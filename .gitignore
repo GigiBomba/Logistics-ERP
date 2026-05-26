@@ -10,15 +10,15 @@ __pycache__/
 # Logs
 logs/
 
-# Virtual environments
+# Env
 venv/
 .venv/
 env/
 
-# GraphHopper
-graph-cache/
-*.gh
-
-# OS files
+# OS
 Thumbs.db
 .DS_Store
+
+# GraphHopper / routing
+graph-cache/
+*.gh
