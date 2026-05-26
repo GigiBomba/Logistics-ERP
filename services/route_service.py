@@ -1,0 +1,905 @@
+"""Routing layer: GraphHopper client, caching, geocoding integration and segmentation.
+
+This module provides:
+- GraphHopperClient: low-level HTTP client for GH with diagnostics and retries
+- RouteCache / GeocodeCache: simple in-memory caches
+- RouteService: orchestration of geocoding, routing, segmentation and async execution
+
+The implementation focuses on clarity, type annotations and maintainability.
+"""
+
+import hashlib
+import math
+import threading
+import time
+from typing import Any, Callable, Dict, List, Optional, Tuple
+
+import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
+from services.calculator import TripCalculator
+from services.constraint_engine import TruckConstraintEngine
+from services.country_exclusion import CountryExclusionEngine
+from services.geocode_nominatim import geocode_place
+from services.graphhopper_network import (
+    CH_DISABLE_DISTANCE_THRESHOLD_KM,
+    MAX_ROUTE_RETRIES,
+    build_route_endpoint,
+    format_point_param,
+    graphhopper_base_url_from_env,
+    is_retryable_request_error,
+    is_transient_http_status,
+    normalize_graphhopper_base_url,
+    retry_delay_seconds,
+    should_use_post_routing,
+    validate_route_points,
+)
+from utils.logger import get_logger
+
+
+GRAPHHOPPER_PROFILES: Dict[str, str] = {
+    "Recommended": "truck",
+    "Fastest": "truck_fast",
+    "Cheapest": "truck_cheap",
+    "Safest": "truck_safe",
+    "Shortest": "truck_short",
+}
+
+
+class RouteCache:
+    def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600) -> None:
+        self._cache: Dict[str, Dict[str, Any]] = {}
+        self._timestamps: Dict[str, float] = {}
+        self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
+
+    def _make_key(self, points: List[Tuple[float, float]], profile: str, exclusions: Optional[List[str]] = None) -> str:
+        points_str = ",".join(f"{lat:.6f},{lon:.6f}" for lat, lon in points)
+        excl_str = "" if not exclusions else ",".join(sorted([c.upper() for c in exclusions]))
+        key = f"{profile}:{points_str}:excl={excl_str}"
+        return hashlib.md5(key.encode()).hexdigest()
+
+    def get(self, points: List[Tuple[float, float]], profile: str, exclusions: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+        key = self._make_key(points, profile, exclusions)
+        if key in self._cache:
+            if time.time() - self._timestamps[key] < self.ttl_seconds:
+                return self._cache[key]
+            del self._cache[key]
+            del self._timestamps[key]
+        return None
+
+    def set(self, points: List[Tuple[float, float]], profile: str, result: Dict[str, Any], exclusions: Optional[List[str]] = None) -> None:
+        key = self._make_key(points, profile, exclusions)
+        if len(self._cache) >= self.max_size:
+            oldest_key = min(self._timestamps, key=self._timestamps.get)
+            del self._cache[oldest_key]
+            del self._timestamps[oldest_key]
+        self._cache[key] = result
+        self._timestamps[key] = time.time()
+
+
+class GeocodeCache:
+    def __init__(self, max_size: int = 2000) -> None:
+        self._cache: Dict[str, Tuple[float, float]] = {}
+        self._lock = threading.Lock()
+        self.max_size = max_size
+
+    def get(self, address: str) -> Optional[Tuple[float, float]]:
+        with self._lock:
+            return self._cache.get(address)
+
+    def set(self, address: str, coords: Tuple[float, float]) -> None:
+        with self._lock:
+            if len(self._cache) >= self.max_size:
+                oldest_key = next(iter(self._cache))
+                del self._cache[oldest_key]
+            self._cache[address] = coords
+
+
+class GraphHopperClient:
+    """Thin GraphHopper HTTP client with retry and diagnostics."""
+
+    def __init__(
+        self,
+        base_url: str = "http://192.168.0.93:8989",
+        timeout: int = 300,
+    ) -> None:
+        self.base_url = normalize_graphhopper_base_url(base_url)
+        self._route_endpoint = build_route_endpoint(self.base_url)
+        self.timeout = timeout
+        self.logger = get_logger("GraphHopperClient")
+        self.debug_logger = get_logger("route_debug")
+
+        self.session = requests.Session()
+        # Application-level retries only (avoid urllib3 × manual retry storms)
+        adapter = HTTPAdapter(pool_connections=20, pool_maxsize=20, max_retries=Retry(total=0), pool_block=False)
+        self.session.mount("http://", adapter)
+        self.session.mount("https://", adapter)
+        self.session.headers.update({"Connection": "keep-alive", "Accept": "application/json"})
+
+    @staticmethod
+    def _validate_coordinates(lat: float, lon: float) -> bool:
+        try:
+            lat = float(lat)
+            lon = float(lon)
+            return -90 <= lat <= 90 and -180 <= lon <= 180
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def _haversine_distance(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+        R = 6371
+        phi1 = math.radians(lat1)
+        phi2 = math.radians(lat2)
+        delta_phi = math.radians(lat2 - lat1)
+        delta_lambda = math.radians(lon2 - lon1)
+        a = math.sin(delta_phi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(delta_lambda / 2) ** 2
+        c = 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+        return R * c
+
+    # Internal-only keys (not sent to GraphHopper query/body)
+    _INTERNAL_PARAM_KEYS = frozenset({
+        "avoid_countries",
+        "country_penalty",
+        "_custom_model",
+        "_exclusion_strategy",
+        "_exclusion_requested",
+        "_exclusion_skipped",
+        "_meta",
+        "_segment_depth",
+    })
+
+    def _split_routing_params(self, params: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], Dict[str, Any]]:
+        """Split truck/query params, custom_model JSON, and diagnostic metadata."""
+        if not params:
+            return {}, None, {}
+        gh_params: Dict[str, Any] = {}
+        meta: Dict[str, Any] = {}
+        custom_model = params.get("_custom_model")
+        for key, value in params.items():
+            if key in self._INTERNAL_PARAM_KEYS:
+                if key.startswith("_exclusion") or key == "avoid_countries" or key == "_meta" or key == "_segment_depth":
+                    meta[key] = value
+                continue
+            gh_params[key] = value
+        return gh_params, custom_model if isinstance(custom_model, dict) else None, meta
+
+    def _route_post(
+        self,
+        points: List[Tuple[float, float]],
+        profile: str,
+        gh_params: Dict[str, Any],
+        custom_model: Optional[Dict[str, Any]],
+        actual_timeout: int,
+        meta: Optional[Dict[str, Any]] = None,
+    ) -> requests.Response:
+        """POST /route — custom_model exclusions or long / multi-point routes."""
+        body: Dict[str, Any] = {
+            "profile": profile,
+            "points": [[float(lon), float(lat)] for lat, lon in points],
+            "points_encoded": False,
+            "instructions": False,
+            "calc_points": True,
+        }
+        if custom_model is not None:
+            body["ch.disable"] = True
+            body["custom_model"] = custom_model
+        for key, value in gh_params.items():
+            if key == "ch.disable":
+                body["ch.disable"] = value in (True, "true", "True", "1", 1)
+            else:
+                body[key] = value
+        applied = (meta or {}).get("avoid_countries") or gh_params.get("avoid_countries")
+        if custom_model is not None:
+            self.debug_logger.info(f"[GraphHopper] POST route exclusions applied={applied}")
+        self.debug_logger.info(
+            f"[GraphHopper] POST {self._route_endpoint} profile={profile} points={len(points)} "
+            f"ch.disable={body.get('ch.disable', False)}"
+        )
+        return self.session.post(
+            self._route_endpoint,
+            json=body,
+            timeout=actual_timeout,
+            headers={"Accept": "application/json", "Content-Type": "application/json"},
+        )
+
+    def _log_request_debug(
+        self,
+        *,
+        use_post: bool,
+        profile: str,
+        points: List[Tuple[float, float]],
+        query_params: Dict[str, Any],
+        meta: Dict[str, Any],
+        segment_depth: int = 0,
+    ) -> None:
+        coord_count = len(points) * 2
+        line = (
+            f"[GH] method={'POST' if use_post else 'GET'} "
+            f"points={len(points)} coords={coord_count} "
+            f"profile={profile} depth={segment_depth} "
+            f"est_km={sum(self._haversine_distance(points[i][0], points[i][1], points[i+1][0], points[i+1][1]) for i in range(len(points)-1)):.1f} "
+            f"endpoint={self._route_endpoint}"
+        )
+        if meta:
+            line += f" meta={meta}"
+        self.debug_logger.info(line)
+        if use_post:
+            self.debug_logger.info(
+                f"REQUEST POST {self._route_endpoint} profile={profile} points={len(points)} "
+                f"strategy={meta.get('_exclusion_strategy', 'post')}"
+            )
+            return
+        try:
+            prep = requests.Request("GET", self._route_endpoint, params=query_params).prepare()
+            self.debug_logger.info(f"REQUEST URL: {prep.url}")
+        except requests.exceptions.InvalidURL as exc:
+            raise ValueError(
+                f"Invalid GraphHopper request URL (base={self.base_url!r}): {exc}"
+            ) from exc
+
+    def route(self, points: List[Tuple[float, float]], profile: str = "truck", params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        gh_params, custom_model, meta = self._split_routing_params(params)
+        avoid = meta.get("avoid_countries") or gh_params.get("avoid_countries")
+        points = validate_route_points(points)
+        start_time = time.time()
+
+        total_distance_km = 0.0
+        for i in range(len(points) - 1):
+            total_distance_km += self._haversine_distance(points[i][0], points[i][1], points[i + 1][0], points[i + 1][1])
+
+        use_post = should_use_post_routing(
+            has_custom_model=custom_model is not None,
+            point_count=len(points),
+            estimated_distance_km=total_distance_km,
+        )
+
+        dynamic_timeout = max(120, int(120 + (total_distance_km / 100) * 8))
+        if use_post:
+            dynamic_timeout = max(dynamic_timeout, 180)
+        actual_timeout = min(dynamic_timeout, self.timeout)
+
+        query_params: Dict[str, Any] = {
+            "profile": profile,
+            "point": [format_point_param(lat, lon) for lat, lon in points],
+            "points_encoded": "false",
+            "instructions": "false",
+            "calc_points": "true",
+            "type": "json",
+        }
+        query_params.update(gh_params)
+
+        if avoid:
+            self.debug_logger.info(f"[GraphHopper] Avoid countries (diagnostic): {avoid}")
+        # Extract segment depth from nested meta
+        _segment_depth = 0
+        _nested_meta = meta.get("_meta", {})
+        if isinstance(_nested_meta, dict):
+            _segment_depth = _nested_meta.get("_segment_depth", 0)
+        self._log_request_debug(
+            use_post=use_post,
+            profile=profile,
+            points=points,
+            query_params=query_params,
+            meta=meta,
+            segment_depth=_segment_depth,
+        )
+
+        self.logger.info(
+            f"Route request profile={profile} points={len(points)} est_distance_km={total_distance_km:.1f} "
+            f"method={'POST' if use_post else 'GET'} endpoint={self._route_endpoint}"
+        )
+
+        max_attempts = MAX_ROUTE_RETRIES
+        last_error: Optional[str] = None
+        for attempt in range(max_attempts):
+            if attempt > 0:
+                time.sleep(retry_delay_seconds(attempt - 1))
+            try:
+                if use_post:
+                    resp = self._route_post(
+                        points, profile, gh_params, custom_model, actual_timeout, meta=meta
+                    )
+                else:
+                    resp = self.session.get(
+                        self._route_endpoint,
+                        params=query_params,
+                        timeout=actual_timeout,
+                        headers={"Accept": "application/json"},
+                    )
+                elapsed = time.time() - start_time
+                self.debug_logger.info(f"RESPONSE status={resp.status_code} time_s={elapsed:.2f} attempt={attempt}")
+                try:
+                    body = resp.text
+                    if len(body) > 20000:
+                        body = body[:20000] + "... (truncated)"
+                    self.debug_logger.info(f"RESPONSE BODY: {body}")
+                except Exception:
+                    pass
+
+                if is_transient_http_status(resp.status_code):
+                    last_error = f"HTTP {resp.status_code}"
+                    if attempt < max_attempts - 1:
+                        continue
+                    resp.raise_for_status()
+
+                if resp.status_code >= 400:
+                    gh_message = ""
+                    try:
+                        error_data = resp.json()
+                        if isinstance(error_data, dict):
+                            gh_message = error_data.get("message", "") or error_data.get("error", "")
+                    except Exception:
+                        gh_message = resp.text[:2000] if resp.text else ""
+
+                    if gh_message:
+                        self.debug_logger.error(
+                            f"GraphHopper HTTP {resp.status_code}: {gh_message}"
+                        )
+                        # Auto-retry with ch.disable for CH distance errors
+                        gh_lower = gh_message.lower()
+                        if ("pointdistanceexceeded" in gh_lower or "too far" in gh_lower) and attempt < max_attempts - 1:
+                            self.logger.info(
+                                f"CH distance error (HTTP {resp.status_code}), retrying with ch.disable=true"
+                            )
+                            gh_params["ch.disable"] = True
+                            if not use_post:
+                                query_params["ch.disable"] = "true"
+                            self.debug_logger.info(
+                                f"[GraphHopper] Retry attempt {attempt+2} with ch.disable=true"
+                            )
+                            continue
+                        raise ValueError(
+                            f"GraphHopper error (HTTP {resp.status_code}): {gh_message}"
+                        )
+                    resp.raise_for_status()
+
+                data = resp.json()
+                if "paths" not in data or not data["paths"]:
+                    gh_err = data.get("message") if isinstance(data, dict) else None
+                    self.debug_logger.error(f"GraphHopper payload: {data}")
+                    raise ValueError(gh_err or "No route found")
+
+                path = data["paths"][0]
+                geometry: List[Tuple[float, float]] = []
+                if "points" in path:
+                    try:
+                        from services.route_decoder import decode_polyline
+
+                        decoded = decode_polyline(path["points"])
+                        geometry = [(lat, lon) for lat, lon in decoded]
+                    except Exception:
+                        try:
+                            from services.route_decoder import decode_polyline
+
+                            snapped = decode_polyline(path.get("snapped_waypoints", ""))
+                            geometry = [(lat, lon) for lat, lon in snapped]
+                        except Exception:
+                            geometry = []
+
+                if not geometry:
+                    geometry = [(lat, lon) for lat, lon in points]
+
+                distance_km = path.get("distance", 0) / 1000.0
+                duration_min = path.get("time", 0) / 60000.0
+
+                result = {
+                    "distance_km": distance_km,
+                    "duration_min": duration_min,
+                    "geometry": geometry,
+                    "points_count": len(points),
+                    "request_time_s": elapsed,
+                    "graphhopper_response": data,
+                    "avoid_countries": avoid or [],
+                    "exclusions_applied": bool(use_post and avoid),
+                    "routing_method": "POST" if use_post else "GET",
+                    "exclusion_strategy": meta.get("_exclusion_strategy"),
+                }
+                if use_post:
+                    self.debug_logger.info(
+                        f"[GraphHopper] Route success with exclusions applied={avoid} distance_km={distance_km:.1f}"
+                    )
+                self.logger.info(f"Route success {distance_km:.1f}km time_s={elapsed:.2f}")
+                return result
+
+            except requests.exceptions.HTTPError as e:
+                if is_retryable_request_error(e) and attempt < max_attempts - 1:
+                    last_error = str(e)
+                    self.logger.warning(f"HTTP retry attempt {attempt + 1}: {e}")
+                    continue
+                raise
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                last_error = str(e)
+                self.logger.warning(f"Transient error attempt {attempt + 1}: {e}")
+                if attempt >= max_attempts - 1:
+                    raise
+            except requests.exceptions.InvalidURL as e:
+                raise ValueError(
+                    f"Invalid GraphHopper URL (check base URL {self.base_url!r}): {e}"
+                ) from e
+            except Exception as e:
+                if is_retryable_request_error(e) and attempt < max_attempts - 1:
+                    last_error = str(e)
+                    self.logger.warning(f"Route retry attempt {attempt + 1}: {e}")
+                    continue
+                raise
+
+        raise RuntimeError(f"Route failed after {max_attempts} attempts: {last_error}")
+
+
+class RouteService:
+    def __init__(self, db: Any = None, graphhopper_url: Optional[str] = None, timeout: int = 300) -> None:
+        self.db = db
+        self.logger = get_logger("RouteService")
+        self.debug_logger = get_logger("route_debug")
+        self.calculator = TripCalculator()
+        self.constraint_engine = TruckConstraintEngine()
+        self.country_exclusion = CountryExclusionEngine()
+        gh_url = graphhopper_url if graphhopper_url is not None else graphhopper_base_url_from_env()
+        self.client = GraphHopperClient(base_url=gh_url, timeout=timeout)
+        self._geocode_cache = GeocodeCache(max_size=2000)
+        self._route_cache = RouteCache(max_size=1000, ttl_seconds=3600)
+        # country analysis cache: geometry_hash -> list[country_codes]
+        self._country_analysis_cache: Dict[str, List[str]] = {}
+        # small cache for reverse lookups (rounded coords -> country)
+        self._country_point_cache: Dict[Tuple[float, float], Optional[str]] = {}
+        self._last_reverse_time = 0.0
+        self._reverse_lock = threading.Lock()
+
+        # segmentation defaults
+        self.segment_distance_threshold_km = 1800.0
+        self.min_segment_distance_km = 700.0
+        self.max_segmentation_depth = 2
+        self.max_segment_count = 4
+
+    def _geocode_address(self, address: str) -> Tuple[float, float]:
+        if not address or not address.strip():
+            raise ValueError("Empty address")
+        address = address.strip()
+        cached = self._geocode_cache.get(address)
+        if cached:
+            return cached
+        start = time.time()
+        coords = geocode_place(address, timeout=15)
+        took = time.time() - start
+        self.debug_logger.info(f"geocode: address={address} time_s={took:.2f}")
+        if not coords:
+            raise ValueError(f"Could not geocode address: {address}")
+        lat, lon = coords
+        if not GraphHopperClient._validate_coordinates(lat, lon):
+            raise ValueError(f"Invalid geocode result for {address}: ({lat}, {lon})")
+        self._geocode_cache.set(address, coords)
+        return coords
+
+    def _reverse_geocode_country(self, lat: float, lon: float) -> Optional[str]:
+        """Reverse geocode a coordinate to a country code (ISO2).
+
+        Simple rate-limited reverse geocode using Nominatim. Caches results keyed
+        by rounded coordinates to avoid excessive requests.
+        """
+        # round to 4 decimals (~11m) for cache stability
+        key = (round(lat, 4), round(lon, 4))
+        if key in self._country_point_cache:
+            return self._country_point_cache[key]
+
+        with self._reverse_lock:
+            # respect ~1s between requests
+            wait = max(0.0, 1.0 - (time.time() - self._last_reverse_time))
+            if wait > 0:
+                time.sleep(wait)
+            try:
+                url = "https://nominatim.openstreetmap.org/reverse"
+                resp = requests.get(url, params={
+                    'lat': lat,
+                    'lon': lon,
+                    'format': 'json',
+                    'zoom': 3,
+                    'addressdetails': 1
+                }, headers={'User-Agent': 'logistics-app/1.0', 'Accept-Language': 'en'}, timeout=10)
+                self._last_reverse_time = time.time()
+                if resp.status_code != 200:
+                    self.debug_logger.warning(f"Reverse geocode HTTP {resp.status_code} for {key}")
+                    self._country_point_cache[key] = None
+                    return None
+                data = resp.json()
+                addr = data.get('address', {}) if isinstance(data, dict) else {}
+                cc = addr.get('country_code')
+                if cc:
+                    cc = cc.upper()
+                self._country_point_cache[key] = cc
+                return cc
+            except Exception as e:
+                self.debug_logger.warning(f"Reverse geocode failed for {key}: {e}")
+                self._country_point_cache[key] = None
+                self._last_reverse_time = time.time()
+                return None
+
+    def _detect_countries_from_geometry(self, geometry: List[Tuple[float, float]]) -> List[str]:
+        """Detect country codes crossed by the geometry.
+
+        Samples geometry points (up to 20) and reverse-geocodes them. Results are cached by geometry hash.
+        """
+        if not geometry:
+            return []
+        # build hash of geometry for caching
+        geom_str = ";".join(f"{lat:.6f},{lon:.6f}" for lat, lon in geometry)
+        gh = hashlib.md5(geom_str.encode()).hexdigest()
+        if gh in self._country_analysis_cache:
+            return list(self._country_analysis_cache[gh])
+
+        # sample up to 20 points evenly
+        n = len(geometry)
+        max_samples = 20
+        step = max(1, n // max_samples)
+        sampled = [geometry[i] for i in range(0, n, step)]
+        countries = []
+        for lat, lon in sampled:
+            try:
+                cc = self._reverse_geocode_country(lat, lon)
+                if cc and cc not in countries:
+                    countries.append(cc)
+            except Exception:
+                pass
+
+        self._country_analysis_cache[gh] = list(countries)
+        return countries
+
+    def _resolve_stops(self, addresses: List[Any]) -> List[Tuple[float, float]]:
+        resolved: List[Tuple[float, float]] = []
+        failed: List[str] = []
+        for i, addr in enumerate(addresses):
+            try:
+                if isinstance(addr, (tuple, list)) and len(addr) >= 2:
+                    lat, lon = float(addr[0]), float(addr[1])
+                    if GraphHopperClient._validate_coordinates(lat, lon):
+                        resolved.append((lat, lon))
+                        continue
+                    failed.append(f"Point {i}: invalid coordinates ({lat},{lon})")
+                    continue
+                start = time.time()
+                coords = self._geocode_address(str(addr))
+                self.debug_logger.info(f"geocode_point index={i} address={addr} time_s={time.time()-start:.2f}")
+                resolved.append(coords)
+            except Exception as e:
+                failed.append(f"Point {i} ({addr}): {e}")
+
+        if failed:
+            raise ValueError("Geocoding failed:\n" + "\n".join(failed))
+
+        if len(resolved) < 2:
+            raise ValueError("At least 2 valid stops required")
+
+        # dedupe consecutive
+        cleaned: List[Tuple[float, float]] = [resolved[0]]
+        for i in range(1, len(resolved)):
+            if resolved[i] != resolved[i - 1]:
+                cleaned.append(resolved[i])
+        if len(cleaned) < 2:
+            raise ValueError("At least 2 unique stops required after deduplication")
+        return cleaned
+
+    @staticmethod
+    def _validate_segment(segment: List[Tuple[float, float]], context: str = "") -> None:
+        """Validate segment points before making a GraphHopper request.
+        
+        Raises ValueError if the segment is invalid.
+        """
+        if not segment:
+            raise ValueError(f"Empty segment {context}")
+        if len(segment) < 2:
+            raise ValueError(f"Segment {context} has only {len(segment)} point(s), need at least 2")
+        for i, pt in enumerate(segment):
+            if pt is None:
+                raise ValueError(f"Segment {context}: None point at index {i}")
+            if not isinstance(pt, (tuple, list)) or len(pt) < 2:
+                raise ValueError(f"Segment {context}: malformed point at index {i}: {pt!r}")
+            lat, lon = pt[0], pt[1]
+            if lat is None or lon is None:
+                raise ValueError(f"Segment {context}: None coordinate at index {i}")
+            try:
+                lat_f, lon_f = float(lat), float(lon)
+            except (TypeError, ValueError) as exc:
+                raise ValueError(f"Segment {context}: non-numeric coordinate at index {i}: ({lat}, {lon})") from exc
+            import math
+            if math.isnan(lat_f) or math.isnan(lon_f):
+                raise ValueError(f"Segment {context}: NaN coordinate at index {i}")
+            if math.isinf(lat_f) or math.isinf(lon_f):
+                raise ValueError(f"Segment {context}: Inf coordinate at index {i}")
+            if not (-90.0 <= lat_f <= 90.0):
+                raise ValueError(f"Segment {context}: invalid latitude at index {i}: {lat_f}")
+            if not (-180.0 <= lon_f <= 180.0):
+                raise ValueError(f"Segment {context}: invalid longitude at index {i}: {lon_f}")
+        for i in range(1, len(segment)):
+            if segment[i] == segment[i - 1]:
+                raise ValueError(f"Segment {context}: duplicate consecutive point at index {i}: {segment[i]}")
+
+    def _merge_segment_results(self, parts: List[Dict[str, Any]], resolved_stops: List[Tuple[float, float]]) -> Dict[str, Any]:
+        merged: Dict[str, Any] = {"distance_km": 0.0, "duration_min": 0.0, "geometry": [], "graphhopper_response_parts": []}
+        for seg in parts:
+            merged["distance_km"] += seg.get("distance_km", 0.0)
+            merged["duration_min"] += seg.get("duration_min", 0.0)
+            geom = seg.get("geometry") or []
+            if not merged["geometry"]:
+                merged["geometry"].extend(geom)
+            else:
+                if geom:
+                    if len(merged["geometry"]) > 0 and len(geom) > 0 and merged["geometry"][-1] == geom[0]:
+                        merged["geometry"].extend(geom[1:])
+                    else:
+                        merged["geometry"].extend(geom)
+            merged["graphhopper_response_parts"].append(seg.get("graphhopper_response"))
+        merged["points_count"] = len(resolved_stops)
+        return merged
+
+    @staticmethod
+    def _segment_midpoint(a: Tuple[float, float], b: Tuple[float, float]) -> Tuple[float, float]:
+        """Return a geographic midpoint for two coordinates."""
+        lat1 = math.radians(a[0])
+        lon1 = math.radians(a[1])
+        lat2 = math.radians(b[0])
+        lon2 = math.radians(b[1])
+
+        dlon = lon2 - lon1
+        bx = math.cos(lat2) * math.cos(dlon)
+        by = math.cos(lat2) * math.sin(dlon)
+        lat3 = math.atan2(
+            math.sin(lat1) + math.sin(lat2),
+            math.sqrt((math.cos(lat1) + bx) ** 2 + by ** 2),
+        )
+        lon3 = lon1 + math.atan2(by, math.cos(lat1) + bx)
+        return math.degrees(lat3), math.degrees(lon3)
+
+    @staticmethod
+    def _is_segmentation_worthy_error(exc: BaseException) -> bool:
+        msg = str(exc).lower()
+        keywords = (
+            "pointdistanceexceededexception",
+            "no route",
+            "no paths",
+            "no path found",
+            "invalid route",
+            "search exceeded",
+            "timeout",
+            "too far",
+            "bad request",
+        )
+        if any(k in msg for k in keywords):
+            return True
+        return is_retryable_request_error(exc)
+
+    def _should_split_segment(self, *, distance_km: float, depth: int, exc: BaseException, segments_total: int) -> bool:
+        if depth >= self.max_segmentation_depth:
+            self.debug_logger.info("[Segmentation] Max depth reached, aborting safely")
+            return False
+        if distance_km < self.min_segment_distance_km:
+            return False
+        if segments_total >= self.max_segment_count:
+            self.debug_logger.info("[Segmentation] Max segment count reached, aborting safely")
+            return False
+        if distance_km < self.segment_distance_threshold_km and not self._is_segmentation_worthy_error(exc):
+            return False
+        return self._is_segmentation_worthy_error(exc)
+
+    def _should_segment_route(self, *, distance_km: float, exc: BaseException) -> bool:
+        if distance_km < self.min_segment_distance_km:
+            return False
+        return distance_km >= self.segment_distance_threshold_km and self._is_segmentation_worthy_error(exc)
+
+    def _route_pair_recursive(
+        self,
+        a: Tuple[float, float],
+        b: Tuple[float, float],
+        profile: str,
+        gh_params: Dict[str, Any],
+        depth: int,
+        resolved_stops: List[Tuple[float, float]],
+        segment_state: Optional[Dict[str, int]] = None,
+    ) -> Dict[str, Any]:
+        if depth > self.max_segmentation_depth:
+            self.debug_logger.info("[Segmentation] Max depth reached, aborting safely")
+            raise RuntimeError(f"Max segmentation depth exceeded for {a}->{b}")
+
+        if segment_state is None:
+            segment_state = {"segments_total": 1}
+
+        pair = [a, b]
+        self._validate_segment(pair, context=f"depth={depth}")
+
+        exclusions = None
+        try:
+            exclusions = gh_params.get('avoid_countries') if gh_params and 'avoid_countries' in gh_params else None
+        except Exception:
+            exclusions = None
+
+        cached = self._route_cache.get(pair, profile, exclusions=exclusions)
+        if cached:
+            self.debug_logger.info(f"cache hit for {a}->{b}")
+            return cached
+
+        dist_km = GraphHopperClient._haversine_distance(a[0], a[1], b[0], b[1])
+        self.debug_logger.info(f"[Segmentation] depth={depth} dist={dist_km:.1f}km segments={segment_state.get('segments_total')} request={a[:2]}->{b[:2]}")
+        try:
+            # Tag meta with segment depth for request logging
+            seg_params = dict(gh_params)
+            seg_meta = seg_params.get("_meta", {})
+            if isinstance(seg_meta, dict):
+                seg_meta = dict(seg_meta)
+            else:
+                seg_meta = {}
+            seg_meta["_segment_depth"] = depth
+            seg_params["_meta"] = seg_meta
+
+            res = self.client.route(pair, profile=profile, params=seg_params)
+            try:
+                self._route_cache.set(pair, profile, res, exclusions=exclusions)
+            except Exception:
+                pass
+            return res
+        except Exception as exc:
+            self.debug_logger.warning(f"Direct segment error {a}->{b}: {exc}")
+            if not self._should_split_segment(
+                distance_km=dist_km,
+                depth=depth,
+                exc=exc,
+                segments_total=segment_state.get("segments_total", 1),
+            ):
+                raise
+
+        self.debug_logger.info(f"[Segmentation] depth={depth} splitting {a[:2]}->{b[:2]} (dist={dist_km:.1f}km)")
+
+        mid = self._segment_midpoint(a, b)
+        self._validate_segment([a, mid, b], context=f"midpoint depth={depth}")
+
+        segment_state["segments_total"] = segment_state.get("segments_total", 1) + 1
+        self.debug_logger.info(f"[Segmentation] Created 2 segments (total={segment_state['segments_total']})")
+        left = self._route_pair_recursive(a, mid, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
+        right = self._route_pair_recursive(mid, b, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
+        merged = self._merge_segment_results([left, right], resolved_stops)
+        try:
+            self._route_cache.set(pair, profile, merged, exclusions=exclusions)
+        except Exception:
+            pass
+        return merged
+
+    def calculate_route(self, stops: List[Any], profile: str = "truck", truck: Optional[Dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+        start = time.time()
+        resolved_stops = self._resolve_stops(stops)
+        if use_cache:
+            cached = self._route_cache.get(resolved_stops, profile, exclusions=avoid_countries)
+            if cached:
+                cached["cached"] = True
+                return [cached]
+
+        gh_params: Dict[str, Any] = {}
+        if truck:
+            try:
+                gh_params = self.constraint_engine.build_params(truck, profile)
+            except Exception:
+                self.logger.warning("Failed to build truck params")
+
+        exclusion_plan = self.country_exclusion.prepare(avoid_countries, resolved_stops)
+        gh_params = self.country_exclusion.merge_into_params(gh_params, exclusion_plan)
+
+        est_km = sum(
+            GraphHopperClient._haversine_distance(
+                resolved_stops[i][0], resolved_stops[i][1],
+                resolved_stops[i + 1][0], resolved_stops[i + 1][1],
+            )
+            for i in range(len(resolved_stops) - 1)
+        )
+
+        # Auto-enable ch.disable for very long routes to prevent PointDistanceExceededException
+        if est_km > CH_DISABLE_DISTANCE_THRESHOLD_KM and gh_params.get("ch.disable") is not True:
+            self.logger.info(
+                f"Route distance {est_km:.1f}km > CH threshold {CH_DISABLE_DISTANCE_THRESHOLD_KM}km, "
+                f"auto-enabling ch.disable=true"
+            )
+            gh_params["ch.disable"] = True
+
+        self.debug_logger.info(
+            f"[Segmentation] Route distance estimate: {est_km:.1f} km "
+            f"stops={len(resolved_stops)} ch.disable={gh_params.get('ch.disable', False)}"
+        )
+        self.debug_logger.info("[Segmentation] Attempting direct route first...")
+        try:
+            res = self.client.route(resolved_stops, profile=profile, params=gh_params)
+        except Exception as direct_exc:
+            self.debug_logger.warning(f"Direct multi-stop failed: {direct_exc}")
+            if not self._should_segment_route(distance_km=est_km, exc=direct_exc):
+                raise
+            self.debug_logger.info("[Segmentation] Direct route failed, splitting into pairs...")
+            parts: List[Dict[str, Any]] = []
+            pair_count = len(resolved_stops) - 1
+            for i in range(pair_count):
+                if i >= 4:
+                    self.debug_logger.warning("[Segmentation] Truncating to max 4 segment pairs")
+                    break
+                a = resolved_stops[i]
+                b = resolved_stops[i + 1]
+                seg = self._route_pair_recursive(a, b, profile, gh_params, depth=0, resolved_stops=resolved_stops)
+                parts.append(seg)
+            if not parts:
+                raise RuntimeError("Segmentation produced no valid segments")
+            res = self._merge_segment_results(parts, resolved_stops)
+
+        try:
+            countries = self._detect_countries_from_geometry(res.get('geometry', []))
+            res['detected_countries'] = countries
+        except Exception:
+            countries = []
+
+        exclusions = exclusion_plan.requested
+        res['excluded_countries_requested'] = exclusions
+        res['excluded_countries_applied'] = exclusion_plan.applied
+        res['excluded_countries_skipped'] = exclusion_plan.skipped_at_stops
+        res['exclusion_strategy'] = exclusion_plan.strategy
+        if exclusion_plan.active:
+            res['routing_method'] = 'POST'
+            res['exclusions_applied'] = True
+
+        applied_set = set(exclusion_plan.applied)
+        if applied_set and any(c in applied_set for c in countries):
+            self.debug_logger.warning(
+                f"[RouteService] Route may still cross blocked countries after pathfinding: "
+                f"detected={countries} applied_exclusions={list(applied_set)}"
+            )
+            res['exclusion_warning'] = (
+                'Route geometry may still touch excluded regions (border sampling / bbox overlap).'
+            )
+        elif exclusion_plan.active:
+            self.debug_logger.info(
+                f"[RouteService] Exclusions active; detected countries={countries} "
+                f"applied={exclusion_plan.applied}"
+            )
+
+        res["profile"] = profile
+        # set truck id safely
+        try:
+            res["truck_id"] = TruckConstraintEngine._get_truck_value(truck, "id") if truck else None
+        except Exception:
+            try:
+                res["truck_id"] = truck["id"] if truck and "id" in truck else None
+            except Exception:
+                res["truck_id"] = None
+
+        res["stops"] = [(lat, lon) for lat, lon in resolved_stops]
+        res["cached"] = False
+        if use_cache:
+            try:
+                self._route_cache.set(resolved_stops, profile, res, exclusions=avoid_countries)
+            except Exception:
+                pass
+
+        self.debug_logger.info(f"calculate_route_end total_s={time.time()-start:.2f} distance_km={res.get('distance_km')}")
+        return [res]
+
+    def calculate_route_async(self, stops: List[Any], callback: Optional[Callable[[Any], None]] = None, profile: str = "truck", truck: Optional[Dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[List[str]] = None) -> threading.Thread:
+        def _safe_invoke(cb: Callable[[Any], None], data: Any) -> None:
+            if not cb:
+                return
+            try:
+                import tkinter as tk
+                root = getattr(tk, "_default_root", None)
+                if root is not None:
+                    root.after(0, lambda: cb(data))
+                    return
+            except Exception:
+                pass
+            try:
+                cb(data)
+            except Exception:
+                self.logger.exception("Callback failed")
+
+        def worker() -> None:
+            try:
+                result = self.calculate_route(stops=stops, profile=profile, truck=truck, use_cache=use_cache, avoid_countries=avoid_countries)
+                _safe_invoke(callback, result)
+            except Exception as e:
+                self.logger.exception("Route calculation failed")
+                err = {"error": str(e), "error_type": type(e).__name__}
+                _safe_invoke(callback, err)
+
+        thread = threading.Thread(target=worker, daemon=True, name="RouteServiceWorker")
+        thread.start()
+        return thread
