@@ -1,0 +1,157 @@
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003" ToolsVersion="4.0">
+  <PropertyGroup>
+    <Configuration Condition=" '$(Configuration)' == '' ">Debug</Configuration>
+    <SchemaVersion>2.0</SchemaVersion>
+    <ProjectGuid>aa93aa51-08b8-4676-9cd8-c17ef635f47e</ProjectGuid>
+    <ProjectHome>.</ProjectHome>
+    <StartupFile>main.py</StartupFile>
+    <SearchPath>
+    </SearchPath>
+    <WorkingDirectory>.</WorkingDirectory>
+    <OutputPath>.</OutputPath>
+    <Name>Calculator logistica</Name>
+    <RootNamespace>Calculator logistica</RootNamespace>
+    <TestFramework>Pytest</TestFramework>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Debug' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <PropertyGroup Condition=" '$(Configuration)' == 'Release' ">
+    <DebugSymbols>true</DebugSymbols>
+    <EnableUnmanagedDebugging>false</EnableUnmanagedDebugging>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="main.py" />
+    <Compile Include="database\db_manager.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="database\schema.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="config.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\calculator.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\api_service.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\constraint_engine.py" />
+    <Compile Include="services\cost_engine.py" />
+    <Compile Include="services\country_avoidance.py" />
+    <Compile Include="services\country_exclusion.py" />
+    <Compile Include="services\export_service.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\geocode_nominatim.py" />
+    <Compile Include="services\graphhopper_network.py" />
+    <Compile Include="services\invoicing\constants.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\invoicing\generator.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\invoicing\config_manager.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\invoicing\__init__.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\email_service.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\fleet_service.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="services\route_runner.py" />
+    <Compile Include="services\route_history_service.py" />
+    <Compile Include="services\route_state.py" />
+    <Compile Include="services\route_service.py" />
+    <Compile Include="services\route_profiles.py" />
+    <Compile Include="services\route_compliance.py" />
+    <Compile Include="services\route_persistence.py" />
+    <Compile Include="services\route_planner_controller.py" />
+    <Compile Include="services\route_result_presenter.py" />
+    <Compile Include="utils\perf_log.py" />
+    <Compile Include="tests\test_country_exclusion.py" />
+    <Compile Include="tests\test_route_history_stats.py" />
+    <Compile Include="services\stop_factory.py" />
+    <Compile Include="services\trip_context.py" />
+    <Compile Include="services\validation.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\main_window.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\dashboard.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\history_view.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\edit_window.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\invoice_tab.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\analytics_view.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\fleet_tab.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\map_helpers.py" />
+    <Compile Include="ui\route_map_renderer.py" />
+    <Compile Include="ui\route_planner_exclusions.py" />
+    <Compile Include="ui\route_planner.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\route_history_view.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\history_map_preview.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\settings_view.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\settings_tab.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\widgets.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="ui\styles.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="utils\helpers.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="utils\logger.py">
+      <SubType>Code</SubType>
+    </Compile>
+    <Compile Include="utils\data_safety.py">
+      <SubType>Code</SubType>
+    </Compile>
+  </ItemGroup>
+  <ItemGroup>
+    <Folder Include="database\" />
+    <Folder Include="services\invoicing\" />
+    <Folder Include="tests\" />
+    <Folder Include="utils\" />
+    <Folder Include="ui\" />
+    <Folder Include="services\" />
+  </ItemGroup>
+  <Import Project="$(MSBuildExtensionsPath32)\Microsoft\VisualStudio\v$(VisualStudioVersion)\Python Tools\Microsoft.PythonTools.targets" />
+  <!-- Uncomment the CoreCompile target to enable the Build command in
+       Visual Studio and specify your pre- and post-build commands in
+       the BeforeBuild and AfterBuild targets below. -->
+  <!--<Target Name="CoreCompile" />-->
+  <Target Name="BeforeBuild">
+  </Target>
+  <Target Name="AfterBuild">
+  </Target>
+</Project>
