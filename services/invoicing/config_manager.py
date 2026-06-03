@@ -1,6 +1,9 @@
 import json
+import logging
 import os
 from services.i18n import t
+
+logger = logging.getLogger(__name__)
 
 CONFIG_FILE = "data/company_config.json"
 
@@ -20,7 +23,8 @@ def load_company_config():
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             return json.load(f)
-    except:
+    except Exception:
+        logger.warning("Could not load company config, using defaults")
         return DEFAULT_CONFIG
 
 def save_company_config(data):

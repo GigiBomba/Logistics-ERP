@@ -52,21 +52,11 @@ def safe_number(value: Any, decimals: int = 2, default: float = 0.0, label: str 
     return f"{num:,.{decimals}f}"
 
 
-def safe_currency(value: Any, decimals: int = 2, default: float = 0.0, label: str = "") -> str:
-    """Format a numeric value as a currency string with *decimals* places.
-
-    Same output as ``PreferencesManager.format_currency()`` but as a
-    standalone function that does not require a ``PrefsManager`` instance.
-    """
-    num = safe_float(value, default, label)
-    # Default to EUR-style formatting
-    formatted = f"{num:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
-    return f"{formatted} €"
-
 # ── Constants ──────────────────────────────────────────────────────────
 
-from services.i18n import t, get_language, set_language as i18n_set_language
+from services.i18n import t, get_language, set_language as i18n_set_language, LANGUAGE_NAMES
 from services.i18n import register_listener as i18n_register_listener
+from services.app_state import AppState
 
 
 _PREF_LANG_KEY = "pref_language"
@@ -87,32 +77,6 @@ _CURRENCY_FORMAT_LOCALES: Dict[str, str] = {
     "USD": "en_US",
     "GBP": "en_GB",
 }
-
-_LANGUAGE_MAP: Dict[str, str] = {
-    "en": "English",
-    "ro": "Română",
-    "fr": "Français",
-    "es": "Español",
-    "de": "Deutsch",
-    "ru": "Русский",
-    "it": "Italiano",
-    "pl": "Polski",
-    "uk": "Українська",
-    "nl": "Nederlands",
-    "sr": "Српски",
-    "hr": "Hrvatski",
-    "tr": "Türkçe",
-    "pt": "Português",
-    "hu": "Magyar",
-    "cs": "Čeština",
-    "sk": "Slovenčina",
-    "bs": "Bosanski",
-    "sl": "Slovenščina",
-    "sv": "Svenska",
-    "el": "Ελληνικά",
-    "bg": "Български",
-}
-
 
 class PreferencesManager:
     """Centralized app preferences backed by the DB settings table.
@@ -161,18 +125,19 @@ class PreferencesManager:
         return get_language()
 
     def get_language_display(self) -> str:
-        return _LANGUAGE_MAP.get(self.get_language(), self.get_language())
+        return LANGUAGE_NAMES.get(self.get_language(), self.get_language())
 
     def get_available_languages(self) -> List[str]:
         from services.i18n import get_available_languages
         return get_available_languages()
 
     def get_language_display_name(self, code: str) -> str:
-        return _LANGUAGE_MAP.get(code, code)
+        return LANGUAGE_NAMES.get(code, code)
 
     def set_language(self, code: str) -> None:
         i18n_set_language(code)
         self._set_setting(_PREF_LANG_KEY, code)
+        AppState().set("language", code)
 
     def register_language_listener(self, cb: Callable[[str], None]) -> None:
         i18n_register_listener(cb)
@@ -193,6 +158,7 @@ class PreferencesManager:
             return
         self._currency = code
         self._set_setting(_PREF_CURRENCY_KEY, code)
+        AppState().set("currency", code)
         for cb in self._currency_listeners:
             try:
                 cb(code)
@@ -201,6 +167,10 @@ class PreferencesManager:
 
     def register_currency_listener(self, cb: Callable[[str], None]) -> None:
         self._currency_listeners.append(cb)
+
+    def unregister_currency_listener(self, cb: Callable[[str], None]) -> None:
+        if cb in self._currency_listeners:
+            self._currency_listeners.remove(cb)
 
     # --- Formatting helpers ---------------------------------------------
 

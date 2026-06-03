@@ -1,39 +1,44 @@
 import tkinter as tk
 from tkinter import ttk
+from ui.theme import COLORS, FONTS, S
 
 
 class Theme:
-    BG = "#0f1117"
-    SURFACE = "#171a23"
-    SURFACE2 = "#202433"
-    SURFACE3 = "#2a3042"
-    INPUT_BG = "#0b0d12"
-    INPUT_HOVER = "#151923"
-    TEXT = "#ffffff"
-    MUTED = "#aeb4c6"
-    ACCENT = "#7c4dff"
-    ACCENT_HOVER = "#9b74ff"
-    ACCENT_SUCCESS = "#9c6bff"
+    BG = COLORS["bg_base"]
+    SURFACE = COLORS["bg_surface"]
+    SURFACE2 = COLORS["bg_elevated"]
+    SURFACE3 = COLORS["bg_elevated"]
+    INPUT_BG = COLORS["bg_input"]
+    INPUT_HOVER = COLORS["bg_elevated"]
+    TEXT = COLORS["text_primary"]
+    MUTED = COLORS["text_secondary"]
+    ACCENT = COLORS["accent"]
+    ACCENT_HOVER = COLORS["accent_hover"]
+    ACCENT_SUCCESS = COLORS["success"]
     HOVER = ACCENT_HOVER
-    BORDER = "#30364a"
-    BORDER_FOCUS = ACCENT
-    DANGER = "#ff6b6b"
-    WARNING = "#ffcc00"
-    SUCCESS = "#38d9a9"
-    GREEN = "#2ecc71"
-    BLUE = "#4f8ef7"
+    BORDER = COLORS["border"]
+    BORDER_FOCUS = COLORS["border_focus"]
+    DANGER = COLORS["danger"]
+    WARNING = COLORS["warning"]
+    SUCCESS = COLORS["success"]
+    GREEN = COLORS["success"]
+    BLUE = COLORS["info"]
     INFO = BLUE
-    ORANGE = "#ffa94d"
-    YELLOW = "#ffd43b"
-    PURPLE_SOFT = "#c084fc"
-    EXCEL = "#1d6f42"
+    ORANGE = COLORS["warning"]
+    YELLOW = COLORS["warning"]
+    PURPLE_SOFT = COLORS["accent_dim"]
+    EXCEL = COLORS["success"]
 
-    FONT_MAIN = ("Segoe UI", 10)
-    FONT_BOLD = ("Segoe UI", 10, "bold")
-    FONT_TITLE = ("Segoe UI", 14, "bold")
+    CARD_BG = COLORS["bg_surface"]
+    CARD_ACCENT = COLORS["accent"]
+    GLOW = COLORS["accent"]
 
-    PAD_X = 12
-    PAD_Y = 8
+    FONT_MAIN = FONTS["body"]
+    FONT_BOLD = FONTS["body_bold"]
+    FONT_TITLE = FONTS["h1"]
+
+    PAD_X = S["4"]
+    PAD_Y = S["2"]
 
     _applied = False
 
@@ -102,14 +107,14 @@ class Theme:
                 background=cls.INPUT_BG,
                 fieldbackground=cls.INPUT_BG,
                 foreground=cls.TEXT,
-                rowheight=28,
+                rowheight=34,
                 bordercolor=cls.BORDER,
                 borderwidth=0
             )
             style.map(
                 "Treeview",
-                background=[("selected", cls.ACCENT)],
-                foreground=[("selected", cls.TEXT)]
+                background=[("selected", COLORS["accent_dim"])],
+                foreground=[("selected", COLORS["text_primary"])]
             )
             style.configure(
                 "Treeview.Heading",

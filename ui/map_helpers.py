@@ -4,7 +4,34 @@ This keeps geometry/path rendering isolated so UI file stays focused on widgets.
 HARD RULE: NEVER create markers from route polyline points.
 route geometry = ONLY polyline; markers = ONLY explicit stops.
 """
+import logging
 from typing import Any, List, Optional, Tuple
+
+logger = logging.getLogger(__name__)
+
+
+def clear_map_overlays(map_widget) -> None:
+    """Delete all route line and marker overlays from the map widget."""
+    if not map_widget:
+        return
+    for attr in ("_last_route_line", "_last_start_marker", "_last_end_marker"):
+        item = getattr(map_widget, attr, None)
+        if item is not None:
+            try:
+                item.delete()
+            except Exception:
+                try:
+                    map_widget.delete(item)
+                except Exception:
+                    pass
+        setattr(map_widget, attr, None)
+    prev_stops = getattr(map_widget, "_last_stop_markers", None) or []
+    for marker in prev_stops:
+        try:
+            marker.delete()
+        except Exception:
+            pass
+    map_widget._last_stop_markers = []
 
 
 def create_path_on_map(
@@ -37,25 +64,7 @@ def create_path_on_map(
 
     try:
         # ── Cleanup any previous overlays ──────────────────────────
-        for attr in ('_last_route_line', '_last_start_marker', '_last_end_marker'):
-            item = getattr(map_widget, attr, None)
-            if item is not None:
-                try:
-                    item.delete()
-                except Exception:
-                    try:
-                        map_widget.delete(item)
-                    except Exception:
-                        pass
-            setattr(map_widget, attr, None)
-
-        prev_stops = getattr(map_widget, '_last_stop_markers', None) or []
-        for pm in prev_stops:
-            try:
-                pm.delete()
-            except Exception:
-                pass
-        map_widget._last_stop_markers = []
+        clear_map_overlays(map_widget)
 
         # ── Draw polyline (geometry is ONLY for the path) ──────────
         try:
@@ -66,7 +75,7 @@ def create_path_on_map(
 
         geo_count = len(geometry)
         stops_count = len(intermediate_stops) if intermediate_stops else 0
-        print(f"[MAP_DEBUG] create_path_on_map: {geo_count} geometry points, {stops_count} explicit stops")
+        logger.debug("create_path_on_map: %d geometry points, %d explicit stops", geo_count, stops_count)
 
         # ── Start marker (first geometry point) ────────────────────
         try:
@@ -115,7 +124,7 @@ def create_path_on_map(
         map_widget._last_end_marker = end_marker
         map_widget._last_stop_markers = stop_markers
 
-        print(f"[MAP_DEBUG] Markers created: 1 start + {len(stop_markers)} stops + 1 end = {len(stop_markers) + 2} total")
+        logger.debug("Markers created: 1 start + %d stops + 1 end = %d total", len(stop_markers), len(stop_markers) + 2)
 
         # ── Fit bounding box ───────────────────────────────────────
         try:

@@ -2,12 +2,14 @@ import json
 import math
 import threading
 import tkinter as tk
+import customtkinter as ctk
 from dataclasses import asdict
 from typing import Optional
 from tkinter import filedialog, messagebox, ttk
 
 from services.route_history_service import RouteHistoryRecord, RouteHistoryService
 from services.i18n import t, register_listener, unregister_listener
+from services.route_result_presenter import format_duration_minutes
 from ui.history_map_preview import HistoryMapPreview
 from ui.route_planner import RoutePlannerTab
 from ui.styles import Theme
@@ -19,7 +21,7 @@ class RouteHistoryView:
 
     PAGE_SIZE = 50
 
-    def __init__(self, parent, db, controller=None):
+    def __init__(self, parent, db, controller=None, embedded=False):
         self.parent = parent
         self.db = db
         self.controller = controller
@@ -35,32 +37,52 @@ class RouteHistoryView:
         self._map_preview = None
         self._i18n_widgets = []
         self._tree_heading_keys = []
+        self._after_ids: list = []
 
-        self.win = tk.Toplevel(parent)
-        self.win.title(t("route_history.title"))
-        self.win.geometry("1280x820")
-        Theme.apply(self.win)
-        self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+        if embedded:
+            self.win = None
+            self.frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
+            self.frame.pack(fill="both", expand=True)
+        else:
+            self.win = ctk.CTkToplevel(parent)
+            self.win.title(t("route_history.title"))
+            self.win.geometry("1280x820")
+            self.win.configure(fg_color=Theme.BG)
+            Theme.apply(self.win)
+            if self.win:
+                self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+            self.frame = ctk.CTkFrame(self.win, fg_color=Theme.BG)
+            self.frame.pack(fill="both", expand=True)
 
         self._setup_ui()
         self._load_async()
 
-        self.win.bind("<Destroy>", self._on_destroy)
+        if self.win:
+            self.win.bind("<Destroy>", self._on_destroy)
         register_listener(self._on_language_changed)
 
     def _i18n_tag(self, widget, key, prefix=""):
         self._i18n_widgets.append((widget, key, prefix))
 
     def _on_destroy(self, event=None):
-        if event is not None and event.widget != self.win:
+        if event is not None and event.widget != (self.win or self.frame):
             return
+        for aid in self._after_ids:
+            try:
+                target = self.win or self.frame or self.parent
+                target.after_cancel(aid)
+            except Exception:
+                pass
+        self._after_ids.clear()
         unregister_listener(self._on_language_changed)
 
     def _on_language_changed(self, lang):
         self.refresh_translations()
 
     def refresh_translations(self):
-        self.win.title(t("route_history.title"))
+        if self.win:
+            if self.win:
+                self.win.title(t("route_history.title"))
         for widget, key, prefix in self._i18n_widgets:
             try:
                 widget.config(text=f"{prefix}{t(key)}")
@@ -75,12 +97,12 @@ class RouteHistoryView:
         self.compare_text.config(text=t("route_history.comparison_hint"), fg=Theme.MUTED)
 
     def _setup_ui(self):
-        root = tk.Frame(self.win, bg=Theme.BG, padx=16, pady=14)
+        root = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
         root.pack(fill="both", expand=True)
 
-        header = tk.Frame(root, bg=Theme.BG)
+        header = ctk.CTkFrame(root, fg_color=Theme.BG)
         header.pack(fill="x", pady=(0, 12))
-        lbl = tk.Label(header, text=t("route_history.header"), bg=Theme.BG, fg=Theme.ACCENT, font=Theme.FONT_TITLE)
+        lbl = ctk.CTkLabel(header, text=t("route_history.header"), fg_color=Theme.BG, text_color=Theme.ACCENT, font=Theme.FONT_TITLE)
         lbl.pack(side="left")
         self._i18n_tag(lbl, "route_history.header")
         btn = ActionButton(header, t("route_history.refresh"), self._load_async, color=Theme.SURFACE2)
@@ -90,10 +112,10 @@ class RouteHistoryView:
         btn.pack(side="right")
         self._i18n_tag(btn, "route_history.open_planner")
 
-        filters = tk.Frame(root, bg=Theme.SURFACE, padx=12, pady=10)
+        filters = ctk.CTkFrame(root, fg_color=Theme.SURFACE)
         filters.pack(fill="x", pady=(0, 12))
 
-        lbl = tk.Label(filters, text=t("route_history.search_label"), bg=Theme.SURFACE, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(filters, text=t("route_history.search_label"), fg_color=Theme.SURFACE, text_color=Theme.TEXT)
         lbl.pack(side="left")
         self._i18n_tag(lbl, "route_history.search_label")
         self.search_var = tk.StringVar()
@@ -101,21 +123,19 @@ class RouteHistoryView:
         self.e_search.pack(side="left", padx=(8, 14))
         self.e_search.bind("<Return>", lambda _e: self._reset_and_load())
 
-        lbl = tk.Label(filters, text=t("route_history.profile_label"), bg=Theme.SURFACE, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(filters, text=t("route_history.profile_label"), fg_color=Theme.SURFACE, text_color=Theme.TEXT)
         lbl.pack(side="left")
         self._i18n_tag(lbl, "route_history.profile_label")
-        self.profile_var = tk.StringVar(value="")
-        self.c_profile = ttk.Combobox(
+        self.c_profile = ctk.CTkComboBox(
             filters,
-            textvariable=self.profile_var,
             values=["", "truck", "truck_fast", "truck_cheap", "truck_safe", "truck_short"],
             width=14,
             state="readonly",
+            command=lambda v: self._reset_and_load(),
         )
         self.c_profile.pack(side="left", padx=(8, 14))
-        self.c_profile.bind("<<ComboboxSelected>>", lambda _e: self._reset_and_load())
 
-        lbl = tk.Label(filters, text=t("route_history.truck_label"), bg=Theme.SURFACE, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(filters, text=t("route_history.truck_label"), fg_color=Theme.SURFACE, text_color=Theme.TEXT)
         lbl.pack(side="left")
         self._i18n_tag(lbl, "route_history.truck_label")
         self.truck_var = tk.StringVar()
@@ -145,8 +165,8 @@ class RouteHistoryView:
         body = tk.PanedWindow(root, orient="horizontal", sashrelief="flat", bg=Theme.BG)
         body.pack(fill="both", expand=True)
 
-        left = tk.Frame(body, bg=Theme.BG)
-        right = tk.Frame(body, bg=Theme.BG, width=360)
+        left = ctk.CTkFrame(body, fg_color=Theme.BG)
+        right = ctk.CTkFrame(body, fg_color=Theme.BG, width=360)
         body.add(left, minsize=760)
         body.add(right, minsize=340)
 
@@ -154,7 +174,7 @@ class RouteHistoryView:
         self._setup_side_panel(right)
 
     def _setup_table(self, parent):
-        table_frame = tk.Frame(parent, bg=Theme.BG)
+        table_frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
         table_frame.pack(fill="both", expand=True)
 
         cols = ("origin", "destination", "date", "truck", "distance", "duration", "profile")
@@ -200,9 +220,9 @@ class RouteHistoryView:
         self.tree.bind("<<TreeviewSelect>>", self._on_select)
         self.tree.bind("<Double-1>", lambda _e: self._open_selected_on_map())
 
-        footer = tk.Frame(parent, bg=Theme.BG, pady=10)
+        footer = ctk.CTkFrame(parent, fg_color=Theme.BG)
         footer.pack(fill="x")
-        self.page_label = tk.Label(footer, text="", bg=Theme.BG, fg=Theme.MUTED)
+        self.page_label = ctk.CTkLabel(footer, text="", fg_color=Theme.BG, text_color=Theme.MUTED)
         self.page_label.pack(side="left")
         btn = ActionButton(footer, t("route_history.next_button"), self._next_page, color=Theme.SURFACE2)
         btn.pack(side="right", padx=(8, 0))
@@ -211,7 +231,7 @@ class RouteHistoryView:
         btn.pack(side="right")
         self._i18n_tag(btn, "route_history.prev_button")
 
-        actions = tk.Frame(parent, bg=Theme.SURFACE, padx=10, pady=10)
+        actions = ctk.CTkFrame(parent, fg_color=Theme.SURFACE)
         actions.pack(fill="x", pady=(0, 2))
         btn = ActionButton(actions, t("route_history.reopen_button"), self._open_selected_on_map, color=Theme.ACCENT)
         btn.pack(side="left", padx=4)
@@ -236,34 +256,34 @@ class RouteHistoryView:
         self._i18n_tag(btn, "route_history.delete_button")
 
     def _setup_side_panel(self, parent):
-        stats = tk.Frame(parent, bg=Theme.SURFACE, padx=12, pady=12)
+        stats = ctk.CTkFrame(parent, fg_color=Theme.SURFACE)
         stats.pack(fill="x", padx=(12, 0), pady=(0, 12))
-        lbl = tk.Label(stats, text=t("route_history.section_stats"), bg=Theme.SURFACE, fg=Theme.ACCENT, font=Theme.FONT_BOLD)
+        lbl = ctk.CTkLabel(stats, text=t("route_history.section_stats"), fg_color=Theme.SURFACE, text_color=Theme.ACCENT, font=Theme.FONT_BOLD)
         lbl.pack(anchor="w")
         self._i18n_tag(lbl, "route_history.section_stats")
-        self.stats_text = tk.Label(stats, text=t("route_history.loading_placeholder"), bg=Theme.SURFACE, fg=Theme.TEXT, justify="left", wraplength=320)
+        self.stats_text = ctk.CTkLabel(stats, text=t("route_history.loading_placeholder"), fg_color=Theme.SURFACE, text_color=Theme.TEXT, justify="left", wraplength=320)
         self.stats_text.pack(fill="x", pady=(8, 0))
 
-        preview = tk.Frame(parent, bg=Theme.SURFACE, padx=12, pady=12)
+        preview = ctk.CTkFrame(parent, fg_color=Theme.SURFACE)
         preview.pack(fill="x", padx=(12, 0), pady=(0, 12))
-        lbl = tk.Label(preview, text=t("route_history.section_map"), bg=Theme.SURFACE, fg=Theme.ACCENT, font=Theme.FONT_BOLD)
+        lbl = ctk.CTkLabel(preview, text=t("route_history.section_map"), fg_color=Theme.SURFACE, text_color=Theme.ACCENT, font=Theme.FONT_BOLD)
         lbl.pack(anchor="w")
         self._i18n_tag(lbl, "route_history.section_map")
-        map_host = tk.Frame(preview, bg=Theme.SURFACE, height=200)
+        map_host = ctk.CTkFrame(preview, fg_color=Theme.SURFACE, height=200)
         map_host.pack(fill="x", pady=(8, 0))
         map_host.pack_propagate(False)
         self._map_preview = HistoryMapPreview(map_host, height=200)
 
-        compare = tk.Frame(parent, bg=Theme.SURFACE, padx=12, pady=12)
+        compare = ctk.CTkFrame(parent, fg_color=Theme.SURFACE)
         compare.pack(fill="both", expand=True, padx=(12, 0))
-        lbl = tk.Label(compare, text=t("route_history.section_comparison"), bg=Theme.SURFACE, fg=Theme.ACCENT, font=Theme.FONT_BOLD)
+        lbl = ctk.CTkLabel(compare, text=t("route_history.section_comparison"), fg_color=Theme.SURFACE, text_color=Theme.ACCENT, font=Theme.FONT_BOLD)
         lbl.pack(anchor="w")
         self._i18n_tag(lbl, "route_history.section_comparison")
-        self.compare_text = tk.Label(
+        self.compare_text = ctk.CTkLabel(
             compare,
             text=t("route_history.comparison_hint"),
-            bg=Theme.SURFACE,
-            fg=Theme.MUTED,
+            fg_color=Theme.SURFACE,
+            text_color=Theme.MUTED,
             justify="left",
             wraplength=320,
         )
@@ -274,7 +294,7 @@ class RouteHistoryView:
 
     def _reset_filters(self):
         self.search_var.set("")
-        self.profile_var.set("")
+        self.c_profile.set("")
         self.truck_var.set("")
         self.include_archived_var.set(False)
         self._reset_and_load()
@@ -298,16 +318,16 @@ class RouteHistoryView:
                 include_archived=args["include_archived"],
             )
             stats = self.service.get_statistics(include_archived=args["include_archived"])
-            self.win.after(0, lambda: self._apply_rows(rows, total, stats))
+            self._safe_after(0, lambda: self._apply_rows(rows, total, stats))
         except Exception as exc:
             error = str(exc)
-            self.win.after(0, lambda: messagebox.showerror(t("route_history.title"), error))
+            self._safe_after(0, lambda: messagebox.showerror(t("route_history.title"), error))
 
     def _current_query(self):
         return {
             "search": self.search_var.get().strip(),
             "truck": self.truck_var.get().strip(),
-            "profile": self.profile_var.get().strip(),
+            "profile": self.c_profile.get().strip(),
             "include_archived": self.include_archived_var.get(),
             "sort_by": self.sort_by,
             "sort_dir": self.sort_dir,
@@ -333,12 +353,12 @@ class RouteHistoryView:
                     row.last_calculated_at.replace("T", " ").replace("Z", ""),
                     row.truck_label or row.truck_id or "",
                     f"{row.total_distance_km or 0:.1f} km",
-                    self._duration(row.duration_min),
+                    format_duration_minutes(row.duration_min),
                     row.profile or "",
                 ),
             )
         pages = max(1, math.ceil(total / self.PAGE_SIZE))
-        self.page_label.config(text=f"Page {self.current_page + 1} / {pages} • {total} routes")
+        self.page_label.config(text=t("route_history.page_info").format(current=self.current_page + 1, total=pages, count=self.total_rows))
         self._render_stats(stats)
         if self._map_preview:
             self._map_preview.clear()
@@ -395,7 +415,7 @@ class RouteHistoryView:
             self._show_map_preview(record)
 
         try:
-            self.win.after(0, apply)
+            self._safe_after(0, apply)
         except tk.TclError:
             pass
 
@@ -515,31 +535,22 @@ class RouteHistoryView:
         dur_delta = (b.duration_min or 0) - (a.duration_min or 0)
         profile_a = a.profile or "-"
         profile_b = b.profile or "-"
-        text = (
-            f"Route {ids[0]} → Route {ids[1]}\n"
-            f"Distance delta: {dist_delta:+.1f} km\n"
-            f"Duration delta: {dur_delta:+.0f} min\n"
-            f"Profiles: {profile_a} vs {profile_b}"
+        text = t("route_history.comparison_result").format(
+            a=ids[0], b=ids[1],
+            d_dist=dist_delta, d_dur=dur_delta,
+            p_a=profile_a, p_b=profile_b,
         )
         self.compare_text.config(text=text, fg=Theme.TEXT)
 
     def _render_stats(self, stats):
         destinations = stats.get("most_common_destinations") or []
-        dest_text = ", ".join(f"{name} ({count})" for name, count in destinations[:3]) or "None"
-        text = (
-            f"Routes: {stats.get('route_count', 0)}\n"
-            f"Total distance: {stats.get('total_distance_km', 0):,.1f} km\n"
-            f"Common destinations: {dest_text}"
+        dest_text = ", ".join(f"{name} ({count})" for name, count in destinations[:3]) or t("route_history.stats_none")
+        text = t("route_history.stats_summary").format(
+            count=stats.get('route_count', 0),
+            dist=stats.get('total_distance_km', 0),
+            dests=dest_text,
         )
         self.stats_text.config(text=text)
-
-    def _duration(self, minutes):
-        minutes = float(minutes or 0)
-        if minutes >= 1440:
-            return f"{minutes / 1440:.1f} d"
-        if minutes >= 60:
-            return f"{minutes / 60:.1f} h"
-        return f"{minutes:.0f} min"
 
     def _money(self, value):
         return "" if value is None else f"{float(value):.2f}"
@@ -547,3 +558,13 @@ class RouteHistoryView:
     def _short(self, value, limit=42):
         value = str(value or "")
         return value if len(value) <= limit else value[: limit - 1] + "…"
+
+    def _safe_after(self, delay, callback):
+        target = self.win or self.frame or self.parent
+        try:
+            aid = target.after(delay, callback)
+            self._after_ids.append(aid)
+            return aid
+        except Exception:
+            pass
+            return None

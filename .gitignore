@@ -22,3 +22,6 @@ Thumbs.db
 # GraphHopper / routing
 graph-cache/
 *.gh
+
+# Tachograph parser binary (downloaded separately)
+tools/tachograph/dddsimple.exe

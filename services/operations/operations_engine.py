@@ -1,0 +1,264 @@
+import logging
+import threading
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from services.operations.alert_manager import AlertManager, AlertType, Severity, Alert
+from services.operations.event_bus import EventBus, SYSTEM_STARTUP, TRUCK_ODOMETER_UPDATED, TRIP_STATUS_CHANGED, VALID_TRANSITIONS, DAILY_CHECK
+from services.operations.maintenance_engine import MaintenanceEngine
+from services.operations.notification_center import NotificationCenter
+from services.operations.rules import Rules
+from services.trip_service import TripService
+from repositories.fleet_repository import FleetRepository
+
+logger = logging.getLogger("operations.operations_engine")
+
+
+class OperationsEngine:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, db=None):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self, db=None):
+        if self._initialized:
+            if db is not None and self._db is None:
+                self._db = db
+            return
+        self._initialized = True
+        self._db = db
+        self._event_bus = EventBus()
+        self._alert_mgr = AlertManager()
+        self._rules = Rules()
+        self._trip_service = TripService(db) if db else None
+        self._maintenance_engine = MaintenanceEngine(db) if db else None
+        self._notification_center = NotificationCenter(db) if db else None
+        self._running = False
+        logger.info("OperationsEngine initialized")
+
+    def start(self):
+        if self._running:
+            return
+        self._running = True
+        self._event_bus.publish(SYSTEM_STARTUP, {})
+        self._schedule_daily_check()
+        if self._maintenance_engine:
+            self._maintenance_engine.evaluate_all()
+        if self._db:
+            self._configure_smtp_from_db()
+            self.migrate_existing_data()
+        logger.info("OperationsEngine started")
+
+    def _schedule_daily_check(self):
+        def _publish_and_reschedule():
+            if not self._running:
+                return
+            self._event_bus.publish(DAILY_CHECK, {})
+            if self._maintenance_engine:
+                self._maintenance_engine.evaluate_all()
+            import threading
+            self._daily_timer = threading.Timer(86400, _publish_and_reschedule)
+            self._daily_timer.daemon = True
+            self._daily_timer.start()
+        import threading
+        self._daily_timer = threading.Timer(86400, _publish_and_reschedule)
+        self._daily_timer.daemon = True
+        self._daily_timer.start()
+
+    def _configure_smtp_from_db(self):
+        if not self._db:
+            return
+        try:
+            cfg = self._db.get_settings(["smtp_server", "smtp_port", "smtp_user", "smtp_password"])
+            if cfg.get("smtp_server") and cfg.get("smtp_user"):
+                port = int(cfg.get("smtp_port", 587))
+                self._notification_center.configure_smtp(
+                    cfg["smtp_server"], port, cfg["smtp_user"], cfg.get("smtp_password", "")
+                )
+        except Exception as e:
+            logger.debug("Could not configure SMTP from settings: %s", e)
+
+    def stop(self):
+        self._running = False
+        if hasattr(self, "_daily_timer"):
+            self._daily_timer.cancel()
+        logger.info("OperationsEngine stopped")
+
+    def get_active_alerts(self, limit: int = 200) -> List[Alert]:
+        return self._alert_mgr.get_active_alerts(limit=limit)
+
+    def get_alerts(
+        self,
+        alert_type: Optional[AlertType] = None,
+        severity: Optional[Severity] = None,
+        truck_id: Optional[str] = None,
+        resolved: Optional[bool] = None,
+        limit: int = 100,
+    ) -> List[Alert]:
+        return self._alert_mgr.get_alerts(
+            alert_type=alert_type,
+            severity=severity,
+            truck_id=truck_id,
+            resolved=resolved,
+            limit=limit,
+        )
+
+    def resolve_alert(self, alert_id: str) -> Optional[Alert]:
+        return self._alert_mgr.resolve_alert(alert_id)
+
+    def get_active_count(self) -> int:
+        return self._alert_mgr.get_active_count()
+
+    def get_active_alert_count(self) -> int:
+        return self.get_active_count()
+
+    def evaluate_all(self) -> int:
+        if self._maintenance_engine:
+            return self._maintenance_engine.evaluate_all()
+        return 0
+
+    def evaluate_truck(self, truck_id: str) -> int:
+        if self._maintenance_engine:
+            return self._maintenance_engine.evaluate_truck(truck_id)
+        return 0
+
+    def get_valid_transitions(self, current_status: str) -> List[str]:
+        """Return list of valid next statuses based on current status."""
+        return VALID_TRANSITIONS.get(current_status, [])
+
+    def force_trip_status(self, trip_id: int, new_status: str) -> bool:
+        """Force a trip to a specific status, updating odometer if completed."""
+        try:
+            trip = self._trip_service.get_by_id(trip_id)
+            if not trip:
+                logger.error("force_trip_status: trip %d not found", trip_id)
+                return False
+
+            old_status = trip.get("status", "")
+            
+            # Update trip status
+            self._trip_service.update(trip_id, {"status": new_status})
+            
+            # If transitioning to Delivered/Completed, update truck odometer
+            if new_status in ("Delivered", "Completed"):
+                self._update_truck_odometer_on_completion(trip)
+            
+            # Publish status change event
+            self._event_bus.publish(TRIP_STATUS_CHANGED, {
+                "trip_id": trip_id,
+                "old_status": old_status,
+                "new_status": new_status,
+            })
+            
+            logger.info("Trip %d status changed: %s -> %s", trip_id, old_status, new_status)
+            return True
+        except Exception as e:
+            logger.error("force_trip_status failed for trip %d: %s", trip_id, e)
+            return False
+
+    def _update_truck_odometer_on_completion(self, trip: Dict[str, Any]) -> None:
+        """Update truck odometer when trip is completed."""
+        try:
+            distance_km = trip.get("distance_km")
+            truck_number = trip.get("truck_number")
+            
+            if not distance_km or distance_km <= 0:
+                logger.debug("Trip %s has no distance, skipping odometer update", trip.get("id"))
+                return
+            
+            if not truck_number:
+                logger.debug("Trip %s has no truck assigned, skipping odometer update", trip.get("id"))
+                return
+            
+            # Get truck by plate number
+            fleet_repo = FleetRepository(self._db)
+            truck = fleet_repo.get_by_plate(truck_number)
+            
+            if not truck:
+                logger.warning("Truck %s not found, cannot update odometer", truck_number)
+                return
+            
+            # Update odometer
+            current_odometer = truck.get("mileage", 0) or 0
+            new_odometer = current_odometer + distance_km
+            
+            fleet_repo.update(truck["id"], {"mileage": new_odometer})
+            
+            logger.info("Updated truck %s odometer: %.1f -> %.1f km (+%.1f km)",
+                       truck_number, current_odometer, new_odometer, distance_km)
+            
+            # Re-evaluate maintenance thresholds
+            if self._maintenance_engine:
+                self._maintenance_engine.evaluate_truck(truck["id"])
+            
+            # Publish odometer update event
+            self._event_bus.publish(TRUCK_ODOMETER_UPDATED, {
+                "truck_id": truck["id"],
+                "truck_number": truck_number,
+                "previous_km": current_odometer,
+                "added_km": distance_km,
+                "new_total_km": new_odometer,
+            })
+        except Exception as e:
+            logger.error("Failed to update truck odometer: %s", e)
+
+    @property
+    def alert_manager(self) -> AlertManager:
+        return self._alert_mgr
+
+    @property
+    def event_bus(self) -> EventBus:
+        return self._event_bus
+
+    @property
+    def notification_center(self) -> Optional[NotificationCenter]:
+        return self._notification_center
+
+    def migrate_existing_data(self) -> Dict[str, int]:
+        results = {"trucks": 0, "trips": 0, "overdue_invoices": 0}
+        if not self._db:
+            return results
+        logger.info("migrate_existing_data: starting backfill...")
+        try:
+            trucks = self._db.get_all_trucks(active_only=True)
+            results["trucks"] = len(trucks)
+            for t in trucks:
+                self._maintenance_engine._evaluate_single(t)
+            logger.info("migrate_existing_data: evaluated %d trucks", results["trucks"])
+        except Exception as e:
+            logger.error("migrate_existing_data truck eval failed: %s", e)
+
+        try:
+            trips = self._trip_service.get_all() if self._trip_service else []
+            results["trips"] = len(trips)
+            today = datetime.now()
+            overdue_days = self._rules.get("unpaid_invoice_days", 30)
+            for t in trips:
+                trip_id, price, created_at, status = t["id"], t.get("total_price_eur", 0), t.get("created_at", ""), t.get("status", "")
+                if status in ("Delivered", "Livrat", "Facturat", "Invoiced"):
+                    try:
+                        created = datetime.strptime(created_at[:10], "%d/%m/%Y")
+                        age = (today - created).days
+                        if age > overdue_days:
+                            self._alert_mgr.create_alert(
+                                AlertType.OVERDUE_INVOICE, Severity.CRITICAL,
+                                f"Overdue invoice for trip #{trip_id}",
+                                f"Trip delivered but unpaid for {age} days ({created_at[:10]}), amount: {price:.2f} EUR",
+                                trip_id=str(trip_id),
+                            )
+                            results["overdue_invoices"] += 1
+                    except Exception:
+                        pass
+            logger.info("migrate_existing_data: checked %d trips, %d overdue invoices",
+                        results["trips"], results["overdue_invoices"])
+        except Exception as e:
+            logger.error("migrate_existing_data trip eval failed: %s", e)
+
+        logger.info("migrate_existing_data complete: %s", results)
+        return results

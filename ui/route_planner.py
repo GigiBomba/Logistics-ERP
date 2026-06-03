@@ -7,9 +7,13 @@ Country exclusions UI: ui/route_planner_exclusions.py
 """
 from __future__ import annotations
 
+import logging
 import tkinter as tk
-from tkinter import ttk
+import customtkinter as ctk
+from tkinter import ttk, messagebox
 import uuid
+
+logger = logging.getLogger(__name__)
 
 try:
     from tkintermapview import TkinterMapView
@@ -53,23 +57,27 @@ class RoutePlannerTab:
         self._core.bind_persistence(self._persistence)
 
         self.profile_map = GRAPHHOPPER_PROFILES
+        self._profile_key_to_display: dict = {}
+        self._profile_display_to_key: dict = {}
         self.stop_vars: dict = {}
         self._row_widgets: list = []
         self._trucks_map: dict = {}
         self._last_route_result = None
         self._calc_token = 0
+        self._dispatch_frame = None
         self._i18n_widgets = []
 
         if open_window:
-            self.win = tk.Toplevel(parent)
+            self.win = ctk.CTkToplevel(parent)
+            self.win.configure(fg_color=Theme.BG)
             self.win.title(t("route.planner_title"))
             self.win.geometry("1200x800")
             Theme.apply(self.win)
-            self.frame = tk.Frame(self.win, bg=Theme.BG)
+            self.frame = ctk.CTkFrame(self.win, fg_color=Theme.BG)
             self.frame.pack(fill="both", expand=True)
         else:
             self.win = None
-            self.frame = tk.Frame(parent, bg=Theme.BG)
+            self.frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
             self.frame.pack(fill="both", expand=True)
 
         self.stops_state = [
@@ -94,6 +102,10 @@ class RoutePlannerTab:
     def _on_language_changed(self, lang):
         self.refresh_translations()
 
+    def _rebuild_profile_display_names(self):
+        self._profile_key_to_display = {k: t(f"route.profile_{k.lower()}") for k in self.profile_map}
+        self._profile_display_to_key = {v: k for k, v in self._profile_key_to_display.items()}
+
     def refresh_translations(self):
         if self.win is not None:
             self.win.title(t("route.planner_title"))
@@ -102,40 +114,46 @@ class RoutePlannerTab:
                 widget.config(text=f"{prefix}{t(key)}")
             except Exception:
                 pass
+        old_internal = self._profile_display_to_key.get(self.profile_menu.get(), "Recommended")
+        self._rebuild_profile_display_names()
+        self.profile_menu.configure(values=list(self._profile_key_to_display.values()))
+        self.profile_menu.set(self._profile_key_to_display.get(
+            old_internal, self._profile_key_to_display.get("Recommended", "Recommended"),
+        ))
         self._exclusions_panel.refresh()
 
     # --- UI construction ---
 
     def _setup_ui(self) -> None:
-        sidebar = tk.Frame(self.frame, bg=Theme.SURFACE, width=360)
+        sidebar = ctk.CTkFrame(self.frame, fg_color=Theme.SURFACE, width=360)
         sidebar.pack(side="left", fill="y")
         sidebar.pack_propagate(False)
 
-        self.sidebar_footer = tk.Frame(sidebar, bg=Theme.SURFACE)
+        self.sidebar_footer = ctk.CTkFrame(sidebar, fg_color=Theme.SURFACE)
         self.sidebar_footer.pack(side="bottom", fill="x", padx=16, pady=(8, 16))
 
         sidebar_body = self._build_sidebar_scroll_area(sidebar)
 
-        lbl = tk.Label(
+        lbl = ctk.CTkLabel(
             sidebar_body,
             text=f"📍 {t('route.section_header')}",
             font=Theme.FONT_BOLD,
-            bg=Theme.SURFACE,
-            fg=Theme.ACCENT,
+            fg_color=Theme.SURFACE,
+            text_color=Theme.ACCENT,
         )
         lbl.pack(pady=20)
         self._i18n_tag(lbl, "route.section_header", "📍 ")
 
-        lbl = tk.Label(sidebar_body, text=t("route.destinations_label"), bg=Theme.SURFACE, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(sidebar_body, text=t("route.destinations_label"), fg_color=Theme.SURFACE, text_color=Theme.TEXT)
         lbl.pack(anchor="w", padx=20)
         self._i18n_tag(lbl, "route.destinations_label")
 
-        stops_frame = tk.Frame(sidebar_body, bg=Theme.SURFACE)
+        stops_frame = ctk.CTkFrame(sidebar_body, fg_color=Theme.SURFACE)
         stops_frame.pack(fill="x", padx=10, pady=(5, 0))
 
         self.stops_canvas = tk.Canvas(stops_frame, bg=Theme.SURFACE, height=88, highlightthickness=0)
-        self.stops_scroll = tk.Scrollbar(stops_frame, orient="vertical", command=self.stops_canvas.yview)
-        self.stops_container_inner = tk.Frame(self.stops_canvas, bg=Theme.SURFACE)
+        self.stops_scroll = ttk.Scrollbar(stops_frame, orient="vertical", command=self.stops_canvas.yview)
+        self.stops_container_inner = ctk.CTkFrame(self.stops_canvas, fg_color=Theme.SURFACE)
         self.stops_container_inner.bind(
             "<Configure>",
             lambda e: self.stops_canvas.configure(scrollregion=self.stops_canvas.bbox("all")),
@@ -152,7 +170,7 @@ class RoutePlannerTab:
         self.stops_scroll.pack(side="right", fill="y")
         self.stops_container = self.stops_container_inner
 
-        btn_frame = tk.Frame(sidebar_body, bg=Theme.SURFACE)
+        btn_frame = ctk.CTkFrame(sidebar_body, fg_color=Theme.SURFACE)
         btn_frame.pack(fill="x", padx=20, pady=10)
         btn_frame.grid_columnconfigure(0, weight=1)
         btn_frame.grid_columnconfigure(1, weight=1)
@@ -165,18 +183,18 @@ class RoutePlannerTab:
 
         self._render_stops_list()
 
-        self._compliance_frame = tk.Frame(sidebar_body, bg=Theme.SURFACE)
+        self._compliance_frame = ctk.CTkFrame(sidebar_body, fg_color=Theme.SURFACE)
         self._compliance_frame.pack(fill="x", padx=20, pady=(4, 8))
-        self._summary_text = tk.Label(
-            self._compliance_frame, text="", bg=Theme.SURFACE, fg=Theme.TEXT, justify="left", wraplength=300
+        self._summary_text = ctk.CTkLabel(
+            self._compliance_frame, text="", fg_color=Theme.SURFACE, text_color=Theme.TEXT, justify="left", wraplength=300
         )
         self._summary_text.pack(fill="x")
-        self._explanation_text = tk.Label(
-            self._compliance_frame, text="", bg=Theme.SURFACE, fg=Theme.MUTED, justify="left", wraplength=300
+        self._explanation_text = ctk.CTkLabel(
+            self._compliance_frame, text="", fg_color=Theme.SURFACE, text_color=Theme.MUTED, justify="left", wraplength=300
         )
         self._explanation_text.pack(fill="x", pady=(6, 0))
 
-        opts = tk.Frame(sidebar_body, bg=Theme.SURFACE)
+        opts = ctk.CTkFrame(sidebar_body, fg_color=Theme.SURFACE)
         opts.pack(fill="x", padx=20, pady=(6, 12))
         self._highlight_var = tk.BooleanVar(value=False)
         cb = StyledCheckbutton(
@@ -208,23 +226,21 @@ class RoutePlannerTab:
         btn.pack(fill="x", padx=20, pady=(6, 12))
         self._i18n_tag(btn, "route.export_metadata")
 
-        lbl = tk.Label(sidebar_body, text=t("route.select_truck"), bg=Theme.SURFACE, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(sidebar_body, text=t("route.select_truck"), fg_color=Theme.SURFACE, text_color=Theme.TEXT)
         lbl.pack(anchor="w", padx=20, pady=(10, 0))
         self._i18n_tag(lbl, "route.select_truck")
-        self.truck_var = tk.StringVar()
-        self.truck_dropdown = tk.OptionMenu(sidebar_body, self.truck_var, "")
-        self.truck_dropdown.config(bg=Theme.INPUT_BG)
-        Theme.style_option_menu(self.truck_dropdown)
+        self._selected_truck_id = None
+        self._truck_label_to_id = {}
+        self.truck_dropdown = ctk.CTkOptionMenu(sidebar_body, values=[], command=self._on_truck_selected)
         self.truck_dropdown.pack(fill="x", padx=20, pady=5)
         self._load_trucks()
 
-        lbl = tk.Label(sidebar_body, text=t("route.profile_label"), bg=Theme.SURFACE, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(sidebar_body, text=t("route.profile_label"), fg_color=Theme.SURFACE, text_color=Theme.TEXT)
         lbl.pack(anchor="w", padx=20, pady=(10, 0))
         self._i18n_tag(lbl, "route.profile_label")
-        self.profile_var = tk.StringVar(value="Recommended")
-        self.profile_menu = tk.OptionMenu(sidebar_body, self.profile_var, *self.profile_map.keys())
-        self.profile_menu.config(bg=Theme.INPUT_BG)
-        Theme.style_option_menu(self.profile_menu)
+        self._rebuild_profile_display_names()
+        self.profile_menu = ctk.CTkOptionMenu(sidebar_body, values=list(self._profile_key_to_display.values()))
+        self.profile_menu.set(self._profile_key_to_display.get("Recommended", "Recommended"))
         self.profile_menu.pack(fill="x", padx=20, pady=5)
 
         self._exclusions_panel = CountryExclusionsPanel(
@@ -241,11 +257,11 @@ class RoutePlannerTab:
         self.btn_search.pack(fill="x", pady=(0, 10))
         self._i18n_tag(self.btn_search, "route.calculate_button", "🔍 ")
 
-        self.lbl_info = tk.Label(
+        self.lbl_info = ctk.CTkLabel(
             self.sidebar_footer,
             text=t("route.info_placeholder"),
-            bg=Theme.SURFACE,
-            fg=Theme.MUTED,
+            fg_color=Theme.SURFACE,
+            text_color=Theme.MUTED,
             justify="left",
             wraplength=300,
         )
@@ -264,11 +280,11 @@ class RoutePlannerTab:
         self._map_renderer = RouteMapRenderer(self.map_widget)
 
     def _build_sidebar_scroll_area(self, parent: tk.Widget) -> tk.Frame:
-        shell = tk.Frame(parent, bg=Theme.SURFACE)
+        shell = ctk.CTkFrame(parent, fg_color=Theme.SURFACE)
         shell.pack(side="top", fill="both", expand=True)
         canvas = tk.Canvas(shell, bg=Theme.SURFACE, highlightthickness=0)
-        scrollbar = tk.Scrollbar(shell, orient="vertical", command=canvas.yview)
-        body = tk.Frame(canvas, bg=Theme.SURFACE)
+        scrollbar = ttk.Scrollbar(shell, orient="vertical", command=canvas.yview)
+        body = ctk.CTkFrame(canvas, fg_color=Theme.SURFACE)
         body_window = canvas.create_window((0, 0), window=body, anchor="nw")
         body.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>", lambda e: canvas.itemconfigure(body_window, width=e.width))
@@ -287,19 +303,32 @@ class RoutePlannerTab:
 
     def _load_trucks(self) -> None:
         try:
+            from services.conflict_service import TripConflictService
+            conflict_svc = TripConflictService(self.fleet_service.db)
             rows = self.fleet_service.get_trucks()
-            menu = self.truck_dropdown["menu"]
-            menu.delete(0, "end")
             self._trucks_map = {}
+            self._truck_label_to_id = {}
+            labels = []
             for row in rows:
-                truck_id = str(row[0])
-                label = f"{row[1]} - {row[2] or ''}"
-                menu.add_command(label=label, command=lambda v=truck_id: self.truck_var.set(v))
+                truck_id = str(row["id"])
+                plate = row['plate_number']
+                label = f"{plate} - {row.get('model') or ''}"
+                next_slot = conflict_svc.get_next_available_slot(plate)
+                if next_slot:
+                    label = f"{label}  [{t('dispatch_board.available_from').format(next_slot)}]"
+                self._truck_label_to_id[label] = truck_id
                 self._trucks_map[truck_id] = row
+                labels.append(label)
+            self.truck_dropdown.configure(values=labels)
             if rows:
-                self.truck_var.set(str(rows[0][0]))
+                first_label = labels[0]
+                self.truck_dropdown.set(first_label)
+                self._selected_truck_id = self._truck_label_to_id[first_label]
         except Exception as exc:
-            print(exc)
+            logger.exception("Failed to set default truck")
+
+    def _on_truck_selected(self, label: str) -> None:
+        self._selected_truck_id = self._truck_label_to_id.get(label)
 
     def _add_stop_field(self) -> None:
         self.stops_state.insert(len(self.stops_state) - 1, normalize_existing_stop({"type": "stop"}))
@@ -324,7 +353,7 @@ class RoutePlannerTab:
         self._row_widgets = []
 
         for idx, stop in enumerate(self.stops_state):
-            row = tk.Frame(self.stops_container_inner, bg=Theme.SURFACE, pady=4)
+            row = ctk.CTkFrame(self.stops_container_inner, fg_color=Theme.SURFACE)
             row.pack(fill="x", padx=2, pady=2)
 
             if stop["type"] == "start":
@@ -334,7 +363,7 @@ class RoutePlannerTab:
             else:
                 label = t("route.stop_n").format(idx)
 
-            tk.Label(row, text=label, bg=Theme.SURFACE, fg=Theme.TEXT).pack(side="left")
+            ctk.CTkLabel(row, text=label, fg_color=Theme.SURFACE, text_color=Theme.TEXT).pack(side="left")
 
             sid = stop.get("id") or uuid.uuid4().hex
             stop["id"] = sid
@@ -345,10 +374,11 @@ class RoutePlannerTab:
             entry.pack(side="left", fill="x", expand=True, padx=8)
 
             if stop["type"] == "stop":
-                tk.Button(
+                ctk.CTkButton(
                     row,
                     text="🗑",
-                    bg=Theme.SURFACE2,
+                    fg_color=Theme.SURFACE2,
+                    width=28,
                     command=lambda i=idx: self._remove_stop_index(i),
                 ).pack(side="right")
 
@@ -367,9 +397,9 @@ class RoutePlannerTab:
 
     def _on_calculate_click(self) -> None:
         ctx, err = self._core.validate_calculation_input(
-            truck_id=self.truck_var.get(),
+            truck_id=self._selected_truck_id,
             trucks_map=self._trucks_map,
-            profile_label=self.profile_var.get(),
+            profile_label=self._profile_display_to_key.get(self.profile_menu.get(), "Recommended"),
             stops_state=self.stops_state,
             row_addresses=self._row_address_pairs(),
         )
@@ -421,6 +451,104 @@ class RoutePlannerTab:
         )
         self._apply_compliance(processed.compliance)
         self._draw_route_on_map(processed.route)
+        self._show_dispatch_button()
+
+    def _show_dispatch_button(self):
+        if self._dispatch_frame:
+            self._dispatch_frame.destroy()
+        self._dispatch_frame = ctk.CTkFrame(self.sidebar_footer, fg_color=Theme.SURFACE)
+        self._dispatch_frame.pack(fill="x", padx=20, pady=(8, 0))
+        ActionButton(
+            self._dispatch_frame,
+            f"\U0001f4e6 {t('route.add_to_dispatch')}",
+            self._on_add_to_dispatch,
+            color=Theme.ACCENT_SUCCESS,
+        ).pack(fill="x")
+
+    def _on_add_to_dispatch(self):
+        if not self._last_route_result:
+            return
+        route = self._last_route_result
+        route_id = route.get("history_id")
+        if not route_id:
+            messagebox.showwarning(t("route.add_to_dispatch"), t("route.no_saved_route_id"))
+            return
+
+        win = ctk.CTkToplevel(self.win or self.frame)
+        win.configure(fg_color=Theme.BG)
+        win.title(t("route.add_to_dispatch"))
+        win.geometry("400x380")
+        Theme.apply(win)
+        body = ctk.CTkFrame(win, fg_color=Theme.BG)
+        body.pack(fill="both", expand=True)
+
+        ctk.CTkLabel(body, text=t("route.select_truck"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
+        truck_menu = ctk.CTkOptionMenu(body, values=[])
+        truck_menu.pack(fill="x", pady=(0, 10))
+        truck_labels = []
+        truck_ids_by_label = {}
+        for tid, t in self._trucks_map.items():
+            label = f"{t['plate_number']} - {t.get('model', '')}"
+            truck_labels.append(label)
+            truck_ids_by_label[label] = tid
+        truck_menu.configure(values=truck_labels)
+        if self._trucks_map:
+            first = next(iter(self._trucks_map.values()))
+            first_label = f"{first['plate_number']} - {first.get('model', '')}"
+            truck_menu.set(first_label)
+
+        ctk.CTkLabel(body, text=t("route.select_driver"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
+        driver_menu = ctk.CTkOptionMenu(body, values=[])
+        driver_menu.pack(fill="x", pady=(0, 10))
+        driver_labels = [""]
+        driver_ids_by_label = {"": None}
+        try:
+            from repositories.driver_repository import DriverRepository
+            for d in DriverRepository(self.db).get_active_drivers():
+                label = d["name"]
+                driver_labels.append(label)
+                driver_ids_by_label[label] = d["id"]
+        except Exception:
+            pass
+        driver_menu.configure(values=driver_labels)
+        if driver_labels:
+            driver_menu.set(driver_labels[0])
+
+        ctk.CTkLabel(body, text=t("route.client_name"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
+        client_entry = StyledEntry(body)
+        client_entry.pack(fill="x", pady=(0, 10))
+
+        ctk.CTkLabel(body, text=t("route.start_date"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
+        date_entry = StyledEntry(body)
+        from datetime import datetime
+        date_entry.insert(0, datetime.now().strftime("%d/%m/%Y"))
+        date_entry.pack(fill="x", pady=(0, 15))
+
+        def do_create():
+            t_id = truck_ids_by_label.get(truck_menu.get())
+            d_id = driver_ids_by_label.get(driver_menu.get()) if driver_menu.get() else None
+            c_name = client_entry.get().strip()
+            s_date = date_entry.get().strip()
+            try:
+                new_id = self._core.create_trip_from_route(
+                    route_id=int(route_id),
+                    truck_id=t_id,
+                    driver_id=d_id,
+                    client_name=c_name,
+                    start_date=s_date,
+                )
+                messagebox.showinfo(
+                    t("route.add_to_dispatch"),
+                    t("route.trip_created").format(new_id),
+                )
+                win.destroy()
+            except Exception as e:
+                messagebox.showerror(t("route.add_to_dispatch"), str(e))
+
+        ActionButton(body, t("route.add_to_dispatch"), do_create,
+                     color=Theme.ACCENT_SUCCESS).pack(fill="x", pady=(10, 0))
+        ActionButton(body, t("driver_manager.cancel"), win.destroy,
+                     color=Theme.SURFACE2).pack(fill="x", pady=(5, 0))
 
     def _apply_compliance(self, compliance) -> None:
         if not compliance:
@@ -456,10 +584,11 @@ class RoutePlannerTab:
             self._render_stops_list()
 
         if patch.get("profile_label"):
-            self.profile_var.set(patch["profile_label"])
+            key = patch["profile_label"]
+            self.profile_menu.set(self._profile_key_to_display.get(key, key))
         if patch.get("truck_id"):
             try:
-                self.truck_var.set(patch["truck_id"])
+                self.truck_dropdown.set(patch["truck_id"])
             except Exception:
                 pass
 

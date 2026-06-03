@@ -1,5 +1,9 @@
-﻿import re
+﻿import logging
+import re
 from services.i18n import t
+
+logger = logging.getLogger(__name__)
+
 
 class ValidationService:
     @staticmethod
@@ -14,5 +18,6 @@ class ValidationService:
             p = float(price)
             if k <= 0 or p <= 0: return False, t("validation.positive_km_price")
             return True, ""
-        except:
+        except Exception:
+            logger.debug("Validation failed for km=%s price=%s", km, price)
             return False, t("validation.numeric_km_price")

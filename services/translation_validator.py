@@ -104,7 +104,7 @@ def validate_language(
 def main():
     tmpl_path = os.path.join(TRANSLATIONS_DIR, "ro.json")
     if not os.path.isfile(tmpl_path):
-        print(f"ERROR: Master template ro.json not found at {tmpl_path}")
+        print(f"ERROR: Master template ro.json not found at {tmpl_path}", file=sys.stderr)
         sys.exit(1)
 
     template = load_json(tmpl_path)

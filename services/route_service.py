@@ -591,21 +591,21 @@ class RouteService:
             raise ValueError(f"Segment {context} has only {len(segment)} point(s), need at least 2")
         for i, pt in enumerate(segment):
             if pt is None:
-                raise ValueError(f"Segment {context}: None point at index {i}")
+                raise ValueError(f"Segment {context} has None point at index {i}")
             if not isinstance(pt, (tuple, list)) or len(pt) < 2:
-                raise ValueError(f"Segment {context}: malformed point at index {i}: {pt!r}")
+                raise ValueError(f"Segment {context} has malformed point at index {i}: {pt!r}")
             lat, lon = pt[0], pt[1]
             if lat is None or lon is None:
-                raise ValueError(f"Segment {context}: None coordinate at index {i}")
+                raise ValueError(f"Segment {context} has None coordinate at index {i}")
             try:
                 lat_f, lon_f = float(lat), float(lon)
             except (TypeError, ValueError) as exc:
-                raise ValueError(f"Segment {context}: non-numeric coordinate at index {i}: ({lat}, {lon})") from exc
-            import math
+                raise ValueError(f"Segment {context} has non-numeric coordinate at index {i}: ({lat}, {lon})") from exc
+            
             if math.isnan(lat_f) or math.isnan(lon_f):
-                raise ValueError(f"Segment {context}: NaN coordinate at index {i}")
+                raise ValueError(f"Segment {context} has NaN coordinate at index {i}")
             if math.isinf(lat_f) or math.isinf(lon_f):
-                raise ValueError(f"Segment {context}: Inf coordinate at index {i}")
+                raise ValueError(f"Segment {context} has Inf coordinate at index {i}")
             if not (-90.0 <= lat_f <= 90.0):
                 raise ValueError(f"Segment {context}: invalid latitude at index {i}: {lat_f}")
             if not (-180.0 <= lon_f <= 180.0):

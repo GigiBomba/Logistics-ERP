@@ -1,10 +1,14 @@
 """Embedded TkinterMapView preview for Route History (single instance, reusable)."""
 from __future__ import annotations
 
+import logging
 import tkinter as tk
 from typing import Any, List, Optional, Tuple
 
 from ui.styles import Theme
+from ui.map_helpers import clear_map_overlays, create_path_on_map
+
+logger = logging.getLogger(__name__)
 
 try:
     from tkintermapview import TkinterMapView
@@ -33,6 +37,8 @@ class HistoryMapPreview:
 
         self._map: Any = None
         self._ready = False
+        self._retry_count = 0
+        self._max_retries = 20
         self._placeholder: Optional[tk.Label] = None
         self._fallback_canvas: Optional[tk.Canvas] = None
         self._route_line = None
@@ -62,6 +68,10 @@ class HistoryMapPreview:
     def _deferred_init(self) -> None:
         if not self._map or self._ready:
             return
+        self._retry_count += 1
+        if self._retry_count > self._max_retries:
+            self._draw_fallback()
+            return
         try:
             if self._map.winfo_width() < 2 or self._map.winfo_height() < 2:
                 self._container.winfo_toplevel().after(50, self._deferred_init)
@@ -90,28 +100,8 @@ class HistoryMapPreview:
 
     def _clear_overlays(self) -> None:
         """Delete ALL previous overlays (route line, markers) from the map widget."""
-        if not self._map:
-            return
-        for attr in ("_last_route_line", "_last_start_marker", "_last_end_marker"):
-            item = getattr(self._map, attr, None)
-            if item is not None:
-                try:
-                    item.delete()
-                except Exception:
-                    try:
-                        self._map.delete(item)
-                    except Exception:
-                        pass
-            setattr(self._map, attr, None)
-        prev_stops = getattr(self._map, "_last_stop_markers", None) or []
-        for marker in prev_stops:
-            try:
-                marker.delete()
-            except Exception:
-                pass
-        self._map._last_stop_markers = []
+        clear_map_overlays(self._map)
         self._route_line = None
-        print("[MAP_DEBUG] _clear_overlays: all previous markers and route line deleted")
 
     def show_route(
         self,
@@ -136,7 +126,7 @@ class HistoryMapPreview:
             if sampled[-1] != points[-1]:
                 sampled.append(points[-1])
             points = sampled
-        print(f"[MAP_DEBUG] show_route: {raw_count} raw pts -> {len(points)} sampled pts")
+        logger.debug("show_route: %d raw pts -> %d sampled pts", raw_count, len(points))
 
         if self._map:
             self._clear_overlays()
