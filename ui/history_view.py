@@ -165,9 +165,6 @@ class HistoryView:
         f_btns = ctk.CTkFrame(parent, fg_color=Theme.BG)
         f_btns.pack(fill="x")
         
-        btn = ActionButton(f_btns, f"✏️ {t('history.button_edit')}", self._edit, color=Theme.SURFACE2)
-        btn.pack(side="left", padx=5)
-        self._i18n_tag(btn, "history.button_edit", "✏️ ")
         btn = ActionButton(f_btns, f"🗺️ {t('history.button_view_route')}", self._view_route, color=Theme.INFO)
         btn.pack(side="left", padx=5)
         self._i18n_tag(btn, "history.button_view_route", "🗺️ ")
@@ -180,11 +177,6 @@ class HistoryView:
         btn = ActionButton(f_btns, f"📧 {t('history.button_email')}", self._send_invoice_email, color=Theme.ORANGE)
         btn.pack(side="left", padx=5)
         self._i18n_tag(btn, "history.button_email", "📧 ")
-        
-        # Status transition button (OperationsEngine)
-        self.btn_status = ActionButton(f_btns, f"🔄 {t('history.button_status')}", self._change_status, color=Theme.PURPLE_SOFT)
-        self.btn_status.pack(side="left", padx=5)
-        self._i18n_tag(self.btn_status, "history.button_status", "🔄 ")
         
         ctk.CTkFrame(f_btns, fg_color=Theme.BORDER, width=2).pack(side="left", fill="y", padx=10)
         
@@ -316,48 +308,6 @@ class HistoryView:
             messagebox.showerror(t("history.email_error"),
                                t("history.email_error").format("SMTP send failed"))
 
-    def _edit(self):
-        data = self._get_selection()
-        if data:
-            from ui.edit_window import EditWindow
-            EditWindow(self.win or self.frame, self.db, data[0], self.refresh)
-
-    def _change_status(self):
-        data = self._get_selection()
-        if not data:
-            messagebox.showwarning(t("history.warning_title"), t("history.select_trip_first"))
-            return
-        if not self.ops:
-            messagebox.showerror(t("history.error_title"), t("history.no_engine"))
-            return
-        trip_id = data[0]
-        current = self.trip_service.get_by_id(trip_id)
-        if not current:
-            return
-        current_status = current.get("status", "")
-        valid = self.ops.get_valid_transitions(current_status)
-        if not valid:
-            messagebox.showinfo(t("history.warning_title"), t("history.no_transitions"))
-            return
-        win = ctk.CTkToplevel(self.win or self.frame)
-        win.configure(fg_color=Theme.BG)
-        win.title(t("history.button_status"))
-        Theme.apply(win)
-        ctk.CTkLabel(win, text=t("history.status_prompt").format(current_status), fg_color=Theme.BG, text_color=Theme.TEXT,                                        font=FONTS["label"]).pack(padx=20, pady=10)
-        var = tk.StringVar()
-        for s in valid:
-            ctk.CTkRadioButton(win, text=s, variable=var, value=s, font=FONTS["label"]).pack(anchor="w", padx=30)
-        def do_transition():
-            if not var.get():
-                return
-            if self.ops.force_trip_status(trip_id, var.get()):
-                win.destroy()
-                self.refresh()
-            else:
-                messagebox.showerror(t("history.error_title"), t("history.transition_failed"))
-        ActionButton(win, t("history.confirm_status"), do_transition, color=Theme.ACCENT_SUCCESS).pack(pady=10)
-        ActionButton(win, t("history.cancel_status"), win.destroy, color=Theme.SURFACE2).pack(pady=5)
-
     def _view_route(self):
         data = self._get_selection()
         if not data:
@@ -377,15 +327,6 @@ class HistoryView:
         from ui.route_planner import RoutePlannerTab
         tab = RoutePlannerTab(self.win or self.frame, self.db, controller=self.main_app)
         tab.load_history_route(record, draw=True)
-
-    def _duplicate(self):
-        data = self._get_selection()
-        if data:
-            old = self.trip_service.get_by_id(data[0])
-            if 'id' in old: del old['id']
-            old['created_at'] = self.main_app.get_timestamp()
-            old['status'] = 'Planned'
-            self.trip_service.add(old); self.refresh()
 
     def _delete(self):
         data = self._get_selection()
