@@ -591,7 +591,12 @@ class DispatchBoardView:
             new_card._set_status(new_status)
 
         try:
-            self._status_engine.transition(trip_id, new_status)
+            if self.ops:
+                ok = self.ops.force_trip_status(trip_id, new_status)
+                if not ok:
+                    raise RuntimeError(f"Status transition failed for trip {trip_id}")
+            else:
+                self._status_engine.transition(trip_id, new_status)
             self._show_success_toast(t("dispatch_board.transition_success").format(new_status))
         except Exception as e:
             # Rollback visual on failure: remove the new card and recreate the original in source

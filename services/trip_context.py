@@ -87,7 +87,8 @@ class TripContext:
             distance_km=rt.get('distance_km'),
             duration_min=rt.get('duration_min'),
             profile=rt.get('profile'),
-            geometry=rt.get('geometry')
+            geometry=rt.get('geometry'),
+            route_history_v2_id=rt.get('route_history_v2_id'),
         )
 
         tr = data.get('truck') or {}
@@ -130,7 +131,8 @@ class TripContext:
             distance_km=route.get('distance_km'),
             duration_min=route.get('duration_min'),
             profile=route.get('profile'),
-            geometry=route.get('geometry')
+            geometry=route.get('geometry'),
+            route_history_v2_id=route.get('route_history_v2_id'),
         )
 
     def set_truck(self, truck: Dict[str, Any]) -> None:
@@ -186,7 +188,8 @@ def update_trip_route(tc: TripContext, route: dict) -> TripContext:
         'end': route.get('end'),
         'distance_km': route.get('distance_km'),
         'duration_min': route.get('duration_min'),
-        'geometry': route.get('geometry')
+        'geometry': route.get('geometry'),
+        'route_history_v2_id': route.get('route_history_v2_id'),
     })
     # Recompute costs when route changes
     try:
@@ -403,7 +406,8 @@ def save_trip_to_db(db_manager, tc: TripContext, client_name: Optional[str] = No
         'salary_cost': None,
         'currency': None,
         'status': tc.status or 'saved',
-        'context_json': json.dumps(tc.to_dict(), default=str)
+        'context_json': json.dumps(tc.to_dict(), default=str),
+        'route_history_v2_id': tc.route.route_history_v2_id if tc.route else None,
     }
 
     # Use db_manager.add_trip which already performs a single-transaction insert

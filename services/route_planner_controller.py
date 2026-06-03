@@ -195,25 +195,14 @@ class RoutePlannerController:
         cost_info: Dict[str, Any],
         profile: str,
     ) -> None:
+        route_id = route.get("history_id")
         self.trip_context.set_active_trip_info(
             distance_km=route.get("distance_km"),
             duration_min=route.get("duration_min"),
             fuel_liters=cost_info.get("fuel_liters"),
             fuel_cost=cost_info.get("fuel_cost"),
+            route_history_v2_id=route_id,
         )
-        try:
-            self.trip_context.update_trip(
-                {
-                    "distance_km": route.get("distance_km"),
-                    "duration_min": route.get("duration_min"),
-                    "geometry": route.get("geometry"),
-                    "stops": route.get("stops") if isinstance(route.get("stops"), list) else None,
-                    "profile": profile,
-                },
-                truck_obj,
-            )
-        except Exception:
-            pass
 
     def load_history_record(self, record: RouteHistoryRecord) -> Dict[str, Any]:
         """Return planner state patch: stops, profile label key, truck_id, route dict."""
