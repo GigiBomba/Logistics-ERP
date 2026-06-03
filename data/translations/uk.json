@@ -27,7 +27,10 @@
     "group_overview": "Огляд",
     "group_operations": "Операції",
     "group_fleet": "Автопарк",
-    "group_finance": "Фінанси"
+    "group_finance": "Фінанси",
+    "tracking": "Відстеження Онлайн",
+    "maintenance": "Техобслуговування",
+    "route_planner": "Планувальник Маршрутів"
   },
   "main": {
     "section_identify": "ІДЕНТИФІКАЦІЯ",
@@ -854,7 +857,8 @@
     "filter_trip": "Фільтр Поїздка",
     "filter_truck": "Фільтр Вантажівка",
     "filter_type": "Фільтр Тип",
-    "show_resolved": "Показати Вирішені"
+    "show_resolved": "Показати Вирішені",
+    "avg_health": "Сер. Стан"
   },
   "tacho": {
     "avg_daily": "Сер. Щоденно",
@@ -901,7 +905,7 @@
     "no_data": "Немає Даних",
     "no_data_12mo": "Немає Даних за 12 Міс.",
     "no_records": "Немає Записів",
-    "title": "Аналітика Техобслуговування",
+    "title": "Аналітика ТО",
     "total_cost_label": "Загальна Вартість",
     "truck_fallback": "Вантажівка",
     "cost_month": "Вартість за Місяць",

@@ -27,7 +27,10 @@
     "group_overview": "Преглед",
     "group_operations": "Операције",
     "group_fleet": "Флота",
-    "group_finance": "Финансије"
+    "group_finance": "Финансије",
+    "tracking": "Праћење Уживо",
+    "maintenance": "Одржавање",
+    "route_planner": "Планер Рута"
   },
   "main": {
     "section_identify": "ИДЕНТИФИКАЦИЈА",
@@ -568,7 +571,11 @@
     "transition_success": "Успешно пребачено у статус {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Камион није пронађен.",
-    "unavailable_overlap": "Недоступно: преклапа се са туром {trip_ref}"
+    "unavailable_overlap": "Недоступно: преклапа се са туром {trip_ref}",
+    "col_planned": "Планирано",
+    "col_loading": "Утовар",
+    "col_in_transit": "У Транзиту",
+    "col_delivered": "Испоручено"
   },
   "driver_manager": {
     "add_driver": "Додај возача",
@@ -672,7 +679,8 @@
     "control_panel_title": "Контролна табла одржавања",
     "schedule_next_due_km": "Закажи следећи доспели KM",
     "status_overdue": "Статус доспело",
-    "status_remaining": "Статус преостало"
+    "status_remaining": "Статус преостало",
+    "avg_health": "Прос. Здравље"
   },
   "tacho": {
     "avg_daily": "Дневни просек",
@@ -719,7 +727,7 @@
     "no_data": "Нема података",
     "no_data_12mo": "Нема података за 12 месеци",
     "no_records": "Нема записа",
-    "title": "Аналитика одржавања",
+    "title": "Аналитика Одржавања",
     "total_cost_label": "Укупни трошак",
     "truck_fallback": "Камион"
   },
@@ -731,6 +739,6 @@
     "field_notes": "Напомене",
     "field_provider": "Добављач",
     "field_type": "Тип",
-    "title": "Хронологија одржавања"
+    "title": "Временска Линија Одржавања"
   }
 }

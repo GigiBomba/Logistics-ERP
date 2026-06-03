@@ -16,7 +16,10 @@
     "routes": "Rotas",
     "fleet": "Frota",
     "language": "Idioma",
-    "live_tracking": "Rastreamento em Tempo Real"
+    "live_tracking": "Rastreamento em Tempo Real",
+    "tracking": "Rastreamento ao Vivo",
+    "maintenance": "Manutencao",
+    "route_planner": "Planejador Rotas"
   },
   "main": {
     "section_identify": "IDENTIFICAÇÃO",
@@ -564,7 +567,11 @@
     "transition_success": "Movido com sucesso para o estado {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Camião não encontrado.",
-    "unavailable_overlap": "Indisponível: sobrepõe-se à viagem {trip_ref}"
+    "unavailable_overlap": "Indisponível: sobrepõe-se à viagem {trip_ref}",
+    "col_planned": "Planejado",
+    "col_loading": "Carregamento",
+    "col_in_transit": "Em Transito",
+    "col_delivered": "Entregue"
   },
   "driver_manager": {
     "add_driver": "Adicionar Motorista",
@@ -668,7 +675,8 @@
     "control_panel_title": "Painel de Controlo de Manutenção",
     "schedule_next_due_km": "Próxima Manutenção em KM",
     "status_overdue": "Em Atraso",
-    "status_remaining": "Restante"
+    "status_remaining": "Restante",
+    "avg_health": "Saude Media"
   },
   "tacho": {
     "avg_daily": "Média Diária",
@@ -715,7 +723,7 @@
     "no_data": "Sem Dados",
     "no_data_12mo": "Sem Dados 12 Meses",
     "no_records": "Sem Registos",
-    "title": "Análises de Manutenção",
+    "title": "Analise Manutencao",
     "total_cost_label": "Custo Total",
     "truck_fallback": "Camião"
   },
@@ -727,6 +735,6 @@
     "field_notes": "Observações",
     "field_provider": "Fornecedor",
     "field_type": "Tipo",
-    "title": "Cronologia de Manutenção"
+    "title": "Linha do Tempo Manutencao"
   }
 }

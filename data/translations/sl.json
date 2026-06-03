@@ -16,7 +16,10 @@
     "routes": "Poti",
     "fleet": "Flota",
     "language": "Jezik",
-    "live_tracking": "Sledenje v živo"
+    "live_tracking": "Sledenje v živo",
+    "tracking": "Sledenje v Givo",
+    "maintenance": "Vzdrevanje",
+    "route_planner": "Načrtovalec Poti"
   },
   "main": {
     "section_identify": "IDENTIFIKACIJA",
@@ -534,7 +537,11 @@
     "transition_success": "Premik uspešno izveden v status {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Tovornjak ni najden.",
-    "unavailable_overlap": "Ni na voljo: prekriva se z vožnjo {trip_ref}"
+    "unavailable_overlap": "Ni na voljo: prekriva se z vožnjo {trip_ref}",
+    "col_planned": "Načrtovano",
+    "col_loading": "Nalaganje",
+    "col_in_transit": "Na Poti",
+    "col_delivered": "Dostavljeno"
   },
   "driver_manager": {
     "add_driver": "Dodaj voznika",
@@ -638,7 +645,8 @@
     "control_panel_title": "Nadzorna plošča vzdrževanja",
     "schedule_next_due_km": "Načrtuj naslednji servisni KM",
     "status_overdue": "Stanje: Zamujeno",
-    "status_remaining": "Stanje: Preostalo"
+    "status_remaining": "Stanje: Preostalo",
+    "avg_health": "Povprečno Zdravje"
   },
   "tacho": {
     "avg_daily": "Dnevno povprečje",
@@ -685,7 +693,7 @@
     "no_data": "Ni podatkov",
     "no_data_12mo": "Ni podatkov za 12 mesecev",
     "no_records": "Ni zapisov",
-    "title": "Analitika vzdrževanja",
+    "title": "Analitika Vzdrevanja",
     "total_cost_label": "Skupni strošek",
     "truck_fallback": "Tovornjak"
   },
@@ -697,6 +705,6 @@
     "field_notes": "Opombe",
     "field_provider": "Ponudnik",
     "field_type": "Vrsta",
-    "title": "Časovnica vzdrževanja"
+    "title": "Časovnica Vzdrevanja"
   }
 }

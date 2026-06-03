@@ -16,7 +16,10 @@
     "routes": "Rotalar",
     "fleet": "Filo",
     "language": "Dil",
-    "live_tracking": "Canlı Takip"
+    "live_tracking": "Canlı Takip",
+    "tracking": "Canli Takip",
+    "maintenance": "Bakim",
+    "route_planner": "Rota Planlayici"
   },
   "main": {
     "section_identify": "TANIMLAMA",
@@ -564,7 +567,11 @@
     "transition_success": "{new_status} durumuna başarıyla geçildi.",
     "trip_id_prefix": "#",
     "truck_not_found": "Kamyon bulunamadı.",
-    "unavailable_overlap": "Müsait değil: {trip_ref} seferi ile çakışıyor"
+    "unavailable_overlap": "Müsait değil: {trip_ref} seferi ile çakışıyor",
+    "col_planned": "Planlandi",
+    "col_loading": "Yukleme",
+    "col_in_transit": "Transit Halinde",
+    "col_delivered": "Teslim Edildi"
   },
   "driver_manager": {
     "add_driver": "Sürücü Ekle",
@@ -668,7 +675,8 @@
     "control_panel_title": "Bakım Kontrol Paneli",
     "schedule_next_due_km": "Sonraki Vadesi Gelen KM'yi Planla",
     "status_overdue": "Gecikmiş",
-    "status_remaining": "Kalan"
+    "status_remaining": "Kalan",
+    "avg_health": "Ort. Saglik"
   },
   "tacho": {
     "avg_daily": "Günlük Ortalama",
@@ -715,7 +723,7 @@
     "no_data": "Veri Yok",
     "no_data_12mo": "12 aylık veri yok",
     "no_records": "Kayıt Yok",
-    "title": "Bakım Analizi",
+    "title": "Bakim Analizi",
     "total_cost_label": "Toplam Maliyet",
     "truck_fallback": "Kamyon"
   },
@@ -727,6 +735,6 @@
     "field_notes": "Notlar",
     "field_provider": "Sağlayıcı",
     "field_type": "Tür",
-    "title": "Bakım Zaman Çizelgesi"
+    "title": "Bakim Zaman Cizelgesi"
   }
 }

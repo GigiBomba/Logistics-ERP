@@ -27,7 +27,10 @@
     "group_overview": "Przegląd",
     "group_operations": "Operacje",
     "group_fleet": "Flota",
-    "group_finance": "Finanse"
+    "group_finance": "Finanse",
+    "tracking": "Sledzenie Na Zywo",
+    "maintenance": "Konserwacja",
+    "route_planner": "Planer Tras"
   },
   "main": {
     "section_identify": "IDENTYFIKACJA",
@@ -642,7 +645,11 @@
     "transition_success": "Pomyślnie zmieniono status na {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Nie znaleziono ciężarówki.",
-    "unavailable_overlap": "Niedostępny: nakłada się z przejazdem {trip_ref}"
+    "unavailable_overlap": "Niedostępny: nakłada się z przejazdem {trip_ref}",
+    "col_planned": "Zaplanowane",
+    "col_loading": "Zaladunek",
+    "col_in_transit": "W Tranzycie",
+    "col_delivered": "Dostarczone"
   },
   "driver_manager": {
     "add_driver": "Dodaj kierowcę",
@@ -844,7 +851,8 @@
     "filter_trip": "Filtruj przejazd",
     "filter_truck": "Filtruj ciężarówkę",
     "filter_type": "Filtruj typ",
-    "show_resolved": "Pokaż rozwiązane"
+    "show_resolved": "Pokaż rozwiązane",
+    "avg_health": "Srednie Zdrowie"
   },
   "tacho": {
     "avg_daily": "Średnia dzienna",
@@ -891,7 +899,7 @@
     "no_data": "Brak danych",
     "no_data_12mo": "Brak danych 12-miesięcznych",
     "no_records": "Brak wpisów",
-    "title": "Analityka serwisowa",
+    "title": "Analityka Konserwacji",
     "total_cost_label": "Koszt całkowity",
     "truck_fallback": "Ciężarówka"
   },
@@ -903,6 +911,6 @@
     "field_notes": "Uwagi",
     "field_provider": "Dostawca",
     "field_type": "Typ",
-    "title": "Historia serwisowa"
+    "title": "Os Czasu Konserwacji"
   }
 }

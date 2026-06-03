@@ -16,7 +16,10 @@
     "routes": "Trasy",
     "fleet": "Flotila",
     "language": "Jazyk",
-    "live_tracking": "Živé sledování"
+    "live_tracking": "Živé sledování",
+    "tracking": "Živé Sledování",
+    "maintenance": "Údřeba",
+    "route_planner": "Plánovač Tras"
   },
   "main": {
     "section_identify": "IDENTIFIKACE",
@@ -564,7 +567,11 @@
     "transition_success": "Úspěšně přesunuto do stavu {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Vozidlo nenalezeno.",
-    "unavailable_overlap": "Nedostupné: překrývá se s jízdou {trip_ref}"
+    "unavailable_overlap": "Nedostupné: překrývá se s jízdou {trip_ref}",
+    "col_planned": "Plánováno",
+    "col_loading": "Nakládka",
+    "col_in_transit": "Na Cestě",
+    "col_delivered": "Doručeno"
   },
   "driver_manager": {
     "add_driver": "Přidat řidiče",
@@ -668,7 +675,8 @@
     "control_panel_title": "Kontrolní panel údržby",
     "schedule_next_due_km": "Další údržba za KM",
     "status_overdue": "Po termínu",
-    "status_remaining": "Zbývá"
+    "status_remaining": "Zbývá",
+    "avg_health": "Průměrný Stav"
   },
   "tacho": {
     "avg_daily": "Denní průměr",
@@ -715,7 +723,7 @@
     "no_data": "Žádná data",
     "no_data_12mo": "Žádná data za 12 měs.",
     "no_records": "Žádné záznamy",
-    "title": "Analytika údržby",
+    "title": "Analýza Údřeby",
     "total_cost_label": "Celkové náklady",
     "truck_fallback": "Vozidlo"
   },
@@ -727,6 +735,6 @@
     "field_notes": "Poznámky",
     "field_provider": "Poskytovatel",
     "field_type": "Typ",
-    "title": "Časová osa údržby"
+    "title": "Časová Osa Údřeby"
   }
 }

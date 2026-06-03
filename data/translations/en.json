@@ -27,7 +27,10 @@
     "group_overview": "Overview",
     "group_operations": "Operations",
     "group_fleet": "Fleet",
-    "group_finance": "Finance"
+    "group_finance": "Finance",
+    "tracking": "Live Tracking",
+    "maintenance": "Maintenance",
+    "route_planner": "Route Planner"
   },
   "main": {
     "section_identify": "IDENTIFICATION",
@@ -649,7 +652,11 @@
     "transition_success": "Transition Success",
     "trip_id_prefix": "Trip Id Prefix",
     "truck_not_found": "Truck Not Found",
-    "unavailable_overlap": "Unavailable Overlap"
+    "unavailable_overlap": "Unavailable Overlap",
+    "col_planned": "Planned",
+    "col_loading": "Loading",
+    "col_in_transit": "In Transit",
+    "col_delivered": "Delivered"
   },
   "driver_manager": {
     "add_driver": "Add Driver",
@@ -851,7 +858,8 @@
     "filter_trip": "Filter Trip",
     "filter_truck": "Filter Truck",
     "filter_type": "Filter Type",
-    "show_resolved": "Show Resolved"
+    "show_resolved": "Show Resolved",
+    "avg_health": "Avg Health"
   },
   "tacho": {
     "avg_daily": "Avg Daily",
@@ -898,7 +906,7 @@
     "no_data": "No Data",
     "no_data_12mo": "No Data 12Mo",
     "no_records": "No Records",
-    "title": "Title",
+    "title": "Maintenance Analytics",
     "total_cost_label": "Total Cost Label",
     "truck_fallback": "Truck Fallback"
   },
@@ -910,6 +918,6 @@
     "field_notes": "Field Notes",
     "field_provider": "Field Provider",
     "field_type": "Field Type",
-    "title": "Title"
+    "title": "Maintenance Timeline"
   }
 }
