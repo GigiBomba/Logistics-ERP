@@ -16,7 +16,10 @@
     "routes": "Rutter",
     "fleet": "Fordonsflotta",
     "language": "Språk",
-    "live_tracking": "Live-spårning"
+    "live_tracking": "Live-spårning",
+    "tracking": "Live-sparning",
+    "maintenance": "Underhall",
+    "route_planner": "Ruttplanerare"
   },
   "main": {
     "section_identify": "IDENTIFIERING",
@@ -564,7 +567,11 @@
     "transition_success": "Flyttad till status {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Lastbilen hittades inte.",
-    "unavailable_overlap": "Otillgänglig: överlappar med resa {trip_ref}"
+    "unavailable_overlap": "Otillgänglig: överlappar med resa {trip_ref}",
+    "col_planned": "Planerad",
+    "col_loading": "Lastning",
+    "col_in_transit": "Under Transport",
+    "col_delivered": "Levererad"
   },
   "driver_manager": {
     "add_driver": "Lägg Till Förare",
@@ -668,7 +675,8 @@
     "control_panel_title": "Underhållskontrollpanel",
     "schedule_next_due_km": "Nästa Underhåll om KM",
     "status_overdue": "Försenad",
-    "status_remaining": "Återstår"
+    "status_remaining": "Återstår",
+    "avg_health": "Genomsnitt Halsa"
   },
   "tacho": {
     "avg_daily": "Genomsnitt Dagligen",
@@ -715,7 +723,7 @@
     "no_data": "Ingen Data",
     "no_data_12mo": "Ingen Data 12 Mån",
     "no_records": "Inga Poster",
-    "title": "Underhållsanalys",
+    "title": "Underhallsanalys",
     "total_cost_label": "Total Kostnad",
     "truck_fallback": "Lastbil"
   },
@@ -727,6 +735,6 @@
     "field_notes": "Anteckningar",
     "field_provider": "Leverantör",
     "field_type": "Typ",
-    "title": "Underhållstidslinje"
+    "title": "Underhallstidslinje"
   }
 }

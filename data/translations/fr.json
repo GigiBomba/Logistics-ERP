@@ -16,7 +16,10 @@
     "routes": "Itineraires",
     "fleet": "Flotte",
     "language": "Langue",
-    "live_tracking": "Suivi en Direct"
+    "live_tracking": "Suivi en Direct",
+    "tracking": "Suivi en Direct",
+    "maintenance": "Maintenance",
+    "route_planner": "Planificateur Itineraire"
   },
   "main": {
     "section_identify": "IDENTIFICATION",
@@ -564,7 +567,11 @@
     "transition_success": "Transition vers {new_status} reussie.",
     "trip_id_prefix": "#",
     "truck_not_found": "Camion introuvable.",
-    "unavailable_overlap": "Indisponible : chevauchement avec le trajet {trip_ref}"
+    "unavailable_overlap": "Indisponible : chevauchement avec le trajet {trip_ref}",
+    "col_planned": "Planifie",
+    "col_loading": "Chargement",
+    "col_in_transit": "En Transit",
+    "col_delivered": "Livre"
   },
   "driver_manager": {
     "add_driver": "Ajouter Conducteur",
@@ -668,7 +675,8 @@
     "control_panel_title": "Panneau de Controle Maintenance",
     "schedule_next_due_km": "Planifier Prochain KM d'Echeance",
     "status_overdue": "Statut En Retard",
-    "status_remaining": "Statut Restant"
+    "status_remaining": "Statut Restant",
+    "avg_health": "Sante Moyenne"
   },
   "tacho": {
     "avg_daily": "Moyenne Quotidienne",

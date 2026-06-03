@@ -16,7 +16,10 @@
     "routes": "Διαδρομές",
     "fleet": "Στόλος",
     "language": "Γλώσσα",
-    "live_tracking": "Ζωντανή Παρακολούθηση"
+    "live_tracking": "Ζωντανή Παρακολούθηση",
+    "tracking": "Ζωντανή Παρακολούθηση",
+    "maintenance": "Συντήρηση",
+    "route_planner": "Σχεδιαστής Διαδρομών"
   },
   "main": {
     "section_identify": "ΤΑΥΤΟΠΟΙΗΣΗ",
@@ -564,7 +567,11 @@
     "transition_success": "Μετακίνηση επιτυχής σε κατάσταση {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Το φορτηγό δεν βρέθηκε.",
-    "unavailable_overlap": "Μη διαθέσιμο: επικαλύπτεται με διαδρομή {trip_ref}"
+    "unavailable_overlap": "Μη διαθέσιμο: επικαλύπτεται με διαδρομή {trip_ref}",
+    "col_planned": "Προγραμματισμένο",
+    "col_loading": "Φόρτωση",
+    "col_in_transit": "Σε Διαμετακόμιση",
+    "col_delivered": "Παραδόθηκε"
   },
   "driver_manager": {
     "add_driver": "Προσθήκη Οδηγού",
@@ -668,7 +675,8 @@
     "control_panel_title": "Πίνακας Ελέγχου Συντήρησης",
     "schedule_next_due_km": "Προγρ/μός Επόμενων ΧΛΜ",
     "status_overdue": "Εκπρόθεσμη Κατάσταση",
-    "status_remaining": "Υπολειπόμενη Κατάσταση"
+    "status_remaining": "Υπολειπόμενη Κατάσταση",
+    "avg_health": "Μέση Κατάσταση"
   },
   "tacho": {
     "avg_daily": "Μέσος Όρος Ημερησίως",
@@ -715,7 +723,7 @@
     "no_data": "Χωρίς δεδομένα",
     "no_data_12mo": "Χωρίς δεδομένα 12μήνου",
     "no_records": "Καμία εγγραφή",
-    "title": "Αναλύσεις Συντήρησης",
+    "title": "Ανάλυση Συντήρησης",
     "total_cost_label": "Συνολικό Κόστος",
     "truck_fallback": "Φορτηγό"
   },

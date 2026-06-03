@@ -16,7 +16,10 @@
     "routes": "Rute",
     "fleet": "Flota",
     "language": "Limbă",
-    "live_tracking": "Urmarire Live"
+    "live_tracking": "Urmarire Live",
+    "tracking": "Urmarire Live",
+    "maintenance": "Mentenanta",
+    "route_planner": "Planificator Rute"
   },
   "main": {
     "section_identify": "IDENTIFICARE",
@@ -564,7 +567,11 @@
     "transition_success": "Mutare realizata cu succes la statutul {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Camion negasit.",
-    "unavailable_overlap": "Indisponibil: se suprapune cu cursa {trip_ref}"
+    "unavailable_overlap": "Indisponibil: se suprapune cu cursa {trip_ref}",
+    "col_planned": "Planificat",
+    "col_loading": "Incarcare",
+    "col_in_transit": "In Tranzit",
+    "col_delivered": "Livrat"
   },
   "driver_manager": {
     "add_driver": "Adauga Sofer",
@@ -668,7 +675,8 @@
     "control_panel_title": "Panou Control Mentenanta",
     "schedule_next_due_km": "Programeaza Urmatorul KM Scadent",
     "status_overdue": "Stare Depasita",
-    "status_remaining": "Stare Ramasa"
+    "status_remaining": "Stare Ramasa",
+    "avg_health": "Sanatate Medie"
   },
   "tacho": {
     "avg_daily": "Medie Zilnica",

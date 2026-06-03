@@ -16,7 +16,10 @@
     "routes": "Маршруты",
     "fleet": "Автопарк",
     "language": "Язык",
-    "live_tracking": "Отслеживание"
+    "live_tracking": "Отслеживание",
+    "tracking": "Отслеживание Онлайн",
+    "maintenance": "Обслуживание",
+    "route_planner": "Планировщик Маршрутов"
   },
   "main": {
     "section_identify": "ИДЕНТИФИКАЦИЯ",
@@ -564,7 +567,11 @@
     "transition_success": "Успешно переведено в статус {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Грузовик не найден.",
-    "unavailable_overlap": "Недоступен: пересекается с рейсом {trip_ref}"
+    "unavailable_overlap": "Недоступен: пересекается с рейсом {trip_ref}",
+    "col_planned": "Запланировано",
+    "col_loading": "Загрузка",
+    "col_in_transit": "В Пути",
+    "col_delivered": "Доставлено"
   },
   "driver_manager": {
     "add_driver": "Добавить водителя",
@@ -668,7 +675,8 @@
     "control_panel_title": "Панель управления обслуживанием",
     "schedule_next_due_km": "График Следующих KM",
     "status_overdue": "Статус Просрочено",
-    "status_remaining": "Статус Осталось"
+    "status_remaining": "Статус Осталось",
+    "avg_health": "Сред. Состояние"
   },
   "tacho": {
     "avg_daily": "Среднее за день",
@@ -715,7 +723,7 @@
     "no_data": "Нет данных",
     "no_data_12mo": "Нет Данных за 12 Мес",
     "no_records": "Нет Записей",
-    "title": "Аналитика обслуживания",
+    "title": "Аналитика Обслуживания",
     "total_cost_label": "Общие Расходы",
     "truck_fallback": "Грузовик"
   },

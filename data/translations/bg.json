@@ -16,7 +16,10 @@
     "routes": "Маршрути",
     "fleet": "Флот",
     "language": "Език",
-    "live_tracking": "Проследяване На Живо"
+    "live_tracking": "Проследяване На Живо",
+    "tracking": "Проследяване Наживо",
+    "maintenance": "Поддръжка",
+    "route_planner": "Планер Маршрути"
   },
   "main": {
     "section_identify": "ИДЕНТИФИКАЦИЯ",
@@ -564,7 +567,11 @@
     "transition_success": "Успешно преместен в {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Камионът не е намерен.",
-    "unavailable_overlap": "Недостъпен: припокрива се с курс {trip_ref}"
+    "unavailable_overlap": "Недостъпен: припокрива се с курс {trip_ref}",
+    "col_planned": "Планиран",
+    "col_loading": "Товарене",
+    "col_in_transit": "В Транзит",
+    "col_delivered": "Доставен"
   },
   "driver_manager": {
     "add_driver": "Добави Шофьор",
@@ -668,7 +675,8 @@
     "control_panel_title": "Контролен Панел Поддръжка",
     "schedule_next_due_km": "Насрочи Следващ КМ Падеж",
     "status_overdue": "Просрочен Статус",
-    "status_remaining": "Оставащ Статус"
+    "status_remaining": "Оставащ Статус",
+    "avg_health": "Ср. Здраве"
   },
   "tacho": {
     "avg_daily": "Средно Дневно",
@@ -715,7 +723,7 @@
     "no_data": "Няма данни",
     "no_data_12mo": "Няма данни за 12 мес.",
     "no_records": "Няма записи",
-    "title": "Анализи на Поддръжка",
+    "title": "Анализ Поддръжка",
     "total_cost_label": "Общ Разход",
     "truck_fallback": "Камион"
   },

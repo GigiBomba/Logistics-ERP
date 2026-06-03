@@ -16,7 +16,10 @@
     "routes": "Routen",
     "fleet": "Fuhrpark",
     "language": "Sprache",
-    "live_tracking": "Live-Tracking"
+    "live_tracking": "Live-Tracking",
+    "tracking": "Tracciamento Live",
+    "maintenance": "Manutenzione",
+    "route_planner": "Pianificatore Rotte"
   },
   "main": {
     "section_identify": "IDENTIFIKATION",
@@ -564,7 +567,11 @@
     "transition_success": "Erfolgreich zu {new_status} uebergegangen.",
     "trip_id_prefix": "#",
     "truck_not_found": "LKW nicht gefunden.",
-    "unavailable_overlap": "Nicht verfuegbar: Ueberschneidung mit Fahrt {trip_ref}"
+    "unavailable_overlap": "Nicht verfuegbar: Ueberschneidung mit Fahrt {trip_ref}",
+    "col_planned": "Pianificato",
+    "col_loading": "Carico",
+    "col_in_transit": "In Transito",
+    "col_delivered": "Consegnato"
   },
   "driver_manager": {
     "add_driver": "Fahrer hinzufuegen",
@@ -668,7 +675,8 @@
     "control_panel_title": "Wartungs-Steuerpult",
     "schedule_next_due_km": "Nachste Faelligkeit KM Planen",
     "status_overdue": "Status Ueberfaellig",
-    "status_remaining": "Status Verbleibend"
+    "status_remaining": "Status Verbleibend",
+    "avg_health": "Salute Media"
   },
   "tacho": {
     "avg_daily": "Tagesdurchschnitt",
@@ -715,7 +723,7 @@
     "no_data": "Keine Daten",
     "no_data_12mo": "Keine 12-Monats-Daten",
     "no_records": "Keine Eintraege",
-    "title": "Wartungsanalyse",
+    "title": "Analisi Manutenzione",
     "total_cost_label": "Gesamtkosten",
     "truck_fallback": "LKW"
   },
@@ -727,6 +735,6 @@
     "field_notes": "Notizen",
     "field_provider": "Anbieter",
     "field_type": "Typ",
-    "title": "Wartungs-Chronik"
+    "title": "Cronologia Manutenzione"
   }
 }

@@ -16,7 +16,10 @@
     "routes": "Routes",
     "fleet": "Vloot",
     "language": "Taal",
-    "live_tracking": "Live Tracking"
+    "live_tracking": "Live Tracking",
+    "tracking": "Live Tracking",
+    "maintenance": "Onderhoud",
+    "route_planner": "Routeplanner"
   },
   "main": {
     "section_identify": "IDENTIFICATIE",
@@ -564,7 +567,11 @@
     "transition_success": "Succesvol verplaatst naar {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Vrachtwagen niet gevonden.",
-    "unavailable_overlap": "Niet beschikbaar: overlapt met rit {trip_ref}"
+    "unavailable_overlap": "Niet beschikbaar: overlapt met rit {trip_ref}",
+    "col_planned": "Gepland",
+    "col_loading": "Laden",
+    "col_in_transit": "Onderweg",
+    "col_delivered": "Afgeleverd"
   },
   "driver_manager": {
     "add_driver": "Chauffeur toevoegen",
@@ -668,7 +675,8 @@
     "control_panel_title": "Onderhoudscontrolepaneel",
     "schedule_next_due_km": "Volgende over {km} km",
     "status_overdue": "Achterstallig",
-    "status_remaining": "{km} km resterend"
+    "status_remaining": "{km} km resterend",
+    "avg_health": "Gem. Gezondheid"
   },
   "tacho": {
     "avg_daily": "Gem. dagelijks",

@@ -16,7 +16,10 @@
     "routes": "Rute",
     "fleet": "Flota",
     "language": "Jezik",
-    "live_tracking": "Praćenje u Stvarnom Vremenu"
+    "live_tracking": "Praćenje u Stvarnom Vremenu",
+    "tracking": "Pračenje Uživo",
+    "maintenance": "Odreavanje",
+    "route_planner": "Planer Ruta"
   },
   "main": {
     "section_identify": "IDENTIFIKACIJA",
@@ -564,7 +567,11 @@
     "transition_success": "Uspješno prebačeno u status {new_status}.",
     "trip_id_prefix": "#",
     "truck_not_found": "Kamion nije pronađen.",
-    "unavailable_overlap": "Nedostupno: preklapa se s turom {trip_ref}"
+    "unavailable_overlap": "Nedostupno: preklapa se s turom {trip_ref}",
+    "col_planned": "Planirano",
+    "col_loading": "Utovar",
+    "col_in_transit": "U Tranzitu",
+    "col_delivered": "Isporučeno"
   },
   "driver_manager": {
     "add_driver": "Dodaj Vozača",
@@ -668,7 +675,8 @@
     "control_panel_title": "Nadzorna Ploča Održavanja",
     "schedule_next_due_km": "Zakaži Sljedeći Dospjeli KM",
     "status_overdue": "Prekoračeno",
-    "status_remaining": "Preostalo"
+    "status_remaining": "Preostalo",
+    "avg_health": "Prosječno Zdravlje"
   },
   "tacho": {
     "avg_daily": "Dnevni Prosjek",
@@ -715,7 +723,7 @@
     "no_data": "Nema Podataka",
     "no_data_12mo": "Nema Podataka za 12 Mj.",
     "no_records": "Nema Zapisa",
-    "title": "Analitika Održavanja",
+    "title": "Analitika Odreavanja",
     "total_cost_label": "Ukupni Trošak",
     "truck_fallback": "Kamion"
   },
@@ -727,6 +735,6 @@
     "field_notes": "Napomene",
     "field_provider": "Dobavljač",
     "field_type": "Vrsta",
-    "title": "Kronologija Održavanja"
+    "title": "Vremenska Crta Odreavanja"
   }
 }
