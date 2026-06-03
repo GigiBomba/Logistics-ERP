@@ -1,6 +1,6 @@
 import tkinter as tk
 import customtkinter as ctk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import os
 from datetime import datetime, timedelta
 from services.i18n import t
@@ -10,6 +10,9 @@ from ui.widgets import ActionButton, StyledEntry
 from services.export_service import ExportService
 from services.trip_service import TripService
 from services.invoicing.service import InvoiceService
+from services.operations.notification_center import NotificationCenter
+from services.operations.event_bus import EventBus, INVOICE_EMAILED
+from services.invoicing.config_manager import load_company_config
 from ui.theme import COLORS, FONTS
 
 class HistoryView:
@@ -248,7 +251,70 @@ class HistoryView:
             messagebox.showwarning(t("history.warning_title"), t("history.select_trip_first"))
             return
 
-        messagebox.showinfo(t("history.email_success").format(""), t("history.email_deprecated"))
+        trip_id = data[0]
+        trip_data = self.trip_service.get_by_id(trip_id)
+        if not trip_data:
+            messagebox.showerror(t("history.error_title"), t("history.email_error").format("trip not found"))
+            return
+
+        try:
+            path = self.invoice_service.generate(trip_data, mode="client")
+            due_date = (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y")
+            self.invoice_service.create_record(trip_id, f"INV-{trip_id}", trip_data.get('total_price_eur', 0), due_date)
+            if not os.path.exists(path):
+                raise FileNotFoundError(f"Invoice PDF not found: {path}")
+        except Exception as e:
+            messagebox.showerror(t("history.email_error"), f"Failed to generate invoice: {e}")
+            return
+
+        recipient = simpledialog.askstring(
+            t("history.email_recipient_title"),
+            t("history.email_recipient_msg"),
+            parent=self.win or self.frame
+        )
+        if not recipient:
+            return
+
+        nc = NotificationCenter(self.db)
+        smtp_cfg = self.db.get_settings(["smtp_server", "smtp_port", "smtp_user", "smtp_password"])
+        if not smtp_cfg.get("smtp_server") or not smtp_cfg.get("smtp_user"):
+            messagebox.showerror(t("history.email_error"), t("email.config_missing"))
+            return
+
+        try:
+            nc.configure_smtp(
+                smtp_cfg.get("smtp_server", ""),
+                int(smtp_cfg.get("smtp_port", "587")),
+                smtp_cfg.get("smtp_user", ""),
+                smtp_cfg.get("smtp_password", ""),
+            )
+        except Exception:
+            messagebox.showerror(t("history.email_error"), t("email.config_missing"))
+            return
+
+        conf = load_company_config()
+        client_name = trip_data.get("client_name", "")
+        filename = os.path.basename(path)
+        subject = t("email.invoice_subject").format(filename, client_name)
+        body = t("email.invoice_body").format(
+            filename,
+            float(trip_data.get("total_price_eur", 0) or 0),
+            due_date,
+            conf.get("company_name", ""),
+        )
+
+        if nc.send_email(recipient, subject, body, attachments=[path]):
+            EventBus().publish(INVOICE_EMAILED, {
+                "trip_id": trip_id,
+                "invoice_number": filename.replace(".pdf", ""),
+                "recipient": recipient,
+            })
+            messagebox.showinfo(t("history.button_email"),
+                              t("history.email_success").format(recipient))
+            self.refresh()
+        else:
+            messagebox.showerror(t("history.email_error"),
+                               t("history.email_error").format("SMTP send failed"))
 
     def _edit(self):
         data = self._get_selection()

@@ -298,7 +298,6 @@
     "route_not_found": "Nie znaleziono powiązanej trasy.",
     "cancel_status": "Anuluj status",
     "confirm_status": "Potwierdź status",
-    "email_deprecated": "Email przestarzały",
     "no_engine": "Brak silnika",
     "no_transitions": "Brak przejść",
     "status_prompt": "Monit statusu",
