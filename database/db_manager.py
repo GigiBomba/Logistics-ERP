@@ -212,6 +212,7 @@ class DatabaseManager:
 
     # --- OPERAȚIUNI CURSE (TRIPS) ---
 
+    # @deprecated — use TripService.add() → TripRepository.create() instead
     def add_trip(self, data: dict):
         """Salvează o cursă nouă și returnează ID-ul generat."""
         # Use a single transaction to write the trip (single full write)
@@ -232,6 +233,7 @@ class DatabaseManager:
                 pass
             raise
 
+    # @deprecated — use TripService.update() → TripRepository.update() instead
     def update_trip(self, trip_id, data: dict):
         """Actualizează datele unei curse existente."""
         placeholders = ", ".join([f"{key} = ?" for key in data.keys()])
@@ -248,11 +250,13 @@ class DatabaseManager:
                 pass
             raise
 
+    # @deprecated — unused; use TripService + TripStatusEngine
     def update_status(self, trip_id, status):
         """Actualizează doar statusul unei curse."""
         self.conn.execute("UPDATE trips SET status = ? WHERE id = ?", (status, trip_id))
         self.conn.commit()
 
+    # @deprecated — use TripService.delete() → TripRepository.delete() instead
     def delete_trip(self, trip_id):
         """Șterge o cursă permanent."""
         self.conn.execute("DELETE FROM trips WHERE id = ?", (trip_id,))

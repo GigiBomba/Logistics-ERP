@@ -783,11 +783,6 @@ class DispatchBoardView:
             
             card.update_truck(plate, truck_id)
             
-            self._event_bus.publish(TRIP_UPDATED, {
-                "trip_id": trip_id,
-                "truck_id": truck_id,
-                "truck_plate": plate,
-            })
             self._event_bus.publish(TRIP_ASSIGNED, {
                 "trip_id": trip_id,
                 "truck_id": truck_id,
@@ -811,11 +806,6 @@ class DispatchBoardView:
             
             card.update_driver(name, driver_id)
             
-            self._event_bus.publish(TRIP_UPDATED, {
-                "trip_id": trip_id,
-                "driver_id": driver_id,
-                "driver_name": name,
-            })
             self._event_bus.publish(TRIP_ASSIGNED, {
                 "trip_id": trip_id,
                 "driver_id": driver_id,
@@ -832,12 +822,6 @@ class DispatchBoardView:
             self._trip_service.update(trip_id, {"truck_number": ""})
             card.update_truck("", None)
             
-            self._event_bus.publish(TRIP_UPDATED, {
-                "trip_id": trip_id,
-                "truck_id": None,
-                "truck_plate": "",
-            })
-            
             logger.info("Cleared truck assignment for trip %d", trip_id)
         except Exception as e:
             logger.error("Failed to clear truck: %s", e)
@@ -848,12 +832,6 @@ class DispatchBoardView:
             trip_id = card.trip_data.get("trip_id_num")
             self._trip_service.update(trip_id, {"driver_id": None, "driver_name": ""})
             card.update_driver("", None)
-            
-            self._event_bus.publish(TRIP_UPDATED, {
-                "trip_id": trip_id,
-                "driver_id": None,
-                "driver_name": "",
-            })
             
             logger.info("Cleared driver assignment for trip %d", trip_id)
         except Exception as e:

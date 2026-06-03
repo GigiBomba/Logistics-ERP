@@ -10,6 +10,7 @@ from ui.widgets import StyledEntry, ActionButton, section_header
 from ui.styles import Theme
 from ui.navigation import NavPanel
 from services.trip_context import register_trip_listener, unregister_trip_listener
+from services.trip_service import TripService
 from services.fleet_service import FleetService
 from services.i18n import t, register_listener, unregister_listener
 from services.fuel_price_service import FuelPriceService
@@ -32,6 +33,7 @@ class MainWindow(I18nMixin):
         from services.preferences import PreferencesManager
         self.prefs = prefs or PreferencesManager(db)
         self.fleet_service = FleetService(self.db)
+        self.trip_service = TripService(self.db)
         self._event_bus = EventBus()
         self._module_cache = {}
         self._active_module = None
@@ -496,7 +498,7 @@ class MainWindow(I18nMixin):
                 if not messagebox.askyesno(t("dispatch_board.conflict_warning_title"), msg):
                     return
 
-            self.db.add_trip({
+            self.trip_service.add({
                 "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
                 "truck_number": (self.selected_truck.get('plate_number') if isinstance(self.selected_truck, dict) and self.selected_truck else (self.selected_truck[1] if self.selected_truck and len(self.selected_truck) > 1 else None)),
                 "driver_name": (self.selected_truck.get('driver_name') if isinstance(self.selected_truck, dict) and self.selected_truck and 'driver_name' in self.selected_truck else (self.selected_truck['driver_name'] if self.selected_truck and hasattr(self.selected_truck, 'keys') and 'driver_name' in self.selected_truck.keys() else None)),
