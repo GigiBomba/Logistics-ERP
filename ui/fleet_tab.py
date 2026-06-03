@@ -1,13 +1,21 @@
 ﻿import csv
+import logging
 import tkinter as tk
+import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 from datetime import datetime
 from services.i18n import t, register_listener, unregister_listener
+from services.operations.event_bus import EventBus, TRUCK_UPDATED
+from services.driver_truck_service import DriverTruckService
 from ui.styles import Theme
-from ui.widgets import ActionButton, StyledCheckbutton, StyledEntry, section_header
+from ui.widgets import ActionButton, StyledEntry, section_header, kpi_card
 from services.fleet_service import FleetService
 from services.export_service import ExportService
 from database.db_manager import DatabaseManager
+from ui.dialogs.truck_form import TruckFormDialog
+from ui.theme import CHART_PRIMARY, CHART_SECONDARY, CHART_INDIGO, FONTS, apply_chart_style
+
+logger = logging.getLogger(__name__)
 
 try:
     import matplotlib
@@ -19,145 +27,163 @@ except Exception:
     HAS_MPL = False
 
 
-class FleetTab:
-    def __init__(self, parent, db_or_path, open_window=True):
+from ui.i18n_mixin import I18nMixin
+
+class FleetTab(I18nMixin):
+    STATUS_KEYS = {
+        "Active": "fleet.status_active",
+        "Inactive": "fleet.status_inactive",
+    }
+
+    def __init__(self, parent, db_or_path, open_window=True, ops=None):
+        I18nMixin.__init__(self)
         self.parent = parent
         if isinstance(db_or_path, DatabaseManager):
             self.db = db_or_path
         else:
             self.db = DatabaseManager(db_or_path)
+        self.ops = ops
         self.service = FleetService(self.db)                                
         self.exporter = ExportService()
+        self._event_bus = EventBus()
+        self._dta_service = DriverTruckService(self.db)
         self._i18n_widgets = []
         self._tree_heading_keys = []
         self._kpi_title_refs = []
+        self._expenses_tree = None
+        self._expenses_tree_heading_keys = []
         if open_window:
-            self.win = tk.Toplevel(parent)
+            self.win = ctk.CTkToplevel(parent)
+            self.win.configure(fg_color=Theme.BG)
             self.win.title(t("fleet.title"))
             self.win.geometry("1100x700")
             Theme.apply(self.win)
-            self.frame = tk.Frame(self.win, bg=Theme.BG)
+            self.frame = ctk.CTkFrame(self.win, fg_color=Theme.BG)
             self.frame.pack(fill="both", expand=True)
         else:
             self.win = None
-            self.frame = tk.Frame(parent, bg=Theme.BG)
+            self.frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
 
         self._setup_ui()
 
         self.refresh_fleet()
 
         self.frame.bind("<Destroy>", self._on_destroy)
-        register_listener(self._on_language_changed)
+        self._event_bus.subscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
 
-    def _i18n_tag(self, widget, key, prefix=""):
-        self._i18n_widgets.append((widget, key, prefix))
+    def _on_truck_updated_ev(self, ev):
+        try:
+            self.frame.after(0, self.refresh_fleet)
+        except Exception:
+            pass
 
     def _on_destroy(self, event=None):
         if event is not None and event.widget != self.frame:
             return
-        unregister_listener(self._on_language_changed)
-
-    def _on_language_changed(self, lang):
-        self.refresh_translations()
+        self._event_bus.unsubscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
+        self.i18n_cleanup()
 
     def refresh_translations(self):
         if self.win is not None:
             self.win.title(t("fleet.title"))
-        for widget, key, prefix in self._i18n_widgets:
-            try:
-                widget.config(text=f"{prefix}{t(key)}")
-            except Exception:
-                pass
         for col, key in self._tree_heading_keys:
             try:
                 self.tree.heading(col, text=t(key))
             except Exception:
                 pass
+        if self._expenses_tree is not None:
+            for col, key in self._expenses_tree_heading_keys:
+                try:
+                    self._expenses_tree.heading(col, text=t(key))
+                except Exception:
+                    pass
         for key in self._kpi_title_refs:
             try:
                 lbl, k = key
                 lbl.config(text=t(k))
             except Exception:
                 pass
+        self.refresh_fleet()
 
     def _setup_ui(self):
-        header = tk.Frame(self.frame, bg=Theme.BG)
+        header = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
         header.pack(fill="x", padx=12, pady=(8, 4))
-        lbl = tk.Label(header, text=t("fleet.title"), bg=Theme.BG, fg=Theme.ACCENT, font=Theme.FONT_TITLE)
+        lbl = ctk.CTkLabel(header, text=t("fleet.title"), fg_color=Theme.BG, text_color=Theme.ACCENT, font=Theme.FONT_TITLE)
         lbl.pack(side="left")
-        self._i18n_tag(lbl, "fleet.title")
-        ex_f = tk.Frame(header, bg=Theme.BG)
+        self.i18n_tag(lbl, "fleet.title")
+        ex_f = ctk.CTkFrame(header, fg_color=Theme.BG)
         ex_f.pack(side="right")
         btn = ActionButton(ex_f, t("fleet.export_csv"), self._export_csv, color=Theme.SURFACE2)
         btn.pack(side="right", padx=6)
-        self._i18n_tag(btn, "fleet.export_csv")
+        self.i18n_tag(btn, "fleet.export_csv")
         btn = ActionButton(ex_f, t("fleet.export_excel"), self._export_excel, color=Theme.SURFACE2)
         btn.pack(side="right", padx=6)
-        self._i18n_tag(btn, "fleet.export_excel")
+        self.i18n_tag(btn, "fleet.export_excel")
         btn = ActionButton(ex_f, t("fleet.export_pdf"), self._export_pdf, color=Theme.SURFACE2)
         btn.pack(side="right", padx=6)
-        self._i18n_tag(btn, "fleet.export_pdf")
+        self.i18n_tag(btn, "fleet.export_pdf")
 
-        kpi_cont = tk.Frame(self.frame, bg=Theme.BG, pady=6)
+        kpi_cont = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
         kpi_cont.pack(fill="x", padx=12)
-        kpi_total_val, kpi_total_title = self._kpi_card(kpi_cont, t("fleet.kpi_total_trucks"), "0")
+        kpi_total_val, kpi_total_title = kpi_card(kpi_cont, t("fleet.kpi_total_trucks"), "0")
         self.kpi_total = kpi_total_val
         self._kpi_title_refs.append((kpi_total_title, "fleet.kpi_total_trucks"))
-        kpi_active_val, kpi_active_title = self._kpi_card(kpi_cont, t("fleet.kpi_active"), "0")
+        kpi_active_val, kpi_active_title = kpi_card(kpi_cont, t("fleet.kpi_active"), "0")
         self.kpi_active = kpi_active_val
         self._kpi_title_refs.append((kpi_active_title, "fleet.kpi_active"))
-        kpi_maint_val, kpi_maint_title = self._kpi_card(kpi_cont, t("fleet.kpi_service_due"), "0")
-        self.kpi_maintenance = kpi_maint_val
-        self._kpi_title_refs.append((kpi_maint_title, "fleet.kpi_service_due"))
-        kpi_lease_val, kpi_lease_title = self._kpi_card(kpi_cont, t("fleet.kpi_monthly_rate"), "0")
+        kpi_lease_val, kpi_lease_title = kpi_card(kpi_cont, t("fleet.kpi_monthly_rate"), "0")
         self.kpi_leasing = kpi_lease_val
         self._kpi_title_refs.append((kpi_lease_title, "fleet.kpi_monthly_rate"))
+
+        kpi_alert_val, kpi_alert_title = kpi_card(kpi_cont, t("fleet.kpi_alerts"), "0")
+        self.kpi_alerts = kpi_alert_val
+        self._kpi_title_refs.append((kpi_alert_title, "fleet.kpi_alerts"))
+
+        # KPIs section complete — maintenance KPIs are in the dedicated MaintenanceView
 
         main = tk.PanedWindow(self.frame, orient="horizontal", sashrelief="raised", bg=Theme.BG)
         main.pack(fill="both", expand=True, padx=12, pady=8)
 
-        left = tk.Frame(main, bg=Theme.BG)
-        right = tk.Frame(main, bg=Theme.BG, width=360)
+        left = ctk.CTkFrame(main, fg_color=Theme.BG)
+        right = ctk.CTkFrame(main, fg_color=Theme.BG, width=360)
         main.add(left, minsize=700)
         main.add(right, minsize=320)
 
-        search_f = tk.Frame(left, bg=Theme.BG)
+        search_f = ctk.CTkFrame(left, fg_color=Theme.BG)
         search_f.pack(fill="x", padx=6, pady=(0, 6))
-        lbl = tk.Label(search_f, text=t("fleet.search_label"), bg=Theme.BG, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(search_f, text=t("fleet.search_label"), fg_color=Theme.BG, text_color=Theme.TEXT)
         lbl.pack(side="left")
-        self._i18n_tag(lbl, "fleet.search_label")
+        self.i18n_tag(lbl, "fleet.search_label")
         self.e_search = StyledEntry(search_f)
         self.e_search.pack(side="left", fill="x", expand=True, padx=(8, 6))
         self.e_search.bind("<KeyRelease>", lambda e: self._filter_tree())
         btn = ActionButton(search_f, t("fleet.reset_button"), lambda: (self.e_search.delete(0, "end"), self._filter_tree()), color=Theme.SURFACE2)
         btn.pack(side="left")
-        self._i18n_tag(btn, "fleet.reset_button")
+        self.i18n_tag(btn, "fleet.reset_button")
 
-        plate_f = tk.Frame(search_f, bg=Theme.BG)
+        plate_f = ctk.CTkFrame(search_f, fg_color=Theme.BG)
         plate_f.pack(side="right")
-        lbl = tk.Label(plate_f, text=t("fleet.plate_label"), bg=Theme.BG, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(plate_f, text=t("fleet.plate_label"), fg_color=Theme.BG, text_color=Theme.TEXT)
         lbl.pack(side="left", padx=(6,4))
-        self._i18n_tag(lbl, "fleet.plate_label")
+        self.i18n_tag(lbl, "fleet.plate_label")
         self.e_plate_search = StyledEntry(plate_f, width=12)
         self.e_plate_search.pack(side="left", padx=(0,6))
         btn = ActionButton(plate_f, t("fleet.find_button"), lambda: self._find_plate(), color=Theme.SURFACE2, width=8)
         btn.pack(side="left")
-        self._i18n_tag(btn, "fleet.find_button")
+        self.i18n_tag(btn, "fleet.find_button")
 
-        table_f = tk.Frame(left, bg=Theme.BG)
+        table_f = ctk.CTkFrame(left, fg_color=Theme.BG)
         table_f.pack(fill="both", expand=True)
-        cols = ("id", "plate", "model", "manufacturer", "year", "vin", "mileage", "fuel", "monthly_rate", "status", "ins_exp", "itp_exp", "maint_due", "active")
+        cols = ("id", "plate", "model", "manufacturer", "year", "vin", "mileage", "fuel", "monthly_rate", "status", "active", "driver")
         headers = (
             t("fleet.table_id"), t("fleet.table_plate"), t("fleet.table_model"), t("fleet.table_manufacturer"),
             t("fleet.table_year"), t("fleet.table_vin"), t("fleet.table_km"), t("fleet.table_consumption"),
-            t("fleet.table_rate"), t("fleet.table_status"), t("fleet.table_insurance"), t("fleet.table_inspection"),
-            t("fleet.table_service_km"), t("fleet.table_active")
+            t("fleet.table_rate"), t("fleet.table_status"), t("fleet.table_active"), t("fleet.table_driver")
         )
         heading_keys = (
             "fleet.table_id", "fleet.table_plate", "fleet.table_model", "fleet.table_manufacturer",
             "fleet.table_year", "fleet.table_vin", "fleet.table_km", "fleet.table_consumption",
-            "fleet.table_rate", "fleet.table_status", "fleet.table_insurance", "fleet.table_inspection",
-            "fleet.table_service_km", "fleet.table_active"
+            "fleet.table_rate", "fleet.table_status", "fleet.table_active", "fleet.table_driver"
         )
         self.tree = ttk.Treeview(table_f, columns=cols, show="headings")
         for c, h, k in zip(cols, headers, heading_keys):
@@ -179,40 +205,33 @@ class FleetTab:
 
         self.tree.bind('<FocusIn>', lambda e: self.tree.focus_set())
 
-        btns = tk.Frame(left, bg=Theme.BG, pady=8)
+        btns = ctk.CTkFrame(left, fg_color=Theme.BG)
         btns.pack(fill="x")
         btn = ActionButton(btns, f"➕ {t('fleet.add_truck')}", self._add_truck_win, color=Theme.ACCENT_SUCCESS)
         btn.pack(side="left", padx=6)
-        self._i18n_tag(btn, "fleet.add_truck", "➕ ")
+        self.i18n_tag(btn, "fleet.add_truck", "➕ ")
         btn = ActionButton(btns, f"✏️ {t('fleet.edit_button')}", self._edit_truck_selected, color=Theme.ACCENT)
         btn.pack(side="left", padx=6)
-        self._i18n_tag(btn, "fleet.edit_button", "✏️ ")
+        self.i18n_tag(btn, "fleet.edit_button", "✏️ ")
         btn = ActionButton(btns, f"🗑️ {t('fleet.delete_button')}", self._delete_truck, color=Theme.DANGER)
         btn.pack(side="right", padx=6)
-        self._i18n_tag(btn, "fleet.delete_button", "🗑️ ")
+        self.i18n_tag(btn, "fleet.delete_button", "🗑️ ")
 
-        lbl = section_header(right, t("fleet.section_alerts"), _return=True)
-        self._i18n_tag(lbl, "fleet.section_alerts")
-        self.alerts_box = tk.Frame(right, bg=Theme.SURFACE, padx=8, pady=8)
-        self.alerts_box.pack(fill="both", padx=8)
-        self.alerts_list = tk.Listbox(
-            self.alerts_box,
-            bg=Theme.INPUT_BG,
-            fg=Theme.TEXT,
-            selectbackground=Theme.ACCENT,
-            selectforeground=Theme.TEXT,
-            bd=0,
-            highlightthickness=0
-        )
-        self.alerts_list.pack(fill="both", expand=True)
+        # ── Alerts panel from OperationsEngine ──
+        self.alerts_frame = ctk.CTkFrame(right, fg_color=Theme.BG)
+        section_header(self.alerts_frame, t("fleet.section_alerts"))
+        self.alerts_container = ctk.CTkFrame(self.alerts_frame, fg_color=Theme.BG)
+        self.alerts_container.pack(fill="both", expand=True, padx=4, pady=2)
+        self.alerts_frame.pack(fill="both", padx=8, pady=(4,0), expand=True)
 
         lbl = section_header(right, t("fleet.section_charts"), _return=True)
-        self._i18n_tag(lbl, "fleet.section_charts")
-        self.chart_area = tk.Frame(right, bg=Theme.BG)
+        self.i18n_tag(lbl, "fleet.section_charts")
+        self.chart_area = ctk.CTkFrame(right, fg_color=Theme.BG)
         self.chart_area.pack(fill="both", padx=8, pady=6, expand=False)
         if HAS_MPL:
             self.fig = Figure(figsize=(4, 2), dpi=100)
             self.ax = self.fig.add_subplot(111)
+            apply_chart_style(self.fig, self.ax)
             self.canvas = FigureCanvasTkAgg(self.fig, master=self.chart_area)
             self.canvas.get_tk_widget().pack(fill="both", expand=True)
         else:
@@ -220,33 +239,112 @@ class FleetTab:
             self.chart_canvas.pack(fill="x", expand=True)
 
         lbl = section_header(right, t("fleet.section_quick_add"), _return=True)
-        self._i18n_tag(lbl, "fleet.section_quick_add")
-        quick_f = tk.Frame(right, bg=Theme.BG)
+        self.i18n_tag(lbl, "fleet.section_quick_add")
+        quick_f = ctk.CTkFrame(right, fg_color=Theme.BG)
         quick_f.pack(fill="x", padx=8, pady=6)
-        lbl = tk.Label(quick_f, text=t("fleet.plate_quick"), bg=Theme.BG, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(quick_f, text=t("fleet.plate_quick"), fg_color=Theme.BG, text_color=Theme.TEXT)
         lbl.pack(anchor="w")
-        self._i18n_tag(lbl, "fleet.plate_quick")
+        self.i18n_tag(lbl, "fleet.plate_quick")
         self.q_plate = StyledEntry(quick_f); self.q_plate.pack(fill="x", pady=4)
-        lbl = tk.Label(quick_f, text=t("fleet.model_quick"), bg=Theme.BG, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(quick_f, text=t("fleet.model_quick"), fg_color=Theme.BG, text_color=Theme.TEXT)
         lbl.pack(anchor="w")
-        self._i18n_tag(lbl, "fleet.model_quick")
+        self.i18n_tag(lbl, "fleet.model_quick")
         self.q_model = StyledEntry(quick_f); self.q_model.pack(fill="x", pady=4)
-        lbl = tk.Label(quick_f, text=t("fleet.rate_quick"), bg=Theme.BG, fg=Theme.TEXT)
+        lbl = ctk.CTkLabel(quick_f, text=t("fleet.rate_quick"), fg_color=Theme.BG, text_color=Theme.TEXT)
         lbl.pack(anchor="w")
-        self._i18n_tag(lbl, "fleet.rate_quick")
+        self.i18n_tag(lbl, "fleet.rate_quick")
         self.q_rate = StyledEntry(quick_f); self.q_rate.insert(0, "0"); self.q_rate.pack(fill="x", pady=4)
         btn = ActionButton(quick_f, t("fleet.save_quick"), self._save_quick, color=Theme.ACCENT_SUCCESS)
         btn.pack(fill="x", pady=6)
-        self._i18n_tag(btn, "fleet.save_quick")
+        self.i18n_tag(btn, "fleet.save_quick")
 
-    def _kpi_card(self, parent, title, value):
-        c = tk.Frame(parent, bg=Theme.SURFACE, padx=12, pady=10)
-        c.pack(side="left", padx=6, fill="y")
-        title_lbl = tk.Label(c, text=title, bg=Theme.SURFACE, fg=Theme.MUTED, font=Theme.FONT_MAIN)
+    def _build_maintenance_kpi_strip(self, parent, truck_id, truck_row):
+        from repositories.fleet_repository import FleetRepository
+        repo = FleetRepository(self.db)
+
+        section_lbl = ctk.CTkLabel(parent, text=t("fleet.maint_kpi_title"), fg_color=Theme.BG, text_color=Theme.ACCENT, font=Theme.FONT_BOLD)
+        section_lbl.pack(anchor="nw", pady=(12, 4))
+
+        kpi_frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
+        kpi_frame.pack(fill="x", pady=(0, 8))
+
+        # Odometer display
+        odometer_km = truck_row.get("mileage", 0) or 0
+        odometer_str = f"{odometer_km:,.0f} {t('fleet.unit_km')}"
+        self._maint_kpi_card(kpi_frame, t("fleet.maint_kpi_odometer"), odometer_str, Theme.ACCENT)
+
+        last_service = repo.get_maintenance_last_date(truck_id)
+        self._maint_kpi_card(kpi_frame, t("fleet.maint_kpi_last_service"), last_service or "—", Theme.SUCCESS)
+
+        schedules = repo.get_maintenance_schedules(truck_id)
+        next_due = None
+        for sched in schedules:
+            fixed_date = sched.get("fixed_expiry_date")
+            if fixed_date:
+                try:
+                    sched_dt = datetime.strptime(fixed_date, "%d/%m/%Y")
+                    if next_due is None or sched_dt < next_due:
+                        next_due = sched_dt
+                except Exception:
+                    pass
+        next_due_str = next_due.strftime("%d/%m/%Y") if next_due else "—"
+        self._maint_kpi_card(kpi_frame, t("fleet.maint_kpi_next_due"), next_due_str, Theme.WARNING)
+
+        month_start = datetime.now().strftime("%Y-%m-01")
+        cost_month = repo.sum_maintenance_cost(since_date=month_start)
+        self._maint_kpi_card(kpi_frame, t("fleet.maint_kpi_cost_month"), f"{cost_month:.0f}", Theme.INFO)
+
+        alert_count = 0
+        if self.ops:
+            try:
+                alerts = self.ops.get_alerts(truck_id=str(truck_id), resolved=False, limit=100)
+                alert_count = len(alerts)
+            except Exception:
+                pass
+        alert_card = self._maint_kpi_card(kpi_frame, t("fleet.maint_kpi_alerts"), str(alert_count), Theme.DANGER)
+        if alert_count > 0:
+            alert_card.bind("<Button-1>", lambda e: self._jump_to_alerts(truck_id))
+            alert_card.configure(cursor="hand2")
+            for child in alert_card.winfo_children():
+                child.bind("<Button-1>", lambda e: self._jump_to_alerts(truck_id))
+                child.configure(cursor="hand2")
+
+        tacho_expiry = truck_row.get("tachograph_expiry") or ""
+        tacho_color = Theme.MUTED
+        tacho_display = "—"
+        if tacho_expiry:
+            for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
+                try:
+                    tacho_dt = datetime.strptime(tacho_expiry, fmt)
+                    days_left = (tacho_dt - datetime.now()).days
+                    tacho_display = tacho_dt.strftime("%d/%m/%Y")
+                    if days_left <= 7:
+                        tacho_color = Theme.DANGER
+                    elif days_left <= 30:
+                        tacho_color = Theme.WARNING
+                    else:
+                        tacho_color = Theme.SUCCESS
+                    break
+                except Exception:
+                    continue
+            else:
+                tacho_color = Theme.DANGER
+                tacho_display = tacho_expiry
+        self._maint_kpi_card(kpi_frame, t("fleet.maint_kpi_tacho"), tacho_display, tacho_color)
+
+    def _maint_kpi_card(self, parent, title, value, accent_color):
+        card = ctk.CTkFrame(parent, fg_color=Theme.SURFACE, border_width=1, border_color=accent_color)
+        card.pack(side="left", padx=3, pady=2, fill="x", expand=True)
+        title_lbl = ctk.CTkLabel(card, text=title.upper(), fg_color=Theme.SURFACE, text_color=Theme.MUTED, font=FONTS["label"])
         title_lbl.pack(anchor="w")
-        val_lbl = tk.Label(c, text=value, bg=Theme.SURFACE, fg=Theme.TEXT, font=Theme.FONT_BOLD)
+        val_lbl = ctk.CTkLabel(card, text=str(value), fg_color=Theme.SURFACE, text_color=accent_color, font=FONTS["small"])
         val_lbl.pack(anchor="w")
-        return val_lbl, title_lbl
+        return card
+
+    def _jump_to_alerts(self, truck_id):
+        row = self.service.get_truck(truck_id)
+        if row:
+            self._open_maintenance_view(truck_id, row["plate_number"])
 
     def refresh_fleet(self):
         for i in self.tree.get_children():
@@ -256,58 +354,51 @@ class FleetTab:
             rows = self.service.get_trucks()
 
             for r in rows:
+                driver_name = self._dta_service.get_driver_name_for_truck(r["id"]) or t("fleet.table_driver_unassigned")
                 self.tree.insert("", "end", values=(
-                    r[0],
-                    r[1],
-                    r[2] or "",
-                    r[3] or "",
-                    r[4] or "",
-                    r[5] or "",
-                    f"{(r[6] or 0):,}",
-                    f"{(r[7] or 0):.1f}" if r[7] is not None else "",
-                    f"{(r[8] or 0):.2f}",
-                    r[9] or "",
-                    r[10] or "",
-                    r[11] or "",
-                    r[12] or "",
-                    "Yes" if (r[13] == 1 or r[13] == True) else "No"
+                    r["id"],
+                    r["plate_number"],
+                    r["model"] or "",
+                    r["manufacturer"] or "",
+                    r["year"] or "",
+                    r["vin"] or "",
+                    f"{(r['mileage'] or 0):,}",
+                    f"{(r['fuel_consumption'] or 0):.1f}" if r.get("fuel_consumption") is not None else "",
+                    f"{(r['monthly_rate'] or 0):.2f}",
+                    r["status"] or "",
+                    t("common.yes") if (r["active_status"] == 1 or r["active_status"] == True) else t("common.no"),
+                    driver_name,
                 ))
 
             total = len(rows)
-            active = sum(1 for r in rows if r[13] == 1 or r[13] == True)
-            maint_due = sum(1 for r in rows if r[12] and r[6] and r[6] >= r[12])
-            month_year = datetime.now().strftime("%m/%Y")
-            total_leasing, total_maint = self.service.get_fleet_financials(month_year)
+            active = sum(1 for r in rows if r["active_status"] == 1 or r["active_status"] == True)
 
             self.kpi_total.config(text=str(total))
             self.kpi_active.config(text=str(active))
-            self.kpi_maintenance.config(text=str(maint_due))
-            self.kpi_leasing.config(text=f"{total_leasing:.2f} EUR")
+            self.kpi_leasing.config(text="")
 
-            self._load_alerts()
+            # Alerts KPI from OperationsEngine
+            if self.ops:
+                self.kpi_alerts.config(text=str(self.ops.get_active_alert_count()))
+                self._refresh_alerts()
+            else:
+                self.kpi_alerts.config(text="N/A")
+
             self._draw_charts(rows)
             self._filter_tree()
         except Exception as ex:
-            messagebox.showerror(t("fleet.error_load").format(""), t("fleet.error_load").format(ex))
-
-    def _load_alerts(self):
-        self.alerts_list.delete(0, "end")
-        try:
-            alerts = self.service.get_truck_alerts()
-            for a in alerts:
-                self.alerts_list.insert("end", t("fleet.alert_format").format(type=a.get('type','INFO'), msg=a.get('msg')))
-            if not alerts:
-                self.alerts_list.insert("end", t("fleet.no_alerts"))
-        except Exception:
-            self.alerts_list.insert("end", t("fleet.alert_load_error"))
+            logger.exception("refresh_fleet failed")
+            messagebox.showerror(t("main.error_title"), t("fleet.error_load").format(ex))
 
     def _draw_charts(self, rows):
         statuses = {}
         rates = []
         for r in rows:
-            st = r[9] or "Unknown"
+            st_raw = r.get("status") or ""
+            key = self.STATUS_KEYS.get(st_raw.title() if st_raw else "")
+            st = t(key) if key else (st_raw or t("fleet.status_unknown"))
             statuses[st] = statuses.get(st, 0) + 1
-            rates.append(float(r[8] or 0))
+            rates.append(float(r.get("monthly_rate") or 0))
 
         labels = list(statuses.keys())
         counts = list(statuses.values())
@@ -315,7 +406,7 @@ class FleetTab:
         if HAS_MPL:
             self.ax.clear()
             if counts:
-                self.ax.pie(counts, labels=labels, autopct="%1.0f%%", colors=[Theme.INFO, Theme.SUCCESS, Theme.DANGER])
+                self.ax.pie(counts, labels=labels, autopct="%1.0f%%", colors=[CHART_PRIMARY, CHART_INDIGO, CHART_SECONDARY])
             else:
                 self.ax.text(0.5, 0.5, t("fleet.no_data_chart"), ha="center")
             self.fig.tight_layout()
@@ -338,6 +429,31 @@ class FleetTab:
                 self.chart_canvas.create_rectangle(10, y, 10 + bar_w, y + bar_h, fill=Theme.ACCENT, outline="")
                 self.chart_canvas.create_text(15 + bar_w, y + bar_h / 2, anchor="w", text=f"{label}: {cnt}", fill=Theme.TEXT)
                 y += bar_h + 8
+
+    def _refresh_alerts(self):
+        for w in self.alerts_container.winfo_children():
+            w.destroy()
+        if not self.ops:
+            ctk.CTkLabel(self.alerts_container, text=t("fleet.no_engine"), fg_color=Theme.BG, text_color=Theme.MUTED, font=FONTS["label"]).pack()
+            return
+        alerts = self.ops.get_active_alerts(limit=20)
+        if not alerts:
+            ctk.CTkLabel(self.alerts_container, text=t("fleet.no_alerts"), fg_color=Theme.BG, text_color=Theme.MUTED, font=FONTS["label"]).pack(pady=10)
+            return
+        c = tk.Canvas(self.alerts_container, bg=Theme.BG, highlightthickness=0)
+        sb = ttk.Scrollbar(self.alerts_container, orient="vertical", command=c.yview)
+        inner = ctk.CTkFrame(c, fg_color=Theme.BG)
+        inner.bind("<Configure>", lambda e: c.configure(scrollregion=c.bbox("all")))
+        c.create_window((0, 0), window=inner, anchor="nw", width=300)
+        c.configure(yscrollcommand=sb.set)
+        c.pack(side="left", fill="both", expand=True)
+        sb.pack(side="right", fill="y")
+        for a in alerts:
+            sev_color = Theme.DANGER if a.severity.value == 'critical' else (Theme.WARNING if a.severity.value == 'warning' else Theme.INFO)
+            card = ctk.CTkFrame(inner, fg_color=Theme.SURFACE2, border_width=1, border_color=sev_color)
+            card.pack(fill="x", pady=2, padx=2)
+            ctk.CTkLabel(card, text=a.title, fg_color=Theme.SURFACE2, text_color=Theme.TEXT, font=FONTS["label"], wraplength=280, justify="left").pack()
+            ctk.CTkLabel(card, text=a.message, fg_color=Theme.SURFACE2, text_color=Theme.MUTED, font=FONTS["label"], wraplength=280, justify="left").pack()
 
     def _filter_tree(self):
         query = self.e_search.get().strip().lower()
@@ -384,7 +500,8 @@ class FleetTab:
 
     # CRUD operations
     def _add_truck_win(self):
-        self._truck_form_window(title=t("fleet.truck_form_title"))
+        TruckFormDialog(self.frame, self.service, title=t("fleet.truck_form_title"),
+                        on_save=self.refresh_fleet, dta_service=self._dta_service)
 
     def _edit_truck_selected(self):
         truck_id = self._get_selected_truck_id()
@@ -394,146 +511,8 @@ class FleetTab:
         if not row:
             messagebox.showerror(t("fleet.truck_not_found"), t("fleet.truck_not_found"))
             return
-        self._truck_form_window(title=t("fleet.edit_button"), truck=row)
-
-    def _truck_form_window(self, title="Truck", truck=None):
-        win = tk.Toplevel(self.frame)
-        win.title(title)
-        Theme.apply(win)
-        container = tk.Frame(win, bg=Theme.BG)
-        container.pack(fill="both", expand=True)
-
-        canvas = tk.Canvas(container, bg=Theme.BG, highlightthickness=0)
-        scrollbar_v = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
-        scrollbar_h = ttk.Scrollbar(container, orient="horizontal", command=canvas.xview)
-
-        canvas.configure(yscrollcommand=scrollbar_v.set, xscrollcommand=scrollbar_h.set)
-
-        scrollbar_v.pack(side="right", fill="y")
-        scrollbar_h.pack(side="bottom", fill="x")
-        canvas.pack(side="left", fill="both", expand=True)
-
-        win_frame = tk.Frame(canvas, bg=Theme.BG, padx=14, pady=12)
-        canvas.create_window((0, 0), window=win_frame, anchor="nw")
-
-        def _on_config(event):
-            canvas.configure(scrollregion=canvas.bbox("all"))
-
-        win_frame.bind("<Configure>", _on_config)
-
-        def _on_mousewheel(event):
-            if event.num == 4:
-                canvas.yview_scroll(-1, "units")
-            elif event.num == 5:
-                canvas.yview_scroll(1, "units")
-            else:
-                canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-        def _bind_mousewheel(_):
-            canvas.bind_all("<MouseWheel>", _on_mousewheel)
-            canvas.bind_all("<Button-4>", _on_mousewheel)
-            canvas.bind_all("<Button-5>", _on_mousewheel)
-
-        def _unbind_mousewheel(_):
-            canvas.unbind_all("<MouseWheel>")
-            canvas.unbind_all("<Button-4>")
-            canvas.unbind_all("<Button-5>")
-
-        canvas.bind("<Enter>", _bind_mousewheel)
-        canvas.bind("<Leave>", _unbind_mousewheel)
-
-        parent_frame = win_frame
-
-        def add_field(label_text, default=""):
-            tk.Label(parent_frame, text=label_text, bg=Theme.BG, fg=Theme.TEXT).pack(anchor="w")
-            e = StyledEntry(parent_frame)
-            e.pack(fill="x", pady=6)
-            e.insert(0, default)
-            return e
-
-        fields = {}
-        fields['plate'] = add_field(t("fleet.form_plate"), truck[1] if truck else "")
-        fields['model'] = add_field(t("fleet.form_model"), truck[2] if truck else "")
-        fields['manufacturer'] = add_field(t("fleet.form_manufacturer"), truck[3] if truck else "")
-        fields['year'] = add_field(t("fleet.form_year"), str(truck[4]) if truck and truck[4] else "")
-        fields['vin'] = add_field(t("fleet.form_vin"), truck[5] if truck else "")
-        fields['fuel'] = add_field(t("fleet.form_consumption"), str(truck[7]) if truck and truck[7] is not None else "")
-        fields['mileage'] = add_field(t("fleet.form_km"), str(truck[6]) if truck and truck[6] is not None else "0")
-        fields['monthly_rate'] = add_field(t("fleet.form_rate"), f"{truck[8]:.2f}" if truck and truck[8] is not None else "0")
-        fields['status'] = add_field(t("fleet.form_status"), truck[9] if truck else "Active")
-        fields['insurance'] = add_field(t("fleet.form_insurance"), truck[10] if truck else "")
-        fields['inspection'] = add_field(t("fleet.form_inspection"), truck[11] if truck else "")
-        fields['maint_due'] = add_field(t("fleet.form_service_km"), str(truck[12]) if truck and truck[12] is not None else "")
-
-        active_var = tk.IntVar(value=(truck[13] if truck else 1))
-        StyledCheckbutton(parent_frame, text=t("fleet.form_active"), variable=active_var).pack(anchor="w", pady=(6, 12))
-
-        def save():
-            plate = fields['plate'].get().strip().upper()
-            if not plate:
-                messagebox.showwarning(t("fleet.validation_plate_required"), t("fleet.validation_plate_required"))
-                return
-            try:
-                year = int(fields['year'].get()) if fields['year'].get().strip() else None
-            except ValueError:
-                messagebox.showwarning(t("fleet.validation_year_invalid"), t("fleet.validation_year_invalid"))
-                return
-            try:
-                fuel = float(fields['fuel'].get()) if fields['fuel'].get().strip() else None
-            except ValueError:
-                messagebox.showwarning(t("fleet.validation_consumption_invalid"), t("fleet.validation_consumption_invalid"))
-                return
-            try:
-                mileage = float(fields['mileage'].get() or 0)
-                monthly_rate = float(fields['monthly_rate'].get() or 0)
-                maint_due = float(fields['maint_due'].get()) if fields['maint_due'].get().strip() else None
-            except ValueError:
-                messagebox.showwarning(t("fleet.validation_km_rate_service_invalid"), t("fleet.validation_km_rate_service_invalid"))
-                return
-
-            ins = fields['insurance'].get().strip()
-            itp = fields['inspection'].get().strip()
-
-            try:
-                if truck:
-                    self.service.update_truck(truck[0], {
-                        "plate_number": plate,
-                        "model": fields['model'].get(),
-                        "manufacturer": fields['manufacturer'].get(),
-                        "year": year,
-                        "vin": fields['vin'].get(),
-                        "fuel_consumption": fuel,
-                        "mileage": mileage,
-                        "monthly_rate": monthly_rate,
-                        "status": fields['status'].get(),
-                        "insurance_expiry": ins,
-                        "inspection_expiry": itp,
-                        "maintenance_due": maint_due,
-                        "active_status": active_var.get()
-                    })
-                else:
-                    self.service.add_truck({
-                        "plate_number": plate,
-                        "model": fields['model'].get(),
-                        "manufacturer": fields['manufacturer'].get(),
-                        "year": year,
-                        "vin": fields['vin'].get(),
-                        "fuel_consumption": fuel,
-                        "mileage": mileage,
-                        "monthly_rate": monthly_rate,
-                        "status": fields['status'].get(),
-                        "insurance_expiry": ins,
-                        "inspection_expiry": itp,
-                        "maintenance_due": maint_due,
-                        "active_status": active_var.get()
-                    })
-                self.refresh_fleet()
-                win.destroy()
-            except Exception as ex:
-                messagebox.showerror(t("fleet.error_save").format(""), t("fleet.error_save").format(ex))
-
-        ActionButton(parent_frame, t("fleet.save_button"), save, color=Theme.ACCENT_SUCCESS).pack(fill="x", pady=10)
-        ActionButton(parent_frame, t("fleet.cancel_button"), win.destroy, color=Theme.SURFACE2).pack(fill="x")
+        TruckFormDialog(self.frame, self.service, title=t("fleet.edit_button"),
+                        truck=row, on_save=self.refresh_fleet, dta_service=self._dta_service)
 
     def _save_quick(self):
         plate = self.q_plate.get().strip().upper()
@@ -587,112 +566,49 @@ class FleetTab:
             messagebox.showerror(t("fleet.truck_not_found"), t("fleet.truck_not_found"))
             return
 
-        win = tk.Toplevel(self.frame)
-        win.title(t("fleet.truck_detail_title").format(row[1]))
-        win.geometry("900x600")
+        win = ctk.CTkToplevel(self.frame)
+        win.title(t("fleet.truck_detail_title").format(row["plate_number"]))
+        win.geometry("900x650")
         Theme.apply(win)
 
-        left = tk.Frame(win, bg=Theme.BG, width=320)
+        left = ctk.CTkFrame(win, fg_color=Theme.BG, width=320)
         left.pack(side="left", fill="y", padx=8, pady=8)
-        right = tk.Frame(win, bg=Theme.BG)
+        right = ctk.CTkFrame(win, fg_color=Theme.BG)
         right.pack(side="right", fill="both", expand=True, padx=8, pady=8)
 
-        tk.Label(left, text=f"{row[1]} - {row[2]}", bg=Theme.BG, fg=Theme.ACCENT, font=Theme.FONT_BOLD).pack(anchor="nw")
-        tk.Label(left, text=f"{t('fleet.detail_manufacturer')} {row[3]}", bg=Theme.BG, fg=Theme.TEXT).pack(anchor="nw", pady=2)
-        tk.Label(left, text=f"{t('fleet.detail_year')} {row[4] or ''}", bg=Theme.BG, fg=Theme.TEXT).pack(anchor="nw")
-        tk.Label(left, text=f"{t('fleet.detail_vin')} {row[5] or ''}", bg=Theme.BG, fg=Theme.TEXT).pack(anchor="nw", pady=2)
-        tk.Label(left, text=f"{t('fleet.detail_km')} {(row[6] or 0):,}", bg=Theme.BG, fg=Theme.TEXT).pack(anchor="nw")
-        tk.Label(left, text=f"{t('fleet.detail_rate')} {(row[8] or 0):.2f} EUR", bg=Theme.BG, fg=Theme.TEXT).pack(anchor="nw", pady=8)
+        ctk.CTkLabel(left, text=f"{row['plate_number']} - {row['model']}", fg_color=Theme.BG, text_color=Theme.ACCENT, font=Theme.FONT_BOLD).pack(anchor="nw")
+        ctk.CTkLabel(left, text=f"{t('fleet.detail_manufacturer')} {row['manufacturer']}", fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="nw", pady=2)
+        ctk.CTkLabel(left, text=f"{t('fleet.detail_year')} {row['year'] or ''}", fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="nw")
+        ctk.CTkLabel(left, text=f"{t('fleet.detail_vin')} {row['vin'] or ''}", fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="nw", pady=2)
+        ctk.CTkLabel(left, text=f"{t('fleet.detail_km')} {(row['mileage'] or 0):,}", fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="nw")
+        ctk.CTkLabel(left, text=f"{t('fleet.detail_rate')} {(row['monthly_rate'] or 0):.2f} {t('common.currency_eur')}", fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="nw", pady=8)
 
-        ActionButton(left, t("fleet.detail_edit_button"), lambda: (win.destroy(), self._truck_form_window(title=t("fleet.edit_button"), truck=row)), color=Theme.ACCENT).pack(fill="x", pady=6)
+        self._build_maintenance_kpi_strip(left, truck_id, row)
+
+        ActionButton(left, t("fleet.detail_edit_button"), lambda: (win.destroy(), TruckFormDialog(self.frame, self.service, title=t("fleet.edit_button"), truck=row, on_save=self.refresh_fleet)), color=Theme.ACCENT).pack(fill="x", pady=6)
         ActionButton(left, t("fleet.detail_export_button"), lambda: self._export_truck_csv(row), color=Theme.SURFACE2).pack(fill="x", pady=6)
 
         nb = ttk.Notebook(right)
         nb.pack(fill="both", expand=True)
 
-        maint_frame = tk.Frame(nb, bg=Theme.BG)
-        nb.add(maint_frame, text=t("fleet.tab_maintenance"))
-        self._populate_maintenance_tab(maint_frame, truck_id)
+        # Maintenance tab — opens the full maintenance manager
+        maint_frame = ctk.CTkFrame(nb, fg_color=Theme.BG)
+        nb.add(maint_frame, text=f"\U0001F527 {t('fleet.tab_maintenance')}")
+        ActionButton(
+            maint_frame,
+            f"\U0001F527 {t('fleet.open_maintenance_manager')}",
+            lambda: self._open_maintenance_view(row["id"], row["plate_number"]),
+            color=Theme.ACCENT,
+        ).pack(pady=40)
+        ctk.CTkLabel(
+            maint_frame,
+            text=t("fleet.maint_history_desc"),
+            fg_color=Theme.BG, text_color=Theme.MUTED, font=FONTS["label"],
+        ).pack()
 
-        ins_frame = tk.Frame(nb, bg=Theme.BG)
-        nb.add(ins_frame, text=t("fleet.tab_insurance"))
-        self._populate_insurance_tab(ins_frame, row)
-
-        exp_frame = tk.Frame(nb, bg=Theme.BG)
+        exp_frame = ctk.CTkFrame(nb, fg_color=Theme.BG)
         nb.add(exp_frame, text=t("fleet.tab_expenses"))
         self._populate_expenses_tab(exp_frame, truck_id)
-
-    def _populate_maintenance_tab(self, parent, truck_id):
-        list_f = tk.Frame(parent, bg=Theme.BG)
-        list_f.pack(fill="both", expand=True, padx=8, pady=8)
-        cols = ("id", "date", "type", "km", "cost", "desc")
-        tree = ttk.Treeview(list_f, columns=cols, show="headings")
-        maint_headers = (t("fleet.maintenance_table_id"), t("fleet.maintenance_table_date"), t("fleet.maintenance_table_type"), t("fleet.maintenance_table_km"), t("fleet.maintenance_table_cost"), t("fleet.maintenance_table_desc"))
-        for c, h in zip(cols, maint_headers):
-            tree.heading(c, text=h)
-            tree.column(c, anchor="center", width=100 if c != "desc" else 240)
-        tree.pack(side="left", fill="both", expand=True)
-        sb = ttk.Scrollbar(list_f, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=sb.set)
-        sb.pack(side="right", fill="y")
-
-        def load():
-            for i in tree.get_children():
-                tree.delete(i)
-            rows = self.service.get_maintenance(truck_id)   
-            for r in rows:
-                tree.insert("", "end", values=(r[0], r[1], r[2], f"{r[3] or ''}", f"{r[4]:.2f}" if r[4] else "", r[5] or ""))
-        load()
-
-        form = tk.Frame(parent, bg=Theme.BG, pady=8)
-        form.pack(fill="x", padx=8)
-        tk.Label(form, text=t("fleet.add_maintenance"), bg=Theme.BG, fg=Theme.ACCENT).pack(anchor="w")
-        e_date = StyledEntry(form); e_date.insert(0, datetime.now().strftime("%d/%m/%Y")); e_date.pack(fill="x", pady=4)
-        e_type = StyledEntry(form); e_type.insert(0, "General"); e_type.pack(fill="x", pady=4)
-        e_km = StyledEntry(form); e_km.pack(fill="x", pady=4)
-        e_cost = StyledEntry(form); e_cost.insert(0, "0"); e_cost.pack(fill="x", pady=4)
-        e_desc = StyledEntry(form); e_desc.pack(fill="x", pady=4)
-
-        def save_maint():
-            try:
-                km = float(e_km.get() or 0)
-                cost = float(e_cost.get() or 0)
-            except ValueError:
-                messagebox.showwarning(t("fleet.validation_km_cost_invalid"), t("fleet.validation_km_cost_invalid"))
-                return
-            try:
-                self.service.add_maintenance(truck_id, e_date.get(), e_type.get(), e_desc.get(), km, cost)
-                load()
-                self.refresh_fleet()
-                e_date.delete(0, "end"); e_date.insert(0, datetime.now().strftime("%d/%m/%Y"))
-                e_type.delete(0, "end"); e_type.insert(0, "General")
-                e_km.delete(0, "end"); e_cost.delete(0, "end"); e_desc.delete(0, "end")
-            except Exception as ex:
-                messagebox.showerror(t("fleet.error_save_maintenance").format(""), t("fleet.error_save_maintenance").format(ex))
-
-        ActionButton(form, t("fleet.save_maintenance"), save_maint, color=Theme.ACCENT_SUCCESS).pack(fill="x", pady=6)
-
-    def _populate_insurance_tab(self, parent, truck_row):
-        parent.pack_propagate(False)
-        f = tk.Frame(parent, bg=Theme.BG, padx=8, pady=8)
-        f.pack(fill="both", expand=True)
-        tk.Label(f, text=t("fleet.insurance_label"), bg=Theme.BG, fg=Theme.TEXT).pack(anchor="w")
-        e_ins = StyledEntry(f); e_ins.insert(0, truck_row[10] or ""); e_ins.pack(fill="x", pady=4)
-        tk.Label(f, text=t("fleet.inspection_label"), bg=Theme.BG, fg=Theme.TEXT).pack(anchor="w")
-        e_itp = StyledEntry(f); e_itp.insert(0, truck_row[11] or ""); e_itp.pack(fill="x", pady=4)
-
-        def save_ins():
-            try:
-                self.service.update_truck(truck_row[0], {
-                    "insurance_expiry": e_ins.get(),    
-                    "inspection_expiry": e_itp.get()
-                })
-                self.refresh_fleet()
-                messagebox.showinfo(t("fleet.success_updated"), t("fleet.success_updated"))
-            except Exception as ex:
-                messagebox.showerror(t("fleet.error_save").format(""), t("fleet.error_save").format(ex))
-
-        ActionButton(f, t("fleet.save_button"), save_ins, color=Theme.ACCENT_SUCCESS).pack(fill="x", pady=6)
 
     def _populate_expenses_tab(self, parent, truck_id):
         try:
@@ -700,11 +616,14 @@ class FleetTab:
         except Exception:
             pass
 
-        list_f = tk.Frame(parent, bg=Theme.BG)
+        list_f = ctk.CTkFrame(parent, fg_color=Theme.BG)
         list_f.pack(fill="both", expand=True, padx=8, pady=8)
         cols = ("id", "date", "category", "amount", "desc")
+        exp_heading_keys = ("fleet.expenses_table_id", "fleet.expenses_table_date", "fleet.expenses_table_category", "fleet.expenses_table_amount", "fleet.expenses_table_desc")
+        self._expenses_tree_heading_keys = list(zip(cols, exp_heading_keys))
         tree = ttk.Treeview(list_f, columns=cols, show="headings")
-        exp_headers = (t("fleet.expenses_table_id"), t("fleet.expenses_table_date"), t("fleet.expenses_table_category"), t("fleet.expenses_table_amount"), t("fleet.expenses_table_desc"))
+        self._expenses_tree = tree
+        exp_headers = tuple(t(k) for k in exp_heading_keys)
         for c, h in zip(cols, exp_headers):
             tree.heading(c, text=h)
             tree.column(c, anchor="center", width=100 if c != "desc" else 240)
@@ -722,11 +641,11 @@ class FleetTab:
 
         load()
 
-        form = tk.Frame(parent, bg=Theme.BG, pady=8)
+        form = ctk.CTkFrame(parent, fg_color=Theme.BG)
         form.pack(fill="x", padx=8)
-        tk.Label(form, text=t("fleet.add_expense"), bg=Theme.BG, fg=Theme.ACCENT).pack(anchor="w")
+        ctk.CTkLabel(form, text=t("fleet.add_expense"), fg_color=Theme.BG, text_color=Theme.ACCENT).pack(anchor="w")
         e_date = StyledEntry(form); e_date.insert(0, datetime.now().strftime("%d/%m/%Y")); e_date.pack(fill="x", pady=4)
-        e_cat = StyledEntry(form); e_cat.insert(0, "Altele"); e_cat.pack(fill="x", pady=4)
+        e_cat = StyledEntry(form); e_cat.insert(0, t("fleet.expense_default_category")); e_cat.pack(fill="x", pady=4)
         e_amount = StyledEntry(form); e_amount.insert(0, "0"); e_amount.pack(fill="x", pady=4)
         e_desc = StyledEntry(form); e_desc.pack(fill="x", pady=4)
 
@@ -751,20 +670,17 @@ class FleetTab:
         trucks = []
         for r in rows:
             trucks.append({
-                "id": r[0],
-                "plate_number": r[1],
-                "model": r[2] or "",
-                "manufacturer": r[3] or "",
-                "year": r[4] or "",
-                "vin": r[5] or "",
-                "mileage": r[6] or 0,
-                "fuel_consumption": r[7] or 0,
-                "monthly_rate": r[8] or 0,
-                "status": r[9] or "",
-                "insurance_expiry": r[10] or "",
-                "inspection_expiry": r[11] or "",
-                "maintenance_due": r[12] or "",
-                "active_status": r[13] or 0
+                "id": r["id"],
+                "plate_number": r["plate_number"],
+                "model": r["model"] or "",
+                "manufacturer": r["manufacturer"] or "",
+                "year": r["year"] or "",
+                "vin": r["vin"] or "",
+                "mileage": r["mileage"] or 0,
+                "fuel_consumption": r["fuel_consumption"] or 0,
+                "monthly_rate": r["monthly_rate"] or 0,
+                "status": r["status"] or "",
+                "active_status": r["active_status"] or 0
             })
         return trucks
 
@@ -776,9 +692,9 @@ class FleetTab:
         try:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
-                writer.writerow(["ID", "Plate", "Model", "Manufacturer", "Year", "VIN", "Mileage", "Fuel L/100", "Monthly Rate EUR", "Status", "Insurance", "Inspection", "Maintenance KM", "Active"])
-                for t in trucks:
-                    writer.writerow([t["id"], t["plate_number"], t["model"], t["manufacturer"], t["year"], t["vin"], t["mileage"], t["fuel_consumption"], t["monthly_rate"], t["status"], t["insurance_expiry"], t["inspection_expiry"], t["maintenance_due"], t["active_status"]])
+                writer.writerow(["ID", "Plate", "Model", "Manufacturer", "Year", "VIN", "Mileage", "Fuel L/100", "Monthly Rate EUR", "Status", "Active"])
+                for truck in trucks:
+                    writer.writerow([truck["id"], truck["plate_number"], truck["model"], truck["manufacturer"], truck["year"], truck["vin"], truck["mileage"], truck["fuel_consumption"], truck["monthly_rate"], truck["status"], truck["active_status"]])
             messagebox.showinfo(t("fleet.export_csv_success").format(""), t("fleet.export_csv_success").format(path))
         except Exception as ex:
             messagebox.showerror(t("fleet.export_csv_error").format(""), t("fleet.export_csv_error").format(ex))
@@ -786,19 +702,19 @@ class FleetTab:
     def _export_excel(self):
         trucks = self._gather_trucks_for_export()
         mapped = []
-        for t in trucks:
+        for truck in trucks:
             mapped.append({
-                "id": t["id"],
+                "id": truck["id"],
                 "created_at": "",
-                "truck_number": t["plate_number"],
+                "truck_number": truck["plate_number"],
                 "driver_name": "",
-                "client_name": t["manufacturer"] or t["model"],
-                "distance_km": t["mileage"],
-                "total_price_eur": t["monthly_rate"],
+                "client_name": truck["manufacturer"] or truck["model"],
+                "distance_km": truck["mileage"],
+                "total_price_eur": truck["monthly_rate"],
                 "gross_per_km": 0,
                 "rate_per_km": 0,
                 "net_profit": 0,
-                "status": t["status"],
+                "status": truck["status"],
                 "fuel_cost": 0,
                 "toll_cost": 0,
                 "salary_cost": 0
@@ -812,16 +728,16 @@ class FleetTab:
     def _export_pdf(self):
         trucks = self._gather_trucks_for_export()
         mapped = []
-        for t in trucks:
+        for truck in trucks:
             mapped.append({
                 "created_at": "",
-                "truck_number": t["plate_number"],
-                "driver_name": t["manufacturer"] or t["model"],
+                "truck_number": truck["plate_number"],
+                "driver_name": truck["manufacturer"] or truck["model"],
                 "client_name": "",
-                "distance_km": t["mileage"],
+                "distance_km": truck["mileage"],
                 "gross_per_km": 0,
-                "net_profit": t["monthly_rate"],
-                "status": t["status"]
+                "net_profit": truck["monthly_rate"],
+                "status": truck["status"]
             })
         try:
             path = self.exporter.generate_pdf(mapped, filename=f"fleet_report_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf")
@@ -837,20 +753,21 @@ class FleetTab:
             with open(path, "w", newline="", encoding="utf-8") as f:
                 writer = csv.writer(f)
                 writer.writerow(["Field", "Value"])
-                writer.writerow(["ID", truck_row[0]])
-                writer.writerow(["Plate", truck_row[1]])
-                writer.writerow(["Model", truck_row[2]])
-                writer.writerow(["Manufacturer", truck_row[3]])
-                writer.writerow(["Year", truck_row[4]])
-                writer.writerow(["VIN", truck_row[5]])
-                writer.writerow(["Mileage", truck_row[6]])
-                writer.writerow(["Fuel L/100", truck_row[7]])
-                writer.writerow(["Monthly Rate EUR", truck_row[8]])
-                writer.writerow(["Status", truck_row[9]])
-                writer.writerow(["Insurance Expiry", truck_row[10]])
-                writer.writerow(["Inspection Expiry", truck_row[11]])
-                writer.writerow(["Maintenance KM", truck_row[12]])
-                writer.writerow(["Active", truck_row[13]])
+                writer.writerow(["ID", truck_row["id"]])
+                writer.writerow(["Plate", truck_row["plate_number"]])
+                writer.writerow(["Model", truck_row["model"]])
+                writer.writerow(["Manufacturer", truck_row["manufacturer"]])
+                writer.writerow(["Year", truck_row["year"]])
+                writer.writerow(["VIN", truck_row["vin"]])
+                writer.writerow(["Mileage", truck_row["mileage"]])
+                writer.writerow(["Fuel L/100", truck_row["fuel_consumption"]])
+                writer.writerow(["Monthly Rate EUR", truck_row["monthly_rate"]])
+                writer.writerow(["Status", truck_row["status"]])
+                writer.writerow(["Active", truck_row["active_status"]])
             messagebox.showinfo(t("fleet.export_truck_csv_success").format(""), t("fleet.export_truck_csv_success").format(path))
         except Exception as ex:
             messagebox.showerror(t("fleet.export_truck_csv_error").format(""), t("fleet.export_truck_csv_error").format(ex))
+
+    def _open_maintenance_view(self, truck_id, truck_plate):
+        from ui.maintenance_view import MaintenanceView
+        MaintenanceView(self.frame, self.db, truck_id, truck_plate)

@@ -1,5 +1,9 @@
 ﻿import sqlite3
+import logging
 from datetime import datetime
+from typing import Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 from database.schema import (
     INDEX_ROUTE_HISTORY_V2_CREATED,
     INDEX_ROUTE_HISTORY_V2_FINGERPRINT,
@@ -13,15 +17,43 @@ from database.schema import (
     INDEX_TRUCK_ROUTE_ASSIGNMENTS_TRUCK,
     INDEX_TRIPS_DATE,
     INDEX_TRIPS_TRUCK,
+    TABLE_ALERTS,
     TABLE_EMAIL_LOGS,
     TABLE_INVOICES,
     TABLE_MAINTENANCE,
+    TABLE_MAINTENANCE_RECORDS,
+    TABLE_MAINTENANCE_SCHEDULES,
+    TABLE_TRUCK_HEALTH_SCORES,
+    TABLE_OPERATION_EVENTS,
     TABLE_ROUTE_HISTORY_V2,
     TABLE_ROUTE_EVENTS,
     TABLE_SETTINGS,
     TABLE_TRIPS,
+    TABLE_TRIP_STATUS_HISTORY,
     TABLE_TRUCKS,
     TABLE_TRUCK_ROUTE_ASSIGNMENTS,
+    TABLE_DRIVERS,
+    TABLE_DRIVER_TRUCK_ASSIGNMENTS,
+    INDEX_ALERTS_TYPE,
+    INDEX_ALERTS_TRUCK,
+    INDEX_ALERTS_RESOLVED,
+    INDEX_DRIVERS_ACTIVE,
+    INDEX_MAINTENANCE_RECORDS_TRUCK,
+    INDEX_MAINTENANCE_RECORDS_TYPE,
+    INDEX_MAINTENANCE_RECORDS_DATE,
+    INDEX_MAINTENANCE_SCHEDULES_TRUCK,
+    INDEX_MAINTENANCE_SCHEDULES_ACTIVE,
+    INDEX_OPERATION_EVENTS_TYPE,
+    INDEX_TRIP_STATUS_HISTORY_TRIP,
+    INDEX_DTA_DRIVER,
+    INDEX_DTA_TRUCK,
+    TABLE_TACHO_IMPORTS,
+    TABLE_TACHO_DRIVER_ACTIVITY,
+    TABLE_TACHO_VEHICLE_DATA,
+    INDEX_TACHO_DRIVER_DATE,
+    INDEX_TACHO_VEHICLE_TRUCK,
+    INDEX_TACHO_IMPORTS_HASH,
+    ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID,
 )
 
 
@@ -41,7 +73,7 @@ class DatabaseManager:
 
     @staticmethod
     def rows_to_dicts(rows):
-        return [dict(r) for r in rows]
+        return [dict(r) for r in rows] if rows else []
 
     def _init_db(self):
         """Creează tabelele și indecșii necesari."""
@@ -74,8 +106,65 @@ class DatabaseManager:
         self.conn.execute(INDEX_TRIPS_TRUCK)
         self.conn.execute(TABLE_SETTINGS)
         self.conn.execute(TABLE_EMAIL_LOGS)
-        
+        # Operations Engine tables
+        self.conn.execute(TABLE_ALERTS)
+        self.conn.execute(TABLE_OPERATION_EVENTS)
+        self.conn.execute(TABLE_TRIP_STATUS_HISTORY)
+        self.conn.execute(INDEX_ALERTS_TYPE)
+        self.conn.execute(INDEX_ALERTS_TRUCK)
+        self.conn.execute(INDEX_ALERTS_RESOLVED)
+        self.conn.execute(INDEX_OPERATION_EVENTS_TYPE)
+        self.conn.execute(INDEX_TRIP_STATUS_HISTORY_TRIP)
+
+        # Fleet Maintenance tables
+        self.conn.execute(TABLE_MAINTENANCE_RECORDS)
+        self.conn.execute(TABLE_MAINTENANCE_SCHEDULES)
+        self.conn.execute(TABLE_TRUCK_HEALTH_SCORES)
+        self.conn.execute(INDEX_MAINTENANCE_RECORDS_TRUCK)
+        self.conn.execute(INDEX_MAINTENANCE_RECORDS_TYPE)
+        self.conn.execute(INDEX_MAINTENANCE_RECORDS_DATE)
+        self.conn.execute(INDEX_MAINTENANCE_SCHEDULES_TRUCK)
+        self.conn.execute(INDEX_MAINTENANCE_SCHEDULES_ACTIVE)
+
+        # Drivers table
+        self.conn.execute(TABLE_DRIVERS)
+        self.conn.execute(INDEX_DRIVERS_ACTIVE)
+
+        # Driver-Truck assignments table
+        self.conn.execute(TABLE_DRIVER_TRUCK_ASSIGNMENTS)
+        self.conn.execute(INDEX_DTA_DRIVER)
+        self.conn.execute(INDEX_DTA_TRUCK)
+
+        # Tachograph tables
+        self.conn.execute(TABLE_TACHO_IMPORTS)
+        self.conn.execute(TABLE_TACHO_DRIVER_ACTIVITY)
+        self.conn.execute(TABLE_TACHO_VEHICLE_DATA)
+        self.conn.execute(INDEX_TACHO_DRIVER_DATE)
+        self.conn.execute(INDEX_TACHO_VEHICLE_TRUCK)
+        self.conn.execute(INDEX_TACHO_IMPORTS_HASH)
+
         self.conn.commit()
+        # Migrate legacy maintenance table to maintenance_records (if both exist)
+        try:
+            has_legacy = self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance'"
+            ).fetchone()
+            has_records = self.conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance_records'"
+            ).fetchone()
+            if has_legacy and has_records:
+                migrated = self.conn.execute("""
+                    INSERT OR IGNORE INTO maintenance_records
+                    (truck_id, maintenance_type, date, km, cost, notes, created_at)
+                    SELECT truck_id, type, date, km_at_service, cost, description,
+                           COALESCE(date, datetime('now'))
+                    FROM maintenance
+                """).rowcount
+                if migrated > 0:
+                    self.conn.execute("DROP TABLE maintenance")
+                    logger.info("Migrated %d legacy maintenance records and dropped old table", migrated)
+        except Exception:
+            pass
         # Migrations for trips table
         try:
             cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trips)").fetchall()]
@@ -92,6 +181,36 @@ class DatabaseManager:
             if 'truck_consumption_l_per_100km' not in cols:
                 try:
                     self.conn.execute("ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Migration: tachograph_expiry on trucks
+        try:
+            truck_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trucks)").fetchall()]
+            if 'tachograph_expiry' not in truck_cols:
+                try:
+                    self.conn.execute("ALTER TABLE trucks ADD COLUMN tachograph_expiry TEXT")
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Migration: tracking_device_id on trucks
+        try:
+            truck_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trucks)").fetchall()]
+            if 'tracking_device_id' not in truck_cols:
+                try:
+                    self.conn.execute(ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Migration: driver_id on trips (FK → drivers)
+        try:
+            trip_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trips)").fetchall()]
+            if 'driver_id' not in trip_cols:
+                try:
+                    self.conn.execute("ALTER TABLE trips ADD COLUMN driver_id INTEGER REFERENCES drivers(id)")
                 except Exception:
                     pass
         except Exception:
@@ -183,29 +302,22 @@ class DatabaseManager:
         drivers = [r[0] for r in self.conn.execute("SELECT DISTINCT driver_name FROM trips WHERE driver_name IS NOT NULL").fetchall()]
         return trucks, drivers
 
-    # --- INVOICE LINKING & WORKFLOW ---
+    # --- INVOICE LINKING ---
 
     def create_invoice_record(self, trip_id, inv_number, amount, due_date):
-        """Leagă o factură de o cursă și mută statusul în 'Invoiced'."""
+        """Leagă o factură de o cursă."""
         try:
-            # Inserăm factura în tabelul invoices
             self.conn.execute("""
                 INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, total_amount, status)
                 VALUES (?, ?, ?, ?, ?, 'Unpaid')
             """, (trip_id, inv_number, datetime.now().strftime("%d/%m/%Y"), due_date, amount))
-            
-            # Actualizăm statusul cursei
-            self.conn.execute("UPDATE trips SET status = 'Invoiced' WHERE id = ?", (trip_id,))
             self.conn.commit()
         except sqlite3.IntegrityError:
-            # Dacă există deja o factură pentru acest ID, doar actualizăm statusul cursei
-            self.conn.execute("UPDATE trips SET status = 'Invoiced' WHERE id = ?", (trip_id,))
-            self.conn.commit()
+            pass
 
     def mark_invoice_as_paid(self, trip_id):
-        """Confirmă plata: actualizează și factura și cursa."""
+        """Confirmă plata."""
         self.conn.execute("UPDATE invoices SET status = 'Paid' WHERE trip_id = ?", (trip_id,))
-        self.conn.execute("UPDATE trips SET status = 'Paid' WHERE id = ?", (trip_id,))
         self.conn.commit()
 
     # --- DASHBOARD & ANALYTICS ---
@@ -283,25 +395,11 @@ class DatabaseManager:
             "active": active
         }
 
-    def get_analytics_data(self):
-        """Date grupate pentru grafice."""
-        per_truck = self.rows_to_dicts(self.conn.execute("SELECT truck_number, SUM(net_profit) as p FROM trips GROUP BY truck_number ORDER BY SUM(net_profit) DESC LIMIT 10").fetchall())
-        per_driver = self.rows_to_dicts(self.conn.execute("SELECT driver_name, SUM(net_profit) as p FROM trips GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10").fetchall())
-        rev_exp = self.conn.execute("""
-            SELECT SUBSTR(created_at, 4, 7) as month, 
-            SUM(total_price_eur) as rev, 
-            SUM(total_price_eur - net_profit) as exp 
-            FROM trips GROUP BY month ORDER BY id DESC LIMIT 6
-        """).fetchall()
-        return per_truck, per_driver, self.rows_to_dicts(rev_exp[::-1])
-
     def get_overdue_data(self):
-        """Detecteaza facturile neplatite care au depasit scadenta."""
         today = datetime.now()
         alerts = []
         total_overdue_amount = 0
-        
-        # CORECTIE: Am scos t.margin_percent din SELECT pentru ca nu exista in baza de date
+
         query = """
             SELECT t.id, t.client_name, i.invoice_number, i.due_date, i.total_amount
             FROM trips t
@@ -325,60 +423,115 @@ class DatabaseManager:
                         "msg": f"Factura {r['invoice_number']} expira in {(due_dt - today).days} zile."
                     })
         except Exception as e:
-            print(f"Eroare SQL Overdue: {e}")
+            logger.error("SQL Overdue error: %s", e)
 
-        # Detectare Marja Negativa (bazat pe net_profit care exista in DB)
         neg_margin = self.conn.execute("SELECT id, truck_number FROM trips WHERE net_profit < 0 AND status != 'Paid'").fetchall()
         for nm in neg_margin:
             alerts.append({"type": "RED", "msg": f"ATENTIE: Cursa #{nm['id']} ({nm['truck_number']}) are profit NEGATIV!"})
 
         return alerts, total_overdue_amount
 
-        for r in rows:
-            try:
-                due_dt = datetime.strptime(r['due_date'], "%d/%m/%Y")
-                if today > due_dt:
-                    days_late = (today - due_dt).days
-                    total_overdue_amount += r['total_amount']
-                    alerts.append({
-                        "type": "RED",
-                        "msg": f"Factura {r['invoice_number']} ({r['client_name']}) intarziata cu {days_late} zile!",
-                        "trip_id": r['id']
-                    })
-                elif (due_dt - today).days <= 3:
-                    alerts.append({
-                        "type": "YELLOW",
-                        "msg": f"Factura {r['invoice_number']} expira in {(due_dt - today).days} zile.",
-                        "trip_id": r['id']
-                    })
-            except: continue
+    def get_analytics_data(self):
+        """Date grupate pentru grafice."""
+        per_truck = self.rows_to_dicts(self.conn.execute("SELECT truck_number, SUM(net_profit) as p FROM trips GROUP BY truck_number ORDER BY SUM(net_profit) DESC LIMIT 10").fetchall())
+        per_driver = self.rows_to_dicts(self.conn.execute("SELECT driver_name, SUM(net_profit) as p FROM trips GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10").fetchall())
+        rev_exp = self.conn.execute("""
+            SELECT SUBSTR(created_at, 4, 7) as month, 
+            SUM(total_price_eur) as rev, 
+            SUM(total_price_eur - net_profit) as exp 
+            FROM trips GROUP BY month ORDER BY id DESC LIMIT 6
+        """).fetchall()
+        return per_truck, per_driver, self.rows_to_dicts(rev_exp[::-1])
 
-        # Detectare Marjă Negativă
-        neg_margin = self.conn.execute("SELECT id, truck_number FROM trips WHERE net_profit < 0 AND status != 'Paid'").fetchall()
-        for nm in neg_margin:
-            alerts.append({"type": "RED", "msg": f"ATENTIE: Cursa #{nm['id']} ({nm['truck_number']}) are profit NEGATIV!", "trip_id": nm['id']})
+    def get_settings(self, keys: List[str]) -> Dict[str, str]:
+        rows = self.conn.execute(
+            f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(keys))})",
+            keys,
+        ).fetchall()
+        return {r[0]: r[1] for r in rows}
 
-        return alerts, total_overdue_amount
-
-    def add_email_log(self, trip_id, rec, subj, status, err=""):
-        self.conn.execute("INSERT INTO email_logs (trip_id, recipient, subject, timestamp, status, error_msg) VALUES (?,?,?,?,?,?)",
-                         (trip_id, rec, subj, datetime.now().strftime("%d/%m/%Y %H:%M"), status, err))
+    def save_setting(self, key: str, value: str) -> None:
+        self.conn.execute(
+            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value)
+        )
         self.conn.commit()
 
-    def update_smtp_setting(self, server, port, user, pwd):
-        data = [('smtp_server', server), ('smtp_port', port), ('smtp_user', user), ('smtp_password', pwd)]
-        for k, v in data:
-            self.conn.execute("INSERT OR REPLACE INTO settings (key, value) VALUES (?,?)", (k, v))
+    def get_setting(self, key: str) -> Optional[str]:
+        res = self.get_settings([key])
+        return res.get(key) if res else None
+
+    # ── Truck CRUD ────────────────────────────────────────────────────
+
+    def get_all_trucks(self, active_only=False):
+        query = "SELECT id, plate_number, model, manufacturer, year, vin, mileage, fuel_consumption, monthly_rate, status, insurance_expiry, inspection_expiry, maintenance_due, active_status FROM trucks"
+        params = ()
+        if active_only:
+            query += " WHERE active_status = 1"
+        return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
+
+    def get_truck_by_id(self, truck_id):
+        return self.row_to_dict(self.conn.execute(
+            "SELECT id, plate_number, model, manufacturer, year, vin, mileage, fuel_consumption, monthly_rate, status, insurance_expiry, inspection_expiry, maintenance_due, active_status FROM trucks WHERE id = ?",
+            (truck_id,),
+        ).fetchone())
+
+    def add_truck(self, data: dict):
+        keys = ", ".join(data.keys())
+        placeholders = ", ".join(["?"] * len(data))
+        cursor = self.conn.execute(f"INSERT INTO trucks ({keys}) VALUES ({placeholders})", tuple(data.values()))
+        self.conn.commit()
+        return cursor.lastrowid
+
+    def update_truck(self, truck_id, data: dict):
+        placeholders = ", ".join([f"{key} = ?" for key in data.keys()])
+        self.conn.execute(f"UPDATE trucks SET {placeholders} WHERE id = ?", list(data.values()) + [truck_id])
         self.conn.commit()
 
-    def get_net_operational_profit(self, month):
-        # Profit curse
-        trips_profit = self.conn.execute("SELECT SUM(net_profit) FROM trips WHERE SUBSTR(created_at, 4, 7) = ?", (month,)).fetchone()[0] or 0
-        
-        # Cheltuieli flotă (Leasing)
-        leasing = self.conn.execute("SELECT SUM(monthly_rate) FROM trucks WHERE active_status = 1").fetchone()[0] or 0
-        
-        # Cheltuieli Mentenanță
-        maint = self.conn.execute("SELECT SUM(cost) FROM maintenance WHERE SUBSTR(date, 4, 7) = ?", (month,)).fetchone()[0] or 0
-        
-        return trips_profit - leasing - maint
+    def delete_truck(self, truck_id):
+        self.conn.execute("DELETE FROM trucks WHERE id = ?", (truck_id,))
+        self.conn.commit()
+
+    def get_truck_routes(self, truck_id, status=None):
+        query = """
+            SELECT a.*, h.last_calculated_at, h.total_distance_km, h.duration_min,
+                   h.profile, h.stops_json
+            FROM truck_route_assignments a
+            JOIN route_history_v2 h ON h.id = a.route_id
+            WHERE a.truck_id = ?
+        """
+        params = [str(truck_id)]
+        if status:
+            query += " AND a.status = ?"
+            params.append(status)
+        query += " ORDER BY COALESCE(a.started_at, a.assigned_at) DESC"
+        return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
+
+    # ── Expenses CRUD ─────────────────────────────────────────────────
+
+    def ensure_expenses_table(self):
+        self.conn.execute("""
+            CREATE TABLE IF NOT EXISTS expenses (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                truck_id INTEGER,
+                date TEXT,
+                category TEXT,
+                description TEXT,
+                amount REAL
+            );
+        """)
+        self.conn.commit()
+
+    def get_expenses(self, truck_id):
+        return self.rows_to_dicts(self.conn.execute(
+            "SELECT id, date, category, amount, description FROM expenses WHERE truck_id = ? ORDER BY date DESC",
+            (truck_id,),
+        ).fetchall())
+
+    def add_expense(self, truck_id, date, category, description, amount):
+        cursor = self.conn.execute(
+            "INSERT INTO expenses (truck_id, date, category, description, amount) VALUES (?,?,?,?,?)",
+            (truck_id, date, category, description, amount),
+        )
+        self.conn.commit()
+        return cursor.lastrowid
+

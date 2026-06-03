@@ -1,24 +1,27 @@
-﻿import tkinter as tk
-from tkinter import ttk, messagebox
+import tkinter as tk
+import customtkinter as ctk
+from tkinter import messagebox
 from services.i18n import t
+from services.trip_service import TripService
 from ui.widgets import StyledEntry, ActionButton
 from ui.styles import Theme
 
 class EditWindow:
     def __init__(self, parent, db, trip_id, callback):
-        self.win = tk.Toplevel(parent)
+        self.win = ctk.CTkToplevel(parent)
+        self.win.configure(fg_color=Theme.BG)
         self.win.title(t("edit_trip.title").format(trip_id))
         self.win.geometry("500x600")
         Theme.apply(self.win)
-        self.db = db
+        self.trip_service = TripService(db)
         self.trip_id = trip_id
         self.callback = callback
-        
-        self.data = self.db.get_trip_by_id(trip_id)
+
+        self.data = self.trip_service.get_by_id(trip_id)
         self._setup_ui()
 
     def _setup_ui(self):
-        container = tk.Frame(self.win, bg=Theme.BG, padx=30, pady=20)
+        container = ctk.CTkFrame(self.win, fg_color=Theme.BG)
         container.pack(fill="both", expand=True)
 
         fields = [
@@ -27,18 +30,13 @@ class EditWindow:
             ("client_name", t("edit_trip.field_client")),
             ("distance_km", t("edit_trip.field_distance")),
             ("net_profit", t("edit_trip.field_profit")),
-            ("status", t("edit_trip.field_status"))
         ]
 
         self.entries = {}
         for key, label in fields:
-            tk.Label(container, text=label, bg=Theme.BG, fg=Theme.TEXT).pack(anchor="w", pady=(10,0))
-            if key == "status":
-                e = ttk.Combobox(container, values=t("edit_trip.status_options"), state="readonly")
-                e.set(self.data[key])
-            else:
-                e = StyledEntry(container)
-                e.insert(0, str(self.data[key]))
+            ctk.CTkLabel(container, text=label, fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w", pady=(10,0))
+            e = StyledEntry(container)
+            e.insert(0, str(self.data[key]))
             e.pack(fill="x")
             self.entries[key] = e
 
@@ -47,7 +45,7 @@ class EditWindow:
     def _save(self):
         new_data = {key: self.entries[key].get() for key in self.entries}
         try:
-            self.db.update_trip(self.trip_id, new_data)
+            self.trip_service.update(self.trip_id, new_data)
             self.callback()
             self.win.destroy()
         except Exception as e:

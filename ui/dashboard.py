@@ -1,224 +1,535 @@
-﻿import tkinter as tk
+import tkinter as tk
+import customtkinter as ctk
 from tkinter import ttk, messagebox
 from datetime import datetime, timedelta
 from services.i18n import t, register_listener, unregister_listener
 from services.preferences import safe_float
-from ui.styles import Theme
-from ui.widgets import ActionButton, StyledEntry
+from services.app_state import AppState
 
 try:
     import matplotlib
-    matplotlib.use('TkAgg') 
+    matplotlib.use('TkAgg')
     import matplotlib.pyplot as plt
     from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
+    from matplotlib.patches import FancyBboxPatch
     HAS_PLOT = True
 except ImportError:
     HAS_PLOT = False
 
-class DashboardView:
-    def __init__(self, parent, db, prefs=None):
-        self.win = tk.Toplevel(parent)
-        self.win.title(f"📊 {t('dashboard.title')}")
-        self.win.geometry("1450x950")
-        Theme.apply(self.win)
+
+from ui.theme import COLORS, CHART_PRIMARY, CHART_SECONDARY, CHART_INDIGO, FONTS, apply_chart_style
+
+class FleetDashboard:
+    def __init__(self, parent, db, prefs=None, ops=None, embedded=False):
+        if embedded:
+            self.win = None
+            self.frame = ctk.CTkFrame(parent, fg_color=COLORS["bg_base"])
+            self.frame.pack(fill="both", expand=True)
+        else:
+            self.win = ctk.CTkToplevel(parent)
+            if self.win:
+                self.win.title(f"\U0001f4ca {t('fleet_dashboard.title')}")
+            self.win.geometry("1400x900")
+            self.win.configure(fg_color=COLORS["bg_base"])
+            self.frame = ctk.CTkFrame(self.win, fg_color=COLORS["bg_base"])
+            self.frame.pack(fill="both", expand=True)
+
         self.db = db
         from services.preferences import PreferencesManager
         self.prefs = prefs or PreferencesManager(db)
-        
-        self.current_start = None
-        self.current_end = None
+        self.ops = ops
+
+        self._period = "today"
+        self._start_date = None
+        self._end_date = None
+        self._last_refresh = None
         self._i18n_widgets = []
-        self._chart_ax = None
-        self._chart_canvas = None
+        self._chart_refs = []
+        self._period_buttons = []
 
-        self._setup_filter_bar()
-        self.content_frame = tk.Frame(self.win, bg=Theme.BG)
-        self.content_frame.pack(fill="both", expand=True)
-        
-        self.refresh_stats()
+        self._build_header()
+        self._build_content()
+        self.refresh_all()
 
-        self.win.bind("<Destroy>", self._on_destroy)
+        app_state = AppState()
+        app_state.subscribe("language", self._on_language_changed)
         register_listener(self._on_language_changed)
+        if self.win:
+            self.win.protocol("WM_DELETE_WINDOW", self._on_close)
+            self.win.bind("<Destroy>", self._on_destroy)
 
     def _i18n_tag(self, widget, key, prefix=""):
         self._i18n_widgets.append((widget, key, prefix))
 
     def _on_destroy(self, event=None):
-        if event is not None and event.widget != self.win:
+        if event is not None and event.widget != (self.win or self.frame):
             return
         unregister_listener(self._on_language_changed)
+        app_state = AppState()
+        app_state.unsubscribe("language", self._on_language_changed)
+
+    def _on_close(self):
+        if self.win:
+            self.win.destroy()
 
     def _on_language_changed(self, lang):
         self.refresh_translations()
 
     def refresh_translations(self):
-        self.win.title(f"📊 {t('dashboard.title')}")
+        if self.win:
+            if self.win:
+                self.win.title(f"📊 {t('fleet_dashboard.title')}")
         for widget, key, prefix in self._i18n_widgets:
             try:
-                widget.config(text=f"{prefix}{t(key)}")
+                widget.configure(text=f"{prefix}{t(key)}")
             except Exception:
                 pass
-        self.c_period.configure(values=t("dashboard.period_options"))
-        self.c_period.current(0)
-        if self._chart_ax is not None:
-            try:
-                self._chart_ax.set_title(t("dashboard.chart_profit_evolution"), color=Theme.TEXT, fontsize=9)
-                if self._chart_canvas is not None:
-                    self._chart_canvas.draw_idle()
-            except Exception:
-                pass
+        self.refresh_all()
 
-    def _setup_filter_bar(self):
-        fb = tk.Frame(self.win, bg=Theme.SURFACE, pady=18, padx=25)
-        fb.pack(fill="x")
+    def _build_header(self):
+        header = ctk.CTkFrame(self.frame, fg_color=COLORS["bg_base"])
+        header.pack(fill="x")
 
-        lbl = tk.Label(fb, text=f"📅 {t('dashboard.period_label')}", bg=Theme.SURFACE, fg=Theme.TEXT, 
-                 font=("Segoe UI", 10, "bold"))
-        lbl.pack(side="left", padx=5)
-        self._i18n_tag(lbl, "dashboard.period_label", "📅 ")
-        
-        self.c_period = ttk.Combobox(fb, values=t("dashboard.period_options"), state="readonly", width=22)
-        self.c_period.current(0)
-        self.c_period.pack(side="left", padx=10)
-        self.c_period.bind("<<ComboboxSelected>>", self._on_period_change)
+        title_lbl = ctk.CTkLabel(header, text=t('fleet_dashboard.title'),
+                            fg_color=COLORS["bg_base"], text_color=COLORS["text_primary"],
+                            font=FONTS["h1"])
+        title_lbl.pack(side="left")
+        self._i18n_tag(title_lbl, "fleet_dashboard.title")
 
-        self.extra_inputs = tk.Frame(fb, bg=Theme.SURFACE)
-        self.extra_inputs.pack(side="left", padx=15)
+        period_frame = ctk.CTkFrame(header, fg_color=COLORS["bg_base"])
+        period_frame.pack(side="left", padx=30)
 
-        btn = ActionButton(fb, f"🔄 {t('dashboard.refresh_button')}", self.refresh_stats, color=Theme.ACCENT)
-        btn.pack(side="right")
-        self._i18n_tag(btn, "dashboard.refresh_button", "🔄 ")
+        periods = [
+            ("today", "fleet_dashboard.today"),
+            ("week", "fleet_dashboard.this_week"),
+            ("month", "fleet_dashboard.this_month"),
+            ("custom", "fleet_dashboard.custom")
+        ]
 
-    def _on_period_change(self, event):
-        for widget in self.extra_inputs.winfo_children():
-            widget.destroy()
+        for period_id, key in periods:
+            btn = ctk.CTkButton(period_frame, text=t(key),
+                          fg_color=COLORS["bg_surface"] if period_id != self._period else COLORS["accent"],
+                          text_color=COLORS["text_primary"],
+                          font=FONTS["small"],
+                          cursor="hand2",
+                          command=lambda p=period_id: self._set_period(p))
+            btn.pack(side="left", padx=2)
+            self._period_buttons.append((btn, period_id, key))
+            self._i18n_tag(btn, key)
 
-        selection = self.c_period.get()
+        refresh_frame = ctk.CTkFrame(header, fg_color=COLORS["bg_base"])
+        refresh_frame.pack(side="right")
+
+        refresh_btn = ctk.CTkButton(refresh_frame, text=f"🔄 {t('fleet_dashboard.refresh')}",
+                               fg_color=COLORS["accent"], text_color=COLORS["text_primary"],
+                          font=FONTS["small"],
+                               cursor="hand2",
+                               command=self.refresh_all)
+        refresh_btn.pack(side="right")
+        self._i18n_tag(refresh_btn, "fleet_dashboard.refresh", "🔄 ")
+
+        self.last_refresh_lbl = ctk.CTkLabel(refresh_frame, text="",
+                                        fg_color=COLORS["bg_base"], text_color=COLORS["text_secondary"],
+                                        font=FONTS["label"])
+        self.last_refresh_lbl.pack(side="right", padx=10)
+
+    def _set_period(self, period):
+        self._period = period
         today = datetime.now()
 
-        po = t("dashboard.period_options")
-        if selection == po[1]:
-            self.current_start = (today - timedelta(days=7)).strftime("%Y-%m-%d")
-            self.current_end = today.strftime("%Y-%m-%d")
-        elif selection == po[2]:
-            self.current_start = today.strftime("%Y-%m-01")
-            self.current_end = today.strftime("%Y-%m-%d")
-        elif selection == po[3]:
-            years = self.db.get_available_years()
-            self.c_year = ttk.Combobox(self.extra_inputs, values=years, state="readonly", width=12)
-            if years: self.c_year.current(0)
-            self.c_year.pack(side="left")
-        elif selection == po[4]:
-            self.e_start = StyledEntry(self.extra_inputs, width=14)
-            self.e_start.insert(0, today.strftime("%Y-%m-%d"))
-            self.e_start.pack(side="left", padx=5)
-            tk.Label(self.extra_inputs, text="➜", bg=Theme.SURFACE, fg=Theme.TEXT).pack(side="left")
-            self.e_end = StyledEntry(self.extra_inputs, width=14)
-            self.e_end.insert(0, today.strftime("%Y-%m-%d"))
-            self.e_end.pack(side="left", padx=5)
+        if period == "today":
+            self._start_date = self._end_date = today.strftime("%Y-%m-%d")
+        elif period == "week":
+            monday = today - timedelta(days=today.weekday())
+            self._start_date = monday.strftime("%Y-%m-%d")
+            self._end_date = today.strftime("%Y-%m-%d")
+        elif period == "month":
+            self._start_date = today.strftime("%Y-%m-01")
+            self._end_date = today.strftime("%Y-%m-%d")
+        else:
+            self._start_date = self._end_date = None
 
-    def refresh_stats(self):
-        selection = self.c_period.get()
-        po = t("dashboard.period_options")
-        start, end = self.current_start, self.current_end
-        if selection == po[3]:
-            year = self.c_year.get()
-            start, end = f"{year}-01-01", f"{year}-12-31"
-        elif selection == po[4]:
-            start, end = self.e_start.get(), self.e_end.get()
-        elif selection == po[0]:
-            start = end = None
+        for btn, pid, _ in self._period_buttons:
+            btn.configure(fg_color=COLORS["accent"] if pid == period else COLORS["bg_surface"])
 
+        self.refresh_all()
+
+    def _build_content(self):
+        self.content_frame = ctk.CTkFrame(self.frame, fg_color=COLORS["bg_base"])
+        self.content_frame.pack(fill="both", expand=True, padx=30, pady=10)
+
+    def refresh_all(self):
         for widget in self.content_frame.winfo_children():
             widget.destroy()
+        self._chart_refs.clear()
+
+        self._last_refresh = datetime.now()
+        self.last_refresh_lbl.configure(
+            text=t('fleet_dashboard.last_refreshed',
+                  time=self._last_refresh.strftime("%H:%M:%S"))
+        )
 
         try:
-            stats = self.db.get_stats_by_period(start, end)
+            trucks = self.db.get_all_trucks()
+            trips = self.db.get_all_trips()
+            alerts, _ = self.db.get_overdue_data()
             kpi = self.db.get_kpi_stats()
-            bt, bd, bm = self.db.get_advanced_analytics()
-            top_clients, monthly_data = self.db.get_dashboard_charts()
-            alerts, total_ov_amount = self.db.get_overdue_data()
+            best_truck, best_driver, _ = self.db.get_advanced_analytics()
 
-            self._build_ui_content(stats, kpi, bm, bt, bd, top_clients, monthly_data, alerts, total_ov_amount)
+            self._build_kpi_row(trucks, trips, alerts, kpi)
+            self._build_charts_row(trucks, trips)
+            self._build_info_cards(best_truck, best_driver, trucks, trips)
+            self._build_activity_feed(trips)
         except Exception as e:
-            messagebox.showerror(t("dashboard.error_title"), t("dashboard.error_msg").format(e))
+            messagebox.showerror(t('fleet_dashboard.error_title'),
+                               t('fleet_dashboard.error_msg').format(str(e)))
 
-    def _build_ui_content(self, stats, kpi, best_month, best_t, best_d, top_clients, monthly, alerts, total_overdue):
-        container = tk.Frame(self.content_frame, bg=Theme.BG)
-        container.pack(fill="both", expand=True, padx=30, pady=20)
+    def _build_kpi_row(self, trucks, trips, alerts, kpi):
+        kpi_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS["bg_base"])
+        kpi_frame.pack(fill="x", pady=(0, 20))
 
-        kpi_row = tk.Frame(container, bg=Theme.BG)
-        kpi_row.pack(fill="x", pady=(0, 30))
-        rev = safe_float(kpi.get('rev'), label="kpi.rev")
-        profit = safe_float(kpi.get('profit'), label="kpi.profit")
-        km_kpi = safe_float(kpi.get('km'), label="kpi.km")
-        avg_p_km = (profit / km_kpi) if km_kpi else 0
-        self._kpi_card(kpi_row, t("dashboard.kpi_monthly_revenue"), self.prefs.format_currency(rev, 0), Theme.ACCENT, 0)
-        self._kpi_card(kpi_row, t("dashboard.kpi_monthly_profit"), self.prefs.format_currency(profit, 0), Theme.ACCENT_SUCCESS, 1)
-        self._kpi_card(kpi_row, t("dashboard.kpi_avg_profit_per_km"), self.prefs.format_currency(avg_p_km), Theme.YELLOW, 2)
-        self._kpi_card(kpi_row, t("dashboard.kpi_unpaid_invoices"), str(kpi.get('unpaid', 0)), Theme.DANGER, 3)
-        self._kpi_card(kpi_row, t("dashboard.kpi_active_trips"), str(kpi.get('active', 0)), Theme.ACCENT, 4)
+        active_trucks = len([t for t in trucks if t.get('status') == 'Active' or t.get('active_status') == 1])
+        today_str = datetime.now().strftime("%d/%m/%Y")
+        trips_today = len([t for t in trips if t.get('start_date') == today_str or
+                          (t.get('status') in ['In Transit', 'Loading'] and
+                           t.get('created_at', '').startswith(today_str))])
 
-        main_body = tk.Frame(container, bg=Theme.BG)
-        main_body.pack(fill="both", expand=True)
+        filtered_trips = self._filter_trips_by_period(trips)
+        revenue = sum(safe_float(t.get('total_price_eur')) for t in filtered_trips)
+        fuel_costs = [safe_float(t.get('fuel_cost')) for t in filtered_trips if t.get('fuel_cost')]
+        avg_fuel = sum(fuel_costs) / len(fuel_costs) if fuel_costs else 0
 
-        left_f = tk.Frame(main_body, bg=Theme.BG)
-        left_f.pack(side="left", fill="both", expand=True)
+        kpis = [
+            ("fleet_dashboard.kpi_active_trucks", str(active_trucks), COLORS["accent"]),
+            ("fleet_dashboard.kpi_trips_today", str(trips_today), COLORS["success"]),
+            ("fleet_dashboard.kpi_revenue", self.prefs.format_currency(revenue, 0), COLORS["accent"]),
+            ("fleet_dashboard.kpi_avg_fuel", self.prefs.format_currency(avg_fuel, 0), COLORS["warning"]),
+            ("fleet_dashboard.kpi_alerts", str(len(alerts)), COLORS["danger"]),
+            ("fleet_dashboard.kpi_unpaid", str(kpi.get('unpaid', 0)), COLORS["danger"])
+        ]
 
-        tk.Label(left_f, text=f"📊 {t('dashboard.section_financial')}", font=("Segoe UI", 10, "bold"), bg=Theme.BG, fg=Theme.MUTED).pack(anchor="w", padx=10)
-        r1 = tk.Frame(left_f, bg=Theme.BG); r1.pack(fill="x", pady=10)
-        p, v, k = safe_float(stats['total_p'], label="stats.total_p"), safe_float(stats['total_rev'], label="stats.total_rev"), safe_float(stats['total_km'], label="stats.total_km")
-        self._card(r1, t("dashboard.card_net_profit"), self.prefs.format_currency(p), 0, 0, Theme.ACCENT_SUCCESS)
-        self._card(r1, t("dashboard.card_gross_revenue"), self.prefs.format_currency(v), 0, 1, Theme.ACCENT)
-        avg_gross = (float(v) / float(k)) if k else 0
-        avg_net = (float(p) / float(k)) if k else 0
-        self._card(r1, t("dashboard.card_avg_gross_rate"), f"{avg_gross:.2f} {self.prefs.get_currency_symbol()}/km", 0, 2)
-        self._card(r1, t("dashboard.card_avg_net_rate"), f"{avg_net:.2f} {self.prefs.get_currency_symbol()}/km", 0, 3)
+        for i, (key, value, color) in enumerate(kpis):
+            self._create_kpi_card(kpi_frame, t(key), value, color, i)
 
-        mid_f = tk.Frame(left_f, bg=Theme.BG); mid_f.pack(fill="both", expand=True, pady=10)
-        mvp_f = tk.Frame(mid_f, bg=Theme.BG); mvp_f.pack(side="left", fill="y")
-        m_val = f"{best_month['month']}\n({self.prefs.format_currency(safe_float(best_month['m_profit'], label='best_month.m_profit'), 0)})" if best_month else "N/A"
-        self._card(mvp_f, t("dashboard.card_best_month"), m_val, 0, 0, Theme.YELLOW)
-        t_val = f"{best_t['truck_number']}\n({self.prefs.format_currency(safe_float(best_t['p'], label='best_t.p'), 0)})" if best_t else "N/A"
-        self._card(mvp_f, t("dashboard.card_top_truck"), t_val, 1, 0, Theme.YELLOW)
-        d_val = f"{best_d['driver_name']}\n({self.prefs.format_currency(safe_float(best_d['p'], label='best_d.p'), 0)})" if best_d else "N/A"
-        self._card(mvp_f, t("dashboard.card_top_driver"), d_val, 2, 0, Theme.PURPLE_SOFT)
+    def _create_kpi_card(self, parent, label, value, color, col):
+        card = tk.Canvas(parent, width=200, height=120, bg=COLORS["bg_surface"],
+                        highlightthickness=0, bd=0)
+        card.grid(row=0, column=col, padx=8, pady=8)
 
-        if HAS_PLOT and monthly: self._draw_chart(mid_f, monthly)
+        card.create_rounded_rect = lambda x1, y1, x2, y2, r, **kw: card.create_polygon(
+            [x1+r, y1, x1+r, y1, x2-r, y1, x2-r, y1, x2, y1, x2, y1+r,
+             x2, y1+r, x2, y2-r, x2, y2-r, x2, y2, x2-r, y2, x2-r, y2,
+             x1+r, y2, x1+r, y2, x1, y2, x1, y2-r, x1, y2-r, x1, y1+r,
+             x1, y1+r, x1, y1], smooth=True, **kw
+        )
 
-        right_f = tk.Frame(main_body, bg=Theme.SURFACE, width=350, highlightthickness=1, highlightbackground=Theme.BORDER)
-        right_f.pack(side="right", fill="y", padx=(20, 0)); right_f.pack_propagate(False)
-        tk.Label(right_f, text=f"🔔 {t('dashboard.section_alerts')}", font=("Segoe UI", 10, "bold"), bg=Theme.SURFACE, fg=Theme.ACCENT).pack(pady=15)
-        
-        canv = tk.Canvas(right_f, bg=Theme.SURFACE, highlightthickness=0); sb = ttk.Scrollbar(right_f, orient="vertical", command=canv.yview)
-        act = tk.Frame(canv, bg=Theme.SURFACE); act.bind("<Configure>", lambda e: canv.configure(scrollregion=canv.bbox("all")))
-        canv.create_window((0,0), window=act, anchor="nw", width=330); canv.configure(yscrollcommand=sb.set); canv.pack(side="left", fill="both", expand=True); sb.pack(side="right", fill="y")
+        card.create_rounded_rect(0, 0, 200, 120, 12, fill=COLORS["bg_surface"], outline=color, width=2)
 
-        if not alerts: tk.Label(act, text=t("dashboard.no_alerts"), bg=Theme.SURFACE, fg=Theme.MUTED).pack(pady=20)
+        card.create_text(100, 35, text=label.upper(), fill=COLORS["text_secondary"],
+                        font=FONTS["label"], anchor="center")
+        card.create_text(100, 75, text=value, fill=COLORS["text_primary"],
+                        font=FONTS["display"], anchor="center")
+
+    def _build_charts_row(self, trucks, trips):
+        charts_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS["bg_base"])
+        charts_frame.pack(fill="both", expand=True, pady=10)
+
+        left_frame = ctk.CTkFrame(charts_frame, fg_color=COLORS["bg_base"])
+        left_frame.pack(side="left", fill="both", expand=True, padx=(0, 10))
+
+        right_frame = ctk.CTkFrame(charts_frame, fg_color=COLORS["bg_base"])
+        right_frame.pack(side="right", fill="both", expand=True)
+
+        if HAS_PLOT:
+            self._draw_trip_activity_chart(left_frame, trips)
+            self._draw_fleet_status_chart(right_frame, trucks)
         else:
-            for a in alerts:
-                c = Theme.DANGER if a['type'] == "RED" else Theme.WARNING
-                b = tk.Frame(act, bg=Theme.SURFACE2, pady=8, padx=10, highlightthickness=1, highlightbackground=c)
-                b.pack(fill="x", pady=4, padx=5); tk.Label(b, text=a['msg'], bg=Theme.SURFACE2, fg=Theme.TEXT, font=("Segoe UI", 8), wraplength=280, justify="left").pack()
+            ctk.CTkLabel(left_frame, text=t('fleet_dashboard.charts_unavailable'), fg_color=COLORS["bg_base"],
+                    text_color=COLORS["text_secondary"]).pack(expand=True)
 
-        tk.Label(right_f, text=t("dashboard.total_overdue").format(total_overdue), bg=Theme.SURFACE, fg=Theme.DANGER, font=("Segoe UI", 9, "bold")).pack(pady=15)
+    def _draw_trip_activity_chart(self, parent, trips):
+        filtered = self._filter_trips_by_period(trips)
 
-    def _kpi_card(self, p, t, v, c, col):
-        f = tk.Frame(p, bg=Theme.SURFACE, width=220, height=130, highlightthickness=2, highlightbackground=c)
-        f.grid(row=0, column=col, padx=6); f.grid_propagate(False)
-        tk.Label(f, text=t.upper(), bg=Theme.SURFACE, fg=Theme.MUTED, font=("Segoe UI", 8, "bold")).pack(pady=(25,0))
-        tk.Label(f, text=v, bg=Theme.SURFACE, fg=Theme.TEXT, font=("Segoe UI", 17, "bold")).pack(expand=True)
+        from collections import defaultdict
+        daily = defaultdict(lambda: {'completed': 0, 'in_progress': 0, 'cancelled': 0})
 
-    def _card(self, p, t, v, r, c, col=Theme.TEXT):
-        f = tk.Frame(p, bg=Theme.SURFACE, width=240, height=110, highlightthickness=1, highlightbackground=Theme.BORDER)
-        f.grid(row=r, column=c, padx=6, pady=6); f.grid_propagate(False)
-        tk.Label(f, text=t, bg=Theme.SURFACE, fg=Theme.MUTED, font=("Segoe UI", 9)).pack(pady=(18,0))
-        tk.Label(f, text=v, bg=Theme.SURFACE, fg=col, font=("Segoe UI", 12, "bold"), justify="center").pack(expand=True)
+        for trip in filtered:
+            date = trip.get('created_at', '')[:10] if trip.get('created_at') else ''
+            if date:
+                status = trip.get('status', '')
+                if status in ['Paid', 'Delivered']:
+                    daily[date]['completed'] += 1
+                elif status in ['In Transit', 'Loading']:
+                    daily[date]['in_progress'] += 1
+                elif status == 'Cancelled':
+                    daily[date]['cancelled'] += 1
 
-    def _draw_chart(self, p, d):
-        fig, ax = plt.subplots(figsize=(6, 4), dpi=90); fig.patch.set_facecolor(Theme.BG); ax.set_facecolor(Theme.SURFACE)
-        ax.bar([x['month'] for x in d], [x['p'] for x in d], color=Theme.ACCENT)
-        ax.set_title(t("dashboard.chart_profit_evolution"), color=Theme.TEXT, fontsize=9); ax.tick_params(colors=Theme.TEXT, labelsize=8)
-        canvas = FigureCanvasTkAgg(fig, master=p); canvas.draw(); canvas.get_tk_widget().pack(side="right", fill="both", expand=True)
-        self._chart_ax = ax
-        self._chart_canvas = canvas
+        if not daily:
+            ctk.CTkLabel(parent, text=t('fleet_dashboard.no_data'),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_secondary"],
+                    font=FONTS["small"]).pack(expand=True, fill="both")
+            return
+
+        dates = sorted(daily.keys())[-14:]
+        completed = [daily[d]['completed'] for d in dates]
+        in_progress = [daily[d]['in_progress'] for d in dates]
+        cancelled = [daily[d]['cancelled'] for d in dates]
+
+        fig, ax = plt.subplots(figsize=(7, 4), dpi=90)
+        apply_chart_style(fig, ax)
+
+        x = range(len(dates))
+        width = 0.25
+        ax.bar([i - width for i in x], completed, width, label=t('fleet_dashboard.status_completed'),
+               color=CHART_PRIMARY, alpha=0.8)
+        ax.bar(x, in_progress, width, label=t('fleet_dashboard.status_in_progress'),
+               color=CHART_INDIGO, alpha=0.8)
+        ax.bar([i + width for i in x], cancelled, width, label=t('fleet_dashboard.status_cancelled'),
+               color=CHART_SECONDARY, alpha=0.8)
+
+        ax.set_title(t('fleet_dashboard.chart_trip_activity'), color=COLORS["text_primary"],
+                    fontsize=12, fontweight='bold', pad=15)
+        ax.set_xlabel(t('fleet_dashboard.date'), color=COLORS["text_secondary"], fontsize=9)
+        ax.set_ylabel(t('fleet_dashboard.trips'), color=COLORS["text_secondary"], fontsize=9)
+        ax.tick_params(colors=COLORS["text_secondary"], labelsize=8)
+        ax.legend(loc='upper left', facecolor=COLORS["bg_surface"],
+                 edgecolor=COLORS["border"], labelcolor=COLORS["text_primary"])
+
+        for spine in ax.spines.values():
+            spine.set_edgecolor(COLORS["border"])
+
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+        self._chart_refs.append((fig, canvas))
+
+    def _draw_fleet_status_chart(self, parent, trucks):
+        status_labels_map = {
+            'active': t('fleet_dashboard.status_active'),
+            'idle': t('fleet_dashboard.status_idle'),
+            'maintenance': t('fleet_dashboard.status_maintenance'),
+            'inactive': t('fleet_dashboard.status_inactive'),
+        }
+        status_counts = {k: 0 for k in status_labels_map}
+
+        for truck in trucks:
+            status = truck.get('status', 'Inactive')
+            active = truck.get('active_status', 0)
+
+            if status == 'Active' and active == 1:
+                status_counts['active'] += 1
+            elif status == 'Active' and active == 0:
+                status_counts['idle'] += 1
+            elif status == 'In Service':
+                status_counts['maintenance'] += 1
+            else:
+                status_counts['inactive'] += 1
+
+        labels = [status_labels_map[k] for k in status_counts.keys()]
+        sizes = list(status_counts.values())
+        colors = [CHART_PRIMARY, CHART_INDIGO, CHART_SECONDARY, COLORS["accent"]]
+
+        if sum(sizes) == 0:
+            ctk.CTkLabel(parent, text=t('fleet_dashboard.no_data'),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_secondary"],
+                    font=FONTS["small"]).pack(expand=True, fill="both")
+            return
+
+        fig, ax = plt.subplots(figsize=(5, 4), dpi=90)
+        fig.patch.set_facecolor(COLORS["bg_surface"])
+        ax.set_facecolor(COLORS["bg_surface"])
+
+        wedges, texts, autotexts = ax.pie(sizes, labels=labels, colors=colors,
+                                          autopct='%1.0f%%', startangle=90,
+                                          textprops={'color': COLORS["text_primary"], 'fontsize': 9})
+
+        for autotext in autotexts:
+            autotext.set_color(COLORS["text_primary"])
+            autotext.set_fontweight('bold')
+
+        ax.set_title(t('fleet_dashboard.chart_fleet_status'), color=COLORS["text_primary"],
+                    fontsize=12, fontweight='bold', pad=15)
+
+        canvas = FigureCanvasTkAgg(fig, master=parent)
+        canvas.draw()
+        canvas.get_tk_widget().pack(fill="both", expand=True)
+        self._chart_refs.append((fig, canvas))
+
+    def _build_info_cards(self, best_truck, best_driver, trucks, trips):
+        cards_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS["bg_base"])
+        cards_frame.pack(fill="x", pady=10)
+
+        filtered_trips = self._filter_trips_by_period(trips)
+
+        truck_revenue = {}
+        truck_trips = {}
+        truck_fuel = {}
+
+        for trip in filtered_trips:
+            truck_num = trip.get('truck_number', '')
+            if truck_num:
+                truck_revenue[truck_num] = truck_revenue.get(truck_num, 0) + safe_float(trip.get('total_price_eur'))
+                truck_trips[truck_num] = truck_trips.get(truck_num, 0) + 1
+                truck_fuel[truck_num] = truck_fuel.get(truck_num, 0) + safe_float(trip.get('fuel_cost'))
+
+        best_truck_card = self._create_info_card(cards_frame, t('fleet_dashboard.card_best_truck'))
+        if best_truck and truck_revenue:
+            top_truck = max(truck_revenue.items(), key=lambda x: x[1])
+            ctk.CTkLabel(best_truck_card, text=top_truck[0], fg_color=COLORS["bg_surface"],
+                    text_color=COLORS["text_primary"], font=FONTS["small"]).pack(pady=(5, 0))
+            ctk.CTkLabel(best_truck_card,
+                    text=t('fleet_dashboard.card_revenue',
+                          amount=self.prefs.format_currency(top_truck[1], 0)),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                    font=FONTS["label"]).pack()
+            ctk.CTkLabel(best_truck_card,
+                    text=t('fleet_dashboard.card_trips', count=truck_trips.get(top_truck[0], 0)),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                    font=FONTS["label"]).pack()
+        else:
+            ctk.CTkLabel(best_truck_card, text=t('fleet_dashboard.no_data'),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_secondary"],
+                    font=FONTS["label"]).pack(pady=10)
+
+        best_driver_card = self._create_info_card(cards_frame, t('fleet_dashboard.card_best_driver'))
+        if best_driver:
+            driver_trips = [t for t in filtered_trips if t.get('driver_name') == best_driver.get('driver_name')]
+            avg_profit = safe_float(best_driver.get('p')) / len(driver_trips) if driver_trips else 0
+
+            ctk.CTkLabel(best_driver_card, text=best_driver.get('driver_name', t('common.na')),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                    font=FONTS["small"]).pack(pady=(5, 0))
+            ctk.CTkLabel(best_driver_card,
+                    text=t('fleet_dashboard.card_trips', count=len(driver_trips)),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                    font=FONTS["label"]).pack()
+            ctk.CTkLabel(best_driver_card,
+                    text=t('fleet_dashboard.card_avg_profit',
+                          amount=self.prefs.format_currency(avg_profit, 0)),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                    font=FONTS["label"]).pack()
+        else:
+            ctk.CTkLabel(best_driver_card, text=t('fleet_dashboard.no_driver_data'),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_secondary"],
+                    font=FONTS["label"]).pack(pady=10)
+
+        fuel_card = self._create_info_card(cards_frame, t('fleet_dashboard.card_highest_fuel'))
+        if truck_fuel:
+            top_fuel_truck = max(truck_fuel.items(), key=lambda x: x[1])
+            truck_data = next((t for t in trucks if t.get('plate_number') == top_fuel_truck[0]), None)
+            consumption = truck_data.get('fuel_consumption', t('common.na')) if truck_data else t('common.na')
+
+            ctk.CTkLabel(fuel_card, text=top_fuel_truck[0], fg_color=COLORS["bg_surface"],
+                    text_color=COLORS["text_primary"], font=FONTS["small"]).pack(pady=(5, 0))
+            ctk.CTkLabel(fuel_card,
+                    text=t('fleet_dashboard.card_fuel_cost',
+                          amount=self.prefs.format_currency(top_fuel_truck[1], 0)),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                    font=FONTS["label"]).pack()
+            ctk.CTkLabel(fuel_card,
+                    text=t('fleet_dashboard.card_consumption', value=consumption),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                    font=FONTS["label"]).pack()
+        else:
+            ctk.CTkLabel(fuel_card, text=t('fleet_dashboard.no_data'),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_secondary"],
+                    font=FONTS["label"]).pack(pady=10)
+
+    def _create_info_card(self, parent, title):
+        card = ctk.CTkFrame(parent, fg_color=COLORS["bg_surface"], width=400, height=140)
+        card.pack(side="left", fill="both", expand=True, padx=8, pady=8)
+        card.pack_propagate(False)
+
+        title_lbl = ctk.CTkLabel(card, text=title, fg_color=COLORS["bg_surface"],
+                            text_color=COLORS["text_primary"], font=FONTS["small"])
+        title_lbl.pack(pady=(12, 5))
+
+        return card
+
+    def _build_activity_feed(self, trips):
+        feed_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS["bg_base"])
+        feed_frame.pack(fill="both", expand=True, pady=10)
+
+        header = ctk.CTkFrame(feed_frame, fg_color=COLORS["bg_base"])
+        header.pack(fill="x", pady=(0, 10))
+
+        ctk.CTkLabel(header, text=t('fleet_dashboard.activity_title'),
+                fg_color=COLORS["bg_base"], text_color=COLORS["text_primary"],
+                font=FONTS["h3"]).pack(side="left")
+
+        view_all = ctk.CTkLabel(header, text=t('fleet_dashboard.activity_view_all'),
+                           fg_color=COLORS["bg_base"], text_color=COLORS["accent"],
+                           font=FONTS["label"], cursor="hand2")
+        view_all.pack(side="right")
+        view_all.bind("<Button-1>", lambda e: self._open_route_history())
+
+        recent_trips = sorted(trips, key=lambda x: x.get('id', 0), reverse=True)[:10]
+
+        feed_container = ctk.CTkFrame(feed_frame, fg_color=COLORS["bg_surface"])
+        feed_container.pack(fill="both", expand=True)
+
+        if not recent_trips:
+            ctk.CTkLabel(feed_container, text=t('fleet_dashboard.no_data'),
+                    fg_color=COLORS["bg_surface"], text_color=COLORS["text_secondary"],
+                     font=FONTS["label"]).pack(expand=True)
+            return
+
+        for trip in recent_trips:
+            self._create_activity_row(feed_container, trip)
+
+    def _create_activity_row(self, parent, trip):
+        row = ctk.CTkFrame(parent, fg_color=COLORS["bg_surface"])
+        row.pack(fill="x")
+
+        timestamp = trip.get('created_at', t('common.na'))[:16]
+        ctk.CTkLabel(row, text=timestamp, fg_color=COLORS["bg_surface"], text_color=COLORS["text_secondary"],
+                font=FONTS["label"], width=18, anchor="w").pack(side="left")
+
+        truck = trip.get('truck_number', t('common.na'))
+        ctk.CTkLabel(row, text=truck, fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                font=FONTS["small"], width=15, anchor="w").pack(side="left")
+
+        status = trip.get('status', t('common.unknown'))
+        status_color = self._get_status_color(status)
+        status_chip = ctk.CTkLabel(row, text=status, fg_color=status_color, text_color=COLORS["text_primary"],
+                              font=FONTS["label"], padx=8, pady=2)
+        status_chip.pack(side="left", padx=10)
+
+        client = trip.get('client_name', '')
+        detail = f"{client}" if client else ""
+        ctk.CTkLabel(row, text=detail, fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
+                font=FONTS["label"], anchor="w").pack(side="left", fill="x", expand=True)
+
+        ctk.CTkFrame(parent, fg_color=COLORS["accent"], height=1).pack(fill="x", padx=15)
+
+    def _get_status_color(self, status):
+        if status in ['Paid', 'Delivered']:
+            return COLORS["success"]
+        elif status in ['In Transit', 'Loading']:
+            return COLORS["warning"]
+        elif status == 'Cancelled':
+            return COLORS["danger"]
+        else:
+            return COLORS["accent"]
+
+    def _filter_trips_by_period(self, trips):
+        if not self._start_date or not self._end_date:
+            return trips
+
+        filtered = []
+        for trip in trips:
+            created = trip.get('created_at', '')
+            if created:
+                try:
+                    trip_date = datetime.strptime(created[:10], "%d/%m/%Y").strftime("%Y-%m-%d")
+                    if self._start_date <= trip_date <= self._end_date:
+                        filtered.append(trip)
+                except Exception:
+                    pass
+        return filtered
+
+    def _open_route_history(self):
+        if self.ops and hasattr(self.ops, '_open_route_history'):
+            self.ops._open_route_history()
+        if self.win:
+            self.win.destroy()

@@ -1,7 +1,7 @@
 import os
 
 class Config:
-    APP_NAME = "Cashflow Manager v2.0 - Logistics"
+    APP_NAME = "Operion ERP"
     DB_PATH = "data/cashflow.db"
     LOG_FILE = "logs/app.log"
     REPORTS_DIR = "reports"
@@ -15,7 +15,10 @@ class Config:
     # API URLs
     CURRENCY_API = "https://open.er-api.com/v6/latest/EUR"
     
-    # Creare directoare necesare
-    os.makedirs("data", exist_ok=True)
-    os.makedirs("logs", exist_ok=True)
-    os.makedirs("reports", exist_ok=True)
+    @classmethod
+    def ensure_dirs(cls):
+        """Creare directoare necesare."""
+        os.makedirs("data", exist_ok=True)
+        os.makedirs("logs", exist_ok=True)
+        os.makedirs("reports", exist_ok=True)
+        os.makedirs(os.path.join("reports", "invoices"), exist_ok=True)

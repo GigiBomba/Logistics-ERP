@@ -124,7 +124,7 @@ class ExportService:
             column = col[0].column_letter
             for cell in col:
                 try: max_length = max(max_length, len(str(cell.value)))
-                except: pass
+                except Exception: pass
             ws.column_dimensions[column].width = max_length + 2
 
         wb.save(full_path)

@@ -2,10 +2,13 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 import threading
 from typing import Any, Callable, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
 _translations: Dict[str, Dict[str, str]] = {}
@@ -15,12 +18,45 @@ _TRANSLATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "da
 _LANG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "lang.txt")
 
 
+LANGUAGE_NAMES = {
+    "en": "English",
+    "ro": "Română",
+    "fr": "Français",
+    "es": "Español",
+    "de": "Deutsch",
+    "ru": "Русский",
+    "it": "Italiano",
+    "pl": "Polski",
+    "uk": "Українська",
+    "nl": "Nederlands",
+    "sr": "Српски",
+    "hr": "Hrvatski",
+    "tr": "Türkçe",
+    "pt": "Português",
+    "hu": "Magyar",
+    "cs": "Čeština",
+    "sk": "Slovenčina",
+    "bs": "Bosanski",
+    "sl": "Slovenščina",
+    "sv": "Svenska",
+    "el": "Ελληνικά",
+    "bg": "Български",
+}
+
+
 def _load_file(lang: str) -> Dict[str, str]:
     path = os.path.join(_TRANSLATIONS_DIR, f"{lang}.json")
     if not os.path.isfile(path):
         return {}
-    with open(path, "r", encoding="utf-8") as f:
-        raw = json.load(f)
+    try:
+        with open(path, "r", encoding="utf-8-sig") as f:
+            raw = json.load(f)
+    except json.JSONDecodeError as e:
+        logger.warning("Skipping %s: %s (line %s)", lang, e.msg, e.lineno)
+        return {}
+    except Exception as e:
+        logger.warning("Skipping %s: %s", lang, e)
+        return {}
     flat: Dict[str, str] = {}
     _flatten(raw, "", flat)
     return flat
@@ -41,19 +77,35 @@ def load_translations() -> None:
     os.makedirs(_TRANSLATIONS_DIR, exist_ok=True)
     available = get_available_languages()
     _translations = {}
+    loaded = []
+    failed = []
     for code in available:
-        _translations[code] = _load_file(code)
+        data = _load_file(code)
+        if data:
+            _translations[code] = data
+            loaded.append(code)
+        else:
+            failed.append(code)
+    if not _translations:
+        _translations["en"] = {}
+        logger.warning("No translations loaded — using empty fallback")
+        return
     en = _translations.get("en", {})
-    for code in available:
+    if not en and _translations:
+        _translations["en"] = next(iter(_translations.values()))
+        en = _translations["en"]
+    for code in loaded:
         if code == "en":
             continue
         base = _translations.get(code, {})
         for k, v in en.items():
             base.setdefault(k, v)
         _translations[code] = base
+    if failed:
+        logger.info("Translations loaded: %s. Failed: %s", loaded, failed)
 
 
-def t(key: str, default: Optional[str] = None, **kwargs: Any) -> str:
+def t(key: str, default: Optional[str] = None, *args: Any, **kwargs: Any) -> str:
     """Translate a key to the current language.
     
     Falls back to English, then to the key itself, then to default.
@@ -66,11 +118,13 @@ def t(key: str, default: Optional[str] = None, **kwargs: Any) -> str:
         msg = en_dict.get(key)
     if msg is None:
         msg = default if default is not None else key
-    if kwargs:
+    if args or kwargs:
         try:
-            msg = msg.format(**kwargs)
-        except KeyError:
-            pass
+            msg = msg.format(*args, **kwargs)
+        except (KeyError, IndexError, ValueError) as e:
+            logger.warning("i18n format failed for %s: %s | msg=%r | args=%s kwargs=%s",
+                           key, e, msg, args, kwargs)
+            # fall back to unformatted message to avoid crash
     return msg
 
 
@@ -82,11 +136,13 @@ def set_language(lang: str) -> None:
     global _current_lang
     start = time.perf_counter()
     if lang not in _translations and lang != "en":
+        logger.debug("set_language: '%s' not in loaded translations, falling back to 'en'", lang)
         lang = "en"
     with _LOCK:
         old = _current_lang
         _current_lang = lang
     if old == lang:
+        logger.debug("set_language: already '%s' — skipping", lang)
         return
     try:
         with open(_LANG_FILE, "w", encoding="utf-8") as f:
@@ -94,14 +150,18 @@ def set_language(lang: str) -> None:
     except Exception:
         pass
     notified = 0
+    failed = 0
     for cb in list(_listeners):
         try:
             cb(lang)
             notified += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            failed += 1
+            logger.warning("set_language: listener %s failed: %s",
+                           getattr(cb, "__name__", str(cb)[:60]), exc)
     elapsed = time.perf_counter() - start
-    print(f"[i18n] language {old}->{lang} | {notified} listener(s) notified in {elapsed*1000:.1f}ms")
+    logger.info("language %s->%s | %d listener(s) notified in %.1fms (%d failed)",
+                old, lang, notified, elapsed * 1000, failed)
 
 
 def get_language() -> str:
@@ -132,31 +192,7 @@ def _get_translations(lang: str) -> Dict[str, str]:
 
 
 def get_language_display_name(lang: str) -> str:
-    names = {
-        "en": "English",
-        "ro": "Română",
-        "fr": "Français",
-        "es": "Español",
-        "de": "Deutsch",
-        "ru": "Русский",
-        "it": "Italiano",
-        "pl": "Polski",
-        "uk": "Українська",
-        "nl": "Nederlands",
-        "sr": "Српски",
-        "hr": "Hrvatski",
-        "tr": "Türkçe",
-        "pt": "Português",
-        "hu": "Magyar",
-        "cs": "Čeština",
-        "sk": "Slovenčina",
-        "bs": "Bosanski",
-        "sl": "Slovenščina",
-        "sv": "Svenska",
-        "el": "Ελληνικά",
-        "bg": "Български",
-    }
-    return names.get(lang, lang)
+    return LANGUAGE_NAMES.get(lang, lang)
 
 
 def register_listener(cb: Callable[[str], None]) -> None:

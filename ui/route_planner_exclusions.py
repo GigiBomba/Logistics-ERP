@@ -3,21 +3,23 @@ from __future__ import annotations
 
 import tkinter as tk
 from tkinter import ttk
+import customtkinter as ctk
 from typing import Callable, List, Optional
 
 from services.country_avoidance import CountryAvoidanceManager
 from services.i18n import t
 from ui.styles import Theme
+from ui.theme import COLORS, FONTS
 
 
 class CountryExclusionsPanel:
     """Collapsible excluded-countries UI with scrollable chip/tag layout."""
 
     _CHIP_BG = Theme.ACCENT
-    _CHIP_FG = "#ffffff"
-    _CHIP_ACTIVE_BG = "#6d3fd8"
-    _CHIP_FONT = ("Segoe UI", 9)
-    _CHIP_REMOVE_FONT = ("Segoe UI", 8)
+    _CHIP_FG = COLORS["text_primary"]
+    _CHIP_ACTIVE_BG = COLORS["accent"]
+    _CHIP_FONT = FONTS["label"]
+    _CHIP_REMOVE_FONT = FONTS["label"]
     _CHIP_PAD_X = 6
     _CHIP_PAD_Y = 4
     _CHIP_GAP = 6
@@ -30,7 +32,6 @@ class CountryExclusionsPanel:
     ) -> None:
         self.avoidance = avoidance
         self.on_change = on_change
-        self._country_search_var = tk.StringVar()
         self._exclusions_count_var = tk.StringVar()
         self._exclusions_expanded = tk.BooleanVar(value=True)
         self._build(parent)
@@ -47,78 +48,69 @@ class CountryExclusionsPanel:
         self.refresh()
 
     def _build(self, parent: tk.Widget) -> None:
-        section = tk.Frame(parent, bg=Theme.SURFACE2, highlightthickness=1, highlightbackground=Theme.BORDER)
+        section = ctk.CTkFrame(parent, fg_color=Theme.SURFACE2, border_width=1, border_color=Theme.BORDER)
         section.pack(fill="x", padx=20, pady=(10, 8))
 
-        header = tk.Frame(section, bg=Theme.SURFACE2)
+        header = ctk.CTkFrame(section, fg_color=Theme.SURFACE2)
         header.pack(fill="x", padx=10, pady=(8, 6))
 
-        self._exclusions_toggle = tk.Button(
+        self._exclusions_toggle = ctk.CTkButton(
             header,
             text="▾",
-            width=2,
-            bg=Theme.SURFACE2,
-            fg=Theme.TEXT,
-            activebackground=Theme.BORDER,
-            activeforeground=Theme.TEXT,
-            bd=0,
-            cursor="hand2",
+            width=28,
+            fg_color=Theme.SURFACE2,
+            text_color=Theme.TEXT,
+            hover_color=Theme.BORDER,
             command=self._toggle_section,
         )
         self._exclusions_toggle.pack(side="left")
 
-        self._header_label = tk.Label(
+        self._header_label = ctk.CTkLabel(
             header,
             text=t("route.exclusions_label"),
-            bg=Theme.SURFACE2,
-            fg=Theme.TEXT,
+            fg_color=Theme.SURFACE2,
+            text_color=Theme.TEXT,
             font=Theme.FONT_BOLD,
         )
         self._header_label.pack(side="left", padx=(4, 8))
 
-        tk.Label(
+        ctk.CTkLabel(
             header,
             textvariable=self._exclusions_count_var,
-            bg=Theme.SURFACE2,
-            fg=Theme.MUTED,
+            fg_color=Theme.SURFACE2,
+            text_color=Theme.MUTED,
         ).pack(side="left")
 
-        self._clear_btn = tk.Button(
+        self._clear_btn = ctk.CTkButton(
             header,
             text=t("route.exclusions_clear"),
-            bg=Theme.SURFACE2,
-            fg=Theme.MUTED,
-            activebackground=Theme.BORDER,
-            activeforeground=Theme.TEXT,
-            bd=0,
-            cursor="hand2",
+            fg_color=Theme.SURFACE2,
+            text_color=Theme.MUTED,
+            hover_color=Theme.BORDER,
             command=self._clear_all,
         )
         self._clear_btn.pack(side="right")
 
-        self._body = tk.Frame(section, bg=Theme.SURFACE2)
+        self._body = ctk.CTkFrame(section, fg_color=Theme.SURFACE2)
         self._body.pack(fill="x", padx=10, pady=(0, 10))
 
         self._configure_combobox_style()
-        self._country_combo = ttk.Combobox(
+        self._search_combo = ctk.CTkComboBox(
             self._body,
-            textvariable=self._country_search_var,
             values=[],
-            state="normal",
-            height=8,
-            style="RoutePlanner.TCombobox",
+            state="readonly",
+            command=self._add_country,
         )
-        self._country_combo.pack(fill="x", pady=(0, 8))
-        self._country_combo.bind("<KeyRelease>", self._on_search_key)
-        self._country_combo.bind("<<ComboboxSelected>>", self._add_country)
-        self._country_combo.bind("<Return>", self._add_country)
+        self._search_combo.pack(fill="x", pady=(0, 8))
+        self._search_combo.bind("<KeyRelease>", self._on_search_key)
+        self._search_combo.bind("<Return>", self._add_country)
 
-        tags_shell = tk.Frame(self._body, bg=Theme.SURFACE2)
+        tags_shell = ctk.CTkFrame(self._body, fg_color=Theme.SURFACE2)
         tags_shell.pack(fill="x")
 
         self._tags_canvas = tk.Canvas(tags_shell, bg=Theme.SURFACE2, highlightthickness=0)
-        self._tags_scroll = tk.Scrollbar(tags_shell, orient="vertical", command=self._tags_canvas.yview)
-        self._tags_frame = tk.Frame(self._tags_canvas, bg=Theme.SURFACE2)
+        self._tags_scroll = ttk.Scrollbar(tags_shell, orient="vertical", command=self._tags_canvas.yview)
+        self._tags_frame = ctk.CTkFrame(self._tags_canvas, fg_color=Theme.SURFACE2)
         self._tags_window = self._tags_canvas.create_window((0, 0), window=self._tags_frame, anchor="nw")
 
         def _on_frame_configure(event=None):
@@ -198,12 +190,12 @@ class CountryExclusionsPanel:
     def _on_search_key(self, event=None) -> None:
         if event and event.keysym in ("Return", "Escape", "Up", "Down", "Left", "Right", "Tab"):
             return
-        self._country_combo.configure(values=self._available_options(self._country_search_var.get()))
+        self._search_combo.configure(values=self._available_options(self._search_combo.get()))
 
     def _add_country(self, event=None) -> None:
-        code = self._code_from_input(self._country_search_var.get())
+        code = self._code_from_input(self._search_combo.get())
         if not code:
-            options = self._available_options(self._country_search_var.get())
+            options = self._available_options(self._search_combo.get())
             code = self._code_from_input(options[0]) if options else None
         if not code:
             return
@@ -211,7 +203,7 @@ class CountryExclusionsPanel:
         if code not in selected:
             selected.append(code)
             self.avoidance.set_selected(selected)
-        self._country_search_var.set("")
+        self._search_combo.set("")
         self.refresh()
         self._notify()
 
@@ -223,19 +215,19 @@ class CountryExclusionsPanel:
 
     def _clear_all(self) -> None:
         self.avoidance.clear()
-        self._country_search_var.set("")
+        self._search_combo.set("")
         self.refresh()
         self._notify()
 
     def refresh(self) -> None:
-        self._country_combo.configure(values=self._available_options(""))
+        self._search_combo.configure(values=self._available_options(""))
         self._render_tags()
         count = len(self.avoidance.get_selected())
         self._exclusions_count_var.set(
             t("route.exclusions_selected").format(count) if count else t("route.exclusions_none")
         )
         self._clear_btn.configure(text=t("route.exclusions_clear"), state="normal" if count else "disabled")
-        self._header_label.config(text=t("route.exclusions_label"))
+        self._header_label.configure(text=t("route.exclusions_label"))
 
     def _render_tags(self) -> None:
         for w in self._tags_frame.winfo_children():
@@ -245,11 +237,11 @@ class CountryExclusionsPanel:
         countries = self.avoidance.get_all_countries()
 
         if not selected:
-            tk.Label(
+            ctk.CTkLabel(
                 self._tags_frame,
                 text=t("route.exclusions_empty"),
-                bg=Theme.SURFACE2,
-                fg=Theme.MUTED,
+                fg_color=Theme.SURFACE2,
+                text_color=Theme.MUTED,
             ).pack(anchor="w", padx=2, pady=6)
             return
 
@@ -278,29 +270,28 @@ class CountryExclusionsPanel:
             rows.append(current_row)
 
         for row_data in rows:
-            row = tk.Frame(self._tags_frame, bg=Theme.SURFACE2)
+            row = ctk.CTkFrame(self._tags_frame, fg_color=Theme.SURFACE2)
             row.pack(fill="x", anchor="w")
 
             for code, name, label in row_data:
-                chip = tk.Frame(row, bg=self._CHIP_BG, bd=0)
+                chip = ctk.CTkFrame(row, fg_color=self._CHIP_BG)
 
-                tk.Label(
+                ctk.CTkLabel(
                     chip,
                     text=label,
-                    bg=self._CHIP_BG,
-                    fg=self._CHIP_FG,
+                    fg_color=self._CHIP_BG,
+                    text_color=self._CHIP_FG,
                     font=self._CHIP_FONT,
                 ).pack(side="left", padx=(self._CHIP_PAD_X, 2), pady=self._CHIP_PAD_Y)
 
-                tk.Button(
+                ctk.CTkButton(
                     chip,
                     text="✕",
-                    bg=self._CHIP_BG,
-                    fg=self._CHIP_FG,
-                    activebackground=self._CHIP_ACTIVE_BG,
-                    activeforeground=self._CHIP_FG,
-                    bd=0,
-                    cursor="hand2",
+                    fg_color=self._CHIP_BG,
+                    text_color=self._CHIP_FG,
+                    hover_color=self._CHIP_ACTIVE_BG,
+                    width=18,
+                    height=18,
                     font=self._CHIP_REMOVE_FONT,
                     command=lambda c=code: self._remove_country(c),
                 ).pack(side="left", padx=(0, self._CHIP_PAD_X), pady=self._CHIP_PAD_Y)

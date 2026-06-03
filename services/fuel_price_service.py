@@ -13,47 +13,48 @@ logger = logging.getLogger("fuel_price")
 
 FALLBACK_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "fallback_fuel_prices.json")
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "fuel_prices_cache.json")
-CACHE_TTL_SECONDS = 3600  # 1 hour
-REQUEST_TIMEOUT = 5
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+CACHE_TTL_SECONDS = 86400  # 24 hours
+REQUEST_TIMEOUT = 10
+USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 SCRAPE_URL = "https://www.globalpetrolprices.com/{country}/diesel_prices/"
 
 # Country code -> full country name mapping for URL building
+# IMPORTANT: Country names must be capitalized (e.g., "Germany" not "germany")
 _COUNTRY_URL_NAMES = {
     "RO": "Romania",
-    "DE": "germany",
-    "FR": "france",
-    "IT": "italy",
-    "ES": "spain",
-    "PT": "portugal",
-    "NL": "netherlands",
-    "BE": "belgium",
-    "AT": "austria",
-    "PL": "poland",
-    "CZ": "czech-republic",
-    "SK": "slovakia",
-    "HU": "hungary",
-    "BG": "bulgaria",
-    "GR": "greece",
-    "HR": "croatia",
-    "RS": "serbia",
-    "SI": "slovenia",
-    "UA": "ukraine",
-    "TR": "turkey",
-    "UK": "united-kingdom",
-    "SE": "sweden",
-    "NO": "norway",
-    "DK": "denmark",
-    "FI": "finland",
-    "LT": "lithuania",
-    "LV": "latvia",
-    "EE": "estonia",
-    "CH": "switzerland",
+    "DE": "Germany",
+    "FR": "France",
+    "IT": "Italy",
+    "ES": "Spain",
+    "PT": "Portugal",
+    "NL": "Netherlands",
+    "BE": "Belgium",
+    "AT": "Austria",
+    "PL": "Poland",
+    "CZ": "Czech-Republic",
+    "SK": "Slovakia",
+    "HU": "Hungary",
+    "BG": "Bulgaria",
+    "GR": "Greece",
+    "HR": "Croatia",
+    "RS": "Serbia",
+    "SI": "Slovenia",
+    "UA": "Ukraine",
+    "TR": "Turkey",
+    "UK": "United-Kingdom",
+    "SE": "Sweden",
+    "NO": "Norway",
+    "DK": "Denmark",
+    "FI": "Finland",
+    "LT": "Lithuania",
+    "LV": "Latvia",
+    "EE": "Estonia",
+    "CH": "Switzerland",
 }
 
 # Price sanity bounds (EUR/L)
 _PRICE_MIN = 0.80
-_PRICE_MAX = 2.50
+_PRICE_MAX = 3.00
 
 
 class FuelPriceService:
@@ -114,6 +115,8 @@ class FuelPriceService:
         if age > CACHE_TTL_SECONDS:
             logger.info("Fuel prices stale (age=%.0fs > TTL=%ds), refreshing", age, CACHE_TTL_SECONDS)
             return self.refresh()
+        else:
+            logger.info("Fetched prices for %d countries from globalpetrolprices (cached)", len(self._prices))
         return True
 
     def refresh(self, background: bool = True) -> bool:
@@ -159,6 +162,7 @@ class FuelPriceService:
         """Fetch prices for all configured countries. Returns True if ANY country succeeded."""
         success_count = 0
         fail_count = 0
+        failed_countries = []
         countries = list(_COUNTRY_URL_NAMES.keys())
 
         for code in countries:
@@ -169,18 +173,23 @@ class FuelPriceService:
                     success_count += 1
                 else:
                     fail_count += 1
+                    failed_countries.append(code)
             except Exception as e:
                 logger.warning("Failed to fetch fuel price for %s: %s", code, e)
                 fail_count += 1
+                failed_countries.append(code)
 
         if success_count > 0:
             self._last_updated = time.time()
             self._last_fetch_ok = True
             self._save_cache()
-            logger.info("Fuel prices refreshed: %d OK, %d failed", success_count, fail_count)
+            logger.info("Fetched prices for %d countries from globalpetrolprices (live)", success_count)
+            if fail_count > 0:
+                logger.warning("Failed to fetch %d countries: %s", fail_count, ", ".join(failed_countries))
         else:
             self._last_fetch_ok = False
             logger.warning("Fuel prices ALL %d countries failed, using fallback", fail_count)
+            logger.warning("Failed countries: %s", ", ".join(failed_countries))
             # Ensure fallback values are at least available
             for code, price in self._fallback_prices.items():
                 self._prices.setdefault(code, price)
@@ -190,6 +199,7 @@ class FuelPriceService:
 
     def _fetch_single_country(self, country_code: str) -> Optional[float]:
         """Scrape globalpetrolprices.com for diesel price in EUR/L."""
+        import traceback
         url_name = _COUNTRY_URL_NAMES.get(country_code)
         if not url_name:
             return None
@@ -199,11 +209,31 @@ class FuelPriceService:
             r = requests.get(url, timeout=REQUEST_TIMEOUT,
                            headers={"User-Agent": USER_AGENT, "Accept-Language": "en"})
             if r.status_code != 200:
-                logger.debug("HTTP %d for %s", r.status_code, url)
+                logger.warning("HTTP %d for %s (URL: %s)", r.status_code, country_code, url)
                 return None
 
-            # Try multiple patterns in order of reliability
             html = r.text
+            
+            # Try to extract EUR price directly (e.g., "EUR 1.93 per liter")
+            eur_match = re.search(r'EUR\s*(\d+\.\d+)\s*per liter', html, re.IGNORECASE)
+            if eur_match:
+                eur_price = float(eur_match.group(1))
+                if _PRICE_MIN < eur_price < _PRICE_MAX:
+                    logger.debug("Fuel price %s: %.3f EUR/L (direct)", country_code, eur_price)
+                    return round(eur_price, 3)
+            
+            # Try to extract USD price and convert to EUR
+            usd_match = re.search(r'USD\s*(\d+\.\d+)\s*per liter', html, re.IGNORECASE)
+            if usd_match:
+                usd_price = float(usd_match.group(1))
+                from services.exchange_rate_service import ExchangeRateService
+                fx = ExchangeRateService()
+                eur_price = fx.convert(usd_price, "USD", "EUR")
+                if _PRICE_MIN < eur_price < _PRICE_MAX:
+                    logger.debug("Fuel price %s: %.3f USD/L -> %.3f EUR/L", country_code, usd_price, eur_price)
+                    return round(eur_price, 3)
+            
+            # Fallback: try other patterns for EUR
             patterns = [
                 r'(\d+\.\d+)\s*(?:EUR|€|euro)',
                 r'price.*?(\d+\.\d+)\s*(?:EUR|€)',
@@ -215,21 +245,21 @@ class FuelPriceService:
                     try:
                         p = float(m.replace(",", "."))
                         if _PRICE_MIN < p < _PRICE_MAX:
-                            logger.debug("Fuel price %s: %.3f EUR/L", country_code, p)
+                            logger.debug("Fuel price %s: %.3f EUR/L (pattern)", country_code, p)
                             return round(p, 3)
                     except ValueError:
                         continue
 
-            logger.debug("No valid price pattern found for %s", country_code)
+            logger.warning("No valid price pattern found for %s (HTML length: %d)", country_code, len(html))
             return None
-        except requests.exceptions.Timeout:
-            logger.debug("Timeout fetching fuel price for %s", country_code)
+        except requests.exceptions.Timeout as e:
+            logger.warning("Timeout fetching fuel price for %s: %s", country_code, e)
             return None
         except requests.exceptions.ConnectionError as e:
-            logger.debug("Connection error for %s: %s", country_code, e)
+            logger.warning("Connection error for %s: %s", country_code, e)
             return None
         except Exception as e:
-            logger.debug("Error fetching %s: %s", country_code, e)
+            logger.warning("Error fetching %s: %s\n%s", country_code, type(e).__name__, traceback.format_exc())
             return None
 
     # ── Fallback defaults ──────────────────────────────────────────────
@@ -263,20 +293,23 @@ class FuelPriceService:
                     data = json.load(f)
                 cached = data.get("prices", {})
                 ts = data.get("timestamp")
+                source = data.get("source", "unknown")
                 for code, price in cached.items():
                     self._prices[code] = price
                 if ts:
                     self._last_updated = ts
                 self._last_fetch_ok = True
-                logger.info("Loaded fuel price cache: %d countries (age=%s)",
-                            len(cached), self._age_str())
+                logger.info("Loaded fuel price cache: %d countries from %s (age=%s)",
+                            len(cached), source, self._age_str())
         except Exception as e:
             logger.warning("Failed to load fuel price cache: %s", e)
 
     def _save_cache(self):
         try:
             data = {
+                "fetched_at": datetime.fromtimestamp(self._last_updated).isoformat() if self._last_updated else None,
                 "timestamp": self._last_updated,
+                "source": "globalpetrolprices",
                 "prices": self._prices,
             }
             with open(CACHE_FILE, "w", encoding="utf-8") as f:

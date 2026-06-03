@@ -29,7 +29,8 @@ class InvoiceGenerator:
 
     def generate(self, trip_data, mode="client"):
         conf = load_company_config()
-        invoice_id = f"INV-{datetime.now().year}-{trip_data['id']:04d}"
+        trip_id = trip_data.get("id", 0)
+        invoice_id = f"INV-{datetime.now().year}-{trip_id:04d}"
         filename = f"{invoice_id}_{mode}.pdf"
         full_path = os.path.join(self.reports_dir, filename)
 
@@ -53,7 +54,7 @@ class InvoiceGenerator:
                         f"Tel: {conf['phone']}")
         
         client_info = (f"<b>{self._tr('invoice_pdf.bill_to_header', mode)}</b><br/>"
-                       f"{self._remove_accents(trip_data['client_name'])}")
+                       f"{self._remove_accents(trip_data.get('client_name', ''))}")
 
         info_table = Table([[Paragraph(company_info, self.styles["Normal"]), 
                              Paragraph(client_info, self.styles["Normal"])]], colWidths=[9.5*cm, 8.5*cm])
@@ -63,8 +64,8 @@ class InvoiceGenerator:
         story.append(Paragraph(f"<b>{self._tr('invoice_pdf.trip_info', mode)}</b>", self.styles["Normal"]))
         tech_data = [
             [self._tr("invoice_pdf.truck", mode), self._tr("invoice_pdf.driver", mode), self._tr("invoice_pdf.distance", mode), self._tr("invoice_pdf.start_date", mode), self._tr("invoice_pdf.end_date", mode)],
-            [trip_data["truck_number"], self._remove_accents(trip_data["driver_name"]), 
-             f"{trip_data['distance_km']} km", trip_data["start_date"], trip_data["end_date"]]
+            [trip_data.get("truck_number", ""), self._remove_accents(trip_data.get("driver_name", "")),
+             f"{trip_data.get('distance_km', 0)} km", trip_data.get("start_date", ""), trip_data.get("end_date", "")]
         ]
         tech_table = Table(tech_data, colWidths=[3.6*cm]*5)
         tech_table.setStyle(TableStyle([
@@ -81,18 +82,18 @@ class InvoiceGenerator:
         if mode == "internal":
             fin_data = [
                 [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.amount_header", mode)],
-                [self._tr("invoice_pdf.line_gross", mode), f"{trip_data['total_price_eur']:.2f}"],
-                [self._tr("invoice_pdf.line_fuel", mode), f"- {trip_data['fuel_cost']:.2f}"],
-                [self._tr("invoice_pdf.line_tolls", mode), f"- {trip_data['toll_cost']:.2f}"],
-                [self._tr("invoice_pdf.line_salary", mode), f"- {trip_data['salary_cost']:.2f}"],
-                [self._tr("invoice_pdf.line_other", mode), f"- {trip_data['extra_costs']:.2f}"],
+                [self._tr("invoice_pdf.line_gross", mode), f"{trip_data.get('total_price_eur', 0):.2f}"],
+                [self._tr("invoice_pdf.line_fuel", mode), f"- {trip_data.get('fuel_cost', 0):.2f}"],
+                [self._tr("invoice_pdf.line_tolls", mode), f"- {trip_data.get('toll_cost', 0):.2f}"],
+                [self._tr("invoice_pdf.line_salary", mode), f"- {trip_data.get('salary_cost', 0):.2f}"],
+                [self._tr("invoice_pdf.line_other", mode), f"- {trip_data.get('extra_costs', 0):.2f}"],
                 [Paragraph(f"<b>{self._tr('invoice_pdf.net_profit', mode)}</b>", self.styles["Normal"]), 
                  Paragraph(f"<b>{trip_data.get('net_profit', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
             ]
         else:
             fin_data = [
                 [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.qty_header", mode), self._tr("invoice_pdf.total_header", mode)],
-                [self._tr("invoice_pdf.service_desc", mode).format(trip_data['distance_km']),
+                [self._tr("invoice_pdf.service_desc", mode).format(trip_data.get('distance_km', 0)),
                  "1", 
                  Paragraph(f"<b>{trip_data.get('total_price_eur', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
             ]

@@ -1,0 +1,204 @@
+import logging
+import threading
+import uuid
+from dataclasses import dataclass, field, asdict
+from datetime import datetime, timedelta
+from enum import Enum
+from typing import Any, Dict, List, Optional
+
+from services.operations.event_bus import EventBus, ALERT_CREATED, ALERT_RESOLVED
+
+logger = logging.getLogger("operations.alert_manager")
+
+
+class AlertType(str, Enum):
+    MAINTENANCE = "maintenance"
+    INSPECTION = "inspection"
+    INSURANCE = "insurance"
+    OVERDUE_INVOICE = "overdue_invoice"
+    TRIP_DELAY = "trip_delay"
+    INACTIVE_TRUCK = "inactive_truck"
+    ROUTE_ISSUE = "route_issue"
+    COMPLIANCE_WARNING = "compliance_warning"
+    TACHOGRAPH_EXPIRY = "tachograph_expiry"
+    DRIVER_HOURS_WEEKLY = "driver_hours_weekly"
+    DRIVER_HOURS_DAILY = "driver_hours_daily"
+
+
+class Severity(str, Enum):
+    INFO = "info"
+    WARNING = "warning"
+    CRITICAL = "critical"
+
+
+_alert_types_display = {
+    AlertType.MAINTENANCE: "Maintenance",
+    AlertType.INSPECTION: "Inspection",
+    AlertType.INSURANCE: "Insurance",
+    AlertType.OVERDUE_INVOICE: "Overdue Invoice",
+    AlertType.TRIP_DELAY: "Trip Delay",
+    AlertType.INACTIVE_TRUCK: "Inactive Truck",
+    AlertType.ROUTE_ISSUE: "Route Issue",
+    AlertType.COMPLIANCE_WARNING: "Compliance Warning",
+    AlertType.TACHOGRAPH_EXPIRY: "Tachograph Calibration",
+    AlertType.DRIVER_HOURS_WEEKLY: "Driver Hours Weekly",
+    AlertType.DRIVER_HOURS_DAILY: "Driver Hours Daily",
+}
+
+
+@dataclass
+class Alert:
+    id: str = field(default_factory=lambda: uuid.uuid4().hex[:12])
+    type: AlertType = AlertType.COMPLIANCE_WARNING
+    severity: Severity = Severity.WARNING
+    title: str = ""
+    message: str = ""
+    truck_id: Optional[str] = None
+    trip_id: Optional[str] = None
+    driver_id: Optional[str] = None
+    created_at: str = field(default_factory=lambda: datetime.now().isoformat())
+    resolved: bool = False
+    resolved_at: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+    def to_dict(self) -> Dict[str, Any]:
+        return asdict(self)
+
+    def display_type(self) -> str:
+        return _alert_types_display.get(self.type, self.type.value)
+
+
+class AlertManager:
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls):
+        if cls._instance is None:
+            with cls._lock:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
+        self._alerts: Dict[str, Alert] = {}
+        self._max_alerts = 5000
+        self._event_bus = EventBus()
+        logger.info("AlertManager initialized")
+
+    # ── CRUD ───────────────────────────────────────────────────────
+
+    def create_alert(
+        self,
+        alert_type: AlertType,
+        severity: Severity,
+        title: str,
+        message: str,
+        truck_id: Optional[str] = None,
+        trip_id: Optional[str] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> Alert:
+        alert = Alert(
+            type=alert_type,
+            severity=severity,
+            title=title,
+            message=message,
+            truck_id=truck_id,
+            trip_id=trip_id,
+            metadata=metadata or {},
+        )
+        self._alerts[alert.id] = alert
+        # Evict oldest resolved alert if over max
+        if len(self._alerts) > self._max_alerts:
+            resolved = [a for a in self._alerts.values() if a.resolved]
+            if resolved:
+                oldest = min(resolved, key=lambda a: a.created_at)
+                del self._alerts[oldest.id]
+                logger.debug("Evicted oldest resolved alert: %s", oldest.id)
+            else:
+                oldest = min(self._alerts.values(), key=lambda a: a.created_at)
+                del self._alerts[oldest.id]
+                logger.debug("Evicted oldest alert (all active): %s", oldest.id)
+        self._event_bus.publish(ALERT_CREATED, {"alert": alert.to_dict()})
+        logger.info("Alert created: [%s] %s — %s", severity.value, alert_type.value, title)
+        return alert
+
+    def resolve_alert(self, alert_id: str) -> Optional[Alert]:
+        alert = self._alerts.get(alert_id)
+        if alert and not alert.resolved:
+            alert.resolved = True
+            alert.resolved_at = datetime.now().isoformat()
+            self._event_bus.publish(ALERT_RESOLVED, {"alert": alert.to_dict()})
+            logger.info("Alert resolved: %s", alert_id)
+        return alert
+
+    def get_alert(self, alert_id: str) -> Optional[Alert]:
+        return self._alerts.get(alert_id)
+
+    def get_alerts(
+        self,
+        alert_type: Optional[AlertType] = None,
+        severity: Optional[Severity] = None,
+        truck_id: Optional[str] = None,
+        resolved: Optional[bool] = None,
+        limit: int = 100,
+    ) -> List[Alert]:
+        results = list(self._alerts.values())
+        if alert_type:
+            results = [a for a in results if a.type == alert_type]
+        if severity:
+            results = [a for a in results if a.severity == severity]
+        if truck_id:
+            results = [a for a in results if a.truck_id == truck_id]
+        if resolved is not None:
+            results = [a for a in results if a.resolved == resolved]
+        results.sort(key=lambda a: a.created_at, reverse=True)
+        return results[:limit]
+
+    def get_active_alerts(self, limit: int = 100) -> List[Alert]:
+        return self.get_alerts(resolved=False, limit=limit)
+
+    def get_active_count(self) -> int:
+        return sum(1 for a in self._alerts.values() if not a.resolved)
+
+    def resolve_by_truck(self, truck_id: str, alert_type: Optional[AlertType] = None) -> int:
+        count = 0
+        for a in list(self._alerts.values()):
+            if a.truck_id == truck_id and not a.resolved:
+                if alert_type is None or a.type == alert_type:
+                    self.resolve_alert(a.id)
+                    count += 1
+        return count
+
+    def get_active_by_type_and_entity(
+        self, alert_type: AlertType, entity_id: str, entity_field: str = "truck_id"
+    ) -> Optional[Alert]:
+        """Return the most recent active alert of a given type for an entity."""
+        matches = [
+            a for a in self._alerts.values()
+            if not a.resolved
+            and a.type == alert_type
+            and getattr(a, entity_field, None) == str(entity_id)
+        ]
+        if not matches:
+            return None
+        return max(matches, key=lambda a: a.created_at or "")
+
+    def update_severity(self, alert_id: str, severity: Severity, new_message: Optional[str] = None):
+        alert = self._alerts.get(alert_id)
+        if alert:
+            alert.severity = severity
+            if new_message is not None:
+                alert.message = new_message
+            logger.info("Alert %s severity updated to %s", alert_id, severity.value)
+
+    def cleanup_old(self, days: int = 90) -> int:
+        cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+        to_remove = [aid for aid, a in self._alerts.items() if a.created_at < cutoff]
+        for aid in to_remove:
+            del self._alerts[aid]
+        logger.info("Cleaned up %d old alerts (>%d days)", len(to_remove), days)
+        return len(to_remove)
