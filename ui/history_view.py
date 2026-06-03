@@ -47,6 +47,7 @@ class HistoryView:
         self._i18n_widgets = []
         self._tree_heading_keys = []
         self._app_state = AppState()
+        self._limit = 200
         
         self._setup_ui()
         self.refresh()
@@ -102,6 +103,13 @@ class HistoryView:
         btn = ActionButton(f_top, t("history.reset_button"), self._reset, color=Theme.SURFACE2)
         btn.pack(side="left")
         self._i18n_tag(btn, "history.reset_button")
+
+        self._count_lbl = ctk.CTkLabel(f_top, text="", fg_color=Theme.SURFACE, text_color=Theme.MUTED, font=FONTS["label"])
+        self._count_lbl.pack(side="left", padx=10)
+
+        load_more_btn = ActionButton(f_top, f"⬇ {t('history.button_load_more')}", self._load_more, color=Theme.SURFACE2)
+        load_more_btn.pack(side="left")
+        self._i18n_tag(load_more_btn, "history.button_load_more", "⬇ ")
 
         f_table = ctk.CTkFrame(parent, fg_color=Theme.BG)
         f_table.pack(fill="both", expand=True, padx=20, pady=10)
@@ -196,17 +204,22 @@ class HistoryView:
 
     def refresh(self):
         for i in self.tree.get_children(): self.tree.delete(i)
-        trips = self.trip_service.get_filtered(self.e_search.get(), status=self.c_status.get())
+        trips = self.trip_service.get_filtered(self.e_search.get(), status=self.c_status.get(), limit=self._limit)
         for trip in trips:
             s = trip["status"]
             self.tree.insert("", "end", values=(trip["id"], trip["created_at"][:10], trip["truck_number"], trip["driver_name"], trip["client_name"], trip["distance_km"], f"{trip['gross_per_km']:.2f}", f"{trip['net_profit']:.2f}", s), tags=(s,))
+        self._count_lbl.configure(text=f" ({len(trips)} / {self._limit})")
+
+    def _load_more(self):
+        self._limit *= 2
+        self.refresh()
 
     def _get_selection(self):
         sel = self.tree.selection()
         return self.tree.item(sel[0])['values'] if sel else None
 
     def _reset(self):
-        self.e_search.delete(0, tk.END); self.c_status.set(""); self.refresh()
+        self.e_search.delete(0, tk.END); self.c_status.set(""); self._limit = 200; self.refresh()
 
     def _generate_invoice(self):
         data = self._get_selection()

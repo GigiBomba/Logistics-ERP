@@ -266,7 +266,8 @@
     "confirm_delete_msg": "¿Está seguro de eliminar este registro?",
     "button_view_route": "Ver Ruta",
     "no_route_linked": "Este viaje no tiene una ruta vinculada.",
-    "route_not_found": "Ruta vinculada no encontrada."
+    "route_not_found": "Ruta vinculada no encontrada.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Analítica de inteligencia de negocio",

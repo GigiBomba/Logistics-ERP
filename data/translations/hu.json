@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Biztosan toerli ezt a rekordot?",
     "button_view_route": "Útvonal Megtekintése",
     "no_route_linked": "Ehhez a fuvarhoz nincs kapcsolt utvonal.",
-    "route_not_found": "A kapcsolt utvonal nem talalhato."
+    "route_not_found": "A kapcsolt utvonal nem talalhato.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Uezleti Intelligencia Elemzes",

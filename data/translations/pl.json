@@ -301,7 +301,8 @@
     "no_engine": "Brak silnika",
     "no_transitions": "Brak przejść",
     "status_prompt": "Monit statusu",
-    "transition_failed": "Przejście nie powiodło się"
+    "transition_failed": "Przejście nie powiodło się",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Analityka Business Intelligence",

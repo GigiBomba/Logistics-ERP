@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Weet u zeker dat u deze record wilt verwijderen?",
     "button_view_route": "Route bekijken",
     "no_route_linked": "Deze rit heeft geen gekoppelde route.",
-    "route_not_found": "Gekoppelde route niet gevonden."
+    "route_not_found": "Gekoppelde route niet gevonden.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Business Intelligence Analyse",

@@ -301,7 +301,8 @@
     "no_engine": "No Engine",
     "no_transitions": "No Transitions",
     "status_prompt": "Status Prompt",
-    "transition_failed": "Transition Failed"
+    "transition_failed": "Transition Failed",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Business Intelligence Analytics",

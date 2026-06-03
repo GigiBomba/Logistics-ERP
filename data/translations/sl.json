@@ -241,7 +241,8 @@
     "confirm_delete_msg": "Ali ste prepričani, da želite izbrisati ta zapis?",
     "button_view_route": "Pokaži pot",
     "no_route_linked": "Ta vožnja nima povezane poti.",
-    "route_not_found": "Povezana pot ni bila najdena."
+    "route_not_found": "Povezana pot ni bila najdena.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Poslovna analitika",

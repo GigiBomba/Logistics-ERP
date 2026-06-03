@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Sigurno želite obrisati ovaj zapis?",
     "button_view_route": "Prikaži rutu",
     "no_route_linked": "Ovo putovanje nema povezanu rutu.",
-    "route_not_found": "Povezana ruta nije pronađena."
+    "route_not_found": "Povezana ruta nije pronađena.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Analitika poslovne inteligencije",

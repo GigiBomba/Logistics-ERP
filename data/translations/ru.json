@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Вы уверены, что хотите удалить эту запись?",
     "button_view_route": "Посмотреть маршрут",
     "no_route_linked": "У этого рейса нет связанного маршрута.",
-    "route_not_found": "Связанный маршрут не найден."
+    "route_not_found": "Связанный маршрут не найден.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Бизнес-аналитика",

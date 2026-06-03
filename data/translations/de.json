@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Sind Sie sicher, dass Sie diesen Datensatz löschen möchten?",
     "button_view_route": "Route anzeigen",
     "no_route_linked": "Diese Fahrt hat keine verknüpfte Route.",
-    "route_not_found": "Verknüpfte Route nicht gefunden."
+    "route_not_found": "Verknüpfte Route nicht gefunden.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Business Intelligence Analytik",

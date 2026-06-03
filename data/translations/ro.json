@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Sigur dorești să ștergi această înregistrare?",
     "button_view_route": "Vezi Ruta",
     "no_route_linked": "Această cursă nu are o rută legată.",
-    "route_not_found": "Ruta legată nu a fost găsită."
+    "route_not_found": "Ruta legată nu a fost găsită.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Analiza Business Intelligence",

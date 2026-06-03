@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Är du säker på att du vill ta bort denna post?",
     "button_view_route": "Visa Rutt",
     "no_route_linked": "Denna resa har ingen kopplad rutt.",
-    "route_not_found": "Kopplad rutt hittades inte."
+    "route_not_found": "Kopplad rutt hittades inte.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Affärsanalys",

@@ -138,18 +138,42 @@ class KanbanColumn(ctk.CTkFrame):
             self._load_older_frame.pack_forget()
 
     def set_trips(self, trips: list):
-        self._clear_cards()
+        self._loading_frame.pack_forget()
+        self._error_frame.pack_forget()
         self._state = "idle"
 
-        self._count_lbl.configure(text=f" • {len(trips)}")
+        # Build map of existing cards by trip_id_num for diff-based update
+        existing = {}
+        stale = list(self._cards)
+        for card in list(self._cards):
+            tid = card.trip_data.get("trip_id_num")
+            if tid is not None:
+                existing[tid] = card
 
+        # Reuse or create cards; update data in place
+        new_cards = []
         for trip in trips:
-            card = TripCard(self._scroll_frame, trip, on_click=self._on_card_click,
-                           on_drag_start=self._on_drag_start,
-                           on_assign_truck=self._on_assign_truck,
-                           on_assign_driver=self._on_assign_driver)
-            card.pack(fill="x", pady=(0, 6), padx=2)
-            self._cards.append(card)
+            tid = trip.get("trip_id_num")
+            if tid is not None and tid in existing:
+                card = existing[tid]
+                card.update_data(trip)
+                if card in stale:
+                    stale.remove(card)
+                new_cards.append(card)
+            else:
+                card = TripCard(self._scroll_frame, trip, on_click=self._on_card_click,
+                               on_drag_start=self._on_drag_start,
+                               on_assign_truck=self._on_assign_truck,
+                               on_assign_driver=self._on_assign_driver)
+                card.pack(fill="x", pady=(0, 6), padx=2)
+                new_cards.append(card)
+
+        # Remove cards no longer in the trip list
+        for old_card in stale:
+            old_card.destroy()
+
+        self._cards = new_cards
+        self._count_lbl.configure(text=f" • {len(trips)}")
 
         if self._show_load_older:
             self._load_older_frame.pack(fill="x", side="bottom")

@@ -277,7 +277,8 @@
     "confirm_delete_msg": "Да ли сте сигурни да желите да обришете овај запис?",
     "button_view_route": "Прикажи руту",
     "no_route_linked": "Ова тура нема повезану руту.",
-    "route_not_found": "Повезана рута није пронађена."
+    "route_not_found": "Повезана рута није пронађена.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Business Intelligence аналитика",

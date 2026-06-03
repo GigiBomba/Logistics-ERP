@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Bu kaydı silmek istediğinizden emin misiniz?",
     "button_view_route": "Rotayı Görüntüle",
     "no_route_linked": "Bu seferin bağlı bir rotası yok.",
-    "route_not_found": "Bağlı rota bulunamadı."
+    "route_not_found": "Bağlı rota bulunamadı.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "İş Zekası Analizi",
