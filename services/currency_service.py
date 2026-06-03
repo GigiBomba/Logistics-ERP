@@ -49,4 +49,4 @@ class CurrencyService:
         return self._exchange.get_rate(code)
 
     def refresh_rates(self, background: bool = True) -> bool:
-        return self._exchange.refresh(background)
+        return self._exchange.refresh_if_stale()

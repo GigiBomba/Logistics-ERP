@@ -194,15 +194,12 @@ class AnalyticsView:
         self._chart_container.pack(fill="both", expand=True, padx=12, pady=4)
 
     def _load_data(self):
-        for w in self._chart_container.winfo_children():
-            w.destroy()
         if self._fig:
-            try:
-                plt.close(self._fig)
-            except Exception:
-                pass
-        self._fig = None
-        self._canvas = None
+            for ax in self._axes.flat:
+                ax.clear()
+        else:
+            for w in self._chart_container.winfo_children():
+                w.destroy()
         self._chart_texts.clear()
         self._leg_lines.clear()
         self._pie_texts.clear()
@@ -234,10 +231,13 @@ class AnalyticsView:
                 truck_profits[truck] = truck_profits.get(truck, 0) + profit
                 driver_profits[driver] = driver_profits.get(driver, 0) + profit
 
-            fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=90)
-            fig.patch.set_facecolor(Theme.BG)
-            self._fig = fig
-            self._axes = axes
+            if not self._fig:
+                fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=90)
+                fig.patch.set_facecolor(Theme.BG)
+                self._fig = fig
+                self._axes = axes
+            else:
+                fig, axes = self._fig, self._axes
 
             ax1 = axes[0, 0]
             apply_chart_style(fig, ax1)
@@ -299,14 +299,14 @@ class AnalyticsView:
             title4 = ax4.set_title(t("analytics.chart_profit_expenses_ratio"), color=Theme.TEXT, fontsize=10)
             self._chart_texts.append((title4, "analytics.chart_profit_expenses_ratio"))
 
-            for ax in axes.flat:
-                apply_chart_style(fig, ax)
-
             fig.tight_layout()
-            canvas = FigureCanvasTkAgg(fig, master=self._chart_container)
-            canvas.draw()
-            canvas.get_tk_widget().pack(fill="both", expand=True)
-            self._canvas = canvas
+            if self._canvas:
+                self._canvas.draw()
+            else:
+                canvas = FigureCanvasTkAgg(fig, master=self._chart_container)
+                canvas.draw()
+                canvas.get_tk_widget().pack(fill="both", expand=True)
+                self._canvas = canvas
 
         except Exception as e:
             msg = t("analytics.render_error")

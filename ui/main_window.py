@@ -58,7 +58,7 @@ class MainWindow(I18nMixin):
         self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
 
         self._fuel_service = FuelPriceService()
-        self._fuel_service.refresh(background=True)
+        self._fuel_service.refresh_if_stale()
         self._init_fuel_status()
 
     def _on_language_changed(self, lang):

@@ -96,9 +96,8 @@ class DispatchBoardView:
         self._dta_service = DriverTruckService(db)
         self._conflict_service = TripConflictService(db)
 
-        self._truck_cache: Dict[str, Optional[Dict]] = {}
         self._driver_cache: Dict[int, Optional[Dict]] = {}
-        self._route_cache: Dict[str, Optional[Dict]] = {}
+        self._route_cache: Dict[int, Optional[Dict]] = {}
         self._alert_counts: Dict[int, int] = {}
         self._delay_timer_id = None
         self._event_handlers = {}
@@ -214,9 +213,6 @@ class DispatchBoardView:
 
     def _load_data_background(self):
         try:
-            self._truck_cache.clear()
-            self._driver_cache.clear()
-            self._route_cache.clear()
             self._alert_counts.clear()
 
             self._preload_alerts()
@@ -386,11 +382,14 @@ class DispatchBoardView:
         for col in self._columns.values():
             col.show_error(error_msg)
 
-    def _get_truck_position(self, truck_id):
-        if not fleet_tracking_service.is_configured() or not truck_id:
+    def _get_truck_position(self, truck_id, positions=None):
+        if not truck_id:
             return None
         try:
-            positions = fleet_tracking_service.get_positions()
+            if positions is None:
+                if not fleet_tracking_service.is_configured():
+                    return None
+                positions = fleet_tracking_service.get_positions()
             truck = self._fleet_repo.get_by_id(int(truck_id))
             if not truck:
                 return None
@@ -422,7 +421,7 @@ class DispatchBoardView:
                     status = card.trip_data.get("status", "")
                     truck_id = card.trip_data.get("truck_id")
                     if status == "In Transit" and truck_id:
-                        pos = self._get_truck_position(truck_id)
+                        pos = self._get_truck_position(truck_id, positions=positions)
                         card.set_live_position(pos)
                     else:
                         card.set_live_position(None)
