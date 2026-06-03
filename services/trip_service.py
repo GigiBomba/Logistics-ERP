@@ -24,24 +24,14 @@ class TripService:
         return self._trip_repo.get_all(limit=limit)
 
     def add(self, data: Dict[str, Any]) -> int:
-        new_id = self.db.add_trip(data)
+        new_id = self._trip_repo.create(data)
         self._event_bus.publish(TRIP_CREATED, {"trip_id": new_id, "data": data})
         return new_id
 
     def update(self, trip_id: int, data: Dict[str, Any]) -> None:
-        self.db.update_trip(trip_id, data)
+        self._trip_repo.update(trip_id, data)
         self._event_bus.publish(TRIP_UPDATED, {"trip_id": trip_id, "changes": data})
 
     def delete(self, trip_id: int) -> None:
-        self.db.delete_trip(trip_id)
+        self._trip_repo.delete(trip_id)
         self._event_bus.publish(TRIP_DELETED, {"trip_id": trip_id})
-
-    def duplicate(self, trip_id: int, timestamp: Optional[str] = None) -> None:
-        old = self.get_by_id(trip_id)
-        if not old:
-            return
-        if "id" in old:
-            del old["id"]
-        old["created_at"] = timestamp or datetime.now().strftime("%d/%m/%Y %H:%M")
-        old["status"] = "Planned"
-        self.add(old)
