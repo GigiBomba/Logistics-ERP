@@ -301,7 +301,8 @@
     "no_engine": "Немає Даних Двигуна",
     "no_transitions": "Немає Переходів",
     "status_prompt": "Запит Статусу",
-    "transition_failed": "Перехід Не Вдався"
+    "transition_failed": "Перехід Не Вдався",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Аналітика Бізнес-Аналізу",

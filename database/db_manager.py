@@ -258,9 +258,11 @@ class DatabaseManager:
         self.conn.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
         self.conn.commit()
 
-    def get_all_trips(self):
-        """Returnează absolut toate cursele."""
-        return self.rows_to_dicts(self.conn.execute("SELECT * FROM trips ORDER BY id DESC").fetchall())
+    def get_all_trips(self, limit: int = 500):
+        """Returnează curse, limitat implicit la 500."""
+        return self.rows_to_dicts(self.conn.execute(
+            f"SELECT * FROM trips ORDER BY id DESC LIMIT ?", (limit,)
+        ).fetchall())
 
     def get_trip_by_id(self, trip_id):
         """Caută o singură cursă după ID."""
@@ -268,8 +270,8 @@ class DatabaseManager:
 
     # --- FILTRE ȘI CĂUTARE ---
 
-    def get_filtered_trips(self, search="", truck="", status=""):
-        """Filtrare dinamică pentru istoricul curselos."""
+    def get_filtered_trips(self, search="", truck="", status="", limit: int = 200):
+        """Filtrare dinamică pentru istoricul curselor — cu paginare."""
         query = "SELECT * FROM trips WHERE 1=1"
         params = []
         
@@ -283,7 +285,8 @@ class DatabaseManager:
             query += " AND status = ?"
             params.append(status)
         
-        query += " ORDER BY id DESC"
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
         return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
 
     def get_unique_lists(self):
@@ -421,16 +424,34 @@ class DatabaseManager:
 
         return alerts, total_overdue_amount
 
-    def get_analytics_data(self):
-        """Date grupate pentru grafice."""
-        per_truck = self.rows_to_dicts(self.conn.execute("SELECT truck_number, SUM(net_profit) as p FROM trips GROUP BY truck_number ORDER BY SUM(net_profit) DESC LIMIT 10").fetchall())
-        per_driver = self.rows_to_dicts(self.conn.execute("SELECT driver_name, SUM(net_profit) as p FROM trips GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10").fetchall())
-        rev_exp = self.conn.execute("""
+    def get_analytics_data(self, from_date=None, to_date=None):
+        """Date grupate pentru grafice — optional date range filtering."""
+        date_clause = ""
+        date_params = []
+        if from_date and to_date:
+            date_clause = """
+                WHERE LENGTH(created_at) >= 10
+                  AND (substr(created_at, 7, 4) || '-' ||
+                       substr(created_at, 4, 2) || '-' ||
+                       substr(created_at, 1, 2)) >= ?
+                  AND (substr(created_at, 7, 4) || '-' ||
+                       substr(created_at, 4, 2) || '-' ||
+                       substr(created_at, 1, 2)) <= ?
+            """
+            date_params = [from_date, to_date]
+
+        per_truck = self.rows_to_dicts(self.conn.execute(
+            f"SELECT truck_number, SUM(net_profit) as p FROM trips {date_clause} GROUP BY truck_number ORDER BY SUM(net_profit) DESC LIMIT 10",
+            date_params).fetchall())
+        per_driver = self.rows_to_dicts(self.conn.execute(
+            f"SELECT driver_name, SUM(net_profit) as p FROM trips {date_clause} GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10",
+            date_params).fetchall())
+        rev_exp = self.conn.execute(f"""
             SELECT SUBSTR(created_at, 4, 7) as month, 
             SUM(total_price_eur) as rev, 
             SUM(total_price_eur - net_profit) as exp 
-            FROM trips GROUP BY month ORDER BY id DESC LIMIT 6
-        """).fetchall()
+            FROM trips {date_clause} GROUP BY month ORDER BY month DESC LIMIT 6
+        """, date_params).fetchall()
         return per_truck, per_driver, self.rows_to_dicts(rev_exp[::-1])
 
     def get_settings(self, keys: List[str]) -> Dict[str, str]:

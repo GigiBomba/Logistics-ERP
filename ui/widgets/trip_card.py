@@ -390,6 +390,37 @@ class TripCard(ctk.CTkFrame):
                 date_text = "  ".join(date_parts) if date_parts else ""
                 self._date_lbl.configure(text=date_text, text_color=Theme.MUTED)
 
+    def update_data(self, new_data: dict):
+        old_status = self.trip_data.get("status", "")
+        new_status = new_data.get("status", "")
+        self.trip_data = dict(new_data)
+
+        # Update status chip + accent bar
+        if new_status != old_status:
+            self._set_status(new_status)
+
+        # Update truck plate
+        if self._truck_lbl:
+            new_plate = new_data.get("truck_plate", "")
+            self.trip_data["truck_plate"] = new_plate
+            if new_plate:
+                self._truck_lbl.configure(text=new_plate, text_color=Theme.TEXT)
+            else:
+                self._truck_lbl.configure(text=t("dispatch_board.assign_truck"), text_color=Theme.MUTED)
+
+        # Update driver name
+        if self._driver_lbl:
+            new_driver = new_data.get("driver_name", "")
+            self.trip_data["driver_name"] = new_driver
+            if new_driver:
+                self._driver_lbl.configure(text=new_driver, text_color=Theme.TEXT)
+            else:
+                self._driver_lbl.configure(text=t("dispatch_board.assign_driver"), text_color=Theme.MUTED)
+
+        # Update alerts count
+        new_alerts = new_data.get("alerts_count", 0)
+        self.trip_data["alerts_count"] = new_alerts
+
     def _set_status(self, status: str):
         self.trip_data["status"] = status
         accent_color = self.STATUS_COLORS.get(status, COLORS["chip_planned"])

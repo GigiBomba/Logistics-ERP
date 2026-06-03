@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Сигурни ли сте, че искате да изтриете този запис?",
     "button_view_route": "Виж Маршрут",
     "no_route_linked": "Този курс няма свързан маршрут.",
-    "route_not_found": "Свързаният маршрут не е намерен."
+    "route_not_found": "Свързаният маршрут не е намерен.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Бизнес Анализи",

@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Opravdu chcete odstranit tento záznam?",
     "button_view_route": "Zobrazit trasu",
     "no_route_linked": "Tato jízda nemá propojenou trasu.",
-    "route_not_found": "Propojená trasa nenalezena."
+    "route_not_found": "Propojená trasa nenalezena.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Analytika Business Intelligence",

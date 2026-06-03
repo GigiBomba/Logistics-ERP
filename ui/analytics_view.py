@@ -210,7 +210,7 @@ class AnalyticsView:
             from_date = self._start_date.strftime("%d/%m/%Y")
             to_date = self._end_date.strftime("%d/%m/%Y")
 
-            p_truck, p_driver, rev_exp = self.analytics_service.get_data()
+            p_truck, p_driver, rev_exp = self.analytics_service.get_data(from_date, to_date)
             from repositories.trip_repository import TripRepository
             repo = TripRepository(self.db)
             filtered = repo.get_by_date_range(from_date, to_date)

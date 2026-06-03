@@ -255,7 +255,8 @@
     "no_engine": "Bez motora",
     "no_transitions": "Žiadne prechody",
     "status_prompt": "Výzva stavu",
-    "transition_failed": "Prechod zlyhal"
+    "transition_failed": "Prechod zlyhal",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Business Intelligence Analytika",

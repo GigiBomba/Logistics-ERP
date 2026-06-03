@@ -11,8 +11,8 @@ class TripService:
         self._event_bus = EventBus()
         self._trip_repo = TripRepository(db)
 
-    def get_filtered(self, search: str = "", status: str = "") -> List[Dict[str, Any]]:
-        return self.db.get_filtered_trips(search, status=status)
+    def get_filtered(self, search: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+        return self.db.get_filtered_trips(search, status=status, limit=limit)
 
     def get_by_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
         return self.db.get_trip_by_id(trip_id)

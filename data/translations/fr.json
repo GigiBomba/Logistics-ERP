@@ -266,7 +266,8 @@
     "confirm_delete_msg": "Êtes-vous sûr de vouloir supprimer cet enregistrement ?",
     "button_view_route": "Voir l'itinéraire",
     "no_route_linked": "Ce voyage n'a pas d'itinéraire lié.",
-    "route_not_found": "Itinéraire lié introuvable."
+    "route_not_found": "Itinéraire lié introuvable.",
+    "button_load_more": "Load More"
   },
   "analytics": {
     "title": "Analyses décisionnelles",
