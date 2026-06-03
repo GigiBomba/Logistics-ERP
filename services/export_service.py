@@ -1,5 +1,4 @@
 ﻿import os
-import unicodedata
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, HRFlowable
@@ -8,6 +7,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import cm
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
+from utils.helpers import remove_accents
 
 class ExportService:
     def __init__(self, prefs=None):
@@ -17,14 +17,6 @@ class ExportService:
             os.makedirs(self.reports_dir)
         from services.preferences import PreferencesManager
         self.prefs = prefs
-
-    def _remove_accents(self, input_str):
-        """Transformă diacriticele în caractere ASCII (ș -> s, ă -> a, etc.)."""
-        if not input_str: return ""
-        # Normalizăm textul pentru a separa accentele de litere
-        nfkd_form = unicodedata.normalize('NFKD', str(input_str))
-        # Filtrăm doar caracterele care nu sunt semne de combinare (accente)
-        return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
     def generate_pdf(self, trips, filename=None):
         """Generează PDF-ul de istoric fără diacritice."""
@@ -42,7 +34,7 @@ class ExportService:
         title_style = ParagraphStyle("T", parent=self.styles["Title"], fontSize=18, textColor=colors.HexColor("#1a73e8"))
         
         # Curățăm titlul și header-ul de orice diacritică
-        story.append(Paragraph(self._remove_accents("Cashflow Manager - Raport Activitate"), title_style))
+        story.append(Paragraph(remove_accents("Cashflow Manager - Raport Activitate"), title_style))
         story.append(HRFlowable(width="100%", color=colors.HexColor("#1a73e8"), spaceAfter=20))
         
         # Header Tabel (ASCII)
@@ -61,13 +53,13 @@ class ExportService:
             # Aplicăm _remove_accents pe toate câmpurile care pot conține text românesc
             data.append([
                 str(t["created_at"])[:10], 
-                self._remove_accents(t["truck_number"]), 
-                self._remove_accents(t["driver_name"]), 
-                self._remove_accents(t["client_name"]),
+                remove_accents(t["truck_number"]), 
+                remove_accents(t["driver_name"]), 
+                remove_accents(t["client_name"]),
                 f"{t['distance_km']:.0f}", 
                 f"{t['gross_per_km']:.2f}", 
                 f"{t['net_profit']:.2f}", 
-                self._remove_accents(t["status"])
+                remove_accents(t["status"])
             ])
         
         # Ajustăm lățimile coloanelor (total ~19cm)

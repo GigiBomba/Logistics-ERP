@@ -20,7 +20,6 @@ from database.schema import (
     TABLE_ALERTS,
     TABLE_EMAIL_LOGS,
     TABLE_INVOICES,
-    TABLE_MAINTENANCE,
     TABLE_MAINTENANCE_RECORDS,
     TABLE_MAINTENANCE_SCHEDULES,
     TABLE_TRUCK_HEALTH_SCORES,
@@ -79,16 +78,7 @@ class DatabaseManager:
         """Creează tabelele și indecșii necesari."""
         self.conn.execute(TABLE_TRIPS)
         self.conn.execute(TABLE_INVOICES)
-        # Trucks and maintenance tables required by fleet management
         self.conn.execute(TABLE_TRUCKS)
-        self.conn.execute(TABLE_MAINTENANCE)
-        # Routes tables
-        try:
-            from database.schema import TABLE_ROUTES, TABLE_ROUTE_HISTORY
-            self.conn.execute(TABLE_ROUTES)
-            self.conn.execute(TABLE_ROUTE_HISTORY)
-        except Exception:
-            pass
         self.conn.execute(TABLE_ROUTE_HISTORY_V2)
         self.conn.execute(INDEX_ROUTE_HISTORY_V2_CREATED)
         self.conn.execute(INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED)

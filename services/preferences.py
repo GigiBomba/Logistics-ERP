@@ -57,19 +57,12 @@ def safe_number(value: Any, decimals: int = 2, default: float = 0.0, label: str 
 from services.i18n import t, get_language, set_language as i18n_set_language, LANGUAGE_NAMES
 from services.i18n import register_listener as i18n_register_listener
 from services.app_state import AppState
-
+from services.currency_service import CURRENCY_SYMBOLS
 
 _PREF_LANG_KEY = "pref_language"
 _PREF_CURRENCY_KEY = "pref_currency"
 _DEFAULT_CURRENCY = "EUR"
 _SUPPORTED_CURRENCIES = ["EUR", "RON", "USD", "GBP"]
-
-_CURRENCY_SYMBOLS: Dict[str, str] = {
-    "EUR": "€",
-    "RON": "lei",
-    "USD": "$",
-    "GBP": "£",
-}
 
 _CURRENCY_FORMAT_LOCALES: Dict[str, str] = {
     "EUR": "de_DE",
@@ -148,7 +141,7 @@ class PreferencesManager:
         return self._currency
 
     def get_currency_symbol(self, code: Optional[str] = None) -> str:
-        return _CURRENCY_SYMBOLS.get(code or self._currency, code or self._currency)
+        return CURRENCY_SYMBOLS.get(code or self._currency, code or self._currency)
 
     def get_supported_currencies(self) -> List[str]:
         return list(_SUPPORTED_CURRENCIES)

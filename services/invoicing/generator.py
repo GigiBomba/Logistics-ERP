@@ -1,5 +1,4 @@
 ﻿import os
-import unicodedata
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
@@ -8,6 +7,7 @@ from reportlab.lib import colors
 from reportlab.lib.units import cm
 from .config_manager import load_company_config
 from services.i18n import t, _get_translations
+from utils.helpers import remove_accents
 
 class InvoiceGenerator:
     def __init__(self):
@@ -15,11 +15,6 @@ class InvoiceGenerator:
         if not os.path.exists(self.reports_dir):
             os.makedirs(self.reports_dir)
         self.styles = getSampleStyleSheet()
-
-    def _remove_accents(self, input_str):
-        if not input_str: return ""
-        nfkd_form = unicodedata.normalize('NFKD', str(input_str))
-        return "".join([c for c in nfkd_form if not unicodedata.combining(c)])
 
     def _tr(self, key, mode):
         """Translate key: client mode always uses English, internal uses current app language."""
@@ -47,14 +42,14 @@ class InvoiceGenerator:
         story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a73e8"), spaceAfter=15))
 
         company_info = (f"<b>{self._tr('invoice_pdf.sender_header', mode)}</b><br/>"
-                        f"{self._remove_accents(conf['company_name'])}<br/>"
+                        f"{remove_accents(conf['company_name'])}<br/>"
                         f"CUI: {conf['cui']}<br/>"
                         f"Reg. Com: {conf['reg_number']}<br/>"
-                        f"Adresa: {self._remove_accents(conf['address'])}<br/>"
+                        f"Adresa: {remove_accents(conf['address'])}<br/>"
                         f"Tel: {conf['phone']}")
         
         client_info = (f"<b>{self._tr('invoice_pdf.bill_to_header', mode)}</b><br/>"
-                       f"{self._remove_accents(trip_data.get('client_name', ''))}")
+                       f"{remove_accents(trip_data.get('client_name', ''))}")
 
         info_table = Table([[Paragraph(company_info, self.styles["Normal"]), 
                              Paragraph(client_info, self.styles["Normal"])]], colWidths=[9.5*cm, 8.5*cm])
@@ -64,7 +59,7 @@ class InvoiceGenerator:
         story.append(Paragraph(f"<b>{self._tr('invoice_pdf.trip_info', mode)}</b>", self.styles["Normal"]))
         tech_data = [
             [self._tr("invoice_pdf.truck", mode), self._tr("invoice_pdf.driver", mode), self._tr("invoice_pdf.distance", mode), self._tr("invoice_pdf.start_date", mode), self._tr("invoice_pdf.end_date", mode)],
-            [trip_data.get("truck_number", ""), self._remove_accents(trip_data.get("driver_name", "")),
+            [trip_data.get("truck_number", ""), remove_accents(trip_data.get("driver_name", "")),
              f"{trip_data.get('distance_km', 0)} km", trip_data.get("start_date", ""), trip_data.get("end_date", "")]
         ]
         tech_table = Table(tech_data, colWidths=[3.6*cm]*5)
@@ -114,7 +109,7 @@ class InvoiceGenerator:
         story.append(Spacer(1, 2*cm))
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
         footer_msg = f"Email: {conf['email']} | Tel: {conf['phone']}"
-        story.append(Paragraph(self._remove_accents(footer_msg), self.styles["Italic"]))
+        story.append(Paragraph(remove_accents(footer_msg), self.styles["Italic"]))
         story.append(Spacer(1, 0.5*cm))
         story.append(Paragraph(self._tr("invoice_pdf.footer", mode), self.styles["Italic"]))
 
