@@ -25,3 +25,8 @@ graph-cache/
 
 # Tachograph parser binary (downloaded separately)
 tools/tachograph/dddsimple.exe
+
+# Runtime data (caches, databases, generated files)
+data/cashflow.db
+data/fuel_prices_cache.json
+invoices/*.pdf
