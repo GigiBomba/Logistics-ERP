@@ -18,7 +18,7 @@ class APIService:
         return self._exchange_service.get_all_rates()
 
     def refresh_fuel_prices(self, background: bool = True) -> bool:
-        return self._fuel_service.refresh(background)
+        return self._fuel_service.refresh_if_stale()
 
     def refresh_exchange_rates(self, background: bool = True) -> bool:
-        return self._exchange_service.refresh(background)
+        return self._exchange_service.refresh_if_stale()

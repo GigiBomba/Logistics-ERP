@@ -829,8 +829,6 @@ class OverviewDashboard(ctk.CTkFrame):
                 widget.configure(text=f"{prefix}{t(key)}")
             except Exception:
                 pass
-        self._last_refresh_ts = 0
-        self.refresh()
 
     # ── Event handling ────────────────────────────────────────────────
 

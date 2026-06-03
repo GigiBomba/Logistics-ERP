@@ -77,14 +77,17 @@ class FleetDashboard:
 
     def refresh_translations(self):
         if self.win:
-            if self.win:
-                self.win.title(f"📊 {t('fleet_dashboard.title')}")
+            self.win.title(f"📊 {t('fleet_dashboard.title')}")
         for widget, key, prefix in self._i18n_widgets:
             try:
                 widget.configure(text=f"{prefix}{t(key)}")
             except Exception:
                 pass
-        self.refresh_all()
+        for btn, pid, key in self._period_buttons:
+            try:
+                btn.configure(text=t(key))
+            except Exception:
+                pass
 
     def _build_header(self):
         header = ctk.CTkFrame(self.frame, fg_color=COLORS["bg_base"])
@@ -159,10 +162,6 @@ class FleetDashboard:
         self.content_frame.pack(fill="both", expand=True, padx=30, pady=10)
 
     def refresh_all(self):
-        for widget in self.content_frame.winfo_children():
-            widget.destroy()
-        self._chart_refs.clear()
-
         self._last_refresh = datetime.now()
         self.last_refresh_lbl.configure(
             text=t('fleet_dashboard.last_refreshed',
@@ -176,36 +175,89 @@ class FleetDashboard:
             kpi = self.db.get_kpi_stats()
             best_truck, best_driver, _ = self.db.get_advanced_analytics()
 
-            self._build_kpi_row(trucks, trips, alerts, kpi)
-            self._build_charts_row(trucks, trips)
-            self._build_info_cards(best_truck, best_driver, trucks, trips)
-            self._build_activity_feed(trips)
+            # One-pass aggregation: compute all derived values from trips in a single pass
+            filtered_trips = self._filter_trips_by_period(trips)
+            today_str = datetime.now().strftime("%d/%m/%Y")
+            active_trucks = 0
+            trips_today = 0
+            revenue = 0.0
+            total_fuel = 0.0
+            fuel_count = 0
+            truck_revenue = {}
+            truck_trips = {}
+            truck_fuel = {}
+            driver_trip_map = {}
+
+            for t in trips:
+                status = t.get('status', '')
+                plate = t.get('truck_number', '')
+                driver = t.get('driver_name', '')
+
+                if t.get('status') == 'Active' or t.get('active_status') == 1:
+                    active_trucks += 1
+                if (t.get('start_date') == today_str or
+                    (status in ('In Transit', 'Loading') and
+                     str(t.get('created_at', ''))[:10] == today_str)):
+                    trips_today += 1
+
+            for t in filtered_trips:
+                plate = t.get('truck_number', '')
+                driver = t.get('driver_name', '')
+                price = safe_float(t.get('total_price_eur'))
+                fuel = safe_float(t.get('fuel_cost'))
+
+                revenue += price
+                if fuel > 0:
+                    total_fuel += fuel
+                    fuel_count += 1
+                if plate:
+                    truck_revenue[plate] = truck_revenue.get(plate, 0) + price
+                    truck_trips[plate] = truck_trips.get(plate, 0) + 1
+                    truck_fuel[plate] = truck_fuel.get(plate, 0) + fuel
+                if driver:
+                    driver_trip_map[driver] = driver_trip_map.get(driver, 0) + 1
+
+            avg_fuel = total_fuel / fuel_count if fuel_count else 0
+
+            # Pre-compute info card derivations
+            top_truck = max(truck_revenue.items(), key=lambda x: x[1]) if truck_revenue else None
+            top_fuel_truck = max(truck_fuel.items(), key=lambda x: x[1]) if truck_fuel else None
+            if best_driver:
+                driver_trip_count = driver_trip_map.get(best_driver.get('driver_name', ''), 0)
+                avg_profit = safe_float(best_driver.get('p')) / driver_trip_count if driver_trip_count else 0
+            else:
+                avg_profit = 0
+                driver_trip_count = 0
+
         except Exception as e:
             messagebox.showerror(t('fleet_dashboard.error_title'),
                                t('fleet_dashboard.error_msg').format(str(e)))
+            return
 
-    def _build_kpi_row(self, trucks, trips, alerts, kpi):
+        for widget in self.content_frame.winfo_children():
+            widget.destroy()
+        self._chart_refs.clear()
+
+        self._build_kpi_row(
+            active_trucks, trips_today, revenue, avg_fuel,
+            len(alerts), kpi.get('unpaid', 0))
+        self._build_charts_row(trucks, trips)
+        self._build_info_cards(top_truck, best_driver, truck_trips, avg_profit,
+                              driver_trip_count, top_fuel_truck, truck_fuel, trucks)
+        self._build_activity_feed(trips)
+
+    def _build_kpi_row(self, active_trucks, trips_today, revenue, avg_fuel,
+                       alert_count, unpaid_count):
         kpi_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS["bg_base"])
         kpi_frame.pack(fill="x", pady=(0, 20))
-
-        active_trucks = len([t for t in trucks if t.get('status') == 'Active' or t.get('active_status') == 1])
-        today_str = datetime.now().strftime("%d/%m/%Y")
-        trips_today = len([t for t in trips if t.get('start_date') == today_str or
-                          (t.get('status') in ['In Transit', 'Loading'] and
-                           t.get('created_at', '').startswith(today_str))])
-
-        filtered_trips = self._filter_trips_by_period(trips)
-        revenue = sum(safe_float(t.get('total_price_eur')) for t in filtered_trips)
-        fuel_costs = [safe_float(t.get('fuel_cost')) for t in filtered_trips if t.get('fuel_cost')]
-        avg_fuel = sum(fuel_costs) / len(fuel_costs) if fuel_costs else 0
 
         kpis = [
             ("fleet_dashboard.kpi_active_trucks", str(active_trucks), COLORS["accent"]),
             ("fleet_dashboard.kpi_trips_today", str(trips_today), COLORS["success"]),
             ("fleet_dashboard.kpi_revenue", self.prefs.format_currency(revenue, 0), COLORS["accent"]),
             ("fleet_dashboard.kpi_avg_fuel", self.prefs.format_currency(avg_fuel, 0), COLORS["warning"]),
-            ("fleet_dashboard.kpi_alerts", str(len(alerts)), COLORS["danger"]),
-            ("fleet_dashboard.kpi_unpaid", str(kpi.get('unpaid', 0)), COLORS["danger"])
+            ("fleet_dashboard.kpi_alerts", str(alert_count), COLORS["danger"]),
+            ("fleet_dashboard.kpi_unpaid", str(unpaid_count), COLORS["danger"])
         ]
 
         for i, (key, value, color) in enumerate(kpis):
@@ -355,26 +407,13 @@ class FleetDashboard:
         canvas.get_tk_widget().pack(fill="both", expand=True)
         self._chart_refs.append((fig, canvas))
 
-    def _build_info_cards(self, best_truck, best_driver, trucks, trips):
+    def _build_info_cards(self, top_truck, best_driver, truck_trips, avg_profit,
+                          driver_trip_count, top_fuel_truck, truck_fuel, trucks):
         cards_frame = ctk.CTkFrame(self.content_frame, fg_color=COLORS["bg_base"])
         cards_frame.pack(fill="x", pady=10)
 
-        filtered_trips = self._filter_trips_by_period(trips)
-
-        truck_revenue = {}
-        truck_trips = {}
-        truck_fuel = {}
-
-        for trip in filtered_trips:
-            truck_num = trip.get('truck_number', '')
-            if truck_num:
-                truck_revenue[truck_num] = truck_revenue.get(truck_num, 0) + safe_float(trip.get('total_price_eur'))
-                truck_trips[truck_num] = truck_trips.get(truck_num, 0) + 1
-                truck_fuel[truck_num] = truck_fuel.get(truck_num, 0) + safe_float(trip.get('fuel_cost'))
-
         best_truck_card = self._create_info_card(cards_frame, t('fleet_dashboard.card_best_truck'))
-        if best_truck and truck_revenue:
-            top_truck = max(truck_revenue.items(), key=lambda x: x[1])
+        if top_truck:
             ctk.CTkLabel(best_truck_card, text=top_truck[0], fg_color=COLORS["bg_surface"],
                     text_color=COLORS["text_primary"], font=FONTS["small"]).pack(pady=(5, 0))
             ctk.CTkLabel(best_truck_card,
@@ -393,14 +432,11 @@ class FleetDashboard:
 
         best_driver_card = self._create_info_card(cards_frame, t('fleet_dashboard.card_best_driver'))
         if best_driver:
-            driver_trips = [t for t in filtered_trips if t.get('driver_name') == best_driver.get('driver_name')]
-            avg_profit = safe_float(best_driver.get('p')) / len(driver_trips) if driver_trips else 0
-
             ctk.CTkLabel(best_driver_card, text=best_driver.get('driver_name', t('common.na')),
                     fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
                     font=FONTS["small"]).pack(pady=(5, 0))
             ctk.CTkLabel(best_driver_card,
-                    text=t('fleet_dashboard.card_trips', count=len(driver_trips)),
+                    text=t('fleet_dashboard.card_trips', count=driver_trip_count),
                     fg_color=COLORS["bg_surface"], text_color=COLORS["text_primary"],
                     font=FONTS["label"]).pack()
             ctk.CTkLabel(best_driver_card,
@@ -414,8 +450,7 @@ class FleetDashboard:
                     font=FONTS["label"]).pack(pady=10)
 
         fuel_card = self._create_info_card(cards_frame, t('fleet_dashboard.card_highest_fuel'))
-        if truck_fuel:
-            top_fuel_truck = max(truck_fuel.items(), key=lambda x: x[1])
+        if top_fuel_truck:
             truck_data = next((t for t in trucks if t.get('plate_number') == top_fuel_truck[0]), None)
             consumption = truck_data.get('fuel_consumption', t('common.na')) if truck_data else t('common.na')
 
