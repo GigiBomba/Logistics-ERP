@@ -9,14 +9,15 @@ from __future__ import annotations
 
 import hashlib
 import json
-import sqlite3
 import threading
 import zlib
-import csv
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, Iterable, List, Optional
 
+from repositories.route_repository import RouteRepository
+from repositories.route_event_repository import RouteEventRepository
+from repositories.truck_route_assignment_repository import TruckRouteAssignmentRepository
 from utils.logger import get_logger
 
 
@@ -89,10 +90,13 @@ class RouteHistoryService:
 
     def __init__(self, db_or_conn: Any, retention_days: Optional[int] = None) -> None:
         self.logger = get_logger("RouteHistoryService")
-        self.conn: sqlite3.Connection = getattr(db_or_conn, "conn", db_or_conn)
+        db = db_or_conn
+        self.db = db
+        self._route_repo = RouteRepository(db)
+        self._event_repo = RouteEventRepository(db)
+        self._assignment_repo = TruckRouteAssignmentRepository(db)
         self._lock = threading.RLock()
         self.retention_days = retention_days
-        self._ensure_schema()
 
     def save_route(self, record: RouteHistoryRecord) -> int:
         """Insert or update a successful route calculation.
@@ -106,60 +110,30 @@ class RouteHistoryService:
         fingerprint = self.build_fingerprint(normalized)
         payload = self._to_db_payload(normalized)
 
+        data = {
+            "route_fingerprint": fingerprint,
+            "metadata_version": normalized.metadata_version,
+            "created_at": now,
+            "last_calculated_at": now,
+            "calculation_count": 1,
+            "stops_json": payload["stops_json"],
+            "geometry_compressed": payload["geometry_compressed"],
+            "geometry_encoding": "zlib-json",
+            "total_distance_km": normalized.total_distance_km,
+            "duration_min": normalized.duration_min,
+            "truck_id": normalized.truck_id,
+            "truck_label": normalized.truck_label,
+            "truck_json": payload["truck_json"],
+            "profile": normalized.profile,
+            "excluded_countries_json": payload["excluded_countries_json"],
+            "countries_traversed_json": payload["countries_traversed_json"],
+        }
+
         with self._lock:
-            cur = self.conn.cursor()
-            try:
-                cur.execute("BEGIN")
-                cur.execute(
-                    """
-                    INSERT INTO route_history_v2 (
-                        route_fingerprint, metadata_version, created_at, last_calculated_at,
-                        calculation_count, stops_json, geometry_compressed, geometry_encoding,
-                        total_distance_km, duration_min, truck_id, truck_label, truck_json,
-                        profile, excluded_countries_json, countries_traversed_json
-                    )
-                    VALUES (?, ?, ?, ?, 1, ?, ?, 'zlib-json', ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(route_fingerprint) DO UPDATE SET
-                        last_calculated_at = excluded.last_calculated_at,
-                        calculation_count = route_history_v2.calculation_count + 1,
-                        metadata_version = excluded.metadata_version,
-                        stops_json = excluded.stops_json,
-                        geometry_compressed = excluded.geometry_compressed,
-                        total_distance_km = excluded.total_distance_km,
-                        duration_min = excluded.duration_min,
-                        truck_id = excluded.truck_id,
-                        truck_label = excluded.truck_label,
-                        truck_json = excluded.truck_json,
-                        profile = excluded.profile,
-                        excluded_countries_json = excluded.excluded_countries_json,
-                        countries_traversed_json = excluded.countries_traversed_json
-                    """,
-                    (
-                        fingerprint,
-                        normalized.metadata_version,
-                        now,
-                        now,
-                        payload["stops_json"],
-                        payload["geometry_compressed"],
-                        normalized.total_distance_km,
-                        normalized.duration_min,
-                        normalized.truck_id,
-                        normalized.truck_label,
-                        payload["truck_json"],
-                        normalized.profile,
-                        payload["excluded_countries_json"],
-                        payload["countries_traversed_json"],
-                    ),
-                )
-                route_id = self._route_id_for_fingerprint(cur, fingerprint)
-                cur.execute("COMMIT")
-            except Exception:
-                try:
-                    cur.execute("ROLLBACK")
-                except Exception:
-                    pass
-                self.logger.exception("Failed to save route history")
-                raise
+            self._route_repo.upsert(data, fingerprint)
+            route_id = self._route_repo.get_id_by_fingerprint(fingerprint)
+            if route_id is None:
+                raise RuntimeError("Upsert failed to produce a route id")
 
         self.prune_old_routes()
         return route_id
@@ -169,11 +143,7 @@ class RouteHistoryService:
         cached = _RECENT_ROUTE_CACHE.get(route_id)
         if cached is not None:
             return cached
-        with self._lock:
-            row = self.conn.execute(
-                "SELECT * FROM route_history_v2 WHERE id = ?",
-                (route_id,),
-            ).fetchone()
+        row = self._route_repo.get_by_id(route_id)
         record = self._row_to_record(row) if row else None
         if record is not None:
             _RECENT_ROUTE_CACHE.put(route_id, record)
@@ -195,46 +165,16 @@ class RouteHistoryService:
         offset: int = 0,
     ) -> List[RouteHistoryListItem]:
         """Return paginated route history metadata with simple filters."""
-        sort_columns = {
-            "origin": "stops_json",
-            "destination": "stops_json",
-            "date": "last_calculated_at",
-            "last_calculated_at": "last_calculated_at",
-            "truck": "truck_label",
-            "distance": "total_distance_km",
-            "duration": "duration_min",
-            "profile": "profile",
-        }
-        order_col = sort_columns.get(sort_by, "last_calculated_at")
-        direction = "ASC" if str(sort_dir).upper() == "ASC" else "DESC"
-        query = """
-            SELECT id, route_fingerprint, created_at, last_calculated_at,
-                   calculation_count, total_distance_km, duration_min, truck_id,
-                   truck_label, profile, excluded_countries_json,
-                   countries_traversed_json, metadata_version, stops_json,
-                   archived_at
-            FROM route_history_v2
-            WHERE 1=1
-        """
-        params: List[Any] = []
-        if not include_archived:
-            query += " AND archived_at IS NULL"
-        if search:
-            query += " AND (stops_json LIKE ? OR truck_label LIKE ? OR profile LIKE ?)"
-            like = f"%{search}%"
-            params.extend([like, like, like])
-        if truck:
-            query += " AND (truck_id = ? OR truck_label LIKE ?)"
-            params.extend([truck, f"%{truck}%"])
-        if profile:
-            query += " AND profile = ?"
-            params.append(profile)
-
-        query += f" ORDER BY {order_col} {direction}, id DESC LIMIT ? OFFSET ?"
-        params.extend([limit, offset])
-
-        with self._lock:
-            rows = self.conn.execute(query, params).fetchall()
+        rows = self._route_repo.search(
+            search=search,
+            truck=truck,
+            profile=profile,
+            include_archived=include_archived,
+            sort_by=sort_by,
+            sort_dir=sort_dir,
+            limit=limit,
+            offset=offset,
+        )
         return [self._row_to_list_item(row) for row in rows]
 
     def count_routes(
@@ -245,75 +185,46 @@ class RouteHistoryService:
         include_archived: bool = False,
     ) -> int:
         """Count route history rows matching current filters."""
-        query = "SELECT COUNT(*) FROM route_history_v2 WHERE 1=1"
-        params: List[Any] = []
-        if not include_archived:
-            query += " AND archived_at IS NULL"
-        if search:
-            query += " AND (stops_json LIKE ? OR truck_label LIKE ? OR profile LIKE ?)"
-            like = f"%{search}%"
-            params.extend([like, like, like])
-        if truck:
-            query += " AND (truck_id = ? OR truck_label LIKE ?)"
-            params.extend([truck, f"%{truck}%"])
-        if profile:
-            query += " AND profile = ?"
-            params.append(profile)
-        with self._lock:
-            return int(self.conn.execute(query, params).fetchone()[0])
+        return self._route_repo.count_filtered(
+            search=search,
+            truck=truck,
+            profile=profile,
+            include_archived=include_archived,
+        )
 
     def delete_route(self, route_id: int) -> bool:
         """Delete one route history record by id."""
-        with self._lock:
-            cur = self.conn.execute("DELETE FROM route_history_v2 WHERE id = ?", (route_id,))
-            self.conn.commit()
-            return cur.rowcount > 0
+        self._route_repo.delete(route_id)
+        return True
 
     def archive_route(self, route_id: int) -> bool:
         """Soft-archive a route history row."""
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-        with self._lock:
-            cur = self.conn.execute(
-                "UPDATE route_history_v2 SET archived_at = ? WHERE id = ?",
-                (now, route_id),
-            )
-            self.conn.commit()
-            ok = cur.rowcount > 0
-        if ok:
-            self.record_event(route_id, "route_archived", {"archived_at": now})
-        return ok
+        self._route_repo.archive(route_id, archived_at=now)
+        self.record_event(route_id, "route_archived", {"archived_at": now})
+        return True
 
     def complete_route(self, route_id: int) -> bool:
         """Mark truck assignment as completed and emit a route_completed event."""
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-        with self._lock:
-            cur = self.conn.execute(
-                """
-                UPDATE truck_route_assignments
-                SET status = 'completed', completed_at = ?
-                WHERE route_id = ? AND status IN ('assigned', 'active')
-                """,
-                (now, route_id),
-            )
-            self.conn.commit()
-            ok = cur.rowcount > 0
+        ok = self._assignment_repo.complete(route_id, now)
         self.record_event(route_id, "route_completed", {"completed_at": now})
         return ok
 
     def set_active_route(self, route_id: int) -> None:
         """Set the central current active route id for ERP-wide sync."""
         with self._lock:
-            self.conn.execute(
+            self.db.conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                 (ACTIVE_ROUTE_SETTING_KEY, str(int(route_id))),
             )
-            self.conn.commit()
+            self.db.conn.commit()
         self.record_event(route_id, "route_updated", {"active": True})
 
     def get_active_route_id(self) -> Optional[int]:
         """Return the active route id if configured."""
         try:
-            row = self.conn.execute("SELECT value FROM settings WHERE key = ?", (ACTIVE_ROUTE_SETTING_KEY,)).fetchone()
+            row = self.db.conn.execute("SELECT value FROM settings WHERE key = ?", (ACTIVE_ROUTE_SETTING_KEY,)).fetchone()
             return int(row[0]) if row and row[0] else None
         except Exception:
             return None
@@ -327,49 +238,32 @@ class RouteHistoryService:
         """Assign a saved route to a truck for dispatch/fleet workflows."""
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         started_at = now if status == "active" else None
-        with self._lock:
-            cur = self.conn.execute(
-                """
-                INSERT INTO truck_route_assignments
-                    (truck_id, route_id, status, assigned_at, started_at, notes)
-                VALUES (?, ?, ?, ?, ?, ?)
-                """,
-                (str(truck_id), int(route_id), status, now, started_at, notes),
-            )
-            self.conn.commit()
-            assignment_id = int(cur.lastrowid)
+        assignment_id = self._assignment_repo.assign(
+            truck_id=str(truck_id),
+            route_id=int(route_id),
+            status=status,
+            assigned_at=now,
+            started_at=started_at,
+            notes=notes,
+        )
         self.record_event(route_id, "route_updated", {"truck_id": str(truck_id), "assignment_status": status})
         if status == "active":
             self.set_active_route(route_id)
         return assignment_id
 
-    def get_truck_routes(self, truck_id: str, status: Optional[str] = None) -> List[sqlite3.Row]:
+    def get_truck_routes(self, truck_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
         """Return assigned, active, or completed route assignments for a truck."""
-        query = """
-            SELECT a.*, h.total_distance_km, h.duration_min, h.profile, h.stops_json,
-                   h.fuel_estimates_json, h.toll_estimates_json, h.profit_estimates_json
-            FROM truck_route_assignments a
-            JOIN route_history_v2 h ON h.id = a.route_id
-            WHERE a.truck_id = ?
-        """
-        params: List[Any] = [str(truck_id)]
-        if status:
-            query += " AND a.status = ?"
-            params.append(status)
-        query += " ORDER BY COALESCE(a.started_at, a.assigned_at) DESC"
-        with self._lock:
-            return self.conn.execute(query, params).fetchall()
+        return self._assignment_repo.get_by_truck(truck_id, status=status)
 
     def record_event(self, route_id: Optional[int], event_type: str, payload: Optional[Dict[str, Any]] = None) -> int:
         """Persist and publish a route event."""
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-        with self._lock:
-            cur = self.conn.execute(
-                "INSERT INTO route_events (route_id, event_type, payload_json, created_at) VALUES (?, ?, ?, ?)",
-                (route_id, event_type, self._json(payload or {}), now),
-            )
-            self.conn.commit()
-            event_id = int(cur.lastrowid)
+        event_id = self._event_repo.create(
+            route_id=route_id,
+            event_type=event_type,
+            payload_json=self._json(payload or {}),
+            created_at=now,
+        )
         RouteEventBus.publish(event_type, {"id": event_id, "route_id": route_id, **(payload or {})})
         return event_id
 
@@ -383,55 +277,33 @@ class RouteHistoryService:
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         fingerprint = hashlib.sha256(f"{route_id}:{now}".encode("utf-8")).hexdigest()
         payload = self._to_db_payload(record)
-        with self._lock:
-            cur = self.conn.cursor()
-            cur.execute(
-                """
-                INSERT INTO route_history_v2 (
-                    route_fingerprint, metadata_version, created_at, last_calculated_at,
-                    calculation_count, stops_json, geometry_compressed, geometry_encoding,
-                    total_distance_km, duration_min, truck_id, truck_label, truck_json,
-                    profile, excluded_countries_json, toll_estimates_json,
-                    fuel_estimates_json, profit_estimates_json, countries_traversed_json,
-                    route_summary_json
-                )
-                VALUES (?, ?, ?, ?, 1, ?, ?, 'zlib-json', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    fingerprint,
-                    record.metadata_version,
-                    now,
-                    now,
-                    payload["stops_json"],
-                    payload["geometry_compressed"],
-                    record.total_distance_km,
-                    record.duration_min,
-                    record.truck_id,
-                    record.truck_label,
-                    payload["truck_json"],
-                    record.profile,
-                    payload["excluded_countries_json"],
-                    payload["toll_estimates_json"],
-                    payload["fuel_estimates_json"],
-                    payload["profit_estimates_json"],
-                    payload["countries_traversed_json"],
-                    payload["route_summary_json"],
-                ),
-            )
-            self.conn.commit()
-            return int(cur.lastrowid)
+        data = {
+            "route_fingerprint": fingerprint,
+            "metadata_version": record.metadata_version,
+            "created_at": now,
+            "last_calculated_at": now,
+            "calculation_count": 1,
+            "stops_json": payload["stops_json"],
+            "geometry_compressed": payload["geometry_compressed"],
+            "geometry_encoding": "zlib-json",
+            "total_distance_km": record.total_distance_km,
+            "duration_min": record.duration_min,
+            "truck_id": record.truck_id,
+            "truck_label": record.truck_label,
+            "truck_json": payload["truck_json"],
+            "profile": record.profile,
+            "excluded_countries_json": payload["excluded_countries_json"],
+            "toll_estimates_json": self._json(record.toll_estimates),
+            "fuel_estimates_json": self._json(record.fuel_estimates),
+            "profit_estimates_json": self._json(record.profit_estimates),
+            "countries_traversed_json": payload["countries_traversed_json"],
+            "route_summary_json": self._json(record.route_summary),
+        }
+        return self._route_repo.create(data)
 
     def get_statistics(self, include_archived: bool = False) -> Dict[str, Any]:
-        """Compute route history statistics (route-only — financial data belongs in trips)."""
-        where = "" if include_archived else "WHERE archived_at IS NULL"
-        with self._lock:
-            rows = self.conn.execute(
-                f"""
-                SELECT stops_json, total_distance_km
-                FROM route_history_v2
-                {where}
-                """
-            ).fetchall()
+        """Compute route history statistics (route-only)."""
+        rows = self._route_repo.get_all(limit=100000, include_archived=include_archived)
 
         destinations: Dict[str, int] = {}
         total_distance = 0.0
@@ -441,7 +313,7 @@ class RouteHistoryService:
             if stops:
                 dest = self._stop_label(stops[-1])
                 destinations[dest] = destinations.get(dest, 0) + 1
-            total_distance += float(row["total_distance_km"] or 0)
+            total_distance += float(row.get("total_distance_km") or 0)
 
         common_destinations = sorted(destinations.items(), key=lambda kv: kv[1], reverse=True)[:5]
         return {
@@ -451,23 +323,15 @@ class RouteHistoryService:
         }
 
     def get_route_analytics(self, include_archived: bool = False) -> Dict[str, Any]:
-        """Return route analytics (route-only — financial data belongs in trips)."""
-        where = "" if include_archived else "WHERE archived_at IS NULL"
-        with self._lock:
-            rows = self.conn.execute(
-                f"""
-                SELECT last_calculated_at, duration_min, countries_traversed_json
-                FROM route_history_v2
-                {where}
-                ORDER BY last_calculated_at ASC
-                """
-            ).fetchall()
+        """Return route analytics (route-only)."""
+        rows = self._route_repo.get_all(limit=100000, include_archived=include_archived)
         country_frequency: Dict[str, int] = {}
         durations = []
         for row in rows:
-            countries = self._loads(row["countries_traversed_json"], [])
-            if row["duration_min"] is not None:
-                durations.append(float(row["duration_min"] or 0))
+            countries = self._loads(row.get("countries_traversed_json"), [])
+            dur = row.get("duration_min")
+            if dur is not None:
+                durations.append(float(dur or 0))
             for country in countries:
                 cc = str(country).upper()
                 country_frequency[cc] = country_frequency.get(cc, 0) + 1
@@ -510,19 +374,16 @@ class RouteHistoryService:
 
     def clear_history(self) -> int:
         """Delete all route history rows and return the deleted count."""
-        with self._lock:
-            cur = self.conn.execute("DELETE FROM route_history_v2")
-            self.conn.commit()
-            return cur.rowcount
+        return self._route_repo.clear_all()
 
     def set_retention_days(self, days: int) -> None:
         """Persist route history retention in days. Use 0 or lower to disable pruning."""
         with self._lock:
-            self.conn.execute(
+            self.db.conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                 (RETENTION_SETTING_KEY, str(int(days))),
             )
-            self.conn.commit()
+            self.db.conn.commit()
         self.retention_days = int(days)
 
     def get_retention_days(self) -> int:
@@ -530,7 +391,7 @@ class RouteHistoryService:
         if self.retention_days is not None:
             return int(self.retention_days)
         try:
-            row = self.conn.execute(
+            row = self.db.conn.execute(
                 "SELECT value FROM settings WHERE key = ?",
                 (RETENTION_SETTING_KEY,),
             ).fetchone()
@@ -546,21 +407,12 @@ class RouteHistoryService:
         if days <= 0:
             return 0
         cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat(timespec="seconds") + "Z"
-        with self._lock:
-            cur = self.conn.execute(
-                "DELETE FROM route_history_v2 WHERE last_calculated_at < ?",
-                (cutoff,),
-            )
-            self.conn.commit()
-            return cur.rowcount
+        return self._route_repo.prune_before(cutoff)
 
     def run_cleanup(self) -> Dict[str, int]:
         """Background cleanup hook for app startup or future scheduler."""
         pruned = self.prune_old_routes()
-        with self._lock:
-            cur = self.conn.execute("DELETE FROM route_events WHERE route_id IS NOT NULL AND route_id NOT IN (SELECT id FROM route_history_v2)")
-            self.conn.commit()
-            orphan_events = cur.rowcount
+        orphan_events = self._event_repo.delete_orphans()
         return {"pruned_routes": pruned, "orphan_events": orphan_events}
 
     def build_fingerprint(self, record: RouteHistoryRecord) -> str:
@@ -574,52 +426,6 @@ class RouteHistoryService:
         }
         raw = json.dumps(key, sort_keys=True, separators=(",", ":"))
         return hashlib.sha256(raw.encode("utf-8")).hexdigest()
-
-    def _ensure_schema(self) -> None:
-        try:
-            from database.schema import (
-                INDEX_ROUTE_HISTORY_V2_CREATED,
-                INDEX_ROUTE_HISTORY_V2_FINGERPRINT,
-                INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED,
-                INDEX_ROUTE_HISTORY_V2_PROFILE,
-                INDEX_ROUTE_HISTORY_V2_TRUCK,
-                TABLE_ROUTE_HISTORY_V2,
-            )
-
-            with self._lock:
-                self.conn.execute(TABLE_ROUTE_HISTORY_V2)
-                self._ensure_column("route_history_v2", "archived_at", "TEXT")
-                self.conn.execute("""
-                    CREATE TABLE IF NOT EXISTS route_events (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        route_id INTEGER,
-                        event_type TEXT NOT NULL,
-                        payload_json TEXT,
-                        created_at TEXT NOT NULL
-                    )
-                """)
-                self.conn.execute("""
-                    CREATE TABLE IF NOT EXISTS truck_route_assignments (
-                        id INTEGER PRIMARY KEY AUTOINCREMENT,
-                        truck_id TEXT NOT NULL,
-                        route_id INTEGER NOT NULL,
-                        status TEXT NOT NULL DEFAULT 'assigned',
-                        assigned_at TEXT NOT NULL,
-                        started_at TEXT,
-                        completed_at TEXT,
-                        archived_at TEXT,
-                        notes TEXT
-                    )
-                """)
-                self.conn.execute(INDEX_ROUTE_HISTORY_V2_CREATED)
-                self.conn.execute(INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED)
-                self.conn.execute(INDEX_ROUTE_HISTORY_V2_TRUCK)
-                self.conn.execute(INDEX_ROUTE_HISTORY_V2_PROFILE)
-                self.conn.execute(INDEX_ROUTE_HISTORY_V2_FINGERPRINT)
-                self.conn.commit()
-        except Exception:
-            self.logger.exception("Failed to initialize route history schema")
-            raise
 
     def _normalize_record(self, record: RouteHistoryRecord) -> RouteHistoryRecord:
         data = asdict(record)
@@ -663,14 +469,7 @@ class RouteHistoryService:
             "countries_traversed_json": self._json(record.countries_traversed),
         }
 
-    def _route_id_for_fingerprint(self, cur: sqlite3.Cursor, fingerprint: str) -> int:
-        row = cur.execute(
-            "SELECT id FROM route_history_v2 WHERE route_fingerprint = ?",
-            (fingerprint,),
-        ).fetchone()
-        return int(row[0])
-
-    def _row_to_record(self, row: sqlite3.Row) -> RouteHistoryRecord:
+    def _row_to_record(self, row: Dict[str, Any]) -> RouteHistoryRecord:
         return RouteHistoryRecord(
             stops=self._loads(row["stops_json"], []),
             geometry=self._decompress_json(row["geometry_compressed"]),
@@ -685,7 +484,7 @@ class RouteHistoryService:
             metadata_version=row["metadata_version"],
         )
 
-    def _row_to_list_item(self, row: sqlite3.Row) -> RouteHistoryListItem:
+    def _row_to_list_item(self, row: Dict[str, Any]) -> RouteHistoryListItem:
         stops = self._loads(row["stops_json"], [])
         return RouteHistoryListItem(
             id=row["id"],
@@ -700,16 +499,11 @@ class RouteHistoryService:
             profile=row["profile"],
             origin=self._stop_label(stops[0]) if stops else "",
             destination=self._stop_label(stops[-1]) if stops else "",
-            excluded_countries=self._loads(row["excluded_countries_json"], []),
-            countries_traversed=self._loads(row["countries_traversed_json"], []),
+            excluded_countries=self._loads(row.get("excluded_countries_json"), []),
+            countries_traversed=self._loads(row.get("countries_traversed_json"), []),
             metadata_version=row["metadata_version"],
-            archived_at=row["archived_at"] if "archived_at" in row.keys() else None,
+            archived_at=row.get("archived_at"),
         )
-
-    def _ensure_column(self, table: str, column: str, definition: str) -> None:
-        cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
-        if column not in cols:
-            self.conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {definition}")
 
     @staticmethod
     def _row_total_cost(

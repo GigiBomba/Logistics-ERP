@@ -5,13 +5,13 @@ from typing import Any, Dict, Optional
 from services.operations.alert_manager import AlertManager, AlertType, Severity
 from services.operations.event_bus import EventBus, TRIP_CREATED, TRIP_UPDATED, TRIP_STATUS_CHANGED, VALID_TRANSITIONS
 from services.operations.rules import Rules
-from services.trip_service import TripService
 
 logger = logging.getLogger("operations.trip_status_engine")
 
 
 class TripStatusEngine:
     def __init__(self, db):
+        from services.trip_service import TripService
         self._trip_service = TripService(db)
         self._alert_mgr = AlertManager()
         self._event_bus = EventBus()
@@ -54,7 +54,7 @@ class TripStatusEngine:
                 created_raw = row.get("created_at")
                 if created_raw and status in ("pending", "loading"):
                     try:
-                        created = datetime.strptime(created_raw[:10], "%d/%m/%Y")
+                        created = datetime.strptime(created_raw[:10], "%Y-%m-%d")
                         hours_idle = (datetime.now() - created).total_seconds() / 3600
                         if hours_idle > delay_hours * 24:
                             self._alert_mgr.create_alert(

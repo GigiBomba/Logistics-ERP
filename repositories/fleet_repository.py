@@ -292,7 +292,7 @@ class FleetRepository(BaseRepository):
     def get_maintenance_cost_truck_monthly(self, since: str) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT truck_id,
-                       substr(date, 7, 4) || '-' || substr(date, 4, 2) AS ym,
+                       substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
                 WHERE date >= ? AND cost IS NOT NULL
@@ -303,7 +303,7 @@ class FleetRepository(BaseRepository):
 
     def get_maintenance_cost_monthly(self, since: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"""SELECT substr(date, 7, 4) || '-' || substr(date, 4, 2) AS ym,
+            f"""SELECT substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
                 WHERE date >= ? AND cost IS NOT NULL

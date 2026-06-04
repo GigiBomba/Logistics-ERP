@@ -227,7 +227,7 @@ class HistoryView:
         try:
             trip_data = self.trip_service.get_by_id(data[0])
             path = self.invoice_service.generate(trip_data, mode="client")
-            due_date = (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y")
+            due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
             self.invoice_service.create_record(data[0], f"INV-{data[0]}", trip_data.get('total_price_eur', 0), due_date)
             if os.path.exists(path): self.refresh(); os.startfile(path)
         except Exception as e: messagebox.showerror(t("history.error_title"), str(e))
@@ -264,7 +264,7 @@ class HistoryView:
 
         try:
             path = self.invoice_service.generate(trip_data, mode="client")
-            due_date = (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y")
+            due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
             self.invoice_service.create_record(trip_id, f"INV-{trip_id}", trip_data.get('total_price_eur', 0), due_date)
             if not os.path.exists(path):
                 raise FileNotFoundError(f"Invoice PDF not found: {path}")
@@ -333,7 +333,7 @@ class HistoryView:
             return
         from services.route_history_service import RouteHistoryService
         svc = RouteHistoryService(self.db)
-        record = svc.get_route(route_id)
+        record = svc.load_route(route_id)
         if not record:
             messagebox.showerror(t("history.error_title"), t("history.route_not_found"))
             return

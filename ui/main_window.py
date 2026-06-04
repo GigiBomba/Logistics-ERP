@@ -488,8 +488,8 @@ class MainWindow(I18nMixin):
             conflicts = cfs.check_conflicts({
                 "truck_plate": truck_plate or "",
                 "driver_id": driver_id,
-                "start_date": dt_s.strftime("%d/%m/%Y"),
-                "end_date": dt_end.strftime("%d/%m/%Y"),
+                "start_date": dt_s.strftime("%Y-%m-%d"),
+                "end_date": dt_end.strftime("%Y-%m-%d"),
                 "distance_km": km,
             })
             if conflicts:
@@ -499,7 +499,7 @@ class MainWindow(I18nMixin):
                     return
 
             self.trip_service.add({
-                "created_at": datetime.now().strftime("%d/%m/%Y %H:%M"),
+                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "truck_number": (self.selected_truck.get('plate_number') if isinstance(self.selected_truck, dict) and self.selected_truck else (self.selected_truck[1] if self.selected_truck and len(self.selected_truck) > 1 else None)),
                 "driver_name": (self.selected_truck.get('driver_name') if isinstance(self.selected_truck, dict) and self.selected_truck and 'driver_name' in self.selected_truck else (self.selected_truck['driver_name'] if self.selected_truck and hasattr(self.selected_truck, 'keys') and 'driver_name' in self.selected_truck.keys() else None)),
                 "client_name": self.e_client.get(),
@@ -508,9 +508,9 @@ class MainWindow(I18nMixin):
                 "rate_per_km": res.rate_per_km,
                 "gross_per_km": res.gross_per_km,
                 "net_profit": res.net_profit,
-                "start_date": dt_s.strftime("%d/%m/%Y"),
-                "end_date": dt_end.strftime("%d/%m/%Y"),
-                "payment_date": dt_inc.strftime("%d/%m/%Y"),
+                "start_date": dt_s.strftime("%Y-%m-%d"),
+                "end_date": dt_end.strftime("%Y-%m-%d"),
+                "payment_date": dt_inc.strftime("%Y-%m-%d"),
                 "currency": self.c_val.get(),
                 "status": "Planned",
                 "fuel_cost": res.fuel_cost,
@@ -598,7 +598,7 @@ class MainWindow(I18nMixin):
         InvoiceTab(win, self.db, prefs=self.prefs).frame.pack(fill="both", expand=True)
 
     def get_timestamp(self):
-        return datetime.now().strftime("%d/%m/%Y %H:%M")
+        return datetime.now().strftime("%Y-%m-%d %H:%M")
 
     def destroy(self):
         try:

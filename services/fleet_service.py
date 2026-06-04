@@ -1,13 +1,15 @@
-﻿"""Truck and expense service — delegates truck CRUD to FleetRepository, expenses to DatabaseManager."""
+"""Truck and expense service — delegates truck CRUD to FleetRepository, expenses to DatabaseManager."""
 
 from services.operations.event_bus import EventBus, TRUCK_CREATED, TRUCK_UPDATED, TRUCK_DELETED
 from repositories.fleet_repository import FleetRepository
+from repositories.truck_route_assignment_repository import TruckRouteAssignmentRepository
 
 
 class FleetService:
     def __init__(self, db):
         self.db = db
         self._fleet_repo = FleetRepository(db)
+        self._assignment_repo = TruckRouteAssignmentRepository(db)
         self._event_bus = EventBus()
 
     def get_trucks(self):
@@ -17,7 +19,7 @@ class FleetService:
         return self._fleet_repo.get_by_id(truck_id)
 
     def get_assigned_routes(self, truck_id, status=None):
-        return self.db.get_truck_routes(truck_id, status=status)
+        return self._assignment_repo.get_by_truck(truck_id, status=status)
 
     def add_truck(self, data: dict) -> int:
         truck_id = self._fleet_repo.create(data)

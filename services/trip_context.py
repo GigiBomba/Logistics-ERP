@@ -388,7 +388,7 @@ def save_trip_to_db(db_manager, tc: TripContext, client_name: Optional[str] = No
 
     # Prepare row payload - map TripContext fields to trips columns
     payload = {
-        'created_at': datetime.now().strftime("%d/%m/%Y %H:%M"),
+        'created_at': datetime.now().strftime("%Y-%m-%d %H:%M"),
         'truck_number': tc.truck.name if tc.truck and tc.truck.name else None,
         'driver_name': tc.driver.name if tc.driver and tc.driver.name else None,
         'client_name': client_name or None,

@@ -177,7 +177,7 @@ class FleetDashboard:
 
             # One-pass aggregation: compute all derived values from trips in a single pass
             filtered_trips = self._filter_trips_by_period(trips)
-            today_str = datetime.now().strftime("%d/%m/%Y")
+            today_str = datetime.now().strftime("%Y-%m-%d")
             active_trucks = 0
             trips_today = 0
             revenue = 0.0
@@ -556,7 +556,7 @@ class FleetDashboard:
             created = trip.get('created_at', '')
             if created:
                 try:
-                    trip_date = datetime.strptime(created[:10], "%d/%m/%Y").strftime("%Y-%m-%d")
+                    trip_date = datetime.strptime(created[:10], "%Y-%m-%d").strftime("%Y-%m-%d")
                     if self._start_date <= trip_date <= self._end_date:
                         filtered.append(trip)
                 except Exception:

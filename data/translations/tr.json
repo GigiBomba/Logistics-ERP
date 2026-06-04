@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Türkçe",
   "app": {
     "name": "ERP LOJİSTİK",
@@ -726,7 +726,24 @@
     "no_records": "Kayıt Yok",
     "title": "Bakim Analizi",
     "total_cost_label": "Toplam Maliyet",
-    "truck_fallback": "Kamyon"
+    "truck_fallback": "Kamyon",
+    "col_truck": "Kamyon",
+    "col_ytd_cost": "Maliyet (YTD)",
+    "col_avg_cost": "Ort. maliyet",
+    "col_count": "Hizmetler",
+    "col_top_category": "Ana kategori",
+    "month_jan": "Oca",
+    "month_feb": "Şub",
+    "month_mar": "Mar",
+    "month_apr": "Nis",
+    "month_may": "May",
+    "month_jun": "Haz",
+    "month_jul": "Tem",
+    "month_aug": "Ağu",
+    "month_sep": "Eyl",
+    "month_oct": "Eki",
+    "month_nov": "Kas",
+    "month_dec": "Ara"
   },
   "maint_timeline": {
     "detail_title": "Kayıt Detayı",

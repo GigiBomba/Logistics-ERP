@@ -222,7 +222,7 @@ class DispatchBoardView:
 
             column_trips: Dict[str, List[Dict[str, Any]]] = {col: [] for col, _, _ in COLUMN_DEFS}
 
-            cutoff = (datetime.now() - timedelta(days=self._delivered_days)).strftime("%d/%m/%Y")
+            cutoff = (datetime.now() - timedelta(days=self._delivered_days)).strftime("%Y-%m-%d")
 
             for trip in all_trips:
                 raw_status = trip.get("status", "")

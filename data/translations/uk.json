@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Українська",
   "app": {
     "name": "ERP ЛОГІСТИКА",
@@ -914,7 +914,24 @@
     "filter_all": "Всі",
     "filter_truck": "Вантажівка",
     "section_title": "Аналітика ТО",
-    "type": "Тип"
+    "type": "Тип",
+    "col_truck": "Вантажівка",
+    "col_ytd_cost": "Витрати (рік)",
+    "col_avg_cost": "Сер. витрати",
+    "col_count": "Послуги",
+    "col_top_category": "Осн. категорія",
+    "month_jan": "Січ",
+    "month_feb": "Лют",
+    "month_mar": "Бер",
+    "month_apr": "Кві",
+    "month_may": "Тра",
+    "month_jun": "Чер",
+    "month_jul": "Лип",
+    "month_aug": "Сер",
+    "month_sep": "Вер",
+    "month_oct": "Жов",
+    "month_nov": "Лис",
+    "month_dec": "Гру"
   },
   "maint_timeline": {
     "detail_title": "Деталі Запису ТО",

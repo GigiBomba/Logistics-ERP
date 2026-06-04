@@ -85,43 +85,28 @@ class TripRepository(BaseRepository):
         return row["last_date"] if row else None
 
     def get_daily_profit(self, start: str, end: str) -> List[tuple]:
-        """Return daily profit for date range: list of (day_str, profit).
-        
-        Handles DD/MM/YYYY date format stored in the database by normalising
-        to YYYY-MM-DD for correct chronological comparison against parameters.
-        """
+        """Return daily profit for date range: list of (day_str, profit)."""
         start = start.strip()
         end = end.strip()
         rows = self._fetchall(
-            f"""SELECT DATE(
-                    substr(start_date, 7, 4) || '-' ||
-                    substr(start_date, 4, 2) || '-' ||
-                    substr(start_date, 1, 2)
-                ) AS day,
-                SUM(COALESCE(net_profit,
-                    total_price_eur - COALESCE(fuel_cost,0)
-                    - COALESCE(toll_cost,0) - COALESCE(salary_cost,0)
-                    - COALESCE(extra_costs,0), 0)) AS profit
-            FROM {self.TABLE}
-            WHERE LENGTH(start_date) >= 10
-              AND (substr(start_date, 7, 4) || '-' ||
-                   substr(start_date, 4, 2) || '-' ||
-                   substr(start_date, 1, 2)) >= ?
-              AND (substr(start_date, 7, 4) || '-' ||
-                   substr(start_date, 4, 2) || '-' ||
-                   substr(start_date, 1, 2)) <= ?
-              AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
-            GROUP BY day
-            ORDER BY day""",
+            f"""SELECT start_date AS day,
+                       SUM(COALESCE(net_profit,
+                           total_price_eur - COALESCE(fuel_cost,0)
+                           - COALESCE(toll_cost,0) - COALESCE(salary_cost,0)
+                           - COALESCE(extra_costs,0), 0)) AS profit
+                FROM {self.TABLE}
+                WHERE LENGTH(start_date) >= 10
+                  AND start_date >= ?
+                  AND start_date <= ?
+                  AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
+                GROUP BY start_date
+                ORDER BY start_date""",
             (start, end),
         )
         return [(r["day"], float(r["profit"] or 0)) for r in rows]
 
     def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4) -> List[Dict[str, Any]]:
-        """Return top trucks by revenue for a date range.
-        
-        Handles DD/MM/YYYY date format stored in the database.
-        """
+        """Return top trucks by revenue for a date range."""
         month_start = month_start.strip()
         month_end = month_end.strip()
         return self._fetchall(
@@ -129,12 +114,8 @@ class TripRepository(BaseRepository):
                        SUM(COALESCE(total_price_eur, 0)) AS revenue
                 FROM {self.TABLE}
                 WHERE LENGTH(start_date) >= 10
-                  AND (substr(start_date, 7, 4) || '-' ||
-                       substr(start_date, 4, 2) || '-' ||
-                       substr(start_date, 1, 2)) >= ?
-                  AND (substr(start_date, 7, 4) || '-' ||
-                       substr(start_date, 4, 2) || '-' ||
-                       substr(start_date, 1, 2)) <= ?
+                  AND start_date >= ?
+                  AND start_date <= ?
                   AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
                 GROUP BY truck_number
                 ORDER BY revenue DESC

@@ -297,7 +297,7 @@ class RoutePlannerController:
         )
 
         trip_data = {
-            'created_at': datetime.now().strftime('%d/%m/%Y %H:%M'),
+            'created_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
             'truck_number': truck_plate,
             'driver_name': driver_name,
             'driver_id': driver_id,
@@ -307,8 +307,8 @@ class RoutePlannerController:
             'rate_per_km': result.rate_per_km if result else 0,
             'gross_per_km': result.gross_per_km if result else 0,
             'net_profit': result.net_profit if result else 0,
-            'start_date': start_dt.strftime('%d/%m/%Y'),
-            'end_date': end_dt.strftime('%d/%m/%Y'),
+            'start_date': start_dt.strftime('%Y-%m-%d'),
+            'end_date': end_dt.strftime('%Y-%m-%d'),
             'fuel_cost': fuel_cost,
             'toll_cost': 0,
             'salary_cost': 0,

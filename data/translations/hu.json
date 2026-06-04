@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Magyar",
   "app": {
     "name": "ERP LOGISZTIKA",
@@ -726,7 +726,24 @@
     "no_records": "Nincs bejegyzes",
     "title": "Karbantartasi Analitika",
     "total_cost_label": "Teljes Koltseg",
-    "truck_fallback": "Kamion"
+    "truck_fallback": "Kamion",
+    "col_truck": "Jármű",
+    "col_ytd_cost": "Költség (YTD)",
+    "col_avg_cost": "Átl. költség",
+    "col_count": "Szolgáltatások",
+    "col_top_category": "Fő kategória",
+    "month_jan": "Jan",
+    "month_feb": "Feb",
+    "month_mar": "Már",
+    "month_apr": "Ápr",
+    "month_may": "Máj",
+    "month_jun": "Jún",
+    "month_jul": "Júl",
+    "month_aug": "Aug",
+    "month_sep": "Szep",
+    "month_oct": "Okt",
+    "month_nov": "Nov",
+    "month_dec": "Dec"
   },
   "maint_timeline": {
     "detail_title": "Bejegyzes Reszletei",
