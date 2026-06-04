@@ -281,7 +281,7 @@ class HistoryView:
             return
 
         nc = NotificationCenter(self.db)
-        smtp_cfg = self.db.get_settings(["smtp_server", "smtp_port", "smtp_user", "smtp_password"])
+        smtp_cfg = self.prefs.get_smtp_config()
         if not smtp_cfg.get("smtp_server") or not smtp_cfg.get("smtp_user"):
             messagebox.showerror(t("history.email_error"), t("email.config_missing"))
             return

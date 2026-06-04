@@ -19,12 +19,13 @@ SEVERITY_EMAIL_PREFIX = {
 
 
 class NotificationCenter:
-    def __init__(self, db=None):
+    def __init__(self, db=None, alert_recipients: Optional[List[str]] = None):
         self._db = db
         self._alert_mgr = AlertManager()
         self._event_bus = EventBus()
         self._subscribers: List[callable] = []
         self._smtp_config: Optional[Dict[str, Any]] = None
+        self._alert_recipients: Optional[List[str]] = alert_recipients
         self._subscribe()
 
     def _subscribe(self):
@@ -124,6 +125,8 @@ class NotificationCenter:
             return False
 
     def _get_alert_recipients(self, alert_data: Dict[str, Any]) -> List[str]:
+        if self._alert_recipients:
+            return self._alert_recipients
         if not self._db:
             return []
         try:

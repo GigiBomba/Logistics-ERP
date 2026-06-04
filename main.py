@@ -131,7 +131,7 @@ class CashflowApp:
             Theme.apply(self.root)
 
             # 6. Inițializare Operations Engine (centralizat)
-            self.ops = OperationsEngine(self.db)
+            self.ops = OperationsEngine(self.db, prefs=self.prefs)
             self.ops.start()
 
             # 7. Inițializare Fleet Tracking Service

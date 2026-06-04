@@ -94,6 +94,7 @@ class PreferencesManager:
             self._currency = currency
 
     def _get_setting(self, key: str) -> Optional[str]:
+        """Read a single setting from the DB. Use get_setting() for public access."""
         try:
             row = self._db.conn.execute(
                 "SELECT value FROM settings WHERE key = ?", (key,)
@@ -103,6 +104,7 @@ class PreferencesManager:
             return None
 
     def _set_setting(self, key: str, value: str) -> None:
+        """Write a single setting to the DB. Use save_setting() for public access."""
         try:
             self._db.conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
@@ -111,6 +113,37 @@ class PreferencesManager:
             self._db.conn.commit()
         except Exception:
             pass
+
+    # --- Public settings API (canonical access layer) --------------------
+
+    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
+        return self._get_setting(key) or default
+
+    def get_settings(self, keys: List[str]) -> Dict[str, str]:
+        return {k: (self._get_setting(k) or "") for k in keys}
+
+    def save_setting(self, key: str, value: str) -> None:
+        self._set_setting(key, value)
+
+    def save_settings(self, data: Dict[str, str]) -> None:
+        for k, v in data.items():
+            self._set_setting(k, v)
+
+    # --- SMTP settings ---------------------------------------------------
+
+    _SMTP_KEYS = ["smtp_server", "smtp_port", "smtp_user", "smtp_password"]
+
+    def get_smtp_config(self) -> Dict[str, str]:
+        cfg = self.get_settings(self._SMTP_KEYS)
+        cfg["alert_email_recipients"] = self.get_setting("alert_email_recipients") or ""
+        return cfg
+
+    def save_smtp_config(self, config: Dict[str, str]) -> None:
+        for k in self._SMTP_KEYS:
+            if k in config:
+                self._set_setting(k, config[k])
+        if "alert_email_recipients" in config:
+            self._set_setting("alert_email_recipients", config["alert_email_recipients"])
 
     # --- Language -------------------------------------------------------
 

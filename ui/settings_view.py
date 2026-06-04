@@ -214,7 +214,7 @@ class SettingsView:
             "settings.field_smtp_user", "settings.field_smtp_password",
             "settings.field_alert_recipients",
         ]
-        smtp_cfg = self.db.get_settings(smtp_keys) if self.db else {}
+        smtp_cfg = self.prefs.get_settings(smtp_keys) if self.prefs else {}
 
         self.smtp_inputs = {}
         for key, label_key in zip(smtp_keys, smtp_labels):
@@ -345,9 +345,9 @@ class SettingsView:
         settings_map = {"tracking.platform": platform}
         for key, (row, entry) in self._tracking_rows.items():
             settings_map[f"tracking.{key}"] = entry.get().strip()
-        if self.db:
+        if self.prefs:
             for k, v in settings_map.items():
-                self.db.save_setting(k, v)
+                self.prefs.save_setting(k, v)
 
         svc = FleetTrackingService()
         svc.initialize(self.db)
@@ -374,7 +374,7 @@ class SettingsView:
         ]:
             row = self._field_row(card, label_key)
             e = StyledEntry(row)
-            smtp_val = self.db.get_settings([key]).get(key, "") if self.db else ""
+            smtp_val = self.prefs.get_setting(key, "") if self.prefs else ""
             e.insert(0, smtp_val or "")
             e.pack(fill="x")
             setattr(self, f"_{key}_entry", e)
@@ -391,18 +391,18 @@ class SettingsView:
         for key in smtp_keys:
             val = self.smtp_inputs.get(key)
             if val:
-                self.db.save_setting(key, val.get().strip())
+                self.prefs.save_setting(key, val.get().strip())
 
-        if self.db:
+        if self.prefs:
             platform = self._tracking_platform_menu.get()
-            self.db.save_setting("tracking.platform", platform)
+            self.prefs.save_setting("tracking.platform", platform)
             for key, (_row, entry) in self._tracking_rows.items():
-                self.db.save_setting(f"tracking.{key}", entry.get().strip())
+                self.prefs.save_setting(f"tracking.{key}", entry.get().strip())
 
         for key in ["alert_days_ahead", "tacho_warning", "tacho_critical"]:
             entry = getattr(self, f"_{key}_entry", None)
             if entry:
-                self.db.save_setting(key, entry.get().strip())
+                self.prefs.save_setting(key, entry.get().strip())
 
         if self.ops:
             try:
