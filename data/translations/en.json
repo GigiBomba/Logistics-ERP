@@ -3,6 +3,7 @@
   "app": {
     "name": "LOGISTICS ERP",
     "title": "Cashflow Manager v2.0 - Logistics",
+    "subtitle": "ERP",
     "loading": "Loading..."
   },
   "nav": {
@@ -597,7 +598,9 @@
     "d_updated": "Updated",
     "d_odometer": "Odometer",
     "d_address": "Location",
-    "btn_fleet_detail": "View in Fleet Manager →"
+    "btn_fleet_detail": "View in Fleet Manager →",
+    "mapview_missing": "tkintermapview not installed.\nRun: pip install tkintermapview",
+    "stopped": "Stopped"
   },
   "  ": {
     "": {
@@ -606,9 +609,20 @@
       }
     }
   },
+  "email_logs": {
+    "col_id": "ID",
+    "col_recipient": "Recipient",
+    "col_subject": "Subject",
+    "col_sent": "Sent",
+    "col_status": "Status",
+    "no_logs": "No logs found"
+  },
   "alerts": {
     "none_active": "None Active",
-    "panel_title": "Panel Title"
+    "panel_title": "Panel Title",
+    "severity_critical": "Critical",
+    "severity_warning": "Warning",
+    "severity_info": "Info"
   },
   "common": {
     "all": "All",
@@ -660,7 +674,8 @@
     "col_planned": "Planned",
     "col_loading": "Loading",
     "col_in_transit": "In Transit",
-    "col_delivered": "Delivered"
+    "col_delivered": "Delivered",
+    "live": "LIVE"
   },
   "driver_manager": {
     "add_driver": "Add Driver",
@@ -895,7 +910,17 @@
     "total_hours": "Total Hours",
     "type_driver": "Type Driver",
     "type_vehicle": "Type Vehicle",
-    "violations": "Violations"
+    "violations": "Violations",
+    "import_steps": "1. Driver inserts card into USB reader\n2. Export .DDD file using card reader software\n3. Import the .DDD file here",
+    "unknown_error": "Unknown error",
+    "import_successful": "Import successful",
+    "result_label": "{label}: {value}",
+    "violations_warning": "Found {count} violation(s) flagged",
+    "result_driver": "Driver",
+    "result_plate": "Plate",
+    "result_calibration": "Calibration",
+    "result_days": "Days",
+    "result_odometer": "Odometer"
   },
   "time": {
     "days_ago": "{n} days ago",
@@ -953,6 +978,17 @@
     "field_email": "Email",
     "field_address": "Address",
     "field_vat": "VAT Number",
-    "field_notes": "Notes"
+    "field_notes": "Notes",
+    "title": "Clients",
+    "new_button": "New Client",
+    "edit_button": "Edit",
+    "deactivate_button": "Deactivate",
+    "deactivate_confirm": "Deactivate '{name}'?",
+    "deactivate_trips_warning": "\n({count} trip(s) linked — trips will be preserved)",
+    "edit_title": "Edit Client",
+    "new_title": "New Client",
+    "save_button": "Save",
+    "name_required": "Name is required.",
+    "already_exists": "Client '{name}' already exists."
   }
 }
