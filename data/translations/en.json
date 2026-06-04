@@ -440,10 +440,15 @@
     "no_saved_route_id": "No Saved Route Id",
     "select_driver": "Select Driver",
     "start_date": "Start Date",
-    "stop_destination": "Stop Destination",
+    "stop_destination": "Destination",
     "stop_n": "Stop N",
-    "stop_start": "Stop Start",
-    "trip_created": "Trip Created"
+    "stop_start": "Start",
+    "trip_created": "Trip Created",
+    "profile_recommended": "Recommended",
+    "profile_fastest": "Fastest",
+    "profile_cheapest": "Cheapest",
+    "profile_safest": "Safest",
+    "profile_shortest": "Shortest"
   },
   "route_history": {
     "title": "Route History",

@@ -439,9 +439,9 @@
     "no_saved_route_id": "Nessun ID Rotta Salvato",
     "select_driver": "Seleziona Autista",
     "start_date": "Data Inizio",
-    "stop_destination": "Fermata Destinazione",
+    "stop_destination": "Destinazione",
     "stop_n": "Fermata N",
-    "stop_start": "Fermata Inizio",
+    "stop_start": "Partenza",
     "trip_created": "Viaggio Creato"
   },
   "route_history": {
