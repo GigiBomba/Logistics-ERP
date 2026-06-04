@@ -164,44 +164,49 @@ class OperationsEngine:
             return False
 
     def _update_truck_odometer_on_completion(self, trip: Dict[str, Any]) -> None:
-        """Update truck odometer when trip is completed."""
+        """Update truck odometer when trip is completed, preferring truck_id FK."""
         try:
             distance_km = trip.get("distance_km")
+            truck_id = trip.get("truck_id")
             truck_number = trip.get("truck_number")
-            
+
             if not distance_km or distance_km <= 0:
                 logger.debug("Trip %s has no distance, skipping odometer update", trip.get("id"))
                 return
-            
-            if not truck_number:
-                logger.debug("Trip %s has no truck assigned, skipping odometer update", trip.get("id"))
-                return
-            
-            # Get truck by plate number
+
             fleet_repo = FleetRepository(self._db)
-            truck = fleet_repo.get_by_plate(truck_number)
-            
+            truck = None
+
+            # Prefer FK lookup (canonical)
+            if truck_id:
+                truck = fleet_repo.get_by_id(int(truck_id))
+
+            # Fall back to plate_number lookup for backward compatibility
+            if not truck and truck_number:
+                truck = fleet_repo.get_by_plate(truck_number)
+
             if not truck:
-                logger.warning("Truck %s not found, cannot update odometer", truck_number)
+                logger.warning("Truck not found (id=%s, plate=%s), cannot update odometer",
+                               truck_id, truck_number)
                 return
-            
+
             # Update odometer
             current_odometer = truck.get("mileage", 0) or 0
             new_odometer = current_odometer + distance_km
-            
+
             fleet_repo.update(truck["id"], {"mileage": new_odometer})
-            
+
             logger.info("Updated truck %s odometer: %.1f -> %.1f km (+%.1f km)",
-                       truck_number, current_odometer, new_odometer, distance_km)
-            
+                       truck.get("plate_number", truck["id"]), current_odometer, new_odometer, distance_km)
+
             # Re-evaluate maintenance thresholds
             if self._maintenance_engine:
                 self._maintenance_engine.evaluate_truck(truck["id"])
-            
+
             # Publish odometer update event
             self._event_bus.publish(TRUCK_ODOMETER_UPDATED, {
                 "truck_id": truck["id"],
-                "truck_number": truck_number,
+                "truck_number": truck.get("plate_number", ""),
                 "previous_km": current_odometer,
                 "added_km": distance_km,
                 "new_total_km": new_odometer,

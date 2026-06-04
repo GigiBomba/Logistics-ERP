@@ -779,7 +779,7 @@ class DispatchBoardView:
             plate = truck.get("plate_number", "")
             trip_id = card.trip_data.get("trip_id_num")
             
-            self._trip_service.update(trip_id, {"truck_number": plate})
+            self._trip_service.update(trip_id, {"truck_number": plate, "truck_id": truck_id})
             
             card.update_truck(plate, truck_id)
             
@@ -819,7 +819,7 @@ class DispatchBoardView:
     def _clear_truck_assignment(self, card):
         try:
             trip_id = card.trip_data.get("trip_id_num")
-            self._trip_service.update(trip_id, {"truck_number": ""})
+            self._trip_service.update(trip_id, {"truck_number": "", "truck_id": None})
             card.update_truck("", None)
             
             logger.info("Cleared truck assignment for trip %d", trip_id)

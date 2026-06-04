@@ -44,6 +44,18 @@ class EditWindow:
 
     def _save(self):
         new_data = {key: self.entries[key].get() for key in self.entries}
+        # Resolve truck_id from truck_number if the field was changed
+        new_truck_number = new_data.get("truck_number", "").strip()
+        if new_truck_number:
+            from repositories.fleet_repository import FleetRepository
+            fleet_repo = FleetRepository(self.trip_service._trip_repo._db)
+            truck = fleet_repo.get_by_plate(new_truck_number)
+            if truck:
+                new_data["truck_id"] = truck["id"]
+            else:
+                new_data["truck_id"] = None
+        else:
+            new_data["truck_id"] = None
         try:
             self.trip_service.update(self.trip_id, new_data)
             self.callback()
