@@ -1,13 +1,18 @@
 from datetime import datetime, timedelta
+import os
 from typing import Any, Dict, Optional
 
 from services.invoicing.generator import InvoiceGenerator
-from services.operations.event_bus import EventBus, INVOICE_CREATED
+from services.invoicing.config_manager import load_company_config
+from services.operations.event_bus import EventBus, INVOICE_CREATED, INVOICE_EMAILED
+from services.operations.notification_center import NotificationCenter
+from services.i18n import t
 
 
 class InvoiceService:
-    def __init__(self, db):
+    def __init__(self, db, prefs=None):
         self.db = db
+        self.prefs = prefs
         self.generator = InvoiceGenerator()
         self._event_bus = EventBus()
 
@@ -37,3 +42,50 @@ class InvoiceService:
                 "due_date": due_date,
             })
         return path
+
+    def send_invoice_email(
+        self,
+        trip_id: int,
+        recipient: str,
+        smtp_config: Optional[Dict[str, str]] = None,
+        trip_data: Optional[Dict[str, Any]] = None,
+        mode: str = "client",
+    ) -> bool:
+        trip = trip_data or {}
+        if not recipient:
+            raise ValueError("Recipient email address is required")
+
+        if smtp_config is None and self.prefs:
+            smtp_config = self.prefs.get_smtp_config()
+        if not smtp_config or not smtp_config.get("smtp_server") or not smtp_config.get("smtp_user"):
+            raise ValueError("SMTP not configured")
+
+        path = self.generate_and_record(trip, mode=mode)
+        if not os.path.exists(path):
+            raise FileNotFoundError(f"Invoice PDF not found: {path}")
+
+        nc = NotificationCenter(self.db)
+        nc.configure_smtp(
+            smtp_config.get("smtp_server", ""),
+            int(smtp_config.get("smtp_port", "587")),
+            smtp_config.get("smtp_user", ""),
+            smtp_config.get("smtp_password", ""),
+        )
+
+        conf = load_company_config()
+        client_name = trip.get("client_name", t("invoice.default_client"))
+        filename = os.path.basename(path)
+        subject = t("email.invoice_subject").format(filename=filename, client=client_name)
+        body = t("email.invoice_body").format(
+            trip_id=trip_id,
+            company=conf.get("company_name", ""),
+        )
+
+        if nc.send_email(recipient, subject, body, attachments=[path]):
+            self._event_bus.publish(INVOICE_EMAILED, {
+                "trip_id": trip_id,
+                "invoice_number": filename.replace(".pdf", ""),
+                "recipient": recipient,
+            })
+            return True
+        return False

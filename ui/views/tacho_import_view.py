@@ -56,11 +56,7 @@ class TachoImportView(ctk.CTkFrame):
                      font=FONTS["body_bold"],
                      text_color=COLORS["text_primary"],
                      anchor="w").pack(anchor="w", padx=S["3"], pady=(S["2"], 0))
-        steps = (
-            "1. Driver inserts card into USB reader\n"
-            "2. Export .DDD file using card reader software\n"
-            "3. Import the .DDD file here"
-        )
+        steps = t("tacho.import_steps")
         ctk.CTkLabel(info, text=steps,
                      font=FONTS["small"],
                      text_color=COLORS["text_secondary"],
@@ -272,7 +268,7 @@ class TachoImportView(ctk.CTkFrame):
         if result.get("success"):
             self._show_result_success(result)
         else:
-            self._show_result_error(result.get("error", "Unknown error"))
+            self._show_result_error(result.get("error", t("tacho.unknown_error")))
         self._refresh_history()
 
     def _show_result_success(self, result: dict):
@@ -280,20 +276,20 @@ class TachoImportView(ctk.CTkFrame):
         self._result_icon.configure(text="✓",
                                      text_color=COLORS["text_success"])
         self._result_msg.configure(
-            text=result.get("summary", "Import successful")
+            text=result.get("summary", t("tacho.import_successful"))
         )
 
         detail_parts = []
         if result.get("driver_name") and result.get("driver_name") != "Unknown Driver":
-            detail_parts.append(f"Driver: {result['driver_name']}")
+            detail_parts.append(t("tacho.result_label").format(label=t("tacho.result_driver"), value=result["driver_name"]))
         if result.get("plate"):
-            detail_parts.append(f"Plate: {result['plate']}")
+            detail_parts.append(t("tacho.result_label").format(label=t("tacho.result_plate"), value=result["plate"]))
         if result.get("calibration_expiry"):
-            detail_parts.append(f"Calibration: {result['calibration_expiry']}")
+            detail_parts.append(t("tacho.result_label").format(label=t("tacho.result_calibration"), value=result["calibration_expiry"]))
         if result.get("days_imported"):
-            detail_parts.append(f"Days: {result['days_imported']}")
+            detail_parts.append(t("tacho.result_label").format(label=t("tacho.result_days"), value=str(result["days_imported"])))
         if result.get("odometer_km"):
-            detail_parts.append(f"Odometer: {result['odometer_km']:.0f} km")
+            detail_parts.append(t("tacho.result_label").format(label=t("tacho.result_odometer"), value=f"{result['odometer_km']:.0f} km"))
 
         self._result_detail.configure(
             text="  |  ".join(detail_parts) if detail_parts else ""
@@ -302,7 +298,7 @@ class TachoImportView(ctk.CTkFrame):
         violations = result.get("violations_found", 0)
         if violations > 0:
             self._result_violations.configure(
-                text=f"⚠ {violations} violation(s) flagged"
+                text=t("tacho.violations_warning").format(count=violations)
             )
             self._result_violations.pack(anchor="w", pady=(S["2"], 0))
         else:

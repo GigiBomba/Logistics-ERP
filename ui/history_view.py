@@ -10,9 +10,6 @@ from ui.widgets import ActionButton, StyledEntry
 from services.export_service import ExportService
 from services.trip_service import TripService
 from services.invoicing.service import InvoiceService
-from services.operations.notification_center import NotificationCenter
-from services.operations.event_bus import EventBus, INVOICE_EMAILED
-from services.invoicing.config_manager import load_company_config
 from ui.theme import COLORS, FONTS
 
 class HistoryView:
@@ -38,7 +35,7 @@ class HistoryView:
         self.main_app = main_app or controller
         self.ops = ops
         self.trip_service = TripService(db)
-        self.invoice_service = InvoiceService(db)
+        self.invoice_service = InvoiceService(db, prefs=self.prefs)
         from services.preferences import PreferencesManager
         self.prefs = prefs or PreferencesManager(db)
 
@@ -262,16 +259,6 @@ class HistoryView:
             messagebox.showerror(t("history.error_title"), t("history.email_error").format("trip not found"))
             return
 
-        try:
-            path = self.invoice_service.generate(trip_data, mode="client")
-            due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
-            self.invoice_service.create_record(trip_id, f"INV-{trip_id}", trip_data.get('total_price_eur', 0), due_date)
-            if not os.path.exists(path):
-                raise FileNotFoundError(f"Invoice PDF not found: {path}")
-        except Exception as e:
-            messagebox.showerror(t("history.email_error"), f"Failed to generate invoice: {e}")
-            return
-
         recipient = simpledialog.askstring(
             t("history.email_recipient_title"),
             t("history.email_recipient_msg"),
@@ -280,46 +267,25 @@ class HistoryView:
         if not recipient:
             return
 
-        nc = NotificationCenter(self.db)
-        smtp_cfg = self.prefs.get_smtp_config()
-        if not smtp_cfg.get("smtp_server") or not smtp_cfg.get("smtp_user"):
-            messagebox.showerror(t("history.email_error"), t("email.config_missing"))
-            return
-
         try:
-            nc.configure_smtp(
-                smtp_cfg.get("smtp_server", ""),
-                int(smtp_cfg.get("smtp_port", "587")),
-                smtp_cfg.get("smtp_user", ""),
-                smtp_cfg.get("smtp_password", ""),
+            ok = self.invoice_service.send_invoice_email(
+                trip_id=trip_id,
+                recipient=recipient,
+                smtp_config=self.prefs.get_smtp_config(),
+                trip_data=trip_data,
+                mode="client",
             )
-        except Exception:
-            messagebox.showerror(t("history.email_error"), t("email.config_missing"))
-            return
-
-        conf = load_company_config()
-        client_name = trip_data.get("client_name", "")
-        filename = os.path.basename(path)
-        subject = t("email.invoice_subject").format(filename, client_name)
-        body = t("email.invoice_body").format(
-            filename,
-            float(trip_data.get("total_price_eur", 0) or 0),
-            due_date,
-            conf.get("company_name", ""),
-        )
-
-        if nc.send_email(recipient, subject, body, attachments=[path]):
-            EventBus().publish(INVOICE_EMAILED, {
-                "trip_id": trip_id,
-                "invoice_number": filename.replace(".pdf", ""),
-                "recipient": recipient,
-            })
-            messagebox.showinfo(t("history.button_email"),
-                              t("history.email_success").format(recipient))
-            self.refresh()
-        else:
-            messagebox.showerror(t("history.email_error"),
-                               t("history.email_error").format("SMTP send failed"))
+            if ok:
+                messagebox.showinfo(t("history.button_email"),
+                                  t("history.email_success").format(recipient))
+                self.refresh()
+            else:
+                messagebox.showerror(t("history.email_error"),
+                                   t("history.email_error").format("SMTP send failed"))
+        except ValueError as e:
+            messagebox.showerror(t("history.email_error"), str(e))
+        except Exception as e:
+            messagebox.showerror(t("history.email_error"), f"Failed to send invoice: {e}")
 
     def _view_route(self):
         data = self._get_selection()

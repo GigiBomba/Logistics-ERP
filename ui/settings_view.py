@@ -446,11 +446,11 @@ class SettingsView:
         tree = ttk.Treeview(win,
                             columns=("id", "recipient", "subject", "timestamp", "status"),
                             show="headings")
-        tree.heading("id", text="ID"); tree.column("id", width=40, anchor="center")
-        tree.heading("recipient", text="Recipient"); tree.column("recipient", width=200)
-        tree.heading("subject", text="Subject"); tree.column("subject", width=200)
-        tree.heading("timestamp", text="Sent"); tree.column("timestamp", width=150, anchor="center")
-        tree.heading("status", text="Status"); tree.column("status", width=60, anchor="center")
+        tree.heading("id", text=t("email_logs.col_id")); tree.column("id", width=40, anchor="center")
+        tree.heading("recipient", text=t("email_logs.col_recipient")); tree.column("recipient", width=200)
+        tree.heading("subject", text=t("email_logs.col_subject")); tree.column("subject", width=200)
+        tree.heading("timestamp", text=t("email_logs.col_sent")); tree.column("timestamp", width=150, anchor="center")
+        tree.heading("status", text=t("email_logs.col_status")); tree.column("status", width=60, anchor="center")
         tree.pack(side="left", fill="both", expand=True, padx=10, pady=10)
 
         sb = ttk.Scrollbar(win, orient="vertical", command=tree.yview)
@@ -464,4 +464,4 @@ class SettingsView:
             for r in rows:
                 tree.insert("", "end", values=(r[0], r[1], r[2], r[3], r[4]))
         except Exception:
-            tree.insert("", "end", values=("", "No logs found", "", "", ""))
+            tree.insert("", "end", values=("", t("email_logs.no_logs"), "", "", ""))

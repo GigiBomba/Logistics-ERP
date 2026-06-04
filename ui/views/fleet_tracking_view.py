@@ -135,8 +135,7 @@ class FleetTrackingView:
         except ImportError:
             ctk.CTkLabel(
                 parent,
-                text="tkintermapview not installed.\n"
-                     "Run: pip install tkintermapview",
+                text=t("tracking.mapview_missing"),
                 font=FONTS["body"],
                 text_color=COLORS["text_muted"]
             ).place(relx=0.5, rely=0.5, anchor="center")
@@ -231,7 +230,7 @@ class FleetTrackingView:
             f"{position.speed_kmh:.0f} km/h" if position.speed_kmh > 3
             else (position.address[:30] + "\u2026"
                   if position.address and len(position.address) > 30
-                  else position.address or "Stopped")
+                  else position.address or t("tracking.stopped"))
         )
         ctk.CTkLabel(info, text=detail_str,
                      font=FONTS["small"],

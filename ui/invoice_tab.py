@@ -12,8 +12,7 @@ from services.trip_service import TripService
 from ui.styles import Theme
 from ui.theme import FONTS
 from ui.widgets import StyledEntry, ActionButton, StyledRadioButton
-from services.operations.notification_center import NotificationCenter
-from services.operations.event_bus import EventBus, INVOICE_EMAILED, SETTINGS_UPDATED
+from services.operations.event_bus import EventBus, SETTINGS_UPDATED
 
 _logger = logging.getLogger(__name__)
 
@@ -25,7 +24,7 @@ class InvoiceTab(I18nMixin):
         self.frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
         self.db = db
         self.trip_service = TripService(db)
-        self.invoice_service = InvoiceService(db)
+        self.invoice_service = InvoiceService(db, prefs=self.prefs)
         from services.preferences import PreferencesManager
         self.prefs = prefs or PreferencesManager(db)
         self._radio_buttons = []
@@ -224,10 +223,6 @@ class InvoiceTab(I18nMixin):
             trip_data = self.trip_service.get_by_id(trip_id)
             mode = self.invoice_mode.get()
 
-            path = self.invoice_service.generate_and_record(trip_data, mode=mode)
-            if not os.path.exists(path):
-                raise FileNotFoundError(f"Invoice PDF not found: {path}")
-
             conf = load_company_config()
             recipient = self.inputs.get("email")
             recipient_addr = recipient.get().strip() if recipient else conf.get("email", "")
@@ -237,37 +232,25 @@ class InvoiceTab(I18nMixin):
                                        t("settings.field_email"))
                 return
 
-            nc = NotificationCenter(self.db)
-            smtp_cfg = self.prefs.get_smtp_config()
-            try:
-                nc.configure_smtp(
-                    smtp_cfg.get("smtp_server", ""),
-                    int(smtp_cfg.get("smtp_port", "587")),
-                    smtp_cfg.get("smtp_user", ""),
-                    smtp_cfg.get("smtp_password", ""),
-                )
-            except Exception:
-                messagebox.showerror(t("invoice.email_failed"), t("invoice.smtp_not_configured"))
-                return
-
-            client_name = trip_data.get("client_name", t("invoice.default_client"))
-            subject = t("invoice.email_subject").format(filename=os.path.basename(path), client=client_name)
-            body = t("invoice.email_body").format(trip_id=trip_id, company=conf.get('company_name', ''))
-
-            if nc.send_email(recipient_addr, subject, body, attachments=[path]):
-                _logger.info("Invoice %s emailed to %s", os.path.basename(path), recipient_addr)
+            ok = self.invoice_service.send_invoice_email(
+                trip_id=trip_id,
+                recipient=recipient_addr,
+                smtp_config=self.prefs.get_smtp_config(),
+                trip_data=trip_data,
+                mode=mode,
+            )
+            if ok:
+                _logger.info("Invoice %s emailed to %s", trip_id, recipient_addr)
                 messagebox.showinfo(t("invoice.button_email"),
                                     t("invoice.email_success").format(recipient_addr))
-                EventBus().publish(INVOICE_EMAILED, {
-                    "trip_id": trip_id,
-                    "invoice_number": os.path.basename(path).replace(".pdf", ""),
-                    "recipient": recipient_addr,
-                })
                 self._refresh_trip_list()
             else:
                 messagebox.showerror(t("invoice.email_failed"),
                                      t("invoice.email_failed").format(trip_id))
 
+        except ValueError as e:
+            _logger.error("Email invoice failed: %s", e)
+            messagebox.showerror(t("invoice.error_generate").format(""), str(e))
         except Exception as e:
             _logger.error("Email invoice failed for trip_id=%s: %s", selection, e, exc_info=True)
-            messagebox.showerror(t("invoice.error_generate").format(''), str(e))
+            messagebox.showerror(t("invoice.error_generate").format(""), str(e))

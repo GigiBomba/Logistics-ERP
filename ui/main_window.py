@@ -346,7 +346,7 @@ class MainWindow(I18nMixin):
             "route_planner": ("ui.route_planner", "RoutePlannerTab", {"open_window": False, "controller": self}),
             "fleet": ("ui.fleet_tab", "FleetTab", {"open_window": False, "ops": self.ops}),
             "driver_manager": ("ui.driver_manager", "DriverManager", {"open_window": False, "ops": self.ops}),
-            "clients": ("ui.client_manager", "ClientManager", {"prefs": self.prefs}),
+            "clients": ("ui.client_manager", "ClientManager", {"prefs": self.prefs, "open_window": False}),
             "invoices": ("ui.invoice_tab", "InvoiceTab", {"prefs": self.prefs}),
             "settings": ("ui.settings_view", "SettingsView", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
             "dashboard": ("ui.dashboard", "FleetDashboard", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
