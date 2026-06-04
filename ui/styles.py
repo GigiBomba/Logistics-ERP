@@ -40,6 +40,9 @@ class Theme:
     PAD_X = S["4"]
     PAD_Y = S["2"]
 
+    ACCENT_PRIMARY = ACCENT
+    ACCENT_SECONDARY = ACCENT_HOVER
+
     _applied = False
 
     @classmethod

@@ -130,13 +130,13 @@ class NavPanel(ctk.CTkFrame):
         self._app_name_frame = ctk.CTkFrame(top, fg_color="transparent")
         self._app_name_frame.pack(side="left", padx=(10, 0), fill="y")
         ctk.CTkLabel(
-            self._app_name_frame, text="Operion",
+            self._app_name_frame, text=t("app.name"),
             font=FONTS["body_bold"],
             text_color=COLORS["text_primary"],
             anchor="w"
         ).pack(anchor="w")
         ctk.CTkLabel(
-            self._app_name_frame, text="ERP",
+            self._app_name_frame, text=t("app.subtitle"),
             font=FONTS["label"],
             text_color=COLORS["text_muted"],
             anchor="w"

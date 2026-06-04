@@ -207,7 +207,7 @@ class TripCard(ctk.CTkFrame):
         # Live indicator row (hidden by default)
         self._live_row = ctk.CTkFrame(self._content_frame, fg_color="transparent")
         self._live_dot = ctk.CTkLabel(
-            self._live_row, text="\u25cf LIVE",
+            self._live_row, text="\u25cf " + t("dispatch_board.live"),
             font=FONTS["label"],
             text_color=COLORS["success"],
         )

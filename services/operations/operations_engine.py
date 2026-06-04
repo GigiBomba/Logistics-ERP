@@ -17,7 +17,7 @@ class OperationsEngine:
     _instance = None
     _lock = threading.Lock()
 
-    def __new__(cls, db=None):
+    def __new__(cls, db=None, prefs=None):
         if cls._instance is None:
             with cls._lock:
                 if cls._instance is None:

@@ -7,51 +7,67 @@ from services.client_service import ClientService
 from services.i18n import t, register_listener, unregister_listener
 from ui.styles import Theme
 from ui.widgets import StyledEntry, ActionButton
-from ui.theme import FONTS
+from ui.theme import FONTS, COLORS
 
 
 class ClientManager:
-    def __init__(self, parent, db, prefs=None):
-        self.win = ctk.CTkToplevel(parent) if parent else ctk.CTk()
-        self.win.title("Clients")
-        self.win.geometry("800x600")
-        self.win.configure(fg_color=Theme.BG)
+    def __init__(self, parent, db, prefs=None, open_window=True):
+        if open_window:
+            self.win = ctk.CTkToplevel(parent) if parent else ctk.CTk()
+            Theme.apply(self.win)  # if you use Theme.apply elsewhere
+            self.frame = ctk.CTkFrame(self.win, fg_color=Theme.BG)
+            self.frame.pack(fill="both", expand=True)
+            self.win.title("Clients")
+            self.win.geometry("800x600")
+            self.win.configure(fg_color=Theme.BG)
+        else:
+            self.win = None
+            self.frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
+
         self.db = db
         self.service = ClientService(db)
         self._i18n_widgets: list = []
         self._selected_id: Optional[int] = None
+        self._container = self.frame
 
         self._build_ui()
         self._load_data()
         register_listener(self._on_language_changed)
-        self.win.bind("<Destroy>", self._on_destroy)
+        # bind destroy to whichever widget is the top-level container
+        self._top_widget = self.win if self.win is not None else self.frame
+        self._top_widget.bind("<Destroy>", self._on_destroy)
 
     def _on_destroy(self, e=None):
-        if e is not None and e.widget != self.win:
+        if e is not None and e.widget != self._top_widget:
             return
         unregister_listener(self._on_language_changed)
 
     def _on_language_changed(self, lang):
-        self.win.title(t("nav.clients"))
+        if self.win is not None:
+            self.win.title(t("nav.clients"))
         self._load_data()
 
     def _build_ui(self):
-        top = ctk.CTkFrame(self.win, fg_color=Theme.SURFACE)
+        top = ctk.CTkFrame(self._container, fg_color=Theme.SURFACE)
         top.pack(fill="x", padx=10, pady=(10, 5))
 
-        ctk.CTkLabel(top, text="Clients", fg_color=Theme.SURFACE,
+        ctk.CTkLabel(top, text=t("client.title"), fg_color=Theme.SURFACE,
                      text_color=Theme.TEXT, font=FONTS["h2"]).pack(side="left", padx=10)
 
-        self._search_entry = StyledEntry(top, placeholder=t("common.search"))
+        self._search_entry = StyledEntry(top)
+        self._search_entry.insert(0, t("common.search"))
+        self._search_entry.configure(text_color=COLORS["text_muted"])
+        self._search_entry.bind("<FocusIn>", self._on_search_focus_in)
+        self._search_entry.bind("<FocusOut>", self._on_search_focus_out)
         self._search_entry.pack(side="left", padx=5)
         self._search_entry.bind("<KeyRelease>", lambda e: self._load_data())
 
-        ActionButton(top, text="+ New Client", command=self._open_form,
+        ActionButton(top, text="+ " + t("client.new_button"), command=self._open_form,
                      fg_color=Theme.ACCENT_PRIMARY, hover_color=Theme.ACCENT_SECONDARY,
                      text_color="#fff").pack(side="right", padx=10)
 
         # Treeview
-        tree_frame = ctk.CTkFrame(self.win, fg_color=Theme.BG)
+        tree_frame = ctk.CTkFrame(self._container, fg_color=Theme.BG)
         tree_frame.pack(fill="both", expand=True, padx=10, pady=5)
 
         cols = ("id", "name", "contact", "phone", "email", "trips")
@@ -81,22 +97,34 @@ class ClientManager:
         self.tree.bind("<<TreeviewSelect>>", lambda e: self._on_select())
 
         # Action buttons
-        btn_frame = ctk.CTkFrame(self.win, fg_color=Theme.BG)
+        btn_frame = ctk.CTkFrame(self._container, fg_color=Theme.BG)
         btn_frame.pack(fill="x", padx=10, pady=(0, 10))
-        self._edit_btn = ActionButton(btn_frame, text="Edit", command=lambda: self._open_form(edit=True),
+        self._edit_btn = ActionButton(btn_frame, text=t("client.edit_button"), command=lambda: self._open_form(edit=True),
                                        fg_color=Theme.ACCENT_PRIMARY, text_color="#fff")
         self._edit_btn.pack(side="left", padx=5)
-        self._deact_btn = ActionButton(btn_frame, text="Deactivate", command=self._deactivate,
+        self._deact_btn = ActionButton(btn_frame, text=t("client.deactivate_button"), command=self._deactivate,
                                         fg_color=Theme.DANGER, text_color="#fff")
         self._deact_btn.pack(side="left", padx=5)
 
         self._refresh_translations()
+
+    def _on_search_focus_in(self, event):
+        if self._search_entry.get() == t("common.search"):
+            self._search_entry.delete(0, "end")
+            self._search_entry.configure(text_color=Theme.TEXT)
+
+    def _on_search_focus_out(self, event):
+        if not self._search_entry.get().strip():
+            self._search_entry.insert(0, t("common.search"))
+            self._search_entry.configure(text_color=COLORS["text_muted"])
 
     def _load_data(self):
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         query = (self._search_entry.get() or "").strip()
+        if query == t("common.search"):
+            query = ""
         if query:
             clients = self.service.search(query, limit=200)
         else:
@@ -126,7 +154,8 @@ class ClientManager:
         if edit and not self._selected_id:
             return
         client = self.service.get_by_id(self._selected_id) if edit and self._selected_id else None
-        _ClientFormDialog(self.win, self.service, client_data=client, on_save=self._load_data)
+        parent = self.win if self.win is not None else self.frame
+        _ClientFormDialog(parent, self.service, client_data=client, on_save=self._load_data)
 
     def _deactivate(self):
         if not self._selected_id:
@@ -135,9 +164,9 @@ class ClientManager:
         if not client:
             return
         count = self.service.get_trip_count(self._selected_id)
-        msg = f"Deactivate '{client['name']}'?"
+        msg = t("client.deactivate_confirm").format(name=client["name"])
         if count > 0:
-            msg += f"\n({count} trip(s) linked — trips will be preserved)"
+            msg += t("client.deactivate_trips_warning").format(count=count)
         if messagebox.askyesno(t("common.confirm"), msg):
             self.service.deactivate(self._selected_id)
             self._load_data()
@@ -158,7 +187,7 @@ class _ClientFormDialog:
         self._editing = client_data is not None
 
         self.win = ctk.CTkToplevel(parent)
-        self.win.title("Edit Client" if self._editing else "New Client")
+        self.win.title(t("client.edit_title") if self._editing else t("client.new_title"))
         self.win.geometry("450x420")
         self.win.configure(fg_color=Theme.BG)
         self.win.grab_set()
@@ -187,13 +216,13 @@ class _ClientFormDialog:
                 val = client_data.get(key) or ""
                 entry.insert(0, str(val))
 
-        ActionButton(body, text="Save", command=self._save,
+        ActionButton(body, text=t("client.save_button"), command=self._save,
                      fg_color=Theme.ACCENT_SUCCESS, text_color="#fff").pack(pady=(15, 0))
 
     def _save(self):
         name = self.entries["name"].get().strip()
         if not name:
-            messagebox.showwarning(t("common.warning"), "Name is required.")
+            messagebox.showwarning(t("common.warning"), t("client.name_required"))
             return
 
         data = {k: v.get().strip() for k, v in self.entries.items()}
@@ -203,7 +232,7 @@ class _ClientFormDialog:
         else:
             existing = self.service._repo.get_by_name(name)
             if existing:
-                messagebox.showwarning(t("common.warning"), f"Client '{name}' already exists.")
+                messagebox.showwarning(t("common.warning"), t("client.already_exists").format(name=name))
                 return
             self.service.create(**data)
 
