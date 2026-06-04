@@ -370,7 +370,21 @@
     "exclusions_clear": "Șterge tot",
     "exclusions_selected": "{} selectată(e)",
     "exclusions_none": "Niciuna selectată",
-    "exclusions_empty": "Nicio țară exclusă"
+    "exclusions_empty": "Nicio țară exclusă",
+    "add_to_dispatch": "Adaugă în Panou",
+    "client_name": "Nume Client",
+    "no_saved_route_id": "Niciun ID Rută Salvat",
+    "select_driver": "Selectează Șofer",
+    "start_date": "Data Începere",
+    "stop_destination": "Destinație",
+    "stop_n": "Stop N",
+    "stop_start": "Start",
+    "trip_created": "Cursă Creată",
+    "profile_recommended": "Recomandat",
+    "profile_fastest": "Cel mai Rapid",
+    "profile_cheapest": "Cel mai Ieftin",
+    "profile_safest": "Cel mai Sigur",
+    "profile_shortest": "Cel mai Scurt"
   },
   "route_history": {
     "title": "Istoric Rute",

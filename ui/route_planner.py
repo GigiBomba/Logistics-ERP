@@ -144,10 +144,6 @@ class RoutePlannerTab:
         lbl.pack(pady=20)
         self._i18n_tag(lbl, "route.section_header", "📍 ")
 
-        lbl = ctk.CTkLabel(sidebar_body, text=t("route.destinations_label"), fg_color=Theme.SURFACE, text_color=Theme.TEXT)
-        lbl.pack(anchor="w", padx=20)
-        self._i18n_tag(lbl, "route.destinations_label")
-
         stops_frame = ctk.CTkFrame(sidebar_body, fg_color=Theme.SURFACE)
         stops_frame.pack(fill="x", padx=10, pady=(5, 0))
 

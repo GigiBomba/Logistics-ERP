@@ -364,19 +364,32 @@ class GraphHopperClient:
                 path = data["paths"][0]
                 geometry: List[Tuple[float, float]] = []
                 if "points" in path:
-                    try:
-                        from services.route_decoder import decode_polyline
-
-                        decoded = decode_polyline(path["points"])
-                        geometry = [(lat, lon) for lat, lon in decoded]
-                    except Exception:
+                    raw_points = path["points"]
+                    # Handle encoded polyline string
+                    if isinstance(raw_points, str):
                         try:
                             from services.route_decoder import decode_polyline
-
-                            snapped = decode_polyline(path.get("snapped_waypoints", ""))
-                            geometry = [(lat, lon) for lat, lon in snapped]
+                            decoded = decode_polyline(raw_points)
+                            geometry = [(lat, lon) for lat, lon in decoded]
                         except Exception:
-                            geometry = []
+                            try:
+                                snapped = decode_polyline(path.get("snapped_waypoints", ""))
+                                geometry = [(lat, lon) for lat, lon in snapped]
+                            except Exception:
+                                geometry = []
+                    # Handle points_encoded=false: dict with "coordinates" array of [lon, lat]
+                    elif isinstance(raw_points, dict) and "coordinates" in raw_points:
+                        coords = raw_points["coordinates"]
+                        geometry = [(coord[1], coord[0]) for coord in coords]
+                    # Handle direct list of [lat, lon] or [lon, lat] pairs
+                    elif isinstance(raw_points, list) and raw_points:
+                        # Detect if first element is [lon, lat] (GraphHopper raw) or [lat, lon]
+                        first = raw_points[0]
+                        if isinstance(first, (list, tuple)) and len(first) == 2:
+                            # GraphHopper returns [lon, lat] in raw point arrays
+                            geometry = [(p[1], p[0]) for p in raw_points]
+                        else:
+                            geometry = [(lat, lon) for lat, lon in raw_points]
 
                 if not geometry:
                     geometry = [(lat, lon) for lat, lon in points]
