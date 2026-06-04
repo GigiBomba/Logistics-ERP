@@ -24,9 +24,9 @@ class InvoiceTab(I18nMixin):
         self.frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
         self.db = db
         self.trip_service = TripService(db)
-        self.invoice_service = InvoiceService(db, prefs=self.prefs)
         from services.preferences import PreferencesManager
         self.prefs = prefs or PreferencesManager(db)
+        self.invoice_service = InvoiceService(db, prefs=self.prefs)
         self._radio_buttons = []
         self._app_state = AppState()
         self._event_bus = EventBus()
