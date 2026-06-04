@@ -40,6 +40,7 @@ class TripConflictService:
 
     def check_conflicts(self, trip_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         truck_plate = (trip_data.get("truck_number") or trip_data.get("truck_plate") or "").strip()
+        truck_id = trip_data.get("truck_id")
         driver_id = trip_data.get("driver_id")
         self_trip_id = trip_data.get("id") or trip_data.get("trip_id_num")
 
@@ -55,6 +56,21 @@ class TripConflictService:
         conflicts = []
         for trip in all_trips:
             if trip.get("status", "") in NON_ACTIVE_STATUSES:
+                continue
+            trip_id_val = trip.get("id")
+            if trip_id_val and trip_id_val == self_trip_id:
+                continue
+
+            other_truck = (trip.get("truck_number") or "").strip()
+            other_truck_id = trip.get("truck_id")
+            other_driver = trip.get("driver_id")
+
+            same_truck = bool(
+                (truck_plate and other_truck and truck_plate == other_truck)
+                or (truck_id and other_truck_id and truck_id == other_truck_id)
+            )
+            same_driver = driver_id and other_driver and driver_id == other_driver
+            if not same_truck and not same_driver:
                 continue
             trip_id = trip.get("id")
             if trip_id and trip_id == self_trip_id:
@@ -87,13 +103,15 @@ class TripConflictService:
 
         return conflicts
 
-    def is_truck_available(self, truck_plate: str,
+    def is_truck_available(self, truck_plate: str = "",
+                           truck_id: int = None,
                            from_date: Optional[str] = None,
                            to_date: Optional[str] = None) -> bool:
-        if not truck_plate:
+        if not truck_plate and not truck_id:
             return True
         conflicts = self.check_conflicts({
             "truck_plate": truck_plate,
+            "truck_id": truck_id,
             "start_date": from_date or "",
             "end_date": to_date or "",
         })
@@ -111,15 +129,21 @@ class TripConflictService:
         })
         return len(conflicts) == 0
 
-    def get_next_available_slot(self, truck_plate: str) -> Optional[str]:
-        if not truck_plate:
+    def get_next_available_slot(self, truck_plate: str = "", truck_id: int = None) -> Optional[str]:
+        if not truck_plate and not truck_id:
             return None
         all_trips = self._trip_repo.get_all(limit=2000)
         latest_eta = datetime.now()
         for trip in all_trips:
             if trip.get("status", "") in NON_ACTIVE_STATUSES:
                 continue
-            if (trip.get("truck_number") or "").strip() != truck_plate:
+            other_plate = (trip.get("truck_number") or "").strip()
+            other_id = trip.get("truck_id")
+            match = bool(
+                (truck_plate and other_plate and truck_plate == other_plate)
+                or (truck_id and other_id and truck_id == other_id)
+            )
+            if not match:
                 continue
             dep = self._get_departure(trip)
             if not dep:

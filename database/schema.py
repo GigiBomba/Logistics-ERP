@@ -342,6 +342,8 @@ INDEX_DTA_TRUCK = "CREATE INDEX IF NOT EXISTS idx_dta_truck ON driver_truck_assi
 ALTER_TRUCKS_ADD_TACHOGRAPH = "ALTER TABLE trucks ADD COLUMN tachograph_expiry TEXT"
 ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID = "ALTER TABLE trucks ADD COLUMN tracking_device_id TEXT"
 ALTER_TRIPS_ADD_DRIVER_ID = "ALTER TABLE trips ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"
+ALTER_TRIPS_ADD_TRUCK_ID = "ALTER TABLE trips ADD COLUMN truck_id INTEGER REFERENCES trucks(id)"
+INDEX_TRIPS_TRUCK_ID = "CREATE INDEX IF NOT EXISTS idx_trips_truck_id ON trips(truck_id)"
 
 # ── Tachograph tables ────────────────────────────────────────────────────
 

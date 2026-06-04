@@ -8,7 +8,7 @@ from repositories import BaseRepository
 class TripRepository(BaseRepository):
     TABLE = "trips"
     COLUMNS = [
-        "id", "created_at", "truck_number", "driver_name", "client_name",
+        "id", "created_at", "truck_number", "truck_id", "driver_name", "client_name",
         "distance_km", "total_price_eur", "rate_per_km", "gross_per_km",
         "net_profit", "start_date", "end_date", "payment_date", "extra_costs",
         "fuel_cost", "toll_cost", "salary_cost", "currency", "status",
@@ -77,6 +77,13 @@ class TripRepository(BaseRepository):
             (truck_number,),
         )
 
+    def get_by_truck_id(self, truck_id: int) -> List[Dict[str, Any]]:
+        """Return trips for a given truck by canonical FK."""
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? ORDER BY created_at DESC",
+            (truck_id,),
+        )
+
     def get_last_activity(self, truck_number: str) -> Optional[str]:
         row = self._fetchone(
             f"SELECT MAX(created_at) AS last_date FROM {self.TABLE} WHERE truck_number = ?",
@@ -106,19 +113,20 @@ class TripRepository(BaseRepository):
         return [(r["day"], float(r["profit"] or 0)) for r in rows]
 
     def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4) -> List[Dict[str, Any]]:
-        """Return top trucks by revenue for a date range."""
+        """Return top trucks by revenue for a date range (canonical truck_id grouping)."""
         month_start = month_start.strip()
         month_end = month_end.strip()
         return self._fetchall(
-            f"""SELECT truck_number,
-                       SUM(COALESCE(total_price_eur, 0)) AS revenue
-                FROM {self.TABLE}
-                WHERE LENGTH(start_date) >= 10
-                  AND start_date >= ?
-                  AND start_date <= ?
-                  AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
-                GROUP BY truck_number
-                ORDER BY revenue DESC
-                LIMIT ?""",
+            f"""SELECT COALESCE(t.plate_number, tr.truck_number) AS truck_number,
+                       SUM(COALESCE(tr.total_price_eur, 0)) AS revenue
+                 FROM {self.TABLE} tr
+                 LEFT JOIN trucks t ON tr.truck_id = t.id
+                 WHERE LENGTH(tr.start_date) >= 10
+                   AND tr.start_date >= ?
+                   AND tr.start_date <= ?
+                   AND LOWER(tr.status) IN ('delivered', 'completed', 'done', 'paid')
+                 GROUP BY COALESCE(tr.truck_id, tr.truck_number)
+                 ORDER BY revenue DESC
+                 LIMIT ?""",
             (month_start, month_end, limit),
         )

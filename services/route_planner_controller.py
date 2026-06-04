@@ -304,6 +304,7 @@ class RoutePlannerController:
         trip_data = {
             'created_at': datetime.now().strftime('%Y-%m-%d %H:%M'),
             'truck_number': truck_plate,
+            'truck_id': int(truck_id),
             'driver_name': driver_name,
             'driver_id': driver_id,
             'client_name': client_name,

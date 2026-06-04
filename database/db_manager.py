@@ -55,6 +55,8 @@ from database.schema import (
     INDEX_TACHO_IMPORTS_HASH,
     INDEX_CLIENTS_NAME,
     INDEX_CLIENTS_ACTIVE,
+    ALTER_TRIPS_ADD_TRUCK_ID,
+    INDEX_TRIPS_TRUCK_ID,
     ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID,
 )
 
@@ -218,6 +220,21 @@ class DatabaseManager:
                     pass
         except Exception:
             pass
+        # Migration: truck_id on trips (FK → trucks)
+        try:
+            trip_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trips)").fetchall()]
+            if 'truck_id' not in trip_cols:
+                try:
+                    self.conn.execute(ALTER_TRIPS_ADD_TRUCK_ID)
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # Index on trips.truck_id
+        try:
+            self.conn.execute(INDEX_TRIPS_TRUCK_ID)
+        except Exception:
+            pass
         try:
             self.conn.commit()
         except Exception:
@@ -308,7 +325,11 @@ class DatabaseManager:
 
     def get_unique_lists(self):
         """Listele de camioane și șoferi pentru dropdown-uri."""
-        trucks = [r[0] for r in self.conn.execute("SELECT DISTINCT truck_number FROM trips WHERE truck_number IS NOT NULL").fetchall()]
+        trucks = [r[0] for r in self.conn.execute(
+            "SELECT DISTINCT COALESCE(t.plate_number, trips.truck_number) "
+            "FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id "
+            "WHERE trips.truck_number IS NOT NULL OR trips.truck_id IS NOT NULL"
+        ).fetchall()]
         drivers = [r[0] for r in self.conn.execute("SELECT DISTINCT driver_name FROM trips WHERE driver_name IS NOT NULL").fetchall()]
         return trucks, drivers
 
@@ -365,15 +386,24 @@ class DatabaseManager:
 
     def get_advanced_analytics(self):
         """Top performeri: Camion, Șofer, Lună."""
-        bt = self.row_to_dict(self.conn.execute("SELECT truck_number, SUM(net_profit) as p FROM trips GROUP BY truck_number ORDER BY p DESC LIMIT 1").fetchone())
+        bt = self.row_to_dict(self.conn.execute(
+            "SELECT COALESCE(t.plate_number, trips.truck_number) as truck_number, SUM(trips.net_profit) as p "
+            "FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id "
+            "GROUP BY COALESCE(trips.truck_id, trips.truck_number) "
+            "ORDER BY p DESC LIMIT 1"
+        ).fetchone())
         bd = self.row_to_dict(self.conn.execute("SELECT driver_name, SUM(net_profit) as p FROM trips GROUP BY driver_name ORDER BY p DESC LIMIT 1").fetchone())
         bm = self.row_to_dict(self.conn.execute("SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as m_profit FROM trips GROUP BY month ORDER BY m_profit DESC LIMIT 1").fetchone())
         return bt, bd, bm
 
     def get_dashboard_charts(self):
         """Date pentru graficul evolutiv (ultimele 6 luni)."""
-        top_clients = self.rows_to_dicts(self.conn.execute("SELECT client_name, SUM(net_profit) as p FROM trips GROUP BY client_name ORDER BY p DESC LIMIT 5").fetchall())
-        monthly = self.conn.execute("SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as p FROM trips GROUP BY month ORDER BY id DESC LIMIT 6").fetchall()
+        top_clients = self.rows_to_dicts(self.conn.execute(
+            "SELECT client_name, SUM(net_profit) as p FROM trips GROUP BY client_name ORDER BY p DESC LIMIT 5"
+        ).fetchall())
+        monthly = self.conn.execute(
+            "SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as p FROM trips GROUP BY month ORDER BY id DESC LIMIT 6"
+        ).fetchall()
         return top_clients, self.rows_to_dicts(monthly[::-1])
 
     def get_available_years(self):
@@ -453,7 +483,10 @@ class DatabaseManager:
             date_params = [from_date, to_date]
 
         per_truck = self.rows_to_dicts(self.conn.execute(
-            f"SELECT truck_number, SUM(net_profit) as p FROM trips {date_clause} GROUP BY truck_number ORDER BY SUM(net_profit) DESC LIMIT 10",
+            f"SELECT COALESCE(t.plate_number, trips.truck_number) as truck_number, SUM(trips.net_profit) as p "
+            f"FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id {date_clause} "
+            f"GROUP BY COALESCE(trips.truck_id, trips.truck_number) "
+            f"ORDER BY SUM(trips.net_profit) DESC LIMIT 10",
             date_params).fetchall())
         per_driver = self.rows_to_dicts(self.conn.execute(
             f"SELECT driver_name, SUM(net_profit) as p FROM trips {date_clause} GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10",

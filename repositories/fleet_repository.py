@@ -86,7 +86,7 @@ class FleetRepository(BaseRepository):
     def get_by_driver_id(self, driver_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT DISTINCT t.* FROM {self.TABLE} t
-                JOIN trips tr ON tr.truck_number = t.plate_number
+                JOIN trips tr ON tr.truck_id = t.id
                 WHERE tr.driver_id = ?
                 ORDER BY t.plate_number ASC""",
             (driver_id,),
