@@ -1,3 +1,4 @@
+import json
 import logging
 import threading
 import uuid
@@ -80,14 +81,19 @@ class AlertManager:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self):
+    def __init__(self, db=None):
         if self._initialized:
+            if db is not None and self._db is None:
+                self._db = db
             return
         self._initialized = True
+        self._db = db
         self._alerts: Dict[str, Alert] = {}
         self._max_alerts = 5000
         self._event_bus = EventBus()
-        logger.info("AlertManager initialized")
+        if self._db is not None:
+            self._load_from_db()
+        logger.info("AlertManager initialized (db=%s)", self._db is not None)
 
     # ── CRUD ───────────────────────────────────────────────────────
 
@@ -111,7 +117,7 @@ class AlertManager:
             metadata=metadata or {},
         )
         self._alerts[alert.id] = alert
-        # Evict oldest resolved alert if over max
+        self._persist_alert(alert)
         if len(self._alerts) > self._max_alerts:
             resolved = [a for a in self._alerts.values() if a.resolved]
             if resolved:
@@ -131,6 +137,7 @@ class AlertManager:
         if alert and not alert.resolved:
             alert.resolved = True
             alert.resolved_at = datetime.now().isoformat()
+            self._persist_resolution(alert)
             self._event_bus.publish(ALERT_RESOLVED, {"alert": alert.to_dict()})
             logger.info("Alert resolved: %s", alert_id)
         return alert
@@ -200,5 +207,93 @@ class AlertManager:
         to_remove = [aid for aid, a in self._alerts.items() if a.created_at < cutoff]
         for aid in to_remove:
             del self._alerts[aid]
+        if self._db is not None:
+            try:
+                self._db.conn.execute(
+                    "DELETE FROM alerts WHERE created_at < ? AND resolved = 1",
+                    (cutoff,),
+                )
+                self._db.conn.commit()
+            except Exception:
+                logger.exception("Failed to clean up old alerts from DB")
         logger.info("Cleaned up %d old alerts (>%d days)", len(to_remove), days)
         return len(to_remove)
+
+    # ── Persistence helpers ──────────────────────────────────────────
+
+    def _load_from_db(self) -> None:
+        """Load unresolved alerts from the database into the in-memory cache."""
+        if self._db is None:
+            return
+        try:
+            rows = self._db.conn.execute(
+                "SELECT id, type, severity, title, message, truck_id, trip_id, "
+                "created_at, resolved, resolved_at, metadata_json "
+                "FROM alerts WHERE resolved = 0 ORDER BY created_at ASC"
+            ).fetchall()
+            loaded = 0
+            for r in rows:
+                alert_id = r[0]
+                if alert_id in self._alerts:
+                    continue
+                try:
+                    metadata = json.loads(r[10]) if r[10] else {}
+                except Exception:
+                    metadata = {}
+                alert = Alert(
+                    id=alert_id,
+                    type=AlertType(r[1]),
+                    severity=Severity(r[2]),
+                    title=r[3] or "",
+                    message=r[4] or "",
+                    truck_id=r[5],
+                    trip_id=str(r[6]) if r[6] else None,
+                    created_at=r[7] or "",
+                    resolved=bool(r[8]),
+                    resolved_at=r[9],
+                    metadata=metadata,
+                )
+                self._alerts[alert_id] = alert
+                loaded += 1
+            logger.info("Loaded %d unresolved alerts from database", loaded)
+        except Exception:
+            logger.exception("Failed to load alerts from database")
+
+    def _persist_alert(self, alert: Alert) -> None:
+        if self._db is None:
+            return
+        try:
+            self._db.conn.execute(
+                "INSERT OR REPLACE INTO alerts "
+                "(id, type, severity, title, message, truck_id, trip_id, "
+                "created_at, resolved, resolved_at, metadata_json) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (
+                    alert.id,
+                    alert.type.value,
+                    alert.severity.value,
+                    alert.title,
+                    alert.message,
+                    alert.truck_id,
+                    int(alert.trip_id) if alert.trip_id and str(alert.trip_id).isdigit() else None,
+                    alert.created_at,
+                    1 if alert.resolved else 0,
+                    alert.resolved_at,
+                    json.dumps(alert.metadata, ensure_ascii=False, default=str) if alert.metadata else None,
+                ),
+            )
+            self._db.conn.commit()
+        except Exception:
+            logger.exception("Failed to persist alert %s", alert.id)
+
+    def _persist_resolution(self, alert: Alert) -> None:
+        if self._db is None:
+            return
+        try:
+            self._db.conn.execute(
+                "UPDATE alerts SET resolved = 1, resolved_at = ? WHERE id = ?",
+                (alert.resolved_at, alert.id),
+            )
+            self._db.conn.commit()
+        except Exception:
+            logger.exception("Failed to persist alert resolution %s", alert.id)

@@ -34,7 +34,7 @@ class OperationsEngine:
         self._db = db
         self._prefs = prefs
         self._event_bus = EventBus()
-        self._alert_mgr = AlertManager()
+        self._alert_mgr = AlertManager(db)
         self._rules = Rules()
         from services.trip_service import TripService
         self._trip_service = TripService(db) if db else None

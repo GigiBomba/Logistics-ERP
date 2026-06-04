@@ -13,7 +13,7 @@ class TripStatusEngine:
     def __init__(self, db):
         from services.trip_service import TripService
         self._trip_service = TripService(db)
-        self._alert_mgr = AlertManager()
+        self._alert_mgr = AlertManager(db)
         self._event_bus = EventBus()
         self._rules = Rules()
         self._subscribe()
