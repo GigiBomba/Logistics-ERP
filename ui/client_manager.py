@@ -29,6 +29,7 @@ class ClientManager:
         self._i18n_widgets: list = []
         self._selected_id: Optional[int] = None
         self._container = self.frame
+        self._search_user_typed = False
 
         self._build_ui()
         self._load_data()
@@ -45,6 +46,10 @@ class ClientManager:
     def _on_language_changed(self, lang):
         if self.win is not None:
             self.win.title(t("nav.clients"))
+        if not self._search_user_typed:
+            self._search_entry.delete(0, "end")
+            self._search_entry.insert(0, t("common.search"))
+            self._search_entry.configure(text_color=COLORS["text_muted"])
         self._load_data()
 
     def _build_ui(self):
@@ -112,11 +117,13 @@ class ClientManager:
         if self._search_entry.get() == t("common.search"):
             self._search_entry.delete(0, "end")
             self._search_entry.configure(text_color=Theme.TEXT)
+        self._search_user_typed = True
 
     def _on_search_focus_out(self, event):
         if not self._search_entry.get().strip():
             self._search_entry.insert(0, t("common.search"))
             self._search_entry.configure(text_color=COLORS["text_muted"])
+            self._search_user_typed = False
 
     def _load_data(self):
         for item in self.tree.get_children():
@@ -188,11 +195,12 @@ class _ClientFormDialog:
 
         self.win = ctk.CTkToplevel(parent)
         self.win.title(t("client.edit_title") if self._editing else t("client.new_title"))
-        self.win.geometry("450x420")
+        self.win.geometry("450x480")
         self.win.configure(fg_color=Theme.BG)
         self.win.grab_set()
 
-        body = ctk.CTkFrame(self.win, fg_color=Theme.BG)
+        body = ctk.CTkScrollableFrame(self.win, fg_color=Theme.BG,
+                                       scrollbar_button_color=COLORS["border"])
         body.pack(fill="both", expand=True, padx=15, pady=15)
 
         fields = [
