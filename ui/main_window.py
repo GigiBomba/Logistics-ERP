@@ -8,7 +8,6 @@ from typing import Optional
 import customtkinter as ctk
 from ui.widgets import StyledEntry, ActionButton, section_header
 from ui.styles import Theme
-from ui.navigation import NavPanel
 from services.trip_context import register_trip_listener, unregister_trip_listener
 from services.trip_service import TripService
 from services.client_service import ClientService
@@ -39,6 +38,14 @@ class MainWindow(I18nMixin):
         self._event_bus = EventBus()
         self._module_cache = {}
         self._active_module = None
+
+        self.route_distance = 0.0
+        self.route_toll = 0.0
+        self.route_fuel_liters = 0.0
+        self.selected_truck_fuel = None
+        self._current_route_history_id: Optional[int] = None
+        self._main_trucks_map = {}
+        self.selected_truck = None
 
         from services.calculator import TripCalculator
         self.calculator = TripCalculator()
@@ -586,8 +593,7 @@ class MainWindow(I18nMixin):
             logger.exception("_on_trip_update failed")
 
     def _open_history(self):
-        from ui.history_view import HistoryView
-        HistoryView(self.root, self.db, self, prefs=self.prefs, ops=self.ops)
+        self._switch_module("history")
 
     def _open_dashboard(self):
         from ui.dashboard import FleetDashboard

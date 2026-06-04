@@ -145,6 +145,15 @@ class NavPanel(ctk.CTkFrame):
         if not self._expanded:
             self._app_name_frame.pack_forget()
 
+        self._toggle_btn = ctk.CTkButton(
+            top, text="\u00ab" if self._expanded else "\u00bb", width=24, height=24,
+            fg_color="transparent", text_color=COLORS["text_muted"],
+            hover_color=COLORS["bg_elevated"],
+            font=("Segoe UI", 12),
+            command=self._toggle_expand,
+        )
+        self._toggle_btn.pack(side="right", padx=(0, 4), pady=14)
+
         # Divider below top section
         ctk.CTkFrame(
             self, fg_color=COLORS["border"],
@@ -365,6 +374,9 @@ class NavPanel(ctk.CTkFrame):
 
     # ── Hover expand/collapse ───────────────────────────────────────────
 
+    def _toggle_expand(self):
+        self._set_width(W_COLLAPSED if self._expanded else W_EXPANDED)
+
     def _on_cursor_enter(self, event):
         if not self._expanded:
             self._set_width(W_EXPANDED)
@@ -390,6 +402,8 @@ class NavPanel(ctk.CTkFrame):
             self._app_name_frame.pack(side="left", padx=(10, 0))
         else:
             self._app_name_frame.pack_forget()
+
+        self._toggle_btn.configure(text="\u00ab" if self._expanded else "\u00bb")
 
         for name, lbl in self._group_labels.items():
             if self._expanded:
