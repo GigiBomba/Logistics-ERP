@@ -542,7 +542,7 @@ class OverviewDashboard(ctk.CTkFrame):
             trips = []
             return
 
-        today_str = datetime.now().strftime("%d/%m/%Y")
+        today_str = datetime.now().strftime("%Y-%m-%d")
         active_trucks = len([t for t in trucks
                                if t.get('status') == 'Active'
                                or t.get('active_status') == 1])

@@ -157,7 +157,7 @@ class MaintenanceHealthTab(ctk.CTkFrame):
         self._form_type_combo.pack(side="left")
 
         fields["date"] = add_row(iconed("maint.form_date"))
-        fields["date"].insert(0, record["date"][:10] if record and record.get("date") else datetime.now().strftime("%d/%m/%Y"))
+        fields["date"].insert(0, record["date"][:10] if record and record.get("date") else datetime.now().strftime("%Y-%m-%d"))
 
         fields["km"] = add_row(iconed("maint.form_km"))
         if record and record.get("km"):

@@ -307,7 +307,7 @@ class DatabaseManager:
             self.conn.execute("""
                 INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, total_amount, status)
                 VALUES (?, ?, ?, ?, ?, 'Unpaid')
-            """, (trip_id, inv_number, datetime.now().strftime("%d/%m/%Y"), due_date, amount))
+            """, (trip_id, inv_number, datetime.now().strftime("%Y-%m-%d"), due_date, amount))
             self.conn.commit()
         except sqlite3.IntegrityError:
             pass
@@ -321,7 +321,6 @@ class DatabaseManager:
 
     def get_stats_by_period(self, start=None, end=None):
         """Statistici calculate pe o perioadă (format date: YYYY-MM-DD)."""
-        date_iso = "SUBSTR(created_at, 7, 4) || '-' || SUBSTR(created_at, 4, 2) || '-' || SUBSTR(created_at, 1, 2)"
         query = f"""
             SELECT 
                 COUNT(*) as total,
@@ -335,7 +334,7 @@ class DatabaseManager:
         """
         params = []
         if start and end:
-            query += f" AND {date_iso} BETWEEN ? AND ?"
+            query += " AND created_at BETWEEN ? AND ?"
             params.extend([start, end])
         
         return self.row_to_dict(self.conn.execute(query, params).fetchone())
@@ -344,7 +343,7 @@ class DatabaseManager:
         """Statistici globale + cea mai bună lună."""
         stats = self.get_stats_by_period()
         best_month = self.row_to_dict(self.conn.execute("""
-            SELECT SUBSTR(created_at, 4, 7) as month, SUM(net_profit) as m_profit 
+            SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as m_profit 
             FROM trips 
             GROUP BY month 
             ORDER BY m_profit DESC LIMIT 1
@@ -355,22 +354,22 @@ class DatabaseManager:
         """Top performeri: Camion, Șofer, Lună."""
         bt = self.row_to_dict(self.conn.execute("SELECT truck_number, SUM(net_profit) as p FROM trips GROUP BY truck_number ORDER BY p DESC LIMIT 1").fetchone())
         bd = self.row_to_dict(self.conn.execute("SELECT driver_name, SUM(net_profit) as p FROM trips GROUP BY driver_name ORDER BY p DESC LIMIT 1").fetchone())
-        bm = self.row_to_dict(self.conn.execute("SELECT SUBSTR(created_at, 4, 7) as month, SUM(net_profit) as m_profit FROM trips GROUP BY month ORDER BY m_profit DESC LIMIT 1").fetchone())
+        bm = self.row_to_dict(self.conn.execute("SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as m_profit FROM trips GROUP BY month ORDER BY m_profit DESC LIMIT 1").fetchone())
         return bt, bd, bm
 
     def get_dashboard_charts(self):
         """Date pentru graficul evolutiv (ultimele 6 luni)."""
         top_clients = self.rows_to_dicts(self.conn.execute("SELECT client_name, SUM(net_profit) as p FROM trips GROUP BY client_name ORDER BY p DESC LIMIT 5").fetchall())
-        monthly = self.conn.execute("SELECT SUBSTR(created_at, 4, 7) as month, SUM(net_profit) as p FROM trips GROUP BY month ORDER BY id DESC LIMIT 6").fetchall()
+        monthly = self.conn.execute("SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as p FROM trips GROUP BY month ORDER BY id DESC LIMIT 6").fetchall()
         return top_clients, self.rows_to_dicts(monthly[::-1])
 
     def get_available_years(self):
         """Anii disponibili pentru filtre."""
-        return [r[0] for r in self.conn.execute("SELECT DISTINCT SUBSTR(created_at, 7, 4) as year FROM trips ORDER BY year DESC").fetchall() if r[0]]
+        return [r[0] for r in self.conn.execute("SELECT DISTINCT SUBSTR(created_at, 1, 4) as year FROM trips ORDER BY year DESC").fetchall() if r[0]]
 
     def get_kpi_stats(self):
         """Calculează cifrele cheie pentru luna curentă."""
-        current_month = datetime.now().strftime("%m/%Y")
+        current_month = datetime.now().strftime("%Y-%m")
         
         # 1. Venit și Profit Luna Curentă
         m_stats = self.conn.execute("""
@@ -406,7 +405,7 @@ class DatabaseManager:
         try:
             rows = self.conn.execute(query).fetchall()
             for r in rows:
-                due_dt = datetime.strptime(r['due_date'], "%d/%m/%Y")
+                due_dt = datetime.strptime(r['due_date'], "%Y-%m-%d")
                 if today > due_dt:
                     days_late = (today - due_dt).days
                     total_overdue_amount += r['total_amount']
@@ -435,12 +434,8 @@ class DatabaseManager:
         if from_date and to_date:
             date_clause = """
                 WHERE LENGTH(created_at) >= 10
-                  AND (substr(created_at, 7, 4) || '-' ||
-                       substr(created_at, 4, 2) || '-' ||
-                       substr(created_at, 1, 2)) >= ?
-                  AND (substr(created_at, 7, 4) || '-' ||
-                       substr(created_at, 4, 2) || '-' ||
-                       substr(created_at, 1, 2)) <= ?
+                  AND created_at >= ?
+                  AND created_at <= ?
             """
             date_params = [from_date, to_date]
 
@@ -451,7 +446,7 @@ class DatabaseManager:
             f"SELECT driver_name, SUM(net_profit) as p FROM trips {date_clause} GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10",
             date_params).fetchall())
         rev_exp = self.conn.execute(f"""
-            SELECT SUBSTR(created_at, 4, 7) as month, 
+            SELECT SUBSTR(created_at, 1, 7) as month, 
             SUM(total_price_eur) as rev, 
             SUM(total_price_eur - net_profit) as exp 
             FROM trips {date_clause} GROUP BY month ORDER BY month DESC LIMIT 6
@@ -506,6 +501,7 @@ class DatabaseManager:
         self.conn.execute("DELETE FROM trucks WHERE id = ?", (truck_id,))
         self.conn.commit()
 
+    # @deprecated — use TruckRouteAssignmentRepository.get_by_truck() via FleetService
     def get_truck_routes(self, truck_id, status=None):
         query = """
             SELECT a.*, h.last_calculated_at, h.total_distance_km, h.duration_min,

@@ -350,7 +350,7 @@ class DriverManager:
                         val = d.get(field, "")
                         if val:
                             try:
-                                dt = datetime.strptime(val, "%d/%m/%Y")
+                                dt = datetime.strptime(val, "%Y-%m-%d")
                                 if dt <= cutoff:
                                     expiring += 1
                                     break

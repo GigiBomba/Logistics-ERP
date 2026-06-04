@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Polski",
   "app": {
     "name": "ERP LOGISTYKA",
@@ -901,7 +901,24 @@
     "no_records": "Brak wpisów",
     "title": "Analityka Konserwacji",
     "total_cost_label": "Koszt całkowity",
-    "truck_fallback": "Ciężarówka"
+    "truck_fallback": "Ciężarówka",
+    "col_truck": "Ciężarówka",
+    "col_ytd_cost": "Koszt (YTD)",
+    "col_avg_cost": "Śr. koszt",
+    "col_count": "Usługi",
+    "col_top_category": "Główna kat.",
+    "month_jan": "Sty",
+    "month_feb": "Lut",
+    "month_mar": "Mar",
+    "month_apr": "Kwi",
+    "month_may": "Maj",
+    "month_jun": "Cze",
+    "month_jul": "Lip",
+    "month_aug": "Sie",
+    "month_sep": "Wrz",
+    "month_oct": "Paź",
+    "month_nov": "Lis",
+    "month_dec": "Gru"
   },
   "maint_timeline": {
     "detail_title": "Szczegóły wpisu",

@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Slovenčina",
   "app": {
     "name": "ERP LOGISTIKA",
@@ -749,7 +749,24 @@
     "no_records": "Žiadne záznamy",
     "title": "Analýza Údřby",
     "total_cost_label": "Celkové náklady",
-    "truck_fallback": "Vozidlo"
+    "truck_fallback": "Vozidlo",
+    "col_truck": "Vozidlo",
+    "col_ytd_cost": "Náklady (YTD)",
+    "col_avg_cost": "Priem. náklady",
+    "col_count": "Služby",
+    "col_top_category": "Hlavná kat.",
+    "month_jan": "Jan",
+    "month_feb": "Feb",
+    "month_mar": "Mar",
+    "month_apr": "Apr",
+    "month_may": "Máj",
+    "month_jun": "Jún",
+    "month_jul": "Júl",
+    "month_aug": "Aug",
+    "month_sep": "Sep",
+    "month_oct": "Okt",
+    "month_nov": "Nov",
+    "month_dec": "Dec"
   },
   "maint_timeline": {
     "detail_title": "Detail záznamu",

@@ -94,8 +94,8 @@ class MaintenanceAnalyticsView:
         twelve_ago = now - timedelta(days=365)
         ytd_start = datetime(now.year, 1, 1)
 
-        since_charts = twelve_ago.strftime("%d/%m/%Y")
-        since_ytd = ytd_start.strftime("%d/%m/%Y")
+        since_charts = twelve_ago.strftime("%Y-%m-%d")
+        since_ytd = ytd_start.strftime("%Y-%m-%d")
 
         self._truck_map: Dict[int, str] = {}
         for rec in self.repo.get_all():
@@ -196,14 +196,14 @@ class MaintenanceAnalyticsView:
         cols = ("truck", "ytd_cost", "avg_cost", "count", "top_category")
         tree = ttk.Treeview(self._table_frame, columns=cols, show="headings", height=8)
         col_headings = [
-            ("truck", "maint_analytics.col_truck"),
-            ("ytd_cost", "maint_analytics.col_ytd_cost"),
-            ("avg_cost", "maint_analytics.col_avg_cost"),
-            ("count", "maint_analytics.col_count"),
-            ("top_category", "maint_analytics.col_top_category"),
+            ("truck", "maint_analytics.col_truck", "Truck"),
+            ("ytd_cost", "maint_analytics.col_ytd_cost", "YTD Cost"),
+            ("avg_cost", "maint_analytics.col_avg_cost", "Avg. Cost"),
+            ("count", "maint_analytics.col_count", "Services"),
+            ("top_category", "maint_analytics.col_top_category", "Top Category"),
         ]
-        for col, key in col_headings:
-            tree.heading(col, text=t(key))
+        for col, key, heading in col_headings:
+            tree.heading(col, text=t(key, default=heading))
             self._tree_heading_keys.append((col, key))
         tree.column("truck", width=120)
         tree.column("ytd_cost", width=140, anchor="e")
@@ -240,11 +240,13 @@ _MONTH_KEYS = [
     "maint_analytics.month_sep", "maint_analytics.month_oct",
     "maint_analytics.month_nov", "maint_analytics.month_dec",
 ]
+_MONTH_NAMES = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 def _label_month(ym: str) -> str:
     try:
         parts = ym.split("-")
         m = int(parts[1])
-        return f"{t(_MONTH_KEYS[m - 1])} {parts[0][2:]}"
+        return f"{t(_MONTH_KEYS[m - 1], default=_MONTH_NAMES[m - 1])} {parts[0][2:]}"
     except Exception:
         return ym

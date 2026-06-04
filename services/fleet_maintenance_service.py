@@ -283,7 +283,7 @@ class FleetMaintenanceService:
         if fixed_expiry:
             result["due_by_date"] = fixed_expiry
             try:
-                expiry = datetime.strptime(fixed_expiry, "%d/%m/%Y")
+                expiry = datetime.strptime(fixed_expiry, "%Y-%m-%d")
                 if expiry < datetime.now():
                     result["overdue"] = True
             except Exception:
@@ -302,7 +302,7 @@ class FleetMaintenanceService:
         date_remaining = None
         if interval_months and last_date:
             try:
-                last_dt = datetime.strptime(last_date, "%d/%m/%Y")
+                last_dt = datetime.strptime(last_date, "%Y-%m-%d")
                 due_dt = last_dt + timedelta(days=interval_months * 30)
                 result["due_by_date"] = due_dt.strftime("%d/%m/%Y")
                 remaining_days = (due_dt - datetime.now()).days
@@ -349,7 +349,7 @@ class FleetMaintenanceService:
             last_date = self._fleet_repo.get_maintenance_last_date(truck_id)
             if last_date:
                 try:
-                    last_dt = datetime.strptime(last_date[:10], "%d/%m/%Y")
+                    last_dt = datetime.strptime(last_date[:10], "%Y-%m-%d")
                     downtime = (now - last_dt).days
                 except Exception:
                     pass
@@ -417,7 +417,7 @@ class FleetMaintenanceService:
         result["total_records"] = self._fleet_repo.count_maintenance_records()
         result["total_cost"] = self._fleet_repo.sum_maintenance_cost()
 
-        _30d = (datetime.now() - timedelta(days=30)).strftime("%d/%m/%Y")
+        _30d = (datetime.now() - timedelta(days=30)).strftime("%Y-%m-%d")
         result["cost_30d"] = self._fleet_repo.sum_maintenance_cost(since_date=_30d)
         result["records_30d"] = self._fleet_repo.count_maintenance_records(since_date=_30d)
 

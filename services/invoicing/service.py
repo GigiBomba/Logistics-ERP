@@ -20,7 +20,7 @@ class InvoiceService:
     def generate_and_record(self, trip_data: Dict[str, Any], mode: str = "client") -> str:
         path = self.generate(trip_data, mode=mode)
         if mode == "client":
-            due_date = (datetime.now() + timedelta(days=30)).strftime("%d/%m/%Y")
+            due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
             trip_id = trip_data.get("id", 0)
             inv_number = f"INV-{datetime.now().year}-{trip_id:04d}"
             total_price = trip_data.get("total_price_eur", 0) or 0

@@ -282,7 +282,7 @@ class FleetTab(I18nMixin):
             fixed_date = sched.get("fixed_expiry_date")
             if fixed_date:
                 try:
-                    sched_dt = datetime.strptime(fixed_date, "%d/%m/%Y")
+                    sched_dt = datetime.strptime(fixed_date, "%Y-%m-%d")
                     if next_due is None or sched_dt < next_due:
                         next_due = sched_dt
                 except Exception:
@@ -644,7 +644,7 @@ class FleetTab(I18nMixin):
         form = ctk.CTkFrame(parent, fg_color=Theme.BG)
         form.pack(fill="x", padx=8)
         ctk.CTkLabel(form, text=t("fleet.add_expense"), fg_color=Theme.BG, text_color=Theme.ACCENT).pack(anchor="w")
-        e_date = StyledEntry(form); e_date.insert(0, datetime.now().strftime("%d/%m/%Y")); e_date.pack(fill="x", pady=4)
+        e_date = StyledEntry(form); e_date.insert(0, datetime.now().strftime("%Y-%m-%d")); e_date.pack(fill="x", pady=4)
         e_cat = StyledEntry(form); e_cat.insert(0, t("fleet.expense_default_category")); e_cat.pack(fill="x", pady=4)
         e_amount = StyledEntry(form); e_amount.insert(0, "0"); e_amount.pack(fill="x", pady=4)
         e_desc = StyledEntry(form); e_desc.pack(fill="x", pady=4)

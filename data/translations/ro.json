@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Română",
   "app": {
     "name": "LOGISTICS ERP",
@@ -726,7 +726,24 @@
     "no_records": "Nicio inregistrare",
     "title": "Analize Mentenanta",
     "total_cost_label": "Cost Total",
-    "truck_fallback": "Camion"
+    "truck_fallback": "Camion",
+    "col_truck": "Camion",
+    "col_ytd_cost": "Cost cumulat",
+    "col_avg_cost": "Cost mediu",
+    "col_count": "Servicii",
+    "col_top_category": "Cat. principală",
+    "month_jan": "Ian",
+    "month_feb": "Feb",
+    "month_mar": "Mar",
+    "month_apr": "Apr",
+    "month_may": "Mai",
+    "month_jun": "Iun",
+    "month_jul": "Iul",
+    "month_aug": "Aug",
+    "month_sep": "Sep",
+    "month_oct": "Oct",
+    "month_nov": "Noi",
+    "month_dec": "Dec"
   },
   "maint_timeline": {
     "detail_title": "Detalii Intrare",

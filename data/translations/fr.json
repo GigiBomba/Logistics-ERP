@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Français",
   "app": {
     "name": "ERP LOGISTIQUE",
@@ -726,7 +726,24 @@
     "no_records": "Aucune entree",
     "title": "Analyse Maintenance",
     "total_cost_label": "Cout Total",
-    "truck_fallback": "Camion"
+    "truck_fallback": "Camion",
+    "col_truck": "Camion",
+    "col_ytd_cost": "Coût cumulé",
+    "col_avg_cost": "Coût moyen",
+    "col_count": "Services",
+    "col_top_category": "Cat. principale",
+    "month_jan": "Jan",
+    "month_feb": "Fév",
+    "month_mar": "Mar",
+    "month_apr": "Avr",
+    "month_may": "Mai",
+    "month_jun": "Juin",
+    "month_jul": "Juil",
+    "month_aug": "Aoû",
+    "month_sep": "Sep",
+    "month_oct": "Oct",
+    "month_nov": "Nov",
+    "month_dec": "Déc"
   },
   "maint_timeline": {
     "detail_title": "Detail de l'Entree",

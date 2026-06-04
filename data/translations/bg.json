@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Български",
   "app": {
     "name": "ЕРП ЛОГИСТИКА",
@@ -726,7 +726,24 @@
     "no_records": "Няма записи",
     "title": "Анализ Поддръжка",
     "total_cost_label": "Общ Разход",
-    "truck_fallback": "Камион"
+    "truck_fallback": "Камион",
+    "col_truck": "Камион",
+    "col_ytd_cost": "Разход (год.)",
+    "col_avg_cost": "Сред. разход",
+    "col_count": "Услуги",
+    "col_top_category": "Осн. категория",
+    "month_jan": "Яну",
+    "month_feb": "Фев",
+    "month_mar": "Мар",
+    "month_apr": "Апр",
+    "month_may": "Май",
+    "month_jun": "Юни",
+    "month_jul": "Юли",
+    "month_aug": "Авг",
+    "month_sep": "Сеп",
+    "month_oct": "Окт",
+    "month_nov": "Ное",
+    "month_dec": "Дек"
   },
   "maint_timeline": {
     "detail_title": "Детайли Запис",

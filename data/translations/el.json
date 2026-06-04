@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Ελληνικά",
   "app": {
     "name": "LOGISTICS ERP",
@@ -726,7 +726,24 @@
     "no_records": "Καμία εγγραφή",
     "title": "Ανάλυση Συντήρησης",
     "total_cost_label": "Συνολικό Κόστος",
-    "truck_fallback": "Φορτηγό"
+    "truck_fallback": "Φορτηγό",
+    "col_truck": "Φορτηγό",
+    "col_ytd_cost": "Κόστος (έτος)",
+    "col_avg_cost": "Μέσο κόστος",
+    "col_count": "Υπηρεσίες",
+    "col_top_category": "Κύρια κατηγ.",
+    "month_jan": "Ιαν",
+    "month_feb": "Φεβ",
+    "month_mar": "Μαρ",
+    "month_apr": "Απρ",
+    "month_may": "Μάι",
+    "month_jun": "Ιούν",
+    "month_jul": "Ιούλ",
+    "month_aug": "Αύγ",
+    "month_sep": "Σεπ",
+    "month_oct": "Οκτ",
+    "month_nov": "Νοέ",
+    "month_dec": "Δεκ"
   },
   "maint_timeline": {
     "detail_title": "Λεπτομέρειες Εγγραφής",

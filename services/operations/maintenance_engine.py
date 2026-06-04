@@ -100,7 +100,7 @@ class MaintenanceEngine:
         insp_val = truck.get("inspection_expiry")
         if insp_val:
             try:
-                expiry = datetime.strptime(insp_val, "%d/%m/%Y")
+                expiry = datetime.strptime(insp_val, "%Y-%m-%d")
                 diff = (expiry - today).days
                 warning_days = self._rules.get("inspection_warning_days", 10)
                 if diff < 0:
@@ -126,7 +126,7 @@ class MaintenanceEngine:
         ins_val = truck.get("insurance_expiry")
         if ins_val:
             try:
-                expiry = datetime.strptime(ins_val, "%d/%m/%Y")
+                expiry = datetime.strptime(ins_val, "%Y-%m-%d")
                 diff = (expiry - today).days
                 warning_days = self._rules.get("insurance_warning_days", 10)
                 if diff < 0:
@@ -183,7 +183,7 @@ class MaintenanceEngine:
                 "SELECT MAX(created_at) FROM trips WHERE truck_number = ?", (plate,)
             ).fetchone()[0]
             if last_activity:
-                last_date = datetime.strptime(last_activity[:10], "%d/%m/%Y")
+                last_date = datetime.strptime(last_activity[:10], "%Y-%m-%d")
                 idle = (today - last_date).days
                 if idle > inactive_days:
                     self._alert_mgr.create_alert(

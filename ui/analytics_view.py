@@ -207,8 +207,8 @@ class AnalyticsView:
         self._no_data_text = None
 
         try:
-            from_date = self._start_date.strftime("%d/%m/%Y")
-            to_date = self._end_date.strftime("%d/%m/%Y")
+            from_date = self._start_date.strftime("%Y-%m-%d")
+            to_date = self._end_date.strftime("%Y-%m-%d")
 
             p_truck, p_driver, rev_exp = self.analytics_service.get_data(from_date, to_date)
             from repositories.trip_repository import TripRepository

@@ -8,7 +8,6 @@ from services.operations.event_bus import EventBus, SYSTEM_STARTUP, TRUCK_ODOMET
 from services.operations.maintenance_engine import MaintenanceEngine
 from services.operations.notification_center import NotificationCenter
 from services.operations.rules import Rules
-from services.trip_service import TripService
 from repositories.fleet_repository import FleetRepository
 
 logger = logging.getLogger("operations.operations_engine")
@@ -36,6 +35,7 @@ class OperationsEngine:
         self._event_bus = EventBus()
         self._alert_mgr = AlertManager()
         self._rules = Rules()
+        from services.trip_service import TripService
         self._trip_service = TripService(db) if db else None
         self._maintenance_engine = MaintenanceEngine(db) if db else None
         self._notification_center = NotificationCenter(db) if db else None
@@ -243,7 +243,7 @@ class OperationsEngine:
                 trip_id, price, created_at, status = t["id"], t.get("total_price_eur", 0), t.get("created_at", ""), t.get("status", "")
                 if status in ("Delivered", "Livrat", "Facturat", "Invoiced"):
                     try:
-                        created = datetime.strptime(created_at[:10], "%d/%m/%Y")
+                        created = datetime.strptime(created_at[:10], "%Y-%m-%d")
                         age = (today - created).days
                         if age > overdue_days:
                             self._alert_mgr.create_alert(

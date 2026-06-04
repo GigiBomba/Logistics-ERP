@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Русский",
   "app": {
     "name": "ERP ЛОГИСТИКА",
@@ -726,7 +726,24 @@
     "no_records": "Нет Записей",
     "title": "Аналитика Обслуживания",
     "total_cost_label": "Общие Расходы",
-    "truck_fallback": "Грузовик"
+    "truck_fallback": "Грузовик",
+    "col_truck": "Грузовик",
+    "col_ytd_cost": "Расход (год)",
+    "col_avg_cost": "Сред. расход",
+    "col_count": "Услуги",
+    "col_top_category": "Осн. категория",
+    "month_jan": "Янв",
+    "month_feb": "Фев",
+    "month_mar": "Мар",
+    "month_apr": "Апр",
+    "month_may": "Май",
+    "month_jun": "Июн",
+    "month_jul": "Июл",
+    "month_aug": "Авг",
+    "month_sep": "Сен",
+    "month_oct": "Окт",
+    "month_nov": "Ноя",
+    "month_dec": "Дек"
   },
   "maint_timeline": {
     "detail_title": "Детали Записи",

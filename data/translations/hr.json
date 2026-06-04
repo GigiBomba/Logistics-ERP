@@ -1,4 +1,4 @@
-{
+﻿{
   "language_name": "Hrvatski",
   "app": {
     "name": "ERP LOGISTIKA",
@@ -726,7 +726,24 @@
     "no_records": "Nema Zapisa",
     "title": "Analitika Odreavanja",
     "total_cost_label": "Ukupni Trošak",
-    "truck_fallback": "Kamion"
+    "truck_fallback": "Kamion",
+    "col_truck": "Kamion",
+    "col_ytd_cost": "Trošak (god.)",
+    "col_avg_cost": "Pros. trošak",
+    "col_count": "Usluge",
+    "col_top_category": "Glavna kat.",
+    "month_jan": "Sij",
+    "month_feb": "Velj",
+    "month_mar": "Ožu",
+    "month_apr": "Tra",
+    "month_may": "Svi",
+    "month_jun": "Lip",
+    "month_jul": "Srp",
+    "month_aug": "Kol",
+    "month_sep": "Ruj",
+    "month_oct": "Lis",
+    "month_nov": "Stu",
+    "month_dec": "Pro"
   },
   "maint_timeline": {
     "detail_title": "Detalji Zapisa Održavanja",
