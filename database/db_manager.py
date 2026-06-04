@@ -18,6 +18,7 @@ from database.schema import (
     INDEX_TRIPS_DATE,
     INDEX_TRIPS_TRUCK,
     TABLE_ALERTS,
+    TABLE_CLIENTS,
     TABLE_EMAIL_LOGS,
     TABLE_INVOICES,
     TABLE_MAINTENANCE_RECORDS,
@@ -52,6 +53,8 @@ from database.schema import (
     INDEX_TACHO_DRIVER_DATE,
     INDEX_TACHO_VEHICLE_TRUCK,
     INDEX_TACHO_IMPORTS_HASH,
+    INDEX_CLIENTS_NAME,
+    INDEX_CLIENTS_ACTIVE,
     ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID,
 )
 
@@ -133,6 +136,11 @@ class DatabaseManager:
         self.conn.execute(INDEX_TACHO_VEHICLE_TRUCK)
         self.conn.execute(INDEX_TACHO_IMPORTS_HASH)
 
+        # Clients table
+        self.conn.execute(TABLE_CLIENTS)
+        self.conn.execute(INDEX_CLIENTS_NAME)
+        self.conn.execute(INDEX_CLIENTS_ACTIVE)
+
         self.conn.commit()
         # Migrate legacy maintenance table to maintenance_records (if both exist)
         try:
@@ -171,6 +179,11 @@ class DatabaseManager:
             if 'truck_consumption_l_per_100km' not in cols:
                 try:
                     self.conn.execute("ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL")
+                except Exception:
+                    pass
+            if 'client_id' not in cols:
+                try:
+                    self.conn.execute("ALTER TABLE trips ADD COLUMN client_id INTEGER REFERENCES clients(id)")
                 except Exception:
                     pass
         except Exception:

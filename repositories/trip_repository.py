@@ -13,7 +13,7 @@ class TripRepository(BaseRepository):
         "net_profit", "start_date", "end_date", "payment_date", "extra_costs",
         "fuel_cost", "toll_cost", "salary_cost", "currency", "status",
         "context_json", "route_history_v2_id", "truck_consumption_l_per_100km",
-        "driver_id",
+        "driver_id", "client_id",
     ]
 
     # ── Base CRUD ─────────────────────────────────────────────────────

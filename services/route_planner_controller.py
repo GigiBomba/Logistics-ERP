@@ -238,6 +238,7 @@ class RoutePlannerController:
         truck_id: str,
         driver_id: int = None,
         client_name: str = '',
+        client_id: int = None,
         start_date: str = None,
         currency: str = 'EUR',
     ) -> int:
@@ -268,6 +269,10 @@ class RoutePlannerController:
             driver = driver_repo.get_by_id(driver_id)
             if driver:
                 driver_name = driver.get('name', '')
+
+        if not client_id and client_name:
+            from services.client_service import ClientService
+            client_id = ClientService(self._db).get_or_create(client_name)
 
         distance_km = float(route.get('total_distance_km') or 0)
         start_dt = datetime.now()
@@ -302,6 +307,7 @@ class RoutePlannerController:
             'driver_name': driver_name,
             'driver_id': driver_id,
             'client_name': client_name,
+            'client_id': client_id,
             'distance_km': distance_km,
             'total_price_eur': 0,
             'rate_per_km': result.rate_per_km if result else 0,
