@@ -30,7 +30,8 @@
     "group_finance": "Finance",
     "tracking": "Live Tracking",
     "maintenance": "Maintenance",
-    "route_planner": "Route Planner"
+    "route_planner": "Route Planner",
+    "clients": "Clients"
   },
   "main": {
     "section_identify": "IDENTIFICATION",
@@ -621,7 +622,10 @@
     "status": "Status",
     "to_date": "To Date",
     "unknown": "Unknown",
-    "yes": "Yes"
+    "yes": "Yes",
+    "search": "Search...",
+    "confirm": "Confirm",
+    "warning": "Warning"
   },
   "dispatch_board": {
     "alerts": "Alerts",
@@ -936,5 +940,19 @@
     "field_provider": "Field Provider",
     "field_type": "Field Type",
     "title": "Maintenance Timeline"
+  },
+  "client": {
+    "table_name": "Name",
+    "table_contact": "Contact Person",
+    "table_phone": "Phone",
+    "table_email": "Email",
+    "table_trips": "Trips",
+    "field_name": "Client Name *",
+    "field_contact": "Contact Person",
+    "field_phone": "Phone",
+    "field_email": "Email",
+    "field_address": "Address",
+    "field_vat": "VAT Number",
+    "field_notes": "Notes"
   }
 }

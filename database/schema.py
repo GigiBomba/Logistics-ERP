@@ -396,3 +396,24 @@ CREATE TABLE IF NOT EXISTS tacho_vehicle_data (
 INDEX_TACHO_DRIVER_DATE = "CREATE INDEX IF NOT EXISTS idx_tacho_driver_date ON tacho_driver_activity(driver_id, activity_date);"
 INDEX_TACHO_VEHICLE_TRUCK = "CREATE INDEX IF NOT EXISTS idx_tacho_vehicle_truck ON tacho_vehicle_data(truck_id);"
 INDEX_TACHO_IMPORTS_HASH = "CREATE INDEX IF NOT EXISTS idx_tacho_imports_hash ON tacho_imports(file_hash);"
+
+# ── Clients ────────────────────────────────────────────────────────────
+TABLE_CLIENTS = """
+CREATE TABLE IF NOT EXISTS clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    contact_person TEXT,
+    phone TEXT,
+    email TEXT,
+    address TEXT,
+    vat_number TEXT,
+    currency_preference TEXT DEFAULT 'EUR',
+    notes TEXT,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL,
+    updated_at TEXT
+);
+"""
+
+INDEX_CLIENTS_NAME = "CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);"
+INDEX_CLIENTS_ACTIVE = "CREATE INDEX IF NOT EXISTS idx_clients_active ON clients(is_active);"

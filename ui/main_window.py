@@ -11,6 +11,7 @@ from ui.styles import Theme
 from ui.navigation import NavPanel
 from services.trip_context import register_trip_listener, unregister_trip_listener
 from services.trip_service import TripService
+from services.client_service import ClientService
 from services.fleet_service import FleetService
 from services.i18n import t, register_listener, unregister_listener
 from services.fuel_price_service import FuelPriceService
@@ -34,6 +35,7 @@ class MainWindow(I18nMixin):
         self.prefs = prefs or PreferencesManager(db)
         self.fleet_service = FleetService(self.db)
         self.trip_service = TripService(self.db)
+        self.client_service = ClientService(self.db)
         self._event_bus = EventBus()
         self._module_cache = {}
         self._active_module = None
@@ -164,6 +166,7 @@ class MainWindow(I18nMixin):
         nav.add_group(t("nav.group_fleet"), "nav.group_fleet")
         nav.add_item("fleet", "\U0001f69b", t("nav.fleet"), i18n_key="nav.fleet")
         nav.add_item("driver_manager", "\U0001f464", t("nav.driver_manager"), i18n_key="nav.driver_manager")
+        nav.add_item("clients", "\U0001f465", t("nav.clients"), i18n_key="nav.clients")
         nav.add_item("maintenance", "\U0001f527", t("nav.maintenance_analytics"), i18n_key="nav.maintenance_analytics")
         nav.add_item("maintenance_control", "\U0001f529", t("nav.maintenance_control"), i18n_key="nav.maintenance_control")
         nav.add_item("tachograph", "\U0001f4be", t("nav.tachograph"), i18n_key="nav.tachograph")
@@ -343,6 +346,7 @@ class MainWindow(I18nMixin):
             "route_planner": ("ui.route_planner", "RoutePlannerTab", {"open_window": False, "controller": self}),
             "fleet": ("ui.fleet_tab", "FleetTab", {"open_window": False, "ops": self.ops}),
             "driver_manager": ("ui.driver_manager", "DriverManager", {"open_window": False, "ops": self.ops}),
+            "clients": ("ui.client_manager", "ClientManager", {"prefs": self.prefs}),
             "invoices": ("ui.invoice_tab", "InvoiceTab", {"prefs": self.prefs}),
             "settings": ("ui.settings_view", "SettingsView", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
             "dashboard": ("ui.dashboard", "FleetDashboard", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
@@ -498,11 +502,16 @@ class MainWindow(I18nMixin):
                 if not messagebox.askyesno(t("dispatch_board.conflict_warning_title"), msg):
                     return
 
+            client_name = self.e_client.get().strip()
+            client_id = self.client_service.get_or_create(client_name) if client_name else None
+
             self.trip_service.add({
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "truck_number": (self.selected_truck.get('plate_number') if isinstance(self.selected_truck, dict) and self.selected_truck else (self.selected_truck[1] if self.selected_truck and len(self.selected_truck) > 1 else None)),
                 "driver_name": (self.selected_truck.get('driver_name') if isinstance(self.selected_truck, dict) and self.selected_truck and 'driver_name' in self.selected_truck else (self.selected_truck['driver_name'] if self.selected_truck and hasattr(self.selected_truck, 'keys') and 'driver_name' in self.selected_truck.keys() else None)),
-                "client_name": self.e_client.get(),
+                "driver_id": (self.selected_truck.get('driver_id') if isinstance(self.selected_truck, dict) and self.selected_truck else None),
+                "client_name": client_name,
+                "client_id": client_id,
                 "distance_km": km,
                 "total_price_eur": round(pret_eur, 2),
                 "rate_per_km": res.rate_per_km,
