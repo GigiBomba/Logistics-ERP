@@ -25,13 +25,14 @@ class OperationsEngine:
                     cls._instance._initialized = False
         return cls._instance
 
-    def __init__(self, db=None):
+    def __init__(self, db=None, prefs=None):
         if self._initialized:
             if db is not None and self._db is None:
                 self._db = db
             return
         self._initialized = True
         self._db = db
+        self._prefs = prefs
         self._event_bus = EventBus()
         self._alert_mgr = AlertManager()
         self._rules = Rules()
@@ -72,10 +73,10 @@ class OperationsEngine:
         self._daily_timer.start()
 
     def _configure_smtp_from_db(self):
-        if not self._db:
+        if not self._prefs:
             return
         try:
-            cfg = self._db.get_settings(["smtp_server", "smtp_port", "smtp_user", "smtp_password"])
+            cfg = self._prefs.get_smtp_config()
             if cfg.get("smtp_server") and cfg.get("smtp_user"):
                 port = int(cfg.get("smtp_port", 587))
                 self._notification_center.configure_smtp(

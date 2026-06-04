@@ -238,7 +238,7 @@ class InvoiceTab(I18nMixin):
                 return
 
             nc = NotificationCenter(self.db)
-            smtp_cfg = self.db.get_settings(["smtp_server", "smtp_port", "smtp_user", "smtp_password"])
+            smtp_cfg = self.prefs.get_smtp_config()
             try:
                 nc.configure_smtp(
                     smtp_cfg.get("smtp_server", ""),
