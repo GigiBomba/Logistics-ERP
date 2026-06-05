@@ -35,6 +35,7 @@ from ui.widgets.dispatch_detail_panel import DispatchDetailPanel
 from ui.widgets.resource_panel import ResourcePanel
 from ui.widgets.dispatch_alerts_panel import DispatchAlertsPanel
 from ui.widgets.dispatch_timeline import DispatchTimeline
+from ui.widgets.paired_assignment_dialog import PairedAssignmentDialog
 from utils.tk_helpers import safe_destroy
 from ui.theme import COLORS, FONTS
 
@@ -117,6 +118,9 @@ class DispatchBoardView:
         self._search_statuses = list(STATUS_OPTIONS)
         self._conflict_alerts: Dict[int, list] = {}
         self._detail_panel = None
+        self._selected_cards: list = []
+        self._ctrl_pressed = False
+        self._bulk_toolbar = None
 
         self._drag_data = {
             "card": None,
@@ -124,6 +128,13 @@ class DispatchBoardView:
             "source_column": None,
             "target_column": None,
         }
+
+        self._tk_root.bind("<Control_L>", lambda e: setattr(self, '_ctrl_pressed', True))
+        self._tk_root.bind("<Control_R>", lambda e: setattr(self, '_ctrl_pressed', True))
+        self._tk_root.bind("<KeyRelease-Control_L>", lambda e: setattr(self, '_ctrl_pressed', False))
+        self._tk_root.bind("<KeyRelease-Control_R>", lambda e: setattr(self, '_ctrl_pressed', False))
+        self._tk_root.bind("<Command_L>", lambda e: setattr(self, '_ctrl_pressed', True))
+        self._tk_root.bind("<KeyRelease-Command_L>", lambda e: setattr(self, '_ctrl_pressed', False))
 
         self._build_ui()
         self._subscribe_events()
@@ -228,6 +239,22 @@ class DispatchBoardView:
             on_search=self._on_search_filter
         )
         self._search_bar.pack(fill="x", padx=12, pady=(4, 8))
+
+        self._bulk_toolbar = ctk.CTkFrame(self._board_tab, fg_color=COLORS["bg_elevated"], corner_radius=6)
+        ctk.CTkLabel(self._bulk_toolbar, text="", fg_color="transparent",
+                     text_color=COLORS["text_primary"], font=FONTS["small"]).pack(side="left", padx=8, pady=4)
+        ctk.CTkButton(self._bulk_toolbar, text=t("dispatch_board.bulk_assign_truck"),
+                     fg_color=COLORS["accent"], text_color="#ffffff",
+                     font=FONTS["label"], cursor="hand2", height=26, width=100,
+                     command=self._on_bulk_assign_truck).pack(side="right", padx=(2, 8), pady=4)
+        ctk.CTkButton(self._bulk_toolbar, text=t("dispatch_board.bulk_assign_driver"),
+                     fg_color=COLORS["accent"], text_color="#ffffff",
+                     font=FONTS["label"], cursor="hand2", height=26, width=100,
+                     command=self._on_bulk_assign_driver).pack(side="right", padx=(2, 2), pady=4)
+        ctk.CTkButton(self._bulk_toolbar, text=t("dispatch_board.bulk_clear_selection"),
+                     fg_color=COLORS["bg_input"], text_color=COLORS["text_muted"],
+                     font=FONTS["label"], cursor="hand2", height=26, width=60,
+                     command=self._clear_all_selections).pack(side="right", padx=(8, 2), pady=4)
 
         board = ctk.CTkFrame(self._board_tab, fg_color=Theme.BG)
         board.pack(fill="both", expand=True, padx=12, pady=(0, 12))
@@ -605,6 +632,137 @@ class DispatchBoardView:
                 if trip_id:
                     card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
 
+    # ── Bulk Selection ────────────────────────────────────────────────
+
+    def _on_card_select_changed(self, card, selected: bool):
+        if selected:
+            if card not in self._selected_cards:
+                self._selected_cards.append(card)
+        else:
+            if card in self._selected_cards:
+                self._selected_cards.remove(card)
+        self._update_bulk_toolbar()
+
+    def _clear_all_selections(self):
+        for card in list(self._selected_cards):
+            card.set_selected(False)
+        self._selected_cards.clear()
+        self._update_bulk_toolbar()
+
+    def _update_bulk_toolbar(self):
+        if not self._bulk_toolbar:
+            return
+        count = len(self._selected_cards)
+        if count > 0:
+            children = self._bulk_toolbar.winfo_children()
+            if children:
+                children[0].configure(text=t("dispatch_board.bulk_selected_count").format(n=count))
+            self._bulk_toolbar.pack(fill="x", padx=12, pady=(2, 2), before=self._bulk_toolbar.master.winfo_children()[1])
+        else:
+            self._bulk_toolbar.pack_forget()
+
+    def _on_bulk_assign_truck(self):
+        if not self._selected_cards:
+            return
+        def fetch_trucks():
+            active_trucks = self._fleet_repo.get_active_trucks()
+            items = []
+            for truck in active_trucks:
+                items.append({
+                    "id": truck.get("id"),
+                    "label": truck.get("plate_number", ""),
+                    "sublabel": truck.get("model", ""),
+                    "available": True,
+                    "status_text": "",
+                })
+            items.sort(key=lambda x: x["label"])
+            return items
+
+        def on_select(truck_id):
+            self._assign_truck_to_selected(truck_id)
+
+        dropdown = AssignmentDropdown(
+            self._tk_root, self._bulk_toolbar,
+            t("dispatch_board.select_truck"),
+            fetch_trucks, on_select,
+        )
+
+    def _on_bulk_assign_driver(self):
+        if not self._selected_cards:
+            return
+        def fetch_drivers():
+            active_drivers = self._driver_repo.get_active_drivers()
+            items = []
+            for d in active_drivers:
+                items.append({
+                    "id": d.get("id"),
+                    "label": d.get("name", ""),
+                    "sublabel": d.get("license_category", ""),
+                    "available": True,
+                    "status_text": "",
+                })
+            items.sort(key=lambda x: x["label"])
+            return items
+
+        def on_select(driver_id):
+            self._assign_driver_to_selected(driver_id)
+
+        dropdown = AssignmentDropdown(
+            self._tk_root, self._bulk_toolbar,
+            t("dispatch_board.select_driver"),
+            fetch_drivers, on_select,
+        )
+
+    def _assign_truck_to_selected(self, truck_id):
+        try:
+            truck = self._fleet_repo.get_by_id(truck_id)
+            if not truck:
+                return
+            plate = truck.get("plate_number", "")
+            ok = 0
+            failed = 0
+            for card in list(self._selected_cards):
+                try:
+                    trip_id = card.trip_data.get("trip_id_num")
+                    self._trip_service.update(trip_id, {"truck_number": plate, "truck_id": truck_id})
+                    card.update_truck(plate, truck_id)
+                    self._event_bus.publish(TRIP_ASSIGNED, {"trip_id": trip_id, "truck_id": truck_id})
+                    ok += 1
+                except Exception:
+                    failed += 1
+            if failed:
+                self._show_success_toast(t("dispatch_board.bulk_partial").format(ok=ok, failed=failed))
+            else:
+                self._show_success_toast(t("dispatch_board.bulk_success").format(count=ok))
+            self._clear_all_selections()
+        except Exception as e:
+            self._show_error_toast(str(e))
+
+    def _assign_driver_to_selected(self, driver_id):
+        try:
+            driver = self._driver_repo.get_by_id(driver_id)
+            if not driver:
+                return
+            name = driver.get("name", "")
+            ok = 0
+            failed = 0
+            for card in list(self._selected_cards):
+                try:
+                    trip_id = card.trip_data.get("trip_id_num")
+                    self._trip_service.update(trip_id, {"driver_id": driver_id, "driver_name": name})
+                    card.update_driver(name, driver_id)
+                    self._event_bus.publish(TRIP_ASSIGNED, {"trip_id": trip_id, "driver_id": driver_id})
+                    ok += 1
+                except Exception:
+                    failed += 1
+            if failed:
+                self._show_success_toast(t("dispatch_board.bulk_partial").format(ok=ok, failed=failed))
+            else:
+                self._show_success_toast(t("dispatch_board.bulk_success").format(count=ok))
+            self._clear_all_selections()
+        except Exception as e:
+            self._show_error_toast(str(e))
+
     # ── Conflict Scan ────────────────────────────────────────────────
 
     def _run_conflict_scan(self):
@@ -802,7 +960,9 @@ class DispatchBoardView:
             on_click=self._on_card_click,
             on_drag_start=self._on_drag_start,
             on_assign_truck=self._on_assign_truck,
-            on_assign_driver=self._on_assign_driver
+            on_assign_driver=self._on_assign_driver,
+            on_select_changed=self._on_card_select_changed,
+            on_assign_both=self._on_assign_both
         )
 
         target_col.add_card(new_card)
@@ -1094,6 +1254,167 @@ class DispatchBoardView:
             on_close=lambda: card.set_dropdown(None)
         )
         card.set_dropdown(dropdown)
+
+    def _on_assign_both(self, card):
+        card_data = card.trip_data
+        from datetime import datetime, date, timedelta
+        active_trucks = self._fleet_repo.get_active_trucks()
+        active_drivers = self._driver_repo.get_active_drivers()
+        now = datetime.now()
+        cutoff_7 = date.today() - timedelta(days=7)
+
+        from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
+        tacho_repo = TachoDriverActivityRepository(self._db)
+
+        truck_items = []
+        for t in active_trucks:
+            plate = t.get("plate_number", "")
+            model = t.get("model", "")
+            tid = t.get("id")
+            conflicts = self._conflict_service.check_conflicts({
+                "truck_plate": plate,
+                "start_date": card_data.get("departure_date", ""),
+                "end_date": card_data.get("eta", ""),
+                "distance_km": 0,
+            })
+            conf = [c for c in conflicts if c.get("trip_id") != card_data.get("trip_id_num")]
+            blocks = []
+            if t.get("status") == "In Service":
+                blocks.append(t("dispatch_board.resource_in_service"))
+            try:
+                ins_ = t.get("insurance_expiry", "")
+                if ins_:
+                    exp = datetime.strptime(ins_, "%Y-%m-%d")
+                    if now.date() > exp.date():
+                        blocks.append(t("dispatch_board.resource_insurance_expired"))
+            except Exception:
+                pass
+            try:
+                insp_ = t.get("inspection_expiry", "")
+                if insp_:
+                    exp = datetime.strptime(insp_, "%Y-%m-%d")
+                    if now.date() > exp.date():
+                        blocks.append(t("dispatch_board.resource_inspection_expired"))
+            except Exception:
+                pass
+            try:
+                md = t.get("maintenance_due")
+                mi = t.get("mileage")
+                if md is not None and mi is not None and float(mi) >= float(md):
+                    blocks.append(t("dispatch_board.resource_maintenance_due"))
+            except Exception:
+                pass
+            avail = not conf and not blocks
+            st = ""
+            if blocks:
+                st = ", ".join(blocks)
+            elif conf:
+                st = t("dispatch_board.unavailable_overlap").format(
+                    f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
+            truck_items.append({
+                "id": tid, "label": plate, "sublabel": model,
+                "available": avail, "status_text": st,
+            })
+
+        driver_items = []
+        for d in active_drivers:
+            did = d.get("id")
+            name = d.get("name", "")
+            lcat = d.get("license_category", "")
+            conflicts = self._conflict_service.check_conflicts({
+                "driver_id": did,
+                "start_date": card_data.get("departure_date", ""),
+                "end_date": card_data.get("eta", ""),
+                "distance_km": 0,
+            })
+            conf = [c for c in conflicts if c.get("trip_id") != card_data.get("trip_id_num")]
+            blocks = []
+            try:
+                le = d.get("license_expiry", "")
+                if le:
+                    exp = datetime.strptime(le, "%Y-%m-%d")
+                    if now.date() > exp.date():
+                        blocks.append(t("dispatch_board.resource_license_expired"))
+            except Exception:
+                pass
+            try:
+                me = d.get("medical_expiry", "")
+                if me:
+                    exp = datetime.strptime(me, "%Y-%m-%d")
+                    if now.date() > exp.date():
+                        blocks.append(t("dispatch_board.resource_medical_expired"))
+            except Exception:
+                pass
+            weekly_h = 0.0
+            try:
+                records = tacho_repo.get_by_driver(int(did or 0), cutoff_7)
+                weekly_h = sum(r.get("driving_minutes", 0) or 0 for r in records) / 60
+            except Exception:
+                pass
+            if weekly_h > 56:
+                blocks.append(t("dispatch_board.driver_hours_exceeded").format(hours=weekly_h, max_h=56))
+            hours_label = t("dispatch_board.driver_hours_weekly").format(hours=weekly_h, max_h=56)
+            avail = not conf and not blocks
+            st = ""
+            if blocks:
+                st = ", ".join(blocks)
+            elif conf:
+                st = t("dispatch_board.unavailable_overlap").format(
+                    f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
+            driver_items.append({
+                "id": did, "label": name, "sublabel": f"{lcat} | {hours_label}",
+                "available": avail, "status_text": st,
+            })
+
+        truck_items.sort(key=lambda x: (not x["available"], x["label"]))
+        driver_items.sort(key=lambda x: (not x["available"], x["label"]))
+
+        paired_hint = ""
+        try:
+            driver_tname = self._dta_service.get_driver_name_for_truck(card_data.get("truck_id")) if card_data.get("truck_id") else None
+            if driver_tname:
+                paired_hint = t("dispatch_board.pair_suggestion").format(driver=driver_tname, truck=card_data.get("truck_plate", "?"))
+        except Exception:
+            pass
+
+        def do_assign_both(truck_id, driver_id):
+            self._assign_both_to_trip(card, truck_id, driver_id)
+
+        def do_assign_truck_only(truck_id):
+            self._assign_truck_to_trip(card, truck_id)
+
+        def do_assign_driver_only(driver_id):
+            self._assign_driver_to_trip(card, driver_id)
+
+        PairedAssignmentDialog(
+            self._tk_root, card_data,
+            truck_items, driver_items,
+            paired_hint=paired_hint,
+            on_assign_both=do_assign_both,
+            on_assign_truck=do_assign_truck_only,
+            on_assign_driver=do_assign_driver_only,
+        )
+
+    def _assign_both_to_trip(self, card, truck_id, driver_id):
+        rolled_back_truck = False
+        try:
+            if truck_id is not None:
+                self._assign_truck_to_trip(card, truck_id)
+                rolled_back_truck = True
+            if driver_id is not None:
+                self._assign_driver_to_trip(card, driver_id)
+            if truck_id is not None and driver_id is not None:
+                try:
+                    self._dta_service.assign_driver_to_truck(driver_id, truck_id)
+                except Exception:
+                    pass
+        except Exception as e:
+            if rolled_back_truck and truck_id is not None:
+                try:
+                    self._clear_truck_assignment(card)
+                except Exception:
+                    pass
+            card.show_error("both", str(e))
 
     def _assign_truck_to_trip(self, card, truck_id):
         try:

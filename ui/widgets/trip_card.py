@@ -38,17 +38,21 @@ class TripCard(ctk.CTkFrame):
     DELAYED_BG = COLORS["danger_dim"]
 
     def __init__(self, parent, trip_data: dict, on_click=None, on_drag_start=None,
-                 on_assign_truck=None, on_assign_driver=None, **kwargs):
+                 on_assign_truck=None, on_assign_driver=None, on_select_changed=None,
+                 on_assign_both=None, **kwargs):
         super().__init__(parent, fg_color=self.CARD_BG, **kwargs)
         self.trip_data = trip_data
         self._on_click = on_click
         self._on_drag_start = on_drag_start
         self._on_assign_truck = on_assign_truck
         self._on_assign_driver = on_assign_driver
+        self._on_select_changed = on_select_changed
+        self._on_assign_both = on_assign_both
         self._hovered = False
         self._drag_data = {"x": 0, "y": 0, "dragging": False}
         self._active_dropdown = None
         self._delayed = False
+        self._selected = False
 
         self._truck_lbl = None
         self._truck_clear_btn = None
@@ -138,6 +142,16 @@ class TripCard(ctk.CTkFrame):
                                                 cursor="hand2")
             self._truck_clear_btn.pack(side="right", padx=(4, 0))
             self._truck_clear_btn.bind("<Button-1>", self._on_truck_clear)
+
+        both_row = ctk.CTkFrame(self._content_frame, fg_color="transparent")
+        both_row.pack(fill="x", pady=(0, 1))
+        both_label = ctk.CTkLabel(both_row, text="\u26a1 " + t("dispatch_board.assign_both"),
+                                  fg_color="transparent", text_color=Theme.ACCENT,
+                                  font=FONTS["label"], cursor="hand2")
+        both_label.pack(side="left", padx=(20, 0))
+        both_label.bind("<Button-1>", self._on_both_click)
+        both_label.bind("<Enter>", lambda e: both_label.configure(text_color=Theme.ACCENT_HOVER))
+        both_label.bind("<Leave>", lambda e: both_label.configure(text_color=Theme.ACCENT))
 
         driver_row = ctk.CTkFrame(self._content_frame, fg_color="transparent")
         driver_row.pack(fill="x", pady=(0, 2))
@@ -282,8 +296,28 @@ class TripCard(ctk.CTkFrame):
 
     def _on_release(self, event):
         if not self._drag_data["dragging"]:
-            self._on_click_handler(event)
+            if event.state & 0x0004:
+                self._selected = not self._selected
+                self._update_selection_visual()
+                if self._on_select_changed:
+                    self._on_select_changed(self, self._selected)
+            else:
+                self._on_click_handler(event)
         self._drag_data["dragging"] = False
+
+    def set_selected(self, selected: bool):
+        if self._selected != selected:
+            self._selected = selected
+            self._update_selection_visual()
+
+    def is_selected(self) -> bool:
+        return self._selected
+
+    def _update_selection_visual(self):
+        if self._selected:
+            self.configure(border_color=Theme.ACCENT, border_width=2)
+        else:
+            self.configure(border_color=self.CARD_BORDER, border_width=1)
 
     def _on_truck_click(self, event):
         if self._active_dropdown:
@@ -296,6 +330,10 @@ class TripCard(ctk.CTkFrame):
             return
         if self._on_assign_driver:
             self._on_assign_driver(self)
+
+    def _on_both_click(self, event):
+        if self._on_assign_both:
+            self._on_assign_both(self)
 
     def _on_truck_clear(self, event):
         if self._on_assign_truck:

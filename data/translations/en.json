@@ -763,7 +763,20 @@
     "brief_departing_today": "Departing Today",
     "brief_arriving_today": "Arriving Today",
     "brief_critical": "Critical",
-    "brief_needs_attention": "Needs Attention"
+    "brief_needs_attention": "Needs Attention",
+    "bulk_selected_count": "{n} trips selected",
+    "bulk_assign_truck": "Assign Truck",
+    "bulk_assign_driver": "Assign Driver",
+    "bulk_clear_selection": "Clear",
+    "bulk_success": "Assigned to {count} trips",
+    "bulk_partial": "Assigned to {ok} trips ({failed} blocked)",
+    "pair_title": "Assign Truck & Driver",
+    "pair_truck_label": "Select Truck",
+    "pair_driver_label": "Select Driver",
+    "pair_assign_both": "Assign Both",
+    "pair_assign_truck_only": "Assign Truck Only",
+    "pair_assign_driver_only": "Assign Driver Only",
+    "pair_suggestion": "Suggested pair: {driver} \u2194 {truck}"
   },
   "driver_manager": {
     "add_driver": "Add Driver",
