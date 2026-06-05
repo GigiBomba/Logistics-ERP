@@ -21,6 +21,7 @@ class KanbanColumn(ctk.CTkFrame):
         "Loading": COLORS["chip_loading"],
         "In Transit": COLORS["chip_transit"],
         "Delivered": COLORS["chip_delivered"],
+        "Cancelled": COLORS["chip_cancelled"],
     }
 
     def __init__(self, parent, status_key: str, title_key: str,

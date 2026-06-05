@@ -23,6 +23,7 @@ class TripCard(ctk.CTkFrame):
         "Loading": COLORS["chip_loading"],
         "In Transit": COLORS["chip_transit"],
         "Delivered": COLORS["chip_delivered"],
+        "Cancelled": COLORS["chip_cancelled"],
     }
 
     STATUS_TRANSLATION_KEYS = {
@@ -30,6 +31,7 @@ class TripCard(ctk.CTkFrame):
         "Loading": "dispatch_board.col_loading",
         "In Transit": "dispatch_board.col_in_transit",
         "Delivered": "dispatch_board.col_delivered",
+        "Cancelled": "dispatch_board.col_cancelled",
     }
 
     DELAYED_COLOR = COLORS["danger"]

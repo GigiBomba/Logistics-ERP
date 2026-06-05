@@ -27,6 +27,12 @@ from services.driver_truck_service import DriverTruckService
 from services.conflict_service import TripConflictService
 from services.fleet_tracking_service import fleet_tracking_service
 from ui.widgets.assignment_dropdown import AssignmentDropdown
+from ui.widgets.dispatch_tabs import DispatchTabs
+from ui.widgets.dispatch_search_bar import DispatchSearchBar, STATUS_OPTIONS
+from ui.widgets.dispatch_detail_panel import DispatchDetailPanel
+from ui.widgets.resource_panel import ResourcePanel
+from ui.widgets.dispatch_alerts_panel import DispatchAlertsPanel
+from ui.widgets.dispatch_timeline import DispatchTimeline
 from utils.tk_helpers import safe_destroy
 from ui.theme import COLORS, FONTS
 
@@ -48,6 +54,7 @@ STATUS_TO_COLUMN = {
     "Done": "Delivered",
     "Invoiced": "Delivered",
     "Paid": "Delivered",
+    "Cancelled": "Cancelled",
 }
 
 COLUMN_DEFS = [
@@ -55,6 +62,7 @@ COLUMN_DEFS = [
     ("Loading", "dispatch_board.col_loading", COLORS["chip_loading"]),
     ("In Transit", "dispatch_board.col_in_transit", COLORS["chip_transit"]),
     ("Delivered", "dispatch_board.col_delivered", COLORS["chip_delivered"]),
+    ("Cancelled", "dispatch_board.col_cancelled", COLORS["chip_cancelled"]),
 ]
 
 DELIVERED_DEFAULT_DAYS = 30
@@ -102,6 +110,11 @@ class DispatchBoardView:
         self._delay_timer_id = None
         self._event_handlers = {}
         self._after_ids: list = []
+        self._all_card_data: List[Dict[str, Any]] = []
+        self._search_query = ""
+        self._search_statuses = list(STATUS_OPTIONS)
+        self._conflict_alerts: Dict[int, list] = {}
+        self._detail_panel = None
 
         self._drag_data = {
             "card": None,
@@ -149,6 +162,12 @@ class DispatchBoardView:
             self._status_engine.shutdown()
         except Exception:
             pass
+        if self._detail_panel:
+            try:
+                self._detail_panel.destroy()
+            except Exception:
+                pass
+            self._detail_panel = None
         unregister_listener(self._on_language_changed)
 
     def _on_language_changed(self, lang):
@@ -157,6 +176,15 @@ class DispatchBoardView:
                 self.win.title(f"\U0001f4cb {t('dispatch_board.title')}")
             self._title_lbl.config(text=t("dispatch_board.title"))
             self._subtitle_lbl.config(text=t("dispatch_board.subtitle"))
+            self._refresh_btn.configure(text=f"\u21bb {t('dispatch_board.refresh')}")
+            self._search_bar._entry.configure(placeholder_text=t("dispatch_board.search_placeholder"))
+            tab_labels = {
+                "board": t("dispatch_board.tabs_board"),
+                "resources": t("dispatch_board.tabs_resources"),
+                "alerts": t("dispatch_board.tabs_alerts"),
+                "timeline": t("dispatch_board.tabs_timeline"),
+            }
+            self._tabs.refresh_translations(tab_labels)
         except Exception:
             pass
         for col in self._columns.values():
@@ -185,11 +213,26 @@ class DispatchBoardView:
                                          command=self._start_load)
         self._refresh_btn.pack(side="right")
 
-        board = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
-        board.pack(fill="both", expand=True, padx=12, pady=(8, 12))
+        # ── Tab container ──────────────────────────────────────────
+        self._tabs = DispatchTabs(self.frame)
+        self._tabs.pack(fill="x", padx=12, pady=(8, 0))
+
+        # ── Tab: Board ─────────────────────────────────────────────
+        self._board_tab = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
+        self._board_tab.pack(fill="both", expand=True)
+
+        self._search_bar = DispatchSearchBar(
+            self._board_tab,
+            on_search=self._on_search_filter
+        )
+        self._search_bar.pack(fill="x", padx=12, pady=(4, 8))
+
+        board = ctk.CTkFrame(self._board_tab, fg_color=Theme.BG)
+        board.pack(fill="both", expand=True, padx=12, pady=(0, 12))
 
         for i, (status_key, title_key, accent_color) in enumerate(COLUMN_DEFS):
             is_delivered = (status_key == "Delivered")
+            is_cancelled = (status_key == "Cancelled")
             col = KanbanColumn(board, status_key=status_key, title_key=title_key,
                                accent_color=accent_color,
                                on_card_click=self._on_card_click,
@@ -201,6 +244,35 @@ class DispatchBoardView:
                                on_retry=lambda sk=status_key: self._start_load())
             col.pack(side="left", fill="both", expand=True, padx=(0 if i == 0 else 4, 0))
             self._columns[status_key] = col
+
+        # ── Tab: Resources ─────────────────────────────────────────
+        self._resource_tab = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
+        self._resource_panel = ResourcePanel(self._resource_tab, self.db, ops=self.ops)
+        self._resource_panel.pack(fill="both", expand=True, padx=12, pady=12)
+
+        # ── Tab: Alerts & Ops ──────────────────────────────────────
+        self._alerts_tab = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
+        self._alerts_panel = DispatchAlertsPanel(
+            self._alerts_tab, self.db, ops=self.ops,
+            on_assign_truck=self._on_quick_assign_truck,
+            on_assign_driver=self._on_quick_assign_driver,
+            on_resolve_alert=self._on_resolve_alert_refresh,
+        )
+        self._alerts_panel.pack(fill="both", expand=True, padx=12, pady=12)
+
+        # ── Tab: Timeline ──────────────────────────────────────────
+        self._timeline_tab = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
+        self._timeline = DispatchTimeline(self._timeline_tab, self.db)
+        self._timeline.pack(fill="both", expand=True, padx=12, pady=12)
+
+        # Register tabs
+        self._tabs.add_tab("board", t("dispatch_board.tabs_board"), self._board_tab)
+        self._tabs.add_tab("resources", t("dispatch_board.tabs_resources"), self._resource_tab)
+        self._tabs.add_tab("alerts", t("dispatch_board.tabs_alerts"), self._alerts_tab)
+        self._tabs.add_tab("timeline", t("dispatch_board.tabs_timeline"), self._timeline_tab)
+
+        self._tabs.on_switch(self._on_tab_switch)
+        self._tabs.switch_to("board")
 
     def _start_load(self):
         if self._loading:
@@ -230,7 +302,7 @@ class DispatchBoardView:
                 if not column:
                     continue
 
-                if column == "Delivered":
+                if column in ("Delivered", "Cancelled"):
                     created = trip.get("created_at", "")
                     trip_date = created[:10] if len(created) >= 10 else created
                     if trip_date and trip_date < cutoff:
@@ -368,14 +440,22 @@ class DispatchBoardView:
 
     def _populate_columns(self, column_trips: Dict[str, List[Dict[str, Any]]]):
         self._loading = False
+
+        all_cards = []
         for status_key, col in self._columns.items():
             trips = column_trips.get(status_key, [])
             col.set_trips(trips)
+            all_cards.extend(trips)
+        self._all_card_data = all_cards
+
         self._safe_after(100, self._evaluate_all_delays)
         self._safe_after(5000, self._start_delay_timer)
-        # Refresh live position indicators on In Transit cards
         self._safe_after(200, self._refresh_live_indicators)
         self._schedule_live_refresh()
+
+        self._safe_after(500, self._run_conflict_scan)
+        self._safe_after(600, self._refresh_side_panels)
+        self._safe_after(700, self._apply_filters)
 
     def _show_error_all(self, error_msg: str):
         self._loading = False
@@ -439,8 +519,142 @@ class DispatchBoardView:
         self._delivered_days += 30
         self._start_load()
 
+    # ── Tab switching ────────────────────────────────────────────────
+
+    def _on_tab_switch(self, tab_id):
+        if tab_id == "resources":
+            self._resource_panel.refresh()
+        elif tab_id == "alerts":
+            self._alerts_panel.refresh(self._all_card_data)
+        elif tab_id == "timeline":
+            self._timeline.refresh(self._all_card_data)
+
+    # ── Search / Filter ──────────────────────────────────────────────
+
+    def _on_search_filter(self, query: str, statuses: list):
+        self._search_query = query
+        self._search_statuses = statuses
+        self._apply_filters()
+
+    def _apply_filters(self):
+        visible = 0
+        total = 0
+        for col in self._columns.values():
+            for card in col._cards:
+                total += 1
+                status = card.trip_data.get("status", "")
+                column = STATUS_TO_COLUMN.get(status, "")
+                show = True
+
+                if column not in self._search_statuses:
+                    show = False
+
+                if show and self._search_query:
+                    text = " ".join([
+                        str(card.trip_data.get("trip_id", "")),
+                        str(card.trip_data.get("truck_plate", "")),
+                        str(card.trip_data.get("driver_name", "")),
+                        str(card.trip_data.get("origin", "")),
+                        str(card.trip_data.get("destination", "")),
+                        str(card.trip_data.get("status", "")),
+                    ]).lower()
+                    if self._search_query not in text:
+                        show = False
+
+                if show:
+                    card.pack(in_=col._scroll_frame, fill="x", pady=(0, 6), padx=2)
+                    visible += 1
+                else:
+                    card.pack_forget()
+
+        self._search_bar.set_result_count(visible, total)
+
+    # ── Detail Panel ─────────────────────────────────────────────────
+
+    def _on_detail_close(self):
+        self._detail_panel = None
+
+    # ── Quick Assign (from Alerts panel) ─────────────────────────────
+
+    def _on_quick_assign_truck(self, item: dict):
+        trip_id = item.get("trip_id_num") or item.get("trip_id")
+        if not trip_id:
+            return
+        card = self._find_card_by_trip_id(trip_id)
+        if card:
+            self._tabs.switch_to("board")
+            self._on_assign_truck(card)
+
+    def _on_quick_assign_driver(self, item: dict):
+        trip_id = item.get("trip_id_num") or item.get("trip_id")
+        if not trip_id:
+            return
+        card = self._find_card_by_trip_id(trip_id)
+        if card:
+            self._tabs.switch_to("board")
+            self._on_assign_driver(card)
+
+    def _on_resolve_alert_refresh(self):
+        self._alerts_panel.refresh(self._all_card_data)
+        self._preload_alerts()
+        for col in self._columns.values():
+            for card in col._cards:
+                trip_id = card.trip_data.get("trip_id_num")
+                if trip_id:
+                    card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
+
+    # ── Conflict Scan ────────────────────────────────────────────────
+
+    def _run_conflict_scan(self):
+        try:
+            all_trips = self._trip_repo.get_all(limit=2000)
+            active_trips = [t for t in all_trips if t.get("status", "") not in
+                          ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced")]
+            conflict_found = False
+            trip_conflict_map = {}
+
+            for i, trip in enumerate(active_trips):
+                conflicts = self._conflict_service.check_conflicts(trip)
+                if conflicts:
+                    tid = trip.get("id")
+                    if tid not in trip_conflict_map:
+                        trip_conflict_map[tid] = []
+                    trip_conflict_map[tid] = conflicts
+                    conflict_found = True
+
+            self._conflict_alerts = trip_conflict_map
+
+            if conflict_found:
+                logger.info("Conflict scan: %d trips with resource conflicts", len(trip_conflict_map))
+        except Exception:
+            logger.debug("Conflict scan failed", exc_info=True)
+
+    def _refresh_side_panels(self):
+        try:
+            self._resource_panel.refresh()
+        except Exception:
+            pass
+        try:
+            self._alerts_panel.refresh(self._all_card_data)
+        except Exception:
+            pass
+        try:
+            self._timeline.refresh(self._all_card_data)
+        except Exception:
+            pass
+
     def _on_card_click(self, trip_data):
-        pass
+        if self._detail_panel:
+            try:
+                self._detail_panel.destroy()
+            except Exception:
+                pass
+            self._detail_panel = None
+        self._detail_panel = DispatchDetailPanel(
+            self._tk_root, trip_data, self.db,
+            ops=self.ops,
+            on_close=self._on_detail_close
+        )
 
     def _on_drag_start(self, card, event):
         if self._drag_data["ghost"]:
@@ -546,7 +760,7 @@ class DispatchBoardView:
         return False
 
     def _handle_transition(self, trip_id, old_status, new_status, card, source_col, target_col):
-        column_order = ["Planned", "Loading", "In Transit", "Delivered"]
+        column_order = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
         old_idx = column_order.index(old_status) if old_status in column_order else -1
         new_idx = column_order.index(new_status) if new_status in column_order else -1
 
@@ -555,8 +769,13 @@ class DispatchBoardView:
         if is_backward:
             confirmed = messagebox.askyesno(
                 t("dispatch_board.confirm_title"),
-                t("dispatch_board.confirm_backward").format(old_status, new_status)
-            )
+                t(
+                  "dispatch_board.confirm_backward",
+                  old_status=old_status,
+                  new_status=new_status,
+                  trip_id=trip_id
+                )
+)
             if not confirmed:
                 return
 
@@ -596,7 +815,7 @@ class DispatchBoardView:
                     raise RuntimeError(f"Status transition failed for trip {trip_id}")
             else:
                 self._status_engine.transition(trip_id, new_status)
-            self._show_success_toast(t("dispatch_board.transition_success").format(new_status))
+            self._show_success_toast(t("dispatch_board.transition_success").format(new_status=new_status))
         except Exception as e:
             # Rollback visual on failure: remove the new card and recreate the original in source
             try:
@@ -617,7 +836,9 @@ class DispatchBoardView:
             if source_col:
                 source_col.add_card(restored)
 
-            self._show_error_toast(t("dispatch_board.transition_error").format(old_status, new_status))
+            self._show_error_toast(
+                t("dispatch_board.transition_error").format(old_status=old_status, new_status=new_status)
+            )
 
     def _show_success_toast(self, msg):
         toast = tk.Toplevel(self._tk_root)
@@ -659,10 +880,15 @@ class DispatchBoardView:
         def fetch_trucks():
             active_trucks = self._fleet_repo.get_active_trucks()
             card_data = card.trip_data
+            from datetime import datetime
 
             truck_conflicts = {}
+            truck_blocks = {}
+            now = datetime.now()
             for truck_entry in active_trucks:
                 plate = truck_entry.get("plate_number", "")
+                truck_id = truck_entry.get("id")
+
                 conflicts = self._conflict_service.check_conflicts({
                     "truck_plate": plate,
                     "start_date": card_data.get("departure_date", ""),
@@ -673,6 +899,36 @@ class DispatchBoardView:
                 if conf:
                     truck_conflicts[plate] = conf
 
+                blocks = []
+                if truck_entry.get("status") == "In Service":
+                    blocks.append(t("dispatch_board.resource_in_service"))
+                try:
+                    insurance = truck_entry.get("insurance_expiry", "")
+                    if insurance:
+                        exp = datetime.strptime(insurance, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_insurance_expired"))
+                except Exception:
+                    pass
+                try:
+                    inspection = truck_entry.get("inspection_expiry", "")
+                    if inspection:
+                        exp = datetime.strptime(inspection, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_inspection_expired"))
+                except Exception:
+                    pass
+                try:
+                    maint_due = truck_entry.get("maintenance_due")
+                    mileage = truck_entry.get("mileage")
+                    if maint_due is not None and mileage is not None:
+                        if float(mileage) >= float(maint_due):
+                            blocks.append(t("dispatch_board.resource_maintenance_due"))
+                except Exception:
+                    pass
+                if blocks:
+                    truck_blocks[plate] = blocks
+
             items = []
             for truck in active_trucks:
                 plate = truck.get("plate_number", "")
@@ -680,8 +936,12 @@ class DispatchBoardView:
                 truck_id = truck.get("id")
 
                 conflicting = truck_conflicts.get(plate)
-                available = not conflicting
-                if conflicting:
+                blocked = truck_blocks.get(plate)
+                available = not conflicting and not blocked
+
+                if blocked:
+                    status_text = t("dispatch_board.assign_truck_blocked").format(reason=", ".join(blocked))
+                elif conflicting:
                     trip_ref = conflicting[0].get("trip_id", "")
                     overlap = conflicting[0].get("overlap_description", "")
                     status_text = t("dispatch_board.unavailable_overlap").format(f"{t('dispatch_board.trip_id_prefix')}{trip_ref} ({overlap})")
@@ -719,8 +979,11 @@ class DispatchBoardView:
         def fetch_drivers():
             active_drivers = self._driver_repo.get_active_drivers()
             card_data = card.trip_data
+            from datetime import datetime
 
             driver_conflicts = {}
+            driver_blocks = {}
+            now = datetime.now()
             for d in active_drivers:
                 did = d.get("id")
                 conflicts = self._conflict_service.check_conflicts({
@@ -733,6 +996,26 @@ class DispatchBoardView:
                 if conf:
                     driver_conflicts[did] = conf
 
+                blocks = []
+                try:
+                    license_expiry = d.get("license_expiry", "")
+                    if license_expiry:
+                        exp = datetime.strptime(license_expiry, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_license_expired"))
+                except Exception:
+                    pass
+                try:
+                    medical_expiry = d.get("medical_expiry", "")
+                    if medical_expiry:
+                        exp = datetime.strptime(medical_expiry, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_medical_expired"))
+                except Exception:
+                    pass
+                if blocks:
+                    driver_blocks[did] = blocks
+
             items = []
             for driver in active_drivers:
                 driver_id = driver.get("id")
@@ -740,8 +1023,12 @@ class DispatchBoardView:
                 license_cat = driver.get("license_category", "")
 
                 conflicting = driver_conflicts.get(driver_id)
-                available = not conflicting
-                if conflicting:
+                blocked = driver_blocks.get(driver_id)
+                available = not conflicting and not blocked
+
+                if blocked:
+                    status_text = t("dispatch_board.assign_driver_blocked").format(reason=", ".join(blocked))
+                elif conflicting:
                     trip_ref = conflicting[0].get("trip_id", "")
                     status_text = t("dispatch_board.unavailable_overlap").format(f"{t('dispatch_board.trip_id_prefix')}{trip_ref}")
                 else:
