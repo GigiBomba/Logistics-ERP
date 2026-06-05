@@ -335,6 +335,10 @@ class MainWindow(I18nMixin):
                 except Exception:
                     pass
         self._active_module = key
+        try:
+            self.nav.highlight(key)
+        except Exception:
+            pass
 
     def _create_module(self, key, parent):
         """Factory for view modules."""
@@ -353,7 +357,7 @@ class MainWindow(I18nMixin):
             "route_planner": ("ui.route_planner", "RoutePlannerTab", {"open_window": False, "controller": self}),
             "fleet": ("ui.fleet_tab", "FleetTab", {"open_window": False, "ops": self.ops}),
             "driver_manager": ("ui.driver_manager", "DriverManager", {"open_window": False, "ops": self.ops}),
-            "clients": ("ui.client_manager", "ClientManager", {"prefs": self.prefs, "open_window": False}),
+            "clients": ("ui.client_workspace", "ClientWorkspace", {"prefs": self.prefs}),
             "invoices": ("ui.invoice_tab", "InvoiceTab", {"prefs": self.prefs}),
             "settings": ("ui.settings_view", "SettingsView", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
             "dashboard": ("ui.dashboard", "FleetDashboard", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
@@ -444,6 +448,9 @@ class MainWindow(I18nMixin):
 
     def _handle_calculate(self):
         try:
+            if not hasattr(self, 'e_price'):
+                self._switch_module("calculator")
+                return
             km = float(self.route_distance or 0)
             price = float(self.e_price.get() or 0)
             if km <= 0 or price <= 0:
