@@ -1,5 +1,6 @@
 """Dispatch alerts and operations panel: alerts list, unassigned trips, assignment summary."""
 import customtkinter as ctk
+from datetime import datetime
 from services.i18n import t
 from ui.theme import COLORS, FONTS
 
@@ -21,8 +22,12 @@ class DispatchAlertsPanel(ctk.CTkFrame):
                                                scrollbar_button_color=COLORS["border"])
         self._scroll.pack(fill="both", expand=True)
 
+        self._brief_section = ctk.CTkFrame(self._scroll, fg_color=COLORS["bg_surface"], corner_radius=8)
+        self._brief_section.pack(fill="x", padx=4, pady=(2, 4))
+        self._build_section_header(self._brief_section, "dispatch_board.brief_title", False)
+
         self._alerts_section = ctk.CTkFrame(self._scroll, fg_color=COLORS["bg_surface"], corner_radius=8)
-        self._alerts_section.pack(fill="x", padx=4, pady=(2, 4))
+        self._alerts_section.pack(fill="x", padx=4, pady=4)
         self._build_section_header(self._alerts_section, "dispatch_board.alerts_panel_title", True)
 
         self._unassigned_section = ctk.CTkFrame(self._scroll, fg_color=COLORS["bg_surface"], corner_radius=8)
@@ -45,7 +50,60 @@ class DispatchAlertsPanel(ctk.CTkFrame):
                                command=self._resolve_all_alerts)
             btn.pack(side="right")
 
+    def _refresh_brief(self, cards_data: list):
+        children = list(self._brief_section.winfo_children())
+        for w in children[1:]:
+            w.destroy()
+
+        today_str = datetime.now().strftime("%d/%m/%Y")
+        departing = 0
+        arriving = 0
+        needs_attention = 0
+
+        for cd in cards_data:
+            status = cd.get("status", "")
+            if status in ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced"):
+                continue
+            dep = cd.get("departure_date", "")
+            eta = cd.get("eta", "")
+            if dep and dep[:10] == today_str:
+                departing += 1
+            if eta and eta[:10] == today_str:
+                arriving += 1
+            has_truck = bool(cd.get("truck_plate"))
+            has_driver = bool(cd.get("driver_name"))
+            if not has_truck or not has_driver:
+                needs_attention += 1
+
+        critical_count = 0
+        if self._ops:
+            try:
+                from services.operations.alert_manager import Severity
+                alerts = self._ops.get_alerts(severity=Severity.CRITICAL, resolved=False, limit=50)
+                critical_count = len(alerts)
+            except Exception:
+                pass
+
+        kpis = [
+            ("dispatch_board.brief_departing_today", departing, COLORS["accent"]),
+            ("dispatch_board.brief_arriving_today", arriving, COLORS["success"]),
+            ("dispatch_board.brief_critical", critical_count, COLORS["danger"] if critical_count else COLORS["text_muted"]),
+            ("dispatch_board.brief_needs_attention", needs_attention, COLORS["warning"] if needs_attention else COLORS["text_muted"]),
+        ]
+
+        grid = ctk.CTkFrame(self._brief_section, fg_color="transparent")
+        grid.pack(fill="x", padx=4, pady=8)
+
+        for i, (key, val, color) in enumerate(kpis):
+            cell = ctk.CTkFrame(grid, fg_color="transparent")
+            cell.pack(side="left", fill="x", expand=True)
+            ctk.CTkLabel(cell, text=t(key), fg_color="transparent",
+                        text_color=COLORS["text_muted"], font=FONTS["label"]).pack()
+            ctk.CTkLabel(cell, text=str(val), fg_color="transparent",
+                        text_color=color, font=FONTS["mono_lg"]).pack()
+
     def refresh(self, cards_data: list = None):
+        self._refresh_brief(cards_data or [])
         self._refresh_alerts()
         self._refresh_unassigned(cards_data or [])
         self._refresh_summary(cards_data or [])

@@ -192,6 +192,12 @@ class KanbanColumn(ctk.CTkFrame):
     def unhighlight_drop_zone(self):
         self.configure(border_width=0)
 
+    def highlight_valid(self):
+        self.configure(border_width=2, border_color=COLORS["success"])
+
+    def highlight_invalid(self):
+        self.configure(border_width=2, border_color=COLORS["danger"])
+
     def add_card(self, card, index=0):
         self._loading_frame.pack_forget()
         self._error_frame.pack_forget()

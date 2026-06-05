@@ -756,7 +756,14 @@
     "col_cancelled": "Cancelled",
     "confirm_cancel": "Cancel Trip",
     "confirm_cancel_body": "Are you sure you want to cancel trip {trip_id}?",
-    "cancelled_title": "Cancelled"
+    "cancelled_title": "Cancelled",
+    "driver_hours_weekly": "{hours:.1f}h/{max_h}h",
+    "driver_hours_exceeded": "Weekly hours exceeded ({hours:.1f}h/{max_h}h)",
+    "brief_title": "Today's Brief",
+    "brief_departing_today": "Departing Today",
+    "brief_arriving_today": "Arriving Today",
+    "brief_critical": "Critical",
+    "brief_needs_attention": "Needs Attention"
   },
   "driver_manager": {
     "add_driver": "Add Driver",
