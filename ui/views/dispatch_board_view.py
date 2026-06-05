@@ -16,10 +16,12 @@ from repositories.trip_repository import TripRepository
 from repositories.fleet_repository import FleetRepository
 from repositories.driver_repository import DriverRepository
 from repositories.route_repository import RouteRepository
+from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
 from services.operations.trip_status_engine import TripStatusEngine
 from services.operations.event_bus import (
     EventBus, TRIP_CREATED, TRIP_STATUS_CHANGED, TRIP_UPDATED, TRIP_ASSIGNED,
     ALERT_CREATED, ALERT_RESOLVED, TRUCK_UPDATED, DRIVER_UPDATED, DRIVER_DELETED,
+    VALID_TRANSITIONS,
 )
 from services.operations.alert_manager import AlertManager, AlertType, Severity
 from services.trip_service import TripService
@@ -703,7 +705,16 @@ class DispatchBoardView:
             if self._drag_data["target_column"]:
                 self._drag_data["target_column"].unhighlight_drop_zone()
             if target_col:
-                target_col.highlight_drop_zone()
+                source_col = self._drag_data["source_column"]
+                if source_col and target_col != source_col:
+                    old_key = source_col.status_key
+                    valid_targets = VALID_TRANSITIONS.get(old_key, [])
+                    if target_col.status_key in valid_targets:
+                        target_col.highlight_valid()
+                    else:
+                        target_col.highlight_invalid()
+                else:
+                    target_col.highlight_drop_zone()
             self._drag_data["target_column"] = target_col
 
     def _on_drop(self, event):
@@ -715,6 +726,7 @@ class DispatchBoardView:
         self._tk_root.unbind("<ButtonRelease-1>")
 
         target_col = self._drag_data["target_column"]
+        source_col = self._drag_data["source_column"]
         if target_col:
             target_col.unhighlight_drop_zone()
 
@@ -979,11 +991,15 @@ class DispatchBoardView:
         def fetch_drivers():
             active_drivers = self._driver_repo.get_active_drivers()
             card_data = card.trip_data
-            from datetime import datetime
+            from datetime import datetime, date, timedelta
 
             driver_conflicts = {}
             driver_blocks = {}
+            driver_hours = {}
             now = datetime.now()
+            cutoff_7 = date.today() - timedelta(days=7)
+            tacho_repo = TachoDriverActivityRepository(self._db)
+
             for d in active_drivers:
                 did = d.get("id")
                 conflicts = self._conflict_service.check_conflicts({
@@ -1013,6 +1029,22 @@ class DispatchBoardView:
                             blocks.append(t("dispatch_board.resource_medical_expired"))
                 except Exception:
                     pass
+
+                weekly_h = 0.0
+                violations = 0
+                try:
+                    records = tacho_repo.get_by_driver(int(did or 0), cutoff_7)
+                    weekly_h = sum(r.get("driving_minutes", 0) or 0 for r in records) / 60
+                    violations = sum(
+                        len(json.loads(r.get("violations") or "[]"))
+                        for r in records
+                    )
+                except Exception:
+                    pass
+                if weekly_h > 56:
+                    blocks.append(t("dispatch_board.driver_hours_exceeded").format(hours=weekly_h, max_h=56))
+                driver_hours[did] = (weekly_h, violations)
+
                 if blocks:
                     driver_blocks[did] = blocks
 
@@ -1021,10 +1053,16 @@ class DispatchBoardView:
                 driver_id = driver.get("id")
                 name = driver.get("name", "")
                 license_cat = driver.get("license_category", "")
+                wh, vc = driver_hours.get(driver_id, (0, 0))
 
                 conflicting = driver_conflicts.get(driver_id)
                 blocked = driver_blocks.get(driver_id)
                 available = not conflicting and not blocked
+
+                hours_label = t("dispatch_board.driver_hours_weekly").format(hours=wh, max_h=56)
+                sublabel = f"{license_cat} | {hours_label}"
+                if vc > 0:
+                    sublabel += f" | \u26a0 {vc}"
 
                 if blocked:
                     status_text = t("dispatch_board.assign_driver_blocked").format(reason=", ".join(blocked))
@@ -1037,7 +1075,7 @@ class DispatchBoardView:
                 items.append({
                     "id": driver_id,
                     "label": name,
-                    "sublabel": license_cat,
+                    "sublabel": sublabel,
                     "available": available,
                     "status_text": status_text,
                     "name": name,

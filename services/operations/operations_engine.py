@@ -142,8 +142,21 @@ class OperationsEngine:
                 return False
 
             old_status = trip.get("status", "")
-            
-            # Update trip status
+
+            normalized_old = {
+                "InTransit": "In Transit",
+                "Active": "In Transit",
+                "InProgress": "In Transit",
+            }.get(old_status, old_status)
+
+            valid_targets = VALID_TRANSITIONS.get(normalized_old, [])
+            if new_status not in valid_targets:
+                logger.warning(
+                    "force_trip_status: invalid transition %s -> %s for trip %d",
+                    old_status, new_status, trip_id,
+                )
+                return False
+
             self._trip_service.update(trip_id, {"status": new_status})
             
             # If transitioning to Delivered/Completed, update truck odometer
