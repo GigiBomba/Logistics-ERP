@@ -670,7 +670,20 @@
     "brief_departing_today": "Plecari Astazi",
     "brief_arriving_today": "Sosiri Astazi",
     "brief_critical": "Critic",
-    "brief_needs_attention": "Necesita Atentie"
+    "brief_needs_attention": "Necesita Atentie",
+    "bulk_selected_count": "{n} curse selectate",
+    "bulk_assign_truck": "Aloca Camion",
+    "bulk_assign_driver": "Aloca Sofer",
+    "bulk_clear_selection": "Sterge",
+    "bulk_success": "Alocat la {count} curse",
+    "bulk_partial": "Alocat la {ok} curse ({failed} blocate)",
+    "pair_title": "Aloca Camion si Sofer",
+    "pair_truck_label": "Selecteaza Camion",
+    "pair_driver_label": "Selecteaza Sofer",
+    "pair_assign_both": "Aloca Ambele",
+    "pair_assign_truck_only": "Aloca Doar Camion",
+    "pair_assign_driver_only": "Aloca Doar Sofer",
+    "pair_suggestion": "Pereche sugerata: {driver} \u2194 {truck}"
   },
   "driver_manager": {
     "add_driver": "Adauga Sofer",
