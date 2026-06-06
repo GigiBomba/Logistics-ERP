@@ -457,7 +457,6 @@ class RouteService:
         self._country_analysis_cache: Dict[str, List[str]] = {}
         # small cache for reverse lookups (rounded coords -> country)
         self._country_point_cache: Dict[Tuple[float, float], Optional[str]] = {}
-        self._last_reverse_time = 0.0
         self._reverse_lock = threading.Lock()
 
         # segmentation defaults
@@ -497,10 +496,6 @@ class RouteService:
             return self._country_point_cache[key]
 
         with self._reverse_lock:
-            # respect ~1s between requests
-            wait = max(0.0, 1.0 - (time.time() - self._last_reverse_time))
-            if wait > 0:
-                time.sleep(wait)
             try:
                 url = "https://nominatim.openstreetmap.org/reverse"
                 resp = requests.get(url, params={
@@ -510,7 +505,6 @@ class RouteService:
                     'zoom': 3,
                     'addressdetails': 1
                 }, headers={'User-Agent': 'logistics-app/1.0', 'Accept-Language': 'en'}, timeout=10)
-                self._last_reverse_time = time.time()
                 if resp.status_code != 200:
                     self.debug_logger.warning(f"Reverse geocode HTTP {resp.status_code} for {key}")
                     self._country_point_cache[key] = None
@@ -525,7 +519,6 @@ class RouteService:
             except Exception as e:
                 self.debug_logger.warning(f"Reverse geocode failed for {key}: {e}")
                 self._country_point_cache[key] = None
-                self._last_reverse_time = time.time()
                 return None
 
     def _detect_countries_from_geometry(self, geometry: List[Tuple[float, float]]) -> List[str]:
@@ -775,9 +768,12 @@ class RouteService:
             pass
         return merged
 
-    def calculate_route(self, stops: List[Any], profile: str = "truck", truck: Optional[Dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def calculate_route(self, stops: List[Any], profile: str = "truck", truck: Optional[Dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[List[str]] = None, stops_are_coordinates: bool = False) -> List[Dict[str, Any]]:
         start = time.time()
-        resolved_stops = self._resolve_stops(stops)
+        if stops_are_coordinates:
+            resolved_stops = validate_route_points(stops)
+        else:
+            resolved_stops = self._resolve_stops(stops)
         if use_cache:
             cached = self._route_cache.get(resolved_stops, profile, exclusions=avoid_countries)
             if cached:
@@ -837,7 +833,7 @@ class RouteService:
             res = self._merge_segment_results(parts, resolved_stops)
 
         try:
-            countries = self._detect_countries_from_geometry(res.get('geometry', []))
+            countries = self.country_exclusion.countries_at_stops(resolved_stops)
             res['detected_countries'] = countries
         except Exception:
             countries = []
