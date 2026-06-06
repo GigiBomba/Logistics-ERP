@@ -107,43 +107,63 @@ class CMRGenerator:
         self._init_styles()
 
     def _init_styles(self):
+        """Initialize shared Paragraph styles with modern, professional typography."""
+        # Refined modern color palette
+        self.primary_color = self._hex_color(load_company_config().get("company_color", "#6366f1"))
+        self.text_color = colors.HexColor("#1f2937")      # Dark gray
+        self.muted_color = colors.HexColor("#6b7280")      # Medium gray
+        self.light_bg = colors.HexColor("#f8fafc")         # Very light slate
+        self.border_color = colors.HexColor("#cbd5e1")     # Slate border
+        self.header_bg = colors.HexColor("#f1f5f9")        # Header background
         self.box_hdr_style = ParagraphStyle(
             "CMRBoxHdr", parent=self.styles["Normal"],
-            fontSize=7, leading=8, textColor=colors.HexColor("#333333"),
-            fontName="Helvetica-Bold",
+            fontSize=6.5, leading=8, textColor=self.muted_color,
+            fontName="Helvetica-Oblique",
         )
         self.box_val_style = ParagraphStyle(
             "CMRBoxVal", parent=self.styles["Normal"],
-            fontSize=8, leading=9, textColor=colors.HexColor("#000000"),
+            fontSize=8, leading=10, textColor=self.text_color,
+            fontName="Helvetica",
         )
         self.box_val_small = ParagraphStyle(
             "CMRBoxValSmall", parent=self.styles["Normal"],
-            fontSize=7, leading=8, textColor=colors.HexColor("#000000"),
+            fontSize=7, leading=9, textColor=self.text_color,
+            fontName="Helvetica",
         )
         self.title_style = ParagraphStyle(
             "CMRTitle", parent=self.styles["Title"],
-            fontSize=11, leading=13, textColor=colors.HexColor("#1a73e8"),
+            fontSize=14, leading=17, textColor=self.primary_color,
             fontName="Helvetica-Bold", alignment=TA_CENTER,
+            spaceAfter=2,
         )
         self.subtitle_style = ParagraphStyle(
             "CMRSubtitle", parent=self.styles["Normal"],
-            fontSize=7, leading=8, textColor=colors.HexColor("#666666"),
+            fontSize=7.5, leading=9, textColor=self.muted_color,
             alignment=TA_CENTER,
+            spaceAfter=6,
         )
         self.sig_label = ParagraphStyle(
             "CMRSig", parent=self.styles["Normal"],
-            fontSize=7, leading=8, textColor=colors.HexColor("#444444"),
-            fontName="Helvetica-Bold",
+            fontSize=7, leading=9, textColor=self.muted_color,
+            fontName="Helvetica-Oblique",
         )
         self.sig_val = ParagraphStyle(
             "CMRSigVal", parent=self.styles["Normal"],
-            fontSize=7, leading=10, textColor=colors.HexColor("#000000"),
+            fontSize=7.5, leading=10, textColor=self.text_color,
+            fontName="Helvetica-Bold",
         )
 
     def _safe_str(self, val) -> str:
         if val is None:
             return ""
         return str(val)
+
+    def _hex_color(self, hex_str: str):
+        """Convert hex color string to ReportLab Color, safely."""
+        try:
+            return colors.HexColor(hex_str)
+        except Exception:
+            return colors.HexColor("#6366f1")
 
     def _next_cmr_number(self) -> Tuple[str, int]:
         year = datetime.now().year
@@ -291,7 +311,17 @@ class CMRGenerator:
         story.append(PageBreak())
         story.extend(self._build_page2(ctx, color_hex, color_light, bar_text, desig_text))
 
-        doc.build(story)
+        def _draw_watermark(canvas, doc):
+            """Draw diagonal watermark behind content."""
+            canvas.saveState()
+            canvas.setFont("Helvetica-Bold", 48)
+            canvas.setFillColor(colors.Color(0.9, 0.9, 0.9, alpha=0.25))
+            canvas.translate(A4[0] / 2, A4[1] / 2)
+            canvas.rotate(45)
+            canvas.drawCentredString(0, 0, suffix.upper())
+            canvas.restoreState()
+
+        doc.build(story, onFirstPage=_draw_watermark, onLaterPages=_draw_watermark)
 
         try:
             xml_data = generate_efti_xml(cmr_number, ctx, {
@@ -311,21 +341,28 @@ class CMRGenerator:
 
         # Top color bar
         story.append(self._color_bar(color_hex, bar_text))
-        story.append(Spacer(1, 2 * mm))
+        story.append(Spacer(1, 3 * mm))
 
-        # Title
+        # Modern header with title and metadata
         story.append(Paragraph(
-            "<b>CMR &mdash; INTERNATIONAL CONSIGNMENT NOTE</b>", self.title_style))
+            "<b>CMR</b> &mdash; International Consignment Note", self.title_style))
         story.append(Paragraph(
             "Convention on the Contract for the International Carriage of Goods by Road"
-            " (Geneva, 19 May 1956) &mdash; UN/ADR", self.subtitle_style))
+            " (Geneva, 19 May 1956) &bull; UN/ADR", self.subtitle_style))
+
+        # Metadata line with CMR number badge
+        meta_style = ParagraphStyle(
+            "MetaLine", parent=self.styles["Normal"],
+            fontSize=7.5, leading=10, textColor=self.muted_color,
+            alignment=TA_CENTER, spaceAfter=2 * mm,
+        )
         story.append(Paragraph(
-            f"<b>CMR No:</b> {ctx['cmr_number']} &nbsp;|&nbsp;"
-            f"Trip: #{ctx['trip_id']} &nbsp;|&nbsp;"
-            f"Date: {datetime.now().strftime('%d/%m/%Y')}",
-            self.box_val_small))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor(color_hex)))
-        story.append(Spacer(1, 2 * mm))
+            f"<b>CMR No:</b> <font color='{color_hex}'>{ctx['cmr_number']}</font>"
+            f" &nbsp;&bull;&nbsp; Trip #{ctx['trip_id']}"
+            f" &nbsp;&bull;&nbsp; {datetime.now().strftime('%d/%m/%Y')}",
+            meta_style))
+        story.append(HRFlowable(width="100%", thickness=0.3, color=self.border_color))
+        story.append(Spacer(1, 3 * mm))
 
         # Row 1: Box 1 (Consignor) | Box 2 (Consignee)
         story.append(self._build_two_box_row(1, "box_1", 2, "box_2",
@@ -370,7 +407,18 @@ class CMRGenerator:
 
         # Top color bar
         story.append(self._color_bar(color_hex, bar_text))
-        story.append(Spacer(1, 2 * mm))
+        story.append(Spacer(1, 3 * mm))
+
+        # Subtle continuation header
+        cont_style = ParagraphStyle(
+            "Continuation", parent=self.styles["Normal"],
+            fontSize=8, leading=10, textColor=self.muted_color,
+            alignment=TA_CENTER, spaceAfter=2 * mm,
+        )
+        story.append(Paragraph(
+            f"CMR <b>{ctx['cmr_number']}</b> &nbsp;&bull;&nbsp; Continuation / Continuare", cont_style))
+        story.append(HRFlowable(width="100%", thickness=0.3, color=self.border_color))
+        story.append(Spacer(1, 3 * mm))
 
         # Row 5: Box 12 (Instructions) | Box 13 (Reservations)
         story.append(self._build_two_box_row(12, "box_12", 13, "box_13",
@@ -421,12 +469,17 @@ class CMRGenerator:
             self._received_content(ctx), color_hex))
 
         # Footer
-        story.append(Spacer(1, 3 * mm))
-        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.HexColor(color_hex)))
+        story.append(Spacer(1, 4 * mm))
+        story.append(HRFlowable(width="100%", thickness=0.3, color=self.border_color))
+        footer_style = ParagraphStyle(
+            "Footer", parent=self.styles["Normal"],
+            fontSize=6.5, leading=9, textColor=self.muted_color,
+            alignment=TA_CENTER, spaceAfter=2 * mm,
+        )
         story.append(Paragraph(
-            f"Generated by Operion ERP | {datetime.now().strftime('%d/%m/%Y %H:%M')} | "
-            f"CMR {ctx['cmr_number']} | {desig_text}",
-            self.subtitle_style))
+            f"Generated by Operion ERP &nbsp;&bull;&nbsp; {datetime.now().strftime('%d/%m/%Y %H:%M')}"
+            f" &nbsp;&bull;&nbsp; CMR {ctx['cmr_number']} &nbsp;&bull;&nbsp; {desig_text}",
+            footer_style))
         story.append(self._color_bar(color_hex, bar_text))
 
         return story
@@ -602,29 +655,44 @@ class CMRGenerator:
 
     def _received_content(self, ctx):
         return Paragraph(
-            "Place of delivery: _________________________<br/>"
-            "Date: ___/___/______ &nbsp; Time: ___:___<br/>"
+            "Place of delivery: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
+            "Date: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
+            " &nbsp; Time: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
             "Received in good condition: &#9744; Yes &nbsp; &#9744; No<br/>"
-            "Reservations: ____________________________________________<br/><br/>"
-            "Signature + Stamp: [&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;]",
+            "Reservations: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/><br/>"
+            "Signature + Stamp: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
+            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>",
             self.box_val_small)
 
     # ── Layout Helpers ──────────────────────────────────────────────
 
     def _color_bar(self, color_hex, text):
+        """Modern banner with left accent stripe and centered text."""
         color = colors.HexColor(color_hex)
+        accent = colors.Color(
+            min(color.red * 0.7, 1.0),
+            min(color.green * 0.7, 1.0),
+            min(color.blue * 0.7, 1.0),
+        )
+        bar_text_style = ParagraphStyle(
+            "BarText", fontSize=8, leading=10,
+            textColor=colors.white, fontName="Helvetica-Bold",
+            alignment=TA_CENTER,
+        )
+        # Two-cell bar: left accent stripe + main colored area with text
         bar = Table(
-            [[Paragraph(f"<b>{text}</b>",
-             ParagraphStyle("BarText", fontSize=8, leading=9,
-                            textColor=colors.white, fontName="Helvetica-Bold",
-                            alignment=TA_CENTER))]],
-            colWidths=[A4[0] - 20 * mm],
-            rowHeights=[6 * mm],
+            [["", Paragraph(f"<b>{text}</b>", bar_text_style)]],
+            colWidths=[3 * mm, A4[0] - 23 * mm],
+            rowHeights=[7 * mm],
         )
         bar.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), color),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('BACKGROUND', (0, 0), (0, -1), accent),
+            ('BACKGROUND', (1, 0), (1, -1), color),
+            ('ALIGN', (1, 0), (1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 0),
             ('RIGHTPADDING', (0, 0), (-1, -1), 0),
@@ -634,39 +702,51 @@ class CMRGenerator:
         return bar
 
     def _designation_footer(self, color_hex, desig_text, cmr_number):
+        """Modern footer with copy badge and reference info."""
         color = colors.HexColor(color_hex)
-        data = [[Paragraph(
-            f"<b>{desig_text}</b><br/>"
-            f"<font size=7>CMR Ref: {cmr_number} | Operion ERP</font>",
-            ParagraphStyle("Desig", fontSize=7, leading=9,
-                           textColor=colors.HexColor("#444444"),
-                           alignment=TA_CENTER))]]
-        tbl = Table(data, colWidths=[A4[0] - 20 * mm], rowHeights=[10 * mm])
+        data = [[
+            Paragraph(
+                f"<b>{desig_text}</b><br/>"
+                f"<font size=6 color='#6b7280'>CMR Ref: {cmr_number} &bull; Operion ERP &bull; "
+                f"{datetime.now().strftime('%d/%m/%Y %H:%M')}</font>",
+                ParagraphStyle("Desig", fontSize=7.5, leading=10,
+                               textColor=self.text_color,
+                               alignment=TA_CENTER)),
+        ]]
+        tbl = Table(data, colWidths=[A4[0] - 20 * mm], rowHeights=[12 * mm])
         tbl.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, -1), colors.HexColor("#f5f5f5")),
+            ('BACKGROUND', (0, 0), (-1, -1), self.header_bg),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('BOX', (0, 0), (-1, -1), 0.5, color),
-            ('INNERGRID', (0, 0), (-1, -1), 0, colors.white),
+            ('LEFTPADDING', (0, 0), (-1, -1), 4 * mm),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 4 * mm),
+            ('TOPPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2 * mm),
         ]))
         return tbl
 
     def _box_header(self, number, label_key, color_hex):
+        """Modern box header with colored number badge and clean label."""
         label = BOX_LABELS.get(label_key, label_key)
         return Paragraph(
-            f"<font size=7 color='{color_hex}'><b>{number}.</b></font> "
-            f"<font size=7><b>{label}</b></font>",
+            f"<font size=8 color='{color_hex}'><b>{number}.</b></font> "
+            f"<font size=7 color='#1f2937'><b>{label}</b></font>",
             self.box_hdr_style)
 
     def _box_frame(self, content, color_hex):
+        """Modern card-style box with subtle background and refined border."""
+        color = colors.HexColor(color_hex)
         data = [[content]]
         tbl = Table(data, colWidths=[A4[0] - 20 * mm - 2 * mm])
         tbl.setStyle(TableStyle([
-            ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor(color_hex)),
-            ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
-            ('RIGHTPADDING', (0, 0), (-1, -1), 2 * mm),
-            ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1 * mm),
+            ('BOX', (0, 0), (-1, -1), 0.4, self.border_color),
+            ('BACKGROUND', (0, 0), (-1, -1), self.light_bg),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.4, color),  # Subtle accent underline
+            ('LEFTPADDING', (0, 0), (-1, -1), 3 * mm),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3 * mm),
+            ('TOPPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2 * mm),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
         ]))
         return tbl
@@ -740,6 +820,7 @@ class CMRGenerator:
         return inner_tbl
 
     def _build_signature_row(self, ctx, color_hex):
+        """Professional signature row with lined fields and image areas."""
         third = (A4[0] - 20 * mm) / 3
         sig_boxes = []
         for n, label_key in [(22, "box_22"), (23, "box_23"), (24, "box_24")]:
@@ -760,11 +841,13 @@ class CMRGenerator:
         return inner
 
     def _signature_block(self, ctx, number, label_key):
+        """Professional signature block with lined fields and image areas."""
+        # Use cleaner, more spacious line format
         parts = [
-            "<b>Date:</b> ___/___/______",
-            "<b>Place:</b> ______________________",
-            "<b>Name (print):</b> ______________________",
-            "<b>Signature:</b> _______________________",
+            "Date: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
+            " &nbsp; Place: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>",
+            "Name (print): <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>",
+            "Signature: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>",
         ]
         body_text = "<br/>".join(parts)
 
@@ -773,30 +856,28 @@ class CMRGenerator:
         img_elements = []
         if sig_path and os.path.isfile(sig_path):
             try:
-                img_elements.append(Image(sig_path, width=3.5 * cm, height=1.3 * cm))
+                img_elements.append(Image(sig_path, width=3 * cm, height=1.1 * cm))
             except Exception:
                 img_elements.append(Paragraph("[Signature]", self.box_val_small))
         if stamp_path and os.path.isfile(stamp_path):
             try:
-                img_elements.append(Image(stamp_path, width=2.5 * cm, height=2.5 * cm))
+                img_elements.append(Image(stamp_path, width=2.2 * cm, height=2.2 * cm))
             except Exception:
                 pass
 
-        elements = [Paragraph(body_text, self.box_val_small)]
+        elements = [Paragraph(body_text, self.sig_val)]
         if img_elements:
-            elements.append(Spacer(1, 1 * mm))
-            img_col_widths = []
+            elements.append(Spacer(1, 1.5 * mm))
+            inner_w = (A4[0] - 20 * mm) / 3 - 8 * mm
             if len(img_elements) == 2:
-                img_col_widths = [(A4[0] - 20 * mm) / 3 - 8 * mm] * 2
-                img_tbl = Table([img_elements], colWidths=img_col_widths)
+                img_tbl = Table([img_elements], colWidths=[inner_w, inner_w])
                 img_tbl.setStyle(TableStyle([
                     ('ALIGN', (0, 0), (0, 0), 'LEFT'),
                     ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
                     ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
                 ]))
             else:
-                img_col_widths = [(A4[0] - 20 * mm) / 3 - 4 * mm]
-                img_tbl = Table([img_elements], colWidths=img_col_widths)
+                img_tbl = Table([img_elements], colWidths=[inner_w])
                 img_tbl.setStyle(TableStyle([
                     ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
                     ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
@@ -805,12 +886,13 @@ class CMRGenerator:
 
         elements.append(Spacer(1, 2 * mm))
         elements.append(Paragraph(
-            "<i>Digital: [ Click to Sign | Timestamp: ____________ ]</i>",
+            "<i><font color='#9ca3af' size=6>Digital signature zone</font></i>",
             self.box_val_small))
 
         return elements if len(elements) > 1 else elements[0]
 
     def _build_adr_box(self, ctx, color_hex):
+        """Modern ADR table with colored header and subtle alternating rows."""
         header = self._box_header(21, "box_21", color_hex)
         adr_items = ctx.get("adr_items", [])
         if not adr_items:
@@ -828,17 +910,22 @@ class CMRGenerator:
                 item.get("quantity", ""),
                 item.get("net_weight", ""),
             ])
-        col_w = (A4[0] - 20 * mm - 4 * mm) / 6
+        col_w = (A4[0] - 20 * mm - 6 * mm) / 6
         tbl = Table(adr_rows, colWidths=[col_w] * 6)
         tbl.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor(color_hex)),
             ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
-            ('GRID', (0, 0), (-1, -1), 0.3, colors.HexColor(color_hex)),
-            ('FONTSIZE', (0, 0), (-1, -1), 6),
+            ('GRID', (0, 0), (-1, -1), 0.25, self.border_color),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor(color_hex)),
+            ('FONTSIZE', (0, 0), (-1, -1), 6.5),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#fff3e0")]),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('TOPPADDING', (0, 0), (-1, -1), 1.5 * mm),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5 * mm),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#fff7ed")]),
         ]))
         body = self._box_frame(tbl, color_hex)
         return self._wrap_box(header, body)
@@ -952,6 +1039,22 @@ class CMRGenerator:
                 relationship=pikepdf.Name("/Data"),
             )
             pdf.attachments._add_replace_filespec("cmr_efti_data.xml", spec)
+
+            # ── /AF array in document catalog (PDF/A-3 requirement) ──
+            # Ensure the file spec is referenced from Root.AF
+            af_array = pdf.Root.get("/AF")
+            if af_array is None:
+                af_array = pikepdf.Array()
+                pdf.Root["/AF"] = af_array
+            # Find the Filespec object in the Names tree and add to AF
+            names = pdf.Root.get("/Names", pikepdf.Dictionary())
+            embedded_files = names.get("/EmbeddedFiles", pikepdf.Dictionary())
+            names_tree = embedded_files.get("/Names", pikepdf.Array())
+            for i in range(0, len(names_tree), 2):
+                if i + 1 < len(names_tree):
+                    file_spec = names_tree[i + 1]
+                    if file_spec not in af_array:
+                        af_array.append(file_spec)
 
             # ── Save ──
             pdf.save(pdf_path)
