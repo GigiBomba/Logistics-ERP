@@ -59,6 +59,22 @@ class InvoiceService:
                 "amount": total_price,
                 "due_date": due_date,
             })
+        if os.path.isfile(path):
+            try:
+                from services.document_service import DocumentService
+                ds = DocumentService(self.db)
+                ds.register_existing(
+                    file_path=path,
+                    title=f"Invoice {os.path.basename(path)}",
+                    category="invoices",
+                    entity_type="invoice",
+                    entity_id=trip_data.get("id", 0),
+                    tags=["invoice", mode],
+                )
+            except Exception:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning("Failed to register invoice in Document Center", exc_info=True)
         return path
 
     def send_invoice_email(

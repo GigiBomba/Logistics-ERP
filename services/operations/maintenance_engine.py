@@ -72,6 +72,8 @@ class MaintenanceEngine:
             for t in trucks:
                 count += self._evaluate_single(t)
             count += self.evaluate_driver_hours()
+            count += self._evaluate_document_expiries()
+            count += self._evaluate_contract_expiries()
         except Exception as e:
             logger.error("evaluate_all failed: %s", e)
         logger.info("MaintenanceEngine evaluated all trucks: %d alerts generated", count)
@@ -362,3 +364,39 @@ class MaintenanceEngine:
             )
             return True
         return False
+
+    # ── Document / Contract Expiry Checks ───────────────────────────
+
+    def _evaluate_document_expiries(self) -> int:
+        try:
+            from services.document_service import DocumentService
+            svc = DocumentService(self._db)
+            svc._alert_mgr = self._alert_mgr
+            return svc.evaluate_document_expiries(alert_mgr=self._alert_mgr)
+        except Exception as e:
+            logger.debug("Document expiry check skipped: %s", e)
+        return 0
+
+    def _evaluate_contract_expiries(self) -> int:
+        try:
+            from services.document_service import DocumentService
+            from datetime import datetime
+            svc = DocumentService(self._db)
+            count = 0
+            contracts = svc.get_expiring_contracts(30)
+            today = datetime.now().strftime("%Y-%m-%d")
+            for c in contracts:
+                severity = Severity.CRITICAL if today > (c.get("end_date") or "") else Severity.WARNING
+                self._alert_mgr.create_alert(
+                    alert_type=AlertType.CONTRACT_EXPIRY.value,
+                    severity=severity.value,
+                    title=f"Contract expiring: {c.get('contract_type', '')}",
+                    message=f"Contract #{c.get('id')} for client #{c.get('client_id')} expires {c.get('end_date')}",
+                    truck_id=None, trip_id=None,
+                    metadata={"contract_id": c["id"], "client_id": c.get("client_id")},
+                )
+                count += 1
+            return count
+        except Exception as e:
+            logger.debug("Contract expiry check skipped: %s", e)
+        return 0

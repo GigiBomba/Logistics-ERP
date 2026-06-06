@@ -453,3 +453,135 @@ ALTER_CLIENTS_ADD_PAYMENT_TERMS = "ALTER TABLE clients ADD COLUMN payment_terms_
 ALTER_CLIENTS_ADD_CREDIT_LIMIT = "ALTER TABLE clients ADD COLUMN credit_limit_eur REAL DEFAULT 0"
 ALTER_CLIENTS_ADD_DEFAULT_RATE = "ALTER TABLE clients ADD COLUMN default_rate_per_km REAL"
 ALTER_CLIENTS_ADD_RATING = "ALTER TABLE clients ADD COLUMN rating INTEGER CHECK(rating BETWEEN 1 AND 5)"
+
+# ── Document Center ───────────────────────────────────────────────────────
+
+TABLE_DOCUMENTS = """
+CREATE TABLE IF NOT EXISTS documents (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    doc_number TEXT UNIQUE NOT NULL,
+    title TEXT NOT NULL,
+    category TEXT NOT NULL DEFAULT 'other',
+    entity_type TEXT NOT NULL DEFAULT '',
+    entity_id INTEGER,
+    file_path TEXT NOT NULL,
+    file_name TEXT NOT NULL,
+    file_size INTEGER DEFAULT 0,
+    mime_type TEXT DEFAULT 'application/octet-stream',
+    file_hash TEXT DEFAULT '',
+    tags TEXT DEFAULT '[]',
+    description TEXT DEFAULT '',
+    is_archived INTEGER DEFAULT 0,
+    uploaded_by TEXT DEFAULT '',
+    uploaded_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+TABLE_DOCUMENT_LINKS = """
+CREATE TABLE IF NOT EXISTS document_links (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    linked_entity_type TEXT NOT NULL,
+    linked_entity_id INTEGER NOT NULL,
+    relation_type TEXT DEFAULT 'attached',
+    created_at TEXT NOT NULL,
+    UNIQUE(document_id, linked_entity_type, linked_entity_id, relation_type)
+);
+"""
+
+INDEX_DOCUMENTS_CATEGORY = "CREATE INDEX IF NOT EXISTS idx_documents_category ON documents(category);"
+INDEX_DOCUMENTS_ENTITY = "CREATE INDEX IF NOT EXISTS idx_documents_entity ON documents(entity_type, entity_id);"
+INDEX_DOCUMENTS_HASH = "CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(file_hash);"
+INDEX_DOCUMENTS_NUMBER = "CREATE INDEX IF NOT EXISTS idx_documents_number ON documents(doc_number);"
+INDEX_DOC_LINKS_DOCUMENT = "CREATE INDEX IF NOT EXISTS idx_doc_links_document ON document_links(document_id);"
+INDEX_DOC_LINKS_ENTITY = "CREATE INDEX IF NOT EXISTS idx_doc_links_entity ON document_links(linked_entity_type, linked_entity_id);"
+
+# ── Document Center P2: FTS5, versions, contracts, templates ───────────────
+
+ALTER_DOCUMENTS_ADD_TEXT_CONTENT = "ALTER TABLE documents ADD COLUMN text_content TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_EXPIRY_DATE = "ALTER TABLE documents ADD COLUMN expiry_date TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_SIGNED_BY = "ALTER TABLE documents ADD COLUMN signed_by TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_SIGNED_AT = "ALTER TABLE documents ADD COLUMN signed_at TEXT DEFAULT ''"
+
+TABLE_DOCUMENTS_FTS = """
+CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
+    title, file_name, description, tags, doc_number, text_content,
+    content='documents', content_rowid='id'
+);
+"""
+
+TRIGGER_DOCUMENTS_FTS_INSERT = """
+CREATE TRIGGER IF NOT EXISTS documents_fts_ai AFTER INSERT ON documents BEGIN
+    INSERT INTO documents_fts(rowid, title, file_name, description, tags, doc_number, text_content)
+    VALUES (new.id, new.title, new.file_name, new.description, new.tags, new.doc_number, '');
+END;
+"""
+
+TRIGGER_DOCUMENTS_FTS_DELETE = """
+CREATE TRIGGER IF NOT EXISTS documents_fts_ad AFTER DELETE ON documents BEGIN
+    INSERT INTO documents_fts(documents_fts, rowid, title, file_name, description, tags, doc_number, text_content)
+    VALUES ('delete', old.id, old.title, old.file_name, old.description, old.tags, old.doc_number, old.text_content);
+END;
+"""
+
+TRIGGER_DOCUMENTS_FTS_UPDATE = """
+CREATE TRIGGER IF NOT EXISTS documents_fts_au AFTER UPDATE ON documents BEGIN
+    INSERT INTO documents_fts(documents_fts, rowid, title, file_name, description, tags, doc_number, text_content)
+    VALUES ('delete', old.id, old.title, old.file_name, old.description, old.tags, old.doc_number, old.text_content);
+    INSERT INTO documents_fts(rowid, title, file_name, description, tags, doc_number, text_content)
+    VALUES (new.id, new.title, new.file_name, new.description, new.tags, new.doc_number, new.text_content);
+END;
+"""
+
+TABLE_DOCUMENT_VERSIONS = """
+CREATE TABLE IF NOT EXISTS document_versions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    version_number INTEGER NOT NULL,
+    file_path TEXT NOT NULL,
+    file_size INTEGER DEFAULT 0,
+    file_hash TEXT DEFAULT '',
+    comment TEXT DEFAULT '',
+    uploaded_by TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    UNIQUE(document_id, version_number)
+);
+"""
+
+INDEX_VERSIONS_DOCUMENT = "CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(document_id);"
+
+TABLE_CONTRACTS = """
+CREATE TABLE IF NOT EXISTS contracts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER UNIQUE,
+    client_id INTEGER NOT NULL REFERENCES clients(id),
+    contract_type TEXT NOT NULL DEFAULT 'transport',
+    start_date TEXT,
+    end_date TEXT,
+    value_eur REAL DEFAULT 0,
+    payment_terms TEXT DEFAULT '',
+    auto_renewal INTEGER DEFAULT 0,
+    renewal_notice_days INTEGER DEFAULT 30,
+    status TEXT DEFAULT 'active',
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+INDEX_CONTRACTS_CLIENT = "CREATE INDEX IF NOT EXISTS idx_contracts_client ON contracts(client_id);"
+INDEX_CONTRACTS_STATUS = "CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);"
+
+TABLE_DOCUMENT_TEMPLATES = """
+CREATE TABLE IF NOT EXISTS document_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    description TEXT DEFAULT '',
+    category TEXT NOT NULL DEFAULT 'general',
+    template_type TEXT NOT NULL DEFAULT 'pdf',
+    fields_json TEXT DEFAULT '[]',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""

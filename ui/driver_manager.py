@@ -168,6 +168,9 @@ class DriverManager:
         btn = ActionButton(btns, t("driver_manager.delete_driver"), self._delete_selected, color=Theme.DANGER)
         btn.pack(side="right", padx=6)
         self._i18n_tag(btn, "driver_manager.delete_driver")
+        btn = ActionButton(btns, f"\U0001F4C2 {t('driver_manager.documents_button')}", self._open_driver_documents, color=Theme.ACCENT)
+        btn.pack(side="right", padx=6)
+        self._i18n_tag(btn, "driver_manager.documents_button", "\U0001F4C2 ")
 
         # ── Tachograph detail panel (shows when driver selected) ──
         self._tacho_detail = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
@@ -442,3 +445,13 @@ class DriverManager:
             messagebox.showinfo(t("driver_manager.export_csv"), t("driver_manager.export_success"))
         except Exception as ex:
             messagebox.showerror(t("main.error_title"), str(ex))
+
+    def _open_driver_documents(self):
+        driver_id = self._get_selected_id()
+        if not driver_id:
+            messagebox.showinfo(t("driver_manager.documents_button"), t("driver_manager.select_driver_first"))
+            return
+        from ui.views.document_center_view import open_entity_documents
+        driver = self._driver_repo.get_by_id(driver_id)
+        name = driver.get("name", "Unknown") if driver else "Unknown"
+        open_entity_documents(self.frame, self.db, "driver", driver_id, f"Driver {name}")

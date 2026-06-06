@@ -138,6 +138,16 @@ class CashflowApp:
             from services.fleet_tracking_service import fleet_tracking_service
             fleet_tracking_service.initialize(self.db)
 
+            # 8. Migrate existing attachments and invoices to Document Center
+            try:
+                from services.document_service import DocumentService
+                ds = DocumentService(self.db)
+                migrated = ds.migrate_all()
+                if migrated > 0:
+                    logger.info("Document Center migration: %d existing files registered", migrated)
+            except Exception as e:
+                logger.warning("Document Center migration skipped: %s", e)
+
             self.ui = MainWindow(self.root, self.db, self.api, prefs=self.prefs, ops=self.ops)
 
             self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -150,6 +160,11 @@ class CashflowApp:
     def _on_close(self):
         try:
             self.ui.shutdown()
+        except Exception:
+            pass
+        try:
+            from services.document_service import DocumentService
+            DocumentService.shutdown()
         except Exception:
             pass
         try:

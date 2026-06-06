@@ -24,6 +24,8 @@ class AlertType(str, Enum):
     TACHOGRAPH_EXPIRY = "tachograph_expiry"
     DRIVER_HOURS_WEEKLY = "driver_hours_weekly"
     DRIVER_HOURS_DAILY = "driver_hours_daily"
+    DOCUMENT_EXPIRY = "document_expiry"
+    CONTRACT_EXPIRY = "contract_expiry"
 
 
 class Severity(str, Enum):
@@ -44,6 +46,8 @@ _alert_types_display = {
     AlertType.TACHOGRAPH_EXPIRY: "Tachograph Calibration",
     AlertType.DRIVER_HOURS_WEEKLY: "Driver Hours Weekly",
     AlertType.DRIVER_HOURS_DAILY: "Driver Hours Daily",
+    AlertType.DOCUMENT_EXPIRY: "Document Expiry",
+    AlertType.CONTRACT_EXPIRY: "Contract Expiry",
 }
 
 

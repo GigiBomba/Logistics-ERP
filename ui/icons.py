@@ -76,6 +76,9 @@ _KEY_ICONS = {
     "maint.schedule_add":       "\u271A",   # ✚
     "maint.schedule_form_title_add":"\u271A", # ✚
     "maint.schedule_form_title_edit":"\u270E", # ✎
+    "maint.form_attachment":    "\U0001F4CE",  # 📎
+    "maint.form_no_attachment": "\u2718",   # ✘
+    "maint.form_choose_file":   "\U0001F4C2",  # 📂
     # maint_analytics section
     "maint_analytics.title":    "\u2699",   # ⚙
     # maint_timeline section

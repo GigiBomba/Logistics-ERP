@@ -67,6 +67,28 @@ from database.schema import (
     ALTER_CLIENTS_ADD_CREDIT_LIMIT,
     ALTER_CLIENTS_ADD_DEFAULT_RATE,
     ALTER_CLIENTS_ADD_RATING,
+    TABLE_DOCUMENTS,
+    TABLE_DOCUMENT_LINKS,
+    INDEX_DOCUMENTS_CATEGORY,
+    INDEX_DOCUMENTS_ENTITY,
+    INDEX_DOCUMENTS_HASH,
+    INDEX_DOCUMENTS_NUMBER,
+    INDEX_DOC_LINKS_DOCUMENT,
+    INDEX_DOC_LINKS_ENTITY,
+    TABLE_DOCUMENTS_FTS,
+    TRIGGER_DOCUMENTS_FTS_INSERT,
+    TRIGGER_DOCUMENTS_FTS_DELETE,
+    TRIGGER_DOCUMENTS_FTS_UPDATE,
+        ALTER_DOCUMENTS_ADD_TEXT_CONTENT,
+    ALTER_DOCUMENTS_ADD_EXPIRY_DATE,
+    ALTER_DOCUMENTS_ADD_SIGNED_BY,
+    ALTER_DOCUMENTS_ADD_SIGNED_AT,
+    TABLE_DOCUMENT_VERSIONS,
+    INDEX_VERSIONS_DOCUMENT,
+    TABLE_CONTRACTS,
+    INDEX_CONTRACTS_CLIENT,
+    INDEX_CONTRACTS_STATUS,
+    TABLE_DOCUMENT_TEMPLATES,
 )
 
 
@@ -159,6 +181,60 @@ class DatabaseManager:
         # Client tags (Phase 3)
         self.conn.execute(TABLE_CLIENT_TAGS)
         self.conn.execute(INDEX_TAGS_CLIENT)
+
+        # Document Center tables
+        self.conn.execute(TABLE_DOCUMENTS)
+        self.conn.execute(TABLE_DOCUMENT_LINKS)
+        self.conn.execute(INDEX_DOCUMENTS_CATEGORY)
+        self.conn.execute(INDEX_DOCUMENTS_ENTITY)
+        self.conn.execute(INDEX_DOCUMENTS_HASH)
+        self.conn.execute(INDEX_DOCUMENTS_NUMBER)
+        self.conn.execute(INDEX_DOC_LINKS_DOCUMENT)
+        self.conn.execute(INDEX_DOC_LINKS_ENTITY)
+
+        # Document Center P2: FTS5, versions, contracts, templates
+        try:
+            self.conn.execute(TABLE_DOCUMENTS_FTS)
+        except Exception:
+            pass
+        try:
+            self.conn.execute(TRIGGER_DOCUMENTS_FTS_INSERT)
+            self.conn.execute(TRIGGER_DOCUMENTS_FTS_DELETE)
+            self.conn.execute(TRIGGER_DOCUMENTS_FTS_UPDATE)
+        except Exception:
+            pass
+        self.conn.execute(TABLE_DOCUMENT_VERSIONS)
+        self.conn.execute(INDEX_VERSIONS_DOCUMENT)
+        self.conn.execute(TABLE_CONTRACTS)
+        self.conn.execute(INDEX_CONTRACTS_CLIENT)
+        self.conn.execute(INDEX_CONTRACTS_STATUS)
+        self.conn.execute(TABLE_DOCUMENT_TEMPLATES)
+
+        # P2 column migrations on documents
+        try:
+            doc_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(documents)").fetchall()]
+            if 'text_content' not in doc_cols:
+                try:
+                    self.conn.execute(ALTER_DOCUMENTS_ADD_TEXT_CONTENT)
+                except Exception:
+                    pass
+            if 'expiry_date' not in doc_cols:
+                try:
+                    self.conn.execute(ALTER_DOCUMENTS_ADD_EXPIRY_DATE)
+                except Exception:
+                    pass
+            if 'signed_by' not in doc_cols:
+                try:
+                    self.conn.execute(ALTER_DOCUMENTS_ADD_SIGNED_BY)
+                except Exception:
+                    pass
+            if 'signed_at' not in doc_cols:
+                try:
+                    self.conn.execute(ALTER_DOCUMENTS_ADD_SIGNED_AT)
+                except Exception:
+                    pass
+        except Exception:
+            pass
 
         self.conn.commit()
         # Migrate legacy maintenance table to maintenance_records (if both exist)

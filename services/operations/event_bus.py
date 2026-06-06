@@ -40,6 +40,12 @@ SETTINGS_UPDATED = "settings.updated"
 ALERT_CREATED = "alert.created"
 ALERT_RESOLVED = "alert.resolved"
 
+DOCUMENT_UPLOADED = "document.uploaded"
+DOCUMENT_ARCHIVED = "document.archived"
+DOCUMENT_DELETED = "document.deleted"
+DOCUMENT_LINKED = "document.linked"
+DOCUMENT_UNLINKED = "document.unlinked"
+
 VALID_TRANSITIONS = {
     "Planned": ["Loading", "Cancelled"],
     "Loading": ["Planned", "In Transit", "Cancelled"],
@@ -63,6 +69,8 @@ ALL_EVENTS = [
     TRIP_CONFLICT, SETTINGS_UPDATED,
     ALERT_CREATED, ALERT_RESOLVED,
     DAILY_CHECK, SYSTEM_STARTUP,
+    DOCUMENT_UPLOADED, DOCUMENT_ARCHIVED, DOCUMENT_DELETED,
+    DOCUMENT_LINKED, DOCUMENT_UNLINKED,
 ]
 
 

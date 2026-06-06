@@ -216,6 +216,9 @@ class FleetTab(I18nMixin):
         btn = ActionButton(btns, f"🗑️ {t('fleet.delete_button')}", self._delete_truck, color=Theme.DANGER)
         btn.pack(side="right", padx=6)
         self.i18n_tag(btn, "fleet.delete_button", "🗑️ ")
+        btn = ActionButton(btns, f"\U0001F4C2 {t('fleet.documents_button')}", self._open_truck_documents, color=Theme.ACCENT)
+        btn.pack(side="right", padx=6)
+        self.i18n_tag(btn, "fleet.documents_button", "\U0001F4C2 ")
 
         # ── Alerts panel from OperationsEngine ──
         self.alerts_frame = ctk.CTkFrame(right, fg_color=Theme.BG)
@@ -771,3 +774,13 @@ class FleetTab(I18nMixin):
     def _open_maintenance_view(self, truck_id, truck_plate):
         from ui.maintenance_view import MaintenanceView
         MaintenanceView(self.frame, self.db, truck_id, truck_plate)
+
+    def _open_truck_documents(self):
+        truck_id = self._get_selected_truck_id()
+        if not truck_id:
+            messagebox.showinfo(t("fleet.documents_button"), t("fleet.select_truck_first"))
+            return
+        from ui.views.document_center_view import open_entity_documents
+        truck = self.service._repo.get_by_id(truck_id)
+        plate = truck.get("plate_number", "Unknown") if truck else "Unknown"
+        open_entity_documents(self.frame, self.db, "truck", truck_id, f"Truck {plate}")

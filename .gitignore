@@ -29,4 +29,13 @@ tools/tachograph/dddsimple.exe
 # Runtime data (caches, databases, generated files)
 data/cashflow.db
 data/fuel_prices_cache.json
+data/company_config.json
+data/lang.txt
+data/backups/
+data/exports/
+data/documents/
+data/exchange_rates_cache.json
+data/country_borders.json
+data/avoid_countries.json
 invoices/*.pdf
+reports/
