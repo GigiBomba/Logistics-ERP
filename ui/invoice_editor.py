@@ -436,7 +436,7 @@ class InvoiceEditor(I18nMixin):
         self._build_canvas_description()
 
         # Line items table
-        self._build_canvas_line_items()
+        self._build_canvas_addon_items()
 
         # Notes
         self._build_canvas_notes()
@@ -689,7 +689,7 @@ class InvoiceEditor(I18nMixin):
                        padx=S["3"], pady=(0, S["3"]))
             entry.bind("<KeyRelease>", lambda e: self._recalc_all())
 
-    def _build_canvas_line_items(self):
+    def _build_canvas_addon_items(self):
         # Container for the additional items section
         self._lit_container = ctk.CTkFrame(self._canvas_inner, fg_color="transparent")
         self._lit_container.pack(fill="x", pady=(0, S["4"]))
@@ -947,7 +947,6 @@ class InvoiceEditor(I18nMixin):
     def _fill_cities_from_route(self, route_id):
         """Extract loading/unloading cities from route stops JSON."""
         try:
-            import json
             row = self.db.conn.execute(
                 "SELECT stops_json FROM route_history_v2 WHERE id = ?",
                 (route_id,),
@@ -984,9 +983,98 @@ class InvoiceEditor(I18nMixin):
                 self._is_client_invoice.set(False)
 
     # ═══════════════════════════════════════════════════════════════
-    # CALCULATIONS
+    # ADDITIONAL ITEMS DATA
     # ═══════════════════════════════════════════════════════════════
-        """Update data model and recalculate when any field changes."""
+
+    def _create_addon_data(self, description="", amount=0):
+        amt = round(float(amount) if amount else 0, 2)
+        return {
+            "description": str(description),
+            "amount": amt,
+            "desc_var": tk.StringVar(value=str(description)),
+            "amt_var": tk.StringVar(value=f"{amt:.2f}"),
+        }
+
+    def _add_default_addon_item(self):
+        self._addon_items = [self._create_addon_data()]
+        self._rebuild_addon_rows()
+
+    def _add_addon_row(self, data=None):
+        if data is None:
+            data = self._create_addon_data()
+        self._addon_items.append(data)
+        self._rebuild_addon_rows()
+        self._recalc_all()
+
+    def _remove_addon(self, idx):
+        if len(self._addon_items) <= 1:
+            return
+        del self._addon_items[idx]
+        self._rebuild_addon_rows()
+        self._recalc_all()
+
+    def _duplicate_addon(self, idx):
+        src = self._addon_items[idx]
+        self._addon_items.insert(idx + 1, self._create_addon_data(
+            description=src["description"], amount=src["amount"]))
+        self._rebuild_addon_rows()
+        self._recalc_all()
+
+    def _move_addon(self, idx, direction):
+        new_idx = idx + direction
+        if 0 <= new_idx < len(self._addon_items):
+            self._addon_items[idx], self._addon_items[new_idx] = \
+                self._addon_items[new_idx], self._addon_items[idx]
+            self._rebuild_addon_rows()
+
+    def _rebuild_addon_rows(self):
+        for w in self._lit_rows_frame.winfo_children():
+            w.destroy()
+        for i, item in enumerate(self._addon_items):
+            self._build_addon_row(i, item)
+
+    def _build_addon_row(self, idx, item):
+        row = ctk.CTkFrame(self._lit_rows_frame, fg_color="transparent")
+        row.pack(fill="x", pady=(0, S["1"]))
+        row.columnconfigure(0, weight=0, minsize=30)    # #
+        row.columnconfigure(1, weight=3)                 # Description
+        row.columnconfigure(2, weight=0, minsize=90)    # Amount
+        row.columnconfigure(3, weight=0, minsize=80)    # Actions
+
+        ctk.CTkLabel(row, text=str(idx + 1), font=FONTS["body"],
+                     text_color=COLORS["text_muted"],
+                     anchor="center").grid(row=0, column=0, sticky="ew", padx=S["1"], pady=S["1"])
+
+        desc_e = ctk.CTkEntry(row, textvariable=item["desc_var"], height=30,
+                              font=FONTS["body"], fg_color=COLORS["bg_input"],
+                              border_color=COLORS["border"],
+                              text_color=COLORS["text_primary"])
+        desc_e.grid(row=0, column=1, sticky="ew", padx=S["1"], pady=S["1"])
+        desc_e.bind("<KeyRelease>", lambda e, i=idx: self._on_addon_field_changed(i))
+
+        amt_e = ctk.CTkEntry(row, textvariable=item["amt_var"], height=30, width=85,
+                             font=FONTS["body"], fg_color=COLORS["bg_input"],
+                             border_color=COLORS["border"],
+                             text_color=COLORS["text_primary"], justify="right")
+        amt_e.grid(row=0, column=2, sticky="ew", padx=S["1"], pady=S["1"])
+        amt_e.bind("<KeyRelease>", lambda e, i=idx: self._on_addon_field_changed(i))
+
+        actions = ctk.CTkFrame(row, fg_color="transparent")
+        actions.grid(row=0, column=3, sticky="ew", padx=S["1"])
+        actions.columnconfigure((0, 1, 2, 3), weight=1)
+        for j, (icon, cmd) in enumerate([
+            ("\u25B2", lambda i=idx: self._move_addon(i, -1)),
+            ("\u25BC", lambda i=idx: self._move_addon(i, 1)),
+            ("\u2398", lambda i=idx: self._duplicate_addon(i)),
+            ("\u2716", lambda i=idx: self._remove_addon(i)),
+        ]):
+            ctk.CTkButton(actions, text=icon, width=18, height=18,
+                          font=("Segoe UI", 9), fg_color="transparent",
+                          hover_color=COLORS["bg_elevated"],
+                          text_color=COLORS["text_muted"],
+                          command=cmd).grid(row=0, column=j, padx=0)
+
+    def _on_addon_field_changed(self, idx):
         if idx >= len(self._addon_items):
             return
         item = self._addon_items[idx]

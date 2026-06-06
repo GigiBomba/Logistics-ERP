@@ -2,8 +2,6 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 from datetime import datetime, timedelta
 import logging
-import re
-import os
 from typing import Optional
 import customtkinter as ctk
 from ui.widgets import StyledEntry, ActionButton, section_header

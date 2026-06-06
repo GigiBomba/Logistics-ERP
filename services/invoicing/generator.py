@@ -145,12 +145,11 @@ class InvoiceGenerator:
         company_color_hex = invoice_data.get("company_color", "#1a73e8")
         mode = invoice_data.get("mode", "client")
 
-        # Internal mode: use app language; client mode: English
-        use_lang = "ro" if mode == "internal" else "en"  # placeholder — uses app language concept
+        # Internal mode: use _tr for translated titles; client mode: English
         if mode == "internal":
-            mode_title = "INTERNAL SETTLEMENT"
+            mode_title = self._tr("invoice_pdf.title_internal", mode)
         else:
-            mode_title = "CLIENT INVOICE"
+            mode_title = self._tr("invoice_pdf.title_client", mode)
 
         try:
             company_color = colors.HexColor(company_color_hex)
