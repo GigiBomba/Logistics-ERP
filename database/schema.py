@@ -419,3 +419,37 @@ CREATE TABLE IF NOT EXISTS clients (
 
 INDEX_CLIENTS_NAME = "CREATE INDEX IF NOT EXISTS idx_clients_name ON clients(name);"
 INDEX_CLIENTS_ACTIVE = "CREATE INDEX IF NOT EXISTS idx_clients_active ON clients(is_active);"
+
+TABLE_CLIENT_CONTACTS = """
+CREATE TABLE IF NOT EXISTS client_contacts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    contact_type TEXT NOT NULL DEFAULT 'operations',
+    full_name TEXT NOT NULL,
+    title TEXT,
+    phone TEXT,
+    email TEXT,
+    is_primary INTEGER DEFAULT 0,
+    notes TEXT,
+    created_at TEXT NOT NULL
+);
+"""
+
+INDEX_CONTACTS_CLIENT = "CREATE INDEX IF NOT EXISTS idx_client_contacts_client ON client_contacts(client_id);"
+
+TABLE_CLIENT_TAGS = """
+CREATE TABLE IF NOT EXISTS client_tags (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
+    tag TEXT NOT NULL,
+    UNIQUE(client_id, tag)
+);
+"""
+
+INDEX_TAGS_CLIENT = "CREATE INDEX IF NOT EXISTS idx_client_tags_client ON client_tags(client_id);"
+
+ALTER_CLIENTS_ADD_TYPE = "ALTER TABLE clients ADD COLUMN client_type TEXT DEFAULT ''"
+ALTER_CLIENTS_ADD_PAYMENT_TERMS = "ALTER TABLE clients ADD COLUMN payment_terms_days INTEGER DEFAULT 30"
+ALTER_CLIENTS_ADD_CREDIT_LIMIT = "ALTER TABLE clients ADD COLUMN credit_limit_eur REAL DEFAULT 0"
+ALTER_CLIENTS_ADD_DEFAULT_RATE = "ALTER TABLE clients ADD COLUMN default_rate_per_km REAL"
+ALTER_CLIENTS_ADD_RATING = "ALTER TABLE clients ADD COLUMN rating INTEGER CHECK(rating BETWEEN 1 AND 5)"

@@ -1,6 +1,7 @@
 """Client workspace — split-panel CRM layout replacing ClientManager."""
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
+import csv
 import customtkinter as ctk
 from typing import Any, Dict, List, Optional
 
@@ -61,7 +62,7 @@ class ClientWorkspace:
         ctk.CTkLabel(top, text=t("client.title"), fg_color=Theme.SURFACE,
                      text_color=Theme.TEXT, font=FONTS["h2"]).pack(side="left", padx=10)
 
-        self._search_entry = StyledEntry(top, width=160)
+        self._search_entry = StyledEntry(top, width=140)
         self._search_entry.insert(0, t("common.search"))
         self._search_entry.configure(text_color=COLORS["text_muted"])
         self._search_entry.bind("<FocusIn>", self._on_search_focus_in)
@@ -102,9 +103,13 @@ class ClientWorkspace:
         btn_frame = ctk.CTkFrame(self._left, fg_color=Theme.BG)
         btn_frame.pack(fill="x", padx=10, pady=(0, 10))
         ActionButton(btn_frame, text=t("client.edit_button"), command=lambda: self._open_form(edit=True),
-                     fg_color=Theme.ACCENT_PRIMARY, text_color="#fff").pack(side="left", padx=5)
+                     fg_color=Theme.ACCENT_PRIMARY, text_color="#fff").pack(side="left", padx=2)
         ActionButton(btn_frame, text=t("client.deactivate_button"), command=self._deactivate,
-                     fg_color=Theme.DANGER, text_color="#fff").pack(side="left", padx=5)
+                     fg_color=Theme.DANGER, text_color="#fff").pack(side="left", padx=2)
+        ActionButton(btn_frame, text=t("client.merge_button"), command=self._merge_clients,
+                     fg_color=Theme.WARNING, text_color="#000").pack(side="left", padx=2)
+        ActionButton(btn_frame, text=t("client.export_csv"), command=self._export_csv,
+                     fg_color=Theme.GREEN, text_color="#fff").pack(side="right", padx=2)
 
     def _build_right_placeholder(self):
         self._detail_placeholder = ctk.CTkLabel(
@@ -113,7 +118,6 @@ class ClientWorkspace:
             justify="center"
         )
         self._detail_placeholder.pack(expand=True)
-
         self._detail_frame = None
         self._detail_obj = None
 
@@ -160,7 +164,6 @@ class ClientWorkspace:
         query = (self._search_entry.get() or "").strip()
         if query == t("common.search"):
             query = ""
-
         if query:
             self._all_clients = self.service.search_advanced(
                 query, include_inactive=self._filter_inactive, limit=200
@@ -169,17 +172,17 @@ class ClientWorkspace:
             self._all_clients = self.service.get_all_with_revenue(
                 include_inactive=self._filter_inactive
             )
-
         self._refresh_list()
 
     def _refresh_list(self):
+        prev_sel = self.tree.selection()
+        prev_idx = self.tree.index(prev_sel[0]) if prev_sel else -1
         for item in self.tree.get_children():
             self.tree.delete(item)
 
         for c in self._all_clients:
             rev = c.get("total_revenue", 0) or 0
             outstanding = c.get("outstanding_balance", 0) or 0
-
             tag = "inactive" if not c.get("is_active", 1) else "active"
             self.tree.insert("", "end", values=(
                 c.get("name", ""),
@@ -192,6 +195,9 @@ class ClientWorkspace:
         self.tree.tag_configure("active", foreground=Theme.TEXT)
 
         if self._selected_id and self._detail_obj:
+            self._show_detail(self._selected_id)
+        elif prev_idx >= 0 and prev_idx < len(self._all_clients):
+            self._selected_id = self._all_clients[prev_idx]["id"]
             self._show_detail(self._selected_id)
 
     def _on_select(self, event=None):
@@ -226,6 +232,37 @@ class ClientWorkspace:
             self._selected_id = None
             self._load_data()
 
+    def _merge_clients(self):
+        if not self._selected_id:
+            messagebox.showinfo(t("client.merge_title"), t("client.select_hint"))
+            return
+        _MergeDialog(self.frame, self.service, source_id=self._selected_id, on_done=self._load_data)
+
+    def _export_csv(self):
+        clients = self.service.get_all_with_revenue(include_inactive=self._filter_inactive)
+        if not clients:
+            messagebox.showinfo(t("common.info"), t("client.no_data_export"))
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv", filetypes=[("CSV files", "*.csv")],
+            initialfile="clients_export.csv"
+        )
+        if not path:
+            return
+        with open(path, "w", newline="", encoding="utf-8") as f:
+            writer = csv.writer(f)
+            writer.writerow(["ID", "Name", "Contact Person", "Phone", "Email", "VAT",
+                             "City", "Type", "Total Revenue", "Trip Count", "Outstanding", "Active"])
+            for c in clients:
+                writer.writerow([
+                    c.get("id", ""), c.get("name", ""), c.get("contact_person", ""),
+                    c.get("phone", ""), c.get("email", ""), c.get("vat_number", ""),
+                    c.get("address", ""), c.get("client_type", ""),
+                    c.get("total_revenue", 0) or 0, c.get("trip_count", 0) or 0,
+                    c.get("outstanding_balance", 0) or 0, c.get("is_active", 1),
+                ])
+        messagebox.showinfo(t("common.info"), t("client.csv_saved"))
+
     def wakeup(self):
         self._load_data()
 
@@ -234,28 +271,47 @@ class ClientWorkspace:
 
 
 class _ClientDetailPanel:
-    """Right-panel detail view: profile + KPIs + trip history + invoice history."""
+    """Right-panel detail view: profile + KPIs + contacts + chart + timeline + trips + invoices + tags + payment."""
 
     def __init__(self, parent, db, service: ClientService, client_id: int, on_refresh_list=None):
         self.db = db
         self.service = service
         self.client_id = client_id
         self._on_refresh_list = on_refresh_list
+        self._chart_widget = None
 
         self.main = ctk.CTkScrollableFrame(parent, fg_color=Theme.BG,
                                            scrollbar_button_color=COLORS["border"])
         self.main.pack(fill="both", expand=True)
-
         self._build()
 
     def _build(self):
         dash = self.service.get_client_dashboard(self.client_id)
         client = dash.get("client", {})
+        contacts = dash.get("contacts", [])
+        tags = dash.get("tags", [])
 
         self._build_profile_section(client, dash)
         self._build_kpi_section(dash)
+
+        if contacts:
+            self._build_contacts_section(contacts)
+
+        self._build_tags_section(tags)
+
+        try:
+            self._build_revenue_chart()
+        except Exception:
+            pass
+
         self._build_trip_history(dash.get("recent_trips", []))
         self._build_invoice_section(dash)
+        self._build_payment_summary()
+
+        try:
+            self._build_timeline()
+        except Exception:
+            pass
 
     def _build_profile_section(self, client, dash):
         section = ctk.CTkFrame(self.main, fg_color=Theme.SURFACE, corner_radius=10)
@@ -268,10 +324,24 @@ class _ClientDetailPanel:
         ctk.CTkLabel(header, text=name, fg_color=Theme.SURFACE,
                      text_color=Theme.TEXT, font=FONTS["h1"]).pack(side="left")
 
-        status_text = "\u2713 Active" if client.get("is_active", 1) else "Inactive"
+        c_type = client.get("client_type", "")
+        if c_type:
+            ctk.CTkLabel(header, text=c_type, fg_color=Theme.SURFACE,
+                         text_color=COLORS["accent_text"], font=FONTS["label"]).pack(side="left", padx=8)
+
+        rating = client.get("rating") or 0
+        if rating:
+            stars = "\u2605" * int(rating) + "\u2606" * (5 - int(rating))
+            ctk.CTkLabel(header, text=stars, fg_color=Theme.SURFACE,
+                         text_color=COLORS["warning"], font=FONTS["small"]).pack(side="left", padx=5)
+
+        status_text = "Active" if client.get("is_active", 1) else "Inactive"
         status_color = COLORS["success"] if client.get("is_active", 1) else COLORS["text_muted"]
         ctk.CTkLabel(header, text=status_text, fg_color=Theme.SURFACE,
                      text_color=status_color, font=FONTS["label"]).pack(side="right", padx=5)
+
+        ActionButton(header, text=t("client.edit_button"), command=self._edit_client,
+                     fg_color=Theme.ACCENT_PRIMARY, text_color="#fff").pack(side="right", padx=5)
 
         fields_row = ctk.CTkFrame(section, fg_color=Theme.SURFACE)
         fields_row.pack(fill="x", padx=12, pady=(0, 10))
@@ -283,35 +353,35 @@ class _ClientDetailPanel:
             details.append(f"\U0001f4de {client['phone']}")
         if client.get("email"):
             details.append(f"\u2709 {client['email']}")
+        if client.get("vat_number"):
+            details.append(f"VAT: {client['vat_number']}")
 
-        for i, d in enumerate(details):
+        for d in details:
             ctk.CTkLabel(fields_row, text=d, fg_color=Theme.SURFACE,
                          text_color=Theme.MUTED, font=FONTS["small"]).pack(side="left", padx=5)
 
-        extra_info = []
-        if client.get("vat_number"):
-            extra_info.append(f"VAT: {client['vat_number']}")
+        extra = []
         if client.get("address"):
-            extra_info.append(client["address"])
+            extra.append(client["address"])
         if client.get("notes"):
-            extra_info.append(client["notes"])
+            extra.append(client["notes"])
+        if client.get("payment_terms_days"):
+            extra.append("Terms: {} days".format(client["payment_terms_days"]))
+        if client.get("credit_limit_eur"):
+            extra.append("Limit: \u20ac{:,}".format(int(client["credit_limit_eur"])))
 
-        for info in extra_info:
-            ctk.CTkLabel(fields_row, text=info, fg_color=Theme.SURFACE,
+        for e in extra:
+            ctk.CTkLabel(fields_row, text=e, fg_color=Theme.SURFACE,
                          text_color=COLORS["text_muted"], font=FONTS["small"]).pack(side="left", padx=5)
-
-        ActionButton(header, text=t("client.edit_button"), command=self._edit_client,
-                     fg_color=Theme.ACCENT_PRIMARY, text_color="#fff").pack(side="right", padx=5)
 
     def _edit_client(self):
         client = self.service.get_by_id(self.client_id)
-        _ClientFormDialog(self.main, self.service, client_data=client, on_save=self._rebuild)
+        _ClientFormDialog(self.main, self.service, client_data=client,
+                          on_save=self._on_refresh_list or (lambda: None))
 
     def _rebuild(self):
         for w in self.main.winfo_children():
             w.destroy()
-        if self._on_refresh_list:
-            self._on_refresh_list()
         self._build()
 
     def _kpi_card(self, parent, label, value, color=None):
@@ -354,9 +424,93 @@ class _ClientDetailPanel:
         f.pack(fill="x", padx=10, pady=(10, 2))
         ctk.CTkLabel(f, text=text, fg_color=Theme.BG,
                      text_color=Theme.ACCENT, font=FONTS["h3"]).pack(side="left")
-
         line = ctk.CTkFrame(f, fg_color=COLORS["border"], height=1)
         line.pack(side="left", fill="x", expand=True, padx=8)
+
+    def _build_contacts_section(self, contacts):
+        self._section_header(self.main, t("client.section_contacts"))
+        for c in contacts:
+            row = ctk.CTkFrame(self.main, fg_color=Theme.BG)
+            row.pack(fill="x", padx=15, pady=2)
+
+            name = c.get("full_name", "")
+            title = c.get("title", "")
+            primary = " \u2605" if c.get("is_primary") else ""
+            ctk.CTkLabel(row, text="{}{}".format(name, primary), fg_color=Theme.BG,
+                         text_color=Theme.TEXT, font=FONTS["body_bold"]).pack(side="left")
+
+            ctk.CTkLabel(row, text="  {}".format(title) if title else "", fg_color=Theme.BG,
+                         text_color=Theme.MUTED, font=FONTS["small"]).pack(side="left")
+
+            phone = c.get("phone", "")
+            email = c.get("email", "")
+            ctk.CTkLabel(row, text="{}  {}".format(phone, email) if phone or email else "",
+                         fg_color=Theme.BG, text_color=Theme.MUTED, font=FONTS["small"]).pack(side="left", padx=10)
+
+            ActionButton(row, text="Edit", command=lambda cid=c["id"]: self._edit_contact(cid),
+                         fg_color=Theme.SURFACE2, text_color=Theme.TEXT, width=8).pack(side="right", padx=2)
+            ActionButton(row, text="\u2716", command=lambda cid=c["id"]: self._delete_contact(cid),
+                         fg_color=Theme.DANGER, text_color="#fff", width=6).pack(side="right", padx=2)
+
+        ActionButton(self.main, text="+ Add Contact", command=self._add_contact,
+                     fg_color=Theme.SURFACE2, text_color=Theme.ACCENT).pack(anchor="w", padx=15, pady=5)
+
+    def _add_contact(self):
+        _ContactDialog(self.main, self.service, client_id=self.client_id, on_save=self._rebuild)
+
+    def _edit_contact(self, contact_id):
+        contacts = self.service.get_contacts(self.client_id)
+        ct_data = next((c for c in contacts if c["id"] == contact_id), None)
+        _ContactDialog(self.main, self.service, client_id=self.client_id, contact_data=ct_data, on_save=self._rebuild)
+
+    def _delete_contact(self, contact_id):
+        if messagebox.askyesno(t("common.confirm"), t("client.confirm_delete_contact")):
+            self.service.delete_contact(contact_id)
+            self._rebuild()
+
+    def _build_tags_section(self, tags):
+        self._section_header(self.main, t("client.section_tags"))
+        tags = [t_row.get("tag", t_row) for t_row in tags]
+        if not tags:
+            ctk.CTkLabel(self.main, text=t("client.no_tags"), fg_color=Theme.BG,
+                         text_color=Theme.MUTED, font=FONTS["small"]).pack(anchor="w", padx=15, pady=5)
+        else:
+            tag_row = ctk.CTkFrame(self.main, fg_color=Theme.BG)
+            tag_row.pack(fill="x", padx=15, pady=5)
+            for tag in tags:
+                chip = ctk.CTkFrame(tag_row, fg_color=COLORS["accent_dim"], corner_radius=6)
+                chip.pack(side="left", padx=2)
+                ctk.CTkLabel(chip, text=tag, fg_color=COLORS["accent_dim"],
+                             text_color=COLORS["accent_text"], font=FONTS["label"]).pack(side="left", padx=6, pady=2)
+                ctk.CTkLabel(chip, text="\u2716", fg_color=COLORS["accent_dim"],
+                             text_color=COLORS["accent_text"], font=FONTS["label"],
+                             cursor="hand2").pack(side="left", padx=(0, 4), pady=2)
+                chip.winfo_children()[-1].bind("<Button-1>", lambda e, t=tag: self._remove_tag(t))
+
+        add_frame = ctk.CTkFrame(self.main, fg_color=Theme.BG)
+        add_frame.pack(fill="x", padx=15, pady=2)
+        self._tag_entry = StyledEntry(add_frame, width=140, placeholder_text=t("client.tag_placeholder"))
+        self._tag_entry.pack(side="left", padx=2)
+        ActionButton(add_frame, text="+", command=self._add_tag,
+                     fg_color=Theme.SURFACE2, text_color=Theme.ACCENT, width=6).pack(side="left", padx=2)
+
+    def _add_tag(self):
+        tag = (self._tag_entry.get() or "").strip()
+        if tag:
+            self.service.add_tag(self.client_id, tag)
+            self._rebuild()
+
+    def _remove_tag(self, tag):
+        self.service.remove_tag(self.client_id, tag)
+        self._rebuild()
+
+    def _build_revenue_chart(self):
+        from ui.client_revenue_chart import ClientRevenueChart
+        self._section_header(self.main, t("client.section_chart"))
+        chart_frame = ctk.CTkFrame(self.main, fg_color=Theme.BG)
+        chart_frame.pack(fill="x", padx=10, pady=5)
+        self._chart_widget = ClientRevenueChart(chart_frame, self.service, self.client_id)
+        self._chart_widget.pack(fill="x")
 
     def _build_trip_history(self, trips):
         self._section_header(self.main, t("client.section_trips"))
@@ -437,6 +591,30 @@ class _ClientDetailPanel:
         tree.pack(side="left", fill="both", expand=True)
         sb.pack(side="right", fill="y")
 
+    def _build_payment_summary(self):
+        try:
+            pay = self.service.get_payment_summary(self.client_id)
+            if not pay or not pay.get("invoice_count"):
+                return
+            self._section_header(self.main, t("client.section_payment"))
+            row = ctk.CTkFrame(self.main, fg_color=Theme.BG)
+            row.pack(fill="x", padx=15, pady=5)
+            self._kpi_card(row, "Billed", f"\u20ac {pay['total_billed']:,.0f}")
+            self._kpi_card(row, "Paid", f"\u20ac {pay['total_paid']:,.0f}", COLORS["success"])
+            self._kpi_card(row, "Unpaid", f"\u20ac {pay['unpaid']:,.0f}", COLORS["warning"])
+            self._kpi_card(row, "Overdue", f"\u20ac {pay['overdue']:,.0f}",
+                          COLORS["danger"] if pay["overdue"] > 0 else COLORS["success"])
+        except Exception:
+            pass
+
+    def _build_timeline(self):
+        from ui.client_activity_timeline import ClientActivityTimeline
+        self._section_header(self.main, t("client.section_timeline"))
+        tl_frame = ctk.CTkFrame(self.main, fg_color=Theme.BG)
+        tl_frame.pack(fill="both", padx=15, pady=5)
+        tl = ClientActivityTimeline(tl_frame, self.service, self.client_id)
+        tl.pack(fill="x")
+
 
 class _ClientFormDialog:
     def __init__(self, parent, service: ClientService, client_data=None, on_save=None):
@@ -447,7 +625,7 @@ class _ClientFormDialog:
 
         self.win = ctk.CTkToplevel(parent)
         self.win.title(t("client.edit_title") if self._editing else t("client.new_title"))
-        self.win.geometry("450x480")
+        self.win.geometry("500x700")
         self.win.configure(fg_color=Theme.BG)
         self.win.grab_set()
 
@@ -462,6 +640,11 @@ class _ClientFormDialog:
             ("email", "client.field_email", False),
             ("address", "client.field_address", False),
             ("vat_number", "client.field_vat", False),
+            ("client_type", "client.field_type", False),
+            ("payment_terms_days", "client.field_payment_terms", False),
+            ("credit_limit_eur", "client.field_credit_limit", False),
+            ("default_rate_per_km", "client.field_default_rate", False),
+            ("rating", "client.field_rating", False),
             ("notes", "client.field_notes", False),
         ]
 
@@ -469,23 +652,61 @@ class _ClientFormDialog:
         for key, i18n_key, required in fields:
             ctk.CTkLabel(body, text=t(i18n_key), fg_color=Theme.BG,
                          text_color=Theme.TEXT, font=FONTS["label"]).pack(anchor="w", pady=(8, 2))
-            entry = StyledEntry(body)
-            entry.pack(fill="x", pady=(0, 4))
-            self.entries[key] = entry
-            if client_data:
-                val = client_data.get(key) or ""
-                entry.insert(0, str(val))
+            if key == "client_type":
+                entry = ctk.CTkComboBox(body, values=["", "Shipper", "Forwarder", "Broker", "Direct", "Other"],
+                                        font=FONTS["body"])
+                entry.pack(fill="x", pady=(0, 4))
+                if client_data:
+                    entry.set(client_data.get(key, "") or "")
+                self.entries[key] = entry
+            else:
+                entry = StyledEntry(body)
+                entry.pack(fill="x", pady=(0, 4))
+                self.entries[key] = entry
+                if client_data:
+                    val = client_data.get(key) or ""
+                    entry.insert(0, str(val))
 
         ActionButton(body, text=t("client.save_button"), command=self._save,
                      fg_color=Theme.ACCENT_SUCCESS, text_color="#fff").pack(pady=(15, 0))
 
     def _save(self):
-        name = self.entries["name"].get().strip()
+        name = self.entries["name"]
+        if isinstance(name, ctk.CTkComboBox):
+            name = name.get()
+        else:
+            name = name.get()
+        name = name.strip()
         if not name:
             messagebox.showwarning(t("common.warning"), t("client.name_required"))
             return
 
-        data = {k: v.get().strip() for k, v in self.entries.items()}
+        data = {}
+        for k, v in self.entries.items():
+            val = v.get() if hasattr(v, "get") else str(v)
+            if isinstance(val, str):
+                val = val.strip()
+            if k == "payment_terms_days":
+                try:
+                    val = int(val) if val else 30
+                except ValueError:
+                    val = 30
+            if k == "credit_limit_eur":
+                try:
+                    val = float(val) if val else 0
+                except ValueError:
+                    val = 0
+            if k == "default_rate_per_km":
+                try:
+                    val = float(val) if val else None
+                except ValueError:
+                    val = None
+            if k == "rating":
+                try:
+                    val = int(val) if val else None
+                except ValueError:
+                    val = None
+            data[k] = val
 
         if self._editing:
             self.service.update(self.client_data["id"], **data)
@@ -498,4 +719,137 @@ class _ClientFormDialog:
 
         if self.on_save:
             self.on_save()
+        self.win.destroy()
+
+
+class _ContactDialog:
+    def __init__(self, parent, service: ClientService, client_id: int, contact_data=None, on_save=None):
+        self.service = service
+        self.client_id = client_id
+        self.contact_data = contact_data
+        self.on_save = on_save
+        self._editing = contact_data is not None
+
+        self.win = ctk.CTkToplevel(parent)
+        self.win.title(t("client.edit_contact") if self._editing else t("client.new_contact"))
+        self.win.geometry("400x400")
+        self.win.configure(fg_color=Theme.BG)
+        self.win.grab_set()
+
+        body = ctk.CTkFrame(self.win, fg_color=Theme.BG)
+        body.pack(fill="both", expand=True, padx=20, pady=20)
+
+        fields = [
+            ("full_name", t("client.field_full_name")),
+            ("title", t("client.field_title")),
+            ("phone", t("client.field_phone")),
+            ("email", t("client.field_email")),
+            ("contact_type", t("client.field_contact_type")),
+        ]
+
+        self.entries = {}
+        for key, label in fields:
+            ctk.CTkLabel(body, text=label, fg_color=Theme.BG,
+                         text_color=Theme.TEXT, font=FONTS["label"]).pack(anchor="w", pady=(8, 2))
+            if key == "contact_type":
+                entry = ctk.CTkComboBox(body, values=["primary", "billing", "operations", "management", "other"],
+                                        font=FONTS["body"])
+                entry.pack(fill="x", pady=(0, 4))
+                if contact_data:
+                    entry.set(contact_data.get(key, "operations"))
+                else:
+                    entry.set("operations")
+            else:
+                entry = StyledEntry(body)
+                entry.pack(fill="x", pady=(0, 4))
+                if contact_data:
+                    val = contact_data.get(key) or ""
+                    entry.insert(0, str(val))
+            self.entries[key] = entry
+
+        ActionButton(body, text=t("client.save_button"), command=self._save,
+                     fg_color=Theme.ACCENT_SUCCESS, text_color="#fff").pack(pady=(15, 0))
+
+    def _save(self):
+        name = self.entries["full_name"]
+        name_val = name.get() if hasattr(name, "get") else str(name)
+        name_val = name_val.strip()
+        if not name_val:
+            messagebox.showwarning(t("common.warning"), t("client.name_required"))
+            return
+
+        data = {}
+        for k, v in self.entries.items():
+            val = v.get() if hasattr(v, "get") else str(v)
+            if isinstance(val, str):
+                val = val.strip()
+            data[k] = val
+
+        if self._editing:
+            self.service.update_contact(self.contact_data["id"], **data)
+        else:
+            self.service.add_contact(self.client_id, **data)
+
+        if self.on_save:
+            self.on_save()
+        self.win.destroy()
+
+
+class _MergeDialog:
+    def __init__(self, parent, service: ClientService, source_id: int, on_done=None):
+        self.service = service
+        self.source_id = source_id
+        self.on_done = on_done
+
+        self.win = ctk.CTkToplevel(parent)
+        self.win.title(t("client.merge_title"))
+        self.win.geometry("450x300")
+        self.win.configure(fg_color=Theme.BG)
+        self.win.grab_set()
+
+        body = ctk.CTkFrame(self.win, fg_color=Theme.BG)
+        body.pack(fill="both", expand=True, padx=20, pady=20)
+
+        source = service.get_by_id(source_id)
+        ctk.CTkLabel(body, text=t("client.merge_source").format(name=source["name"] if source else "?"),
+                     fg_color=Theme.BG, text_color=Theme.TEXT, font=FONTS["body_bold"]).pack(anchor="w", pady=5)
+
+        ctk.CTkLabel(body, text=t("client.merge_target_label"), fg_color=Theme.BG,
+                     text_color=Theme.TEXT, font=FONTS["label"]).pack(anchor="w", pady=(15, 2))
+
+        all_clients = service.get_all_with_revenue(include_inactive=True)
+        names = [c["name"] for c in all_clients if c["id"] != source_id]
+        self._name_to_id = {c["name"]: c["id"] for c in all_clients if c["id"] != source_id}
+
+        self._target_combo = ctk.CTkComboBox(body, values=names, font=FONTS["body"])
+        self._target_combo.pack(fill="x", pady=5)
+        if names:
+            self._target_combo.set(names[0])
+
+        warn = ctk.CTkLabel(body, text=t("client.merge_warning"),
+                            fg_color=Theme.BG, text_color=COLORS["warning"], font=FONTS["small"],
+                            wraplength=400, justify="left")
+        warn.pack(anchor="w", pady=(10, 5))
+
+        ActionButton(body, text=t("client.merge_execute"), command=self._execute,
+                     fg_color=Theme.DANGER, text_color="#fff").pack(pady=(10, 0))
+
+    def _execute(self):
+        target_name = self._target_combo.get()
+        target_id = self._name_to_id.get(target_name)
+        if not target_id:
+            return
+        if not messagebox.askyesno(t("client.merge_title"),
+                                   t("client.merge_final_confirm").format(
+                                       target=target_name, source=self.service.get_by_id(self.source_id)["name"])):
+            return
+        try:
+            result = self.service.merge_clients(self.source_id, target_id)
+            messagebox.showinfo(t("client.merge_title"),
+                                "Moved: {} trips, {} invoices, {} contacts".format(
+                                    result["trips"], result["invoices"], result["contacts"]))
+        except Exception as ex:
+            messagebox.showerror(t("common.error"), str(ex))
+        if self.on_done:
+            self.on_done()
         self.win.destroy()

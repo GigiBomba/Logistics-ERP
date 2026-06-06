@@ -22,7 +22,11 @@ class InMemoryDB:
             TABLE_TRUCK_HEALTH_SCORES,
             TABLE_TACHO_IMPORTS, TABLE_TACHO_DRIVER_ACTIVITY,
             TABLE_TACHO_VEHICLE_DATA,
+            TABLE_CLIENT_CONTACTS, TABLE_CLIENT_TAGS,
             ALTER_TRIPS_ADD_DRIVER_ID, ALTER_TRIPS_ADD_TRUCK_ID,
+            ALTER_CLIENTS_ADD_TYPE, ALTER_CLIENTS_ADD_PAYMENT_TERMS,
+            ALTER_CLIENTS_ADD_CREDIT_LIMIT, ALTER_CLIENTS_ADD_DEFAULT_RATE,
+            ALTER_CLIENTS_ADD_RATING,
         )
         self.conn.execute(TABLE_TRIPS)
         self.conn.execute(TABLE_TRUCKS)
@@ -44,6 +48,8 @@ class InMemoryDB:
         self.conn.execute(TABLE_TACHO_IMPORTS)
         self.conn.execute(TABLE_TACHO_DRIVER_ACTIVITY)
         self.conn.execute(TABLE_TACHO_VEHICLE_DATA)
+        self.conn.execute(TABLE_CLIENT_CONTACTS)
+        self.conn.execute(TABLE_CLIENT_TAGS)
         # Apply migrations (columns added after initial schema)
         self.conn.execute(ALTER_TRIPS_ADD_DRIVER_ID)
         self.conn.execute(ALTER_TRIPS_ADD_TRUCK_ID)
@@ -51,6 +57,11 @@ class InMemoryDB:
         self.conn.execute("ALTER TABLE trips ADD COLUMN context_json TEXT")
         self.conn.execute("ALTER TABLE trips ADD COLUMN route_history_v2_id INTEGER REFERENCES route_history_v2(id)")
         self.conn.execute("ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL")
+        self.conn.execute(ALTER_CLIENTS_ADD_TYPE)
+        self.conn.execute(ALTER_CLIENTS_ADD_PAYMENT_TERMS)
+        self.conn.execute(ALTER_CLIENTS_ADD_CREDIT_LIMIT)
+        self.conn.execute(ALTER_CLIENTS_ADD_DEFAULT_RATE)
+        self.conn.execute(ALTER_CLIENTS_ADD_RATING)
         self.conn.commit()
 
     @staticmethod

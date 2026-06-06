@@ -28,6 +28,7 @@ class KanbanColumn(ctk.CTkFrame):
                  accent_color: str = None, on_card_click=None,
                  on_drag_start=None,
                  on_assign_truck=None, on_assign_driver=None,
+                 on_select_changed=None, on_assign_both=None,
                  show_load_older: bool = False,
                  on_load_older=None, on_retry=None, **kwargs):
         super().__init__(parent, fg_color=self.COLUMN_BG, **kwargs)
@@ -38,6 +39,8 @@ class KanbanColumn(ctk.CTkFrame):
         self._on_drag_start = on_drag_start
         self._on_assign_truck = on_assign_truck
         self._on_assign_driver = on_assign_driver
+        self._on_select_changed = on_select_changed
+        self._on_assign_both = on_assign_both
         self._show_load_older = show_load_older
         self._on_load_older = on_load_older
         self._on_retry = on_retry
@@ -165,7 +168,9 @@ class KanbanColumn(ctk.CTkFrame):
                 card = TripCard(self._scroll_frame, trip, on_click=self._on_card_click,
                                on_drag_start=self._on_drag_start,
                                on_assign_truck=self._on_assign_truck,
-                               on_assign_driver=self._on_assign_driver)
+                               on_assign_driver=self._on_assign_driver,
+                               on_select_changed=self._on_select_changed,
+                               on_assign_both=self._on_assign_both)
                 card.pack(fill="x", pady=(0, 6), padx=2)
                 new_cards.append(card)
 

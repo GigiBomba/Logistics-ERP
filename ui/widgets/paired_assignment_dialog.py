@@ -3,7 +3,6 @@ import tkinter as tk
 import customtkinter as ctk
 from services.i18n import t
 from ui.theme import COLORS, FONTS
-from ui.styles import Theme
 
 
 class PairedAssignmentDialog(ctk.CTkToplevel):
@@ -14,7 +13,7 @@ class PairedAssignmentDialog(ctk.CTkToplevel):
                  on_assign_truck=None, on_assign_driver=None):
         super().__init__(parent)
         self.title(t("dispatch_board.pair_title"))
-        self.geometry("600x500")
+        self.geometry("600x520")
         self.configure(fg_color=COLORS["bg_surface"])
         self.resizable(False, False)
         self.attributes("-topmost", True)
@@ -30,14 +29,28 @@ class PairedAssignmentDialog(ctk.CTkToplevel):
         self._selected_driver = None
         self._truck_widgets = {}
         self._driver_widgets = {}
+        self._both_btn = None
+        self._truck_btn = None
+        self._driver_btn = None
 
         self._build()
+        self._auto_select_first_available()
         self.after(100, lambda: self.focus_set())
         self.protocol("WM_DELETE_WINDOW", self.destroy)
 
+    def _auto_select_first_available(self):
+        for i, item in enumerate(self._truck_items):
+            if item.get("available", True):
+                self._select_truck(i)
+                break
+        for i, item in enumerate(self._driver_items):
+            if item.get("available", True):
+                self._select_driver(i)
+                break
+
     def _build(self):
         hdr = ctk.CTkFrame(self, fg_color="transparent")
-        hdr.pack(fill="x", padx=16, pady=(12, 8))
+        hdr.pack(fill="x", padx=16, pady=(12, 4))
         ctk.CTkLabel(hdr, text=self._trip_data.get("trip_id", ""),
                      fg_color="transparent", text_color=COLORS["text_primary"],
                      font=FONTS["h2"]).pack(side="left")
@@ -45,8 +58,13 @@ class PairedAssignmentDialog(ctk.CTkToplevel):
         ctk.CTkLabel(hdr, text=route, fg_color="transparent",
                      text_color=COLORS["text_muted"], font=FONTS["small"]).pack(side="left", padx=12)
 
+        hint = ctk.CTkLabel(self, text="Click a truck and a driver, then press Assign Both.",
+                           fg_color="transparent", text_color=COLORS["text_muted"],
+                           font=FONTS["label"])
+        hint.pack(anchor="w", padx=16, pady=(0, 4))
+
         lists_frame = ctk.CTkFrame(self, fg_color="transparent")
-        lists_frame.pack(fill="both", expand=True, padx=12, pady=(4, 8))
+        lists_frame.pack(fill="both", expand=True, padx=12, pady=(2, 8))
 
         lists_frame.columnconfigure(0, weight=1)
         lists_frame.columnconfigure(1, weight=1)
@@ -72,20 +90,23 @@ class PairedAssignmentDialog(ctk.CTkToplevel):
         btn_row.pack(fill="x", side="bottom")
         btn_row.pack_propagate(False)
 
-        ctk.CTkButton(btn_row, text=t("dispatch_board.pair_assign_both"),
+        self._both_btn = ctk.CTkButton(btn_row, text=t("dispatch_board.pair_assign_both"),
                      fg_color=COLORS["accent"], text_color="#ffffff",
                      font=FONTS["body_bold"], cursor="hand2", height=30,
-                     command=self._do_assign_both).pack(side="right", padx=(6, 12), pady=9)
+                     command=self._do_assign_both)
+        self._both_btn.pack(side="right", padx=(6, 12), pady=9)
 
-        ctk.CTkButton(btn_row, text=t("dispatch_board.pair_assign_truck_only"),
+        self._truck_btn = ctk.CTkButton(btn_row, text=t("dispatch_board.pair_assign_truck_only"),
                      fg_color="transparent", text_color=COLORS["text_secondary"],
                      font=FONTS["body_bold"], cursor="hand2", height=30,
-                     command=self._do_assign_truck_only).pack(side="right", padx=6, pady=9)
+                     command=self._do_assign_truck_only)
+        self._truck_btn.pack(side="right", padx=6, pady=9)
 
-        ctk.CTkButton(btn_row, text=t("dispatch_board.pair_assign_driver_only"),
+        self._driver_btn = ctk.CTkButton(btn_row, text=t("dispatch_board.pair_assign_driver_only"),
                      fg_color="transparent", text_color=COLORS["text_secondary"],
                      font=FONTS["body_bold"], cursor="hand2", height=30,
-                     command=self._do_assign_driver_only).pack(side="right", padx=6, pady=9)
+                     command=self._do_assign_driver_only)
+        self._driver_btn.pack(side="right", padx=6, pady=9)
 
         ctk.CTkButton(btn_row, text=t("dispatch_board.detail_cancel"),
                      fg_color=COLORS["bg_elevated"], text_color=COLORS["text_muted"],
@@ -101,27 +122,23 @@ class PairedAssignmentDialog(ctk.CTkToplevel):
                                          scrollbar_button_color=COLORS["border"])
         scroll.pack(fill="both", expand=True, padx=4, pady=(0, 4))
 
-        colors = {
-            "free": COLORS["success"],
-            "returning": COLORS["warning"],
-            "on_trip": COLORS["danger"],
-            "blocked": COLORS["danger"],
-        }
-
         for idx, item in enumerate(items):
             row = ctk.CTkFrame(scroll, fg_color=COLORS["bg_surface"], corner_radius=4, cursor="hand2")
             row.pack(fill="x", pady=1)
-            item_id = idx
-            widget_map[item_id] = row
+            widget_map[idx] = row
 
             avail = item.get("available", True)
             dot_color = COLORS["success"] if avail else COLORS["danger"]
-            if not avail and item.get("status_text", ""):
-                pass
 
             dot = ctk.CTkFrame(row, fg_color=dot_color, width=8, height=8, corner_radius=4)
             dot.pack(side="left", padx=(6, 4), pady=8)
             dot.pack_propagate(False)
+
+            score = item.get("score", 0)
+            if avail and score > 70:
+                ctk.CTkLabel(row, text="\u2b50", fg_color="transparent",
+                            text_color=COLORS["warning"], font=FONTS["label"]).pack(
+                    side="left", padx=(0, 2))
 
             fg = COLORS["text_primary"] if avail else COLORS["text_muted"]
             ctk.CTkLabel(row, text=item.get("label", "")[:24], fg_color="transparent",
@@ -138,45 +155,56 @@ class PairedAssignmentDialog(ctk.CTkToplevel):
                             text_color=COLORS["warning"], font=FONTS["label"], anchor="e").pack(
                     side="right", padx=(4, 6))
 
-            if avail:
-                row.bind("<Enter>", lambda e, r=row: r.configure(fg_color=COLORS["bg_elevated"]))
-                row.bind("<Leave>", lambda e, r=row: r.configure(fg_color=COLORS["bg_surface"]))
-                row.bind("<Button-1>", lambda e, i=idx: select_fn(i))
+            row.bind("<Button-1>", lambda e, i=idx: select_fn(i))
+
+            for child in row.winfo_children():
+                child.bind("<Button-1>", lambda e, i=idx: select_fn(i))
+                for subchild in child.winfo_children():
+                    subchild.bind("<Button-1>", lambda e, i=idx: select_fn(i))
 
     def _select_truck(self, idx):
-        for wid in self._truck_widgets.values():
-            wid.configure(fg_color=COLORS["bg_surface"])
-        self._truck_widgets[idx].configure(fg_color=COLORS["accent_dim"])
         self._selected_truck = idx
+        for i, wid in self._truck_widgets.items():
+            wid.configure(fg_color=COLORS["accent_dim"] if i == idx else COLORS["bg_surface"])
+        self._update_buttons()
 
     def _select_driver(self, idx):
-        for wid in self._driver_widgets.values():
-            wid.configure(fg_color=COLORS["bg_surface"])
-        self._driver_widgets[idx].configure(fg_color=COLORS["accent_dim"])
         self._selected_driver = idx
+        for i, wid in self._driver_widgets.items():
+            wid.configure(fg_color=COLORS["accent_dim"] if i == idx else COLORS["bg_surface"])
+        self._update_buttons()
+
+    def _update_buttons(self):
+        has_truck = self._selected_truck is not None
+        has_driver = self._selected_driver is not None
+        if self._both_btn:
+            self._both_btn.configure(state="normal" if has_truck and has_driver else "disabled")
+        if self._truck_btn:
+            self._truck_btn.configure(state="normal" if has_truck else "disabled")
+        if self._driver_btn:
+            self._driver_btn.configure(state="normal" if has_driver else "disabled")
 
     def _do_assign_both(self):
-        truck_id = None
-        driver_id = None
-        if self._selected_truck is not None and self._selected_truck < len(self._truck_items):
-            truck_id = self._truck_items[self._selected_truck].get("id")
-        if self._selected_driver is not None and self._selected_driver < len(self._driver_items):
-            driver_id = self._driver_items[self._selected_driver].get("id")
-
+        if self._selected_truck is None or self._selected_driver is None:
+            return
+        truck_id = self._truck_items[self._selected_truck].get("id")
+        driver_id = self._driver_items[self._selected_driver].get("id")
         if self._on_assign_both:
             self._on_assign_both(truck_id, driver_id)
         self.destroy()
 
     def _do_assign_truck_only(self):
-        if self._selected_truck is not None and self._selected_truck < len(self._truck_items):
-            truck_id = self._truck_items[self._selected_truck].get("id")
-            if self._on_assign_truck:
-                self._on_assign_truck(truck_id)
+        if self._selected_truck is None:
+            return
+        truck_id = self._truck_items[self._selected_truck].get("id")
+        if self._on_assign_truck:
+            self._on_assign_truck(truck_id)
         self.destroy()
 
     def _do_assign_driver_only(self):
-        if self._selected_driver is not None and self._selected_driver < len(self._driver_items):
-            driver_id = self._driver_items[self._selected_driver].get("id")
-            if self._on_assign_driver:
-                self._on_assign_driver(driver_id)
+        if self._selected_driver is None:
+            return
+        driver_id = self._driver_items[self._selected_driver].get("id")
+        if self._on_assign_driver:
+            self._on_assign_driver(driver_id)
         self.destroy()
