@@ -396,7 +396,12 @@
     "test_connection": "Test Connection",
     "email_logs": "Email Logs",
     "test_success": "Test successful!",
-    "test_failed": "Test failed: {}"
+    "test_failed": "Test failed: {}",
+    "section_branding": "BRANDING",
+    "field_logo": "Company Logo:",
+    "field_color": "Company Color:",
+    "field_signature": "Signature Image:",
+    "field_stamp": "Stamp Image:"
   },
   "edit_trip": {
     "title": "Edit Trip #{}",

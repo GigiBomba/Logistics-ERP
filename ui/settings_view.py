@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 import tkinter as tk
 import customtkinter as ctk
 from tkinter import ttk, messagebox
@@ -114,6 +114,9 @@ class SettingsView:
         # ── Company ──
         self._build_section_company(scroll)
 
+        # ── Branding ──
+        self._build_section_branding(scroll)
+
         # ── Preferences ──
         self._build_section_preferences(scroll)
 
@@ -171,6 +174,93 @@ class SettingsView:
             e.insert(0, conf.get(key, ""))
             e.pack(fill="x")
             self.company_inputs[key] = e
+
+    def _build_section_branding(self, parent):
+        card = self._section_card(parent)
+        self._section_heading(card, "settings.section_branding", emoji="\U0001f3a8 ")
+
+        conf = load_company_config()
+        self.branding_inputs = {}
+
+        # Logo
+        row = self._field_row(card, "settings.field_logo")
+        logo_row = ctk.CTkFrame(row, fg_color="transparent")
+        logo_row.pack(fill="x")
+        e_logo = StyledEntry(logo_row)
+        e_logo.insert(0, conf.get("logo_path", ""))
+        e_logo.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(logo_row, text="...", width=30, height=28,
+                      font=FONTS["small"], fg_color=COLORS["bg_elevated"],
+                      hover_color=COLORS["border_hover"],
+                      text_color=COLORS["text_primary"],
+                      command=lambda: self._browse_file(e_logo)).pack(side="left", padx=(6, 0))
+        self.branding_inputs["logo_path"] = e_logo
+
+        # Company Color
+        row = self._field_row(card, "settings.field_color")
+        color_row = ctk.CTkFrame(row, fg_color="transparent")
+        color_row.pack(fill="x")
+        e_color = StyledEntry(color_row)
+        e_color.insert(0, conf.get("company_color", "#6366f1"))
+        e_color.pack(side="left", fill="x", expand=True)
+        swatch = ctk.CTkFrame(color_row, width=24, height=24,
+                              fg_color=conf.get("company_color", "#6366f1"),
+                              corner_radius=4)
+        swatch.pack(side="left", padx=(6, 4))
+        ctk.CTkButton(color_row, text=t("invoice_editor.pick_color"), width=50, height=28,
+                      font=FONTS["small"], fg_color=COLORS["bg_elevated"],
+                      hover_color=COLORS["border_hover"],
+                      text_color=COLORS["text_primary"],
+                      command=lambda e=e_color, s=swatch: self._pick_brand_color(e, s)).pack(
+            side="left", padx=(4, 0))
+        self.branding_inputs["company_color"] = e_color
+        self._brand_color_swatch = swatch
+
+        # Signature
+        row = self._field_row(card, "settings.field_signature")
+        sig_row = ctk.CTkFrame(row, fg_color="transparent")
+        sig_row.pack(fill="x")
+        e_sig = StyledEntry(sig_row)
+        e_sig.insert(0, conf.get("signature_path", ""))
+        e_sig.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(sig_row, text="...", width=30, height=28,
+                      font=FONTS["small"], fg_color=COLORS["bg_elevated"],
+                      hover_color=COLORS["border_hover"],
+                      text_color=COLORS["text_primary"],
+                      command=lambda: self._browse_file(e_sig)).pack(side="left", padx=(6, 0))
+        self.branding_inputs["signature_path"] = e_sig
+
+        # Stamp
+        row = self._field_row(card, "settings.field_stamp")
+        stamp_row = ctk.CTkFrame(row, fg_color="transparent")
+        stamp_row.pack(fill="x")
+        e_stamp = StyledEntry(stamp_row)
+        e_stamp.insert(0, conf.get("stamp_path", ""))
+        e_stamp.pack(side="left", fill="x", expand=True)
+        ctk.CTkButton(stamp_row, text="...", width=30, height=28,
+                      font=FONTS["small"], fg_color=COLORS["bg_elevated"],
+                      hover_color=COLORS["border_hover"],
+                      text_color=COLORS["text_primary"],
+                      command=lambda: self._browse_file(e_stamp)).pack(side="left", padx=(6, 0))
+        self.branding_inputs["stamp_path"] = e_stamp
+
+    def _browse_file(self, entry):
+        from tkinter import filedialog
+        path = filedialog.askopenfilename(
+            title=t("invoice_editor.select_logo"),
+            filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.bmp;*.gif"),
+                       ("All files", "*.*")])
+        if path:
+            entry.delete(0, "end")
+            entry.insert(0, path)
+
+    def _pick_brand_color(self, entry, swatch):
+        import tkinter.colorchooser as cc
+        result = cc.askcolor(color=entry.get(), title=t("invoice_editor.pick_color_title"))
+        if result and result[1]:
+            entry.delete(0, "end")
+            entry.insert(0, result[1])
+            swatch.configure(fg_color=result[1])
 
     def _build_section_preferences(self, parent):
         card = self._section_card(parent)
@@ -381,6 +471,10 @@ class SettingsView:
 
     def _save_all(self):
         company_data = {k: v.get() for k, v in self.company_inputs.items()}
+        # Include branding fields
+        if hasattr(self, 'branding_inputs'):
+            for k, e in self.branding_inputs.items():
+                company_data[k] = e.get()
         save_company_config(company_data)
 
         self._on_lang_changed()

@@ -790,6 +790,20 @@ class InvoiceEditor(I18nMixin):
         self._company_address.set(conf.get("address", ""))
         self._company_phone.set(conf.get("phone", ""))
         self._company_email.set(conf.get("email", ""))
+        # Branding defaults from settings
+        logo = conf.get("logo_path", "")
+        if logo:
+            self._logo_path.set(logo)
+            self._update_logo_preview(logo)
+        color = conf.get("company_color", COLORS["accent"])
+        if color:
+            self._company_color.set(color)
+        sig = conf.get("signature_path", "")
+        if sig:
+            self._signature_path.set(sig)
+        stamp = conf.get("stamp_path", "")
+        if stamp:
+            self._stamp_path.set(stamp)
 
     def _load_clients(self):
         try:

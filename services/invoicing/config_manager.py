@@ -13,7 +13,11 @@ DEFAULT_CONFIG = {
     "reg_number": t("invoice_pdf.default_reg"),
     "address": t("invoice_pdf.default_address"),
     "phone": t("invoice_pdf.default_phone"),
-    "email": t("invoice_pdf.default_email")
+    "email": t("invoice_pdf.default_email"),
+    "logo_path": "",
+    "company_color": "#6366f1",
+    "signature_path": "",
+    "stamp_path": "",
 }
 
 def load_company_config():
