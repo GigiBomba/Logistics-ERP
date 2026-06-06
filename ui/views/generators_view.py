@@ -113,15 +113,23 @@ class GeneratorsView(ctk.CTkFrame):
 
         self._refresh_trip_lists()
 
-    def _section_card(self, parent):
-        card = ctk.CTkFrame(parent, fg_color=COLORS["bg_surface"], corner_radius=8)
-        card.pack(fill="x", pady=(0, S["3"]))
+    def _section_card(self, parent, accent_color=None):
+        """Modern card with optional colored left accent border."""
+        accent = accent_color or COLORS["accent"]
+        outer = ctk.CTkFrame(parent, fg_color=accent, corner_radius=10)
+        outer.pack(fill="x", pady=(0, S["4"]))
+        # Inner card with left margin to create accent stripe effect
+        card = ctk.CTkFrame(outer, fg_color=COLORS["bg_surface"], corner_radius=0)
+        card.pack(fill="both", expand=True, padx=(3, 0))
         return card
 
-    def _section_label(self, parent, text):
-        ctk.CTkLabel(parent, text=text, font=FONTS["label"],
-                     text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", padx=S["4"], pady=(S["4"], 0))
+    def _section_label(self, parent, text, icon=""):
+        """Section header with optional icon."""
+        lbl = ctk.CTkLabel(parent, text=f"{icon}  {text}" if icon else text,
+                           font=FONTS["label"],
+                           text_color=COLORS["text_primary"],
+                           anchor="w")
+        lbl.pack(anchor="w", padx=S["4"], pady=(S["4"], S["1"]))
 
     def _entry(self, parent, placeholder="", height=32):
         e = ctk.CTkEntry(parent, placeholder_text=placeholder,
@@ -152,8 +160,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Language Selectors ──────────────────────────────────────────
 
     def _build_language_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, "CMR Languages / Limbi CMR")
+        card = self._section_card(parent, accent_color=COLORS["info"])
+        self._section_label(card, "CMR Languages / Limbi CMR", icon="\U0001F310")
         row = ctk.CTkFrame(card, fg_color="transparent")
         row.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
         row.columnconfigure(0, weight=1)
@@ -199,8 +207,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Trip Selection ──────────────────────────────────────────────
 
     def _build_trip_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, t("generators.cmr_trip_select"))
+        card = self._section_card(parent, accent_color=COLORS["warning"])
+        self._section_label(card, t("generators.cmr_trip_select"), icon="\U0001F68C")
         sel = ctk.CTkFrame(card, fg_color="transparent")
         sel.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
         self._cmr_trip_combo = ctk.CTkComboBox(
@@ -223,8 +231,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Consignment Parties ─────────────────────────────────────────
 
     def _build_consignment_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, "Consignment Parties")
+        card = self._section_card(parent, accent_color=COLORS["success"])
+        self._section_label(card, "Consignment Parties", icon="\U0001F465")
 
         cols = ctk.CTkFrame(card, fg_color="transparent")
         cols.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
@@ -338,8 +346,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Transport Details ───────────────────────────────────────────
 
     def _build_transport_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, "Transport Details")
+        card = self._section_card(parent, accent_color=COLORS["info"])
+        self._section_label(card, "Transport Details", icon="\U0001F6E3")
         cols = ctk.CTkFrame(card, fg_color="transparent")
         cols.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
         cols.columnconfigure(0, weight=1)
@@ -396,8 +404,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Cargo Details ──────────────────────────────────────────────
 
     def _build_cargo_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, "Cargo Details")
+        card = self._section_card(parent, accent_color=COLORS["warning"])
+        self._section_label(card, "Cargo Details", icon="\U0001F4E6")
         pf = ctk.CTkFrame(card, fg_color="transparent")
         pf.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
 
@@ -437,8 +445,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Instructions & Reservations ─────────────────────────────────
 
     def _build_instructions_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, "Instructions & Reservations")
+        card = self._section_card(parent, accent_color=COLORS["info"])
+        self._section_label(card, "Instructions & Reservations", icon="\U0001F4CB")
 
         self._cmr_instructions = ctk.CTkTextbox(card, height=40,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
@@ -481,7 +489,7 @@ class GeneratorsView(ctk.CTkFrame):
     # ── ADR Section ────────────────────────────────────────────────
 
     def _build_adr_section(self, parent):
-        self._adr_card = self._section_card(parent)
+        self._adr_card = self._section_card(parent, accent_color=COLORS["danger"])
         header = ctk.CTkFrame(self._adr_card, fg_color="transparent")
         header.pack(fill="x", padx=S["4"], pady=(S["4"], 0))
         self._adr_toggle_var = tk.BooleanVar(value=False)
@@ -490,7 +498,8 @@ class GeneratorsView(ctk.CTkFrame):
             variable=self._adr_toggle_var,
             command=self._on_adr_toggle,
             font=FONTS["body"], text_color=COLORS["text_primary"],
-            fg_color=COLORS["accent"],
+            fg_color=COLORS["danger"],
+            hover_color=COLORS.get("danger_hover", COLORS["danger"]),
         )
         self._adr_toggle.pack(side="left")
 
@@ -559,8 +568,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Successive Carriers ─────────────────────────────────────────
 
     def _build_successive_section(self, parent):
-        self._succ_card = self._section_card(parent)
-        self._section_label(self._succ_card, "Successive Carriers (Sub-contracted)")
+        self._succ_card = self._section_card(parent, accent_color=COLORS["info"])
+        self._section_label(self._succ_card, "Successive Carriers (Sub-contracted)", icon="\U0001F69A")
         self._succ_content = ctk.CTkFrame(self._succ_card, fg_color="transparent")
         self._succ_content.pack(fill="x", padx=S["4"], pady=(S["1"], S["2"]))
         self._succ_add_btn = ctk.CTkButton(
@@ -617,8 +626,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Signature Settings ──────────────────────────────────────────
 
     def _build_signature_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, "Signature & Stamp Images")
+        card = self._section_card(parent, accent_color=COLORS["accent"])
+        self._section_label(card, "Signature & Stamp Images", icon="\U0000270F")
         row1 = ctk.CTkFrame(card, fg_color="transparent")
         row1.pack(fill="x", padx=S["4"], pady=(S["1"], S["1"]))
         self._cmr_sig_path_var = tk.StringVar()
@@ -660,8 +669,8 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Generation Section ──────────────────────────────────────────
 
     def _build_generation_section(self, parent):
-        card = self._section_card(parent)
-        self._section_label(card, "Generate CMR")
+        card = self._section_card(parent, accent_color=COLORS["accent"])
+        self._section_label(card, "Generate CMR", icon="\U0001F680")
         btn_f = ctk.CTkFrame(card, fg_color="transparent")
         btn_f.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
         btn_f.columnconfigure((0, 1), weight=1)
@@ -669,14 +678,14 @@ class GeneratorsView(ctk.CTkFrame):
                       fg_color=COLORS["accent"],
                       hover_color=COLORS["accent_hover"],
                       text_color="#ffffff", font=FONTS["body_bold"],
-                      height=40,
+                      height=44, corner_radius=8,
                       command=self._generate_all_copies).grid(
             row=0, column=0, sticky="ew", padx=(0, S["2"]))
         ctk.CTkButton(btn_f, text="\U0001F4C4 Generate Single Copy",
                       fg_color=COLORS["bg_elevated"],
                       hover_color=COLORS["border_hover"],
                       text_color=COLORS["text_primary"],
-                      font=FONTS["body_bold"], height=40,
+                      font=FONTS["body_bold"], height=44, corner_radius=8,
                       command=self._generate_cmr).grid(
             row=0, column=1, sticky="ew")
         self._cmr_status_lbl = ctk.CTkLabel(card, text="", font=FONTS["small"],
@@ -686,29 +695,32 @@ class GeneratorsView(ctk.CTkFrame):
     # ── Copies Status Section ───────────────────────────────────────
 
     def _build_copies_section(self, parent):
-        self._copies_card = self._section_card(parent)
-        self._section_label(self._copies_card, "Generated Copies")
+        self._copies_card = self._section_card(parent, accent_color=COLORS["text_muted"])
+        self._section_label(self._copies_card, "Generated Copies", icon="\U0001F4C1")
         self._copies_frame = ctk.CTkFrame(self._copies_card, fg_color="transparent")
         self._copies_frame.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
         self._copy_labels = {}
         colors_map = {"Sender": "#D32F2F", "Consignee": "#1565C0",
                        "Carrier": "#2E7D32", "Administrative": "#212121"}
+        bg_map = {"Sender": "#FFEBEE", "Consignee": "#E3F2FD",
+                  "Carrier": "#E8F5E9", "Administrative": "#F5F5F5"}
         for suffix, color in colors_map.items():
-            row = ctk.CTkFrame(self._copies_frame, fg_color="transparent")
-            row.pack(fill="x", pady=(0, S["1"]))
-            dot = ctk.CTkLabel(row, text="●", font=("Segoe UI", 12),
+            row = ctk.CTkFrame(self._copies_frame, fg_color=bg_map.get(suffix, COLORS["bg_surface"]),
+                               corner_radius=6)
+            row.pack(fill="x", pady=(0, S["2"]), padx=(0, S["1"]))
+            dot = ctk.CTkLabel(row, text="\u25CF", font=("Segoe UI", 10),
                               text_color=color, width=20)
-            dot.pack(side="left")
+            dot.pack(side="left", padx=(S["2"], 0))
             lbl = ctk.CTkLabel(row, text=f"{suffix} Copy: not generated",
-                              font=FONTS["small"], text_color=COLORS["text_muted"])
+                               font=FONTS["small"], text_color=COLORS["text_secondary"])
             lbl.pack(side="left", fill="x", expand=True)
             open_btn = ctk.CTkButton(row, text="Open", font=FONTS["small"],
                 fg_color=COLORS["bg_elevated"],
                 hover_color=COLORS["border_hover"],
                 text_color=COLORS["text_primary"], height=24, width=50,
-                state="disabled",
+                state="disabled", corner_radius=4,
                 command=lambda s=suffix: self._open_copy(s))
-            open_btn.pack(side="right", padx=(0, S["1"]))
+            open_btn.pack(side="right", padx=S["2"])
             self._copy_labels[suffix] = (lbl, open_btn)
 
     # ── Trip Lists ──────────────────────────────────────────────────
