@@ -7,7 +7,6 @@ import math
 from typing import Dict, List, Optional, Callable, Any
 
 from services.geocode_nominatim import geocode_place
-from services.graphhopper_network import is_retryable_request_error
 from services.route_service import RouteService
 
 
@@ -231,74 +230,39 @@ class RouteRunner:
                 
                 self._log("info", f"Phase 1 complete: {len(resolved_points)} unique points")
                 
-                # Phase 2: Calculate route with enhanced retry handling for long distances
-                self._log("info", "Phase 2: Calculating route with optimized retry strategy...")
-                
-                max_retries = 3
-                last_error = None
+                # Phase 2: Calculate route (retries handled by GraphHopperClient)
+                self._log("info", "Phase 2: Calculating route...")
+                total_attempts = 1
 
-                for attempt in range(max_retries):
-                    try:
-                        total_attempts += 1
+                result = route_service.calculate_route(
+                    stops=resolved_points,
+                    profile=profile,
+                    truck=truck,
+                    avoid_countries=avoid_countries,
+                    stops_are_coordinates=True,
+                )
 
-                        result = route_service.calculate_route(
-                            stops=resolved_points,
-                            profile=profile,
-                            truck=truck,
-                            avoid_countries=avoid_countries,
-                        )
+                if self._is_cancelled():
+                    raise InterruptedError("Route calculation cancelled")
 
-                        if self._is_cancelled():
-                            raise InterruptedError("Route calculation cancelled")
+                elapsed = time.time() - start_time
 
-                        elapsed = time.time() - start_time
+                if result and len(result) > 0:
+                    route = result[0]
+                    distance = route.get("distance_km", 0)
+                    self._log(
+                        "info",
+                        f"Route calculated successfully: {distance:.1f} km, "
+                        f"{route.get('duration_min', 0):.1f} min in {elapsed:.2f}s",
+                    )
+                    if callback:
+                        self._safe_invoke(callback, result)
+                    return
 
-                        if result and len(result) > 0:
-                            route = result[0]
-                            distance = route.get("distance_km", 0)
-                            retry_info = f"(attempt {total_attempts})" if total_attempts > 1 else ""
-
-                            self._log(
-                                "info",
-                                f"Route calculated successfully: {distance:.1f} km, "
-                                f"{route.get('duration_min', 0):.1f} min in {elapsed:.2f}s {retry_info}",
-                            )
-
-                            if callback:
-                                self._safe_invoke(callback, result)
-                            return
-
-                        last_error = "Route calculation returned no results"
-                        self._log("error", last_error)
-                        if callback:
-                            self._safe_invoke(callback, {"error": last_error, "type": "no_result"})
-                        return
-
-                    except Exception as e:
-                        last_error = str(e)
-                        can_retry = is_retryable_request_error(e) and attempt < max_retries - 1
-                        if can_retry:
-                            wait_time = 2 ** attempt
-                            self._log(
-                                "warning",
-                                f"Route calculation failed (attempt {attempt + 1}/{max_retries}): {last_error} "
-                                f"(retrying in {wait_time}s)",
-                            )
-                            time.sleep(wait_time)
-                        else:
-                            self._log(
-                                "error",
-                                f"Route calculation failed after {attempt + 1} attempt(s): {last_error}",
-                            )
-                            break
-                
-                # All retries exhausted
+                last_error = "Route calculation returned no results"
+                self._log("error", last_error)
                 if callback:
-                    self._safe_invoke(callback, {
-                        "error": last_error or "Route calculation failed",
-                        "type": "calculation",
-                        "attempts": total_attempts
-                    })
+                    self._safe_invoke(callback, {"error": last_error, "type": "no_result"})
                 
             except InterruptedError as e:
                 self._log("warning", f"Route calculation cancelled: {e}")

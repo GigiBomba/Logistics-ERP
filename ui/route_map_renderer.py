@@ -1,7 +1,6 @@
 """Map overlay rendering for Route Planner (TkinterMapView, reused paths/markers)."""
 from __future__ import annotations
 
-import hashlib
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -26,7 +25,7 @@ class RouteMapRenderer:
         self.alt_route_line = None
         self.stop_markers: List[Any] = []
         self.avoid_markers: List[Any] = []
-        self._last_geom_hash: Optional[str] = None
+        self._last_geom_key: Optional[tuple] = None
         self._last_draw_time = 0.0
         self._min_redraw_interval_s = 1.0
 
@@ -82,12 +81,13 @@ class RouteMapRenderer:
     def should_redraw(self, geometry: List[Tuple[float, float]]) -> bool:
         if not geometry:
             return False
-        geom_str = ";".join(f"{lat:.6f},{lon:.6f}" for lat, lon in geometry)
-        geom_hash = hashlib.md5(geom_str.encode()).hexdigest()
+        n = len(geometry)
+        first = geometry[0]
+        last = geometry[-1]
         now = time.time()
-        if geom_hash == self._last_geom_hash and (now - self._last_draw_time) < self._min_redraw_interval_s:
+        if (n, first, last) == self._last_geom_key and (now - self._last_draw_time) < self._min_redraw_interval_s:
             return False
-        self._last_geom_hash = geom_hash
+        self._last_geom_key = (n, first, last)
         self._last_draw_time = now
         return True
 

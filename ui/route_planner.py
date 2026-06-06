@@ -61,6 +61,8 @@ class RoutePlannerTab:
         self._profile_display_to_key: dict = {}
         self.stop_vars: dict = {}
         self._row_widgets: list = []
+        self._stop_rows: dict = {}
+        self._stop_ids: dict = {}
         self._trucks_map: dict = {}
         self._last_route_result = None
         self._calc_token = 0
@@ -350,41 +352,78 @@ class RoutePlannerTab:
         self._render_stops_list()
 
     def _render_stops_list(self) -> None:
-        for widget in self.stops_container_inner.winfo_children():
-            widget.destroy()
+        new_indices = set(range(len(self.stops_state)))
+        existing_indices = set(self._stop_rows.keys())
+        removed = existing_indices - new_indices
+        for idx in removed:
+            try:
+                self._stop_rows[idx].destroy()
+            except Exception:
+                pass
+            del self._stop_rows[idx]
+            self._stop_ids.pop(idx, None)
+        self._row_widgets = [(i, e) for i, e in self._row_widgets if i not in removed]
+
         self._row_widgets = []
-
         for idx, stop in enumerate(self.stops_state):
-            row = ctk.CTkFrame(self.stops_container_inner, fg_color=Theme.SURFACE)
-            row.pack(fill="x", padx=2, pady=2)
-
-            if stop["type"] == "start":
-                label = t("route.stop_start")
-            elif stop["type"] == "destination":
-                label = t("route.stop_destination")
-            else:
-                label = t("route.stop_n").format(idx)
-
-            ctk.CTkLabel(row, text=label, fg_color=Theme.SURFACE, text_color=Theme.TEXT).pack(side="left")
-
             sid = stop.get("id") or uuid.uuid4().hex
             stop["id"] = sid
             if sid not in self.stop_vars:
                 self.stop_vars[sid] = tk.StringVar(value=stop.get("address", ""))
 
-            entry = StyledEntry(row, textvariable=self.stop_vars[sid])
-            entry.pack(side="left", fill="x", expand=True, padx=8)
+            needs_rebuild = True
+            if idx in self._stop_rows and self._stop_ids.get(idx) == sid:
+                needs_rebuild = False
+                existing_row = self._stop_rows[idx]
+                for child in existing_row.winfo_children():
+                    if isinstance(child, ctk.CTkLabel) and getattr(child, '_stop_label_type', False):
+                        if stop["type"] == "start":
+                            child.configure(text=t("route.stop_start"))
+                        elif stop["type"] == "destination":
+                            child.configure(text=t("route.stop_destination"))
+                        else:
+                            child.configure(text=t("route.stop_n").format(idx))
+                        break
+                    if isinstance(child, StyledEntry):
+                        self._row_widgets.append((idx, child))
+                        break
 
-            if stop["type"] == "stop":
-                ctk.CTkButton(
-                    row,
-                    text="🗑",
-                    fg_color=Theme.SURFACE2,
-                    width=28,
-                    command=lambda i=idx: self._remove_stop_index(i),
-                ).pack(side="right")
+            if needs_rebuild:
+                if idx in self._stop_rows:
+                    try:
+                        self._stop_rows[idx].destroy()
+                    except Exception:
+                        pass
 
-            self._row_widgets.append((idx, entry))
+                row = ctk.CTkFrame(self.stops_container_inner, fg_color=Theme.SURFACE)
+                row.pack(fill="x", padx=2, pady=2)
+
+                if stop["type"] == "start":
+                    label_text = t("route.stop_start")
+                elif stop["type"] == "destination":
+                    label_text = t("route.stop_destination")
+                else:
+                    label_text = t("route.stop_n").format(idx)
+
+                lbl = ctk.CTkLabel(row, text=label_text, fg_color=Theme.SURFACE, text_color=Theme.TEXT)
+                lbl._stop_label_type = True
+                lbl.pack(side="left")
+
+                entry = StyledEntry(row, textvariable=self.stop_vars[sid])
+                entry.pack(side="left", fill="x", expand=True, padx=8)
+
+                if stop["type"] == "stop":
+                    ctk.CTkButton(
+                        row,
+                        text="\U0001f5d1",
+                        fg_color=Theme.SURFACE2,
+                        width=28,
+                        command=lambda i=idx: self._remove_stop_index(i),
+                    ).pack(side="right")
+
+                self._stop_rows[idx] = row
+                self._stop_ids[idx] = sid
+                self._row_widgets.append((idx, entry))
 
         visible_rows = min(max(len(self.stops_state), 2), 6)
         self.stops_canvas.configure(height=visible_rows * 44)
