@@ -138,10 +138,19 @@ class InvoiceGenerator:
         """
         conf = invoice_data.get("company", load_company_config())
         client = invoice_data.get("client", {})
-        line_items = invoice_data.get("line_items", [])
+        addon_items = invoice_data.get("addon_items", [])
+        if not addon_items:
+            addon_items = invoice_data.get("line_items", [])
         currency = invoice_data.get("currency", "EUR")
         company_color_hex = invoice_data.get("company_color", "#1a73e8")
         mode = invoice_data.get("mode", "client")
+
+        # Internal mode: use app language; client mode: English
+        use_lang = "ro" if mode == "internal" else "en"  # placeholder — uses app language concept
+        if mode == "internal":
+            mode_title = "INTERNAL SETTLEMENT"
+        else:
+            mode_title = "CLIENT INVOICE"
 
         try:
             company_color = colors.HexColor(company_color_hex)
@@ -158,7 +167,7 @@ class InvoiceGenerator:
         story = []
 
         # ── HEADER ──────────────────────────────────────────────────
-        title_text = "INVOICE"
+        title_text = mode_title
         title_style = ParagraphStyle("InvTitle", parent=self.styles["Title"],
                                      fontSize=22, textColor=company_color, alignment=2)
         story.append(Paragraph(f"<b>{title_text}</b>", title_style))
@@ -274,39 +283,97 @@ class InvoiceGenerator:
             story.append(Paragraph(remove_accents(description), self.styles["Normal"]))
             story.append(Spacer(1, 0.6*cm))
 
-        # ── LINE ITEMS TABLE ────────────────────────────────────────
-        header_row = [
-            Paragraph("<b>#</b>", self.styles["Normal"]),
-            Paragraph("<b>Qty</b>", self.styles["Normal"]),
-            Paragraph("<b>Unit Price</b>", self.styles["Normal"]),
-            Paragraph("<b>Tax %</b>", self.styles["Normal"]),
-            Paragraph("<b>Total</b>", self.styles["Normal"]),
+        # ── ADDON ITEMS TABLE ────────────────────────────────────────
+        trip_price = invoice_data.get("trip_price", 0)
+        price_pre_vat = invoice_data.get("price_pre_vat")
+        vat_percent = invoice_data.get("vat_percent")
+
+        # Trip price line
+        price_data = [
+            [Paragraph("<b>Item</b>", self.styles["Normal"]),
+             Paragraph("<b>Amount</b>", self.styles["Normal"])],
         ]
-        table_data = [header_row]
 
-        for i, li in enumerate(line_items):
-            table_data.append([
-                Paragraph(str(i + 1), self.styles["Normal"]),
-                Paragraph(str(li.get("quantity", 1)), self.styles["Normal"]),
-                Paragraph(f"{li.get('unit_price', 0):.2f} {currency}", self.styles["Normal"]),
-                Paragraph(f"{li.get('tax_rate', 0):.1f}%", self.styles["Normal"]),
-                Paragraph(f"<b>{li.get('total', 0):.2f} {currency}</b>", self.styles["Normal"]),
-            ])
+        if price_pre_vat is not None and vat_percent is not None:
+            price_data.append([
+                Paragraph(f"Transport fee (excl. VAT {vat_percent}%)", self.styles["Normal"]),
+                Paragraph(f"{float(price_pre_vat):,.2f} {currency}", self.styles["Normal"])])
+            price_data.append([
+                Paragraph(f"VAT {vat_percent}%", self.styles["Normal"]),
+                Paragraph(f"{float(trip_price) - float(price_pre_vat):,.2f} {currency}", self.styles["Normal"])])
+            price_data.append([
+                Paragraph("<b>Transport fee (incl. VAT)</b>", self.styles["Normal"]),
+                Paragraph(f"<b>{float(trip_price):,.2f} {currency}</b>", self.styles["Normal"])])
+        else:
+            price_data.append([
+                Paragraph("Transport fee", self.styles["Normal"]),
+                Paragraph(f"{float(trip_price):,.2f} {currency}", self.styles["Normal"])])
 
-        col_widths = [1*cm, 2*cm, 5*cm, 3*cm, 7*cm]
-        items_table = Table(table_data, colWidths=col_widths)
-        items_table.setStyle(TableStyle([
+        # Addon items
+        for ai in addon_items:
+            desc = ai.get("description", "Additional")
+            amt = ai.get("amount", 0) or ai.get("total", 0)
+            price_data.append([
+                Paragraph(remove_accents(str(desc)), self.styles["Normal"]),
+                Paragraph(f"{float(amt):,.2f} {currency}", self.styles["Normal"])])
+
+        price_table = Table(price_data, colWidths=[13*cm, 5*cm])
+        price_table.setStyle(TableStyle([
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f0f4ff")),
             ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
-            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
-            ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('FONTSIZE', (0, 0), (-1, -1), 9),
             ('TOPPADDING', (0, 0), (-1, -1), 4),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
         ]))
-        story.append(items_table)
-        story.append(Spacer(1, 0.8*cm))
+        story.append(price_table)
+        story.append(Spacer(1, 0.6*cm))
+
+        # ── INTERNAL MODE: COST BREAKDOWN ─────────────────────────────
+        if mode == "internal":
+            trip_data = invoice_data.get("trip_data") or {}
+            gross = float(trip_data.get("total_price_eur", 0) or 0)
+            fuel = float(trip_data.get("fuel_cost", 0) or 0)
+            tolls = float(trip_data.get("toll_cost", 0) or 0)
+            salary = float(trip_data.get("salary_cost", 0) or 0)
+            extra = float(trip_data.get("extra_costs", 0) or 0)
+            net = float(trip_data.get("net_profit", 0) or 0)
+            total_costs = fuel + tolls + salary + extra
+
+            story.append(Paragraph("<b>COST BREAKDOWN (internal)</b>", self.styles["Normal"]))
+            cost_data = [
+                [Paragraph("<b>Item</b>", self.styles["Normal"]),
+                 Paragraph("<b>Amount</b>", self.styles["Normal"])],
+                [Paragraph("Gross Revenue", self.styles["Normal"]),
+                 Paragraph(f"{gross:,.2f} EUR", self.styles["Normal"])],
+                [Paragraph("Fuel Cost", self.styles["Normal"]),
+                 Paragraph(f"-{fuel:,.2f} EUR", self.styles["Normal"])],
+                [Paragraph("Toll Cost", self.styles["Normal"]),
+                 Paragraph(f"-{tolls:,.2f} EUR", self.styles["Normal"])],
+                [Paragraph("Driver Salary", self.styles["Normal"]),
+                 Paragraph(f"-{salary:,.2f} EUR", self.styles["Normal"])],
+                [Paragraph("Extra Costs", self.styles["Normal"]),
+                 Paragraph(f"-{extra:,.2f} EUR", self.styles["Normal"])],
+                [Paragraph("<b>Total Costs</b>", self.styles["Normal"]),
+                 Paragraph(f"<b>-{total_costs:,.2f} EUR</b>", self.styles["Normal"])],
+                [Paragraph("<b>Net Profit</b>", self.styles["Normal"]),
+                 Paragraph(f"<b>{net:,.2f} EUR</b>", self.styles["Normal"])],
+            ]
+            cost_table = Table(cost_data, colWidths=[13*cm, 5*cm])
+            cost_table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#e8f0fe")),
+                ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+                ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('FONTSIZE', (0, 0), (-1, -1), 9),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+                ('BACKGROUND', (0, -2), (-1, -2), colors.HexColor("#f0f4ff")),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor("#e8f0fe")),
+            ]))
+            story.append(cost_table)
+            story.append(Spacer(1, 0.6*cm))
 
         # ── TOTALS ──────────────────────────────────────────────────
         subtotal = invoice_data.get("subtotal", 0)

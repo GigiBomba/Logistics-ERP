@@ -1,4 +1,4 @@
-﻿import sqlite3
+import sqlite3
 import logging
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -279,6 +279,16 @@ class DatabaseManager:
             if 'client_id' not in cols:
                 try:
                     self.conn.execute("ALTER TABLE trips ADD COLUMN client_id INTEGER REFERENCES clients(id)")
+                except Exception:
+                    pass
+            if 'price_pre_vat' not in cols:
+                try:
+                    self.conn.execute("ALTER TABLE trips ADD COLUMN price_pre_vat REAL DEFAULT 0")
+                except Exception:
+                    pass
+            if 'vat_percent' not in cols:
+                try:
+                    self.conn.execute("ALTER TABLE trips ADD COLUMN vat_percent REAL DEFAULT 0")
                 except Exception:
                     pass
         except Exception:
