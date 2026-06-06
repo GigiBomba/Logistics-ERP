@@ -153,6 +153,25 @@ class TripConflictService:
                 latest_eta = eta
         return latest_eta.strftime("%d/%m/%Y %H:%M") if latest_eta > datetime.now() else None
 
+    def get_next_available_slot_for_driver(self, driver_id: int) -> Optional[str]:
+        if not driver_id:
+            return None
+        all_trips = self._trip_repo.get_all(limit=2000)
+        latest_eta = datetime.now()
+        for trip in all_trips:
+            if trip.get("status", "") in NON_ACTIVE_STATUSES:
+                continue
+            other_driver = trip.get("driver_id")
+            if not other_driver or int(other_driver) != int(driver_id):
+                continue
+            dep = self._get_departure(trip)
+            if not dep:
+                continue
+            eta = self._estimate_eta(trip, dep)
+            if eta > latest_eta:
+                latest_eta = eta
+        return latest_eta.strftime("%d/%m/%Y %H:%M") if latest_eta > datetime.now() else None
+
     def describe_conflict(self, conflict: Dict[str, Any]) -> str:
         parts = []
         if conflict.get("same_truck"):

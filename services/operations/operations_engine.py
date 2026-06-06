@@ -8,6 +8,7 @@ from services.operations.event_bus import EventBus, SYSTEM_STARTUP, TRUCK_ODOMET
 from services.operations.maintenance_engine import MaintenanceEngine
 from services.operations.notification_center import NotificationCenter
 from services.operations.rules import Rules
+from services.operations.undo_stack import UndoStack, UndoCommand
 from repositories.fleet_repository import FleetRepository
 
 logger = logging.getLogger("operations.operations_engine")
@@ -40,8 +41,25 @@ class OperationsEngine:
         self._trip_service = TripService(db) if db else None
         self._maintenance_engine = MaintenanceEngine(db) if db else None
         self._notification_center = NotificationCenter(db) if db else None
+        self._undo_stack = UndoStack()
         self._running = False
         logger.info("OperationsEngine initialized")
+
+    def undo_last(self) -> bool:
+        cmd = self._undo_stack.undo()
+        if not cmd:
+            return False
+        return self.force_trip_status(cmd.trip_id, cmd.old_status, skip_undo=True)
+
+    def redo_last(self) -> bool:
+        cmd = self._undo_stack.redo()
+        if not cmd:
+            return False
+        return self.force_trip_status(cmd.trip_id, cmd.new_status, skip_undo=True)
+
+    @property
+    def undo_stack(self):
+        return self._undo_stack
 
     def start(self):
         if self._running:
@@ -133,7 +151,7 @@ class OperationsEngine:
         """Return list of valid next statuses based on current status."""
         return VALID_TRANSITIONS.get(current_status, [])
 
-    def force_trip_status(self, trip_id: int, new_status: str) -> bool:
+    def force_trip_status(self, trip_id: int, new_status: str, skip_undo: bool = False) -> bool:
         """Force a trip to a specific status, updating odometer if completed."""
         try:
             trip = self._trip_service.get_by_id(trip_id)
@@ -142,6 +160,8 @@ class OperationsEngine:
                 return False
 
             old_status = trip.get("status", "")
+            if old_status == new_status:
+                return True
 
             normalized_old = {
                 "InTransit": "In Transit",
@@ -171,6 +191,25 @@ class OperationsEngine:
             })
             
             logger.info("Trip %d status changed: %s -> %s", trip_id, old_status, new_status)
+
+            if not skip_undo:
+                prev_odo = None
+                if new_status in ("Delivered", "Completed"):
+                    truck_id = trip.get("truck_id")
+                    if truck_id:
+                        from repositories.fleet_repository import FleetRepository
+                        fleet_repo = FleetRepository(self._db)
+                        truck = fleet_repo.get_by_id(int(truck_id))
+                        if truck:
+                            prev_odo = truck.get("mileage")
+                self._undo_stack.push(UndoCommand(
+                    trip_id=trip_id,
+                    old_status=old_status,
+                    new_status=new_status,
+                    previous_odometer=prev_odo,
+                    truck_id=trip.get("truck_id"),
+                ))
+
             return True
         except Exception as e:
             logger.error("force_trip_status failed for trip %d: %s", trip_id, e)

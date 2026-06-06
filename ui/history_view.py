@@ -11,6 +11,7 @@ from services.export_service import ExportService
 from services.trip_service import TripService
 from services.invoicing.service import InvoiceService
 from ui.theme import COLORS, FONTS
+from services.preferences import PreferencesManager
 
 class HistoryView:
     def __init__(self, parent, db, main_app=None, controller=None, prefs=None, ops=None, embedded=False):
@@ -34,11 +35,10 @@ class HistoryView:
         # prefer explicit main_app, fall back to controller if provided
         self.main_app = main_app or controller
         self.ops = ops
-        self.trip_service = TripService(db)
-        self.invoice_service = InvoiceService(db, prefs=self.prefs)
-        from services.preferences import PreferencesManager
         self.prefs = prefs or PreferencesManager(db)
 
+        self.trip_service = TripService(db)
+        self.invoice_service = InvoiceService(db, prefs=self.prefs)
         self.exporter = ExportService(prefs=self.prefs)
         
         self._i18n_widgets = []

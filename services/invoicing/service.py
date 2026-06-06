@@ -7,6 +7,7 @@ from services.invoicing.config_manager import load_company_config
 from services.operations.event_bus import EventBus, INVOICE_CREATED, INVOICE_EMAILED
 from services.operations.notification_center import NotificationCenter
 from services.i18n import t
+from repositories.client_repository import ClientRepository
 
 
 class InvoiceService:
@@ -15,9 +16,26 @@ class InvoiceService:
         self.prefs = prefs
         self.generator = InvoiceGenerator()
         self._event_bus = EventBus()
+        self._client_repo = ClientRepository(db)
+
+    def _enrich_trip_with_client(self, trip_data: Dict[str, Any]) -> Dict[str, Any]:
+        client_id = trip_data.get("client_id")
+        if not client_id:
+            return trip_data
+        client = self._client_repo.get_by_id(client_id)
+        if not client:
+            return trip_data
+        enriched = dict(trip_data)
+        enriched["client_vat"] = client.get("vat_number") or ""
+        enriched["client_address"] = client.get("address") or ""
+        enriched["client_phone"] = client.get("phone") or ""
+        enriched["client_email"] = client.get("email") or ""
+        enriched["client_contact"] = client.get("contact_person") or ""
+        return enriched
 
     def generate(self, trip_data: Dict[str, Any], mode: str = "client") -> str:
-        return self.generator.generate(trip_data, mode=mode)
+        enriched = self._enrich_trip_with_client(trip_data)
+        return self.generator.generate(enriched, mode=mode)
 
     def create_record(self, trip_id: int, inv_number: str, amount: float, due_date: str) -> None:
         self.db.create_invoice_record(trip_id, inv_number, amount, due_date)

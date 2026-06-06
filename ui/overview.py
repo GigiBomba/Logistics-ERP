@@ -4,7 +4,6 @@ import customtkinter as ctk
 from tkinter import ttk
 import logging
 from datetime import datetime, timedelta
-import calendar
 
 import numpy as np
 
@@ -216,10 +215,7 @@ class OverviewDashboard(ctk.CTkFrame):
         self._i18n_tag(title_lbl, "home.profit_chart_title")
 
         today = datetime.now()
-        first_of_month = today.replace(day=1)
-        last_month_end = first_of_month - timedelta(days=1)
-        last_month_start = last_month_end.replace(day=1)
-        month_label = last_month_start.strftime("%B %Y")
+        month_label = t("home.profit_30_days", default="Past 30 Days")
 
         self._month_lbl_ref = ctk.CTkLabel(
             hdr, text=month_label,
@@ -243,9 +239,6 @@ class OverviewDashboard(ctk.CTkFrame):
         )
         footer.pack(anchor="w", padx=S["5"], pady=(0, S["3"]))
         self._i18n_tag(footer, "home.profit_data_source")
-
-        self._last_month_start = last_month_start
-        self._last_month_end = last_month_end
 
     # ── Active trips (left, bottom, compact) ──────────────────────────
 
@@ -340,25 +333,35 @@ class OverviewDashboard(ctk.CTkFrame):
             self._profit_fig = None
 
         profit_map = {}
+        now_dt = datetime.now()
+        chart_start = now_dt - timedelta(days=30)
+        chart_end = now_dt
         try:
             raw_data = self._trip_repo.get_daily_profit(
-                self._last_month_start.strftime("%Y-%m-%d"),
-                self._last_month_end.strftime("%Y-%m-%d")
+                chart_start.strftime("%Y-%m-%d"),
+                chart_end.strftime("%Y-%m-%d")
             )
             for d, p in raw_data:
                 try:
-                    day = int(d.split("-")[2]) if "-" in d else int(d)
-                    profit_map[day] = float(p or 0)
+                    if "-" in d:
+                        parts = d.split("-")
+                        date_key = f"{int(parts[2]):02d}/{int(parts[1]):02d}"
+                    else:
+                        date_key = d
+                    profit_map[date_key] = float(p or 0)
                 except (ValueError, IndexError):
-                    pass
+                    profit_map[d] = float(p or 0)
         except Exception as exc:
             logger.exception("[HOME] Data fetch failed: %s", exc)
 
-        days_in_month = calendar.monthrange(
-            self._last_month_start.year, self._last_month_start.month
-        )[1]
-        days = list(range(1, days_in_month + 1))
-        profits = [profit_map.get(d, 0.0) for d in days]
+        num_days = 31
+        day_labels = []
+        for i in range(num_days):
+            dt = chart_start + timedelta(days=i)
+            day_labels.append(dt.strftime("%d/%m"))
+
+        days = list(range(1, num_days + 1))
+        profits = [abs(profit_map.get(day_labels[i], 0.0)) for i in range(num_days)]
 
         if not profit_map or all(p == 0 for p in profits):
             msg = t("home.profit_no_data",
@@ -411,22 +414,24 @@ class OverviewDashboard(ctk.CTkFrame):
         nonzero = [p for p in profits if p != 0]
         if nonzero:
             y_min = min(0, min(nonzero) * 1.15)
-            y_max = max(nonzero) * 1.20 if max(nonzero) > 0 else max(nonzero) * 0.80
+            y_max = max(0, max(nonzero) * 1.20)
         else:
             y_min, y_max = 0, 100
         y_pad = (y_max - y_min) * 0.05
         ax.set_ylim(y_min - y_pad, y_max + y_pad)
-        ax.set_xlim(0.5, days_in_month + 0.5)
+        ax.set_xlim(0.5, num_days + 0.5)
 
         ax.yaxis.set_major_formatter(
             plt.FuncFormatter(lambda x_val, _: f"{x_val:,.0f}")
         )
 
-        tick_step = max(1, days_in_month // 6)
-        tick_positions = [1] + list(range(tick_step, days_in_month + 1, tick_step))
-        if days_in_month not in tick_positions:
-            tick_positions.append(days_in_month)
+        tick_step = max(1, num_days // 6)
+        tick_positions = [1] + list(range(tick_step, num_days + 1, tick_step))
+        if num_days not in tick_positions:
+            tick_positions.append(num_days)
         ax.set_xticks(tick_positions)
+        tick_labels = [day_labels[p - 1] for p in tick_positions]
+        ax.set_xticklabels(tick_labels)
         ax.set_xlabel(
             t("home.profit_day_label"),
             fontsize=8,
@@ -439,33 +444,30 @@ class OverviewDashboard(ctk.CTkFrame):
         x_smooth, y_smooth = self._smooth_data(days_arr, profits_arr, num=len(days) * 20)
 
         line_color = COLORS.get("chart_green", "#4ADE80")
-        fill_color = line_color
+
+        ax.fill_between(
+            x_smooth, 0, y_smooth,
+            alpha=0.25, color=line_color, zorder=1,
+        )
 
         ax.plot(
             x_smooth, y_smooth,
             color=line_color,
-            linewidth=7.0,
-            alpha=0.12,
-            solid_capstyle="round",
-            solid_joinstyle="round",
-            zorder=2,
-        )
-        ax.plot(
-            x_smooth, y_smooth,
-            color=line_color,
-            linewidth=3.0,
-            marker="o",
-            markersize=5.0,
-            markerfacecolor=line_color,
-            markeredgecolor=COLORS["bg_surface"],
-            markeredgewidth=1.5,
+            linewidth=2.0,
+            alpha=0.85,
             solid_capstyle="round",
             solid_joinstyle="round",
             zorder=3,
         )
-        ax.fill_between(
-            x_smooth, y_smooth, y2=y_min - y_pad,
-            alpha=0.25, color=fill_color, zorder=2
+
+        ax.plot(
+            days_arr, profits_arr,
+            linestyle="none",
+            marker="o",
+            markersize=3.5,
+            markerfacecolor=line_color,
+            markeredgecolor="none",
+            zorder=4,
         )
 
         canvas = FigureCanvasTkAgg(fig, master=self._chart_container)

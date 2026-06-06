@@ -19,6 +19,10 @@ from database.schema import (
     INDEX_TRIPS_TRUCK,
     TABLE_ALERTS,
     TABLE_CLIENTS,
+    TABLE_CLIENT_CONTACTS,
+    TABLE_CLIENT_TAGS,
+    INDEX_CONTACTS_CLIENT,
+    INDEX_TAGS_CLIENT,
     TABLE_EMAIL_LOGS,
     TABLE_INVOICES,
     TABLE_MAINTENANCE_RECORDS,
@@ -58,6 +62,11 @@ from database.schema import (
     ALTER_TRIPS_ADD_TRUCK_ID,
     INDEX_TRIPS_TRUCK_ID,
     ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID,
+    ALTER_CLIENTS_ADD_TYPE,
+    ALTER_CLIENTS_ADD_PAYMENT_TERMS,
+    ALTER_CLIENTS_ADD_CREDIT_LIMIT,
+    ALTER_CLIENTS_ADD_DEFAULT_RATE,
+    ALTER_CLIENTS_ADD_RATING,
 )
 
 
@@ -142,6 +151,14 @@ class DatabaseManager:
         self.conn.execute(TABLE_CLIENTS)
         self.conn.execute(INDEX_CLIENTS_NAME)
         self.conn.execute(INDEX_CLIENTS_ACTIVE)
+
+        # Client contacts (Phase 2)
+        self.conn.execute(TABLE_CLIENT_CONTACTS)
+        self.conn.execute(INDEX_CONTACTS_CLIENT)
+
+        # Client tags (Phase 3)
+        self.conn.execute(TABLE_CLIENT_TAGS)
+        self.conn.execute(INDEX_TAGS_CLIENT)
 
         self.conn.commit()
         # Migrate legacy maintenance table to maintenance_records (if both exist)
@@ -233,6 +250,23 @@ class DatabaseManager:
         # Index on trips.truck_id
         try:
             self.conn.execute(INDEX_TRIPS_TRUCK_ID)
+        except Exception:
+            pass
+        # Migration: new client columns (Phase 2 + 3)
+        try:
+            client_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(clients)").fetchall()]
+            for col_name, alter_sql in [
+                ("client_type", ALTER_CLIENTS_ADD_TYPE),
+                ("payment_terms_days", ALTER_CLIENTS_ADD_PAYMENT_TERMS),
+                ("credit_limit_eur", ALTER_CLIENTS_ADD_CREDIT_LIMIT),
+                ("default_rate_per_km", ALTER_CLIENTS_ADD_DEFAULT_RATE),
+                ("rating", ALTER_CLIENTS_ADD_RATING),
+            ]:
+                if col_name not in client_cols:
+                    try:
+                        self.conn.execute(alter_sql)
+                    except Exception:
+                        pass
         except Exception:
             pass
         try:

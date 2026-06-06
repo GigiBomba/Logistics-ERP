@@ -329,6 +329,14 @@ class NavPanel(ctk.CTkFrame):
         if self._on_select:
             self._on_select(key)
 
+    def highlight(self, key: str):
+        if key == self._active_key:
+            return
+        if self._active_key:
+            self._deactivate(self._active_key)
+        self._active_key = key
+        self._activate(key)
+
     def get_active_key(self):
         return self._active_key
 

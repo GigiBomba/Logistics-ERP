@@ -225,5 +225,88 @@ class TestInvoiceServiceEmailValidation(unittest.TestCase):
         self.assertFalse(result)
 
 
+class TestInvoiceServiceClientEnrichment(unittest.TestCase):
+    def setUp(self):
+        from tests.test_helpers import make_db
+        self.db = make_db()
+        self.svc = InvoiceService(self.db)
+
+    def test_enrich_trip_with_client_injects_fields(self):
+        from repositories.client_repository import ClientRepository
+        repo = ClientRepository(self.db)
+        client_id = repo.create({
+            "name": "Acme Corp",
+            "vat_number": "RO123456",
+            "address": "100 Fleet St",
+            "phone": "+40700123456",
+            "email": "billing@acme.com",
+            "contact_person": "John Doe",
+        })
+        trip = {"id": 1, "client_id": client_id, "client_name": "Acme Corp"}
+        enriched = self.svc._enrich_trip_with_client(trip)
+        self.assertEqual(enriched["client_vat"], "RO123456")
+        self.assertEqual(enriched["client_address"], "100 Fleet St")
+        self.assertEqual(enriched["client_phone"], "+40700123456")
+        self.assertEqual(enriched["client_email"], "billing@acme.com")
+        self.assertEqual(enriched["client_contact"], "John Doe")
+        self.assertEqual(enriched["client_name"], "Acme Corp")
+
+    def test_enrich_trip_without_client_id_is_noop(self):
+        trip = {"id": 1, "client_name": "Nope"}
+        enriched = self.svc._enrich_trip_with_client(trip)
+        self.assertNotIn("client_vat", enriched)
+        self.assertEqual(enriched["client_name"], "Nope")
+
+    def test_enrich_trip_with_missing_client_is_noop(self):
+        trip = {"id": 1, "client_id": 99999, "client_name": "Ghost"}
+        enriched = self.svc._enrich_trip_with_client(trip)
+        self.assertNotIn("client_vat", enriched)
+
+    def test_generate_with_enriched_client_creates_pdf(self):
+        trip = {
+            "id": 30,
+            "truck_number": "B-900-TST",
+            "driver_name": "Jane",
+            "client_name": "EnrichedCo",
+            "client_vat": "RO998877",
+            "client_address": "123 Main St",
+            "client_phone": "+40700999888",
+            "client_email": "mail@enriched.co",
+            "distance_km": 250.0,
+            "start_date": "2025-05-01",
+            "end_date": "2025-05-02",
+            "total_price_eur": 500.0,
+            "fuel_cost": 50.0,
+            "toll_cost": 25.0,
+            "salary_cost": 25.0,
+            "extra_costs": 0,
+            "net_profit": 400.0,
+            "currency": "EUR",
+        }
+        path = self.svc.generator.generate(trip, mode="client")
+        self.assertTrue(os.path.exists(path))
+        self.assertTrue(path.endswith(".pdf"))
+
+    def test_original_tests_still_pass_unchanged_data(self):
+        trip = {
+            "id": 40,
+            "truck_number": "",
+            "driver_name": "",
+            "client_name": "LegacyCo",
+            "distance_km": 0.0,
+            "start_date": "",
+            "end_date": "",
+            "total_price_eur": 0.0,
+            "fuel_cost": 0.0,
+            "toll_cost": 0.0,
+            "salary_cost": 0.0,
+            "extra_costs": 0,
+            "net_profit": 0.0,
+            "currency": "EUR",
+        }
+        path = self.svc.generator.generate(trip, mode="client")
+        self.assertTrue(os.path.exists(path))
+
+
 if __name__ == "__main__":
     unittest.main()

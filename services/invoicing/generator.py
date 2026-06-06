@@ -50,6 +50,18 @@ class InvoiceGenerator:
         
         client_info = (f"<b>{self._tr('invoice_pdf.bill_to_header', mode)}</b><br/>"
                        f"{remove_accents(trip_data.get('client_name', ''))}")
+        client_vat = trip_data.get("client_vat")
+        client_address = trip_data.get("client_address")
+        client_phone = trip_data.get("client_phone")
+        client_email = trip_data.get("client_email")
+        if client_vat:
+            client_info += f"<br/>VAT: {client_vat}"
+        if client_address:
+            client_info += f"<br/>{remove_accents(client_address)}"
+        if client_phone:
+            client_info += f"<br/>Tel: {client_phone}"
+        if client_email:
+            client_info += f"<br/>Email: {client_email}"
 
         info_table = Table([[Paragraph(company_info, self.styles["Normal"]), 
                              Paragraph(client_info, self.styles["Normal"])]], colWidths=[9.5*cm, 8.5*cm])
