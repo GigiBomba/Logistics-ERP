@@ -30,6 +30,7 @@ class MainWindow(I18nMixin):
         self.db = db
         self.api = api
         self.ops = ops
+        self._suppress_tk_cleanup_errors()
         from services.preferences import PreferencesManager
         self.prefs = prefs or PreferencesManager(db)
         self.fleet_service = FleetService(self.db)
@@ -72,6 +73,20 @@ class MainWindow(I18nMixin):
         self._fuel_service.refresh_if_stale()
         self._init_fuel_status()
 
+    @staticmethod
+    def _suppress_tk_cleanup_errors():
+        try:
+            import tkinter as tk
+            _original = tk.Tk.report_callback_exception
+            def _quiet(_, exc, val, tb):
+                msg = str(val)
+                if "invalid command name" in msg:
+                    return
+                _original(_, exc, val, tb)
+            tk.Tk.report_callback_exception = _quiet
+        except Exception:
+            pass
+
     def _on_language_changed(self, lang):
         logger.info("MainWindow language change -> %s | refreshing nav + title + combos", lang)
         self._refresh_nav_labels()
@@ -79,13 +94,6 @@ class MainWindow(I18nMixin):
 
     def refresh_translations(self):
         self.root.title(t("app.title"))
-        currencies = t("main.currencies")
-        if isinstance(currencies, str):
-            currencies = ["EUR", "RON", "USD", "GBP"]
-        try:
-            self.c_val.configure(values=currencies)
-        except Exception:
-            pass
         self._update_fuel_status()
 
     def _open_fleet(self):
@@ -139,7 +147,8 @@ class MainWindow(I18nMixin):
             except Exception:
                 self.selected_truck_fuel = 34.0
             try:
-                self.truck_var.set(str(truck_id))
+                label = f"{truck.get('plate_number','')} - {truck.get('model','')}"
+                self.truck_var.set(label)
             except Exception:
                 pass
         except Exception:
@@ -174,6 +183,7 @@ class MainWindow(I18nMixin):
         nav.add_item("fleet", "\U0001f69b", t("nav.fleet"), i18n_key="nav.fleet")
         nav.add_item("driver_manager", "\U0001f464", t("nav.driver_manager"), i18n_key="nav.driver_manager")
         nav.add_item("clients", "\U0001f465", t("nav.clients"), i18n_key="nav.clients")
+        nav.add_item("documents", "\U0001F4C2", t("nav.documents"), i18n_key="nav.documents")
         nav.add_item("maintenance", "\U0001f527", t("nav.maintenance_analytics"), i18n_key="nav.maintenance_analytics")
         nav.add_item("maintenance_control", "\U0001f529", t("nav.maintenance_control"), i18n_key="nav.maintenance_control")
         nav.add_item("tachograph", "\U0001f4be", t("nav.tachograph"), i18n_key="nav.tachograph")
@@ -247,22 +257,24 @@ class MainWindow(I18nMixin):
             self._load_trucks_main()
         except Exception:
             pass
+        try:
+            from services.trip_context import TripContextService
+            tc = getattr(TripContextService(), '_tc', None)
+            if tc and tc.truck and tc.truck.id and hasattr(self, '_main_trucks_map'):
+                truck_id = tc.truck.id
+                if truck_id in self._main_trucks_map:
+                    truck_data = self._main_trucks_map[truck_id]
+                    label = f"{truck_data.get('plate_number','')} - {truck_data.get('model','')}"
+                    self.truck_var.set(label)
+                    self._on_main_truck_selected(truck_id)
+        except Exception:
+            pass
 
         fin_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
         fin_f.pack(fill="x")
         lbl = section_header(fin_f, t("main.section_finance"), _return=True)
         self.i18n_tag(lbl, "main.section_finance")
         self.e_price = self._add_field(fin_f, "main.offer_price")
-
-        lbl = ctk.CTkLabel(fin_f, text=t("main.currency_label"), fg_color=Theme.BG, text_color=Theme.TEXT)
-        lbl.pack(anchor="w", pady=(8,0))
-        self.i18n_tag(lbl, "main.currency_label")
-        currencies = t("main.currencies")
-        if isinstance(currencies, str):
-            currencies = ["EUR", "RON", "USD", "GBP"]
-        self.c_val = ctk.CTkComboBox(fin_f, values=currencies, state="readonly")
-        self.c_val.set(currencies[0])
-        self.c_val.pack(fill="x", pady=5)
 
         cost_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
         cost_f.pack(fill="x")
@@ -299,6 +311,10 @@ class MainWindow(I18nMixin):
         self._fuel_status_lbl = ctk.CTkLabel(self.scrollable_frame, text="",
                                           fg_color=Theme.BG, text_color=Theme.MUTED,                                           font=FONTS["label"])
         self._fuel_status_lbl.pack(anchor="se", padx=10, pady=(0, 5))
+
+        calc_frame.bind("<Return>", lambda e: self._handle_calculate())
+        for entry in (self.e_price, self.e_sal, self.e_extra, self.e_days, self.e_term):
+            entry.bind("<Return>", lambda e: self._handle_calculate())
 
         return calc_frame
 
@@ -358,6 +374,7 @@ class MainWindow(I18nMixin):
             "fleet": ("ui.fleet_tab", "FleetTab", {"open_window": False, "ops": self.ops}),
             "driver_manager": ("ui.driver_manager", "DriverManager", {"open_window": False, "ops": self.ops}),
             "clients": ("ui.client_workspace", "ClientWorkspace", {"prefs": self.prefs}),
+            "documents": ("ui.views.document_center_view", "DocumentCenterView", {}),
             "invoices": ("ui.invoice_tab", "InvoiceTab", {"prefs": self.prefs}),
             "settings": ("ui.settings_view", "SettingsView", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
             "dashboard": ("ui.dashboard", "FleetDashboard", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
@@ -458,7 +475,8 @@ class MainWindow(I18nMixin):
                 return
 
             rates = self.api.get_rates()
-            rate_eur = rates.get(self.c_val.get(), 1.0)
+            currency = self.prefs.get_currency()
+            rate_eur = rates.get(currency, 1.0)
             pret_eur = price / rate_eur
 
             try:
@@ -466,7 +484,7 @@ class MainWindow(I18nMixin):
             except Exception:
                 cons = 34.0
 
-            selected_currency = self.c_val.get()
+            selected_currency = self.prefs.get_currency()
             fuel_price = self._fuel_service.get_price("DEFAULT", selected_currency)
 
             fuel_cost_from_route = None
@@ -534,7 +552,7 @@ class MainWindow(I18nMixin):
                 "start_date": dt_s.strftime("%Y-%m-%d"),
                 "end_date": dt_end.strftime("%Y-%m-%d"),
                 "payment_date": dt_inc.strftime("%Y-%m-%d"),
-                "currency": self.c_val.get(),
+                "currency": self.prefs.get_currency(),
                 "status": "Planned",
                 "fuel_cost": res.fuel_cost,
                 "toll_cost": res.toll_cost,
@@ -584,6 +602,14 @@ class MainWindow(I18nMixin):
                                 self.selected_truck_fuel = float(tc.truck.fuel_consumption_l_per_100km)
                             except Exception:
                                 logger.exception("_on_trip_update apply_inner failed")
+
+                    if tc.truck and tc.truck.id is not None and hasattr(self, '_main_trucks_map'):
+                        truck_id = tc.truck.id
+                        if truck_id in self._main_trucks_map:
+                            truck_data = self._main_trucks_map[truck_id]
+                            label = f"{truck_data.get('plate_number','')} - {truck_data.get('model','')}"
+                            self.truck_var.set(label)
+                            self._on_main_truck_selected(truck_id)
 
                     if tc.profit and tc.profit.total_cost is not None:
                         self.e_price.delete(0, 'end')

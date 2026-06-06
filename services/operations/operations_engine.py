@@ -1,4 +1,5 @@
 import logging
+import os
 import threading
 from datetime import datetime
 from typing import Any, Dict, List, Optional
@@ -72,6 +73,7 @@ class OperationsEngine:
         if self._db:
             self._configure_smtp_from_db()
             self.migrate_existing_data()
+        self._event_bus.subscribe(TRIP_STATUS_CHANGED, self._on_trip_status_for_docs)
         logger.info("OperationsEngine started")
 
     def _schedule_daily_check(self):
@@ -319,4 +321,52 @@ class OperationsEngine:
             logger.error("migrate_existing_data trip eval failed: %s", e)
 
         logger.info("migrate_existing_data complete: %s", results)
+
+    def _on_trip_status_for_docs(self, ev: Dict[str, Any]) -> None:
+        data = ev.get("data", {})
+        new_status = data.get("new_status", "")
+        trip_id = data.get("trip_id")
+        if new_status != "In Transit" or not trip_id:
+            return
+        import threading
+        t = threading.Thread(target=self._generate_cmr, args=(trip_id,), daemon=True,
+                             name=f"cmr-gen-{trip_id}")
+        t.start()
+
+    def _generate_cmr(self, trip_id: int) -> None:
+        try:
+            from services.trip_service import TripService
+            from services.invoicing.cmr_generator import CMRGenerator
+            from services.document_service import DocumentService
+            ts = TripService(self._db)
+            trip = ts.get_by_id(trip_id)
+            if not trip:
+                return
+            ds = DocumentService(self._db)
+            existing = ds.get_documents_for_entity("trip", trip_id)
+            for d in existing:
+                if "cmr" in (d.get("tags") or "[]"):
+                    return
+            output_dir = os.path.join("data", "documents", "trips", str(trip_id))
+            gen = CMRGenerator()
+            ctx = {
+                "trip_id": trip_id,
+                "client_name": trip.get("client_name", ""),
+                "truck_plate": trip.get("truck_number", ""),
+                "driver_name": trip.get("driver_name", ""),
+                "distance_km": trip.get("distance_km", 0),
+                "start_date": trip.get("start_date", ""),
+                "end_date": trip.get("end_date", ""),
+                "origin": trip.get("loading_address", ""),
+                "destination": trip.get("unloading_address", ""),
+            }
+            filepath = gen.generate(ctx, output_dir)
+            ds.register_existing(
+                filepath, title=f"CMR Trip #{trip_id}",
+                category="trips", entity_type="trip",
+                entity_id=trip_id, tags=["cmr", "auto-generated"],
+            )
+            logger.info("Auto-generated CMR for trip %d: %s", trip_id, filepath)
+        except Exception as e:
+            logger.debug("Auto-CMR generation skipped for trip %d: %s", trip_id, e)
         return results

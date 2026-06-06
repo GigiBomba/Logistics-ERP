@@ -194,6 +194,9 @@ class HistoryView:
         
         btn = ActionButton(f_btns, f"🗑️ {t('history.button_delete')}", self._delete, color=Theme.DANGER)
         btn.pack(side="right")
+        btn = ActionButton(f_btns, f"\U0001F4C2 {t('history.button_documents')}", self._open_trip_documents, color=Theme.ACCENT)
+        btn.pack(side="right", padx=5)
+        self._i18n_tag(btn, "history.button_documents", "\U0001F4C2 ")
         self._i18n_tag(btn, "history.button_delete", "🗑️ ")
 
     def _on_status_filter_changed(self, value):
@@ -311,3 +314,12 @@ class HistoryView:
         data = self._get_selection()
         if data and messagebox.askyesno(t("history.confirm_delete_title"), t("history.confirm_delete_msg")):
             self.trip_service.delete(data[0]); self.refresh()
+
+    def _open_trip_documents(self):
+        data = self._get_selection()
+        if not data:
+            messagebox.showinfo(t("history.button_documents"), t("history.select_trip_first"))
+            return
+        trip_id = data[0]
+        from ui.views.document_center_view import open_entity_documents
+        open_entity_documents(self.frame, self.db, "trip", trip_id, f"Trip #{trip_id}")

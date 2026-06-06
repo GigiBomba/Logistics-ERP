@@ -2,6 +2,7 @@ import tkinter as tk
 import customtkinter as ctk
 from tkinter import ttk, messagebox, filedialog
 import csv
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Callable
 
@@ -196,7 +197,7 @@ class MaintenanceRecordTab(ctk.CTkFrame):
     def _record_form(self, title="", record=None):
         win = ctk.CTkToplevel(self.win)
         win.title(title)
-        win.geometry("550x500")
+        win.geometry("550x560")
         win.configure(fg_color=Theme.BG)
         Theme.apply(win)
 
@@ -204,6 +205,7 @@ class MaintenanceRecordTab(ctk.CTkFrame):
         f.pack(fill="both", expand=True)
 
         fields = {}
+        self._form_attachment_path = ""
 
         def add_row(label):
             r = ctk.CTkFrame(f, fg_color=Theme.BG)
@@ -255,6 +257,47 @@ class MaintenanceRecordTab(ctk.CTkFrame):
         if record and record.get("notes"):
             fields["notes"].insert(0, record["notes"])
 
+        att_row = ctk.CTkFrame(f, fg_color=Theme.BG)
+        att_row.pack(fill="x", pady=4)
+        ctk.CTkLabel(att_row, text=iconed("maint.form_attachment"), fg_color=Theme.BG,
+                     text_color=Theme.MUTED, font=FONTS["label"], width=18,
+                     anchor="w").pack(side="left")
+        self._form_att_label = ctk.CTkLabel(att_row, text=iconed("maint.form_no_attachment"),
+                                            fg_color=Theme.BG,
+                                            text_color=COLORS["text_secondary"],
+                                            font=FONTS["body"], anchor="w")
+        self._form_att_label.pack(side="left", fill="x", expand=True, padx=(8, 0))
+
+        def pick_attachment():
+            path = filedialog.askopenfilename(
+                title=iconed("maint.form_choose_file"),
+                filetypes=[
+                    ("All Supported", "*.pdf;*.png;*.jpg;*.jpeg;*.docx;*.xlsx;*.csv;*.txt;*.zip"),
+                    ("PDF", "*.pdf"),
+                    ("Images", "*.png;*.jpg;*.jpeg;*.gif"),
+                    ("Documents", "*.docx;*.xlsx;*.csv;*.txt"),
+                    ("All Files", "*.*"),
+                ],
+            )
+            if path:
+                self._form_attachment_path = path
+                self._form_att_label.configure(text=os.path.basename(path))
+
+        pick_btn = ctk.CTkButton(att_row, text=iconed("maint.form_choose_file"),
+                                 fg_color=COLORS["accent"],
+                                 hover_color=COLORS["accent_hover"],
+                                 text_color="#ffffff",
+                                 font=FONTS["small"],
+                                 width=32, height=26, corner_radius=4,
+                                 command=pick_attachment)
+        pick_btn.pack(side="right", padx=(4, 0))
+
+        if record and record.get("attachment_path"):
+            self._form_attachment_path = record["attachment_path"]
+            self._form_att_label.configure(
+                text=os.path.basename(record["attachment_path"])
+            )
+
         def save():
             try:
                 mt = self._form_type_combo.get()
@@ -263,13 +306,33 @@ class MaintenanceRecordTab(ctk.CTkFrame):
                 cost = float(fields["cost"].get().strip()) if fields["cost"].get().strip() else None
                 provider = fields["provider"].get().strip()
                 notes = fields["notes"].get().strip()
+                attachment = self._form_attachment_path or ""
 
                 if record:
                     self.service.update_record(
                         record["id"], mt, date, km, cost, provider, notes,
                     )
+                    rid = record["id"]
                 else:
-                    self.service.add_record(self.truck_id, mt, date, km, cost, notes, provider)
+                    rid = self.service.add_record(
+                        self.truck_id, mt, date, km, cost, notes, provider,
+                        attachment=attachment,
+                    )
+                if attachment and os.path.isfile(attachment):
+                    try:
+                        from services.document_service import DocumentService
+                        ds = DocumentService(self.service.db)
+                        ds.upload(
+                            source_path=attachment,
+                            title=f"Maintenance {mt} {date}",
+                            category="maintenance",
+                            entity_type="maintenance_record",
+                            entity_id=rid,
+                            tags=["maintenance", mt],
+                        )
+                    except Exception as e:
+                        logger = __import__("logging").getLogger(__name__)
+                        logger.warning("Failed to register attachment in Document Center: %s", e)
                 win.destroy()
                 self._load_records()
                 if self.on_change:

@@ -13,7 +13,8 @@ class Config:
     EXTRA_COST_PER_DAY = 12.0     # EUR/zi
     
     # API URLs
-    CURRENCY_API = "https://open.er-api.com/v6/latest/EUR"
+    CURRENCY_API_PRIMARY = "https://open.er-api.com/v6/latest/EUR"
+    CURRENCY_API_FALLBACK = "https://api.frankfurter.dev/latest?from=EUR"
     
     @classmethod
     def ensure_dirs(cls):
@@ -22,3 +23,5 @@ class Config:
         os.makedirs("logs", exist_ok=True)
         os.makedirs("reports", exist_ok=True)
         os.makedirs(os.path.join("reports", "invoices"), exist_ok=True)
+        os.makedirs("invoices", exist_ok=True)
+        os.makedirs(os.path.join("data", "documents"), exist_ok=True)
