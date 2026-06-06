@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Français",
   "app": {
     "name": "ERP LOGISTIQUE",
@@ -423,7 +423,7 @@
     "duration": "Durée : {}",
     "stops": "Arrêts : {} arrêts",
     "fuel": "Carburant : {:.2f} L",
-    "fuel_cost": "Coût carburant : {:.2f} RON",
+    "fuel_cost": "Coût carburant : {}",
     "history_loaded": "Itinéraire chargé depuis l'historique",
     "days": "jours",
     "hours": "heures",

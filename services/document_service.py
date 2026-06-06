@@ -289,7 +289,11 @@ class DocumentService:
                           entity_id: Optional[int] = None,
                           description: str = "",
                           tags: Optional[List[str]] = None,
-                          is_migration: bool = False) -> Optional[int]:
+                          is_migration: bool = False,
+                          copy_type: str = "",
+                          cmr_number: str = "",
+                          cmr_metadata: str = "",
+                          is_signed: int = 0) -> Optional[int]:
         if not os.path.isfile(file_path):
             logger.warning("register_existing: file not found: %s", file_path)
             return None
@@ -348,6 +352,10 @@ class DocumentService:
             uploaded_by="system",
             uploaded_at=now,
             updated_at=now,
+            copy_type=copy_type,
+            cmr_number=cmr_number,
+            cmr_metadata_json=cmr_metadata,
+            is_signed=is_signed,
         )
 
         if entity_type and entity_id is not None:

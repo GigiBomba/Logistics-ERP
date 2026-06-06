@@ -1,4 +1,4 @@
-﻿import os
+import os
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Table, TableStyle, HRFlowable

@@ -14,6 +14,7 @@ class FleetRepository(BaseRepository):
         "fuel_consumption", "mileage", "monthly_rate", "status",
         "insurance_expiry", "inspection_expiry", "maintenance_due",
         "tachograph_expiry", "active_status", "tracking_device_id",
+        "trailer_plate", "max_payload_kg", "cmr_insurance_number", "cmr_insurance_expiry",
     ]
 
     # ── Truck CRUD ───────────────────────────────────────────────────

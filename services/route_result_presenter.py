@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Tuple
 from services.i18n import t
+from services.currency_service import CURRENCY_SYMBOLS
 
 
 def format_duration_minutes(duration_min: float) -> str:
@@ -18,6 +19,7 @@ def format_success_info(
     route: Dict[str, Any],
     cost_info: Dict[str, Any],
     stops_count: int,
+    preferred_currency: str = "EUR",
 ) -> str:
     distance = float(route.get("distance_km") or 0)
     duration = float(route.get("duration_min") or 0)
@@ -30,7 +32,12 @@ def format_success_info(
         f"⛽ {t('result.fuel').format(float(cost_info.get('fuel_liters') or 0))}",
     ]
     if cost_info.get("fuel_cost"):
-        lines.append(f"💰 {t('result.fuel_cost').format(float(cost_info.get('fuel_cost') or 0))}")
+        fuel_cost = float(cost_info.get("fuel_cost") or 0)
+        if preferred_currency.upper() != "EUR":
+            from services.exchange_rate_service import ExchangeRateService
+            fuel_cost = ExchangeRateService().convert(fuel_cost, "EUR", preferred_currency.upper())
+        symbol = CURRENCY_SYMBOLS.get(preferred_currency.upper(), preferred_currency.upper())
+        lines.append(f"💰 {t('result.fuel_cost').format(f'{fuel_cost:.2f} {symbol}')}")
     return "\n".join(lines)
 
 

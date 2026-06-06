@@ -1,4 +1,4 @@
-﻿import logging
+import logging
 
 from services.exchange_rate_service import ExchangeRateService
 from services.fuel_price_service import FuelPriceService

@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Bosanski",
   "app": {
     "name": "ERP LOGISTIKA",
@@ -423,7 +423,7 @@
     "duration": "Trajanje: {}",
     "stops": "Stanice: {} stanica",
     "fuel": "Gorivo: {:.2f} L",
-    "fuel_cost": "Trošak goriva: {:.2f} BAM",
+    "fuel_cost": "Trošak goriva: {}",
     "history_loaded": "Ruta učitana iz historije",
     "days": "dana",
     "hours": "sati",

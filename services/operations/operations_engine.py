@@ -338,6 +338,7 @@ class OperationsEngine:
             from services.trip_service import TripService
             from services.invoicing.cmr_generator import CMRGenerator
             from services.document_service import DocumentService
+            from services.operations.alert_manager import AlertType, Severity
             ts = TripService(self._db)
             trip = ts.get_by_id(trip_id)
             if not trip:
@@ -347,26 +348,93 @@ class OperationsEngine:
             for d in existing:
                 if "cmr" in (d.get("tags") or "[]"):
                     return
+
+            if not trip.get("cargo_description") or not trip.get("gross_weight_kg"):
+                self._alert_mgr.create_alert(
+                    AlertType.POLICY_VIOLATION, Severity.HIGH,
+                    f"CMR blocked for trip #{trip_id}",
+                    "Cargo description and gross weight are required for CMR. "
+                    "Generate CMR manually via the Generators workspace.",
+                    trip_id=str(trip_id),
+                )
+                logger.warning("Auto-CMR skipped for trip %d: missing cargo data", trip_id)
+                return
+
+            if trip.get("adr_info_json"):
+                driver_id = trip.get("driver_id")
+                if driver_id:
+                    try:
+                        driver = self._db.conn.execute(
+                            "SELECT name, adr_certificate_expiry FROM drivers WHERE id = ?",
+                            (driver_id,),
+                        ).fetchone()
+                        if driver and driver["adr_certificate_expiry"]:
+                            expiry = datetime.strptime(driver["adr_certificate_expiry"], "%Y-%m-%d")
+                            if expiry < datetime.now():
+                                self._alert_mgr.create_alert(
+                                    AlertType.COMPLIANCE_RISK, Severity.CRITICAL,
+                                    f"ADR certificate expired for driver {driver['name']}",
+                                    f"Trip #{trip_id} requires ADR transport but driver"
+                                    f" ADR certificate expired {driver['adr_certificate_expiry']}.",
+                                    trip_id=str(trip_id),
+                                )
+                                logger.warning(
+                                    "Auto-CMR skipped for trip %d: expired ADR certificate", trip_id)
+                                return
+                    except Exception as e:
+                        logger.debug("ADR cert check skipped: %s", e)
+
             output_dir = os.path.join("data", "documents", "trips", str(trip_id))
-            gen = CMRGenerator()
-            ctx = {
-                "trip_id": trip_id,
-                "client_name": trip.get("client_name", ""),
-                "truck_plate": trip.get("truck_number", ""),
-                "driver_name": trip.get("driver_name", ""),
-                "distance_km": trip.get("distance_km", 0),
-                "start_date": trip.get("start_date", ""),
-                "end_date": trip.get("end_date", ""),
-                "origin": trip.get("loading_address", ""),
-                "destination": trip.get("unloading_address", ""),
-            }
-            filepath = gen.generate(ctx, output_dir)
-            ds.register_existing(
-                filepath, title=f"CMR Trip #{trip_id}",
-                category="trips", entity_type="trip",
-                entity_id=trip_id, tags=["cmr", "auto-generated"],
-            )
-            logger.info("Auto-generated CMR for trip %d: %s", trip_id, filepath)
+            os.makedirs(output_dir, exist_ok=True)
+
+            gen = CMRGenerator(db=self._db, prefs=self._prefs)
+            ctx = dict(trip)
+            ctx["trip_id"] = trip_id
+            ctx["truck_plate"] = trip.get("truck_number", "")
+            if trip.get("driver_id"):
+                try:
+                    dr = self._db.conn.execute(
+                        "SELECT * FROM drivers WHERE id = ?", (trip["driver_id"],)
+                    ).fetchone()
+                    if dr:
+                        d = dict(dr)
+                        ctx["driver_license"] = d.get("license_number", "")
+                        ctx["driver_name"] = d.get("name", trip.get("driver_name", ""))
+                except Exception:
+                    pass
+            if trip.get("truck_id"):
+                try:
+                    tr = self._db.conn.execute(
+                        "SELECT * FROM trucks WHERE id = ?", (trip["truck_id"],)
+                    ).fetchone()
+                    if tr:
+                        t = dict(tr)
+                        ctx["trailer_plate"] = t.get("trailer_plate", "")
+                        ctx["cmr_insurance_number"] = t.get("cmr_insurance_number", "")
+                except Exception:
+                    pass
+            if trip.get("client_id"):
+                try:
+                    cl = self._db.conn.execute(
+                        "SELECT * FROM clients WHERE id = ?", (trip["client_id"],)
+                    ).fetchone()
+                    if cl:
+                        c = dict(cl)
+                        ctx["consignee_vat"] = c.get("vat_number", "")
+                        ctx["consignee_eori"] = c.get("eori_number", "")
+                except Exception:
+                    pass
+
+            copies = gen.generate_all_copies(ctx, output_dir)
+            for suffix, path in copies.items():
+                ds.register_existing(
+                    path,
+                    title=f"CMR #{ctx.get('cmr_number', '')} - {suffix.upper()} COPY",
+                    category="trips", entity_type="trip",
+                    entity_id=trip_id,
+                    tags=["cmr", suffix.lower(), "auto-generated"],
+                )
+            logger.info("Auto-generated 4 CMR copies for trip %d: %s", trip_id, output_dir)
         except Exception as e:
             logger.debug("Auto-CMR generation skipped for trip %d: %s", trip_id, e)
         return results

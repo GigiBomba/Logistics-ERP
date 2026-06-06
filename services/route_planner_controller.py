@@ -116,6 +116,14 @@ class RoutePlannerController:
     def cancel_calculation(self) -> None:
         self._runner.cancel()
 
+    def commit_route(self, route_id: int, truck_id: Optional[str] = None) -> None:
+        if self._persistence:
+            self._persistence.commit_route(route_id, truck_id=truck_id)
+
+    def discard_route(self, route_id: int) -> None:
+        if self._persistence:
+            self._persistence.history.discard_route(route_id)
+
     def process_calculation_result(
         self,
         result: Any,
@@ -139,7 +147,10 @@ class RoutePlannerController:
             truck_obj = self._truck_cost_payload(ctx.truck)
             self._sync_trip_context(route, truck_obj, cost_info, ctx.profile)
 
-            info_text = format_success_info(route, cost_info, len(ctx.stops_state))
+            info_text = format_success_info(
+                route, cost_info, len(ctx.stops_state),
+                preferred_currency=_get_preferred_currency(),
+            )
             compliance = self.compliance.analyze(route)
 
             if self._persistence:
@@ -197,6 +208,8 @@ class RoutePlannerController:
             fuel_liters=cost_info.get("fuel_liters"),
             fuel_cost=cost_info.get("fuel_cost"),
             route_history_v2_id=route_id,
+            truck_id=truck_obj.get("id"),
+            truck_fuel_consumption=truck_obj.get("fuel_consumption_l_per_100km"),
         )
 
     def load_history_record(self, record: RouteHistoryRecord) -> Dict[str, Any]:
@@ -225,3 +238,25 @@ class RoutePlannerController:
             return path, None
         except Exception as exc:
             return None, f"❌ {t('result.generic_error').format('Export', str(exc))}"
+
+
+def _get_preferred_currency() -> str:
+    try:
+        from services.app_state import AppState
+        currency = AppState().get("currency")
+        if currency:
+            return currency
+    except Exception:
+        pass
+    try:
+        import sqlite3, os
+        db_path = os.path.join("data", "cashflow.db")
+        if os.path.isfile(db_path):
+            conn = sqlite3.connect(db_path)
+            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("pref_currency",)).fetchone()
+            conn.close()
+            if row and row[0]:
+                return row[0]
+    except Exception:
+        pass
+    return "EUR"

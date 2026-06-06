@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Hrvatski",
   "app": {
     "name": "ERP LOGISTIKA",
@@ -423,7 +423,7 @@
     "duration": "Trajanje: {}",
     "stops": "Stajališta: {} stajališta",
     "fuel": "Gorivo: {:.2f} L",
-    "fuel_cost": "Trošak goriva: {:.2f} RON",
+    "fuel_cost": "Trošak goriva: {}",
     "history_loaded": "Ruta učitana iz povijesti",
     "days": "dana",
     "hours": "sati",

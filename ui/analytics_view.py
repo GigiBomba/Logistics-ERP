@@ -42,6 +42,8 @@ class AnalyticsView:
         self._canvas = None
         self._axes = None
         self._no_data_text = None
+        self._currency = self.prefs.get_currency()
+        self._currency_symbol = self.prefs.get_currency_symbol()
 
         now = datetime.now()
         self._start_date = now.replace(day=1, hour=0, minute=0, second=0)
@@ -59,6 +61,19 @@ class AnalyticsView:
     def _on_destroy(self, event=None):
         if event is not None and event.widget != (self.win or self.frame):
             return
+        if self._canvas:
+            try:
+                self._canvas.get_tk_widget().destroy()
+            except Exception:
+                pass
+            self._canvas = None
+        if self._fig:
+            try:
+                import matplotlib.pyplot as mplt
+                mplt.close(self._fig)
+            except Exception:
+                pass
+            self._fig = None
         unregister_listener(self._on_language_changed)
 
     def _on_language_changed(self, lang):
@@ -193,6 +208,16 @@ class AnalyticsView:
         self._chart_container = ctk.CTkFrame(self.frame, fg_color=Theme.BG)
         self._chart_container.pack(fill="both", expand=True, padx=12, pady=4)
 
+    def _fmt_currency(self, values):
+        if self._currency == "EUR":
+            return [v for v in values]
+        try:
+            from services.exchange_rate_service import ExchangeRateService
+            fx = ExchangeRateService()
+            return [fx.convert(v, "EUR", self._currency) for v in values]
+        except Exception:
+            return [v for v in values]
+
     def _load_data(self):
         if self._fig:
             for ax in self._axes.flat:
@@ -244,10 +269,11 @@ class AnalyticsView:
             if truck_profits:
                 sorted_trucks = sorted(truck_profits.items(), key=lambda x: x[1], reverse=True)[:8]
                 trucks = [x[0] for x in sorted_trucks]
-                profits_t = [x[1] for x in sorted_trucks]
+                profits_t = self._fmt_currency([x[1] for x in sorted_trucks])
                 bars = ax1.barh(trucks, profits_t, color=CHART_PRIMARY, height=0.6)
                 max_idx = profits_t.index(max(profits_t))
                 bars[max_idx].set_color(CHART_SECONDARY)
+                ax1.set_xlabel(f"Profit ({self._currency_symbol})", color=Theme.MUTED, fontsize=8)
             title1 = ax1.set_title(t("analytics.chart_top_trucks"), color=Theme.TEXT, fontsize=10)
             self._chart_texts.append((title1, "analytics.chart_top_trucks"))
 
@@ -255,8 +281,8 @@ class AnalyticsView:
             apply_chart_style(fig, ax2)
             if rev_exp:
                 months = [str(x['month']) for x in rev_exp]
-                revs = [float(x['rev']) for x in rev_exp]
-                exps = [float(x['exp']) for x in rev_exp]
+                revs = self._fmt_currency([float(x['rev']) for x in rev_exp])
+                exps = self._fmt_currency([float(x['exp']) for x in rev_exp])
                 line1 = ax2.plot(months, revs, marker='o', label=t("analytics.legend_revenue"),
                                  color=CHART_PRIMARY, linewidth=2, markerfacecolor=CHART_SECONDARY,
                                  markeredgecolor="none")[0]
@@ -266,6 +292,7 @@ class AnalyticsView:
                 ax2.fill_between(months, revs, alpha=0.12, color=CHART_PRIMARY)
                 self._leg_lines = [(line1, "analytics.legend_revenue"), (line2, "analytics.legend_expenses")]
                 ax2.legend(fontsize=8, facecolor=Theme.SURFACE, labelcolor='white')
+                ax2.set_ylabel(f"Amount ({self._currency_symbol})", color=Theme.MUTED, fontsize=8)
             title2 = ax2.set_title(t("analytics.chart_revenue_vs_expenses"), color=Theme.TEXT, fontsize=10)
             self._chart_texts.append((title2, "analytics.chart_revenue_vs_expenses"))
 
@@ -274,11 +301,12 @@ class AnalyticsView:
             if driver_profits:
                 sorted_drivers = sorted(driver_profits.items(), key=lambda x: x[1], reverse=True)[:8]
                 drivers = [x[0] for x in sorted_drivers]
-                profits_d = [x[1] for x in sorted_drivers]
+                profits_d = self._fmt_currency([x[1] for x in sorted_drivers])
                 bars = ax3.bar(drivers, profits_d, color=CHART_PRIMARY, width=0.6)
                 max_idx = profits_d.index(max(profits_d))
                 bars[max_idx].set_color(CHART_SECONDARY)
                 ax3.tick_params(axis='x', rotation=30)
+                ax3.set_ylabel(f"Profit ({self._currency_symbol})", color=Theme.MUTED, fontsize=8)
             title3 = ax3.set_title(t("analytics.chart_profit_per_driver"), color=Theme.TEXT, fontsize=10)
             self._chart_texts.append((title3, "analytics.chart_profit_per_driver"))
 

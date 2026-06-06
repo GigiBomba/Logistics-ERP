@@ -33,15 +33,19 @@ class RouteComplianceAnalyzer:
         summary_lines = [
             t("compliance.traversed").format(', '.join(countries) if countries else 'N/A'),
             t("compliance.toll_countries").format(', '.join(tolls) if tolls else 'None'),
-            t("compliance.excluded_avoided").format(', '.join(avoided) if avoided else 'None'),
             t("compliance.border_crossings").format(borders),
         ]
         if extra_km > 0:
             summary_lines.append(t("compliance.extra_distance").format(extra_km))
 
-        reason = route.get("reroute_reason") or ("cached" if route.get("cached") else "chosen")
+        reason = route.get("reroute_reason") or ""
+        cached = route.get("cached")
         note = route.get("note") or ""
-        explanation = t("compliance.why_chosen").format(reason, note).strip()
+        explanation = ""
+        if cached:
+            explanation = t("compliance.why_chosen").format("cached", note).strip()
+        elif reason and reason != "chosen":
+            explanation = t("compliance.why_chosen").format(reason, note).strip()
 
         return RouteComplianceSummary(
             traversed=countries,

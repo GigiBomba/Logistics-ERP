@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Deutsch",
   "app": {
     "name": "LOGISTIK ERP",
@@ -423,7 +423,7 @@
     "duration": "Dauer: {}",
     "stops": "Halte: {} Halte",
     "fuel": "Kraftstoff: {:.2f} L",
-    "fuel_cost": "Kraftstoffkosten: {:.2f} RON",
+    "fuel_cost": "Kraftstoffkosten: {}",
     "history_loaded": "Route aus Verlauf geladen",
     "days": "Tage",
     "hours": "Stunden",

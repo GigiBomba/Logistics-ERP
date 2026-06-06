@@ -102,6 +102,19 @@ class RoutePersistenceService:
             self.route_state.on_route_calculated(route_id, record, source="route_planner")
             return route_id
 
+    def commit_route(
+        self,
+        route_id: int,
+        truck_id: Optional[str] = None,
+    ) -> None:
+        """Mark a draft route as committed and sync truck assignment."""
+        self.history.commit_route(route_id)
+        if truck_id:
+            try:
+                self.history.assign_route_to_truck(route_id, truck_id)
+            except Exception:
+                pass
+
     @staticmethod
     def record_to_planner_route(record: RouteHistoryRecord) -> Dict[str, Any]:
         return {
