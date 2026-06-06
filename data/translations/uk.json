@@ -347,7 +347,7 @@
     "email_subject": "Тема Email",
     "email_success": "Email Відправлено",
     "smtp_not_configured": "SMTP Не Налаштовано",
-    "trip_list_format": "Формат Списку Поїздок",
+    "trip_list_format": "#{id} {truck_number} \u2014 {client_name} [{created_at}]",
     "field_{key}": "Поле {key}"
   },
   "settings": {
@@ -434,6 +434,7 @@
     "exclusions_none": "Нічого не вибрано",
     "exclusions_empty": "Немає виключених країн",
     "add_to_dispatch": "Додати до Диспетчерської",
+    "send_to_calculator": "Надіслати до Калькулятора",
     "client_name": "Назва Клієнта",
     "no_saved_route_id": "Немає ID Збереженого Маршруту",
     "select_driver": "Вибрати Водія",

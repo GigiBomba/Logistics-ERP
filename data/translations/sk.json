@@ -300,7 +300,7 @@
     "email_subject": "Predmet emailu",
     "email_success": "Email úspešný",
     "smtp_not_configured": "SMTP nie je nakonfigurované",
-    "trip_list_format": "Formát zoznamu ciest",
+    "trip_list_format": "#{id} {truck_number} \u2014 {client_name} [{created_at}]",
     "field_{key}": "Pole {key}"
   },
   "settings": {
@@ -382,6 +382,7 @@
     "exclusions_none": "Nič nevybrané",
     "exclusions_empty": "Žiadne vylúčené krajiny",
     "add_to_dispatch": "Pridať do dispečingu",
+    "send_to_calculator": "Poslať do Kalkulačky",
     "client_name": "Meno klienta",
     "no_saved_route_id": "Žiadne ID uloženej trasy",
     "select_driver": "Vybrať vodiča",

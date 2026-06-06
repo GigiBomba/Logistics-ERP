@@ -347,7 +347,7 @@
     "email_subject": "Temat emaila",
     "email_success": "Email udany",
     "smtp_not_configured": "SMTP nie skonfigurowane",
-    "trip_list_format": "Format listy przejazdów",
+    "trip_list_format": "#{id} {truck_number} \u2014 {client_name} [{created_at}]",
     "field_{key}": "Pole {Key}"
   },
   "settings": {
@@ -434,6 +434,7 @@
     "exclusions_none": "Nic nie wybrano",
     "exclusions_empty": "Brak wykluczonych krajów",
     "add_to_dispatch": "Dodaj do dyspozytora",
+    "send_to_calculator": "Wyślij do Kalkulatora",
     "client_name": "Nazwa klienta",
     "no_saved_route_id": "Brak zapisanego ID trasy",
     "select_driver": "Wybierz kierowcę",
