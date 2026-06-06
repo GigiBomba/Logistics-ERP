@@ -1,4 +1,4 @@
-﻿import tkinter as tk
+import tkinter as tk
 from tkinter import messagebox, ttk
 from datetime import datetime, timedelta
 import logging
@@ -189,7 +189,7 @@ class MainWindow(I18nMixin):
         nav.add_item("tachograph", "\U0001f4be", t("nav.tachograph"), i18n_key="nav.tachograph")
 
         nav.add_group(t("nav.group_finance"), "nav.group_finance")
-        nav.add_item("invoices", "\U0001f9fe", t("nav.invoices"), i18n_key="nav.invoices")
+        nav.add_item("invoices", "\U0001f9fe", t("nav.generators"), i18n_key="nav.generators")
         nav.add_item("history", "\U0001f4cb", t("nav.history"), i18n_key="nav.history")
         nav.add_item("route_history", "\U0001f5c2", t("nav.route_history"), i18n_key="nav.route_history")
 
@@ -275,6 +275,32 @@ class MainWindow(I18nMixin):
         lbl = section_header(fin_f, t("main.section_finance"), _return=True)
         self.i18n_tag(lbl, "main.section_finance")
         self.e_price = self._add_field(fin_f, "main.offer_price")
+
+        # VAT checkbox + pre/post VAT fields
+        vat_row = ctk.CTkFrame(fin_f, fg_color=Theme.BG)
+        vat_row.pack(fill="x", pady=(4, 0))
+        self._vat_enabled = tk.BooleanVar(value=False)
+        self._vat_check = ctk.CTkCheckBox(vat_row, text=t("main.vat_checkbox"),
+                                          variable=self._vat_enabled,
+                                          command=self._on_vat_toggled,
+                                          font=FONTS["body"],
+                                          text_color=Theme.TEXT,
+                                          fg_color=Theme.ACCENT,
+                                          hover_color=Theme.ACCENT_HOVER)
+        self._vat_check.pack(side="left")
+        self.i18n_tag(self._vat_check, "main.vat_checkbox")
+
+        self._vat_percent_entry = ctk.CTkEntry(vat_row, placeholder_text="VAT %",
+                                               font=FONTS["body"], width=60, height=32,
+                                               fg_color=Theme.INPUT_BG,
+                                               text_color=Theme.TEXT)
+        self._vat_percent_entry.insert(0, "19")
+
+        # Pre/post VAT fields (hidden initially)
+        self._vat_fields_frame = ctk.CTkFrame(fin_f, fg_color=Theme.BG)
+        self._e_price_pre = self._add_field(self._vat_fields_frame, "main.offer_price_pre_vat")
+        self._e_price_post = self._add_field(self._vat_fields_frame, "main.offer_price_post_vat")
+        self._e_price_post.configure(state="readonly")
 
         cost_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
         cost_f.pack(fill="x")
@@ -375,7 +401,7 @@ class MainWindow(I18nMixin):
             "driver_manager": ("ui.driver_manager", "DriverManager", {"open_window": False, "ops": self.ops}),
             "clients": ("ui.client_workspace", "ClientWorkspace", {"prefs": self.prefs}),
             "documents": ("ui.views.document_center_view", "DocumentCenterView", {}),
-            "invoices": ("ui.invoice_tab", "InvoiceTab", {"prefs": self.prefs}),
+            "invoices": ("ui.views.generators_view", "GeneratorsView", {"prefs": self.prefs}),
             "settings": ("ui.settings_view", "SettingsView", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
             "dashboard": ("ui.dashboard", "FleetDashboard", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
             "analytics": ("ui.analytics_view", "AnalyticsView", {"prefs": self.prefs, "embedded": True}),
@@ -463,21 +489,57 @@ class MainWindow(I18nMixin):
             self._route_badge.pack(anchor="w", pady=(2, 0))
         return e
 
+    def _on_vat_toggled(self):
+        if self._vat_enabled.get():
+            self._vat_percent_entry.pack(side="left", padx=(6, 0))
+            self._vat_fields_frame.pack(fill="x", pady=(4, 0))
+            try:
+                price = float(self.e_price.get() or 0)
+                vat_pct = float(self._vat_percent_entry.get() or 0)
+                self._e_price_pre.delete(0, "end")
+                self._e_price_pre.insert(0, f"{price:.2f}")
+                post = round(price * (1 + vat_pct / 100), 2)
+                self._e_price_post.configure(state="normal")
+                self._e_price_post.delete(0, "end")
+                self._e_price_post.insert(0, f"{post:.2f}")
+                self._e_price_post.configure(state="readonly")
+            except ValueError:
+                pass
+        else:
+            self._vat_percent_entry.pack_forget()
+            self._vat_fields_frame.pack_forget()
+
     def _handle_calculate(self):
         try:
             if not hasattr(self, 'e_price'):
                 self._switch_module("calculator")
                 return
             km = float(self.route_distance or 0)
-            price = float(self.e_price.get() or 0)
-            if km <= 0 or price <= 0:
+            price_raw = float(self.e_price.get() or 0)
+            if km <= 0 or price_raw <= 0:
                 messagebox.showwarning(t("main.warning_title"), t("main.fields_required"))
                 return
+
+            # VAT handling
+            vat_enabled = self._vat_enabled.get()
+            vat_pct = 0.0
+            price_pre_vat = price_raw
+            if vat_enabled:
+                try:
+                    vat_pct = float(self._vat_percent_entry.get() or 0)
+                    price_pre_vat = float(self._e_price_pre.get() or price_raw)
+                    price = float(self._e_price_post.get() or price_raw)
+                except ValueError:
+                    price = price_raw
+                    vat_pct = 0
+            else:
+                price = price_raw
 
             rates = self.api.get_rates()
             currency = self.prefs.get_currency()
             rate_eur = rates.get(currency, 1.0)
             pret_eur = price / rate_eur
+            pret_eur_pre_vat = price_pre_vat / rate_eur if vat_enabled else pret_eur
 
             try:
                 cons = float(self.selected_truck_fuel) if self.selected_truck_fuel is not None else 34.0
@@ -537,7 +599,7 @@ class MainWindow(I18nMixin):
             client_name = self.e_client.get().strip()
             client_id = self.client_service.get_or_create(client_name) if client_name else None
 
-            self.trip_service.add({
+            trip_data = {
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
                 "truck_number": (self.selected_truck.get('plate_number') if isinstance(self.selected_truck, dict) and self.selected_truck else (self.selected_truck[1] if self.selected_truck and len(self.selected_truck) > 1 else None)),
                 "driver_name": (self.selected_truck.get('driver_name') if isinstance(self.selected_truck, dict) and self.selected_truck and 'driver_name' in self.selected_truck else (self.selected_truck['driver_name'] if self.selected_truck and hasattr(self.selected_truck, 'keys') and 'driver_name' in self.selected_truck.keys() else None)),
@@ -560,7 +622,12 @@ class MainWindow(I18nMixin):
                 "extra_costs": res.extra_costs,
                 "route_history_v2_id": self._current_route_history_id,
                 "truck_consumption_l_per_100km": self.selected_truck_fuel,
-            })
+            }
+            if vat_enabled:
+                trip_data["price_pre_vat"] = round(pret_eur_pre_vat, 2)
+                trip_data["vat_percent"] = round(vat_pct, 2)
+
+            self.trip_service.add(trip_data)
             self._show_toast(f"✅ {t('main.save_success')}")
 
         except Exception as e:
@@ -635,15 +702,6 @@ class MainWindow(I18nMixin):
     def _open_analytics(self):
         from ui.analytics_view import AnalyticsView
         AnalyticsView(self.root, self.db, prefs=self.prefs)
-
-    def _open_invoices(self):
-        from ui.invoice_tab import InvoiceTab
-        win = ctk.CTkToplevel(self.root)
-        win.title(t("invoice.section_company"))
-        win.geometry("950x850")
-        Theme.apply(win)
-        win.configure(fg_color=Theme.BG)
-        InvoiceTab(win, self.db, prefs=self.prefs).frame.pack(fill="both", expand=True)
 
     def get_timestamp(self):
         return datetime.now().strftime("%Y-%m-%d %H:%M")

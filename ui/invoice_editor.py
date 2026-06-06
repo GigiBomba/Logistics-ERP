@@ -58,8 +58,17 @@ class InvoiceEditor(I18nMixin):
         self._discount_value = tk.StringVar(value="0")
         self._currency = tk.StringVar(value=self.prefs.get_currency())
 
-        # Line items: list of dicts, each with StringVar fields
-        self._line_items = []
+        # Additional items: list of dicts with description + amount
+        self._addon_items = []
+
+        # Invoice mode
+        self._is_client_invoice = tk.BooleanVar(value=True)
+        self._is_internal_invoice = tk.BooleanVar(value=False)
+
+        # Trip base price (loaded from trip)
+        self._trip_base_price = tk.StringVar(value="0.00")
+        self._trip_price_pre_vat = tk.StringVar()
+        self._trip_vat_percent = tk.StringVar()
 
         # Trip details (auto-filled from trip + route)
         self._truck_plate = tk.StringVar()
@@ -107,7 +116,7 @@ class InvoiceEditor(I18nMixin):
         self._load_company_config()
         self._load_clients()
         self._load_trips()
-        self._add_default_line_item()
+        self._add_default_addon_item()
 
         self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
         self.frame.bind("<Destroy>", self._on_destroy)
@@ -192,6 +201,22 @@ class InvoiceEditor(I18nMixin):
             hover_color=COLORS["accent_hover"], text_color="#ffffff",
             command=self._auto_fill_all)
         self._auto_btn.grid(row=0, column=4, sticky="e")
+
+        # Mode checkboxes
+        mode_frame = ctk.CTkFrame(inner, fg_color="transparent")
+        mode_frame.grid(row=0, column=5, sticky="e", padx=(S["3"], 0))
+        self._cb_client = ctk.CTkCheckBox(mode_frame, text=t("invoice.radio_client_invoice"),
+                                          variable=self._is_client_invoice,
+                                          command=lambda: self._on_mode_changed("client"),
+                                          font=FONTS["small"], text_color=COLORS["text_secondary"],
+                                          fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"])
+        self._cb_client.pack(side="left", padx=(0, S["2"]))
+        self._cb_internal = ctk.CTkCheckBox(mode_frame, text=t("invoice.radio_internal_invoice"),
+                                            variable=self._is_internal_invoice,
+                                            command=lambda: self._on_mode_changed("internal"),
+                                            font=FONTS["small"], text_color=COLORS["text_secondary"],
+                                            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"])
+        self._cb_internal.pack(side="left")
 
         # Refresh buttons
         ctk.CTkButton(inner, text="\U0001F504", width=34, height=34,
@@ -665,7 +690,7 @@ class InvoiceEditor(I18nMixin):
             entry.bind("<KeyRelease>", lambda e: self._recalc_all())
 
     def _build_canvas_line_items(self):
-        # Container for the line items section
+        # Container for the additional items section
         self._lit_container = ctk.CTkFrame(self._canvas_inner, fg_color="transparent")
         self._lit_container.pack(fill="x", pady=(0, S["4"]))
 
@@ -674,21 +699,15 @@ class InvoiceEditor(I18nMixin):
                                   corner_radius=6)
         lit_header.pack(fill="x", pady=(0, S["1"]))
         lit_header.columnconfigure(0, weight=0, minsize=30)   # #
-        lit_header.columnconfigure(1, weight=0, minsize=65)   # Qty
-        lit_header.columnconfigure(2, weight=1)                # Unit Price
-        lit_header.columnconfigure(3, weight=0, minsize=65)   # Tax %
-        lit_header.columnconfigure(4, weight=0, minsize=100)  # Total
-        lit_header.columnconfigure(5, weight=0, minsize=90)   # Actions
+        lit_header.columnconfigure(1, weight=3)                # Description
+        lit_header.columnconfigure(2, weight=0, minsize=95)   # Amount
+        lit_header.columnconfigure(3, weight=0, minsize=85)   # Actions
 
-        headers = [
-            "#", t("invoice_editor.quantity"),
-            t("invoice_editor.unit_price"), t("invoice_editor.tax_rate_short"),
-            t("invoice_editor.total"), ""
-        ]
+        headers = ["#", t("invoice_editor.description"), t("invoice_editor.amount"), ""]
         for i, h in enumerate(headers):
             ctk.CTkLabel(lit_header, text=h, font=FONTS["label"],
                          text_color=COLORS["text_muted"],
-                         anchor="center").grid(
+                         anchor="w" if i == 1 else "center").grid(
                 row=0, column=i, sticky="ew", padx=S["2"], pady=(S["2"], S["2"]))
 
         # Rows container
@@ -703,7 +722,7 @@ class InvoiceEditor(I18nMixin):
                       fg_color=COLORS["bg_elevated"],
                       hover_color=COLORS["border_hover"],
                       text_color=COLORS["text_secondary"],
-                      command=self._add_line_item_row).pack(side="left", padx=(0, S["2"]))
+                      command=self._add_addon_row).pack(side="left", padx=(0, S["2"]))
 
     def _build_canvas_notes(self):
         notes_frame = ctk.CTkFrame(self._canvas_inner, fg_color="transparent")
@@ -903,20 +922,21 @@ class InvoiceEditor(I18nMixin):
                 self._desc_text.delete("1.0", "end")
                 self._desc_text.insert("1.0", t("invoice_pdf.service_desc").format(dist))
 
-        # Auto-fill a line item from trip data
-        price = trip.get("total_price_eur", 0) or 0
-        if price > 0:
-            unit_price = price if price > 0 else 0
-            qty = 1
+        # Set trip base price in totals section
+        price = round(float(trip.get("total_price_eur", 0) or 0), 2)
+        self._trip_base_price.set(f"{price:.2f}")
 
-            # Replace first line item if it's the default empty one
-            if len(self._line_items) == 1 and self._line_items[0].get("quantity", 0) == 0:
-                self._line_items = []
+        # Handle VAT if present on trip
+        pre_vat = trip.get("price_pre_vat")
+        vat_pct = trip.get("vat_percent")
+        if pre_vat is not None and vat_pct is not None:
+            self._trip_price_pre_vat.set(str(pre_vat))
+            self._trip_vat_percent.set(str(vat_pct))
 
-            self._line_items.append(self._create_line_item_data(
-                quantity=qty, unit_price=unit_price))
-            self._rebuild_line_item_rows()
-            self._recalc_all()
+        # Clear existing addon items and add empty one
+        self._addon_items = [self._create_addon_data()]
+        self._rebuild_addon_rows()
+        self._recalc_all()
 
         # Auto-select client if not selected
         client_name = trip.get("client_name", "")
@@ -955,157 +975,26 @@ class InvoiceEditor(I18nMixin):
         if choice and choice in self._trip_map:
             self._on_trip_selected(choice)
 
+    def _on_mode_changed(self, mode):
+        if mode == "client":
+            if self._is_client_invoice.get():
+                self._is_internal_invoice.set(False)
+        else:
+            if self._is_internal_invoice.get():
+                self._is_client_invoice.set(False)
+
     # ═══════════════════════════════════════════════════════════════
-    # LINE ITEMS
+    # CALCULATIONS
     # ═══════════════════════════════════════════════════════════════
-
-    def _create_line_item_data(self, quantity=1, unit_price=0, tax_rate=None):
-        if tax_rate is None:
-            tax_rate = float(self._tax_rate.get() or 0)
-        qty = round(float(quantity) if quantity else 0, 6)
-        price = round(float(unit_price) if unit_price else 0, 2)
-        rate = round(float(tax_rate), 2)
-        subtotal = round(qty * price, 2)
-        tax_amount = round(subtotal * (rate / 100), 2)
-        total = round(subtotal + tax_amount, 2)
-        return {
-            "quantity": qty,
-            "unit_price": price,
-            "tax_rate": rate,
-            "total": total,
-            "qty_var": tk.StringVar(value=str(qty)),
-            "price_var": tk.StringVar(value=f"{price:.2f}"),
-            "tax_var": tk.StringVar(value=f"{rate:.1f}"),
-            "total_var": tk.StringVar(value=f"{total:.2f}"),
-        }
-
-    def _add_default_line_item(self):
-        self._line_items = [self._create_line_item_data()]
-        self._rebuild_line_item_rows()
-
-    def _add_line_item_row(self, data=None):
-        if data is None:
-            data = self._create_line_item_data()
-        self._line_items.append(data)
-        self._rebuild_line_item_rows()
-        self._recalc_all()
-
-    def _remove_line_item(self, idx):
-        if len(self._line_items) <= 1:
+        """Update data model and recalculate when any field changes."""
+        if idx >= len(self._addon_items):
             return
-        del self._line_items[idx]
-        self._rebuild_line_item_rows()
-        self._recalc_all()
-
-    def _duplicate_line_item(self, idx):
-        src = self._line_items[idx]
-        new_data = self._create_line_item_data(
-            quantity=src["quantity"],
-            unit_price=src["unit_price"],
-            tax_rate=src["tax_rate"],
-        )
-        self._line_items.insert(idx + 1, new_data)
-        self._rebuild_line_item_rows()
-        self._recalc_all()
-
-    def _move_line_item(self, idx, direction):
-        new_idx = idx + direction
-        if 0 <= new_idx < len(self._line_items):
-            self._line_items[idx], self._line_items[new_idx] = \
-                self._line_items[new_idx], self._line_items[idx]
-            self._rebuild_line_item_rows()
-
-    def _rebuild_line_item_rows(self):
-        """Rebuild all line item rows from the data model."""
-        for w in self._lit_rows_frame.winfo_children():
-            w.destroy()
-
-        for i, item in enumerate(self._line_items):
-            self._build_line_item_row(i, item)
-
-    def _build_line_item_row(self, idx, item):
-        row = ctk.CTkFrame(self._lit_rows_frame, fg_color="transparent")
-        row.pack(fill="x", pady=(0, S["1"]))
-        row.columnconfigure(0, weight=0, minsize=30)   # #
-        row.columnconfigure(1, weight=0, minsize=65)   # Qty
-        row.columnconfigure(2, weight=1)                # Unit Price
-        row.columnconfigure(3, weight=0, minsize=65)   # Tax %
-        row.columnconfigure(4, weight=0, minsize=100)  # Total
-        row.columnconfigure(5, weight=0, minsize=90)   # Actions
-
-        # Row number
-        ctk.CTkLabel(row, text=str(idx + 1), font=FONTS["body"],
-                     text_color=COLORS["text_muted"],
-                     anchor="center").grid(row=0, column=0, sticky="ew",
-                                           padx=S["1"], pady=S["1"])
-
-        # Quantity
-        qty_e = ctk.CTkEntry(row, textvariable=item["qty_var"], height=30, width=50,
-                             font=FONTS["body"], fg_color=COLORS["bg_input"],
-                             border_color=COLORS["border"],
-                             text_color=COLORS["text_primary"],
-                             justify="center")
-        qty_e.grid(row=0, column=1, sticky="ew", padx=S["1"], pady=S["1"])
-        qty_e.bind("<KeyRelease>", lambda e, i=idx: self._on_line_item_field_changed(i))
-
-        # Unit price
-        price_e = ctk.CTkEntry(row, textvariable=item["price_var"], height=30, width=90,
-                               font=FONTS["body"], fg_color=COLORS["bg_input"],
-                               border_color=COLORS["border"],
-                               text_color=COLORS["text_primary"],
-                               justify="right")
-        price_e.grid(row=0, column=2, sticky="ew", padx=S["1"], pady=S["1"])
-        price_e.bind("<KeyRelease>", lambda e, i=idx: self._on_line_item_field_changed(i))
-
-        # Tax rate
-        tax_e = ctk.CTkEntry(row, textvariable=item["tax_var"], height=30, width=50,
-                             font=FONTS["body"], fg_color=COLORS["bg_input"],
-                             border_color=COLORS["border"],
-                             text_color=COLORS["text_primary"],
-                             justify="center")
-        tax_e.grid(row=0, column=3, sticky="ew", padx=S["1"], pady=S["1"])
-        tax_e.bind("<KeyRelease>", lambda e, i=idx: self._on_line_item_field_changed(i))
-
-        # Total (read-only display)
-        total_e = ctk.CTkEntry(row, textvariable=item["total_var"], height=30, width=95,
-                               font=FONTS["body_bold"], fg_color=COLORS["bg_elevated"],
-                               border_color=COLORS["border"],
-                               text_color=COLORS["text_primary"],
-                               justify="right", state="readonly")
-        total_e.grid(row=0, column=4, sticky="ew", padx=S["1"], pady=S["1"])
-
-        # Action buttons
-        actions = ctk.CTkFrame(row, fg_color="transparent")
-        actions.grid(row=0, column=5, sticky="ew", padx=S["1"])
-        actions.columnconfigure((0, 1, 2, 3), weight=1)
-
-        for j, (icon, cmd) in enumerate([
-            ("\u25B2", lambda i=idx: self._move_line_item(i, -1)),  # Up
-            ("\u25BC", lambda i=idx: self._move_line_item(i, 1)),   # Down
-            ("\u2398", lambda i=idx: self._duplicate_line_item(i)),  # Dup
-            ("\u2716", lambda i=idx: self._remove_line_item(i)),    # Remove
-        ]):
-            ctk.CTkButton(actions, text=icon, width=18, height=18,
-                          font=("Segoe UI", 9), fg_color="transparent",
-                          hover_color=COLORS["bg_elevated"],
-                          text_color=COLORS["text_muted"],
-                          command=cmd).grid(row=0, column=j, padx=0)
-
-    def _on_line_item_field_changed(self, idx):
-        """Update data model and recalculate when any field in a line item changes."""
-        if idx >= len(self._line_items):
-            return
-        item = self._line_items[idx]
+        item = self._addon_items[idx]
         try:
-            item["quantity"] = round(float(item["qty_var"].get() or 0), 6)
-            item["unit_price"] = round(float(item["price_var"].get() or 0), 2)
-            item["tax_rate"] = round(float(item["tax_var"].get() or 0), 2)
-            subtotal = round(item["quantity"] * item["unit_price"], 2)
-            tax_amount = round(subtotal * (item["tax_rate"] / 100), 2)
-            item["total"] = round(subtotal + tax_amount, 2)
-            item["total_var"].set(f"{item['total']:.2f}")
+            item["description"] = item["desc_var"].get()
+            item["amount"] = round(float(item["amt_var"].get() or 0), 2)
         except ValueError:
-            item["total_var"].set("0.00")
+            item["amount"] = 0.0
         self._recalc_all()
 
     # ═══════════════════════════════════════════════════════════════
@@ -1116,45 +1005,33 @@ class InvoiceEditor(I18nMixin):
         self._refresh_totals_display()
 
     def _refresh_totals_display(self):
-        """Update all totals displays based on current line items and settings."""
+        """Update all totals displays based on addon items and settings."""
         try:
             tax_rate = float(self._tax_rate.get() or 0)
             disc_val = float(self._discount_value.get() or 0)
+            trip_price = float(self._trip_base_price.get() or 0)
         except ValueError:
             tax_rate = 0
             disc_val = 0
+            trip_price = 0
 
         disc_type = self._discount_type.get()
         currency = self._currency.get()
 
-        subtotal = 0
-        total_tax = 0
+        # Trip base price
+        subtotal = round(trip_price, 2)
 
-        for item in self._line_items:
+        # Addon items
+        for item in self._addon_items:
             try:
-                qty = round(float(item["qty_var"].get() or 0), 6)
-                price = round(float(item["price_var"].get() or 0), 2)
-                item_tax = round(float(item["tax_var"].get() or 0), 2)
+                item["amount"] = round(float(item["amt_var"].get() or 0), 2)
             except ValueError:
-                qty = 0
-                price = 0
-                item_tax = 0
-            line_sub = round(qty * price, 2)
-            line_tax = round(line_sub * (item_tax / 100), 2)
-            subtotal += line_sub
-            total_tax += line_tax
+                item["amount"] = 0.0
+            subtotal = round(subtotal + item["amount"], 2)
 
-            # Update item's data model
-            item["quantity"] = qty
-            item["unit_price"] = price
-            item["tax_rate"] = item_tax
-            item["total"] = round(line_sub + line_tax, 2)
-            item["total_var"].set(f"{item['total']:.2f}")
+        total_tax = round(subtotal * (tax_rate / 100), 2)
 
-        subtotal = round(subtotal, 2)
-        total_tax = round(total_tax, 2)
-
-        # Calculate discount
+        # Discount
         is_percent = disc_type == t("invoice_editor.discount_percentage")
         if is_percent:
             discount = round(subtotal * (disc_val / 100), 2)
@@ -1300,23 +1177,30 @@ class InvoiceEditor(I18nMixin):
             "email": self._client_email.get(),
         }
 
-        line_items = []
-        for item in self._line_items:
-            line_items.append({
-                "quantity": item["quantity"],
-                "unit_price": item["unit_price"],
-                "tax_rate": item["tax_rate"],
-                "total": item["total"],
+        addon_items = []
+        for item in self._addon_items:
+            addon_items.append({
+                "description": item["description"],
+                "amount": item["amount"],
             })
 
-        subtotal = round(sum(li["quantity"] * li["unit_price"] for li in line_items), 2)
-        total_tax = round(sum(li["total"] - (li["quantity"] * li["unit_price"]) for li in line_items), 2)
+        trip_price = round(float(self._trip_base_price.get() or 0), 2)
+        addon_total = round(sum(li["amount"] for li in addon_items), 2)
+        subtotal = round(trip_price + addon_total, 2)
+        tax_rate = float(self._tax_rate.get() or 0)
+        total_tax = round(subtotal * (tax_rate / 100), 2)
         disc_val = round(float(self._discount_value.get() or 0), 2)
         is_percent = self._discount_type.get() == t("invoice_editor.discount_percentage")
         discount = round(subtotal * (disc_val / 100), 2) if is_percent else disc_val
         grand_total = round(subtotal + total_tax - discount, 2)
 
+        mode = "internal" if self._is_internal_invoice.get() else "client"
+
         description = self._desc_text.get("1.0", "end-1c") if hasattr(self, '_desc_text') else ""
+
+        # Pre/post VAT from trip if available
+        price_pre_vat = self._trip_price_pre_vat.get() if self._trip_price_pre_vat.get() else None
+        vat_percent = self._trip_vat_percent.get() if self._trip_vat_percent.get() else None
 
         return {
             "invoice_number": self._invoice_number.get(),
@@ -1326,14 +1210,16 @@ class InvoiceEditor(I18nMixin):
             "currency": self._currency.get(),
             "company": conf,
             "client": client,
-            "line_items": line_items,
+            "addon_items": addon_items,
+            "trip_price": trip_price,
+            "addon_total": addon_total,
             "description": description,
             "loading_stops": [s["var"].get() for s in self._loading_stops if s["var"].get().strip()],
             "unloading_stops": [s["var"].get() for s in self._unloading_stops if s["var"].get().strip()],
             "truck_plate": self._truck_plate.get(),
             "driver_name": self._driver_name.get(),
             "distance": self._distance.get(),
-            "tax_rate": float(self._tax_rate.get() or 0),
+            "tax_rate": tax_rate,
             "discount_type": self._discount_type.get(),
             "discount_value": disc_val,
             "subtotal": subtotal,
@@ -1347,8 +1233,10 @@ class InvoiceEditor(I18nMixin):
             "company_color": self._company_color.get(),
             "trip_id": self._selected_trip_id,
             "trip_data": self._selected_trip_data,
-            "mode": "client",
+            "mode": mode,
             "client_id": self._selected_client_id,
+            "price_pre_vat": price_pre_vat,
+            "vat_percent": vat_percent,
         }
 
     def _preview_pdf(self):
@@ -1563,17 +1451,41 @@ class InvoiceEditor(I18nMixin):
             self._client_phone.set(cl.get("phone", ""))
             self._client_email.set(cl.get("email", ""))
 
-            # Line items
-            self._line_items = []
-            for li in data.get("line_items", []):
-                self._line_items.append(self._create_line_item_data(
-                    quantity=li.get("quantity", 1),
-                    unit_price=li.get("unit_price", 0),
-                    tax_rate=li.get("tax_rate", float(self._tax_rate.get() or 0)),
-                ))
-            if not self._line_items:
-                self._add_default_line_item()
-            self._rebuild_line_item_rows()
+            # Addon items (and backward compat for old line_items)
+            self._addon_items = []
+            addons = data.get("addon_items") or []
+            if not addons:
+                # Load from old line_items format
+                for li in data.get("line_items", []):
+                    self._addon_items.append(self._create_addon_data(
+                        description=li.get("description", ""),
+                        amount=li.get("total", li.get("amount", 0)),
+                    ))
+            else:
+                for ai in addons:
+                    self._addon_items.append(self._create_addon_data(
+                        description=ai.get("description", ""),
+                        amount=ai.get("amount", 0),
+                    ))
+            if not self._addon_items:
+                self._add_default_addon_item()
+            self._rebuild_addon_rows()
+
+            # Trip base price
+            self._trip_base_price.set(data.get("trip_price", "0.00"))
+            if data.get("price_pre_vat"):
+                self._trip_price_pre_vat.set(str(data["price_pre_vat"]))
+            if data.get("vat_percent"):
+                self._trip_vat_percent.set(str(data["vat_percent"]))
+
+            # Mode
+            mode = data.get("mode", "client")
+            if mode == "internal":
+                self._is_internal_invoice.set(True)
+                self._is_client_invoice.set(False)
+            else:
+                self._is_client_invoice.set(True)
+                self._is_internal_invoice.set(False)
 
             # Description
             self._desc_text.delete("1.0", "end")

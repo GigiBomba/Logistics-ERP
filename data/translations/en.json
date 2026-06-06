@@ -42,6 +42,9 @@
     "client_label": "Client (Company):",
     "section_finance": "FINANCE & CONSUMPTION",
     "offer_price": "Offer Price (Total):",
+    "vat_checkbox": "Add VAT",
+    "offer_price_pre_vat": "Price (before VAT):",
+    "offer_price_post_vat": "Price (after VAT):",
     "currency_label": "Currency:",
     "currencies": [
       "EUR",
@@ -1256,6 +1259,7 @@
     "due_date": "Due Date",
     "payment_terms": "Payment Terms",
     "description": "Description",
+    "amount": "Amount",
     "quantity": "Qty",
     "unit_price": "Unit Price",
     "tax_rate": "Tax Rate",
