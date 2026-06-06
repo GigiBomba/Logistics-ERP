@@ -1,10 +1,12 @@
+import csv
 import json
 import logging
+import os
 import threading
 import tkinter as tk
+from tkinter import filedialog, messagebox
 import customtkinter as ctk
 from datetime import datetime, timedelta
-from tkinter import messagebox
 from typing import Any, Dict, List, Optional
 
 from ui.styles import Theme
@@ -79,6 +81,7 @@ class DispatchBoardView:
             self.frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
             self.frame.pack(fill="both", expand=True)
             self._tk_root = parent.winfo_toplevel()
+            self.frame.bind("<Destroy>", self._on_destroy)
         else:
             self.win = ctk.CTkToplevel(parent)
             self.win.title(f"\U0001f4cb {t('dispatch_board.title')}")
@@ -89,6 +92,7 @@ class DispatchBoardView:
             self._tk_root = self.win
 
         self.db = db
+        self._db = db
         self.prefs = prefs
         self.ops = ops
         self._i18n_widgets = []
@@ -113,6 +117,7 @@ class DispatchBoardView:
         self._delay_timer_id = None
         self._event_handlers = {}
         self._after_ids: list = []
+        self._destroyed = False
         self._all_card_data: List[Dict[str, Any]] = []
         self._search_query = ""
         self._search_statuses = list(STATUS_OPTIONS)
@@ -133,8 +138,9 @@ class DispatchBoardView:
         self._tk_root.bind("<Control_R>", lambda e: setattr(self, '_ctrl_pressed', True))
         self._tk_root.bind("<KeyRelease-Control_L>", lambda e: setattr(self, '_ctrl_pressed', False))
         self._tk_root.bind("<KeyRelease-Control_R>", lambda e: setattr(self, '_ctrl_pressed', False))
-        self._tk_root.bind("<Command_L>", lambda e: setattr(self, '_ctrl_pressed', True))
-        self._tk_root.bind("<KeyRelease-Command_L>", lambda e: setattr(self, '_ctrl_pressed', False))
+        self._tk_root.bind("<Control-z>", self._on_undo)
+        self._tk_root.bind("<Control-Z>", self._on_redo)
+        self._tk_root.bind("<Control-y>", self._on_redo)
 
         self._build_ui()
         self._subscribe_events()
@@ -155,6 +161,7 @@ class DispatchBoardView:
     def _on_destroy(self, event=None):
         if event is not None and event.widget != (self.win or self.frame):
             return
+        self._destroyed = True
         for aid in self._after_ids:
             try:
                 self._tk_root.after_cancel(aid)
@@ -198,6 +205,8 @@ class DispatchBoardView:
                 "timeline": t("dispatch_board.tabs_timeline"),
             }
             self._tabs.refresh_translations(tab_labels)
+            self._export_csv_btn.configure(text=t("dispatch_board.export_csv"))
+            self._export_pdf_btn.configure(text=t("dispatch_board.export_pdf"))
         except Exception:
             pass
         for col in self._columns.values():
@@ -225,6 +234,18 @@ class DispatchBoardView:
                                          cursor="hand2",
                                          command=self._start_load)
         self._refresh_btn.pack(side="right")
+
+        self._export_pdf_btn = ctk.CTkButton(header, text=t("dispatch_board.export_pdf"),
+                                            fg_color=Theme.SURFACE2, text_color=Theme.MUTED,
+                                            font=FONTS["label"], cursor="hand2",
+                                            command=self._export_pdf)
+        self._export_pdf_btn.pack(side="right", padx=(0, 4))
+
+        self._export_csv_btn = ctk.CTkButton(header, text=t("dispatch_board.export_csv"),
+                                            fg_color=Theme.SURFACE2, text_color=Theme.MUTED,
+                                            font=FONTS["label"], cursor="hand2",
+                                            command=self._export_csv)
+        self._export_csv_btn.pack(side="right", padx=(0, 4))
 
         # ── Tab container ──────────────────────────────────────────
         self._tabs = DispatchTabs(self.frame)
@@ -268,6 +289,8 @@ class DispatchBoardView:
                                on_drag_start=self._on_drag_start,
                                on_assign_truck=self._on_assign_truck,
                                on_assign_driver=self._on_assign_driver,
+                               on_select_changed=self._on_card_select_changed,
+                               on_assign_both=self._on_assign_both,
                                show_load_older=is_delivered,
                                on_load_older=self._on_load_older_delivered,
                                on_retry=lambda sk=status_key: self._start_load())
@@ -307,6 +330,11 @@ class DispatchBoardView:
         if self._loading:
             return
         self._loading = True
+        if self.ops:
+            try:
+                self.ops.undo_stack.clear()
+            except Exception:
+                pass
         for col in self._columns.values():
             col.show_loading()
         thread = threading.Thread(target=self._load_data_background, daemon=True)
@@ -538,9 +566,13 @@ class DispatchBoardView:
             pass
 
     def _schedule_live_refresh(self):
+        if self._destroyed:
+            return
         self._safe_after(30_000, self._refresh_live_indicators_and_reschedule)
 
     def _refresh_live_indicators_and_reschedule(self):
+        if self._destroyed:
+            return
         self._refresh_live_indicators()
         self._schedule_live_refresh()
 
@@ -763,6 +795,38 @@ class DispatchBoardView:
         except Exception as e:
             self._show_error_toast(str(e))
 
+    # ── Undo / Redo ────────────────────────────────────────────────────
+
+    def _on_undo(self, event=None):
+        if not self.ops:
+            self._show_error_toast(t("dispatch_board.undo_nothing"))
+            return
+        stack = self.ops.undo_stack
+        cmd = stack.last_undo_command()
+        if not cmd:
+            self._show_error_toast(t("dispatch_board.undo_nothing"))
+            return
+        ok = self.ops.undo_last()
+        if ok:
+            self._show_success_toast(t("dispatch_board.undo_success").format(
+                trip_id=cmd.trip_id, old_status=cmd.old_status, new_status=cmd.new_status))
+            self._safe_after(500, self._start_load)
+
+    def _on_redo(self, event=None):
+        if not self.ops:
+            self._show_error_toast(t("dispatch_board.redo_nothing"))
+            return
+        stack = self.ops.undo_stack
+        cmd = stack.last_redo_command()
+        if not cmd:
+            self._show_error_toast(t("dispatch_board.redo_nothing"))
+            return
+        ok = self.ops.redo_last()
+        if ok:
+            self._show_success_toast(t("dispatch_board.redo_success").format(
+                trip_id=cmd.trip_id, old_status=cmd.old_status, new_status=cmd.new_status))
+            self._safe_after(500, self._start_load)
+
     # ── Conflict Scan ────────────────────────────────────────────────
 
     def _run_conflict_scan(self):
@@ -802,6 +866,115 @@ class DispatchBoardView:
             self._timeline.refresh(self._all_card_data)
         except Exception:
             pass
+
+    # ── Export ────────────────────────────────────────────────────────
+
+    def _export_csv(self):
+        if not self._all_card_data:
+            self._show_error_toast(t("dispatch_board.export_error").format(error="No data"))
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".csv",
+            filetypes=[("CSV files", "*.csv")],
+            initialfile=f"dispatch_board_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+        )
+        if not path:
+            return
+        try:
+            with open(path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.writer(f)
+                writer.writerow([
+                    "Trip ID", "Status", "Truck", "Driver", "Origin", "Destination",
+                    "Departure", "ETA", "Distance (km)", "Alerts"
+                ])
+                for cd in self._all_card_data:
+                    writer.writerow([
+                        cd.get("trip_id", ""),
+                        cd.get("status", ""),
+                        cd.get("truck_plate", ""),
+                        cd.get("driver_name", ""),
+                        cd.get("origin", ""),
+                        cd.get("destination", ""),
+                        cd.get("departure_date", ""),
+                        cd.get("eta", ""),
+                        cd.get("distance_km", ""),
+                        cd.get("alerts_count", 0),
+                    ])
+            self._show_success_toast(t("dispatch_board.export_success").format(path=path))
+        except Exception as e:
+            self._show_error_toast(t("dispatch_board.export_error").format(error=str(e)))
+
+    def _export_pdf(self):
+        if not self._all_card_data:
+            self._show_error_toast(t("dispatch_board.export_error").format(error="No data"))
+            return
+        path = filedialog.asksaveasfilename(
+            defaultextension=".pdf",
+            filetypes=[("PDF files", "*.pdf")],
+            initialfile=f"dispatch_board_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+        )
+        if not path:
+            return
+        try:
+            from reportlab.lib.pagesizes import A4, landscape
+            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+            from reportlab.lib import colors
+            from reportlab.lib.units import mm
+
+            doc = SimpleDocTemplate(path, pagesize=landscape(A4), topMargin=10 * mm, bottomMargin=10 * mm)
+            styles = getSampleStyleSheet()
+            elements = []
+
+            title_style = ParagraphStyle("Title", parent=styles["Title"], fontSize=14, textColor=colors.HexColor("#fafafa"))
+            elements.append(Paragraph(f"Dispatch Board — {datetime.now().strftime('%d/%m/%Y %H:%M')}", title_style))
+            elements.append(Spacer(1, 6 * mm))
+
+            status_colors = {
+                "Planned": colors.HexColor("#1c1917"),
+                "Loading": colors.HexColor("#341a00"),
+                "In Transit": colors.HexColor("#0f1f4a"),
+                "Delivered": colors.HexColor("#052e16"),
+                "Cancelled": colors.HexColor("#3b0000"),
+            }
+            header_style = ParagraphStyle("Header", textColor=colors.HexColor("#fafafa"), fontSize=9, fontName="Helvetica-Bold")
+            cell_style = ParagraphStyle("Cell", textColor=colors.HexColor("#a1a1aa"), fontSize=8)
+
+            for col_key in ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]:
+                col_trips = [cd for cd in self._all_card_data if STATUS_TO_COLUMN.get(cd.get("status", "")) == col_key]
+                bg = status_colors.get(col_key, colors.grey)
+
+                elements.append(Paragraph(f"{col_key} ({len(col_trips)})", header_style))
+                elements.append(Spacer(1, 2 * mm))
+
+                if col_trips:
+                    table_data = [["Trip ID", "Truck", "Driver", "Route", "Departure", "ETA"]]
+                    for cd in col_trips[:50]:
+                        table_data.append([
+                            cd.get("trip_id", ""),
+                            cd.get("truck_plate", ""),
+                            cd.get("driver_name", ""),
+                            f"{cd.get('origin','?')} -> {cd.get('destination','?')}",
+                            cd.get("departure_date", ""),
+                            cd.get("eta", ""),
+                        ])
+                    tbl = Table(table_data, colWidths=[45 * mm, 40 * mm, 45 * mm, 60 * mm, 40 * mm, 40 * mm])
+                    tbl.setStyle(TableStyle([
+                        ("BACKGROUND", (0, 0), (-1, 0), bg),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.HexColor("#fafafa")),
+                        ("FONTSIZE", (0, 0), (-1, -1), 8),
+                        ("GRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#27272a")),
+                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.HexColor("#111113"), colors.HexColor("#18181b")]),
+                    ]))
+                    elements.append(tbl)
+                else:
+                    elements.append(Paragraph("No trips", cell_style))
+                elements.append(Spacer(1, 4 * mm))
+
+            doc.build(elements)
+            self._show_success_toast(t("dispatch_board.export_success").format(path=path))
+        except Exception as e:
+            self._show_error_toast(t("dispatch_board.export_error").format(error=str(e)))
 
     def _on_card_click(self, trip_data):
         if self._detail_panel:
@@ -1003,7 +1176,9 @@ class DispatchBoardView:
                 on_click=self._on_card_click,
                 on_drag_start=self._on_drag_start,
                 on_assign_truck=self._on_assign_truck,
-                on_assign_driver=self._on_assign_driver
+                on_assign_driver=self._on_assign_driver,
+                on_select_changed=self._on_card_select_changed,
+                on_assign_both=self._on_assign_both
             )
             if source_col:
                 source_col.add_card(restored)
@@ -1202,7 +1377,7 @@ class DispatchBoardView:
                 except Exception:
                     pass
                 if weekly_h > 56:
-                    blocks.append(t("dispatch_board.driver_hours_exceeded").format(hours=weekly_h, max_h=56))
+                    blocks.append(t("dispatch_board.driver_hours_exceeded", hours=weekly_h, max_h=56))
                 driver_hours[did] = (weekly_h, violations)
 
                 if blocks:
@@ -1219,7 +1394,7 @@ class DispatchBoardView:
                 blocked = driver_blocks.get(driver_id)
                 available = not conflicting and not blocked
 
-                hours_label = t("dispatch_board.driver_hours_weekly").format(hours=wh, max_h=56)
+                hours_label = t("dispatch_board.driver_hours_weekly", hours=wh, max_h=56)
                 sublabel = f"{license_cat} | {hours_label}"
                 if vc > 0:
                     sublabel += f" | \u26a0 {vc}"
@@ -1255,6 +1430,73 @@ class DispatchBoardView:
         )
         card.set_dropdown(dropdown)
 
+    def _score_items(self, truck_items: list, driver_items: list, card_data: dict):
+        from datetime import datetime
+        now = datetime.now()
+
+        for item in truck_items:
+            if not item["available"]:
+                continue
+            score = 0
+            truck_id = item.get("id")
+            truck_plate = item.get("label", "")
+            try:
+                next_free = self._conflict_service.get_next_available_slot(truck_plate=truck_plate, truck_id=truck_id)
+                if next_free:
+                    try:
+                        nf_dt = datetime.strptime(next_free, "%d/%m/%Y %H:%M")
+                        hours_until = max(0, (nf_dt - now).total_seconds() / 3600)
+                        score += max(0, 40 - hours_until * 2)
+                    except Exception:
+                        score += 40
+                else:
+                    score += 40
+            except Exception:
+                score += 40
+            try:
+                truck = self._fleet_repo.get_by_id(int(truck_id)) if truck_id else None
+                if truck:
+                    fuel = float(truck.get("fuel_consumption") or 34)
+                    score += max(0, 20 - (fuel - 20) * 1.5)
+            except Exception:
+                pass
+            try:
+                health = self._fleet_repo.get_truck_health(int(truck_id)) if truck_id else None
+                if health:
+                    score += (float(health.get("score", 0)) / 100) * 10
+            except Exception:
+                pass
+            item["score"] = round(score, 1)
+
+        for item in driver_items:
+            if not item["available"]:
+                continue
+            score = 0
+            driver_id = item.get("id")
+            try:
+                next_free = self._conflict_service.get_next_available_slot_for_driver(int(driver_id)) if driver_id else None
+                if next_free:
+                    try:
+                        nf_dt = datetime.strptime(next_free, "%d/%m/%Y %H:%M")
+                        hours_until = max(0, (nf_dt - now).total_seconds() / 3600)
+                        score += max(0, 40 - hours_until * 2)
+                    except Exception:
+                        score += 40
+                else:
+                    score += 40
+            except Exception:
+                score += 40
+            try:
+                from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
+                from datetime import date, timedelta
+                tacho_repo = TachoDriverActivityRepository(self._db)
+                records = tacho_repo.get_by_driver(int(driver_id), date.today() - timedelta(days=7))
+                violations = sum(len(json.loads(r.get("violations") or "[]")) for r in records)
+                score += max(0, 10 - violations * 3)
+            except Exception:
+                pass
+            item["score"] = round(score, 1)
+
     def _on_assign_both(self, card):
         card_data = card.trip_data
         from datetime import datetime, date, timedelta
@@ -1267,10 +1509,10 @@ class DispatchBoardView:
         tacho_repo = TachoDriverActivityRepository(self._db)
 
         truck_items = []
-        for t in active_trucks:
-            plate = t.get("plate_number", "")
-            model = t.get("model", "")
-            tid = t.get("id")
+        for trk in active_trucks:
+            plate = trk.get("plate_number", "")
+            model = trk.get("model", "")
+            tid = trk.get("id")
             conflicts = self._conflict_service.check_conflicts({
                 "truck_plate": plate,
                 "start_date": card_data.get("departure_date", ""),
@@ -1279,10 +1521,10 @@ class DispatchBoardView:
             })
             conf = [c for c in conflicts if c.get("trip_id") != card_data.get("trip_id_num")]
             blocks = []
-            if t.get("status") == "In Service":
+            if trk.get("status") == "In Service":
                 blocks.append(t("dispatch_board.resource_in_service"))
             try:
-                ins_ = t.get("insurance_expiry", "")
+                ins_ = trk.get("insurance_expiry", "")
                 if ins_:
                     exp = datetime.strptime(ins_, "%Y-%m-%d")
                     if now.date() > exp.date():
@@ -1290,7 +1532,7 @@ class DispatchBoardView:
             except Exception:
                 pass
             try:
-                insp_ = t.get("inspection_expiry", "")
+                insp_ = trk.get("inspection_expiry", "")
                 if insp_:
                     exp = datetime.strptime(insp_, "%Y-%m-%d")
                     if now.date() > exp.date():
@@ -1298,8 +1540,8 @@ class DispatchBoardView:
             except Exception:
                 pass
             try:
-                md = t.get("maintenance_due")
-                mi = t.get("mileage")
+                md = trk.get("maintenance_due")
+                mi = trk.get("mileage")
                 if md is not None and mi is not None and float(mi) >= float(md):
                     blocks.append(t("dispatch_board.resource_maintenance_due"))
             except Exception:
@@ -1313,7 +1555,7 @@ class DispatchBoardView:
                     f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
             truck_items.append({
                 "id": tid, "label": plate, "sublabel": model,
-                "available": avail, "status_text": st,
+                "available": avail, "status_text": st, "score": 0,
             })
 
         driver_items = []
@@ -1352,8 +1594,8 @@ class DispatchBoardView:
             except Exception:
                 pass
             if weekly_h > 56:
-                blocks.append(t("dispatch_board.driver_hours_exceeded").format(hours=weekly_h, max_h=56))
-            hours_label = t("dispatch_board.driver_hours_weekly").format(hours=weekly_h, max_h=56)
+                blocks.append(t("dispatch_board.driver_hours_exceeded", hours=weekly_h, max_h=56))
+            hours_label = t("dispatch_board.driver_hours_weekly", hours=weekly_h, max_h=56)
             avail = not conf and not blocks
             st = ""
             if blocks:
@@ -1363,11 +1605,12 @@ class DispatchBoardView:
                     f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
             driver_items.append({
                 "id": did, "label": name, "sublabel": f"{lcat} | {hours_label}",
-                "available": avail, "status_text": st,
+                "available": avail, "status_text": st, "score": 0,
             })
 
-        truck_items.sort(key=lambda x: (not x["available"], x["label"]))
-        driver_items.sort(key=lambda x: (not x["available"], x["label"]))
+        self._score_items(truck_items, driver_items, card_data)
+        truck_items.sort(key=lambda x: (-x.get("score", 0), x["label"]))
+        driver_items.sort(key=lambda x: (-x.get("score", 0), x["label"]))
 
         paired_hint = ""
         try:
@@ -1583,7 +1826,9 @@ class DispatchBoardView:
                                 on_click=self._on_card_click,
                                 on_drag_start=self._on_drag_start,
                                 on_assign_truck=self._on_assign_truck,
-                                on_assign_driver=self._on_assign_driver)
+                                on_assign_driver=self._on_assign_driver,
+                                on_select_changed=self._on_card_select_changed,
+                                on_assign_both=self._on_assign_both)
                 planned_col.add_card(card, index=0)
             logger.debug("Trip %d card added to Planned column", trip_id)
         except Exception:
@@ -1622,7 +1867,9 @@ class DispatchBoardView:
                                on_click=self._on_card_click,
                                on_drag_start=self._on_drag_start,
                                on_assign_truck=self._on_assign_truck,
-                               on_assign_driver=self._on_assign_driver)
+                               on_assign_driver=self._on_assign_driver,
+                               on_select_changed=self._on_card_select_changed,
+                               on_assign_both=self._on_assign_both)
             target.add_card(new_card, index=0)
 
             if new_status == "Delivered":
@@ -1878,6 +2125,8 @@ class DispatchBoardView:
                 return
 
     def _safe_after(self, ms, callback):
+        if self._destroyed:
+            return None
         try:
             aid = self._tk_root.after(ms, callback)
             self._after_ids.append(aid)

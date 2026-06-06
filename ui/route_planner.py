@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 import tkinter as tk
 import customtkinter as ctk
-from tkinter import ttk, messagebox
+from tkinter import ttk
 import uuid
 
 logger = logging.getLogger(__name__)
@@ -97,6 +97,12 @@ class RoutePlannerTab:
     def _on_destroy(self, event=None):
         if event is not None and event.widget != self.frame:
             return
+        if hasattr(self, 'map_widget') and self.map_widget is not None:
+            try:
+                self.map_widget.destroy()
+            except Exception:
+                pass
+        self._map_renderer = None
         unregister_listener(self._on_language_changed)
 
     def _on_language_changed(self, lang):
@@ -456,95 +462,14 @@ class RoutePlannerTab:
         self._dispatch_frame.pack(fill="x", padx=20, pady=(8, 0))
         ActionButton(
             self._dispatch_frame,
-            f"\U0001f4e6 {t('route.add_to_dispatch')}",
-            self._on_add_to_dispatch,
+            f"\U0001f4b0 {t('route.send_to_calculator')}",
+            self._go_to_calculator,
             color=Theme.ACCENT_SUCCESS,
         ).pack(fill="x")
 
-    def _on_add_to_dispatch(self):
-        if not self._last_route_result:
-            return
-        route = self._last_route_result
-        route_id = route.get("history_id")
-        if not route_id:
-            messagebox.showwarning(t("route.add_to_dispatch"), t("route.no_saved_route_id"))
-            return
-
-        win = ctk.CTkToplevel(self.win or self.frame)
-        win.configure(fg_color=Theme.BG)
-        win.title(t("route.add_to_dispatch"))
-        win.geometry("400x380")
-        Theme.apply(win)
-        body = ctk.CTkFrame(win, fg_color=Theme.BG)
-        body.pack(fill="both", expand=True)
-
-        ctk.CTkLabel(body, text=t("route.select_truck"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
-        truck_menu = ctk.CTkOptionMenu(body, values=[])
-        truck_menu.pack(fill="x", pady=(0, 10))
-        truck_labels = []
-        truck_ids_by_label = {}
-        for tid, t in self._trucks_map.items():
-            label = f"{t['plate_number']} - {t.get('model', '')}"
-            truck_labels.append(label)
-            truck_ids_by_label[label] = tid
-        truck_menu.configure(values=truck_labels)
-        if self._trucks_map:
-            first = next(iter(self._trucks_map.values()))
-            first_label = f"{first['plate_number']} - {first.get('model', '')}"
-            truck_menu.set(first_label)
-
-        ctk.CTkLabel(body, text=t("route.select_driver"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
-        driver_menu = ctk.CTkOptionMenu(body, values=[])
-        driver_menu.pack(fill="x", pady=(0, 10))
-        driver_labels = [""]
-        driver_ids_by_label = {"": None}
-        try:
-            from repositories.driver_repository import DriverRepository
-            for d in DriverRepository(self.db).get_active_drivers():
-                label = d["name"]
-                driver_labels.append(label)
-                driver_ids_by_label[label] = d["id"]
-        except Exception:
-            pass
-        driver_menu.configure(values=driver_labels)
-        if driver_labels:
-            driver_menu.set(driver_labels[0])
-
-        ctk.CTkLabel(body, text=t("route.client_name"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
-        client_entry = StyledEntry(body)
-        client_entry.pack(fill="x", pady=(0, 10))
-
-        ctk.CTkLabel(body, text=t("route.start_date"), fg_color=Theme.BG, text_color=Theme.TEXT).pack(anchor="w")
-        date_entry = StyledEntry(body)
-        from datetime import datetime
-        date_entry.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        date_entry.pack(fill="x", pady=(0, 15))
-
-        def do_create():
-            t_id = truck_ids_by_label.get(truck_menu.get())
-            d_id = driver_ids_by_label.get(driver_menu.get()) if driver_menu.get() else None
-            c_name = client_entry.get().strip()
-            s_date = date_entry.get().strip()
-            try:
-                new_id = self._core.create_trip_from_route(
-                    route_id=int(route_id),
-                    truck_id=t_id,
-                    driver_id=d_id,
-                    client_name=c_name,
-                    start_date=s_date,
-                )
-                messagebox.showinfo(
-                    t("route.add_to_dispatch"),
-                    t("route.trip_created").format(new_id),
-                )
-                win.destroy()
-            except Exception as e:
-                messagebox.showerror(t("route.add_to_dispatch"), str(e))
-
-        ActionButton(body, t("route.add_to_dispatch"), do_create,
-                     color=Theme.ACCENT_SUCCESS).pack(fill="x", pady=(10, 0))
-        ActionButton(body, t("driver_manager.cancel"), win.destroy,
-                     color=Theme.SURFACE2).pack(fill="x", pady=(5, 0))
+    def _go_to_calculator(self):
+        if self.controller and hasattr(self.controller, '_switch_module'):
+            self.controller._switch_module("calculator")
 
     def _apply_compliance(self, compliance) -> None:
         if not compliance:

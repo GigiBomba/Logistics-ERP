@@ -372,6 +372,7 @@
     "exclusions_none": "Niciuna selectată",
     "exclusions_empty": "Nicio țară exclusă",
     "add_to_dispatch": "Adaugă în Panou",
+    "send_to_calculator": "Trimite în Calculator",
     "client_name": "Nume Client",
     "no_saved_route_id": "Niciun ID Rută Salvat",
     "select_driver": "Selectează Șofer",
@@ -683,7 +684,15 @@
     "pair_assign_both": "Aloca Ambele",
     "pair_assign_truck_only": "Aloca Doar Camion",
     "pair_assign_driver_only": "Aloca Doar Sofer",
-    "pair_suggestion": "Pereche sugerata: {driver} \u2194 {truck}"
+    "pair_suggestion": "Pereche sugerata: {driver} \u2194 {truck}",
+    "export_csv": "CSV",
+    "export_pdf": "PDF",
+    "export_success": "Exportat in {path}",
+    "export_error": "Export esuat: {error}",
+    "undo_success": "Anulat: {trip_id} {new_status} \u2192 {old_status}",
+    "redo_success": "Refacut: {trip_id} {old_status} \u2192 {new_status}",
+    "undo_nothing": "Nimic de anulat",
+    "redo_nothing": "Nimic de refacut"
   },
   "driver_manager": {
     "add_driver": "Adauga Sofer",
@@ -776,10 +785,11 @@
     "active_trips": "Curse Active",
     "no_active_trips": "Fara curse active",
     "no_alerts": "Nu exista alerte active",
-    "profit_chart_title": "Profitul Lunii Precedente",
+    "profit_chart_title": "Profit (ultimele 30 zile)",
     "profit_data_source": "Date importate automat din Analytics",
     "profit_day_label": "Zi",
     "profit_no_data": "Nu sunt disponibile date despre profit inca.",
+    "profit_30_days": "Ultimele 30 zile",
     "recent_activity": "Activitate Recenta",
     "top_trucks": "Top Camioane Luna Aceasta"
   },

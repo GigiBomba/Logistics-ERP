@@ -348,7 +348,7 @@
     "email_subject": "Oggetto Email",
     "email_success": "Email Inviata",
     "smtp_not_configured": "SMTP Non Configurato",
-    "trip_list_format": "Formato Lista Viaggi",
+    "trip_list_format": "#{id} {truck_number} \u2014 {client_name} [{created_at}]",
     "field_{key}": "Campo {Key}"
   },
   "settings": {
@@ -435,6 +435,7 @@
     "exclusions_none": "Nessuno selezionato",
     "exclusions_empty": "Nessun paese escluso",
     "add_to_dispatch": "Aggiungi a Spedizione",
+    "send_to_calculator": "Invia al Calcolatore",
     "client_name": "Nome Cliente",
     "no_saved_route_id": "Nessun ID Rotta Salvato",
     "select_driver": "Seleziona Autista",
