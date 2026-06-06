@@ -197,6 +197,18 @@ class RouteHistoryService:
         self._route_repo.delete(route_id)
         return True
 
+    def commit_route(self, route_id: int) -> bool:
+        """Mark a draft route as committed (user intends to use it operationally)."""
+        self._route_repo.commit(route_id)
+        self.record_event(route_id, "route_committed")
+        return True
+
+    def discard_route(self, route_id: int) -> bool:
+        """Soft-discard a draft route (sets is_committed = -1, keeps record)."""
+        self._route_repo.discard(route_id)
+        self.record_event(route_id, "route_discarded")
+        return True
+
     def archive_route(self, route_id: int) -> bool:
         """Soft-archive a route history row."""
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"

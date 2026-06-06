@@ -1,4 +1,4 @@
-﻿# trips table — financial/business entity (Trip History).
+# trips table — financial/business entity (Trip History).
 # Linked to route_history_v2 via route_history_v2_id FK when the trip
 # originates from a route calculation.
 TABLE_TRIPS = """
@@ -585,3 +585,97 @@ CREATE TABLE IF NOT EXISTS document_templates (
     updated_at TEXT NOT NULL
 );
 """
+
+# ── CMR System ─────────────────────────────────────────────────────────────
+
+TABLE_CMR_COUNTER = """
+CREATE TABLE IF NOT EXISTS cmr_counter (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    year INTEGER NOT NULL,
+    sequence_number INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(year)
+);
+"""
+
+TABLE_SUCCESSIVE_CARRIERS = """
+CREATE TABLE IF NOT EXISTS successive_carriers (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    sequence_order INTEGER NOT NULL DEFAULT 1,
+    carrier_name TEXT NOT NULL,
+    carrier_address TEXT,
+    carrier_country TEXT,
+    vehicle_plate TEXT,
+    trailer_plate TEXT,
+    driver_name TEXT,
+    from_location TEXT,
+    to_location TEXT,
+    UNIQUE(trip_id, sequence_order)
+);
+"""
+INDEX_SUCCESSIVE_CARRIERS_TRIP = "CREATE INDEX IF NOT EXISTS idx_successive_carriers_trip ON successive_carriers(trip_id);"
+
+TABLE_CMR_AUDIT_LOG = """
+CREATE TABLE IF NOT EXISTS cmr_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    cmr_number TEXT NOT NULL,
+    trip_id INTEGER NOT NULL,
+    event_type TEXT NOT NULL,
+    actor TEXT DEFAULT 'system',
+    timestamp TEXT NOT NULL,
+    data_hash TEXT,
+    metadata_json TEXT,
+    FOREIGN KEY (trip_id) REFERENCES trips(id)
+);
+"""
+INDEX_CMR_AUDIT_TRIP = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_trip ON cmr_audit_log(trip_id);"
+INDEX_CMR_AUDIT_NUMBER = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_number ON cmr_audit_log(cmr_number);"
+
+# ── CMR column additions (migrations) ───────────────────────────────────────
+
+ALTER_TRIPS_ADD_CMR_NUMBER = "ALTER TABLE trips ADD COLUMN cmr_number TEXT"
+ALTER_TRIPS_ADD_CMR_SEQUENCE = "ALTER TABLE trips ADD COLUMN cmr_sequence INTEGER"
+ALTER_TRIPS_ADD_CARGO_DESCRIPTION = "ALTER TABLE trips ADD COLUMN cargo_description TEXT"
+ALTER_TRIPS_ADD_CARGO_MARKS = "ALTER TABLE trips ADD COLUMN cargo_marks TEXT"
+ALTER_TRIPS_ADD_PACKAGE_COUNT = "ALTER TABLE trips ADD COLUMN package_count INTEGER"
+ALTER_TRIPS_ADD_PACKAGE_TYPE = "ALTER TABLE trips ADD COLUMN package_type TEXT"
+ALTER_TRIPS_ADD_GROSS_WEIGHT_KG = "ALTER TABLE trips ADD COLUMN gross_weight_kg REAL"
+ALTER_TRIPS_ADD_VOLUME_M3 = "ALTER TABLE trips ADD COLUMN volume_m3 REAL"
+ALTER_TRIPS_ADD_HS_CODE = "ALTER TABLE trips ADD COLUMN hs_code TEXT"
+ALTER_TRIPS_ADD_CARRIER_INSTRUCTIONS = "ALTER TABLE trips ADD COLUMN carrier_instructions TEXT"
+ALTER_TRIPS_ADD_CARRIER_RESERVATIONS = "ALTER TABLE trips ADD COLUMN carrier_reservations TEXT"
+ALTER_TRIPS_ADD_SPECIAL_AGREEMENTS = "ALTER TABLE trips ADD COLUMN special_agreements TEXT"
+ALTER_TRIPS_ADD_CARRIAGE_PAYER = "ALTER TABLE trips ADD COLUMN carriage_payer TEXT"
+ALTER_TRIPS_ADD_DOCUMENTS_ATTACHED = "ALTER TABLE trips ADD COLUMN documents_attached TEXT"
+ALTER_TRIPS_ADD_PLACE_OF_LOADING = "ALTER TABLE trips ADD COLUMN place_of_loading TEXT"
+ALTER_TRIPS_ADD_PLACE_OF_LOADING_DATE = "ALTER TABLE trips ADD COLUMN place_of_loading_date TEXT"
+ALTER_TRIPS_ADD_LOADING_COUNTRY = "ALTER TABLE trips ADD COLUMN loading_country TEXT"
+ALTER_TRIPS_ADD_DELIVERY_COUNTRY = "ALTER TABLE trips ADD COLUMN delivery_country TEXT"
+ALTER_TRIPS_ADD_ADR_INFO_JSON = "ALTER TABLE trips ADD COLUMN adr_info_json TEXT"
+ALTER_TRIPS_ADD_CMR_STATUS = "ALTER TABLE trips ADD COLUMN cmr_status TEXT DEFAULT 'draft'"
+ALTER_TRIPS_ADD_CMR_REMARKS = "ALTER TABLE trips ADD COLUMN cmr_remarks TEXT"
+
+ALTER_CLIENTS_ADD_EORI_NUMBER = "ALTER TABLE clients ADD COLUMN eori_number TEXT DEFAULT ''"
+ALTER_CLIENTS_ADD_COUNTRY = "ALTER TABLE clients ADD COLUMN country TEXT DEFAULT ''"
+ALTER_CLIENTS_ADD_CONSIGNEE_CONTACT_NAME = "ALTER TABLE clients ADD COLUMN consignee_contact_name TEXT DEFAULT ''"
+ALTER_CLIENTS_ADD_CONSIGNEE_CONTACT_PHONE = "ALTER TABLE clients ADD COLUMN consignee_contact_phone TEXT DEFAULT ''"
+
+ALTER_TRUCKS_ADD_TRAILER_PLATE = "ALTER TABLE trucks ADD COLUMN trailer_plate TEXT DEFAULT ''"
+ALTER_TRUCKS_ADD_MAX_PAYLOAD_KG = "ALTER TABLE trucks ADD COLUMN max_payload_kg REAL DEFAULT 0"
+ALTER_TRUCKS_ADD_CMR_INSURANCE = "ALTER TABLE trucks ADD COLUMN cmr_insurance_number TEXT DEFAULT ''"
+ALTER_TRUCKS_ADD_CMR_INSURANCE_EXPIRY = "ALTER TABLE trucks ADD COLUMN cmr_insurance_expiry TEXT DEFAULT ''"
+
+ALTER_DRIVERS_ADD_PASSPORT_NUMBER = "ALTER TABLE drivers ADD COLUMN passport_number TEXT DEFAULT ''"
+ALTER_DRIVERS_ADD_PASSPORT_EXPIRY = "ALTER TABLE drivers ADD COLUMN passport_expiry TEXT DEFAULT ''"
+ALTER_DRIVERS_ADD_ADR_CERTIFICATE = "ALTER TABLE drivers ADD COLUMN adr_certificate TEXT DEFAULT ''"
+ALTER_DRIVERS_ADD_ADR_CERTIFICATE_EXPIRY = "ALTER TABLE drivers ADD COLUMN adr_certificate_expiry TEXT DEFAULT ''"
+ALTER_DRIVERS_ADD_CARD_NUMBER = "ALTER TABLE drivers ADD COLUMN driver_card_number TEXT DEFAULT ''"
+
+ALTER_DOCUMENTS_ADD_COPY_TYPE = "ALTER TABLE documents ADD COLUMN copy_type TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_CMR_NUMBER = "ALTER TABLE documents ADD COLUMN cmr_number TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_CMR_METADATA = "ALTER TABLE documents ADD COLUMN cmr_metadata_json TEXT DEFAULT '{}'"
+ALTER_DOCUMENTS_ADD_IS_SIGNED = "ALTER TABLE documents ADD COLUMN is_signed INTEGER DEFAULT 0"
+
+INDEX_TRIPS_CMR_STATUS = "CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status);"
+INDEX_DOCUMENTS_COPY_TYPE = "CREATE INDEX IF NOT EXISTS idx_documents_copy_type ON documents(copy_type);"
+INDEX_DOCUMENTS_CMR_NUMBER = "CREATE INDEX IF NOT EXISTS idx_documents_cmr_number ON documents(cmr_number);"

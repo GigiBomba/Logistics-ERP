@@ -513,21 +513,16 @@ class TripContextService:
         cost_per_km: Optional[float] = None,
         net_profit: Optional[float] = None,
         route_history_v2_id: Optional[int] = None,
+        truck_id: Optional[str] = None,
+        truck_fuel_consumption: Optional[float] = None,
     ):
         # Merge provided values with existing ones to preserve manual overrides
         info = dict(self._active_trip_info)
-        if distance_km is not None:
-            info['distance_km'] = distance_km
-        if duration_min is not None:
-            info['duration_min'] = duration_min
-        if fuel_liters is not None:
-            info['fuel_liters'] = fuel_liters
-        if fuel_cost is not None:
-            info['fuel_cost'] = fuel_cost
-        if cost_per_km is not None:
-            info['cost_per_km'] = cost_per_km
-        if net_profit is not None:
-            info['net_profit'] = net_profit
+        for key, val in [("distance_km", distance_km), ("duration_min", duration_min),
+                         ("fuel_liters", fuel_liters), ("fuel_cost", fuel_cost),
+                         ("cost_per_km", cost_per_km), ("net_profit", net_profit)]:
+            if val is not None:
+                info[key] = val
 
         self._active_trip_info = info
 
@@ -535,16 +530,21 @@ class TripContextService:
         try:
             if getattr(self, '_tc', None) is None:
                 self._tc = TripContext.create()
-            # Update minimal route/truck/costs in TripContext
             route_update = {'distance_km': info.get('distance_km'), 'duration_min': info.get('duration_min'), 'geometry': None}
             if route_history_v2_id is not None:
                 route_update['route_history_v2_id'] = route_history_v2_id
             update_trip_route(self._tc, route_update)
             costs_update = {'fuel_liters': info.get('fuel_liters'), 'fuel_cost': info.get('fuel_cost'), 'toll_cost': None}
             self._tc.set_costs(costs_update)
-            _notify_listeners(self._tc, ['route', 'costs'])
+            truck_update = {}
+            if truck_id is not None:
+                truck_update['id'] = truck_id
+            if truck_fuel_consumption is not None:
+                truck_update['fuel_consumption_l_per_100km'] = truck_fuel_consumption
+            if truck_update:
+                self._tc.set_truck(truck_update)
+            _notify_listeners(self._tc, ['route', 'costs', 'truck'])
         except Exception:
-            # non-fatal: preserve active_trip_info even if TripContext update fails
             pass
 
     def get_active_trip_info(self) -> dict:

@@ -23,7 +23,6 @@ from services.constraint_engine import TruckConstraintEngine
 from services.country_exclusion import CountryExclusionEngine
 from services.geocode_nominatim import geocode_place
 from services.graphhopper_network import (
-    CH_DISABLE_DISTANCE_THRESHOLD_KM,
     MAX_ROUTE_RETRIES,
     build_route_endpoint,
     format_point_param,
@@ -798,14 +797,6 @@ class RouteService:
             for i in range(len(resolved_stops) - 1)
         )
 
-        # Auto-enable ch.disable for very long routes to prevent PointDistanceExceededException
-        if est_km > CH_DISABLE_DISTANCE_THRESHOLD_KM and gh_params.get("ch.disable") is not True:
-            self.logger.info(
-                f"Route distance {est_km:.1f}km > CH threshold {CH_DISABLE_DISTANCE_THRESHOLD_KM}km, "
-                f"auto-enabling ch.disable=true"
-            )
-            gh_params["ch.disable"] = True
-
         self.debug_logger.info(
             f"[Segmentation] Route distance estimate: {est_km:.1f} km "
             f"stops={len(resolved_stops)} ch.disable={gh_params.get('ch.disable', False)}"
@@ -833,7 +824,10 @@ class RouteService:
             res = self._merge_segment_results(parts, resolved_stops)
 
         try:
-            countries = self.country_exclusion.countries_at_stops(resolved_stops)
+            from services.country_borders import countries_from_points
+            geom_points = res.get('geometry', [])
+            all_pts = [(float(lat), float(lon)) for lat, lon in resolved_stops] + geom_points
+            countries = countries_from_points(all_pts)
             res['detected_countries'] = countries
         except Exception:
             countries = []

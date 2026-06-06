@@ -1,4 +1,4 @@
-﻿"""
+"""
 Route Planner UI — presentation and events only.
 
 Business logic: services/route_planner_controller.py
@@ -65,6 +65,9 @@ class RoutePlannerTab:
         self._stop_ids: dict = {}
         self._trucks_map: dict = {}
         self._last_route_result = None
+        self._last_route_history_id: int | None = None
+        self._last_route_calc_ctx = None
+        self._pending_clear = False
         self._calc_token = 0
         self._dispatch_frame = None
         self._i18n_widgets = []
@@ -86,9 +89,9 @@ class RoutePlannerTab:
             normalize_existing_stop({"type": "start"}),
             normalize_existing_stop({"type": "destination"}),
         ]
+        self._map_renderer: RouteMapRenderer | None = None
 
         self._setup_ui()
-        self._map_renderer: RouteMapRenderer | None = None
 
         self.frame.bind("<Destroy>", self._on_destroy)
         register_listener(self._on_language_changed)
@@ -200,16 +203,6 @@ class RoutePlannerTab:
 
         opts = ctk.CTkFrame(sidebar_body, fg_color=Theme.SURFACE)
         opts.pack(fill="x", padx=20, pady=(6, 12))
-        self._highlight_var = tk.BooleanVar(value=False)
-        cb = StyledCheckbutton(
-            opts,
-            text=t("route.highlight_avoided"),
-            variable=self._highlight_var,
-            bg=Theme.SURFACE,
-            activebackground=Theme.SURFACE,
-        )
-        cb.pack(anchor="w")
-        self._i18n_tag(cb, "route.highlight_avoided")
         self._compare_var = tk.BooleanVar(value=True)
         cb = StyledCheckbutton(
             opts,
@@ -250,6 +243,7 @@ class RoutePlannerTab:
         self._exclusions_panel = CountryExclusionsPanel(
             sidebar_body,
             self._core.country_avoidance,
+            on_change=self._on_exclusions_changed,
         )
 
         self.btn_search = ActionButton(
@@ -333,6 +327,11 @@ class RoutePlannerTab:
 
     def _on_truck_selected(self, label: str) -> None:
         self._selected_truck_id = self._truck_label_to_id.get(label)
+
+    def _on_exclusions_changed(self) -> None:
+        codes = self._core.get_excluded_countries()
+        if self._map_renderer:
+            self._map_renderer.draw_avoided_country_overlays(codes)
 
     def _add_stop_field(self) -> None:
         self.stops_state.insert(len(self.stops_state) - 1, normalize_existing_stop({"type": "stop"}))
@@ -427,6 +426,10 @@ class RoutePlannerTab:
 
         visible_rows = min(max(len(self.stops_state), 2), 6)
         self.stops_canvas.configure(height=visible_rows * 44)
+        if self._row_widgets:
+            last_entry = self._row_widgets[-1][1]
+            last_entry.bind("<Return>", lambda e: self._on_calculate_click())
+        self.frame.bind("<Return>", lambda e: self._on_calculate_click())
 
     def _collect_stop_addresses(self) -> dict:
         return {sid: var.get().strip() for sid, var in self.stop_vars.items()}
@@ -486,6 +489,9 @@ class RoutePlannerTab:
             return
 
         self._last_route_result = processed.route
+        self._last_route_history_id = processed.route.get("history_id")
+        self._last_route_calc_ctx = ctx
+        self._populate_stops_from_route(processed.route)
         self.lbl_info.config(
             text=processed.info_text,
             fg=Theme.SUCCESS if hasattr(Theme, "SUCCESS") else Theme.TEXT,
@@ -499,16 +505,73 @@ class RoutePlannerTab:
             self._dispatch_frame.destroy()
         self._dispatch_frame = ctk.CTkFrame(self.sidebar_footer, fg_color=Theme.SURFACE)
         self._dispatch_frame.pack(fill="x", padx=20, pady=(8, 0))
+        btn_row = ctk.CTkFrame(self._dispatch_frame, fg_color=Theme.SURFACE)
+        btn_row.pack(fill="x")
+        btn_row.grid_columnconfigure(0, weight=1)
+        btn_row.grid_columnconfigure(1, weight=0)
         ActionButton(
-            self._dispatch_frame,
+            btn_row,
             f"\U0001f4b0 {t('route.send_to_calculator')}",
             self._go_to_calculator,
             color=Theme.ACCENT_SUCCESS,
-        ).pack(fill="x")
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 4))
+        ctk.CTkButton(
+            btn_row,
+            text="\U0001f5d1",
+            fg_color=Theme.DANGER if hasattr(Theme, "DANGER") else Theme.WARNING,
+            width=36,
+            command=self._discard_route,
+        ).grid(row=0, column=1)
 
     def _go_to_calculator(self):
+        if self._last_route_history_id:
+            truck_id = str(self._selected_truck_id) if self._selected_truck_id else None
+            self._core.commit_route(self._last_route_history_id, truck_id=truck_id)
+            self._pending_clear = True
         if self.controller and hasattr(self.controller, '_switch_module'):
             self.controller._switch_module("calculator")
+
+    def _discard_route(self):
+        if self._last_route_history_id:
+            self._core.discard_route(self._last_route_history_id)
+        self._clear_route_state()
+
+    def _clear_route_state(self):
+        self._last_route_result = None
+        self._last_route_history_id = None
+        self._last_route_calc_ctx = None
+        if self._dispatch_frame:
+            self._dispatch_frame.destroy()
+            self._dispatch_frame = None
+        if self._map_renderer:
+            self._map_renderer.clear_route_overlays()
+            self._map_renderer.clear_stop_markers()
+        self._summary_text.config(text="")
+        self._explanation_text.config(text="")
+        self.lbl_info.config(text=t("route.info_placeholder"), fg=Theme.MUTED)
+        self.stops_state = [
+            normalize_existing_stop({"type": "start"}),
+            normalize_existing_stop({"type": "destination"}),
+        ]
+        self.stop_vars = {}
+        self._stop_rows = {}
+        self._stop_ids = {}
+        self._row_widgets = []
+        for widget in self.stops_container_inner.winfo_children():
+            widget.destroy()
+        self._render_stops_list()
+
+    def wakeup(self):
+        if self._pending_clear:
+            self._pending_clear = False
+            self._clear_route_state()
+
+    def _populate_stops_from_route(self, route: dict) -> None:
+        stops = route.get("stops") or []
+        for i, stop in enumerate(self.stops_state):
+            if i < len(stops):
+                stop["lat"], stop["lon"] = float(stops[i][0]), float(stops[i][1])
+                stop["resolved"] = True
 
     def _apply_compliance(self, compliance) -> None:
         if not compliance:
@@ -518,6 +581,7 @@ class RoutePlannerTab:
 
     def _draw_route_on_map(self, route: dict) -> None:
         if not self._map_renderer:
+            logger.warning("_draw_route_on_map: _map_renderer is None")
             return
         geometry = route.get("geometry") or []
         if not geometry:
@@ -527,11 +591,11 @@ class RoutePlannerTab:
                 geometry,
                 route,
                 show_comparison=self._compare_var.get(),
-                highlight_avoided=self._highlight_var.get(),
+                highlight_avoided=True,
             )
             self._map_renderer.update_stop_markers(self.stops_state)
         except Exception:
-            pass
+            logger.exception("Failed to draw route on map")
 
     # --- History load ---
 
@@ -564,12 +628,12 @@ class RoutePlannerTab:
                     route["geometry"],
                     route,
                     show_comparison=self._compare_var.get(),
-                    highlight_avoided=False,
+                    highlight_avoided=True,
                 )
                 self._map_renderer.update_stop_markers(self.stops_state)
                 self._map_renderer.center_on_geometry(route["geometry"])
             except Exception:
-                pass
+                logger.exception("Failed to draw history route on map")
 
     # --- Export ---
 

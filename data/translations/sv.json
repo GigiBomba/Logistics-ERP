@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Svenska",
   "app": {
     "name": "ERP LOGISTIK",
@@ -423,7 +423,7 @@
     "duration": "Varaktighet: {}",
     "stops": "Stopp: {} stopp",
     "fuel": "Bränsle: {:.2f} L",
-    "fuel_cost": "Bränslekostnad: {:.2f} SEK",
+    "fuel_cost": "Bränslekostnad: {}",
     "history_loaded": "Rutt laddad från historik",
     "days": "dagar",
     "hours": "timmar",

@@ -8,14 +8,15 @@ from typing import Dict, Optional
 
 import requests
 
-from config import Config
-
 logger = logging.getLogger("exchange_rate")
 
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "exchange_rates_cache.json")
 CACHE_TTL_SECONDS = 3600  # 1 hour
 REQUEST_TIMEOUT = 5
 BASE_CURRENCY = "EUR"
+
+PRIMARY_API = "https://open.er-api.com/v6/latest/EUR"
+FALLBACK_API = "https://api.frankfurter.dev/latest?from=EUR"
 
 _DEFAULT_RATES: Dict[str, float] = {
     "EUR": 1.0,
@@ -111,38 +112,34 @@ class ExchangeRateService:
     # ── Internal ───────────────────────────────────────────────────────
 
     def _do_refresh(self) -> bool:
-        try:
-            logger.info("Fetching exchange rates from %s ...", Config.CURRENCY_API)
-            r = requests.get(Config.CURRENCY_API, timeout=REQUEST_TIMEOUT)
-            if r.status_code == 200:
-                data = r.json()
-                raw = data.get("rates", {})
-                for code, rate in raw.items():
-                    self._rates[code] = float(rate)
-                self._rates[BASE_CURRENCY] = 1.0
-                self._last_updated = time.time()
-                self._last_fetch_ok = True
-                self._save_cache()
-                logger.info("Exchange rates refreshed OK: %d currencies", len(raw))
-                return True
-            else:
-                logger.warning("Exchange rate API returned HTTP %d", r.status_code)
-                self._last_fetch_ok = False
-                return False
-        except requests.exceptions.Timeout:
-            logger.warning("Exchange rate API timeout (%ds)", REQUEST_TIMEOUT)
-            self._last_fetch_ok = False
-            return False
-        except requests.exceptions.ConnectionError as e:
-            logger.warning("Exchange rate API connection error: %s", e)
-            self._last_fetch_ok = False
-            return False
-        except Exception as e:
-            logger.error("Exchange rate API unexpected error: %s", e)
-            self._last_fetch_ok = False
-            return False
-        finally:
-            self._refresh_in_progress = False
+        urls = [PRIMARY_API, FALLBACK_API]
+        for url in urls:
+            try:
+                logger.info("Fetching exchange rates from %s ...", url)
+                r = requests.get(url, timeout=REQUEST_TIMEOUT)
+                if r.status_code == 200:
+                    data = r.json()
+                    raw = data.get("rates", {})
+                    for code, rate in raw.items():
+                        self._rates[code] = float(rate)
+                    self._rates[BASE_CURRENCY] = 1.0
+                    self._last_updated = time.time()
+                    self._last_fetch_ok = True
+                    self._save_cache()
+                    logger.info("Exchange rates refreshed OK (%s): %d currencies", url, len(raw))
+                    return True
+                else:
+                    logger.warning("Exchange rate API %s returned HTTP %d", url, r.status_code)
+            except requests.exceptions.Timeout:
+                logger.warning("Exchange rate API %s timeout (%ds)", url, REQUEST_TIMEOUT)
+            except requests.exceptions.ConnectionError as e:
+                logger.warning("Exchange rate API %s connection error: %s", url, e)
+            except Exception as e:
+                logger.error("Exchange rate API %s unexpected error: %s", url, e)
+
+        self._last_fetch_ok = False
+        self._refresh_in_progress = False
+        return False
 
     def is_available(self) -> bool:
         return self._last_fetch_ok or self._last_updated is not None

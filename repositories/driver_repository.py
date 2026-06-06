@@ -11,6 +11,8 @@ class DriverRepository(BaseRepository):
         "id", "name", "phone", "email", "license_number", "license_category",
         "license_expiry", "medical_expiry", "hire_date", "monthly_salary",
         "notes", "is_active", "created_at", "updated_at",
+        "passport_number", "passport_expiry", "adr_certificate",
+        "adr_certificate_expiry", "driver_card_number",
     ]
 
     # ── Base CRUD ─────────────────────────────────────────────────────

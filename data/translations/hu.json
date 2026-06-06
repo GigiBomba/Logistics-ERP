@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Magyar",
   "app": {
     "name": "ERP LOGISZTIKA",
@@ -423,7 +423,7 @@
     "duration": "Időtartam: {}",
     "stops": "Megallok: {} megallo",
     "fuel": "Uezemanyag: {:.2f} L",
-    "fuel_cost": "Uezemanyag koltseg: {:.2f} RON",
+    "fuel_cost": "Uezemanyag koltseg: {}",
     "history_loaded": "Uetvonal betoeltve az előzmenyekből",
     "days": "nap",
     "hours": "ora",

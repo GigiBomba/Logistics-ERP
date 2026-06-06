@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Português",
   "app": {
     "name": "ERP LOGÍSTICA",
@@ -423,7 +423,7 @@
     "duration": "Duração: {}",
     "stops": "Paragens: {} paragens",
     "fuel": "Combustível: {:.2f} L",
-    "fuel_cost": "Custo de combustível: {:.2f} EUR",
+    "fuel_cost": "Custo de combustível: {}",
     "history_loaded": "Rota carregada do histórico",
     "days": "dias",
     "hours": "horas",

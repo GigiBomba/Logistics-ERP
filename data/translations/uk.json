@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Українська",
   "app": {
     "name": "ERP ЛОГІСТИКА",
@@ -347,7 +347,7 @@
     "email_subject": "Тема Email",
     "email_success": "Email Відправлено",
     "smtp_not_configured": "SMTP Не Налаштовано",
-    "trip_list_format": "#{id} {truck_number} \u2014 {client_name} [{created_at}]",
+    "trip_list_format": "#{id} {truck_number} — {client_name} [{created_at}]",
     "field_{key}": "Поле {key}"
   },
   "settings": {
@@ -499,7 +499,7 @@
     "duration": "Тривалість: {}",
     "stops": "Зупинки: {} зупинок",
     "fuel": "Паливо: {:.2f} Л",
-    "fuel_cost": "Вартість палива: {:.2f} RON",
+    "fuel_cost": "Вартість палива: {}",
     "history_loaded": "Маршрут завантажено з історії",
     "days": "дні",
     "hours": "год",

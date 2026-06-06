@@ -13,8 +13,20 @@ class RouteRepository(BaseRepository):
         "duration_min", "truck_id", "truck_label", "truck_json", "profile",
         "excluded_countries_json", "toll_estimates_json", "fuel_estimates_json",
         "profit_estimates_json", "countries_traversed_json",
-        "route_summary_json", "archived_at",
+        "route_summary_json", "archived_at", "is_committed",
     ]
+
+    def __init__(self, db):
+        super().__init__(db)
+        self._migrate()
+
+    def _migrate(self):
+        try:
+            self._execute(
+                f"ALTER TABLE {self.TABLE} ADD COLUMN is_committed INTEGER NOT NULL DEFAULT 0"
+            )
+        except Exception:
+            pass
 
     # ── Base CRUD ─────────────────────────────────────────────────────
 
@@ -26,11 +38,11 @@ class RouteRepository(BaseRepository):
     def get_all(self, limit: int = 100, offset: int = 0, include_archived: bool = False) -> List[Dict[str, Any]]:
         if include_archived:
             return self._fetchall(
-                f"SELECT * FROM {self.TABLE} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"SELECT * FROM {self.TABLE} WHERE is_committed >= 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 (limit, offset),
             )
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL AND is_committed >= 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (limit, offset),
         )
 
@@ -90,6 +102,18 @@ class RouteRepository(BaseRepository):
             (ts, route_id),
         )
 
+    def commit(self, route_id: int) -> None:
+        self._execute(
+            f"UPDATE {self.TABLE} SET is_committed = 1 WHERE id = ?",
+            (route_id,),
+        )
+
+    def discard(self, route_id: int) -> None:
+        self._execute(
+            f"UPDATE {self.TABLE} SET is_committed = -1 WHERE id = ?",
+            (route_id,),
+        )
+
     def count(self) -> int:
         row = self._fetchone(f"SELECT COUNT(*) AS cnt FROM {self.TABLE}")
         return row["cnt"] if row else 0
@@ -102,7 +126,7 @@ class RouteRepository(BaseRepository):
         vals = ", ".join("?" for _ in filtered)
         set_clauses = ", ".join(
             f"{k} = excluded.{k}" for k in filtered
-            if k not in ("route_fingerprint", "calculation_count", "created_at")
+            if k not in ("route_fingerprint", "calculation_count", "created_at", "is_committed")
         )
         return self._execute_insert(
             f"""INSERT INTO {self.TABLE} ({cols})
@@ -146,8 +170,8 @@ class RouteRepository(BaseRepository):
                            calculation_count, total_distance_km, duration_min, truck_id,
                            truck_label, profile, excluded_countries_json,
                            countries_traversed_json, metadata_version, stops_json,
-                           archived_at
-                    FROM {self.TABLE} WHERE 1=1"""
+                           archived_at, is_committed
+                    FROM {self.TABLE} WHERE is_committed >= 0"""
         params: List[Any] = []
         if not include_archived:
             query += " AND archived_at IS NULL"
@@ -172,7 +196,7 @@ class RouteRepository(BaseRepository):
         profile: str = "",
         include_archived: bool = False,
     ) -> int:
-        query = f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE 1=1"
+        query = f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_committed >= 0"
         params: List[Any] = []
         if not include_archived:
             query += " AND archived_at IS NULL"

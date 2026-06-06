@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Italiano",
   "app": {
     "name": "LOGISTICA ERP",
@@ -348,7 +348,7 @@
     "email_subject": "Oggetto Email",
     "email_success": "Email Inviata",
     "smtp_not_configured": "SMTP Non Configurato",
-    "trip_list_format": "#{id} {truck_number} \u2014 {client_name} [{created_at}]",
+    "trip_list_format": "#{id} {truck_number} — {client_name} [{created_at}]",
     "field_{key}": "Campo {Key}"
   },
   "settings": {
@@ -500,7 +500,7 @@
     "duration": "Durata: {}",
     "stops": "Fermate: {} fermate",
     "fuel": "Carburante: {:.2f} L",
-    "fuel_cost": "Costo carburante: {:.2f} RON",
+    "fuel_cost": "Costo carburante: {}",
     "history_loaded": "Rotta caricata dalla cronologia",
     "days": "giorni",
     "hours": "ore",

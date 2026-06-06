@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Türkçe",
   "app": {
     "name": "ERP LOJİSTİK",
@@ -423,7 +423,7 @@
     "duration": "Süre: {}",
     "stops": "Durak: {} durak",
     "fuel": "Yakıt: {:.2f} L",
-    "fuel_cost": "Yakıt maliyeti: {:.2f} RON",
+    "fuel_cost": "Yakıt maliyeti: {}",
     "history_loaded": "Rota geçmişten yüklendi",
     "days": "gün",
     "hours": "saat",

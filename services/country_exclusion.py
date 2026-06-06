@@ -9,9 +9,10 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
+from services.country_borders import get_polygons
 from utils.logger import get_logger
 
-# ISO2 -> ISO3166-1 alpha3 (for servers with country encoded value; polygon fallback always used)
+# ISO2 -> ISO3166-1 alpha3
 ISO2_TO_ISO3: Dict[str, str] = {
     "AL": "ALB", "AD": "AND", "AT": "AUT", "BY": "BLR", "BE": "BEL",
     "BA": "BIH", "BG": "BGR", "HR": "HRV", "CY": "CYP", "CZ": "CZE",
@@ -25,7 +26,8 @@ ISO2_TO_ISO3: Dict[str, str] = {
     "GB": "GBR", "VA": "VAT",
 }
 
-# Approximate mainland bounds: (lon_min, lat_min, lon_max, lat_max) — sufficient for area blocking
+# Bounding boxes for fast country detection: (lon_min, lat_min, lon_max, lat_max)
+# Tightened to minimize overlap with neighboring countries
 COUNTRY_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
     "AL": (19.1, 39.6, 21.1, 42.7),
     "AD": (1.4, 42.4, 1.8, 42.7),
@@ -71,7 +73,7 @@ COUNTRY_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
     "SE": (11.1, 55.3, 24.2, 69.1),
     "CH": (5.9, 45.8, 10.5, 47.8),
     "TR": (26.0, 36.0, 44.8, 42.1),
-    "UA": (22.1, 44.4, 40.2, 52.4),
+    "UA": (22.1, 45.0, 40.2, 52.4),
     "GB": (-8.6, 49.9, 1.8, 60.9),
     "VA": (12.4, 41.9, 12.5, 41.91),
 }
@@ -117,12 +119,13 @@ class CountryExclusionEngine:
         lon_min, lat_min, lon_max, lat_max = bounds
         return lon_min <= lon <= lon_max and lat_min <= lat <= lat_max
 
-    def countries_at_stops(self, stops: Sequence[Tuple[float, float]]) -> List[str]:
+    @staticmethod
+    def countries_at_stops(stops: Sequence[Tuple[float, float]]) -> List[str]:
         """Return ISO2 codes whose bounds contain any stop (lat, lon)."""
         found: List[str] = []
         for lat, lon in stops:
             for code, bounds in COUNTRY_BOUNDS.items():
-                if self._point_in_bounds(lon, lat, bounds) and code not in found:
+                if CountryExclusionEngine._point_in_bounds(lon, lat, bounds) and code not in found:
                     found.append(code)
         return found
 
@@ -182,28 +185,38 @@ class CountryExclusionEngine:
         areas: Dict[str, Any] = {}
         conditions: List[str] = []
         for code in countries:
-            bounds = COUNTRY_BOUNDS.get(code)
-            if not bounds:
-                self.logger.warning(f"[CountryExclusion] No bounds for {code}; skipping")
+            rings = get_polygons(code)
+            if not rings or len(rings[0]) < 3:
+                self.logger.warning(f"[CountryExclusion] No polygon for {code}; skipping")
                 continue
             area_id = f"avoid_{code.lower()}"
-            lon_min, lat_min, lon_max, lat_max = bounds
-            areas[area_id] = {
-                "type": "Feature",
-                "properties": {"country": code},
-                "geometry": {
-                    "type": "Polygon",
-                    "coordinates": [
-                        [
-                            [lon_min, lat_min],
-                            [lon_max, lat_min],
-                            [lon_max, lat_max],
-                            [lon_min, lat_max],
-                            [lon_min, lat_min],
-                        ]
-                    ],
-                },
-            }
+            if len(rings) == 1:
+                coords = [[p[1], p[0]] for p in rings[0]]
+                if coords[0] != coords[-1]:
+                    coords.append(coords[0])
+                areas[area_id] = {
+                    "type": "Feature",
+                    "properties": {"country": code},
+                    "geometry": {
+                        "type": "Polygon",
+                        "coordinates": [coords],
+                    },
+                }
+            else:
+                all_coords = []
+                for ring in rings:
+                    coords = [[p[1], p[0]] for p in ring]
+                    if coords[0] != coords[-1]:
+                        coords.append(coords[0])
+                    all_coords.append([coords])
+                areas[area_id] = {
+                    "type": "Feature",
+                    "properties": {"country": code},
+                    "geometry": {
+                        "type": "MultiPolygon",
+                        "coordinates": all_coords,
+                    },
+                }
             conditions.append(f"in_{area_id}")
 
         if not areas:

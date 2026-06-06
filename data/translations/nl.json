@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Nederlands",
   "app": {
     "name": "ERP LOGISTIEK",
@@ -423,7 +423,7 @@
     "duration": "Duur: {}",
     "stops": "Stops: {} stops",
     "fuel": "Brandstof: {:.2f} L",
-    "fuel_cost": "Brandstofkosten: {:.2f} RON",
+    "fuel_cost": "Brandstofkosten: {}",
     "history_loaded": "Route geladen uit geschiedenis",
     "days": "dagen",
     "hours": "uur",

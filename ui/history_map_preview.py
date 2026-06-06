@@ -138,7 +138,11 @@ class HistoryMapPreview:
                     80, lambda: self.show_route(geometry, max_points, intermediate_stops)
                 )
                 return
-            create_path_on_map(self._map, points, intermediate_stops=intermediate_stops)
+            try:
+                create_path_on_map(self._map, points, intermediate_stops=intermediate_stops)
+            except Exception as exc:
+                logger.warning("history map create_path_on_map failed: %s", exc)
+                self._draw_fallback(points)
             return
 
         if self._fallback_canvas:

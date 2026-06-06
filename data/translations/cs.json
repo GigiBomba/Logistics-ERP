@@ -1,4 +1,4 @@
-﻿{
+{
   "language_name": "Čeština",
   "app": {
     "name": "ERP LOGISTIKA",
@@ -423,7 +423,7 @@
     "duration": "Trvání: {}",
     "stops": "Zastávky: {} zastávek",
     "fuel": "Palivo: {:.2f} L",
-    "fuel_cost": "Náklady na palivo: {:.2f} Kč",
+    "fuel_cost": "Náklady na palivo: {}",
     "history_loaded": "Trasa načtena z historie",
     "days": "dny",
     "hours": "hod",

@@ -15,16 +15,20 @@ class DocumentRepository(BaseRepository):
                file_path: str, file_name: str, file_size: int,
                mime_type: str, file_hash: str, tags: str,
                description: str, uploaded_by: str,
-               uploaded_at: str, updated_at: str) -> int:
+               uploaded_at: str, updated_at: str,
+               copy_type: str = "", cmr_number: str = "",
+               cmr_metadata_json: str = "{}", is_signed: int = 0) -> int:
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} "
             f"(doc_number, title, category, entity_type, entity_id, "
             f"file_path, file_name, file_size, mime_type, file_hash, "
-            f"tags, description, uploaded_by, uploaded_at, updated_at) "
-            f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            f"tags, description, uploaded_by, uploaded_at, updated_at, "
+            f"copy_type, cmr_number, cmr_metadata_json, is_signed) "
+            f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (doc_number, title, category, entity_type, entity_id,
              file_path, file_name, file_size, mime_type, file_hash,
-             tags, description, uploaded_by, uploaded_at, updated_at),
+             tags, description, uploaded_by, uploaded_at, updated_at,
+             copy_type, cmr_number, cmr_metadata_json, is_signed),
         )
 
     def get_by_id(self, doc_id: int) -> Optional[Dict[str, Any]]:

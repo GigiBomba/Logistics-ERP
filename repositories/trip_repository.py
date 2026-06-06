@@ -13,7 +13,13 @@ class TripRepository(BaseRepository):
         "net_profit", "start_date", "end_date", "payment_date", "extra_costs",
         "fuel_cost", "toll_cost", "salary_cost", "currency", "status",
         "context_json", "route_history_v2_id", "truck_consumption_l_per_100km",
-        "driver_id", "client_id",
+        "driver_id", "client_id", "price_pre_vat", "vat_percent",
+        "cmr_number", "cmr_sequence", "cargo_description", "cargo_marks",
+        "package_count", "package_type", "gross_weight_kg", "volume_m3",
+        "hs_code", "carrier_instructions", "carrier_reservations",
+        "special_agreements", "carriage_payer", "documents_attached",
+        "place_of_loading", "place_of_loading_date", "loading_country",
+        "delivery_country", "adr_info_json", "cmr_status", "cmr_remarks",
     ]
 
     # ── Base CRUD ─────────────────────────────────────────────────────
