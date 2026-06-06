@@ -1,4 +1,4 @@
-﻿import os
+import os
 from datetime import datetime
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
@@ -124,6 +124,279 @@ class InvoiceGenerator:
         story.append(Paragraph(remove_accents(footer_msg), self.styles["Italic"]))
         story.append(Spacer(1, 0.5*cm))
         story.append(Paragraph(self._tr("invoice_pdf.footer", mode), self.styles["Italic"]))
+
+        doc.build(story)
+        return full_path
+
+    def generate_rich(self, invoice_data):
+        """Generate a rich invoice PDF with line items, tax, discount, notes, and branding.
+
+        invoice_data dict with keys: invoice_number, issue_date, due_date, payment_terms,
+        currency, company, client, line_items, tax_rate, discount_type, discount_value,
+        subtotal, total_tax, discount, grand_total, notes, logo_path, signature_path,
+        stamp_path, company_color, mode.
+        """
+        conf = invoice_data.get("company", load_company_config())
+        client = invoice_data.get("client", {})
+        line_items = invoice_data.get("line_items", [])
+        currency = invoice_data.get("currency", "EUR")
+        company_color_hex = invoice_data.get("company_color", "#1a73e8")
+        mode = invoice_data.get("mode", "client")
+
+        try:
+            company_color = colors.HexColor(company_color_hex)
+        except Exception:
+            company_color = colors.HexColor("#1a73e8")
+
+        invoice_id = invoice_data.get("invoice_number", f"INV-{datetime.now().year}-0001")
+        filename = f"{invoice_id}.pdf"
+        full_path = os.path.join(self.reports_dir, filename)
+
+        doc = SimpleDocTemplate(full_path, pagesize=A4,
+                                leftMargin=1.5*cm, rightMargin=1.5*cm,
+                                topMargin=1.5*cm, bottomMargin=1.5*cm)
+        story = []
+
+        # ── HEADER ──────────────────────────────────────────────────
+        title_text = "INVOICE"
+        title_style = ParagraphStyle("InvTitle", parent=self.styles["Title"],
+                                     fontSize=22, textColor=company_color, alignment=2)
+        story.append(Paragraph(f"<b>{title_text}</b>", title_style))
+        story.append(Spacer(1, 0.3*cm))
+
+        # Invoice number and dates
+        header_info = (
+            f"<b>Invoice #:</b> {invoice_id}<br/>"
+            f"<b>Date:</b> {invoice_data.get('issue_date', '')}<br/>"
+            f"<b>Due Date:</b> {invoice_data.get('due_date', '')}<br/>"
+            f"<b>Payment Terms:</b> {invoice_data.get('payment_terms', 'Net 30')}"
+        )
+        header_style = ParagraphStyle("InvHeader", parent=self.styles["Normal"],
+                                      fontSize=9, alignment=2)
+        story.append(Paragraph(header_info, header_style))
+        story.append(HRFlowable(width="100%", thickness=1.5,
+                                color=company_color, spaceAfter=12))
+
+        # ── FROM / BILL TO ──────────────────────────────────────────
+        company_info = (
+            f"<b>FROM:</b><br/>"
+            f"{remove_accents(conf.get('company_name', ''))}<br/>"
+            f"CUI: {conf.get('cui', '')}<br/>"
+            f"Reg. Com: {conf.get('reg_number', '')}<br/>"
+            f"{remove_accents(conf.get('address', ''))}<br/>"
+            f"Tel: {conf.get('phone', '')}<br/>"
+            f"Email: {conf.get('email', '')}"
+        )
+
+        client_info = (
+            f"<b>BILL TO:</b><br/>"
+            f"{remove_accents(client.get('name', ''))}"
+        )
+        if client.get("vat_number"):
+            client_info += f"<br/>VAT: {client.get('vat_number')}"
+        if client.get("address"):
+            client_info += f"<br/>{remove_accents(client.get('address', ''))}"
+        if client.get("phone"):
+            client_info += f"<br/>Tel: {client.get('phone')}"
+        if client.get("email"):
+            client_info += f"<br/>Email: {client.get('email')}"
+
+        # Logo handling
+        logo_path = invoice_data.get("logo_path", "")
+        if logo_path and os.path.isfile(logo_path):
+            try:
+                from reportlab.platypus import Image
+                logo_img = Image(logo_path, width=2.5*cm, height=2.5*cm)
+                logo_img.hAlign = 'LEFT'
+                story.append(logo_img)
+                story.append(Spacer(1, 0.3*cm))
+            except Exception:
+                pass
+
+        info_table_data = [
+            [Paragraph(company_info, self.styles["Normal"]),
+             Paragraph(client_info, self.styles["Normal"])]
+        ]
+        info_table = Table(info_table_data, colWidths=[9*cm, 9*cm])
+        info_table.setStyle(TableStyle([
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        story.append(info_table)
+        story.append(Spacer(1, 0.6*cm))
+
+        # ── TRIP DETAILS ─────────────────────────────────────────────
+        loading_stops = invoice_data.get("loading_stops", [])
+        unloading_stops = invoice_data.get("unloading_stops", [])
+        distance = invoice_data.get("distance", "")
+        truck = invoice_data.get("truck_plate", "")
+        driver = invoice_data.get("driver_name", "")
+
+        has_stops = loading_stops or unloading_stops
+        if has_stops or any([distance, truck, driver]):
+            story.append(Paragraph("<b>TRIP DETAILS</b>", self.styles["Normal"]))
+            trip_rows = []
+            if loading_stops:
+                for i, stop in enumerate(loading_stops):
+                    trip_rows.append(
+                        [Paragraph(f"<b>Loading {i+1}:</b>", self.styles["Normal"]),
+                         Paragraph(remove_accents(stop), self.styles["Normal"])])
+            if unloading_stops:
+                for i, stop in enumerate(unloading_stops):
+                    trip_rows.append(
+                        [Paragraph(f"<b>Unloading {i+1}:</b>", self.styles["Normal"]),
+                         Paragraph(remove_accents(stop), self.styles["Normal"])])
+            if distance:
+                trip_rows.append(
+                    [Paragraph("<b>Distance:</b>", self.styles["Normal"]),
+                     Paragraph(str(distance), self.styles["Normal"])])
+            if truck:
+                trip_rows.append(
+                    [Paragraph("<b>Truck:</b>", self.styles["Normal"]),
+                     Paragraph(str(truck), self.styles["Normal"])])
+            if driver:
+                trip_rows.append(
+                    [Paragraph("<b>Driver:</b>", self.styles["Normal"]),
+                     Paragraph(remove_accents(str(driver)), self.styles["Normal"])])
+            if trip_rows:
+                trip_table = Table(trip_rows, colWidths=[3*cm, 15*cm])
+                trip_table.setStyle(TableStyle([
+                    ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                    ('TOPPADDING', (0, 0), (-1, -1), 2),
+                    ('BOTTOMPADDING', (0, 0), (-1, -1), 2),
+                ]))
+                story.append(trip_table)
+            story.append(Spacer(1, 0.6*cm))
+
+        # ── DESCRIPTION ──────────────────────────────────────────────
+        description = invoice_data.get("description", "")
+        if description and description.strip():
+            story.append(Paragraph("<b>Description:</b>", self.styles["Normal"]))
+            story.append(Paragraph(remove_accents(description), self.styles["Normal"]))
+            story.append(Spacer(1, 0.6*cm))
+
+        # ── LINE ITEMS TABLE ────────────────────────────────────────
+        header_row = [
+            Paragraph("<b>#</b>", self.styles["Normal"]),
+            Paragraph("<b>Qty</b>", self.styles["Normal"]),
+            Paragraph("<b>Unit Price</b>", self.styles["Normal"]),
+            Paragraph("<b>Tax %</b>", self.styles["Normal"]),
+            Paragraph("<b>Total</b>", self.styles["Normal"]),
+        ]
+        table_data = [header_row]
+
+        for i, li in enumerate(line_items):
+            table_data.append([
+                Paragraph(str(i + 1), self.styles["Normal"]),
+                Paragraph(str(li.get("quantity", 1)), self.styles["Normal"]),
+                Paragraph(f"{li.get('unit_price', 0):.2f} {currency}", self.styles["Normal"]),
+                Paragraph(f"{li.get('tax_rate', 0):.1f}%", self.styles["Normal"]),
+                Paragraph(f"<b>{li.get('total', 0):.2f} {currency}</b>", self.styles["Normal"]),
+            ])
+
+        col_widths = [1*cm, 2*cm, 5*cm, 3*cm, 7*cm]
+        items_table = Table(table_data, colWidths=col_widths)
+        items_table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f0f4ff")),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ALIGN', (0, 0), (0, -1), 'CENTER'),
+            ('ALIGN', (1, 0), (-1, -1), 'RIGHT'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTSIZE', (0, 0), (-1, -1), 9),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        story.append(items_table)
+        story.append(Spacer(1, 0.8*cm))
+
+        # ── TOTALS ──────────────────────────────────────────────────
+        subtotal = invoice_data.get("subtotal", 0)
+        total_tax = invoice_data.get("total_tax", 0)
+        discount = invoice_data.get("discount", 0)
+        grand_total = invoice_data.get("grand_total", 0)
+
+        totals_data = [
+            [Paragraph("<b>Subtotal:</b>", self.styles["Normal"]),
+             Paragraph(f"{subtotal:,.2f} {currency}", self.styles["Normal"])],
+            [Paragraph("<b>Tax:</b>", self.styles["Normal"]),
+             Paragraph(f"{total_tax:,.2f} {currency}", self.styles["Normal"])],
+        ]
+        if discount > 0:
+            disc_label = f"Discount ({invoice_data.get('discount_type', '')}):"
+            totals_data.append([
+                Paragraph(f"<b>{disc_label}</b>", self.styles["Normal"]),
+                Paragraph(f"-{discount:,.2f} {currency}", self.styles["Normal"]),
+            ])
+
+        totals_table = Table(totals_data, colWidths=[12*cm, 6*cm])
+        totals_table.setStyle(TableStyle([
+            ('ALIGN', (1, 0), (1, -1), 'RIGHT'),
+            ('TOPPADDING', (0, 0), (-1, -1), 3),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ('LINEBELOW', (0, -1), (-1, -1), 1, colors.black),
+        ]))
+        story.append(totals_table)
+        story.append(Spacer(1, 0.3*cm))
+
+        grand_style = ParagraphStyle("GrandTotal", parent=self.styles["Normal"],
+                                     fontSize=12, textColor=company_color)
+        story.append(Paragraph(
+            f"<b>GRAND TOTAL: {grand_total:,.2f} {currency}</b>", grand_style))
+        story.append(Spacer(1, 1*cm))
+
+        # ── NOTES ───────────────────────────────────────────────────
+        notes = invoice_data.get("notes", "")
+        if notes and notes.strip():
+            story.append(Paragraph("<b>Notes:</b>", self.styles["Normal"]))
+            story.append(Paragraph(remove_accents(notes), self.styles["Normal"]))
+            story.append(Spacer(1, 1*cm))
+
+        # ── SIGNATURE / STAMP ───────────────────────────────────────
+        sig_path = invoice_data.get("signature_path", "")
+        stamp_path = invoice_data.get("stamp_path", "")
+
+        if sig_path or stamp_path:
+            sig_data = []
+            if sig_path and os.path.isfile(sig_path):
+                try:
+                    from reportlab.platypus import Image
+                    sig_img = Image(sig_path, width=4*cm, height=1.5*cm)
+                    sig_data.append(sig_img)
+                except Exception:
+                    sig_data.append(Paragraph("Authorized Signature", self.styles["Normal"]))
+            else:
+                sig_data.append(Paragraph("", self.styles["Normal"]))
+
+            if stamp_path and os.path.isfile(stamp_path):
+                try:
+                    from reportlab.platypus import Image
+                    stamp_img = Image(stamp_path, width=3*cm, height=3*cm)
+                    sig_data.append(stamp_img)
+                except Exception:
+                    sig_data.append(Paragraph("", self.styles["Normal"]))
+            elif len(sig_data) == 1 and sig_path:
+                sig_data.append(Paragraph("", self.styles["Normal"]))
+
+            if len(sig_data) > 0:
+                sig_table = Table([sig_data], colWidths=[9*cm, 9*cm])
+                sig_table.setStyle(TableStyle([
+                    ('ALIGN', (0, 0), (0, 0), 'LEFT'),
+                    ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
+                    ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
+                ]))
+                story.append(sig_table)
+                story.append(Spacer(1, 0.5*cm))
+
+        # ── FOOTER ──────────────────────────────────────────────────
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+        footer_text = (f"{conf.get('company_name', '')} | "
+                       f"CUI: {conf.get('cui', '')} | "
+                       f"Tel: {conf.get('phone', '')} | "
+                       f"Email: {conf.get('email', '')}")
+        story.append(Paragraph(remove_accents(footer_text), self.styles["Italic"]))
+        story.append(Spacer(1, 0.3*cm))
+        story.append(Paragraph(
+            "Thank you for your trust! — Generated by Operion ERP",
+            self.styles["Italic"]))
 
         doc.build(story)
         return full_path
