@@ -965,7 +965,7 @@ class DocumentService:
 
         if cat == "cmr" and ttype == "pdf":
             from services.invoicing.cmr_generator import CMRGenerator
-            gen = CMRGenerator()
+            gen = CMRGenerator(db=self.db)
             if not output_dir:
                 output_dir = os.path.join(DOCUMENTS_ROOT, "trips")
             os.makedirs(output_dir, exist_ok=True)

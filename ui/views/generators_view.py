@@ -32,6 +32,7 @@ class GeneratorsView(ctk.CTkFrame):
         self._cmr_last_paths = {}
         self._adr_rows = []
         self._successive_carrier_frames = []
+        self._cmr_filled_trip_id = None
         self._build()
 
     @property
@@ -257,15 +258,15 @@ class GeneratorsView(ctk.CTkFrame):
         self._cmr_consignor_vat = ctk.CTkEntry(vat_row, width=80, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
+        ctk.CTkLabel(vat_row, text="VAT", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
         self._cmr_consignor_vat.pack(side="left", padx=(0, S["1"]))
+        ctk.CTkLabel(vat_row, text="EORI", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
         self._cmr_consignor_eori = ctk.CTkEntry(vat_row, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_consignor_eori.pack(side="left", fill="x", expand=True)
-        ctk.CTkLabel(vat_row, text="VAT", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["1"], S["2"]))
-        ctk.CTkLabel(vat_row, text="EORI", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["1"], 0))
         self._cmr_consignor_phone = ctk.CTkEntry(c_left, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"],
@@ -289,7 +290,11 @@ class GeneratorsView(ctk.CTkFrame):
         self._cmr_consignee_vat = ctk.CTkEntry(cv_row, width=80, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
+        ctk.CTkLabel(cv_row, text="VAT", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
         self._cmr_consignee_vat.pack(side="left", padx=(0, S["1"]))
+        ctk.CTkLabel(cv_row, text="EORI", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
         self._cmr_consignee_eori = ctk.CTkEntry(cv_row, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
@@ -308,12 +313,12 @@ class GeneratorsView(ctk.CTkFrame):
 
         name_f = ctk.CTkFrame(card, fg_color="transparent")
         name_f.pack(fill="x", padx=S["4"], pady=(S["1"], S["1"]))
+        ctk.CTkLabel(name_f, text="Company Name", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(anchor="w")
         self._cmr_carrier_name = ctk.CTkEntry(name_f, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_carrier_name.pack(fill="x")
-        ctk.CTkLabel(name_f, text="Company Name", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
 
         self._cmr_carrier_addr = ctk.CTkEntry(card, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
@@ -425,13 +430,13 @@ class GeneratorsView(ctk.CTkFrame):
         ctk.CTkLabel(drow, text="ISO", font=FONTS["small"],
                      text_color=COLORS["text_muted"]).pack(side="left", padx=(S["1"], S["3"]))
 
+        ctk.CTkLabel(card, text="Documents Attached", font=FONTS["small"],
+                     text_color=COLORS["text_muted"], anchor="w").pack(
+            anchor="w", padx=S["4"], pady=(S["2"], 0))
         self._cmr_docs_text = ctk.CTkEntry(card, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_docs_text.pack(fill="x", padx=S["4"], pady=(0, S["4"]))
-        ctk.CTkLabel(card, text="Documents Attached", font=FONTS["small"],
-                     text_color=COLORS["text_muted"], anchor="w").pack(
-            anchor="w", padx=S["4"])
 
     # ── Cargo Details ──────────────────────────────────────────────
 
@@ -441,13 +446,13 @@ class GeneratorsView(ctk.CTkFrame):
         pf = ctk.CTkFrame(card, fg_color="transparent")
         pf.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
 
+        ctk.CTkLabel(pf, text="Description", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(anchor="w")
         self._cmr_cargo_desc = ctk.CTkTextbox(pf, height=60,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_primary"], font=FONTS["body"],
             wrap="word")
         self._cmr_cargo_desc.pack(fill="x", pady=(0, S["2"]))
-        ctk.CTkLabel(pf, text="Description", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
 
         row1 = ctk.CTkFrame(pf, fg_color="transparent")
         row1.pack(fill="x", pady=(S["2"], S["1"]))
@@ -480,29 +485,29 @@ class GeneratorsView(ctk.CTkFrame):
         card = self._section_card(parent, accent_color=COLORS["info"])
         self._section_label(card, "Instructions & Reservations", icon="\U0001F4CB")
 
-        self._cmr_instructions = ctk.CTkTextbox(card, height=40,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
-        self._cmr_instructions.pack(fill="x", padx=S["4"], pady=(S["1"], 0))
         ctk.CTkLabel(card, text="Sender's Instructions (Customs)",
                      font=FONTS["small"], text_color=COLORS["text_muted"]).pack(
             anchor="w", padx=S["4"])
-
-        self._cmr_reservations = ctk.CTkTextbox(card, height=40,
+        self._cmr_instructions = ctk.CTkTextbox(card, height=40,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
-        self._cmr_reservations.pack(fill="x", padx=S["4"], pady=(S["2"], 0))
+        self._cmr_instructions.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
+
         ctk.CTkLabel(card, text="Carrier's Reservations",
                      font=FONTS["small"], text_color=COLORS["text_muted"]).pack(
             anchor="w", padx=S["4"])
-
-        self._cmr_agreements = ctk.CTkTextbox(card, height=40,
+        self._cmr_reservations = ctk.CTkTextbox(card, height=40,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
-        self._cmr_agreements.pack(fill="x", padx=S["4"], pady=(S["2"], 0))
+        self._cmr_reservations.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
+
         ctk.CTkLabel(card, text="Special Agreements",
                      font=FONTS["small"], text_color=COLORS["text_muted"]).pack(
             anchor="w", padx=S["4"])
+        self._cmr_agreements = ctk.CTkTextbox(card, height=40,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
+        self._cmr_agreements.pack(fill="x", padx=S["4"], pady=(0, S["2"]))
 
         pr = ctk.CTkFrame(card, fg_color="transparent")
         pr.pack(fill="x", padx=S["4"], pady=(S["2"], S["4"]))
@@ -797,9 +802,16 @@ class GeneratorsView(ctk.CTkFrame):
         trip = self._trip_service.get_by_id(trip_id)
         if not trip:
             return
+        # Reset fill tracker when user manually changes trip
+        if trip.get("id") != self._cmr_filled_trip_id:
+            self._cmr_filled_trip_id = None
         self._auto_fill_from_trip(trip)
 
     def _auto_fill_from_trip(self, trip):
+        trip_id = trip.get("id")
+        if trip_id is not None and trip_id == self._cmr_filled_trip_id:
+            return  # Already filled, preserve user edits
+        self._cmr_filled_trip_id = trip_id
         from services.invoicing.config_manager import load_company_config
         conf = load_company_config()
         self._set_entry(self._cmr_consignor_name, conf.get("company_name", ""))
@@ -832,7 +844,8 @@ class GeneratorsView(ctk.CTkFrame):
         self._set_entry(self._cmr_carrier_phone, conf.get("phone", ""))
         self._set_entry(self._cmr_carrier_email, conf.get("email", ""))
         self._set_entry(self._cmr_carrier_reg, conf.get("reg_number", ""))
-
+        truck_number = trip.get("truck_number", "")
+        self._set_entry(self._cmr_vehicle, truck_number)
         if trip.get("truck_id"):
             try:
                 truck = self.db.conn.execute(
@@ -840,12 +853,20 @@ class GeneratorsView(ctk.CTkFrame):
                 ).fetchone()
                 if truck:
                     t = dict(truck)
-                    self._set_entry(self._cmr_vehicle, t.get("plate_number", trip.get("truck_number", "")))
-                    self._set_entry(self._cmr_trailer, t.get("trailer_plate", ""))
-                    self._set_entry(self._cmr_insurance, t.get("cmr_insurance_number", ""))
+                    self._set_entry(self._cmr_vehicle, t.get("plate_number", truck_number))
+                    self._set_entry(self._cmr_trailer, t.get("trailer_plate",
+                                     trip.get("trailer_plate", "")))
+                    self._set_entry(self._cmr_insurance, t.get("cmr_insurance_number",
+                                     trip.get("cmr_insurance_number", "")))
             except Exception:
-                self._set_entry(self._cmr_vehicle, trip.get("truck_number", ""))
+                self._set_entry(self._cmr_trailer, trip.get("trailer_plate", ""))
+                self._set_entry(self._cmr_insurance, trip.get("cmr_insurance_number", ""))
+        else:
+            self._set_entry(self._cmr_trailer, trip.get("trailer_plate", ""))
+            self._set_entry(self._cmr_insurance, trip.get("cmr_insurance_number", ""))
 
+        driver_name = trip.get("driver_name", "")
+        self._set_entry(self._cmr_driver_name, driver_name)
         if trip.get("driver_id"):
             try:
                 driver = self.db.conn.execute(
@@ -853,10 +874,13 @@ class GeneratorsView(ctk.CTkFrame):
                 ).fetchone()
                 if driver:
                     d = dict(driver)
-                    self._set_entry(self._cmr_driver_name, d.get("name", trip.get("driver_name", "")))
-                    self._set_entry(self._cmr_driver_license, d.get("license_number", ""))
+                    self._set_entry(self._cmr_driver_name, d.get("name", driver_name))
+                    self._set_entry(self._cmr_driver_license, d.get("license_number",
+                                     trip.get("driver_license", "")))
             except Exception:
-                self._set_entry(self._cmr_driver_name, trip.get("driver_name", ""))
+                self._set_entry(self._cmr_driver_license, trip.get("driver_license", ""))
+        else:
+            self._set_entry(self._cmr_driver_license, trip.get("driver_license", ""))
 
         self._set_entry(self._cmr_loading, trip.get("place_of_loading",
                      trip.get("loading_address", trip.get("origin", ""))))
@@ -1009,11 +1033,8 @@ class GeneratorsView(ctk.CTkFrame):
             trip_data["adr_info_json"] = json.dumps(adr_data)
 
         trip_data["successive_carriers"] = self._get_successive_carriers()
-
-        if self._cmr_sig_path_var.get():
-            trip_data["signature_path"] = self._cmr_sig_path_var.get()
-        if self._cmr_stamp_path_var.get():
-            trip_data["stamp_path"] = self._cmr_stamp_path_var.get()
+        trip_data["signature_path"] = self._cmr_sig_path_var.get() or "__NONE__"
+        trip_data["stamp_path"] = self._cmr_stamp_path_var.get() or "__NONE__"
 
         return trip_data
 

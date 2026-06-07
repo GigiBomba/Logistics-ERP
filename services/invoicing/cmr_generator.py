@@ -6,7 +6,6 @@ four-copy support, eFTI XML embedding, PDF/A-3 compliance, and signature pads.
 """
 import json
 import os
-import hashlib
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
@@ -69,34 +68,6 @@ COPY_CONFIGS = [
      "ADMINISTRATIVE COPY / COPIE ADMINISTRATIVA",
      "This copy is for: ADMINISTRATIVE RECORDS"),
 ]
-
-BOX_LABELS = {
-    "box_1": "CONSIGNOR / EXPEDITOR",
-    "box_2": "CONSIGNEE / DESTINATAR",
-    "box_3": "PLACE OF TAKING OVER / LOCUL PREDARII",
-    "box_4": "PLACE OF DELIVERY / LOCUL LIVRARII",
-    "box_5": "DOCUMENTS ATTACHED / DOCUMENTE ATASATE",
-    "box_6": "MARKS AND NUMBERS / MARCAJE SI NUMERE",
-    "box_7": "NUMBER & KIND OF PACKAGES / NR. SI TIP COLETE",
-    "box_8": "NATURE OF GOODS / NATURA MARFII",
-    "box_9": "STATISTICAL NUMBER / COD STATISTIC",
-    "box_10": "GROSS WEIGHT (KG) / GREUTATE BRUTA",
-    "box_11": "VOLUME (M\\u00B3) / VOLUM",
-    "box_12": "SENDER'S INSTRUCTIONS / INSTRUCTIUNILE EXPEDITORULUI",
-    "box_13": "CARRIER'S RESERVATIONS / REZERVELE TRANSPORTATORULUI",
-    "box_14": "SPECIAL AGREEMENTS / ACORDURI SPECIALE",
-    "box_15": "CARRIAGE CHARGES / TAXE DE TRANSPORT",
-    "box_16": "CARRIER / TRANSPORTATOR",
-    "box_17": "SUCCESSIVE CARRIERS / TRANSPORTATORI SUCCESIVI",
-    "box_18": "VEHICLE / VEHICUL",
-    "box_19": "TRAILER / REMORCA",
-    "box_20": "DRIVER / SOFER",
-    "box_21": "ADR - DANGEROUS GOODS / MARFURI PERICULOASE",
-    "box_22": "SENDER'S SIGNATURE / SEMNATURA EXPEDITORULUI",
-    "box_23": "CARRIER'S SIGNATURE / SEMNATURA TRANSPORTATORULUI",
-    "box_24": "CONSIGNEE'S SIGNATURE / SEMNATURA DESTINATARULUI",
-    "box_25": "CONSIGNMENT RECEIVED / RECEPTIE MARFA",
-}
 
 
 class CMRGenerator:
@@ -215,37 +186,46 @@ class CMRGenerator:
             cmr_number, seq = self._next_cmr_number()
             ctx["cmr_number"] = cmr_number
             ctx["cmr_sequence"] = seq
-        # Consignor fields — override company config from form data
-        ctx.setdefault("consignor_name", trip_data.get("consignor_name") or conf.get("company_name", ""))
-        ctx.setdefault("consignor_address", trip_data.get("consignor_address") or conf.get("address", ""))
-        ctx.setdefault("consignor_phone", trip_data.get("consignor_phone") or conf.get("phone", ""))
-        ctx.setdefault("consignor_vat", trip_data.get("consignor_vat") or conf.get("cui", ""))
-        ctx.setdefault("consignor_eori", trip_data.get("consignor_eori") or trip_data.get("eori_number", ""))
-        # Carrier fields — override company config from form data
-        ctx.setdefault("carrier_name", trip_data.get("carrier_name") or conf.get("company_name", ""))
-        ctx.setdefault("carrier_address", trip_data.get("carrier_address") or conf.get("address", ""))
-        ctx.setdefault("carrier_phone", trip_data.get("carrier_phone") or conf.get("phone", ""))
-        ctx.setdefault("carrier_email", trip_data.get("carrier_email") or conf.get("email", ""))
-        ctx.setdefault("carrier_reg", trip_data.get("carrier_reg") or conf.get("reg_number", ""))
-        ctx.setdefault("carrier_insurance", trip_data.get("cmr_insurance_number") or conf.get("cmr_insurance", ""))
-        # Shared company config (used as default for backward compat)
-        ctx.setdefault("company_name", conf.get("company_name", ""))
-        ctx.setdefault("company_address", conf.get("address", ""))
-        ctx.setdefault("company_phone", conf.get("phone", ""))
-        ctx.setdefault("company_email", conf.get("email", ""))
-        ctx.setdefault("company_cui", conf.get("cui", ""))
-        ctx.setdefault("company_reg", conf.get("reg_number", ""))
-        ctx.setdefault("signature_path", conf.get("signature_path", ""))
-        ctx.setdefault("stamp_path", conf.get("stamp_path", ""))
+        # Consignor — override company config from form data
+        ctx.setdefault("consignor_name",
+            trip_data.get("consignor_name") or trip_data.get("company_name") or conf.get("company_name", ""))
+        ctx.setdefault("consignor_address",
+            trip_data.get("consignor_address") or trip_data.get("company_address") or conf.get("address", ""))
+        ctx.setdefault("consignor_phone",
+            trip_data.get("consignor_phone") or trip_data.get("company_phone") or conf.get("phone", ""))
+        ctx.setdefault("consignor_vat",
+            trip_data.get("consignor_vat") or trip_data.get("company_cui") or conf.get("cui", ""))
+        ctx.setdefault("consignor_eori",
+            trip_data.get("consignor_eori") or trip_data.get("eori_number") or conf.get("eori_number", ""))
+        # Consignee — resolved from trip data or client lookup, no company fallback
+        ctx.setdefault("client_name", trip_data.get("client_name", ""))
+        ctx.setdefault("client_address", trip_data.get("client_address", ""))
+        ctx.setdefault("consignee_vat", trip_data.get("consignee_vat", ""))
+        ctx.setdefault("consignee_eori", trip_data.get("consignee_eori", ""))
+        ctx.setdefault("consignee_contact", trip_data.get("consignee_contact", ""))
+        # Carrier — override company config from form data
+        ctx.setdefault("carrier_name",
+            trip_data.get("carrier_name") or trip_data.get("company_name") or conf.get("company_name", ""))
+        ctx.setdefault("carrier_address",
+            trip_data.get("carrier_address") or trip_data.get("company_address") or conf.get("address", ""))
+        ctx.setdefault("carrier_phone",
+            trip_data.get("carrier_phone") or trip_data.get("company_phone") or conf.get("phone", ""))
+        ctx.setdefault("carrier_email",
+            trip_data.get("carrier_email") or trip_data.get("company_email") or conf.get("email", ""))
+        ctx.setdefault("carrier_reg",
+            trip_data.get("carrier_reg") or trip_data.get("company_reg") or conf.get("reg_number", ""))
+        ctx.setdefault("carrier_insurance",
+            trip_data.get("cmr_insurance_number") or conf.get("cmr_insurance", ""))
+        # Signature/stamp — use "__NONE__" sentinel to force empty (allow clearing)
+        sig_raw = trip_data.get("signature_path", conf.get("signature_path", ""))
+        stamp_raw = trip_data.get("stamp_path", conf.get("stamp_path", ""))
+        ctx["signature_path"] = "" if sig_raw == "__NONE__" else sig_raw
+        ctx["stamp_path"] = "" if stamp_raw == "__NONE__" else stamp_raw
         ctx.setdefault("company_color", conf.get("company_color", "#6366f1"))
-        ctx.setdefault("truck_plate", trip_data.get("truck_plate",
-                          trip_data.get("truck_number", "")))
+        ctx.setdefault("truck_plate", trip_data.get("truck_plate", trip_data.get("truck_number", "")))
         ctx.setdefault("trailer_plate", trip_data.get("trailer_plate", ""))
         ctx.setdefault("driver_name", trip_data.get("driver_name", ""))
-        ctx.setdefault("driver_license", trip_data.get("driver_license",
-                          trip_data.get("license_number", "")))
-        ctx.setdefault("cmr_insurance", trip_data.get("cmr_insurance_number", conf.get("cmr_insurance", "")))
-        ctx.setdefault("eori_number", trip_data.get("eori_number", ""))
+        ctx.setdefault("driver_license", trip_data.get("driver_license", trip_data.get("license_number", "")))
         ctx.setdefault("loading_country", trip_data.get("loading_country", ""))
         ctx.setdefault("delivery_country", trip_data.get("delivery_country", ""))
         ctx.setdefault("place_of_loading", trip_data.get("place_of_loading",
@@ -267,8 +247,6 @@ class CMRGenerator:
         ctx.setdefault("special_agreements", trip_data.get("special_agreements", ""))
         ctx.setdefault("carriage_payer", trip_data.get("carriage_payer", ""))
         ctx.setdefault("distance_km", trip_data.get("distance_km", ""))
-        ctx.setdefault("start_date", trip_data.get("start_date", ""))
-        ctx.setdefault("end_date", trip_data.get("end_date", ""))
         ctx["successive_carriers"] = trip_data.get("successive_carriers", [])
         ctx["adr_items"] = self._parse_adr(trip_data)
         ctx["has_adr"] = bool(ctx["adr_items"])
@@ -417,9 +395,14 @@ class CMRGenerator:
                    "Consignee pays / Destinatarul plateste" if payer == "consignee" else "—")
         dist = ctx.get("distance_km", "")
         if dist:
+            try:
+                dist = round(float(dist), 1)
+            except (ValueError, TypeError):
+                pass
             charges += f"\nDistance: {dist} km"
-        vd = (f"Vehicle: {ctx.get('truck_plate', '—')}   Trailer: {ctx.get('trailer_plate', '—')}\n"
-              f"Driver: {ctx.get('driver_name', '—')}")
+        vd = (f"Vehicle: {ctx.get('truck_plate') or '—'}   "
+              f"Trailer: {ctx.get('trailer_plate') or '—'}\n"
+              f"Driver: {ctx.get('driver_name') or '—'}")
         if ctx.get("driver_license"):
             vd += f"   Lic: {ctx['driver_license']}"
         story.append(self._grid_2col(
@@ -786,10 +769,10 @@ class CMRGenerator:
         - Document-level metadata (Title, Author, Subject, Keywords)
         """
         import pikepdf
-        from datetime import datetime as dt_module
+        from datetime import datetime as dt_module, timezone as tz_module
 
         icc_data = _get_srgb_icc_profile()
-        now_utc = dt_module.now(timezone.utc).strftime("D:%Y%m%d%H%M%SZ")
+        now_utc = dt_module.now(tz_module.utc).strftime("D:%Y%m%d%H%M%SZ")
 
         with pikepdf.open(pdf_path, allow_overwriting_input=True) as pdf:
             # ── XMP Metadata Stream (PDF/A-3 conformance declarations) ──
@@ -885,9 +868,9 @@ class CMRGenerator:
             pdf.save(pdf_path)
 
     def _embed_xml_fallback(self, pdf_path, xml_string, cmr_number):
-        """Fallback embedding using PyPDF2 (no PDF/A-3 structures)."""
+        """Fallback embedding using pypdf (no PDF/A-3 structures)."""
         try:
-            from PyPDF2 import PdfReader, PdfWriter
+            from pypdf import PdfReader, PdfWriter
             reader = PdfReader(pdf_path)
             writer = PdfWriter()
             for page in reader.pages:
@@ -908,46 +891,3 @@ class CMRGenerator:
             pass
         except Exception as e:
             logger.debug("XML embedding skipped: %s", e)
-
-    # ── Meta JSON ────────────────────────────────────────────────────
-
-    def _build_meta_json(self, ctx: dict, copies: dict, output_dir: str) -> str:
-        icc_available = _get_srgb_icc_profile() is not None
-        pdfa3 = False
-        try:
-            import pikepdf
-            pdfa3 = True
-        except ImportError:
-            pass
-        meta = {
-            "cmr_number": ctx["cmr_number"],
-            "trip_id": ctx["trip_id"],
-            "generated_at": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "generator_version": "2.0.0",
-            "cmr_sequence": ctx.get("cmr_sequence", 0),
-            "pdf_compliance": {
-                "pdfa3_enabled": pdfa3,
-                "icc_profile_available": icc_available,
-                "efti_xml_embedded": True,
-            },
-            "copies": {},
-            "signatures": {
-                "sender": {"status": "unsigned", "timestamp": None},
-                "carrier": {"status": "unsigned", "timestamp": None},
-                "consignee": {"status": "unsigned", "timestamp": None},
-            },
-        }
-        for suffix, path in copies.items():
-            try:
-                with open(path, "rb") as f:
-                    sha = hashlib.sha256(f.read()).hexdigest()
-            except Exception:
-                sha = ""
-            meta["copies"][suffix] = {"path": os.path.basename(path), "sha256": sha}
-        data_str = json.dumps({k: str(v) if not isinstance(v, (dict, list, int, float, bool, type(None))) else v
-                                for k, v in ctx.items()}, default=str)
-        meta["input_data_hash"] = hashlib.sha256(data_str.encode()).hexdigest()
-        meta_path = os.path.join(output_dir, "_meta.json")
-        with open(meta_path, "w", encoding="utf-8") as f:
-            json.dump(meta, f, indent=2, ensure_ascii=False)
-        return meta_path
