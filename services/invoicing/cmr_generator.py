@@ -341,130 +341,91 @@ class CMRGenerator:
 
         return filepath
 
-    # ── Continuous Story Builder ────────────────────────────────────
+    # ── Story Builder (grid-based, real CMR form layout) ───────────
 
     def _build_story(self, ctx, color_hex, bar_text, desig_text):
-        """Build one continuous story — ReportLab auto-paginates when needed."""
+        """Build CMR form as a professional grid — 2-col body with unified cargo table."""
         story = []
-        w = A4[0] - 20 * mm
-        line_color = colors.HexColor(color_hex)
+        L = 78 * mm          # Left column width
+        R = 112 * mm         # Right column width (cargo area)
+        FW = L + R           # Full width = 190mm
+        lc = colors.HexColor(color_hex)
 
         # ── Header ──
         story.append(self._copy_badge(color_hex, bar_text))
         story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(
-            "<b>CMR</b> &mdash; International Consignment Note", self.title_style))
-        story.append(Paragraph(
-            "Convention on the Contract for the International Carriage of Goods by Road "
-            "(Geneva, 19 May 1956)", self.subtitle_style))
-        story.append(Paragraph(
-            f"<b>Ref:</b> {ctx['cmr_number']} &nbsp;&nbsp; <b>Trip:</b> #{ctx['trip_id']} "
-            f"&nbsp;&nbsp; <b>Date:</b> {datetime.now().strftime('%d %b %Y')}",
-            self.footer_style))
-        story.append(self._hline(line_color, 0.75))
+        story.append(self._header_block(ctx, color_hex, FW))
+        story.append(self._hline(lc, 0.75))
 
-        # ── 1. Consignor ──
-        story.append(self._section_label("1. CONSIGNOR / EXPEDITOR"))
-        story.append(Paragraph(self._party_text(ctx, "consignor"), self.sec_val))
-        story.append(Spacer(1, 1 * mm))
+        # ── Parties + Cargo Grid ──
+        left_block = Paragraph(
+            "<b>1. CONSIGNOR / EXPEDITOR</b><br/>" + self._party_text(ctx, "consignor") +
+            "<br/><br/><b>2. CONSIGNEE / DESTINATAR</b><br/>" + self._party_text(ctx, "consignee"),
+            self.sec_val)
+        cargo_block = self._cargo_grid(ctx, R, lc)
+        story.append(self._grid_2col(left_block, cargo_block, L, R, lc, min_height=70 * mm))
 
-        # ── 2. Consignee ──
-        story.append(self._section_label("2. CONSIGNEE / DESTINATAR"))
-        story.append(Paragraph(self._party_text(ctx, "consignee"), self.sec_val))
-        story.append(self._hline(line_color, 0.5))
+        # ── Loading & Delivery ──
+        story.append(self._grid_2col(
+            self._labeled_box("3. PLACE OF TAKING OVER / LOCUL PREDARII",
+                              self._location_text(ctx, "loading")),
+            self._labeled_box("4. PLACE OF DELIVERY / LOCUL LIVRARII",
+                              self._location_text(ctx, "delivery")),
+            L, R, lc))
 
-        # ── 3 & 4. Loading & Delivery ──
-        story.append(self._two_col_table(
-            [("3. PLACE OF TAKING OVER", self._location_text(ctx, "loading")),
-             ("4. PLACE OF DELIVERY", self._location_text(ctx, "delivery"))],
-            w, line_color))
-        story.append(self._hline(line_color, 0.5))
+        # ── Documents & Instructions ──
+        story.append(self._grid_2col(
+            self._labeled_box("5. DOCUMENTS ATTACHED / DOCUMENTE ATASATE",
+                              ctx.get("documents_attached", "") or "—"),
+            self._labeled_box("13. SENDER'S INSTRUCTIONS / INSTRUCTIUNI",
+                              ctx.get("carrier_instructions", "") or "—"),
+            L, R, lc))
 
-        # ── 5. Documents ──
-        docs = ctx.get("documents_attached", "") or "None"
-        story.append(self._section_label("5. DOCUMENTS ATTACHED / DOCUMENTE ATAȘATE"))
-        story.append(Paragraph(docs, self.sec_small))
-        story.append(self._hline(line_color, 0.5))
+        # ── Carrier & Reservations ──
+        story.append(self._grid_2col(
+            self._labeled_box("16. CARRIER / TRANSPORTATOR",
+                              self._carrier_text(ctx)),
+            self._labeled_box("18. CARRIER'S RESERVATIONS / REZERVE",
+                              ctx.get("carrier_reservations", "") or "—"),
+            L, R, lc))
 
-        # ── Cargo Table ──
-        story.append(self._section_label("GOODS / MARFĂ"))
-        story.append(self._cargo_table(ctx, w, line_color))
-        story.append(self._hline(line_color, 0.5))
+        # ── Successive Carriers & Agreements ──
+        succ = self._successive_text(ctx)
+        story.append(self._grid_2col(
+            self._labeled_box("17. SUCCESSIVE CARRIERS / SUCCESIVI", succ),
+            self._labeled_box("19. SPECIAL AGREEMENTS / ACORDURI SPECIALE",
+                              ctx.get("special_agreements", "") or "—"),
+            L, R, lc))
 
-        # ── 12 & 13. Instructions & Reservations ──
-        inst = ctx.get("carrier_instructions", "") or "None"
-        res = ctx.get("carrier_reservations", "") or "None"
-        story.append(self._two_col_table(
-            [("12. SENDER'S INSTRUCTIONS", inst),
-             ("13. CARRIER'S RESERVATIONS", res)],
-            w, line_color))
-        story.append(self._hline(line_color, 0.5))
-
-        # ── 14 & 15. Agreements & Charges ──
-        agr = ctx.get("special_agreements", "") or "None"
+        # ── Carriage Charges & Vehicle/Driver ──
         payer = ctx.get("carriage_payer", "")
-        charges = (
-            "Sender pays / Expeditorul plătește" if payer == "sender" else
-            "Consignee pays / Destinatarul plătește" if payer == "consignee" else
-            "&mdash;"
-        )
+        charges = ("Sender pays / Expeditorul plateste" if payer == "sender" else
+                   "Consignee pays / Destinatarul plateste" if payer == "consignee" else "—")
         dist = ctx.get("distance_km", "")
         if dist:
-            charges += f"<br/>Distance: {dist} km"
-        story.append(self._two_col_table(
-            [("14. SPECIAL AGREEMENTS", agr),
-             ("15. CARRIAGE CHARGES", charges)],
-            w, line_color))
-        story.append(self._hline(line_color, 0.5))
-
-        # ── 16. Carrier ──
-        story.append(self._section_label("16. CARRIER / TRANSPORTATOR"))
-        story.append(Paragraph(self._carrier_text(ctx), self.sec_val))
-        story.append(self._hline(line_color, 0.5))
-
-        # ── 17. Successive Carriers ──
-        if ctx.get("successive_carriers"):
-            story.append(self._section_label("17. SUCCESSIVE CARRIERS"))
-            story.append(Paragraph(self._successive_text(ctx), self.sec_small))
-            story.append(self._hline(line_color, 0.5))
-
-        # ── 18, 19, 20. Vehicle / Trailer / Driver ──
-        v_text = ctx.get("truck_plate", "") or "&mdash;"
-        t_text = ctx.get("trailer_plate", "") or "&mdash;"
-        d_lines = []
-        if ctx.get("driver_name"):
-            d_lines.append(ctx["driver_name"])
+            charges += f"\nDistance: {dist} km"
+        vd = (f"Vehicle: {ctx.get('truck_plate', '—')}   Trailer: {ctx.get('trailer_plate', '—')}\n"
+              f"Driver: {ctx.get('driver_name', '—')}")
         if ctx.get("driver_license"):
-            d_lines.append(f"License: {ctx['driver_license']}")
-        d_text = "<br/>".join(d_lines) if d_lines else "&mdash;"
-        story.append(self._three_col_table(
-            [("18. VEHICLE", v_text),
-             ("19. TRAILER", t_text),
-             ("20. DRIVER", d_text)],
-            w, line_color))
-        story.append(self._hline(line_color, 0.5))
+            vd += f"   Lic: {ctx['driver_license']}"
+        story.append(self._grid_2col(
+            self._labeled_box("14. CARRIAGE CHARGES / TAXE DE TRANSPORT", charges),
+            self._labeled_box("18-20. VEHICLE & DRIVER / VEHICUL SI SOFER", vd),
+            L, R, lc))
 
-        # ── 21. ADR ──
-        if ctx.get("has_adr"):
-            story.append(self._section_label("21. DANGEROUS GOODS (ADR)"))
-            story.append(self._adr_table(ctx, w, line_color))
-            story.append(self._hline(line_color, 0.5))
+        # ── Signatures ──
+        story.append(self._signature_grid(ctx, FW, lc))
 
-        # ── 22-24. Signatures ──
-        story.append(self._section_label("SIGNATURES / SEMNĂTURI"))
-        story.append(self._signature_row(ctx, w, line_color))
-        story.append(self._hline(line_color, 0.5))
-
-        # ── 25. Receipt ──
-        story.append(self._section_label("25. CONSIGNMENT RECEIVED / RECEPTIE MARFĂ"))
-        story.append(self._receipt_block())
+        # ── Receipt ──
+        story.append(self._full_width_box("25. CONSIGNMENT RECEIVED / RECEPTIE MARFA",
+                                          self._receipt_text(), FW, lc))
 
         # ── Footer ──
         story.append(Spacer(1, 4 * mm))
-        story.append(self._hline(line_color, 0.3))
+        story.append(self._hline(lc, 0.3))
         story.append(Paragraph(
-            f"Generated by Operion ERP &middot; {datetime.now().strftime('%d/%m/%Y %H:%M')} "
-            f"&middot; CMR {ctx['cmr_number']} &middot; {desig_text}", self.footer_style))
+            f"Generated by Operion ERP · {datetime.now().strftime('%d/%m/%Y %H:%M')} "
+            f"· CMR {ctx['cmr_number']} · {desig_text}", self.footer_style))
         return story
 
     # ── Content Helpers ─────────────────────────────────────────────
@@ -473,25 +434,19 @@ class CMRGenerator:
         if role == "consignor":
             lines = [f"<b>{ctx.get('company_name', '')}</b>", ctx.get("company_address", "")]
             cui = ctx.get("company_cui", "")
-            if cui:
-                lines.append(f"VAT/CUI: {cui}")
+            if cui: lines.append(f"VAT/CUI: {cui}")
             eori = ctx.get("eori_number", "")
-            if eori:
-                lines.append(f"EORI: {eori}")
+            if eori: lines.append(f"EORI: {eori}")
             phone = ctx.get("company_phone", "")
-            if phone:
-                lines.append(f"Tel: {phone}")
+            if phone: lines.append(f"Tel: {phone}")
         else:
             lines = [f"<b>{ctx.get('client_name', '')}</b>", ctx.get("client_address", "")]
             vat = ctx.get("consignee_vat", "")
-            if vat:
-                lines.append(f"VAT: {vat}")
+            if vat: lines.append(f"VAT: {vat}")
             eori = ctx.get("consignee_eori", "")
-            if eori:
-                lines.append(f"EORI: {eori}")
+            if eori: lines.append(f"EORI: {eori}")
             contact = ctx.get("consignee_contact", "")
-            if contact:
-                lines.append(f"Contact: {contact}")
+            if contact: lines.append(f"Contact: {contact}")
         return "<br/>".join(lines)
 
     def _location_text(self, ctx, role):
@@ -504,43 +459,43 @@ class CMRGenerator:
             country = ctx.get("delivery_country", "")
             date = ""
         parts = [addr]
-        if country:
-            parts.append(f"Country: {country}")
-        if date:
-            parts.append(f"Date: {date}")
-        return "<br/>".join(parts) if parts else "&mdash;"
+        if country: parts.append(f"Country: {country}")
+        if date: parts.append(f"Date: {date}")
+        return "<br/>".join(parts) if parts else "—"
 
     def _carrier_text(self, ctx):
         lines = [f"<b>{ctx.get('company_name', '')}</b>", ctx.get("company_address", "")]
         phone = ctx.get("company_phone", "")
-        if phone:
-            lines.append(f"Tel: {phone}")
+        if phone: lines.append(f"Tel: {phone}")
         email = ctx.get("company_email", "")
-        if email:
-            lines.append(f"Email: {email}")
+        if email: lines.append(f"Email: {email}")
         reg = ctx.get("company_reg", "")
-        if reg:
-            lines.append(f"Reg No: {reg}")
+        if reg: lines.append(f"Reg No: {reg}")
         ins = ctx.get("cmr_insurance", "")
-        if ins:
-            lines.append(f"CMR Insurance: {ins}")
+        if ins: lines.append(f"CMR Insurance: {ins}")
         return "<br/>".join(lines)
 
     def _successive_text(self, ctx):
         carriers = ctx.get("successive_carriers", [])
         if not carriers:
-            return "None"
+            return "—"
         rows = []
         for i, c in enumerate(carriers):
             rows.append(
-                f"{i + 1}. <b>{c.get('carrier_name', '')}</b> &mdash; "
-                f"{c.get('carrier_address', '')} &mdash; "
-                f"Plate: {c.get('vehicle_plate', '')} &mdash; "
-                f"Driver: {c.get('driver_name', '')}"
-            )
+                f"{i + 1}. <b>{c.get('carrier_name', '')}</b> — "
+                f"{c.get('carrier_address', '')} — "
+                f"Plate: {c.get('vehicle_plate', '')} — "
+                f"Driver: {c.get('driver_name', '')}")
         return "<br/>".join(rows)
 
-    # ── Layout Primitives ───────────────────────────────────────────
+    def _receipt_text(self):
+        return (
+            "Place: __________________________  Date: ___/___/______  Time: ___:___<br/>"
+            "Good condition: &#9744; Yes  &#9744; No<br/>"
+            "Reservations: ________________________________________________<br/><br/>"
+            "Signature + Stamp: ________________________________________________")
+
+    # ── Grid Layout Primitives ─────────────────────────────────────
 
     def _section_label(self, text):
         return Paragraph(text, self.sec_label)
@@ -549,7 +504,6 @@ class CMRGenerator:
         return HRFlowable(width="100%", thickness=thickness, color=color)
 
     def _copy_badge(self, color_hex, text):
-        """Small colored badge at top."""
         badge = Table([[Paragraph(text, self.badge_style)]],
                       colWidths=[A4[0] - 20 * mm], rowHeights=[5 * mm])
         badge.setStyle(TableStyle([
@@ -563,209 +517,197 @@ class CMRGenerator:
         ]))
         return badge
 
-    def _two_col_table(self, items, total_w, line_color):
-        """Clean two-column layout: label+value pairs side by side."""
-        half = total_w / 2
-        left_label, left_val = items[0]
-        right_label, right_val = items[1]
-        data = [
-            [Paragraph(left_label, self.sec_label), Paragraph(right_label, self.sec_label)],
-            [Paragraph(left_val, self.sec_val), Paragraph(right_val, self.sec_val)],
+    def _header_block(self, ctx, color_hex, w):
+        """Full-width header with title and CMR No badge at right."""
+        header_style = ParagraphStyle(
+            "DocHeader", parent=self.styles["Normal"],
+            fontSize=22, leading=26, textColor=colors.HexColor(color_hex),
+            fontName="Helvetica-Bold", alignment=0, spaceAfter=0,
+        )
+        sub_style = ParagraphStyle(
+            "DocSub", parent=self.styles["Normal"],
+            fontSize=7.5, leading=10, textColor=self.text_color,
+            alignment=0, spaceAfter=2,
+        )
+        right_style = ParagraphStyle(
+            "DocRight", parent=self.styles["Normal"],
+            fontSize=8, leading=10, textColor=self.muted_color,
+            alignment=TA_RIGHT, spaceBefore=4,
+        )
+        data = [[
+            Paragraph("<b>CMR</b><br/>INTERNATIONAL<br/>CONSIGNMENT NOTE", header_style),
+            Paragraph(
+                f"<font size=11 color='{color_hex}'><b>No: {ctx['cmr_number']}</b></font><br/>"
+                f"Trip #{ctx['trip_id']}<br/>"
+                f"{datetime.now().strftime('%d %b %Y')}",
+                right_style),
+        ]]
+        tbl = Table(data, colWidths=[w * 0.65, w * 0.35])
+        tbl.setStyle(TableStyle([
+            ('LEFTPADDING', (0, 0), (-1, -1), 0),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 0),
+            ('TOPPADDING', (0, 0), (-1, -1), 0),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+        ]))
+        return tbl
+
+    def _grid_2col(self, left, right, left_w, right_w, lc, min_height=None):
+        """Two-column grid row with copy-colored borders on all sides."""
+        data = [[left, right]]
+        row_heights = None
+        if min_height:
+            row_heights = [min_height]
+        tbl = Table(data, colWidths=[left_w, right_w], rowHeights=row_heights)
+        tbl.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, lc),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (0, 0), 3 * mm),
+            ('RIGHTPADDING', (0, 0), (0, 0), 1.5 * mm),
+            ('LEFTPADDING', (1, 0), (1, 0), 1.5 * mm),
+            ('RIGHTPADDING', (1, 0), (1, 0), 3 * mm),
+            ('TOPPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2 * mm),
+        ]))
+        return tbl
+
+    def _labeled_box(self, label, value):
+        """A box with a bold label and value text."""
+        return Paragraph(
+            f"<b>{label}</b><br/>{value}", self.sec_val)
+
+    def _full_width_box(self, label, value, w, lc):
+        """A single full-width bordered box."""
+        content = Paragraph(f"<b>{label}</b><br/>{value}", self.sec_val)
+        tbl = Table([[content]], colWidths=[w - 0 * mm])
+        tbl.setStyle(TableStyle([
+            ('BOX', (0, 0), (-1, -1), 0.5, lc),
+            ('INNERGRID', (0, 0), (-1, -1), 0, colors.white),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 3 * mm),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 3 * mm),
+            ('TOPPADDING', (0, 0), (-1, -1), 2.5 * mm),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2.5 * mm),
+        ]))
+        return tbl
+
+    def _cargo_grid(self, ctx, right_w, lc):
+        """Unified cargo table with 6 fixed-width columns — all vertical lines align.
+        Includes conditional ADR rows. All sub-column widths sum to right_w."""
+        c6 = [22 * mm, 13 * mm, 12 * mm, 27 * mm, 18 * mm, 20 * mm]
+        # => 22+13+12+27+18+20 = 112mm ✓
+
+        marks_val = ctx.get("cargo_marks", "") or "—"
+        pkg_val = ctx.get("package_count", "") or "—"
+        kind_val = ctx.get("package_type", "") or "—"
+        nature_val = ctx.get("cargo_description", "") or "—"
+        hs_val = ctx.get("hs_code", "") or "—"
+        wt_val = (f"{ctx['gross_weight_kg']} kg" if ctx.get("gross_weight_kg") else "—")
+        vol_val = (f"{ctx['volume_m3']} m³" if ctx.get("volume_m3") else "—")
+
+        rows = [
+            # Row 0: Box numbers header
+            ["6. MARKS & NUMBERS", "7. PACKAGES", "8. KIND", "9. NATURE OF GOODS",
+             "10. HS CODE", "11-12. WT / VOL"],
+            # Row 1: Marks (spans all 6 columns)
+            [marks_val, "", "", "", "", ""],
+            # Row 2: Detail data
+            [pkg_val, kind_val, nature_val, hs_val, wt_val, vol_val],
         ]
-        tbl = Table(data, colWidths=[half, half])
-        tbl.setStyle(TableStyle([
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (0, -1), 3 * mm),
-            ('RIGHTPADDING', (1, 0), (1, -1), 0),
-            ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1 * mm),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.3, line_color),
-        ]))
-        return tbl
 
-    def _three_col_table(self, items, total_w, line_color):
-        """Clean three-column layout."""
-        third = total_w / 3
-        labels = [Paragraph(it[0], self.sec_label) for it in items]
-        values = [Paragraph(it[1], self.sec_val) for it in items]
-        data = [labels, values]
-        tbl = Table(data, colWidths=[third, third, third])
-        tbl.setStyle(TableStyle([
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (0, -1), 2 * mm),
-            ('RIGHTPADDING', (1, 0), (1, -1), 2 * mm),
-            ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1 * mm),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.3, line_color),
-        ]))
-        return tbl
+        # Conditional ADR rows
+        if ctx.get("has_adr"):
+            adr_items = ctx["adr_items"]
+            rows.append(["ADR — DANGEROUS GOODS", "", "", "", "", ""])
+            rows.append(["UN No", "Class", "Pack Grp", "Tunnel", "Qty", "Net Wt(kг)"])
+            for item in adr_items:
+                rows.append([
+                    item.get("un_no", ""), item.get("adr_class", ""),
+                    item.get("packing_group", ""), item.get("tunnel_code", ""),
+                    item.get("quantity", ""), item.get("net_weight", ""),
+                ])
 
-    def _cargo_table(self, ctx, total_w, line_color):
-        """Professional cargo table — the heart of the CMR."""
-        marks = ctx.get("cargo_marks", "") or "&mdash;"
-        cnt = ctx.get("package_count", "") or ""
-        typ = ctx.get("package_type", "") or ""
-        pkg = f"<b>{cnt}</b> {typ}" if cnt else "&mdash;"
-        desc = ctx.get("cargo_description", "") or "&mdash;"
-        weight = ctx.get("gross_weight_kg", "") or ""
-        weight = f"<b>{weight} kg</b>" if weight else "&mdash;"
-        volume = ctx.get("volume_m3", "") or ""
-        volume = f"<b>{volume} m³</b>" if volume else "&mdash;"
-        hs = ctx.get("hs_code", "") or "&mdash;"
-
-        hdr = ["Marks & Nos", "Packages", "Description", "Weight", "Volume", "HS Code"]
-        row = [marks, pkg, desc, weight, volume, hs]
-        data = [hdr, row]
-
-        cw = total_w / 6
-        tbl = Table(data, colWidths=[cw] * 6)
-        tbl.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), self.header_bg),
+        tbl = Table(rows, colWidths=c6)
+        styles = [
+            ('GRID', (0, 0), (-1, -1), 0.5, lc),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
             ('TEXTCOLOR', (0, 0), (-1, 0), self.text_color),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 7),
+            ('FONTSIZE', (0, 0), (-1, 0), 6.5),
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
             ('FONTSIZE', (0, 1), (-1, -1), 8),
-            ('GRID', (0, 0), (-1, -1), 0.5, line_color),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.75, line_color),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
             ('RIGHTPADDING', (0, 0), (-1, -1), 2 * mm),
             ('TOPPADDING', (0, 0), (-1, -1), 1.5 * mm),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5 * mm),
-        ]))
+            ('LINEBELOW', (0, 0), (-1, 0), 0.75, lc),
+            # Marks row spans all 6 columns
+            ('SPAN', (0, 1), (5, 1)),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.white),
+        ]
+
+        # ADR-specific styling
+        if ctx.get("has_adr"):
+            adr_idx = 3  # Row index for ADR section label
+            styles.extend([
+                ('SPAN', (0, adr_idx), (5, adr_idx)),
+                ('BACKGROUND', (0, adr_idx), (-1, adr_idx), colors.HexColor("#fef2f2")),
+                ('TEXTCOLOR', (0, adr_idx), (-1, adr_idx), colors.HexColor("#991b1b")),
+                ('BACKGROUND', (0, adr_idx + 1), (-1, adr_idx + 1), colors.HexColor("#fef2f2")),
+                ('FONTNAME', (0, adr_idx + 1), (-1, adr_idx + 1), 'Helvetica-Bold'),
+                ('FONTSIZE', (0, adr_idx + 1), (-1, adr_idx + 1), 6.5),
+                ('ALIGN', (0, adr_idx + 1), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, adr_idx + 1), (-1, -1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0, adr_idx + 2), (-1, -1),
+                 [colors.white, colors.HexColor("#fff5f5")]),
+            ])
+
+        tbl.setStyle(TableStyle(styles))
         return tbl
 
-    def _adr_table(self, ctx, total_w, line_color):
-        """Professional ADR dangerous goods table."""
-        adr_items = ctx.get("adr_items", [])
-        if not adr_items:
-            return Paragraph("&mdash;", self.sec_small)
-        hdr = ["UN No", "Class", "Pack. Grp", "Tunnel", "Qty", "Net Wt (kg)"]
-        rows = [hdr]
-        for item in adr_items:
-            rows.append([
-                item.get("un_no", ""),
-                item.get("adr_class", ""),
-                item.get("packing_group", ""),
-                item.get("tunnel_code", ""),
-                item.get("quantity", ""),
-                item.get("net_weight", ""),
-            ])
-        cw = total_w / 6
-        tbl = Table(rows, colWidths=[cw] * 6)
+    def _signature_grid(self, ctx, w, lc):
+        """Four signature pads in a clean grid at the bottom."""
+        q = w / 4
+        pads = []
+        for label, party in [("Sender", "sender"), ("Carrier", "carrier"),
+                              ("Consignee", "consignee"), ("Stamp", "stamp")]:
+            pads.append(self._sig_pad(label, party, ctx, q))
+        data = [pads]
+        tbl = Table(data, colWidths=[q, q, q, q])
         tbl.setStyle(TableStyle([
-            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), self.text_color),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 7),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 7.5),
-            ('GRID', (0, 0), (-1, -1), 0.5, line_color),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.75, line_color),
-            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
-            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('GRID', (0, 0), (-1, -1), 0.5, lc),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
             ('RIGHTPADDING', (0, 0), (-1, -1), 2 * mm),
-            ('TOPPADDING', (0, 0), (-1, -1), 1.5 * mm),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5 * mm),
-            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#fff7ed")]),
+            ('TOPPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 2 * mm),
         ]))
         return tbl
 
-    def _signature_row(self, ctx, total_w, line_color):
-        """Three signature pads side by side, clean and spacious."""
-        third = total_w / 3
-        pads = []
-        for n, label in [(22, "Sender / Expeditor"),
-                         (23, "Carrier / Transportator"),
-                         (24, "Consignee / Destinatar")]:
-            pads.append(self._signature_pad(label, ctx, third))
-        data = [pads]
-        tbl = Table(data, colWidths=[third, third, third])
-        tbl.setStyle(TableStyle([
-            ('LEFTPADDING', (0, 0), (-1, -1), 0),
-            ('RIGHTPADDING', (0, 0), (0, -1), 2 * mm),
-            ('RIGHTPADDING', (1, 0), (1, -1), 2 * mm),
-            ('TOPPADDING', (0, 0), (-1, -1), 0),
-            ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
-            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LINEABOVE', (0, 0), (-1, 0), 0.5, line_color),
-        ]))
-        return tbl
-
-    def _signature_pad(self, label, ctx, pad_width):
-        """Single signature pad with dotted lines and image space."""
-        elements = []
-        elements.append(Paragraph(f"<b>{label}</b>", self.sec_label))
-        elements.append(Spacer(1, 2 * mm))
-
-        line = (
-            "Date: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
-            " &nbsp;&nbsp; Place: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
+    def _sig_pad(self, label, party, ctx, pad_w):
+        """Single signature pad with dotted lines."""
+        guts = (
+            f"<b>{label}</b><br/><br/>"
+            "Date: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
+            "Place: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
+            "Name: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
+            "Signature: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
         )
-        elements.append(Paragraph(line, self.sig_style))
-        elements.append(Spacer(1, 1.5 * mm))
-        elements.append(Paragraph(
-            "Name (print): <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>",
-            self.sig_style))
-        elements.append(Spacer(1, 1.5 * mm))
-        elements.append(Paragraph(
-            "Signature: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>",
-            self.sig_style))
-        elements.append(Spacer(1, 2 * mm))
-
-        # Image placeholders
+        elements = [Paragraph(guts, self.sig_style)]
         sig_path = ctx.get("signature_path", "")
         stamp_path = ctx.get("stamp_path", "")
-        imgs = []
-        if sig_path and os.path.isfile(sig_path):
+        target_path = stamp_path if party == "stamp" else sig_path
+        if target_path and os.path.isfile(target_path):
+            elements.append(Spacer(1, 1 * mm))
             try:
-                imgs.append(Image(sig_path, width=2.8 * cm, height=1.0 * cm))
+                w_img = (2.4 * cm if party == "stamp" else 2.5 * cm)
+                h_img = (2.4 * cm if party == "stamp" else 1.0 * cm)
+                elements.append(Image(target_path, width=w_img, height=h_img))
             except Exception:
                 pass
-        if stamp_path and os.path.isfile(stamp_path):
-            try:
-                imgs.append(Image(stamp_path, width=2.0 * cm, height=2.0 * cm))
-            except Exception:
-                pass
-        if imgs:
-            inner_w = pad_width - 6 * mm
-            if len(imgs) == 2:
-                img_tbl = Table([imgs], colWidths=[inner_w, inner_w])
-                img_tbl.setStyle(TableStyle([
-                    ('ALIGN', (0, 0), (0, 0), 'LEFT'),
-                    ('ALIGN', (1, 0), (1, 0), 'RIGHT'),
-                    ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
-                ]))
-            else:
-                img_tbl = Table([imgs], colWidths=[inner_w])
-                img_tbl.setStyle(TableStyle([
-                    ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
-                    ('VALIGN', (0, 0), (-1, -1), 'BOTTOM'),
-                ]))
-            elements.append(img_tbl)
-
         return elements
-
-    def _receipt_block(self):
-        """Consignment receipt area with checkboxes and lines."""
-        return Paragraph(
-            "Place of delivery: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
-            "&nbsp;&nbsp; Date: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
-            "&nbsp;&nbsp; Time: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
-            "Received in good condition: &#9744; Yes &nbsp;&nbsp; &#9744; No&nbsp;&nbsp;"
-            "&nbsp;&nbsp; Reservations: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/><br/>"
-            "Signature + Stamp: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;"
-            "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>",
-            self.sig_style)
 
     def _embed_xml_payload(self, pdf_path, xml_string, cmr_number):
         try:
