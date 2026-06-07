@@ -324,15 +324,20 @@ class GeneratorsView(ctk.CTkFrame):
         row2.pack(fill="x", pady=(0, S["2"]))
         row2.columnconfigure(0, weight=2)
         row2.columnconfigure(1, weight=1)
-        self._cmr_cargo_desc = ctk.CTkTextbox(row2, height=50,
+        d_col = ctk.CTkFrame(row2, fg_color="transparent")
+        d_col.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
+        self._lbl(d_col, "9. Nature of Goods")
+        self._cmr_cargo_desc = ctk.CTkTextbox(d_col, height=50,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
-        self._cmr_cargo_desc.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
-        self._lbl(f, "9. Nature of Goods")
-        self._cmr_hs_code = ctk.CTkEntry(row2, height=28,
+        self._cmr_cargo_desc.pack(fill="x")
+        h_col = ctk.CTkFrame(row2, fg_color="transparent")
+        h_col.grid(row=0, column=1, sticky="nsew")
+        self._lbl(h_col, "10. HS Code")
+        self._cmr_hs_code = ctk.CTkEntry(h_col, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="10. HS Code")
-        self._cmr_hs_code.grid(row=0, column=1, sticky="new", pady=(0, S["1"]))
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_hs_code.pack(fill="x")
         self._lbl(f, "8. Kind (Package Type)")
         sep = ctk.CTkFrame(f, fg_color=COLORS["border"], height=1)
         sep.pack(fill="x", pady=(S["2"], S["2"]))
@@ -487,32 +492,46 @@ class GeneratorsView(ctk.CTkFrame):
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Distance (km)")
         self._cmr_distance.pack(anchor="w")
-        vd = ctk.CTkFrame(right, fg_color="transparent")
-        vd.pack(fill="x")
-        vd.columnconfigure(0, weight=1)
-        vd.columnconfigure(1, weight=1)
-        self._lbl(vd, "Vehicle Plate")
-        self._cmr_vehicle = ctk.CTkEntry(vd, height=28,
+
+        v_row1 = ctk.CTkFrame(right, fg_color="transparent")
+        v_row1.pack(fill="x")
+        v_col1 = ctk.CTkFrame(v_row1, fg_color="transparent")
+        v_col1.pack(fill="x")
+        ctk.CTkLabel(v_col1, text="Vehicle Plate", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(anchor="w")
+        self._cmr_vehicle = ctk.CTkEntry(v_col1, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_vehicle.grid(row=1, column=0, sticky="ew", padx=(0, S["1"]))
-        self._cmr_trailer = ctk.CTkEntry(vd, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Trailer Plate")
-        self._cmr_trailer.grid(row=1, column=1, sticky="ew")
-        dl_row = ctk.CTkFrame(right, fg_color="transparent")
-        dl_row.pack(fill="x", pady=(S["1"], 0))
-        dl_row.columnconfigure(0, weight=1)
-        dl_row.columnconfigure(1, weight=1)
-        self._lbl(dl_row, "Driver Name")
-        self._cmr_driver_name = ctk.CTkEntry(dl_row, height=28,
+        self._cmr_vehicle.pack(fill="x")
+
+        v_col2 = ctk.CTkFrame(right, fg_color="transparent")
+        v_col2.pack(fill="x", pady=(S["1"], 0))
+        ctk.CTkLabel(v_col2, text="Trailer Plate", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(anchor="w")
+        self._cmr_trailer = ctk.CTkEntry(v_col2, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_driver_name.grid(row=1, column=0, sticky="ew", padx=(0, S["1"]))
-        self._cmr_driver_license = ctk.CTkEntry(dl_row, height=28,
+        self._cmr_trailer.pack(fill="x")
+
+        d_row = ctk.CTkFrame(right, fg_color="transparent")
+        d_row.pack(fill="x", pady=(S["1"], 0))
+        d_col1 = ctk.CTkFrame(d_row, fg_color="transparent")
+        d_col1.pack(fill="x")
+        ctk.CTkLabel(d_col1, text="Driver Name", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(anchor="w")
+        self._cmr_driver_name = ctk.CTkEntry(d_col1, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="License")
-        self._cmr_driver_license.grid(row=1, column=1, sticky="ew")
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_driver_name.pack(fill="x")
+
+        d_col2 = ctk.CTkFrame(right, fg_color="transparent")
+        d_col2.pack(fill="x", pady=(S["1"], 0))
+        ctk.CTkLabel(d_col2, text="Driver License", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(anchor="w")
+        self._cmr_driver_license = ctk.CTkEntry(d_col2, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_driver_license.pack(fill="x")
 
     def _on_adr_toggle(self):
         if self._adr_toggle_var.get():
@@ -730,8 +749,9 @@ class GeneratorsView(ctk.CTkFrame):
                 self._trip_map[label] = trip["id"]
                 labels.append(label)
             if hasattr(self, "_cmr_trip_combo") and self._cmr_trip_combo.winfo_exists():
+                current = self._cmr_trip_combo.get()
                 self._cmr_trip_combo.configure(values=labels)
-                if labels:
+                if labels and current not in labels:
                     self._cmr_trip_combo.set(labels[0])
                     self._on_cmr_trip_selected(labels[0])
         except Exception as e:
@@ -1019,48 +1039,59 @@ class GeneratorsView(ctk.CTkFrame):
     def _generate_all_copies(self):
         trip_data = self._collect_cmr_data()
         if trip_data is None:
-            messagebox.showwarning("Generate CMR", "Please select a trip first.")
+            messagebox.showwarning(t("generators.cmr_generate"),
+                                   t("generators.cmr_select_trip"))
             return
         trip_id = trip_data["trip_id"]
         self._cmr_status_lbl.configure(text="Generating 4 copies...", text_color=COLORS["text_warning"])
         self._cmr_status_lbl.update_idletasks()
 
         def _run():
+            registered_paths = {}
             try:
                 from services.invoicing.cmr_generator import CMRGenerator
                 gen = CMRGenerator(db=self.db, prefs=self.prefs)
                 output_dir = os.path.join("data", "documents", "trips", str(trip_id))
                 os.makedirs(output_dir, exist_ok=True)
                 copies = gen.generate_all_copies(trip_data, output_dir)
+                registered_paths = dict(copies)
             except Exception as e:
-                self.after(0, lambda: self._cmr_status_lbl.configure(
-                    text=f"Error: {e}", text_color=COLORS["danger"]))
+                def _err():
+                    if self._cmr_status_lbl.winfo_exists():
+                        self._cmr_status_lbl.configure(
+                            text=t("generators.cmr_error").format(error=str(e)),
+                            text_color=COLORS["danger"])
+                self.after(0, _err)
                 logger.error("CMR generation failed: %s", e)
                 return
 
-            ds = self._lazy_cmr_doc_service()
-            for suffix, path in copies.items():
+            # DB writes done on main thread via after()
+            def _register():
                 try:
-                    ds.register_existing(
-                        path,
-                        title=f"CMR Trip #{trip_id} - {suffix.upper()} COPY",
-                        category="trips",
-                        entity_type="trip",
-                        entity_id=trip_id,
-                        tags=["cmr", suffix.lower(), "generated"],
-                    )
+                    ds = self._lazy_cmr_doc_service()
+                    for suffix, path in registered_paths.items():
+                        try:
+                            ds.register_existing(
+                                path,
+                                title=f"CMR Trip #{trip_id} - {suffix.upper()} COPY",
+                                category="trips",
+                                entity_type="trip",
+                                entity_id=trip_id,
+                                tags=["cmr", suffix.lower(), "generated"],
+                            )
+                        except Exception:
+                            pass
                 except Exception:
                     pass
-
-            def _update_ui():
-                self._cmr_last_paths.update(copies)
-                base = os.path.basename(list(copies.values())[0]) if copies else ""
-                self._cmr_status_lbl.configure(
-                    text=f"All 4 copies generated: {base}",
-                    text_color=COLORS["text_success"])
-                for suffix, path in copies.items():
-                    self._update_copy_status(suffix, path)
-            self.after(0, _update_ui)
+                if self._cmr_status_lbl.winfo_exists():
+                    self._cmr_last_paths.update(registered_paths)
+                    base = os.path.basename(list(registered_paths.values())[0]) if registered_paths else ""
+                    self._cmr_status_lbl.configure(
+                        text=f"All 4 copies generated: {base}",
+                        text_color=COLORS["text_success"])
+                    for suffix, path in registered_paths.items():
+                        self._update_copy_status(suffix, path)
+            self.after(0, _register)
 
         threading.Thread(target=_run, daemon=True, name=f"cmr-gen-{trip_id}").start()
 
