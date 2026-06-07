@@ -84,32 +84,45 @@ class GeneratorsView(ctk.CTkFrame):
         tab.rowconfigure(0, weight=0)
         tab.rowconfigure(1, weight=1)
 
+        # ── Header row: title + trip selector ──
         hdr = ctk.CTkFrame(tab, fg_color="transparent")
         hdr.grid(row=0, column=0, sticky="ew", pady=(S["4"], S["2"]))
+        hdr.columnconfigure(0, weight=1)
         ctk.CTkLabel(hdr, text="\U0001F4C4 " + t("generators.cmr_title"),
                      font=FONTS["h2"], text_color=COLORS["text_primary"],
-                     anchor="w").pack(anchor="w")
-        ctk.CTkLabel(hdr, text=t("generators.cmr_subtitle"),
-                     font=FONTS["small"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w")
+                     anchor="w").grid(row=0, column=0, sticky="w")
+        trip_f = ctk.CTkFrame(hdr, fg_color="transparent")
+        trip_f.grid(row=0, column=1, sticky="e")
+        ctk.CTkLabel(trip_f, text="Trip:", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left")
+        self._cmr_trip_combo = ctk.CTkComboBox(
+            trip_f, values=[], state="readonly", width=280,
+            font=FONTS["body"], fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"], button_color=COLORS["bg_elevated"],
+            text_color=COLORS["text_primary"],
+            command=self._on_cmr_trip_selected)
+        self._cmr_trip_combo.pack(side="left", padx=(S["1"], S["1"]))
+        ctk.CTkButton(trip_f, text="\U0001F504", width=32, height=32,
+                      fg_color=COLORS["bg_elevated"], hover_color=COLORS["border_hover"],
+                      text_color=COLORS["text_primary"], font=FONTS["body"],
+                      command=self._refresh_trip_lists).pack(side="left")
 
         self._cmr_scroll = ctk.CTkScrollableFrame(
             tab, fg_color="transparent",
-            scrollbar_fg_color=COLORS["bg_surface"],
-        )
+            scrollbar_fg_color=COLORS["bg_surface"])
         self._cmr_scroll.grid(row=1, column=0, sticky="nsew")
         self._cmr_scroll.columnconfigure(0, weight=1)
 
-        self._build_language_section(self._cmr_scroll)
-        self._build_trip_section(self._cmr_scroll)
-        self._build_consignment_section(self._cmr_scroll)
-        self._build_carrier_section(self._cmr_scroll)
-        self._build_transport_section(self._cmr_scroll)
-        self._build_cargo_section(self._cmr_scroll)
-        self._build_instructions_section(self._cmr_scroll)
-        self._build_adr_section(self._cmr_scroll)
-        self._build_successive_section(self._cmr_scroll)
+        # Sections ordered to match the CMR convention form layout
+        self._build_box_1_2(self._cmr_scroll)
+        self._build_box_6_12_adr(self._cmr_scroll)
+        self._build_box_3_4(self._cmr_scroll)
+        self._build_box_5_13(self._cmr_scroll)
+        self._build_box_16_18(self._cmr_scroll)
+        self._build_box_17_19(self._cmr_scroll)
+        self._build_box_14_18_20(self._cmr_scroll)
         self._build_signature_section(self._cmr_scroll)
+        self._build_language_section(self._cmr_scroll)
         self._build_generation_section(self._cmr_scroll)
         self._build_copies_section(self._cmr_scroll)
 
@@ -126,12 +139,30 @@ class GeneratorsView(ctk.CTkFrame):
         return card
 
     def _section_label(self, parent, text, icon=""):
-        """Section header with optional icon."""
+        """Unified section header with box number and label (matches PDF headers)."""
         lbl = ctk.CTkLabel(parent, text=f"{icon}  {text}" if icon else text,
                            font=FONTS["label"],
                            text_color=COLORS["text_primary"],
                            anchor="w")
         lbl.pack(anchor="w", padx=S["4"], pady=(S["4"], S["1"]))
+
+    def _two_col(self, parent):
+        """Create a 2-column layout frame. Returns (cols_frame, left_frame, right_frame)."""
+        cols = ctk.CTkFrame(parent, fg_color="transparent")
+        cols.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
+        cols.columnconfigure(0, weight=1)
+        cols.columnconfigure(1, weight=1)
+        left = ctk.CTkFrame(cols, fg_color="transparent")
+        left.grid(row=0, column=0, sticky="new", padx=(0, S["2"]))
+        right = ctk.CTkFrame(cols, fg_color="transparent")
+        right.grid(row=0, column=1, sticky="new")
+        return cols, left, right
+
+    def _lbl(self, parent, text):
+        """Small, muted label for field description."""
+        ctk.CTkLabel(parent, text=text, font=FONTS["small"],
+                     text_color=COLORS["text_muted"],
+                     anchor="w").pack(anchor="w")
 
     def _entry(self, parent, placeholder="", height=32):
         e = ctk.CTkEntry(parent, placeholder_text=placeholder,
@@ -163,12 +194,9 @@ class GeneratorsView(ctk.CTkFrame):
 
     def _build_language_section(self, parent):
         card = self._section_card(parent, accent_color=COLORS["info"])
-        self._section_label(card, "CMR Languages / Limbi CMR", icon="\U0001F310")
-        row = ctk.CTkFrame(card, fg_color="transparent")
-        row.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
-        row.columnconfigure(0, weight=1)
-        row.columnconfigure(1, weight=1)
-
+        self._section_label(card, "CMR Languages / Limbi CMR")
+        f = ctk.CTkFrame(card, fg_color="transparent")
+        f.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
         lang_codes = self.prefs.get_available_languages() if self.prefs else ["en", "ro"]
         lang_display = []
         for c in lang_codes:
@@ -177,386 +205,314 @@ class GeneratorsView(ctk.CTkFrame):
                 lang_display.append(f"{dn} ({c})")
             except Exception:
                 lang_display.append(c)
-
-        l1 = ctk.CTkFrame(row, fg_color="transparent")
-        l1.grid(row=0, column=0, sticky="ew", padx=(0, S["2"]))
-        ctk.CTkLabel(l1, text="Primary:", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_lang1 = ctk.CTkComboBox(l1, values=lang_display, state="readonly",
-                                          font=FONTS["body"],
+        ctk.CTkLabel(f, text="Primary:", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left")
+        self._cmr_lang1 = ctk.CTkComboBox(f, values=lang_display, state="readonly",
+                                          width=160, font=FONTS["body"],
                                           fg_color=COLORS["bg_input"],
                                           border_color=COLORS["border"],
                                           button_color=COLORS["bg_elevated"],
                                           text_color=COLORS["text_primary"])
-        self._cmr_lang1.pack(fill="x")
+        self._cmr_lang1.pack(side="left", padx=(S["1"], S["3"]))
         if lang_display:
             self._cmr_lang1.set(lang_display[0])
-
-        l2 = ctk.CTkFrame(row, fg_color="transparent")
-        l2.grid(row=0, column=1, sticky="ew")
-        ctk.CTkLabel(l2, text="Secondary:", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_lang2 = ctk.CTkComboBox(l2, values=lang_display, state="readonly",
-                                          font=FONTS["body"],
+        ctk.CTkLabel(f, text="Secondary:", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left")
+        self._cmr_lang2 = ctk.CTkComboBox(f, values=lang_display, state="readonly",
+                                          width=160, font=FONTS["body"],
                                           fg_color=COLORS["bg_input"],
                                           border_color=COLORS["border"],
                                           button_color=COLORS["bg_elevated"],
                                           text_color=COLORS["text_primary"])
-        self._cmr_lang2.pack(fill="x")
+        self._cmr_lang2.pack(side="left", padx=(S["1"], 0))
         if len(lang_display) > 1:
             self._cmr_lang2.set(lang_display[1])
 
-    # ── Trip Selection ──────────────────────────────────────────────
+    # ═══════════════════════════════════════════════════════════════
+    # CMR convention form sections (box-number order)
+    # ═══════════════════════════════════════════════════════════════
 
-    def _build_trip_section(self, parent):
-        card = self._section_card(parent, accent_color=COLORS["warning"])
-        self._section_label(card, t("generators.cmr_trip_select"), icon="\U0001F68C")
-        sel = ctk.CTkFrame(card, fg_color="transparent")
-        sel.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
-        self._cmr_trip_combo = ctk.CTkComboBox(
-            sel, values=[], state="readonly",
-            font=FONTS["body"],
-            fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"],
-            button_color=COLORS["bg_elevated"],
-            text_color=COLORS["text_primary"],
-            command=self._on_cmr_trip_selected,
-        )
-        self._cmr_trip_combo.pack(side="left", fill="x", expand=True, padx=(0, S["2"]))
-        ctk.CTkButton(sel, text="\U0001F504", width=36, height=36,
-                      fg_color=COLORS["bg_elevated"],
-                      hover_color=COLORS["border_hover"],
-                      text_color=COLORS["text_primary"],
-                      font=FONTS["body"],
-                      command=self._refresh_trip_lists).pack(side="right")
+    # ── Box 1: Consignor + Box 2: Consignee ────────────────────────
 
-    # ── Consignment Parties ─────────────────────────────────────────
-
-    def _build_consignment_section(self, parent):
+    def _build_box_1_2(self, parent):
         card = self._section_card(parent, accent_color=COLORS["success"])
-        self._section_label(card, "Consignment Parties", icon="\U0001F465")
-
-        cols = ctk.CTkFrame(card, fg_color="transparent")
-        cols.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
-        cols.columnconfigure(0, weight=1)
-        cols.columnconfigure(1, weight=1)
-
-        c_left = ctk.CTkFrame(cols, fg_color="transparent")
-        c_left.grid(row=0, column=0, sticky="new", padx=(0, S["2"]))
-        ctk.CTkLabel(c_left, text="CONSIGNOR", font=FONTS["label"],
-                     text_color=COLORS["accent"]).pack(anchor="w")
-        self._cmr_consignor_name = ctk.CTkEntry(c_left, height=28,
+        self._section_label(card, "1. CONSIGNOR / EXPEDITOR                   2. CONSIGNEE / DESTINATAR")
+        cols, left, right = self._two_col(card)
+        self._cmr_consignor_name = ctk.CTkEntry(left, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Name")
         self._cmr_consignor_name.pack(fill="x", pady=(0, S["1"]))
-        self._cmr_consignor_addr = ctk.CTkEntry(c_left, height=28,
+        self._cmr_consignor_addr = ctk.CTkEntry(left, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Address")
         self._cmr_consignor_addr.pack(fill="x", pady=(0, S["1"]))
-        vat_row = ctk.CTkFrame(c_left, fg_color="transparent")
-        vat_row.pack(fill="x", pady=(0, S["1"]))
-        self._cmr_consignor_vat = ctk.CTkEntry(vat_row, width=80, height=28,
+        r1 = ctk.CTkFrame(left, fg_color="transparent")
+        r1.pack(fill="x", pady=(0, S["1"]))
+        self._lbl(r1, "VAT")
+        self._cmr_consignor_vat = ctk.CTkEntry(r1, width=80, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
-        ctk.CTkLabel(vat_row, text="VAT", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
         self._cmr_consignor_vat.pack(side="left", padx=(0, S["1"]))
-        ctk.CTkLabel(vat_row, text="EORI", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
-        self._cmr_consignor_eori = ctk.CTkEntry(vat_row, height=28,
+        self._lbl(r1, "EORI")
+        self._cmr_consignor_eori = ctk.CTkEntry(r1, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_consignor_eori.pack(side="left", fill="x", expand=True)
-        self._cmr_consignor_phone = ctk.CTkEntry(c_left, height=28,
+        self._cmr_consignor_phone = ctk.CTkEntry(left, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"],
-            placeholder_text="Phone")
-        self._cmr_consignor_phone.pack(fill="x", pady=(S["1"], 0))
-
-        c_right = ctk.CTkFrame(cols, fg_color="transparent")
-        c_right.grid(row=0, column=1, sticky="new")
-        ctk.CTkLabel(c_right, text="CONSIGNEE", font=FONTS["label"],
-                     text_color=COLORS["accent"]).pack(anchor="w")
-        self._cmr_consignee_name = ctk.CTkEntry(c_right, height=28,
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Phone")
+        self._cmr_consignor_phone.pack(fill="x")
+        self._cmr_consignee_name = ctk.CTkEntry(right, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Name")
         self._cmr_consignee_name.pack(fill="x", pady=(0, S["1"]))
-        self._cmr_consignee_addr = ctk.CTkEntry(c_right, height=28,
+        self._cmr_consignee_addr = ctk.CTkEntry(right, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Address")
         self._cmr_consignee_addr.pack(fill="x", pady=(0, S["1"]))
-        cv_row = ctk.CTkFrame(c_right, fg_color="transparent")
-        cv_row.pack(fill="x", pady=(0, S["1"]))
-        self._cmr_consignee_vat = ctk.CTkEntry(cv_row, width=80, height=28,
+        r2 = ctk.CTkFrame(right, fg_color="transparent")
+        r2.pack(fill="x", pady=(0, S["1"]))
+        self._lbl(r2, "VAT")
+        self._cmr_consignee_vat = ctk.CTkEntry(r2, width=80, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
-        ctk.CTkLabel(cv_row, text="VAT", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
         self._cmr_consignee_vat.pack(side="left", padx=(0, S["1"]))
-        ctk.CTkLabel(cv_row, text="EORI", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["2"], S["1"]))
-        self._cmr_consignee_eori = ctk.CTkEntry(cv_row, height=28,
+        self._lbl(r2, "EORI")
+        self._cmr_consignee_eori = ctk.CTkEntry(r2, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_consignee_eori.pack(side="left", fill="x", expand=True)
-        self._cmr_consignee_contact = ctk.CTkEntry(c_right, height=28,
+        self._cmr_consignee_contact = ctk.CTkEntry(right, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"],
-            placeholder_text="Contact Person")
-        self._cmr_consignee_contact.pack(fill="x", pady=(S["1"], 0))
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Contact Person")
+        self._cmr_consignee_contact.pack(fill="x")
 
-    # ── Carrier Details ─────────────────────────────────────────────
+    # ── Boxes 6-12: Cargo + ADR ────────────────────────────────────
 
-    def _build_carrier_section(self, parent):
-        card = self._section_card(parent, accent_color=COLORS["accent"])
-        self._section_label(card, "Carrier / Transportator", icon="\U0001F69A")
-
-        name_f = ctk.CTkFrame(card, fg_color="transparent")
-        name_f.pack(fill="x", padx=S["4"], pady=(S["1"], S["1"]))
-        ctk.CTkLabel(name_f, text="Company Name", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_carrier_name = ctk.CTkEntry(name_f, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_carrier_name.pack(fill="x")
-
-        self._cmr_carrier_addr = ctk.CTkEntry(card, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"],
-            placeholder_text="Address")
-        self._cmr_carrier_addr.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
-
-        contact_row = ctk.CTkFrame(card, fg_color="transparent")
-        contact_row.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
-        contact_row.columnconfigure((0, 1), weight=1)
-        self._cmr_carrier_phone = self._entry(contact_row, "Phone", 28)
-        self._cmr_carrier_phone.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
-        self._cmr_carrier_email = self._entry(contact_row, "Email", 28)
-        self._cmr_carrier_email.grid(row=0, column=1, sticky="ew")
-
-        company_row = ctk.CTkFrame(card, fg_color="transparent")
-        company_row.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
-        company_row.columnconfigure((0, 1), weight=1)
-        self._cmr_carrier_reg = self._entry(company_row, "Reg. Number", 28)
-        self._cmr_carrier_reg.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
-        self._cmr_insurance = self._entry(company_row, "CMR Insurance No.", 28)
-        self._cmr_insurance.grid(row=0, column=1, sticky="ew")
-
-        veh = ctk.CTkFrame(card, fg_color="transparent")
-        veh.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
-        veh.columnconfigure(0, weight=1)
-        veh.columnconfigure(1, weight=1)
-        veh.columnconfigure(2, weight=1)
-        vf = ctk.CTkFrame(veh, fg_color="transparent")
-        vf.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
-        ctk.CTkLabel(vf, text="Vehicle Plate", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_vehicle = ctk.CTkEntry(vf, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_vehicle.pack(fill="x")
-        tf = ctk.CTkFrame(veh, fg_color="transparent")
-        tf.grid(row=0, column=1, sticky="ew", padx=(0, S["1"]))
-        ctk.CTkLabel(tf, text="Trailer Plate", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_trailer = ctk.CTkEntry(tf, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_trailer.pack(fill="x")
-        df = ctk.CTkFrame(veh, fg_color="transparent")
-        df.grid(row=0, column=2, sticky="ew")
-        ctk.CTkLabel(df, text="Driver", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_driver_name = ctk.CTkEntry(df, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_driver_name.pack(fill="x")
-
-        dl = ctk.CTkFrame(card, fg_color="transparent")
-        dl.pack(fill="x", padx=S["4"], pady=(0, S["4"]))
-        self._cmr_driver_license = ctk.CTkEntry(dl, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"],
-            placeholder_text="Driver License")
-        self._cmr_driver_license.pack(fill="x")
-
-    # ── Transport Details ───────────────────────────────────────────
-
-    def _build_transport_section(self, parent):
-        card = self._section_card(parent, accent_color=COLORS["info"])
-        self._section_label(card, "Transport Details", icon="\U0001F6E3")
-        cols = ctk.CTkFrame(card, fg_color="transparent")
-        cols.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
-        cols.columnconfigure(0, weight=1)
-        cols.columnconfigure(1, weight=1)
-
-        lf = ctk.CTkFrame(cols, fg_color="transparent")
-        lf.grid(row=0, column=0, sticky="ew", padx=(0, S["2"]))
-        ctk.CTkLabel(lf, text="Place of Loading", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_loading = ctk.CTkEntry(lf, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_loading.pack(fill="x", pady=(0, S["1"]))
-        lrow = ctk.CTkFrame(lf, fg_color="transparent")
-        lrow.pack(fill="x")
-        self._cmr_loading_date = ctk.CTkEntry(lrow, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_loading_date.pack(side="left", fill="x", expand=True, padx=(0, S["1"]))
-        ctk.CTkLabel(lrow, text="Date", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(0, S["2"]))
-        self._cmr_loading_country = ctk.CTkEntry(lrow, width=50, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_loading_country.pack(side="left")
-        ctk.CTkLabel(lrow, text="ISO", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["1"], 0))
-
-        rf = ctk.CTkFrame(cols, fg_color="transparent")
-        rf.grid(row=0, column=1, sticky="ew")
-        ctk.CTkLabel(rf, text="Place of Delivery", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_unloading = ctk.CTkEntry(rf, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_unloading.pack(fill="x", pady=(0, S["1"]))
-        drow = ctk.CTkFrame(rf, fg_color="transparent")
-        drow.pack(fill="x")
-        self._cmr_delivery_country = ctk.CTkEntry(drow, width=50, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_delivery_country.pack(side="left")
-        ctk.CTkLabel(drow, text="ISO", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=(S["1"], S["3"]))
-
-        ctk.CTkLabel(card, text="Documents Attached", font=FONTS["small"],
-                     text_color=COLORS["text_muted"], anchor="w").pack(
-            anchor="w", padx=S["4"], pady=(S["2"], 0))
-        self._cmr_docs_text = ctk.CTkEntry(card, height=28,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_docs_text.pack(fill="x", padx=S["4"], pady=(0, S["4"]))
-
-    # ── Cargo Details ──────────────────────────────────────────────
-
-    def _build_cargo_section(self, parent):
+    def _build_box_6_12_adr(self, parent):
         card = self._section_card(parent, accent_color=COLORS["warning"])
-        self._section_label(card, "Cargo Details", icon="\U0001F4E6")
-        pf = ctk.CTkFrame(card, fg_color="transparent")
-        pf.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
-
-        ctk.CTkLabel(pf, text="Description", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(anchor="w")
-        self._cmr_cargo_desc = ctk.CTkTextbox(pf, height=60,
+        self._section_label(card, "6-12. CARGO / MARFA  |  ADR - DANGEROUS GOODS / MARFURI PERICULOASE")
+        f = ctk.CTkFrame(card, fg_color="transparent")
+        f.pack(fill="x", padx=S["4"], pady=(S["1"], S["4"]))
+        self._lbl(f, "6. Marks & Numbers")
+        self._cmr_marks = ctk.CTkEntry(f, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"],
-            wrap="word")
-        self._cmr_cargo_desc.pack(fill="x", pady=(0, S["2"]))
-
-        row1 = ctk.CTkFrame(pf, fg_color="transparent")
-        row1.pack(fill="x", pady=(S["2"], S["1"]))
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_marks.pack(fill="x", pady=(0, S["2"]))
+        row1 = ctk.CTkFrame(f, fg_color="transparent")
+        row1.pack(fill="x", pady=(0, S["1"]))
         row1.columnconfigure((0, 1, 2, 3), weight=1)
-        self._cmr_package_count = self._entry(row1, "Package Count", 28)
+        self._cmr_package_count = ctk.CTkEntry(row1, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="7. Package Count")
         self._cmr_package_count.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
         self._cmr_package_type = ctk.CTkComboBox(row1, values=PACKAGE_TYPES,
-            state="readonly", font=FONTS["body"],
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            button_color=COLORS["bg_elevated"],
+            state="readonly", font=FONTS["body"], fg_color=COLORS["bg_input"],
+            border_color=COLORS["border"], button_color=COLORS["bg_elevated"],
             text_color=COLORS["text_primary"], height=28)
         self._cmr_package_type.grid(row=0, column=1, sticky="ew", padx=(0, S["1"]))
         self._cmr_package_type.set("Pallet")
-        self._cmr_weight = self._entry(row1, "Weight (kg)", 28)
+        self._cmr_weight = ctk.CTkEntry(row1, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="11. Weight (kg)")
         self._cmr_weight.grid(row=0, column=2, sticky="ew", padx=(0, S["1"]))
-        self._cmr_volume = self._entry(row1, "Volume (m\u00b3)", 28)
+        self._cmr_volume = ctk.CTkEntry(row1, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="12. Volume (m\u00b3)")
         self._cmr_volume.grid(row=0, column=3, sticky="ew")
-
-        row2 = ctk.CTkFrame(pf, fg_color="transparent")
-        row2.pack(fill="x")
-        row2.columnconfigure((0, 1), weight=1)
-        self._cmr_hs_code = self._entry(row2, "HS Code", 28)
-        self._cmr_hs_code.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
-        self._cmr_marks = self._entry(row2, "Marks & Numbers", 28)
-        self._cmr_marks.grid(row=0, column=1, sticky="ew")
-
-    # ── Instructions & Reservations ─────────────────────────────────
-
-    def _build_instructions_section(self, parent):
-        card = self._section_card(parent, accent_color=COLORS["info"])
-        self._section_label(card, "Instructions & Reservations", icon="\U0001F4CB")
-
-        ctk.CTkLabel(card, text="Sender's Instructions (Customs)",
-                     font=FONTS["small"], text_color=COLORS["text_muted"]).pack(
-            anchor="w", padx=S["4"])
-        self._cmr_instructions = ctk.CTkTextbox(card, height=40,
+        row2 = ctk.CTkFrame(f, fg_color="transparent")
+        row2.pack(fill="x", pady=(0, S["2"]))
+        row2.columnconfigure(0, weight=2)
+        row2.columnconfigure(1, weight=1)
+        self._cmr_cargo_desc = ctk.CTkTextbox(row2, height=50,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
-        self._cmr_instructions.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
-
-        ctk.CTkLabel(card, text="Carrier's Reservations",
-                     font=FONTS["small"], text_color=COLORS["text_muted"]).pack(
-            anchor="w", padx=S["4"])
-        self._cmr_reservations = ctk.CTkTextbox(card, height=40,
+        self._cmr_cargo_desc.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
+        self._lbl(f, "9. Nature of Goods")
+        self._cmr_hs_code = ctk.CTkEntry(row2, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
-        self._cmr_reservations.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
-
-        ctk.CTkLabel(card, text="Special Agreements",
-                     font=FONTS["small"], text_color=COLORS["text_muted"]).pack(
-            anchor="w", padx=S["4"])
-        self._cmr_agreements = ctk.CTkTextbox(card, height=40,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
-        self._cmr_agreements.pack(fill="x", padx=S["4"], pady=(0, S["2"]))
-
-        pr = ctk.CTkFrame(card, fg_color="transparent")
-        pr.pack(fill="x", padx=S["4"], pady=(S["2"], S["4"]))
-        self._cmr_payer_var = tk.StringVar(value="")
-        ctk.CTkLabel(pr, text="Carriage charges:", font=FONTS["body"],
-                     text_color=COLORS["text_secondary"]).pack(side="left")
-        ctk.CTkRadioButton(pr, text="Sender pays", variable=self._cmr_payer_var,
-                           value="sender", font=FONTS["body"],
-                           text_color=COLORS["text_primary"],
-                           fg_color=COLORS["accent"]).pack(side="left", padx=S["2"])
-        ctk.CTkRadioButton(pr, text="Consignee pays", variable=self._cmr_payer_var,
-                           value="consignee", font=FONTS["body"],
-                           text_color=COLORS["text_primary"],
-                           fg_color=COLORS["accent"]).pack(side="left", padx=S["2"])
-
-        dist_f = ctk.CTkFrame(card, fg_color="transparent")
-        dist_f.pack(fill="x", padx=S["4"], pady=(0, S["4"]))
-        self._cmr_distance = ctk.CTkEntry(dist_f, height=28, width=100,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"],
-            placeholder_text="Distance (km)")
-        self._cmr_distance.pack(side="left")
-        ctk.CTkLabel(dist_f, text="Total distance (km)", font=FONTS["small"],
-                     text_color=COLORS["text_muted"]).pack(side="left", padx=S["2"])
-
-    # ── ADR Section ────────────────────────────────────────────────
-
-    def _build_adr_section(self, parent):
-        self._adr_card = self._section_card(parent, accent_color=COLORS["danger"])
-        header = ctk.CTkFrame(self._adr_card, fg_color="transparent")
-        header.pack(fill="x", padx=S["4"], pady=(S["4"], 0))
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="10. HS Code")
+        self._cmr_hs_code.grid(row=0, column=1, sticky="new", pady=(0, S["1"]))
+        self._lbl(f, "8. Kind (Package Type)")
+        sep = ctk.CTkFrame(f, fg_color=COLORS["border"], height=1)
+        sep.pack(fill="x", pady=(S["2"], S["2"]))
+        adr_hdr = ctk.CTkFrame(f, fg_color="transparent")
+        adr_hdr.pack(fill="x")
         self._adr_toggle_var = tk.BooleanVar(value=False)
         self._adr_toggle = ctk.CTkCheckBox(
-            header, text="\u26A0 This shipment contains DANGEROUS GOODS (ADR)",
-            variable=self._adr_toggle_var,
-            command=self._on_adr_toggle,
+            adr_hdr, text="\u26A0 This shipment contains DANGEROUS GOODS (ADR)",
+            variable=self._adr_toggle_var, command=self._on_adr_toggle,
             font=FONTS["body"], text_color=COLORS["text_primary"],
             fg_color=COLORS["danger"],
-            hover_color=COLORS.get("danger_hover", COLORS["danger"]),
-        )
+            hover_color=COLORS.get("danger_hover", COLORS["danger"]))
         self._adr_toggle.pack(side="left")
-
-        self._adr_content = ctk.CTkFrame(self._adr_card, fg_color="transparent")
+        self._adr_content = ctk.CTkFrame(f, fg_color="transparent")
         self._adr_add_btn = ctk.CTkButton(
-            self._adr_card, text="+ Add ADR Row", font=FONTS["body"],
+            f, text="+ Add ADR Row", font=FONTS["body"],
+            fg_color=COLORS["bg_elevated"], hover_color=COLORS["border_hover"],
+            text_color=COLORS["text_primary"], height=28, command=self._add_adr_row)
+
+    # ── Box 3: Loading + Box 4: Delivery ───────────────────────────
+
+    def _build_box_3_4(self, parent):
+        card = self._section_card(parent, accent_color=COLORS["info"])
+        self._section_label(card, "3. PLACE OF TAKING OVER / LOCUL PREDARII          4. PLACE OF DELIVERY / LOCUL LIVRARII")
+        cols, left, right = self._two_col(card)
+        self._lbl(left, "Place")
+        self._cmr_loading = ctk.CTkEntry(left, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_loading.pack(fill="x", pady=(0, S["1"]))
+        lr = ctk.CTkFrame(left, fg_color="transparent")
+        lr.pack(fill="x")
+        self._cmr_loading_date = ctk.CTkEntry(lr, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Date")
+        self._cmr_loading_date.pack(side="left", fill="x", expand=True, padx=(0, S["1"]))
+        self._cmr_loading_country = ctk.CTkEntry(lr, width=50, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="ISO")
+        self._cmr_loading_country.pack(side="left")
+        self._lbl(lr, "Date / Country ISO")
+        self._lbl(right, "Place")
+        self._cmr_unloading = ctk.CTkEntry(right, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_unloading.pack(fill="x", pady=(0, S["1"]))
+        dr = ctk.CTkFrame(right, fg_color="transparent")
+        dr.pack(fill="x")
+        self._cmr_delivery_country = ctk.CTkEntry(dr, width=50, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="ISO")
+        self._cmr_delivery_country.pack(side="left")
+        self._lbl(dr, "Country ISO")
+
+    # ── Box 5: Documents + Box 13: Instructions ────────────────────
+
+    def _build_box_5_13(self, parent):
+        card = self._section_card(parent, accent_color=COLORS["info"])
+        self._section_label(card, "5. DOCUMENTS ATTACHED / DOCUMENTE ATASATE          13. SENDER\u2019S INSTRUCTIONS / INSTRUCTIUNI")
+        cols, left, right = self._two_col(card)
+        self._cmr_docs_text = ctk.CTkEntry(left, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"],
+            placeholder_text="e.g. Invoice, Packing list, CMR")
+        self._cmr_docs_text.pack(fill="x")
+        self._cmr_instructions = ctk.CTkTextbox(right, height=60,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
+        self._cmr_instructions.pack(fill="x")
+
+    # ── Box 16: Carrier + Box 18: Reservations ─────────────────────
+
+    def _build_box_16_18(self, parent):
+        card = self._section_card(parent, accent_color=COLORS["accent"])
+        self._section_label(card, "16. CARRIER / TRANSPORTATOR          18. CARRIER\u2019S RESERVATIONS / REZERVE")
+        cols, left, right = self._two_col(card)
+        self._lbl(left, "Company Name")
+        self._cmr_carrier_name = ctk.CTkEntry(left, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_carrier_name.pack(fill="x", pady=(0, S["1"]))
+        self._cmr_carrier_addr = ctk.CTkEntry(left, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Address")
+        self._cmr_carrier_addr.pack(fill="x", pady=(0, S["1"]))
+        c1 = ctk.CTkFrame(left, fg_color="transparent")
+        c1.pack(fill="x", pady=(0, S["1"]))
+        c1.columnconfigure((0, 1), weight=1)
+        self._cmr_carrier_phone = ctk.CTkEntry(c1, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Phone")
+        self._cmr_carrier_phone.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
+        self._cmr_carrier_email = ctk.CTkEntry(c1, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Email")
+        self._cmr_carrier_email.grid(row=0, column=1, sticky="ew")
+        c2 = ctk.CTkFrame(left, fg_color="transparent")
+        c2.pack(fill="x")
+        c2.columnconfigure((0, 1), weight=1)
+        self._cmr_carrier_reg = ctk.CTkEntry(c2, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Reg. Number")
+        self._cmr_carrier_reg.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
+        self._cmr_insurance = ctk.CTkEntry(c2, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="CMR Insurance No.")
+        self._cmr_insurance.grid(row=0, column=1, sticky="ew")
+        self._cmr_reservations = ctk.CTkTextbox(right, height=80,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
+        self._cmr_reservations.pack(fill="x", expand=True)
+
+    # ── Box 17: Successive + Box 19: Agreements ────────────────────
+
+    def _build_box_17_19(self, parent):
+        card = self._section_card(parent, accent_color=COLORS["info"])
+        self._section_label(card, "17. SUCCESSIVE CARRIERS / SUCCESIVI          19. SPECIAL AGREEMENTS / ACORDURI SPECIALE")
+        cols, left, right = self._two_col(card)
+        self._succ_content = ctk.CTkFrame(left, fg_color="transparent")
+        self._succ_content.pack(fill="x", pady=(0, S["2"]))
+        self._succ_add_btn = ctk.CTkButton(
+            left, text="+ Add Successive Carrier", font=FONTS["body"],
             fg_color=COLORS["bg_elevated"], hover_color=COLORS["border_hover"],
             text_color=COLORS["text_primary"], height=28,
-            command=self._add_adr_row,
-        )
+            command=self._add_successive_carrier)
+        self._succ_add_btn.pack(anchor="w")
+        self._cmr_agreements = ctk.CTkTextbox(right, height=60,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_primary"], font=FONTS["body"], wrap="word")
+        self._cmr_agreements.pack(fill="x")
+
+    # ── Box 14: Charges + Box 18-20: Vehicle & Driver ──────────────
+
+    def _build_box_14_18_20(self, parent):
+        card = self._section_card(parent, accent_color=COLORS["warning"])
+        self._section_label(card, "14. CARRIAGE CHARGES / TAXE DE TRANSPORT          18-20. VEHICLE & DRIVER / VEHICUL SI SOFER")
+        cols, left, right = self._two_col(card)
+        self._cmr_payer_var = tk.StringVar(value="")
+        ctk.CTkLabel(left, text="Carriage charges paid by:",
+                     font=FONTS["body"], text_color=COLORS["text_secondary"]).pack(anchor="w")
+        pr = ctk.CTkFrame(left, fg_color="transparent")
+        pr.pack(fill="x", pady=(S["1"], S["2"]))
+        ctk.CTkRadioButton(pr, text="Sender", variable=self._cmr_payer_var,
+                           value="sender", font=FONTS["body"],
+                           text_color=COLORS["text_primary"],
+                           fg_color=COLORS["accent"]).pack(side="left", padx=(0, S["2"]))
+        ctk.CTkRadioButton(pr, text="Consignee", variable=self._cmr_payer_var,
+                           value="consignee", font=FONTS["body"],
+                           text_color=COLORS["text_primary"],
+                           fg_color=COLORS["accent"]).pack(side="left")
+        self._cmr_distance = ctk.CTkEntry(left, height=28, width=100,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Distance (km)")
+        self._cmr_distance.pack(anchor="w")
+        vd = ctk.CTkFrame(right, fg_color="transparent")
+        vd.pack(fill="x")
+        vd.columnconfigure(0, weight=1)
+        vd.columnconfigure(1, weight=1)
+        self._lbl(vd, "Vehicle Plate")
+        self._cmr_vehicle = ctk.CTkEntry(vd, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_vehicle.grid(row=1, column=0, sticky="ew", padx=(0, S["1"]))
+        self._cmr_trailer = ctk.CTkEntry(vd, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="Trailer Plate")
+        self._cmr_trailer.grid(row=1, column=1, sticky="ew")
+        dl_row = ctk.CTkFrame(right, fg_color="transparent")
+        dl_row.pack(fill="x", pady=(S["1"], 0))
+        dl_row.columnconfigure(0, weight=1)
+        dl_row.columnconfigure(1, weight=1)
+        self._lbl(dl_row, "Driver Name")
+        self._cmr_driver_name = ctk.CTkEntry(dl_row, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"])
+        self._cmr_driver_name.grid(row=1, column=0, sticky="ew", padx=(0, S["1"]))
+        self._cmr_driver_license = ctk.CTkEntry(dl_row, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"], placeholder_text="License")
+        self._cmr_driver_license.grid(row=1, column=1, sticky="ew")
 
     def _on_adr_toggle(self):
         if self._adr_toggle_var.get():
@@ -613,20 +569,6 @@ class GeneratorsView(ctk.CTkFrame):
         return items if items else None
 
     # ── Successive Carriers ─────────────────────────────────────────
-
-    def _build_successive_section(self, parent):
-        self._succ_card = self._section_card(parent, accent_color=COLORS["info"])
-        self._section_label(self._succ_card, "Successive Carriers (Sub-contracted)", icon="\U0001F69A")
-        self._succ_content = ctk.CTkFrame(self._succ_card, fg_color="transparent")
-        self._succ_content.pack(fill="x", padx=S["4"], pady=(S["1"], S["2"]))
-        self._succ_add_btn = ctk.CTkButton(
-            self._succ_card, text="+ Add Successive Carrier", font=FONTS["body"],
-            fg_color=COLORS["bg_elevated"], hover_color=COLORS["border_hover"],
-            text_color=COLORS["text_primary"], height=28,
-            command=self._add_successive_carrier,
-        )
-        self._succ_add_btn.pack(padx=S["4"], pady=(0, S["4"]), anchor="w")
-
     def _add_successive_carrier(self):
         row = ctk.CTkFrame(self._succ_content, fg_color=COLORS["bg_base"],
                            corner_radius=4)
@@ -674,7 +616,7 @@ class GeneratorsView(ctk.CTkFrame):
 
     def _build_signature_section(self, parent):
         card = self._section_card(parent, accent_color=COLORS["accent"])
-        self._section_label(card, "Signature & Stamp Images", icon="\U0000270F")
+        self._section_label(card, "SIGNATURES / SEMNATURI  \u2502  Sender  \u2502  Carrier  \u2502  Consignee  \u2502  Stamp")
         row1 = ctk.CTkFrame(card, fg_color="transparent")
         row1.pack(fill="x", padx=S["4"], pady=(S["1"], S["1"]))
         self._cmr_sig_path_var = tk.StringVar()
