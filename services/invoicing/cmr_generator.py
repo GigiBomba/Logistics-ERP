@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import (
     SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, KeepTogether, Image,
+    HRFlowable, Image,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
@@ -25,6 +25,10 @@ from services.invoicing.cmr_efti import generate_efti_xml
 logger = logging.getLogger(__name__)
 
 
+import functools
+
+
+@functools.lru_cache(maxsize=1)
 def _get_srgb_icc_profile() -> Optional[bytes]:
     """Load sRGB ICC profile for PDF/A-3 OutputIntent.
 
@@ -79,69 +83,73 @@ class CMRGenerator:
 
     def _init_styles(self):
         """Initialize shared Paragraph styles with modern, professional typography."""
-        self.primary_color = self._hex_color(load_company_config().get("company_color", "#6366f1"))
         self.text_color = colors.HexColor("#1f2937")
         self.muted_color = colors.HexColor("#6b7280")
-        self.light_bg = colors.HexColor("#f8fafc")
-        self.border_color = colors.HexColor("#cbd5e1")
-        self.header_bg = colors.HexColor("#f1f5f9")
 
-        # Section label — muted italic above each section
-        self.sec_label = ParagraphStyle(
-            "SecLabel", parent=self.styles["Normal"],
-            fontSize=7, leading=9, textColor=self.muted_color,
-            fontName="Helvetica-Oblique", spaceAfter=1,
-        )
-        # Section value — primary text
         self.sec_val = ParagraphStyle(
             "SecVal", parent=self.styles["Normal"],
             fontSize=8.5, leading=11, textColor=self.text_color,
             fontName="Helvetica", spaceAfter=1,
         )
-        # Small value — for secondary info
-        self.sec_small = ParagraphStyle(
-            "SecSmall", parent=self.styles["Normal"],
-            fontSize=7.5, leading=10, textColor=self.text_color,
-            fontName="Helvetica", spaceAfter=1,
-        )
-        # Title
-        self.title_style = ParagraphStyle(
-            "CMRTitle", parent=self.styles["Title"],
-            fontSize=16, leading=20, textColor=self.text_color,
-            fontName="Helvetica-Bold", alignment=TA_CENTER, spaceAfter=1,
-        )
-        # Subtitle
-        self.subtitle_style = ParagraphStyle(
-            "CMRSubtitle", parent=self.styles["Normal"],
-            fontSize=8, leading=10, textColor=self.muted_color,
-            alignment=TA_CENTER, spaceAfter=4,
-        )
-        # Signature
         self.sig_style = ParagraphStyle(
             "CMRSig", parent=self.styles["Normal"],
             fontSize=7.5, leading=10, textColor=self.text_color,
             fontName="Helvetica",
         )
-        # Footer
         self.footer_style = ParagraphStyle(
             "CMRFooter", parent=self.styles["Normal"],
             fontSize=7, leading=9, textColor=self.muted_color,
             alignment=TA_CENTER, spaceAfter=1,
         )
-        # Copy badge text
         self.badge_style = ParagraphStyle(
             "Badge", parent=self.styles["Normal"],
             fontSize=7, leading=9, textColor=colors.white,
             fontName="Helvetica-Bold", alignment=TA_CENTER,
         )
-
-    def _safe_str(self, val) -> str:
-        if val is None:
-            return ""
-        return str(val)
+        # Header block styles (created once, reused)
+        self._hdr_style = ParagraphStyle(
+            "DocHeader", parent=self.styles["Normal"],
+            fontSize=22, leading=26, textColor=colors.HexColor("#D32F2F"),
+            fontName="Helvetica-Bold", alignment=0, spaceAfter=0,
+        )
+        self._hdr_sub_style = ParagraphStyle(
+            "DocSub", parent=self.styles["Normal"],
+            fontSize=7.5, leading=10, textColor=self.text_color,
+            alignment=0, spaceAfter=2,
+        )
+        self._hdr_right_style = ParagraphStyle(
+            "DocRight", parent=self.styles["Normal"],
+            fontSize=8, leading=10, textColor=self.muted_color,
+            alignment=TA_RIGHT, spaceBefore=4,
+        )
+        # Cargo table styles (created once, reused)
+        self._cargo_hdr_style = ParagraphStyle(
+            "cargo_hdr", parent=self.styles["Normal"], fontName="Helvetica-Bold",
+            fontSize=5.5, leading=6.5, textColor=self.text_color,
+            alignment=TA_LEFT, wordWrap="CJK",
+        )
+        self._cargo_val_style = ParagraphStyle(
+            "cargo_val", parent=self.styles["Normal"], fontName="Helvetica",
+            fontSize=7.5, leading=9, textColor=self.text_color,
+            alignment=TA_LEFT, wordWrap="CJK",
+        )
+        self._adr_label_style = ParagraphStyle(
+            "adr_label", parent=self.styles["Normal"], fontName="Helvetica-Bold",
+            fontSize=6.5, leading=8, textColor=colors.HexColor("#991b1b"),
+            alignment=TA_LEFT, wordWrap="CJK",
+        )
+        self._adr_hdr_style = ParagraphStyle(
+            "adr_hdr", parent=self.styles["Normal"], fontName="Helvetica-Bold",
+            fontSize=5.5, leading=6.5, textColor=self.text_color,
+            alignment=TA_CENTER, wordWrap="CJK",
+        )
+        self._adr_val_style = ParagraphStyle(
+            "adr_val", parent=self.styles["Normal"], fontName="Helvetica",
+            fontSize=7, leading=8.5, textColor=self.text_color,
+            alignment=TA_CENTER, wordWrap="CJK",
+        )
 
     def _hex_color(self, hex_str: str):
-        """Convert hex color string to ReportLab Color, safely."""
         try:
             return colors.HexColor(hex_str)
         except Exception:
@@ -276,8 +284,7 @@ class CMRGenerator:
         paths = {}
         for suffix, color_name, color_hex, color_light, bar_text, desig_text in COPY_CONFIGS:
             path = self._build_single_copy(ctx, suffix, output_dir,
-                                           color_name, color_hex, color_light,
-                                           bar_text, desig_text)
+                                           color_hex, bar_text, desig_text)
             paths[suffix] = path
 
         if self.db:
@@ -293,8 +300,7 @@ class CMRGenerator:
         return paths
 
     def _build_single_copy(self, ctx: Dict[str, Any], suffix: str,
-                           output_dir: str, color_name: str = "Sender",
-                           color_hex: str = "#D32F2F", color_light: str = "#FFCDD2",
+                           output_dir: str, color_hex: str = "#D32F2F",
                            bar_text: str = "", desig_text: str = "") -> str:
         cmr_number = ctx["cmr_number"]
         filename = f"CMR_{suffix}_Copy.pdf"
@@ -322,11 +328,23 @@ class CMRGenerator:
 
         try:
             xml_data = generate_efti_xml(cmr_number, ctx, {
-                "company_name": ctx.get("company_name", ""),
-                "address": ctx.get("company_address", ""),
-                "cui": ctx.get("company_cui", ""),
-                "eori_number": ctx.get("eori_number", ""),
-            })
+                "company_name": ctx.get("consignor_name", ""),
+                "address": ctx.get("consignor_address", ""),
+                "cui": ctx.get("consignor_vat", ""),
+                "eori_number": ctx.get("consignor_eori", ""),
+            }, client_data={
+                "name": ctx.get("client_name", ""),
+                "address": ctx.get("client_address", ""),
+                "vat_number": ctx.get("consignee_vat", ""),
+                "eori_number": ctx.get("consignee_eori", ""),
+                "contact": ctx.get("consignee_contact", ""),
+            }, truck_data={
+                "plate_number": ctx.get("truck_plate", ""),
+                "trailer_plate": ctx.get("trailer_plate", ""),
+            }, driver_data={
+                "name": ctx.get("driver_name", ""),
+                "license_number": ctx.get("driver_license", ""),
+            }, successive_carriers=ctx.get("successive_carriers", []))
             self._embed_xml_payload(filepath, xml_data, cmr_number)
         except Exception as e:
             logger.debug("eFTI XML embedding skipped: %s", e)
@@ -494,9 +512,6 @@ class CMRGenerator:
 
     # ── Grid Layout Primitives ─────────────────────────────────────
 
-    def _section_label(self, text):
-        return Paragraph(text, self.sec_label)
-
     def _hline(self, color, thickness=0.5):
         return HRFlowable(width="100%", thickness=thickness, color=color)
 
@@ -515,29 +530,15 @@ class CMRGenerator:
         return badge
 
     def _header_block(self, ctx, color_hex, w):
-        """Full-width header with title and CMR No badge at right."""
-        header_style = ParagraphStyle(
-            "DocHeader", parent=self.styles["Normal"],
-            fontSize=22, leading=26, textColor=colors.HexColor(color_hex),
-            fontName="Helvetica-Bold", alignment=0, spaceAfter=0,
-        )
-        sub_style = ParagraphStyle(
-            "DocSub", parent=self.styles["Normal"],
-            fontSize=7.5, leading=10, textColor=self.text_color,
-            alignment=0, spaceAfter=2,
-        )
-        right_style = ParagraphStyle(
-            "DocRight", parent=self.styles["Normal"],
-            fontSize=8, leading=10, textColor=self.muted_color,
-            alignment=TA_RIGHT, spaceBefore=4,
-        )
+        """Full-width header — uses cached styles from _init_styles."""
+        self._hdr_style.textColor = colors.HexColor(color_hex)
         data = [[
-            Paragraph("<b>CMR</b><br/>INTERNATIONAL<br/>CONSIGNMENT NOTE", header_style),
+            Paragraph("<b>CMR</b><br/>INTERNATIONAL<br/>CONSIGNMENT NOTE", self._hdr_style),
             Paragraph(
                 f"<font size=11 color='{color_hex}'><b>No: {ctx['cmr_number']}</b></font><br/>"
                 f"Trip #{ctx['trip_id']}<br/>"
                 f"{datetime.now().strftime('%d %b %Y')}",
-                right_style),
+                self._hdr_right_style),
         ]]
         tbl = Table(data, colWidths=[w * 0.65, w * 0.35])
         tbl.setStyle(TableStyle([
@@ -590,9 +591,8 @@ class CMRGenerator:
 
     def _cargo_grid(self, ctx, right_w, lc):
         """Unified cargo table with 6 fixed-width columns — all vertical lines align.
-        Includes conditional ADR rows. All sub-column widths sum to right_w."""
-        c6 = [22 * mm, 13 * mm, 12 * mm, 27 * mm, 18 * mm, 20 * mm]
-        # => 22+13+12+27+18+20 = 112mm ✓
+        Includes conditional ADR rows."""
+        c6 = [22 * mm, 13 * mm, 12 * mm, 27 * mm, 18 * mm, 20 * mm]  # = 112mm
 
         marks_val = ctx.get("cargo_marks", "") or "—"
         pkg_val = ctx.get("package_count", "") or "—"
@@ -602,80 +602,45 @@ class CMRGenerator:
         wt_val = (f"{ctx['gross_weight_kg']} kg" if ctx.get("gross_weight_kg") else "—")
         vol_val = (f"{ctx['volume_m3']} m³" if ctx.get("volume_m3") else "—")
 
-        # Header cell style: bold, small, tight leading, wraps inside cell width
-        hdr_style = ParagraphStyle(
-            "cargo_hdr", parent=self.styles["Normal"], fontName="Helvetica-Bold",
-            fontSize=5.5, leading=6.5, textColor=self.text_color,
-            alignment=TA_LEFT, wordWrap="CJK",
-        )
-        val_style = ParagraphStyle(
-            "cargo_val", parent=self.styles["Normal"], fontName="Helvetica",
-            fontSize=7.5, leading=9, textColor=self.text_color,
-            alignment=TA_LEFT, wordWrap="CJK",
-        )
-
         def H(s):
-            return Paragraph(s, hdr_style)
+            return Paragraph(s, self._cargo_hdr_style)
 
         def V(s):
-            return Paragraph(str(s), val_style)
+            return Paragraph(str(s), self._cargo_val_style)
 
         rows = [
-            # Row 0: Box numbers header (Paragraphs wrap inside cell width)
             [H("6. MARKS &amp; NUMBERS"), H("7. PKGS"), H("8. KIND"),
              H("9. NATURE OF GOODS"), H("10. HS CODE"), H("11-12. WT / VOL")],
-            # Row 1: Marks (spans all 6 columns)
             [V(marks_val), "", "", "", "", ""],
-            # Row 2: Detail data
             [V(pkg_val), V(kind_val), V(nature_val), V(hs_val), V(wt_val), V(vol_val)],
         ]
 
-        # Conditional ADR rows
         if ctx.get("has_adr"):
             adr_items = ctx["adr_items"]
-            adr_label_style = ParagraphStyle(
-                "adr_label", parent=self.styles["Normal"], fontName="Helvetica-Bold",
-                fontSize=6.5, leading=8, textColor=colors.HexColor("#991b1b"),
-                alignment=TA_LEFT, wordWrap="CJK",
-            )
-            adr_hdr_style = ParagraphStyle(
-                "adr_hdr", parent=self.styles["Normal"], fontName="Helvetica-Bold",
-                fontSize=5.5, leading=6.5, textColor=self.text_color,
-                alignment=TA_CENTER, wordWrap="CJK",
-            )
-            adr_val_style = ParagraphStyle(
-                "adr_val", parent=self.styles["Normal"], fontName="Helvetica",
-                fontSize=7, leading=8.5, textColor=self.text_color,
-                alignment=TA_CENTER, wordWrap="CJK",
-            )
+            rows.append([Paragraph("ADR — DANGEROUS GOODS", self._adr_label_style),
+                         "", "", "", "", ""])
             rows.append([
-                Paragraph("ADR — DANGEROUS GOODS", adr_label_style),
-                "", "", "", "", ""
-            ])
-            rows.append([
-                Paragraph("UN No", adr_hdr_style), Paragraph("Class", adr_hdr_style),
-                Paragraph("Pack Grp", adr_hdr_style), Paragraph("Tunnel", adr_hdr_style),
-                Paragraph("Qty", adr_hdr_style), Paragraph("Net Wt", adr_hdr_style),
+                Paragraph("UN No", self._adr_hdr_style),
+                Paragraph("Class", self._adr_hdr_style),
+                Paragraph("Pack Grp", self._adr_hdr_style),
+                Paragraph("Tunnel", self._adr_hdr_style),
+                Paragraph("Qty", self._adr_hdr_style),
+                Paragraph("Net Wt", self._adr_hdr_style),
             ])
             for item in adr_items:
                 rows.append([
-                    Paragraph(str(item.get("un_no", "")), adr_val_style),
-                    Paragraph(str(item.get("adr_class", "")), adr_val_style),
-                    Paragraph(str(item.get("packing_group", "")), adr_val_style),
-                    Paragraph(str(item.get("tunnel_code", "")), adr_val_style),
-                    Paragraph(str(item.get("quantity", "")), adr_val_style),
-                    Paragraph(str(item.get("net_weight", "")), adr_val_style),
+                    Paragraph(str(item.get("un_no", "")), self._adr_val_style),
+                    Paragraph(str(item.get("adr_class", "")), self._adr_val_style),
+                    Paragraph(str(item.get("packing_group", "")), self._adr_val_style),
+                    Paragraph(str(item.get("tunnel_code", "")), self._adr_val_style),
+                    Paragraph(str(item.get("quantity", "")), self._adr_val_style),
+                    Paragraph(str(item.get("net_weight", "")), self._adr_val_style),
                 ])
 
         tbl = Table(rows, colWidths=c6)
         styles = [
             ('GRID', (0, 0), (-1, -1), 0.5, lc),
             ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
-            ('TEXTCOLOR', (0, 0), (-1, 0), self.text_color),
-            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
-            ('FONTSIZE', (0, 0), (-1, 0), 6.5),
-            ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
-            ('FONTSIZE', (0, 1), (-1, -1), 8),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
             ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
@@ -683,21 +648,17 @@ class CMRGenerator:
             ('TOPPADDING', (0, 0), (-1, -1), 1.5 * mm),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5 * mm),
             ('LINEBELOW', (0, 0), (-1, 0), 0.75, lc),
-            # Marks row spans all 6 columns
             ('SPAN', (0, 1), (5, 1)),
             ('BACKGROUND', (0, 1), (-1, 1), colors.white),
         ]
 
         # ADR-specific styling
         if ctx.get("has_adr"):
-            adr_idx = 3  # Row index for ADR section label
+            adr_idx = 3
             styles.extend([
                 ('SPAN', (0, adr_idx), (5, adr_idx)),
                 ('BACKGROUND', (0, adr_idx), (-1, adr_idx), colors.HexColor("#fef2f2")),
-                ('TEXTCOLOR', (0, adr_idx), (-1, adr_idx), colors.HexColor("#991b1b")),
                 ('BACKGROUND', (0, adr_idx + 1), (-1, adr_idx + 1), colors.HexColor("#fef2f2")),
-                ('FONTNAME', (0, adr_idx + 1), (-1, adr_idx + 1), 'Helvetica-Bold'),
-                ('FONTSIZE', (0, adr_idx + 1), (-1, adr_idx + 1), 6.5),
                 ('ALIGN', (0, adr_idx + 1), (-1, -1), 'CENTER'),
                 ('VALIGN', (0, adr_idx + 1), (-1, -1), 'MIDDLE'),
                 ('ROWBACKGROUNDS', (0, adr_idx + 2), (-1, -1),
@@ -755,7 +716,7 @@ class CMRGenerator:
         except ImportError:
             self._embed_xml_fallback(pdf_path, xml_string, cmr_number)
         except Exception as e:
-            logger.debug("PDF/A-3 embedding fell back to PyPDF2: %s", e)
+            logger.debug("PDF/A-3 pikepdf wrapper failed, using pypdf fallback: %s", e)
             self._embed_xml_fallback(pdf_path, xml_string, cmr_number)
 
     def _embed_xml_pdfa3(self, pdf_path, xml_string, cmr_number):
@@ -769,10 +730,9 @@ class CMRGenerator:
         - Document-level metadata (Title, Author, Subject, Keywords)
         """
         import pikepdf
-        from datetime import datetime as dt_module, timezone as tz_module
 
         icc_data = _get_srgb_icc_profile()
-        now_utc = dt_module.now(tz_module.utc).strftime("D:%Y%m%d%H%M%SZ")
+        now_utc = datetime.now(timezone.utc).strftime("D:%Y%m%d%H%M%SZ")
 
         with pikepdf.open(pdf_path, allow_overwriting_input=True) as pdf:
             # ── XMP Metadata Stream (PDF/A-3 conformance declarations) ──
@@ -787,7 +747,7 @@ class CMRGenerator:
                 '    </rdf:Description>\n'
                 '    <rdf:Description rdf:about=""\n'
                 '        xmlns:dc="http://purl.org/dc/elements/1.1/">\n'
-                f'      <dc:title>{cmr_number}</dc:title>\n'
+                f'      <dc:title>{cmr_number.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")}</dc:title>\n'
                 '      <dc:creator>Operion ERP</dc:creator>\n'
                 f'      <dc:subject>eCMR {cmr_number}</dc:subject>\n'
                 '    </rdf:Description>\n'
@@ -858,9 +818,10 @@ class CMRGenerator:
             names = pdf.Root.get("/Names", pikepdf.Dictionary())
             embedded_files = names.get("/EmbeddedFiles", pikepdf.Dictionary())
             names_tree = embedded_files.get("/Names", pikepdf.Array())
-            for i in range(0, len(names_tree), 2):
-                if i + 1 < len(names_tree):
-                    file_spec = names_tree[i + 1]
+            if names_tree and hasattr(names_tree, '__len__'):
+                for i in range(0, len(names_tree), 2):
+                    if i + 1 < len(names_tree):
+                        file_spec = names_tree[i + 1]
                     if file_spec not in af_array:
                         af_array.append(file_spec)
 

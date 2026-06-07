@@ -11,10 +11,9 @@ Namespaces:
 """
 import json
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
-from xml.dom import minidom
-from xml.etree.ElementTree import Element, SubElement, tostring
+from xml.etree.ElementTree import Element, SubElement, tostring, indent
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +24,6 @@ NS_UDT = "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100"
 
 def _sub(parent: Element, tag: str, text: Optional[str] = None,
          attrib: Optional[Dict[str, str]] = None) -> Element:
-    """Helper to create a namespaced sub-element."""
     el = SubElement(parent, tag, attrib or {})
     if text is not None:
         el.text = text
@@ -33,8 +31,16 @@ def _sub(parent: Element, tag: str, text: Optional[str] = None,
 
 
 def _date_time(parent: Element, dt_str: str) -> None:
-    """Add a udt:DateTime element."""
     _sub(parent, "udt:DateTime", dt_str)
+
+
+def _safe_date(raw: str) -> str:
+    """Normalize a date string — append ISO time if missing, return as-is if already ISO."""
+    if not raw:
+        return ""
+    if raw and "T" in raw:
+        return raw
+    return raw + "T00:00:00Z"
 
 
 def generate_efti_xml(
@@ -48,7 +54,6 @@ def generate_efti_xml(
 ) -> str:
     """Generate UN/CEFACT MMT-RDM compliant eCMR XML."""
 
-    # ── Root ──
     root = Element("rsm:CrossBorderRegulatoryNotification", {
         "xmlns:rsm": NS_RSM,
         "xmlns:ram": NS_RAM,
@@ -58,9 +63,9 @@ def generate_efti_xml(
     # ── HeaderExchangedDocument ──
     hed = _sub(root, "rsm:HeaderExchangedDocument")
     _sub(hed, "ram:ID", cmr_number)
-    _sub(hed, "ram:TypeCode", "999")  # 999 = CMR per UN/CEFACT
+    _sub(hed, "ram:TypeCode", "999")
     issue_dt = _sub(hed, "ram:IssueDateTime")
-    _date_time(issue_dt, datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"))
+    _date_time(issue_dt, datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"))
 
     # ── SpecifiedCrossBorderRegulatoryProcedure ──
     proc = _sub(root, "rsm:SpecifiedCrossBorderRegulatoryProcedure")
@@ -70,41 +75,41 @@ def generate_efti_xml(
     cons = _sub(root, "ram:Consignment")
     _sub(cons, "ram:ID", cmr_number)
 
-    # Consignor Trade Party
+    # Consignor
     consignor = _sub(cons, "ram:ConsignorTradeParty")
     _sub(consignor, "ram:Name", company_config.get("company_name", ""))
     addr1 = _sub(consignor, "ram:PostalTradeAddress")
     _sub(addr1, "ram:LineOne", company_config.get("address", ""))
     _sub(addr1, "ram:CountryID", trip_data.get("loading_country", ""))
-    if company_config.get("cui"):
+    vat = company_config.get("cui", "")
+    if vat:
         tax1 = _sub(consignor, "ram:SpecifiedTaxRegistration")
-        _sub(tax1, "ram:ID", company_config["cui"], {"schemeID": "VA"})
-    eori_val = company_config.get("eori_number", company_config.get("cui", ""))
+        _sub(tax1, "ram:ID", vat, {"schemeID": "VA"})
+    eori_val = company_config.get("eori_number", vat)
     if eori_val:
         tax2 = _sub(consignor, "ram:SpecifiedTaxRegistration")
         _sub(tax2, "ram:ID", eori_val, {"schemeID": "EORI"})
 
-    # Consignee Trade Party
+    # Consignee
+    cd = client_data or {}
     consignee = _sub(cons, "ram:ConsigneeTradeParty")
-    client_name = trip_data.get("client_name", "")
-    client_addr = trip_data.get("client_address", "")
-    if client_data:
-        client_name = client_data.get("name", client_name)
-        client_addr = client_data.get("address", client_addr)
-    _sub(consignee, "ram:Name", client_name)
+    _sub(consignee, "ram:Name", cd.get("name", trip_data.get("client_name", "")))
     addr2 = _sub(consignee, "ram:PostalTradeAddress")
-    _sub(addr2, "ram:LineOne", client_addr)
+    _sub(addr2, "ram:LineOne", cd.get("address", trip_data.get("client_address", "")))
     _sub(addr2, "ram:CountryID", trip_data.get("delivery_country", ""))
-    if client_data and client_data.get("vat_number"):
+    if cd.get("vat_number"):
         tax3 = _sub(consignee, "ram:SpecifiedTaxRegistration")
-        _sub(tax3, "ram:ID", client_data["vat_number"], {"schemeID": "VA"})
+        _sub(tax3, "ram:ID", cd["vat_number"], {"schemeID": "VA"})
+    if cd.get("eori_number"):
+        tax4 = _sub(consignee, "ram:SpecifiedTaxRegistration")
+        _sub(tax4, "ram:ID", cd["eori_number"], {"schemeID": "EORI"})
 
-    # Carrier Trade Party
+    # Carrier
     carrier = _sub(cons, "ram:CarrierTradeParty")
     _sub(carrier, "ram:Name", company_config.get("company_name", ""))
     if company_config.get("cui"):
-        tax4 = _sub(carrier, "ram:SpecifiedTaxRegistration")
-        _sub(tax4, "ram:ID", company_config["cui"], {"schemeID": "VA"})
+        tax5 = _sub(carrier, "ram:SpecifiedTaxRegistration")
+        _sub(tax5, "ram:ID", company_config["cui"], {"schemeID": "VA"})
 
     # Takeover Location
     takeover = _sub(cons, "ram:LogisticsLocationTakeOver")
@@ -113,7 +118,7 @@ def generate_efti_xml(
     _sub(takeover, "ram:CountryID", trip_data.get("loading_country", ""))
     if trip_data.get("place_of_loading_date"):
         dt = _sub(takeover, "ram:EffectiveDateTime")
-        _date_time(dt, trip_data["place_of_loading_date"] + "T00:00:00Z")
+        _date_time(dt, _safe_date(trip_data["place_of_loading_date"]))
 
     # Delivery Location
     delivery = _sub(cons, "ram:LogisticsLocationDelivery")
@@ -135,43 +140,64 @@ def generate_efti_xml(
         _sub(item, "ram:TotalPackageQuantity", str(trip_data["package_count"]))
 
     # Vehicle / Transport Means
+    veh = truck_data or {}
+    drv = driver_data or {}
+    veh_id = veh.get("plate_number", trip_data.get("truck_plate",
+                     trip_data.get("truck_number", "")))
     veh_move = _sub(cons, "ram:SpecifiedLogisticsTransportMovement")
-    _sub(veh_move, "ram:ID", trip_data.get("truck_number",
-          trip_data.get("truck_plate", "")))
-    _sub(veh_move, "ram:ModeCode", "3")  # 3 = Road
+    _sub(veh_move, "ram:ID", veh_id)
+    _sub(veh_move, "ram:ModeCode", "3")
     veh_means = _sub(veh_move, "ram:UsedLogisticsTransportMeans")
-    _sub(veh_means, "ram:ID", trip_data.get("truck_plate",
-          trip_data.get("truck_number", "")))
-    if trip_data.get("trailer_plate"):
-        trailer = _sub(veh_move, "ram:AttachedLogisticsTransportEquipment")
-        _sub(trailer, "ram:ID", trip_data["trailer_plate"])
+    _sub(veh_means, "ram:ID", veh_id)
+    trailer = veh.get("trailer_plate", trip_data.get("trailer_plate", ""))
+    if trailer:
+        tr = _sub(veh_move, "ram:AttachedLogisticsTransportEquipment")
+        _sub(tr, "ram:ID", trailer)
 
     # Driver
-    if trip_data.get("driver_name"):
+    driver_name = drv.get("name", trip_data.get("driver_name", ""))
+    if driver_name:
         driver = _sub(veh_move, "ram:SpecifiedTransportPerson")
-        _sub(driver, "ram:Name", trip_data["driver_name"])
-        if trip_data.get("driver_license"):
-            _sub(driver, "ram:ID", trip_data["driver_license"])
+        _sub(driver, "ram:Name", driver_name)
+        lic = drv.get("license_number", trip_data.get("driver_license", ""))
+        if lic:
+            _sub(driver, "ram:ID", lic)
+
+    # Successive Carriers
+    succ = successive_carriers or trip_data.get("successive_carriers", [])
+    for sc in succ:
+        scp = _sub(cons, "ram:CarrierTradeParty")
+        _sub(scp, "ram:Name", sc.get("carrier_name", ""))
+        if sc.get("carrier_address"):
+            sca = _sub(scp, "ram:PostalTradeAddress")
+            _sub(sca, "ram:LineOne", sc["carrier_address"])
+            if sc.get("carrier_country"):
+                _sub(sca, "ram:CountryID", sc["carrier_country"])
 
     # Dangerous Goods
-    if trip_data.get("adr_info_json"):
+    adr_raw = trip_data.get("adr_info_json")
+    if adr_raw:
         try:
-            adr_items = json.loads(trip_data["adr_info_json"])
-            for adr in adr_items:
-                dg = _sub(cons, "ram:IncludedDangerousGoods")
-                if adr.get("un_no"):
-                    _sub(dg, "ram:UNDGIdentifier", adr["un_no"])
-                if adr.get("adr_class"):
-                    _sub(dg, "ram:ClassificationCode", adr["adr_class"])
-                if adr.get("packing_group"):
-                    _sub(dg, "ram:PackingGroupCode", adr["packing_group"])
-                if adr.get("tunnel_code"):
-                    _sub(dg, "ram:TunnelRestrictionCode", adr["tunnel_code"])
-                if adr.get("quantity"):
-                    _sub(dg, "ram:GrossMassMeasure", str(adr["quantity"]),
-                         {"unitCode": "KGM"})
-        except (json.JSONDecodeError, TypeError):
-            pass
+            if isinstance(adr_raw, str):
+                adr_items = json.loads(adr_raw)
+            else:
+                adr_items = adr_raw
+            if isinstance(adr_items, list):
+                for adr in adr_items:
+                    dg = _sub(cons, "ram:IncludedDangerousGoods")
+                    if adr.get("un_no"):
+                        _sub(dg, "ram:UNDGIdentifier", adr["un_no"])
+                    if adr.get("adr_class"):
+                        _sub(dg, "ram:ClassificationCode", adr["adr_class"])
+                    if adr.get("packing_group"):
+                        _sub(dg, "ram:PackingGroupCode", adr["packing_group"])
+                    if adr.get("tunnel_code"):
+                        _sub(dg, "ram:TunnelRestrictionCode", adr["tunnel_code"])
+                    if adr.get("quantity"):
+                        _sub(dg, "ram:GrossMassMeasure", str(adr["quantity"]),
+                             {"unitCode": "KGM"})
+        except (json.JSONDecodeError, TypeError) as exc:
+            logger.debug("ADR XML generation skipped: %s", exc)
 
     # Remarks / Instructions
     if trip_data.get("carrier_instructions") or trip_data.get("carrier_reservations"):
@@ -181,17 +207,13 @@ def generate_efti_xml(
         if trip_data.get("carrier_reservations"):
             _sub(remarks, "ram:Content", trip_data["carrier_reservations"])
 
-    # Signatures placeholder
-    sigs = _sub(root, "rsm:SpecifiedSignature")
+    # Signatures — one SpecifiedSignature per party per UN/CEFACT MMT-RDM
     for party in ("sender", "carrier", "consignee"):
+        sigs = _sub(root, "rsm:SpecifiedSignature")
         sig = _sub(sigs, "ram:ExchangedDocument")
         _sub(sig, "ram:TypeCode", party)
         _sub(sig, "ram:StatusCode", "unsigned")
 
-    # Pretty-print
-    rough = tostring(root, encoding="unicode")
-    try:
-        dom = minidom.parseString(rough)
-        return dom.toprettyxml(indent="  ", encoding="UTF-8").decode("utf-8")
-    except Exception:
-        return rough
+    # Pretty-print (Python 3.9+ indent)
+    indent(root, space="  ")
+    return '<?xml version="1.0" encoding="UTF-8"?>\n' + tostring(root, encoding="unicode")
