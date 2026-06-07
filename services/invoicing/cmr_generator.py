@@ -605,26 +605,69 @@ class CMRGenerator:
         wt_val = (f"{ctx['gross_weight_kg']} kg" if ctx.get("gross_weight_kg") else "—")
         vol_val = (f"{ctx['volume_m3']} m³" if ctx.get("volume_m3") else "—")
 
+        # Header cell style: bold, small, tight leading, wraps inside cell width
+        hdr_style = ParagraphStyle(
+            "cargo_hdr", parent=self.styles["Normal"], fontName="Helvetica-Bold",
+            fontSize=5.5, leading=6.5, textColor=self.text_color,
+            alignment=TA_LEFT, wordWrap="CJK",
+        )
+        val_style = ParagraphStyle(
+            "cargo_val", parent=self.styles["Normal"], fontName="Helvetica",
+            fontSize=7.5, leading=9, textColor=self.text_color,
+            alignment=TA_LEFT, wordWrap="CJK",
+        )
+
+        def H(s):
+            return Paragraph(s, hdr_style)
+
+        def V(s):
+            return Paragraph(str(s), val_style)
+
         rows = [
-            # Row 0: Box numbers header
-            ["6. MARKS & NUMBERS", "7. PACKAGES", "8. KIND", "9. NATURE OF GOODS",
-             "10. HS CODE", "11-12. WT / VOL"],
+            # Row 0: Box numbers header (Paragraphs wrap inside cell width)
+            [H("6. MARKS &amp; NUMBERS"), H("7. PKGS"), H("8. KIND"),
+             H("9. NATURE OF GOODS"), H("10. HS CODE"), H("11-12. WT / VOL")],
             # Row 1: Marks (spans all 6 columns)
-            [marks_val, "", "", "", "", ""],
+            [V(marks_val), "", "", "", "", ""],
             # Row 2: Detail data
-            [pkg_val, kind_val, nature_val, hs_val, wt_val, vol_val],
+            [V(pkg_val), V(kind_val), V(nature_val), V(hs_val), V(wt_val), V(vol_val)],
         ]
 
         # Conditional ADR rows
         if ctx.get("has_adr"):
             adr_items = ctx["adr_items"]
-            rows.append(["ADR — DANGEROUS GOODS", "", "", "", "", ""])
-            rows.append(["UN No", "Class", "Pack Grp", "Tunnel", "Qty", "Net Wt(kг)"])
+            adr_label_style = ParagraphStyle(
+                "adr_label", parent=self.styles["Normal"], fontName="Helvetica-Bold",
+                fontSize=6.5, leading=8, textColor=colors.HexColor("#991b1b"),
+                alignment=TA_LEFT, wordWrap="CJK",
+            )
+            adr_hdr_style = ParagraphStyle(
+                "adr_hdr", parent=self.styles["Normal"], fontName="Helvetica-Bold",
+                fontSize=5.5, leading=6.5, textColor=self.text_color,
+                alignment=TA_CENTER, wordWrap="CJK",
+            )
+            adr_val_style = ParagraphStyle(
+                "adr_val", parent=self.styles["Normal"], fontName="Helvetica",
+                fontSize=7, leading=8.5, textColor=self.text_color,
+                alignment=TA_CENTER, wordWrap="CJK",
+            )
+            rows.append([
+                Paragraph("ADR — DANGEROUS GOODS", adr_label_style),
+                "", "", "", "", ""
+            ])
+            rows.append([
+                Paragraph("UN No", adr_hdr_style), Paragraph("Class", adr_hdr_style),
+                Paragraph("Pack Grp", adr_hdr_style), Paragraph("Tunnel", adr_hdr_style),
+                Paragraph("Qty", adr_hdr_style), Paragraph("Net Wt", adr_hdr_style),
+            ])
             for item in adr_items:
                 rows.append([
-                    item.get("un_no", ""), item.get("adr_class", ""),
-                    item.get("packing_group", ""), item.get("tunnel_code", ""),
-                    item.get("quantity", ""), item.get("net_weight", ""),
+                    Paragraph(str(item.get("un_no", "")), adr_val_style),
+                    Paragraph(str(item.get("adr_class", "")), adr_val_style),
+                    Paragraph(str(item.get("packing_group", "")), adr_val_style),
+                    Paragraph(str(item.get("tunnel_code", "")), adr_val_style),
+                    Paragraph(str(item.get("quantity", "")), adr_val_style),
+                    Paragraph(str(item.get("net_weight", "")), adr_val_style),
                 ])
 
         tbl = Table(rows, colWidths=c6)
