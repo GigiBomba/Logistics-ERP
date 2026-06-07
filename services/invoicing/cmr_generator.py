@@ -13,7 +13,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak,
+    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
     HRFlowable, KeepTogether, Image,
 )
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
@@ -311,23 +311,18 @@ class CMRGenerator:
         doc = SimpleDocTemplate(
             filepath, pagesize=A4,
             leftMargin=10 * mm, rightMargin=10 * mm,
-            topMargin=8 * mm, bottomMargin=8 * mm,
+            topMargin=10 * mm, bottomMargin=10 * mm,
             title=f"{cmr_number} - {suffix} Copy",
             author="Operion ERP",
             subject=f"eCMR {cmr_number}",
         )
 
-        story = []
-        story.extend(self._build_page1(ctx, color_hex, color_light, bar_text, desig_text))
-        story.append(PageBreak())
-        story.extend(self._build_page2(ctx, color_hex, color_light, bar_text, desig_text))
+        story = self._build_story(ctx, color_hex, bar_text, desig_text)
 
         def _draw_page_bg(canvas, doc):
-            """Subtle top-edge color bar for copy identification."""
+            """Top-edge color bar for copy identification."""
             canvas.saveState()
             canvas.setFillColor(colors.HexColor(color_hex))
-            canvas.setStrokeColor(colors.HexColor(color_hex))
-            # Very thin bar at top edge
             canvas.rect(0, A4[1] - 3 * mm, A4[0], 3 * mm, fill=1, stroke=0)
             canvas.restoreState()
 
@@ -346,17 +341,17 @@ class CMRGenerator:
 
         return filepath
 
-    # ── Page Builders ───────────────────────────────────────────────
+    # ── Continuous Story Builder ────────────────────────────────────
 
-    def _build_page1(self, ctx, color_hex, color_light, bar_text, desig_text):
+    def _build_story(self, ctx, color_hex, bar_text, desig_text):
+        """Build one continuous story — ReportLab auto-paginates when needed."""
         story = []
         w = A4[0] - 20 * mm
+        line_color = colors.HexColor(color_hex)
 
-        # Copy badge (top-right, small colored pill)
+        # ── Header ──
         story.append(self._copy_badge(color_hex, bar_text))
         story.append(Spacer(1, 2 * mm))
-
-        # Document title
         story.append(Paragraph(
             "<b>CMR</b> &mdash; International Consignment Note", self.title_style))
         story.append(Paragraph(
@@ -366,65 +361,46 @@ class CMRGenerator:
             f"<b>Ref:</b> {ctx['cmr_number']} &nbsp;&nbsp; <b>Trip:</b> #{ctx['trip_id']} "
             f"&nbsp;&nbsp; <b>Date:</b> {datetime.now().strftime('%d %b %Y')}",
             self.footer_style))
-        story.append(self._hline())
+        story.append(self._hline(line_color, 0.75))
 
-        # ── Section 1: Consignor & Consignee ──
+        # ── 1. Consignor ──
         story.append(self._section_label("1. CONSIGNOR / EXPEDITOR"))
-        left = self._party_text(ctx, "consignor")
-        story.append(Paragraph(left, self.sec_val))
-        story.append(Spacer(1, 2 * mm))
+        story.append(Paragraph(self._party_text(ctx, "consignor"), self.sec_val))
+        story.append(Spacer(1, 1 * mm))
 
+        # ── 2. Consignee ──
         story.append(self._section_label("2. CONSIGNEE / DESTINATAR"))
-        right = self._party_text(ctx, "consignee")
-        story.append(Paragraph(right, self.sec_val))
-        story.append(self._hline())
+        story.append(Paragraph(self._party_text(ctx, "consignee"), self.sec_val))
+        story.append(self._hline(line_color, 0.5))
 
-        # ── Section 2: Loading & Delivery ──
-        load_text = self._location_text(ctx, "loading")
-        del_text = self._location_text(ctx, "delivery")
+        # ── 3 & 4. Loading & Delivery ──
         story.append(self._two_col_table(
-            [("3. PLACE OF TAKING OVER", load_text),
-             ("4. PLACE OF DELIVERY", del_text)], w))
-        story.append(self._hline())
+            [("3. PLACE OF TAKING OVER", self._location_text(ctx, "loading")),
+             ("4. PLACE OF DELIVERY", self._location_text(ctx, "delivery"))],
+            w, line_color))
+        story.append(self._hline(line_color, 0.5))
 
-        # ── Section 3: Cargo Table ──
-        story.append(self._section_label("GOODS / MARFĂ"))
-        story.append(self._cargo_table(ctx, w))
-        story.append(self._hline())
-
-        # ── Section 4: Documents ──
+        # ── 5. Documents ──
         docs = ctx.get("documents_attached", "") or "None"
         story.append(self._section_label("5. DOCUMENTS ATTACHED / DOCUMENTE ATAȘATE"))
         story.append(Paragraph(docs, self.sec_small))
-        story.append(self._hline())
+        story.append(self._hline(line_color, 0.5))
 
-        # Footer
-        story.append(Paragraph(desig_text, self.footer_style))
-        return story
+        # ── Cargo Table ──
+        story.append(self._section_label("GOODS / MARFĂ"))
+        story.append(self._cargo_table(ctx, w, line_color))
+        story.append(self._hline(line_color, 0.5))
 
-    def _build_page2(self, ctx, color_hex, color_light, bar_text, desig_text):
-        story = []
-        w = A4[0] - 20 * mm
-
-        story.append(self._copy_badge(color_hex, bar_text))
-        story.append(Spacer(1, 2 * mm))
-        story.append(Paragraph(
-            f"CMR <b>{ctx['cmr_number']}</b> &nbsp;&mdash;&nbsp; Continuation / Continuare",
-            self.subtitle_style))
-        story.append(self._hline())
-
-        # ── Instructions & Reservations ──
+        # ── 12 & 13. Instructions & Reservations ──
         inst = ctx.get("carrier_instructions", "") or "None"
-        story.append(self._section_label("12. SENDER'S INSTRUCTIONS"))
-        story.append(Paragraph(inst, self.sec_small))
-        story.append(self._hline(0.3))
-
         res = ctx.get("carrier_reservations", "") or "None"
-        story.append(self._section_label("13. CARRIER'S RESERVATIONS"))
-        story.append(Paragraph(res, self.sec_small))
-        story.append(self._hline())
+        story.append(self._two_col_table(
+            [("12. SENDER'S INSTRUCTIONS", inst),
+             ("13. CARRIER'S RESERVATIONS", res)],
+            w, line_color))
+        story.append(self._hline(line_color, 0.5))
 
-        # ── Agreements & Charges ──
+        # ── 14 & 15. Agreements & Charges ──
         agr = ctx.get("special_agreements", "") or "None"
         payer = ctx.get("carriage_payer", "")
         charges = (
@@ -437,21 +413,22 @@ class CMRGenerator:
             charges += f"<br/>Distance: {dist} km"
         story.append(self._two_col_table(
             [("14. SPECIAL AGREEMENTS", agr),
-             ("15. CARRIAGE CHARGES", charges)], w))
-        story.append(self._hline())
+             ("15. CARRIAGE CHARGES", charges)],
+            w, line_color))
+        story.append(self._hline(line_color, 0.5))
 
-        # ── Carrier ──
+        # ── 16. Carrier ──
         story.append(self._section_label("16. CARRIER / TRANSPORTATOR"))
         story.append(Paragraph(self._carrier_text(ctx), self.sec_val))
-        story.append(self._hline())
+        story.append(self._hline(line_color, 0.5))
 
-        # ── Successive Carriers ──
+        # ── 17. Successive Carriers ──
         if ctx.get("successive_carriers"):
             story.append(self._section_label("17. SUCCESSIVE CARRIERS"))
             story.append(Paragraph(self._successive_text(ctx), self.sec_small))
-            story.append(self._hline())
+            story.append(self._hline(line_color, 0.5))
 
-        # ── Vehicle / Trailer / Driver ──
+        # ── 18, 19, 20. Vehicle / Trailer / Driver ──
         v_text = ctx.get("truck_plate", "") or "&mdash;"
         t_text = ctx.get("trailer_plate", "") or "&mdash;"
         d_lines = []
@@ -463,30 +440,31 @@ class CMRGenerator:
         story.append(self._three_col_table(
             [("18. VEHICLE", v_text),
              ("19. TRAILER", t_text),
-             ("20. DRIVER", d_text)], w))
-        story.append(self._hline())
+             ("20. DRIVER", d_text)],
+            w, line_color))
+        story.append(self._hline(line_color, 0.5))
 
-        # ── ADR ──
+        # ── 21. ADR ──
         if ctx.get("has_adr"):
             story.append(self._section_label("21. DANGEROUS GOODS (ADR)"))
-            story.append(self._adr_table(ctx, w))
-            story.append(self._hline())
+            story.append(self._adr_table(ctx, w, line_color))
+            story.append(self._hline(line_color, 0.5))
 
-        # ── Signatures ──
+        # ── 22-24. Signatures ──
         story.append(self._section_label("SIGNATURES / SEMNĂTURI"))
-        story.append(self._signature_row(ctx, w))
-        story.append(self._hline())
+        story.append(self._signature_row(ctx, w, line_color))
+        story.append(self._hline(line_color, 0.5))
 
-        # ── Receipt ──
+        # ── 25. Receipt ──
         story.append(self._section_label("25. CONSIGNMENT RECEIVED / RECEPTIE MARFĂ"))
         story.append(self._receipt_block())
 
-        # Page footer
+        # ── Footer ──
         story.append(Spacer(1, 4 * mm))
-        story.append(self._hline(0.3))
+        story.append(self._hline(line_color, 0.3))
         story.append(Paragraph(
             f"Generated by Operion ERP &middot; {datetime.now().strftime('%d/%m/%Y %H:%M')} "
-            f"&middot; CMR {ctx['cmr_number']}", self.footer_style))
+            f"&middot; CMR {ctx['cmr_number']} &middot; {desig_text}", self.footer_style))
         return story
 
     # ── Content Helpers ─────────────────────────────────────────────
@@ -567,8 +545,8 @@ class CMRGenerator:
     def _section_label(self, text):
         return Paragraph(text, self.sec_label)
 
-    def _hline(self, thickness=0.5):
-        return HRFlowable(width="100%", thickness=thickness, color=self.border_color)
+    def _hline(self, color, thickness=0.5):
+        return HRFlowable(width="100%", thickness=thickness, color=color)
 
     def _copy_badge(self, color_hex, text):
         """Small colored badge at top."""
@@ -585,7 +563,7 @@ class CMRGenerator:
         ]))
         return badge
 
-    def _two_col_table(self, items, total_w):
+    def _two_col_table(self, items, total_w, line_color):
         """Clean two-column layout: label+value pairs side by side."""
         half = total_w / 2
         left_label, left_val = items[0]
@@ -602,11 +580,11 @@ class CMRGenerator:
             ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 1 * mm),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.3, self.border_color),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.3, line_color),
         ]))
         return tbl
 
-    def _three_col_table(self, items, total_w):
+    def _three_col_table(self, items, total_w, line_color):
         """Clean three-column layout."""
         third = total_w / 3
         labels = [Paragraph(it[0], self.sec_label) for it in items]
@@ -620,11 +598,11 @@ class CMRGenerator:
             ('TOPPADDING', (0, 0), (-1, -1), 1 * mm),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 1 * mm),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.3, self.border_color),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.3, line_color),
         ]))
         return tbl
 
-    def _cargo_table(self, ctx, total_w):
+    def _cargo_table(self, ctx, total_w, line_color):
         """Professional cargo table — the heart of the CMR."""
         marks = ctx.get("cargo_marks", "") or "&mdash;"
         cnt = ctx.get("package_count", "") or ""
@@ -637,7 +615,6 @@ class CMRGenerator:
         volume = f"<b>{volume} m³</b>" if volume else "&mdash;"
         hs = ctx.get("hs_code", "") or "&mdash;"
 
-        # Header + one data row
         hdr = ["Marks & Nos", "Packages", "Description", "Weight", "Volume", "HS Code"]
         row = [marks, pkg, desc, weight, volume, hs]
         data = [hdr, row]
@@ -645,21 +622,16 @@ class CMRGenerator:
         cw = total_w / 6
         tbl = Table(data, colWidths=[cw] * 6)
         tbl.setStyle(TableStyle([
-            # Header styling
             ('BACKGROUND', (0, 0), (-1, 0), self.header_bg),
             ('TEXTCOLOR', (0, 0), (-1, 0), self.text_color),
             ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
             ('FONTSIZE', (0, 0), (-1, 0), 7),
-            # Body styling
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
             ('FONTSIZE', (0, 1), (-1, -1), 8),
-            # Grid
-            ('GRID', (0, 0), (-1, -1), 0.3, self.border_color),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.5, self.border_color),
-            # Alignment
+            ('GRID', (0, 0), (-1, -1), 0.5, line_color),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.75, line_color),
             ('ALIGN', (0, 0), (-1, -1), 'LEFT'),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
-            # Padding
             ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
             ('RIGHTPADDING', (0, 0), (-1, -1), 2 * mm),
             ('TOPPADDING', (0, 0), (-1, -1), 1.5 * mm),
@@ -667,7 +639,7 @@ class CMRGenerator:
         ]))
         return tbl
 
-    def _adr_table(self, ctx, total_w):
+    def _adr_table(self, ctx, total_w, line_color):
         """Professional ADR dangerous goods table."""
         adr_items = ctx.get("adr_items", [])
         if not adr_items:
@@ -692,8 +664,8 @@ class CMRGenerator:
             ('FONTSIZE', (0, 0), (-1, 0), 7),
             ('FONTNAME', (0, 1), (-1, -1), 'Helvetica'),
             ('FONTSIZE', (0, 1), (-1, -1), 7.5),
-            ('GRID', (0, 0), (-1, -1), 0.3, self.border_color),
-            ('LINEBELOW', (0, 0), (-1, 0), 0.5, colors.HexColor("#ef4444")),
+            ('GRID', (0, 0), (-1, -1), 0.5, line_color),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.75, line_color),
             ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
             ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
             ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
@@ -704,14 +676,14 @@ class CMRGenerator:
         ]))
         return tbl
 
-    def _signature_row(self, ctx, total_w):
+    def _signature_row(self, ctx, total_w, line_color):
         """Three signature pads side by side, clean and spacious."""
         third = total_w / 3
         pads = []
         for n, label in [(22, "Sender / Expeditor"),
                          (23, "Carrier / Transportator"),
                          (24, "Consignee / Destinatar")]:
-            pads.append(self._signature_pad(label, ctx))
+            pads.append(self._signature_pad(label, ctx, third))
         data = [pads]
         tbl = Table(data, colWidths=[third, third, third])
         tbl.setStyle(TableStyle([
@@ -721,16 +693,16 @@ class CMRGenerator:
             ('TOPPADDING', (0, 0), (-1, -1), 0),
             ('BOTTOMPADDING', (0, 0), (-1, -1), 0),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LINEABOVE', (0, 0), (-1, 0), 0.5, line_color),
         ]))
         return tbl
 
-    def _signature_pad(self, label, ctx):
+    def _signature_pad(self, label, ctx, pad_width):
         """Single signature pad with dotted lines and image space."""
         elements = []
         elements.append(Paragraph(f"<b>{label}</b>", self.sec_label))
         elements.append(Spacer(1, 2 * mm))
 
-        # Dotted lines for Date, Place, Name, Signature
         line = (
             "Date: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
             " &nbsp;&nbsp; Place: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
@@ -763,7 +735,7 @@ class CMRGenerator:
             except Exception:
                 pass
         if imgs:
-            inner_w = third - 6 * mm
+            inner_w = pad_width - 6 * mm
             if len(imgs) == 2:
                 img_tbl = Table([imgs], colWidths=[inner_w, inner_w])
                 img_tbl.setStyle(TableStyle([
