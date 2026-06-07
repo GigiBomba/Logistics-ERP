@@ -215,6 +215,20 @@ class CMRGenerator:
             cmr_number, seq = self._next_cmr_number()
             ctx["cmr_number"] = cmr_number
             ctx["cmr_sequence"] = seq
+        # Consignor fields — override company config from form data
+        ctx.setdefault("consignor_name", trip_data.get("consignor_name") or conf.get("company_name", ""))
+        ctx.setdefault("consignor_address", trip_data.get("consignor_address") or conf.get("address", ""))
+        ctx.setdefault("consignor_phone", trip_data.get("consignor_phone") or conf.get("phone", ""))
+        ctx.setdefault("consignor_vat", trip_data.get("consignor_vat") or conf.get("cui", ""))
+        ctx.setdefault("consignor_eori", trip_data.get("consignor_eori") or trip_data.get("eori_number", ""))
+        # Carrier fields — override company config from form data
+        ctx.setdefault("carrier_name", trip_data.get("carrier_name") or conf.get("company_name", ""))
+        ctx.setdefault("carrier_address", trip_data.get("carrier_address") or conf.get("address", ""))
+        ctx.setdefault("carrier_phone", trip_data.get("carrier_phone") or conf.get("phone", ""))
+        ctx.setdefault("carrier_email", trip_data.get("carrier_email") or conf.get("email", ""))
+        ctx.setdefault("carrier_reg", trip_data.get("carrier_reg") or conf.get("reg_number", ""))
+        ctx.setdefault("carrier_insurance", trip_data.get("cmr_insurance_number") or conf.get("cmr_insurance", ""))
+        # Shared company config (used as default for backward compat)
         ctx.setdefault("company_name", conf.get("company_name", ""))
         ctx.setdefault("company_address", conf.get("address", ""))
         ctx.setdefault("company_phone", conf.get("phone", ""))
@@ -230,7 +244,7 @@ class CMRGenerator:
         ctx.setdefault("driver_name", trip_data.get("driver_name", ""))
         ctx.setdefault("driver_license", trip_data.get("driver_license",
                           trip_data.get("license_number", "")))
-        ctx.setdefault("cmr_insurance", trip_data.get("cmr_insurance_number", ""))
+        ctx.setdefault("cmr_insurance", trip_data.get("cmr_insurance_number", conf.get("cmr_insurance", "")))
         ctx.setdefault("eori_number", trip_data.get("eori_number", ""))
         ctx.setdefault("loading_country", trip_data.get("loading_country", ""))
         ctx.setdefault("delivery_country", trip_data.get("delivery_country", ""))
@@ -432,12 +446,12 @@ class CMRGenerator:
 
     def _party_text(self, ctx, role):
         if role == "consignor":
-            lines = [f"<b>{ctx.get('company_name', '')}</b>", ctx.get("company_address", "")]
-            cui = ctx.get("company_cui", "")
+            lines = [f"<b>{ctx.get('consignor_name', '')}</b>", ctx.get("consignor_address", "")]
+            cui = ctx.get("consignor_vat", "")
             if cui: lines.append(f"VAT/CUI: {cui}")
-            eori = ctx.get("eori_number", "")
+            eori = ctx.get("consignor_eori", "")
             if eori: lines.append(f"EORI: {eori}")
-            phone = ctx.get("company_phone", "")
+            phone = ctx.get("consignor_phone", "")
             if phone: lines.append(f"Tel: {phone}")
         else:
             lines = [f"<b>{ctx.get('client_name', '')}</b>", ctx.get("client_address", "")]
@@ -464,14 +478,14 @@ class CMRGenerator:
         return "<br/>".join(parts) if parts else "—"
 
     def _carrier_text(self, ctx):
-        lines = [f"<b>{ctx.get('company_name', '')}</b>", ctx.get("company_address", "")]
-        phone = ctx.get("company_phone", "")
+        lines = [f"<b>{ctx.get('carrier_name', '')}</b>", ctx.get("carrier_address", "")]
+        phone = ctx.get("carrier_phone", "")
         if phone: lines.append(f"Tel: {phone}")
-        email = ctx.get("company_email", "")
+        email = ctx.get("carrier_email", "")
         if email: lines.append(f"Email: {email}")
-        reg = ctx.get("company_reg", "")
+        reg = ctx.get("carrier_reg", "")
         if reg: lines.append(f"Reg No: {reg}")
-        ins = ctx.get("cmr_insurance", "")
+        ins = ctx.get("carrier_insurance", "")
         if ins: lines.append(f"CMR Insurance: {ins}")
         return "<br/>".join(lines)
 

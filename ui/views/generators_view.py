@@ -102,6 +102,7 @@ class GeneratorsView(ctk.CTkFrame):
         self._build_language_section(self._cmr_scroll)
         self._build_trip_section(self._cmr_scroll)
         self._build_consignment_section(self._cmr_scroll)
+        self._build_carrier_section(self._cmr_scroll)
         self._build_transport_section(self._cmr_scroll)
         self._build_cargo_section(self._cmr_scroll)
         self._build_instructions_section(self._cmr_scroll)
@@ -265,6 +266,11 @@ class GeneratorsView(ctk.CTkFrame):
                      text_color=COLORS["text_muted"]).pack(side="left", padx=(S["1"], S["2"]))
         ctk.CTkLabel(vat_row, text="EORI", font=FONTS["small"],
                      text_color=COLORS["text_muted"]).pack(side="left", padx=(S["1"], 0))
+        self._cmr_consignor_phone = ctk.CTkEntry(c_left, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"],
+            placeholder_text="Phone")
+        self._cmr_consignor_phone.pack(fill="x", pady=(S["1"], 0))
 
         c_right = ctk.CTkFrame(cols, fg_color="transparent")
         c_right.grid(row=0, column=1, sticky="new")
@@ -290,26 +296,53 @@ class GeneratorsView(ctk.CTkFrame):
         self._cmr_consignee_eori.pack(side="left", fill="x", expand=True)
         self._cmr_consignee_contact = ctk.CTkEntry(c_right, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_consignee_contact.pack(fill="x")
+            text_color=COLORS["text_secondary"], font=FONTS["body"],
+            placeholder_text="Contact Person")
+        self._cmr_consignee_contact.pack(fill="x", pady=(S["1"], 0))
 
-        carr_f = ctk.CTkFrame(card, fg_color="transparent")
-        carr_f.pack(fill="x", padx=S["4"], pady=(0, S["4"]))
-        ctk.CTkLabel(carr_f, text="CARRIER", font=FONTS["label"],
-                     text_color=COLORS["accent"]).pack(anchor="w")
-        cr = ctk.CTkFrame(carr_f, fg_color="transparent")
-        cr.pack(fill="x")
-        self._cmr_carrier_name = ctk.CTkEntry(cr, height=28,
+    # ── Carrier Details ─────────────────────────────────────────────
+
+    def _build_carrier_section(self, parent):
+        card = self._section_card(parent, accent_color=COLORS["accent"])
+        self._section_label(card, "Carrier / Transportator", icon="\U0001F69A")
+
+        name_f = ctk.CTkFrame(card, fg_color="transparent")
+        name_f.pack(fill="x", padx=S["4"], pady=(S["1"], S["1"]))
+        self._cmr_carrier_name = ctk.CTkEntry(name_f, height=28,
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
-        self._cmr_carrier_name.pack(fill="x", pady=(0, S["1"]))
+        self._cmr_carrier_name.pack(fill="x")
+        ctk.CTkLabel(name_f, text="Company Name", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(anchor="w")
 
-        cd = ctk.CTkFrame(carr_f, fg_color="transparent")
-        cd.pack(fill="x")
-        cd.columnconfigure(0, weight=1)
-        cd.columnconfigure(1, weight=1)
-        cd.columnconfigure(2, weight=1)
-        vf = ctk.CTkFrame(cd, fg_color="transparent")
+        self._cmr_carrier_addr = ctk.CTkEntry(card, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"],
+            placeholder_text="Address")
+        self._cmr_carrier_addr.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
+
+        contact_row = ctk.CTkFrame(card, fg_color="transparent")
+        contact_row.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
+        contact_row.columnconfigure((0, 1), weight=1)
+        self._cmr_carrier_phone = self._entry(contact_row, "Phone", 28)
+        self._cmr_carrier_phone.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
+        self._cmr_carrier_email = self._entry(contact_row, "Email", 28)
+        self._cmr_carrier_email.grid(row=0, column=1, sticky="ew")
+
+        company_row = ctk.CTkFrame(card, fg_color="transparent")
+        company_row.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
+        company_row.columnconfigure((0, 1), weight=1)
+        self._cmr_carrier_reg = self._entry(company_row, "Reg. Number", 28)
+        self._cmr_carrier_reg.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
+        self._cmr_insurance = self._entry(company_row, "CMR Insurance No.", 28)
+        self._cmr_insurance.grid(row=0, column=1, sticky="ew")
+
+        veh = ctk.CTkFrame(card, fg_color="transparent")
+        veh.pack(fill="x", padx=S["4"], pady=(0, S["1"]))
+        veh.columnconfigure(0, weight=1)
+        veh.columnconfigure(1, weight=1)
+        veh.columnconfigure(2, weight=1)
+        vf = ctk.CTkFrame(veh, fg_color="transparent")
         vf.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
         ctk.CTkLabel(vf, text="Vehicle Plate", font=FONTS["small"],
                      text_color=COLORS["text_muted"]).pack(anchor="w")
@@ -317,7 +350,7 @@ class GeneratorsView(ctk.CTkFrame):
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_vehicle.pack(fill="x")
-        tf = ctk.CTkFrame(cd, fg_color="transparent")
+        tf = ctk.CTkFrame(veh, fg_color="transparent")
         tf.grid(row=0, column=1, sticky="ew", padx=(0, S["1"]))
         ctk.CTkLabel(tf, text="Trailer Plate", font=FONTS["small"],
                      text_color=COLORS["text_muted"]).pack(anchor="w")
@@ -325,7 +358,7 @@ class GeneratorsView(ctk.CTkFrame):
             fg_color=COLORS["bg_input"], border_color=COLORS["border"],
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_trailer.pack(fill="x")
-        df = ctk.CTkFrame(cd, fg_color="transparent")
+        df = ctk.CTkFrame(veh, fg_color="transparent")
         df.grid(row=0, column=2, sticky="ew")
         ctk.CTkLabel(df, text="Driver", font=FONTS["small"],
                      text_color=COLORS["text_muted"]).pack(anchor="w")
@@ -334,14 +367,13 @@ class GeneratorsView(ctk.CTkFrame):
             text_color=COLORS["text_secondary"], font=FONTS["body"])
         self._cmr_driver_name.pack(fill="x")
 
-        dl = ctk.CTkFrame(carr_f, fg_color="transparent")
-        dl.pack(fill="x")
-        dl.columnconfigure(0, weight=1)
-        dl.columnconfigure(1, weight=1)
-        self._cmr_driver_license = self._entry(dl, "Driver License", 28)
-        self._cmr_driver_license.grid(row=0, column=0, sticky="ew", padx=(0, S["1"]))
-        self._cmr_insurance = self._entry(dl, "CMR Insurance No.", 28)
-        self._cmr_insurance.grid(row=0, column=1, sticky="ew")
+        dl = ctk.CTkFrame(card, fg_color="transparent")
+        dl.pack(fill="x", padx=S["4"], pady=(0, S["4"]))
+        self._cmr_driver_license = ctk.CTkEntry(dl, height=28,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"],
+            placeholder_text="Driver License")
+        self._cmr_driver_license.pack(fill="x")
 
     # ── Transport Details ───────────────────────────────────────────
 
@@ -485,6 +517,16 @@ class GeneratorsView(ctk.CTkFrame):
                            value="consignee", font=FONTS["body"],
                            text_color=COLORS["text_primary"],
                            fg_color=COLORS["accent"]).pack(side="left", padx=S["2"])
+
+        dist_f = ctk.CTkFrame(card, fg_color="transparent")
+        dist_f.pack(fill="x", padx=S["4"], pady=(0, S["4"]))
+        self._cmr_distance = ctk.CTkEntry(dist_f, height=28, width=100,
+            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
+            text_color=COLORS["text_secondary"], font=FONTS["body"],
+            placeholder_text="Distance (km)")
+        self._cmr_distance.pack(side="left")
+        ctk.CTkLabel(dist_f, text="Total distance (km)", font=FONTS["small"],
+                     text_color=COLORS["text_muted"]).pack(side="left", padx=S["2"])
 
     # ── ADR Section ────────────────────────────────────────────────
 
@@ -764,6 +806,7 @@ class GeneratorsView(ctk.CTkFrame):
         self._set_entry(self._cmr_consignor_addr, conf.get("address", ""))
         self._set_entry(self._cmr_consignor_vat, conf.get("cui", ""))
         self._set_entry(self._cmr_consignor_eori, conf.get("eori_number", ""))
+        self._set_entry(self._cmr_consignor_phone, conf.get("phone", ""))
 
         self._set_entry(self._cmr_consignee_name, trip.get("client_name", ""))
         if trip.get("client_id"):
@@ -785,6 +828,10 @@ class GeneratorsView(ctk.CTkFrame):
                 pass
 
         self._set_entry(self._cmr_carrier_name, conf.get("company_name", ""))
+        self._set_entry(self._cmr_carrier_addr, conf.get("address", ""))
+        self._set_entry(self._cmr_carrier_phone, conf.get("phone", ""))
+        self._set_entry(self._cmr_carrier_email, conf.get("email", ""))
+        self._set_entry(self._cmr_carrier_reg, conf.get("reg_number", ""))
 
         if trip.get("truck_id"):
             try:
@@ -839,6 +886,7 @@ class GeneratorsView(ctk.CTkFrame):
         payer = trip.get("carriage_payer", "")
         if payer in ("sender", "consignee"):
             self._cmr_payer_var.set(payer)
+        self._set_entry(self._cmr_distance, trip.get("distance_km", ""))
 
         self._set_entry(self._cmr_sig_path_var, conf.get("signature_path", ""))
         self._set_entry(self._cmr_stamp_path_var, conf.get("stamp_path", ""))
@@ -919,15 +967,24 @@ class GeneratorsView(ctk.CTkFrame):
         trip_data["trip_id"] = trip_id
         trip_data["client_name"] = self._cmr_consignee_name.get()
         trip_data["client_address"] = self._cmr_consignee_addr.get()
+        trip_data["consignee_vat"] = self._cmr_consignee_vat.get()
+        trip_data["consignee_eori"] = self._cmr_consignee_eori.get()
+        trip_data["consignee_contact"] = self._cmr_consignee_contact.get()
+        trip_data["consignor_name"] = self._cmr_consignor_name.get()
+        trip_data["consignor_address"] = self._cmr_consignor_addr.get()
+        trip_data["consignor_vat"] = self._cmr_consignor_vat.get()
+        trip_data["consignor_eori"] = self._cmr_consignor_eori.get()
+        trip_data["consignor_phone"] = self._cmr_consignor_phone.get()
+        trip_data["carrier_name"] = self._cmr_carrier_name.get()
+        trip_data["carrier_address"] = self._cmr_carrier_addr.get()
+        trip_data["carrier_phone"] = self._cmr_carrier_phone.get()
+        trip_data["carrier_email"] = self._cmr_carrier_email.get()
+        trip_data["carrier_reg"] = self._cmr_carrier_reg.get()
+        trip_data["cmr_insurance_number"] = self._cmr_insurance.get()
         trip_data["truck_plate"] = self._cmr_vehicle.get()
         trip_data["trailer_plate"] = self._cmr_trailer.get()
         trip_data["driver_name"] = self._cmr_driver_name.get()
         trip_data["driver_license"] = self._cmr_driver_license.get()
-        trip_data["cmr_insurance_number"] = self._cmr_insurance.get()
-        trip_data["eori_number"] = self._cmr_consignor_eori.get()
-        trip_data["consignee_vat"] = self._cmr_consignee_vat.get()
-        trip_data["consignee_eori"] = self._cmr_consignee_eori.get()
-        trip_data["consignee_contact"] = self._cmr_consignee_contact.get()
         trip_data["place_of_loading"] = self._cmr_loading.get()
         trip_data["destination"] = self._cmr_unloading.get()
         trip_data["place_of_loading_date"] = self._cmr_loading_date.get()
@@ -945,6 +1002,7 @@ class GeneratorsView(ctk.CTkFrame):
         trip_data["carrier_reservations"] = self._cmr_reservations.get("1.0", "end-1c").strip()
         trip_data["special_agreements"] = self._cmr_agreements.get("1.0", "end-1c").strip()
         trip_data["carriage_payer"] = self._cmr_payer_var.get()
+        trip_data["distance_km"] = self._cmr_distance.get()
 
         adr_data = self._get_adr_data()
         if adr_data:
