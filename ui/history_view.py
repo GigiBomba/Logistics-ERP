@@ -194,10 +194,10 @@ class HistoryView:
         
         btn = ActionButton(f_btns, f"🗑️ {t('history.button_delete')}", self._delete, color=Theme.DANGER)
         btn.pack(side="right")
+        self._i18n_tag(btn, "history.button_delete", "🗑️ ")
         btn = ActionButton(f_btns, f"\U0001F4C2 {t('history.button_documents')}", self._open_trip_documents, color=Theme.ACCENT)
         btn.pack(side="right", padx=5)
         self._i18n_tag(btn, "history.button_documents", "\U0001F4C2 ")
-        self._i18n_tag(btn, "history.button_delete", "🗑️ ")
 
     def _on_status_filter_changed(self, value):
         self.refresh()

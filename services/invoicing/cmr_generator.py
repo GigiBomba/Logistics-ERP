@@ -236,6 +236,8 @@ class CMRGenerator:
         ctx.setdefault("driver_license", trip_data.get("driver_license", trip_data.get("license_number", "")))
         ctx.setdefault("loading_country", trip_data.get("loading_country", ""))
         ctx.setdefault("delivery_country", trip_data.get("delivery_country", ""))
+        ctx.setdefault("loading_city", trip_data.get("loading_city", ""))
+        ctx.setdefault("delivery_city", trip_data.get("delivery_city", ""))
         ctx.setdefault("place_of_loading", trip_data.get("place_of_loading",
                           trip_data.get("origin", trip_data.get("loading_address", ""))))
         ctx.setdefault("place_of_delivery", trip_data.get("destination",
@@ -258,6 +260,16 @@ class CMRGenerator:
         ctx["successive_carriers"] = trip_data.get("successive_carriers", [])
         ctx["adr_items"] = self._parse_adr(trip_data)
         ctx["has_adr"] = bool(ctx["adr_items"])
+        # New boxes from WYSIWYG form
+        ctx.setdefault("cod_amount", trip_data.get("cod_amount", ""))
+        ctx.setdefault("issue_place", trip_data.get("issue_place", ""))
+        ctx.setdefault("issue_date", trip_data.get("issue_date", ""))
+        ctx["financial_grid"] = trip_data.get("financial_grid", {})
+        for party in ["sender", "carrier", "consignee"]:
+            sig_key = f"sig_{party}_path"
+            ctx.setdefault(sig_key, trip_data.get(sig_key, ""))
+        # Generating role — determines whether company acts as consignor or consignee
+        ctx["generating_role"] = trip_data.get("generating_role", "consignor")
         return ctx
 
     def _parse_adr(self, trip_data: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -278,7 +290,8 @@ class CMRGenerator:
         filepath = self._build_single_copy(ctx, "Sender", output_dir)
         return filepath
 
-    def generate_all_copies(self, trip_data: dict, output_dir: str) -> Dict[str, str]:
+    def generate_all_copies(self, trip_data: dict, output_dir: str,
+                            skip_db_update: bool = False) -> Dict[str, str]:
         ctx = self._gather_context(trip_data)
         cmr_number = ctx["cmr_number"]
         paths = {}
@@ -287,7 +300,7 @@ class CMRGenerator:
                                            color_hex, bar_text, desig_text)
             paths[suffix] = path
 
-        if self.db:
+        if self.db and not skip_db_update:
             try:
                 self.db.conn.execute(
                     "UPDATE trips SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ?",
@@ -318,9 +331,12 @@ class CMRGenerator:
         story = self._build_story(ctx, color_hex, bar_text, desig_text)
 
         def _draw_page_bg(canvas, doc):
-            """Top-edge color bar for copy identification."""
+            """Left-margin color stripe + top bar for copy identification."""
             canvas.saveState()
             canvas.setFillColor(colors.HexColor(color_hex))
+            # Full-height left margin stripe (8mm wide)
+            canvas.rect(0, 0, 8 * mm, A4[1], fill=1, stroke=0)
+            # Top bar (3mm)
             canvas.rect(0, A4[1] - 3 * mm, A4[0], 3 * mm, fill=1, stroke=0)
             canvas.restoreState()
 
@@ -344,7 +360,8 @@ class CMRGenerator:
             }, driver_data={
                 "name": ctx.get("driver_name", ""),
                 "license_number": ctx.get("driver_license", ""),
-            }, successive_carriers=ctx.get("successive_carriers", []))
+            }, successive_carriers=ctx.get("successive_carriers", []),
+            role=ctx.get("generating_role", "consignor"))
             self._embed_xml_payload(filepath, xml_data, cmr_number)
         except Exception as e:
             logger.debug("eFTI XML embedding skipped: %s", e)
@@ -393,46 +410,68 @@ class CMRGenerator:
 
         # ── Carrier & Reservations ──
         story.append(self._grid_2col(
-            self._labeled_box("16. CARRIER / TRANSPORTATOR",
+            self._labeled_box("18. CARRIER / TRANSPORTATOR",
                               self._carrier_text(ctx)),
-            self._labeled_box("18. CARRIER'S RESERVATIONS / REZERVE",
+            self._labeled_box("14. CARRIER'S RESERVATIONS / REZERVE TRANSPORTATOR",
                               ctx.get("carrier_reservations", "") or "—"),
             L, R, lc))
 
-        # ── Successive Carriers & Agreements ──
+        # ── Successive Carriers & Special Agreements ──
         succ = self._successive_text(ctx)
         story.append(self._grid_2col(
-            self._labeled_box("17. SUCCESSIVE CARRIERS / SUCCESIVI", succ),
-            self._labeled_box("19. SPECIAL AGREEMENTS / ACORDURI SPECIALE",
+            self._labeled_box("19. SUCCESSIVE CARRIERS / TRANSPORTATORI SUCCESIVI", succ),
+            self._labeled_box("17. SPECIAL AGREEMENTS / ACORDURI SPECIALE",
                               ctx.get("special_agreements", "") or "—"),
             L, R, lc))
 
-        # ── Carriage Charges & Vehicle/Driver ──
+        # ── Carriage Payment, COD, Distance & Vehicle ──
         payer = ctx.get("carriage_payer", "")
-        charges = ("Sender pays / Expeditorul plateste" if payer == "sender" else
-                   "Consignee pays / Destinatarul plateste" if payer == "consignee" else "—")
+        pay_label = ("Sender pays / Expeditorul plateste" if payer.lower() == "sender" else
+                     "Consignee pays / Destinatarul plateste" if payer.lower() == "consignee" else "—")
+        left_parts = [f"<b>15. PAYMENT OF CARRIAGE / PLATA TRANSPORT:</b> {pay_label}"]
+
+        cod_amount = ctx.get("cod_amount", "")
+        if cod_amount:
+            left_parts.append(f"<b>16. CASH ON DELIVERY (COD) / RAMBURS:</b> EUR {cod_amount}")
+
         dist = ctx.get("distance_km", "")
         if dist:
             try:
                 dist = round(float(dist), 1)
             except (ValueError, TypeError):
                 pass
-            charges += f"\nDistance: {dist} km"
+            left_parts.append(f"<b>Distance / Distanta:</b> {dist} km")
+
         vd = (f"Vehicle: {ctx.get('truck_plate') or '—'}   "
               f"Trailer: {ctx.get('trailer_plate') or '—'}\n"
               f"Driver: {ctx.get('driver_name') or '—'}")
         if ctx.get("driver_license"):
             vd += f"   Lic: {ctx['driver_license']}"
         story.append(self._grid_2col(
-            self._labeled_box("14. CARRIAGE CHARGES / TAXE DE TRANSPORT", charges),
-            self._labeled_box("18-20. VEHICLE & DRIVER / VEHICUL SI SOFER", vd),
+            self._labeled_box("15-16. CARRIAGE PAYMENT & COD / PLATA SI RAMBURS",
+                              "<br/><br/>".join(left_parts)),
+            self._labeled_box("VEHICLE & DRIVER / VEHICUL SI SOFER", vd),
             L, R, lc))
 
-        # ── Signatures ──
-        story.append(self._signature_grid(ctx, FW, lc))
+        # ── Box 20: Financial Grid (spanning full width, always shown) ──
+        story.append(self._financial_grid(ctx, FW, lc))
+
+        # ── Boxes 21-24: Issue info and Signatures ──
+        issue_place = ctx.get("issue_place", "")
+        issue_date = ctx.get("issue_date", "")
+        issue_text = ""
+        if issue_place or issue_date:
+            issue_text = f"<b>Established in:</b> {issue_place}  <b>on:</b> {issue_date}"
+        else:
+            issue_text = "Established in: _______________  on: ___/___/______"
+        story.append(self._full_width_box("21. ESTABLISHED IN / ON / EMIS IN / LA",
+                                          issue_text, FW, lc))
+
+        # ── Signatures (Boxes 22-24) ──
+        story.append(self._signature_grid_enhanced(ctx, FW, lc))
 
         # ── Receipt ──
-        story.append(self._full_width_box("25. CONSIGNMENT RECEIVED / RECEPTIE MARFA",
+        story.append(self._full_width_box("RECEPTION CONFIRMATION / CONFIRMARE RECEPTIE",
                                           self._receipt_text(), FW, lc))
 
         # ── Footer ──
@@ -496,11 +535,27 @@ class CMRGenerator:
             return "—"
         rows = []
         for i, c in enumerate(carriers):
-            rows.append(
-                f"{i + 1}. <b>{c.get('carrier_name', '')}</b> — "
-                f"{c.get('carrier_address', '')} — "
-                f"Plate: {c.get('vehicle_plate', '')} — "
-                f"Driver: {c.get('driver_name', '')}")
+            parts = [f"<b>{c.get('carrier_name', '')}</b>"]
+            addr = c.get('carrier_address', '')
+            if addr:
+                parts.append(addr)
+            country = c.get('carrier_country', '')
+            if country:
+                parts.append(country)
+            plate = c.get('vehicle_plate', '')
+            if plate:
+                parts.append(f"Plate: {plate}")
+            trailer = c.get('trailer_plate', '')
+            if trailer:
+                parts.append(f"Trailer: {trailer}")
+            driver = c.get('driver_name', '')
+            if driver:
+                parts.append(f"Driver: {driver}")
+            from_loc = c.get('from_location', '')
+            to_loc = c.get('to_location', '')
+            if from_loc or to_loc:
+                parts.append(f"Route: {from_loc} → {to_loc}")
+            rows.append(f"{i + 1}. " + " — ".join(parts))
         return "<br/>".join(rows)
 
     def _receipt_text(self):
@@ -609,8 +664,8 @@ class CMRGenerator:
             return Paragraph(str(s), self._cargo_val_style)
 
         rows = [
-            [H("6. MARKS &amp; NUMBERS"), H("7. PKGS"), H("8. KIND"),
-             H("9. NATURE OF GOODS"), H("10. HS CODE"), H("11-12. WT / VOL")],
+            [H("6. MARKS &amp; NUMBERS"), H("7. NO. PKGS"), H("8. METHOD"),
+             H("9. NATURE OF GOODS"), H("10. HS CODE"), H("11. WT / 12. VOL")],
             [V(marks_val), "", "", "", "", ""],
             [V(pkg_val), V(kind_val), V(nature_val), V(hs_val), V(wt_val), V(vol_val)],
         ]
@@ -668,15 +723,66 @@ class CMRGenerator:
         tbl.setStyle(TableStyle(styles))
         return tbl
 
-    def _signature_grid(self, ctx, w, lc):
-        """Four signature pads in a clean grid at the bottom."""
-        q = w / 4
+    def _financial_grid(self, ctx, w, lc):
+        """Box 20: To be Paid by — financial split sub-grid."""
+        fin = ctx.get("financial_grid", {})
+        if not isinstance(fin, dict):
+            fin = {}
+        cost_rows = [
+            ("Carriage charges / Taxe transport",
+             fin.get("carriage_sender", ""),
+             fin.get("carriage_consignee", "")),
+            ("Supplementary charges / Taxe suplimentare",
+             fin.get("supplementary_sender", ""),
+             fin.get("supplementary_consignee", "")),
+            ("Customs duties / Taxe vamale",
+             fin.get("customs_sender", ""),
+             fin.get("customs_consignee", "")),
+            ("Other costs / Alte costuri",
+             fin.get("other_sender", ""),
+             fin.get("other_consignee", "")),
+        ]
+        hdr_style = self._cargo_hdr_style
+        val_style = self._cargo_val_style
+
+        header = [
+            Paragraph("20. TO BE PAID BY", hdr_style),
+            Paragraph("Sender", hdr_style),
+            Paragraph("Consignee", hdr_style),
+        ]
+        cw = [w * 0.45, w * 0.275, w * 0.275]
+        data = [header]
+        for label, sender_val, consignee_val in cost_rows:
+            data.append([
+                Paragraph(label, val_style),
+                Paragraph(f"EUR {sender_val}" if sender_val else "—", val_style),
+                Paragraph(f"EUR {consignee_val}" if consignee_val else "—", val_style),
+            ])
+        tbl = Table(data, colWidths=cw)
+        tbl.setStyle(TableStyle([
+            ('GRID', (0, 0), (-1, -1), 0.5, lc),
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#f1f5f9")),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('LEFTPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('RIGHTPADDING', (0, 0), (-1, -1), 2 * mm),
+            ('TOPPADDING', (0, 0), (-1, -1), 1.5 * mm),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 1.5 * mm),
+            ('LINEBELOW', (0, 0), (-1, 0), 0.75, lc),
+        ]))
+        return tbl
+
+    def _signature_grid_enhanced(self, ctx, w, lc):
+        """Boxes 22-24: Signature pads for Sender, Carrier, Consignee."""
+        q = w / 3
         pads = []
-        for label, party in [("Sender", "sender"), ("Carrier", "carrier"),
-                              ("Consignee", "consignee"), ("Stamp", "stamp")]:
-            pads.append(self._sig_pad(label, party, ctx, q))
+        for box_num, label, party_key in [
+            (22, "Sender / Expeditor", "sender"),
+            (23, "Carrier / Transportator", "carrier"),
+            (24, "Consignee / Destinatar", "consignee"),
+        ]:
+            pads.append(self._sig_pad_enhanced(box_num, label, party_key, ctx, q))
         data = [pads]
-        tbl = Table(data, colWidths=[q, q, q, q])
+        tbl = Table(data, colWidths=[q, q, q])
         tbl.setStyle(TableStyle([
             ('GRID', (0, 0), (-1, -1), 0.5, lc),
             ('VALIGN', (0, 0), (-1, -1), 'TOP'),
@@ -687,25 +793,22 @@ class CMRGenerator:
         ]))
         return tbl
 
-    def _sig_pad(self, label, party, ctx, pad_w):
-        """Single signature pad with dotted lines."""
+    def _sig_pad_enhanced(self, box_num, label, party_key, ctx, pad_w):
+        """Enhanced signature pad with box number, supporting per-party signature images."""
         guts = (
-            f"<b>{label}</b><br/><br/>"
+            f"<b>Box {box_num}. {label}</b><br/><br/>"
             "Date: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
             "Place: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
             "Name: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u><br/>"
             "Signature: <u>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</u>"
         )
         elements = [Paragraph(guts, self.sig_style)]
-        sig_path = ctx.get("signature_path", "")
-        stamp_path = ctx.get("stamp_path", "")
-        target_path = stamp_path if party == "stamp" else sig_path
-        if target_path and os.path.isfile(target_path):
+        sig_key = f"sig_{party_key}_path"
+        sig_path = ctx.get(sig_key, ctx.get("signature_path", ""))
+        if sig_path and os.path.isfile(sig_path):
             elements.append(Spacer(1, 1 * mm))
             try:
-                w_img = (2.4 * cm if party == "stamp" else 2.5 * cm)
-                h_img = (2.4 * cm if party == "stamp" else 1.0 * cm)
-                elements.append(Image(target_path, width=w_img, height=h_img))
+                elements.append(Image(sig_path, width=2.2 * cm, height=0.9 * cm))
             except Exception:
                 pass
         return elements
@@ -822,8 +925,8 @@ class CMRGenerator:
                 for i in range(0, len(names_tree), 2):
                     if i + 1 < len(names_tree):
                         file_spec = names_tree[i + 1]
-                    if file_spec not in af_array:
-                        af_array.append(file_spec)
+                        if file_spec not in af_array:
+                            af_array.append(file_spec)
 
             # ── Save ──
             pdf.save(pdf_path)

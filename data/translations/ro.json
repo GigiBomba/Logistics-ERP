@@ -431,7 +431,11 @@
     "export_success": "Rută exportată:\n{}",
     "comparison_error": "Selectează exact două rute pentru comparare.",
     "truck_all": "Toate",
-    "calculate_trip_button": "Calculează Cursa"
+    "calculate_trip_button": "Calculează Cursa",
+    "comparison_result": "Ruta #{a} vs #{b}\nDelta distanță: {d_dist:+.1f} km\nDelta durată: {d_dur}\nProfiluri: {p_a} / {p_b}",
+    "page_info": "Pagina {current} din {total} ({count} rute)",
+    "stats_none": "Niciuna",
+    "stats_summary": "Total rute: {count}\nDistanța totală: {dist:.1f} km\nDestinații frecvente: {dests}"
   },
   "result": {
     "distance": "Distanță: {:.2f} km",
@@ -443,6 +447,9 @@
     "days": "zile",
     "hours": "ore",
     "minutes": "minute",
+    "day": "zi",
+    "hour": "oră",
+    "minute": "minut",
     "route_not_found_title": "Rută negăsită",
     "route_not_found_msg": "Punctele pot fi inaccesibile.\nÎncearcă să adaugi opriri intermediare.",
     "invalid_coords": "Coordonate invalide",

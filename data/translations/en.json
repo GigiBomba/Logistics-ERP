@@ -309,7 +309,8 @@
     "no_transitions": "No Transitions",
     "status_prompt": "Status Prompt",
     "transition_failed": "Transition Failed",
-    "button_load_more": "Load More"
+    "button_load_more": "Load More",
+    "button_documents": "Documents"
   },
   "analytics": {
     "title": "Business Intelligence Analytics",
@@ -506,10 +507,10 @@
     "comparison_error": "Select exactly two routes to compare.",
     "truck_all": "All",
     "calculate_trip_button": "Calculate Trip",
-    "comparison_result": "Comparison Result",
-    "page_info": "Page Info",
-    "stats_none": "Stats None",
-    "stats_summary": "Stats Summary"
+    "comparison_result": "Route #{a} vs #{b}\nDistance delta: {d_dist:+.1f} km\nDuration delta: {d_dur}\nProfiles: {p_a} / {p_b}",
+    "page_info": "Page {current} of {total} ({count} routes)",
+    "stats_none": "None",
+    "stats_summary": "Total routes: {count}\nTotal distance: {dist:.1f} km\nTop destinations: {dests}"
   },
   "result": {
     "distance": "Distance: {:.2f} km",
@@ -521,6 +522,9 @@
     "days": "days",
     "hours": "hours",
     "minutes": "minutes",
+    "day": "day",
+    "hour": "hour",
+    "minute": "minute",
     "route_not_found_title": "Route not found",
     "route_not_found_msg": "Points may be unreachable.\nTry adding intermediate stops.",
     "invalid_coords": "Invalid coordinates",
@@ -1227,10 +1231,6 @@
   "driver_manager": {
     "documents_button": "Documents",
     "select_driver_first": "Select a driver first."
-  },
-  "history": {
-    "button_documents": "Documents",
-    "select_trip_first": "Select a trip first."
   },
   "generators": {
     "tab_invoice": "Invoice",

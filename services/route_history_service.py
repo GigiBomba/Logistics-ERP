@@ -18,6 +18,7 @@ from typing import Any, Dict, Iterable, List, Optional
 from repositories.route_repository import RouteRepository
 from repositories.route_event_repository import RouteEventRepository
 from repositories.truck_route_assignment_repository import TruckRouteAssignmentRepository
+from services.route_result_presenter import format_duration_minutes
 from utils.logger import get_logger
 
 
@@ -574,7 +575,7 @@ class RouteHistoryService:
                     ["Origin", route["origin"]],
                     ["Destination", route["destination"]],
                     ["Distance", route["distance_km"]],
-                    ["Duration", route["duration_min"]],
+                    ["Duration", format_duration_minutes(route["duration_min"])],
                     ["Profile", payload["metadata"]["profile"]],
                 ]},
             ],
@@ -586,7 +587,7 @@ class RouteHistoryService:
             ["origin", payload["route"]["origin"]],
             ["destination", payload["route"]["destination"]],
             ["distance_km", payload["route"]["distance_km"]],
-            ["duration_min", payload["route"]["duration_min"]],
+            ["duration", format_duration_minutes(payload["route"]["duration_min"])],
             ["profile", payload["metadata"]["profile"]],
         ]
         return "\n".join(",".join("" if v is None else str(v) for v in row) for row in rows)

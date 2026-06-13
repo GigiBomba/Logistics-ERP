@@ -6,13 +6,37 @@ from services.i18n import t
 from services.currency_service import CURRENCY_SYMBOLS
 
 
+def _fmt_unit(value: int, singular_key: str, plural_key: str) -> str:
+    """Return '1 day' or '2 days' using the correct i18n key."""
+    return f"{value} {t(singular_key if value == 1 else plural_key)}"
+
+
 def format_duration_minutes(duration_min: float) -> str:
-    duration = float(duration_min or 0)
-    if duration >= 1440:
-        return f"{duration / 1440:.1f} {t('result.days')}"
-    if duration >= 60:
-        return f"{duration / 60:.1f} {t('result.hours')}"
-    return f"{duration:.0f} {t('result.minutes')}"
+    """Convert minutes to human-readable day / hour / minute breakdown.
+
+    90 min  → '1 hour, 30 min'
+    1500 min → '1 day, 1 hour'
+    45 min   → '45 min'
+    0 min    → '0 min'
+    """
+    total = int(abs(float(duration_min or 0)))
+    if total == 0:
+        return f"0 {t('result.minutes')}"
+
+    days = total // 1440
+    remainder = total % 1440
+    hours = remainder // 60
+    minutes = remainder % 60
+
+    parts = []
+    if days > 0:
+        parts.append(_fmt_unit(days, "result.day", "result.days"))
+    if hours > 0:
+        parts.append(_fmt_unit(hours, "result.hour", "result.hours"))
+    if minutes > 0 or not parts:
+        parts.append(_fmt_unit(minutes, "result.minute", "result.minutes"))
+
+    return ", ".join(parts)
 
 
 def format_success_info(

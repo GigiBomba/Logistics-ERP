@@ -182,6 +182,12 @@ def field(parent, label: str,
                                 self.status_var, "combobox",
                                 values=["Planned","In Transit"])
     """
+    # Map shorthand 'placeholder' → CTkEntry's 'placeholder_text'
+    # Only CTkEntry supports placeholder_text; strip for other widget kinds
+    _placeholder = widget_kwargs.pop("placeholder", None)
+    if kind == "entry" and _placeholder is not None:
+        widget_kwargs["placeholder_text"] = _placeholder
+
     wrapper = ctk.CTkFrame(parent, fg_color="transparent")
     wrapper.pack(fill="x", pady=(0, S["4"]))
 

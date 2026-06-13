@@ -38,7 +38,7 @@ class InvoiceEditor(I18nMixin):
         self.prefs = prefs or PreferencesManager(db)
         self._trip_service = TripService(db)
         self._client_repo = ClientRepository(db)
-        self._invoice_service = InvoiceService(db, prefs=self.prefs)
+        self._invoice_service = None  # lazily created on first use
         self._app_state = AppState()
         self._event_bus = EventBus()
 
@@ -114,12 +114,25 @@ class InvoiceEditor(I18nMixin):
 
         self._build_layout()
         self._load_company_config()
-        self._load_clients()
-        self._load_trips()
         self._add_default_addon_item()
+        # Data loading deferred to lazy_load() — called externally when tab is selected
+        self._data_loaded = False
 
         self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
         self.frame.bind("<Destroy>", self._on_destroy)
+
+    def lazy_load(self):
+        """Load DB-dependent data. Called once when the invoice tab is first selected."""
+        if self._data_loaded:
+            return
+        self._load_clients()
+        self._load_trips()
+        self._data_loaded = True
+
+    def _get_invoice_service(self):
+        if self._invoice_service is None:
+            self._invoice_service = InvoiceService(self.db, prefs=self.prefs)
+        return self._invoice_service
 
     def _on_destroy(self, event=None):
         if event is not None and event.widget != self.frame:
@@ -1367,7 +1380,7 @@ class InvoiceEditor(I18nMixin):
             trip_data = data.get("trip_data") or {}
             trip_id = data.get("trip_id") or trip_data.get("id", 0)
             if trip_id:
-                self._invoice_service.create_record(
+                self._get_invoice_service().create_record(
                     trip_id=trip_id,
                     inv_number=data["invoice_number"],
                     amount=data["grand_total"],

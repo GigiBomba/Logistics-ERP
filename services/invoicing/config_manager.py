@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import functools
 from services.i18n import t
 
 logger = logging.getLogger(__name__)
@@ -20,6 +21,7 @@ DEFAULT_CONFIG = {
     "stamp_path": "",
 }
 
+@functools.lru_cache(maxsize=1)
 def load_company_config():
     if not os.path.exists(CONFIG_FILE):
         save_company_config(DEFAULT_CONFIG)
