@@ -32,6 +32,7 @@ data/fuel_prices_cache.json
 data/company_config.json
 data/lang.txt
 data/backups/
+data/temp/
 data/exports/
 data/documents/
 data/exchange_rates_cache.json

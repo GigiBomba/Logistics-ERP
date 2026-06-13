@@ -168,6 +168,9 @@ def get_language() -> str:
     return _current_lang
 
 
+import functools
+
+@functools.lru_cache(maxsize=1)
 def get_available_languages() -> List[str]:
     """Return list of available language codes based on JSON files."""
     os.makedirs(_TRANSLATIONS_DIR, exist_ok=True)

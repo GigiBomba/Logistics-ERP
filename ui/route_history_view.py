@@ -394,7 +394,7 @@ class RouteHistoryView:
     def _on_select(self, _event=None):
         selected = self.tree.selection()
         self._selected_route_id = int(selected[0]) if selected else None
-        if self._selected_route_id:
+        if len(selected) == 1 and self._selected_route_id:
             self._preview_token += 1
             token = self._preview_token
             route_id = self._selected_route_id
@@ -405,6 +405,8 @@ class RouteHistoryView:
             ).start()
         elif self._map_preview:
             self._map_preview.clear()
+            self.stats_text.config(text=t("route_history.loading_placeholder"))
+            self.compare_text.config(text=t("route_history.comparison_hint"), text_color=Theme.MUTED)
 
     def _preview_worker(self, route_id: int, token: int) -> None:
         record = self.service.load_route(route_id)
@@ -413,6 +415,7 @@ class RouteHistoryView:
             if token != self._preview_token:
                 return
             self._show_map_preview(record)
+            self._show_route_info(record)
 
         try:
             self._safe_after(0, apply)
@@ -426,6 +429,22 @@ class RouteHistoryView:
             self._map_preview.clear()
             return
         self._map_preview.show_route(record.geometry)
+
+    def _show_route_info(self, record: Optional[RouteHistoryRecord]) -> None:
+        if not record:
+            return
+        stops_count = len(record.stops) if record.stops else 0
+        countries = ", ".join(record.countries_traversed) if record.countries_traversed else "—"
+        dur = format_duration_minutes(record.duration_min) if record.duration_min is not None else "—"
+        text = (
+            f"Distance: {record.total_distance_km or 0:.1f} km\n"
+            f"Duration: {dur}\n"
+            f"Stops: {stops_count}\n"
+            f"Profile: {record.profile or '—'}\n"
+            f"Truck: {record.truck_label or record.truck_id or '—'}\n"
+            f"Countries: {countries}"
+        )
+        self.stats_text.config(text=text)
 
     def _on_close(self) -> None:
         unregister_listener(self._on_language_changed)
@@ -533,11 +552,16 @@ class RouteHistoryView:
             return
         dist_delta = (b.total_distance_km or 0) - (a.total_distance_km or 0)
         dur_delta = (b.duration_min or 0) - (a.duration_min or 0)
+        dur_str = format_duration_minutes(abs(dur_delta))
+        if dur_delta > 0:
+            dur_str = f"+{dur_str}"
+        elif dur_delta < 0:
+            dur_str = f"-{dur_str}"
         profile_a = a.profile or "-"
         profile_b = b.profile or "-"
         text = t("route_history.comparison_result").format(
             a=ids[0], b=ids[1],
-            d_dist=dist_delta, d_dur=dur_delta,
+            d_dist=dist_delta, d_dur=dur_str,
             p_a=profile_a, p_b=profile_b,
         )
         self.compare_text.config(text=text, fg=Theme.TEXT)
