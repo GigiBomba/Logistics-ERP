@@ -14,6 +14,10 @@ logs/
 venv/
 .venv/
 env/
+.env
+
+# Ruff
+.ruff_cache/
 
 # OS
 Thumbs.db
