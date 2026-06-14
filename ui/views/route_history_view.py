@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
     QFrame,
     QFileDialog,
     QMessageBox,
+    QHeaderView,
 )
 
 from services.i18n import t, register_listener, unregister_listener
@@ -127,15 +128,19 @@ class QtRouteHistoryView(QWidget):
         splitter = QSplitter(Qt.Horizontal)
 
         # Left: table
-        self.table = StyledTableWidget(self, columns=[
-            ("origin", t("route_history.table_origin"), 150),
-            ("destination", t("route_history.table_destination"), 150),
-            ("last_calculated_at", t("route_history.table_datetime"), 140),
-            ("truck", t("route_history.table_truck"), 120),
-            ("distance_km", t("route_history.table_distance"), 90),
-            ("duration_min", t("route_history.table_duration"), 90),
-            ("profile", t("route_history.table_profile"), 90),
-        ])
+        columns = [
+            ("origin", t("route_history.table_origin"), 100),
+            ("destination", t("route_history.table_destination"), 100),
+            ("last_calculated_at", t("route_history.table_datetime"), 100),
+            ("truck", t("route_history.table_truck"), 100),
+            ("distance_km", t("route_history.table_distance"), 100),
+            ("duration_min", t("route_history.table_duration"), 100),
+            ("profile", t("route_history.table_profile"), 100),
+        ]
+        self.table = StyledTableWidget(self, columns=columns)
+        self.table.horizontalHeader().setStretchLastSection(False)
+        for i in range(len(columns)):
+            self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
         self.table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self.table.rowSelected.connect(self._on_row_selected)
         self.table.rowDoubleClicked.connect(lambda d: self._open_in_planner())

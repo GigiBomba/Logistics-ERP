@@ -325,7 +325,10 @@
     "invoice_done": "Invoiced",
     "invoice_done_msg": "Invoice generated successfully",
     "error": "Error",
-    "search_placeholder": "Search trips..."
+    "search_placeholder": "Search trips...",
+    "button_export_pdf": "Export PDF",
+    "button_export_excel": "Export Excel",
+    "button_email_invoice": "Email Invoice"
   },
   "analytics": {
     "title": "Analiza Business Intelligence",
@@ -490,7 +493,8 @@
     "profile_cheapest": "Cel mai Ieftin",
     "profile_safest": "Cel mai Sigur",
     "profile_shortest": "Cel mai Scurt",
-    "click_to_add_stop": "Click map to add stop"
+    "click_to_add_stop": "Click map to add stop",
+    "loaded_route": "Route loaded"
   },
   "route_history": {
     "title": "Istoric Rute",
@@ -702,7 +706,18 @@
     "search": "Search...",
     "confirm": "Confirm",
     "warning": "Warning",
-    "error": "Error"
+    "error": "Error",
+    "no_schedule": "Schedule",
+    "no_activity": "No activity recorded",
+    "no_revenue_data": "No revenue data yet",
+    "ops_unavailable": "Ops not available",
+    "no_signature": "No signature",
+    "signature_accepted": "Signature accepted",
+    "signature_cleared": "Cleaned up",
+    "select_signature_image": "Select Signature Image",
+    "open_calendar": "Open calendar",
+    "select_date": "Select date",
+    "show_alerts": "Show alerts"
   },
   "dispatch_board": {
     "alerts": "Alerte",

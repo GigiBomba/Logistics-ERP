@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QHBoxLayout,
     QMessageBox,
     QInputDialog,
+    QHeaderView,
 )
 
 from services.i18n import t, register_listener, unregister_listener
@@ -129,20 +130,24 @@ class QtHistoryView(QWidget):
         layout.addWidget(bar)
 
     def _build_table(self, layout: QVBoxLayout) -> None:
+        columns = [
+            ("id", t("history.col_id"), 60),
+            ("status", t("history.col_status"), 80),
+            ("start_date", t("history.col_data"), 90),
+            ("truck_number", t("history.col_camion"), 90),
+            ("driver_name", t("history.col_driver"), 90),
+            ("client_name", t("history.col_client"), 90),
+            ("distance_km", t("history.col_km"), 70),
+            ("gross_per_km", t("history.col_brut_km"), 70),
+            ("net_profit", t("history.col_profit"), 80),
+        ]
         self.table = StyledTableWidget(
             self,
-            columns=[
-                ("id", t("history.col_id"), 50),
-                ("status", t("history.col_status"), 80),
-                ("start_date", t("history.col_data"), 100),
-                ("truck_number", t("history.col_camion"), 120),
-                ("driver_name", t("history.col_driver"), 100),
-                ("client_name", t("history.col_client"), 120),
-                ("distance_km", t("history.col_km"), 70),
-                ("gross_per_km", t("history.col_brut_km"), 80),
-                ("net_profit", t("history.col_profit"), 90),
-            ],
+            columns=columns,
         )
+        self.table.horizontalHeader().setStretchLastSection(False)
+        for i in range(len(columns)):
+            self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
         layout.addWidget(self.table, 1)
 
     def _build_action_bar(self, layout: QVBoxLayout) -> None:
