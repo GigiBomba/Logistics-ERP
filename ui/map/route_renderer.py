@@ -131,6 +131,17 @@ class QtRouteMapRenderer:
         if not self.should_redraw(geometry):
             return
 
+        # Downsample for map rendering — 500 pts is more than enough
+        # to draw a smooth polyline; avoids massive JSON serialization
+        # and QWebEngineView JS overhead on 15K+ point routes
+        MAX_MAP_PTS = 500
+        geometry_raw = geometry
+        if len(geometry) > MAX_MAP_PTS:
+            step = max(1, len(geometry) // MAX_MAP_PTS)
+            geometry = [geometry[i] for i in range(0, len(geometry), step)]
+            if geometry[-1] != geometry_raw[-1]:
+                geometry.append(geometry_raw[-1])
+
         with perf_timer("map_draw_route"):
             self.clear_stop_markers()
             self.clear_route_overlays()
