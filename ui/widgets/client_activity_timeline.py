@@ -16,6 +16,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
+from services.i18n import t
+
 
 class QtClientActivityTimeline(QWidget):
     """Chronological event feed for a client.
@@ -70,7 +72,7 @@ class QtClientActivityTimeline(QWidget):
                 widget.deleteLater()
 
     def _show_empty_state(self):
-        label = QLabel("No activity recorded")
+        label = QLabel(t("common.no_activity"))
         label.setProperty("fontRole", "muted")
         label.setContentsMargins(0, 10, 0, 10)
         self._layout.addWidget(label)

@@ -312,7 +312,22 @@
     "status_prompt": "Запит Статусу",
     "transition_failed": "Перехід Не Вдався",
     "button_load_more": "Load More",
-    "button_documents": "Documents"
+    "button_documents": "Documents",
+    "col_id": "ID",
+    "col_data": "Date",
+    "col_camion": "Truck",
+    "col_driver": "Driver",
+    "col_client": "Client",
+    "col_km": "Distance (km)",
+    "col_brut_km": "€/km",
+    "col_profit": "Profit",
+    "col_status": "Status",
+    "email_done": "Emailed",
+    "email_done_msg": "Trip emailed successfully",
+    "invoice_done": "Invoiced",
+    "invoice_done_msg": "Invoice generated successfully",
+    "error": "Error",
+    "search_placeholder": "Search trips..."
   },
   "analytics": {
     "title": "Аналітика Бізнес-Аналізу",
@@ -419,7 +434,9 @@
     "field_logo": "Company Logo:",
     "field_color": "Color",
     "field_signature": "Signature Image:",
-    "field_stamp": "Stamp Image:"
+    "field_stamp": "Stamp Image:",
+    "theme_dark": "Dark",
+    "theme_light": "Light"
   },
   "edit_trip": {
     "title": "Редагувати Поїздку #{}",
@@ -685,7 +702,8 @@
     "yes": "Так",
     "search": "Search...",
     "confirm": "Confirm",
-    "warning": "Warning"
+    "warning": "Warning",
+    "error": "Error"
   },
   "dispatch_board": {
     "alerts": "Сповіщення",
@@ -867,7 +885,9 @@
     "toggle_active": "Перемкнути Активність",
     "unassigned": "Не Призначений",
     "documents_button": "Documents",
-    "select_driver_first": "Select a driver first."
+    "select_driver_first": "Select a driver first.",
+    "import_csv": "Import CSV",
+    "import_success": "Drivers imported"
   },
   "fleet_dashboard": {
     "activity_title": "Активність Автопарку",
@@ -1048,7 +1068,16 @@
     "health_overall": "Overall Health",
     "health_compliance": "Compliance",
     "health_overdue": "Overdue",
-    "health_recurring": "Recurring Issues"
+    "health_recurring": "Recurring Issues",
+    "col_description": "Description",
+    "col_interval_days": "Interval (days)",
+    "col_interval_km": "Interval (km)",
+    "col_mileage": "Mileage",
+    "col_next_date": "Next Date",
+    "col_next_mileage": "Next Mileage",
+    "health_downtime": "Downtime",
+    "health_no_data": "No health data available",
+    "health_ok": "All systems nominal"
   },
   "tacho": {
     "avg_daily": "Сер. Щоденно",
@@ -1090,7 +1119,15 @@
     "result_plate": "Plate",
     "result_calibration": "Calibration",
     "result_days": "Days",
-    "result_odometer": "Odometer"
+    "result_odometer": "Odometer",
+    "hdr_date": "Date",
+    "hdr_file": "File",
+    "hdr_records": "Records",
+    "hdr_status": "Status",
+    "hdr_type": "Type",
+    "status_error": "Error",
+    "status_ok": "OK",
+    "status_partial": "Partial"
   },
   "time": {
     "days_ago": "{n} дн. тому",
@@ -1237,7 +1274,13 @@
     "merge_execute": "Execute Merge",
     "new_contact": "New Contact",
     "edit_contact": "Edit Contact",
-    "confirm_delete_contact": "Delete this contact?"
+    "confirm_delete_contact": "Delete this contact?",
+    "add_contact": "Add Contact",
+    "section_kpis": "KPIs",
+    "tab_details": "Details",
+    "tab_trips": "Trips",
+    "tab_invoices": "Invoices",
+    "tab_revenue": "Revenue"
   },
   "docs": {
     "title": "DOCUMENT CENTER",
@@ -1294,7 +1337,11 @@
     "confirm_restore_msg": "Restore version {v}? Current version will be replaced.",
     "contract": "Create Contract",
     "contract_type": "Contract type:",
-    "generate_cmr": "Generate CMR"
+    "generate_cmr": "Generate CMR",
+    "expiry_saved": "Expiry date saved",
+    "version_comment": "Comment",
+    "version_error": "Version error",
+    "version_uploaded": "Version uploaded"
   },
   "generators": {
     "title": "Document Generators",
@@ -1340,7 +1387,8 @@
     "cmr_actions_title": "Actions",
     "cmr_status_ready": "Ready to generate.",
     "cmr_status_generating": "Generating 4 copies...",
-    "open_pdf": "Open"
+    "open_pdf": "Open",
+    "cmr_generated_status": "generated"
   },
   "invoice_editor": {
     "select_client": "Client:",
@@ -1418,7 +1466,14 @@
     "distance": "Distance",
     "truck_plate": "Truck Plate",
     "driver": "Driver",
-    "browse": "Browse"
+    "browse": "Browse",
+    "title": "Invoice Editor",
+    "totals": "Totals",
+    "line_items": "Line Items",
+    "notes_section": "Notes",
+    "invoice_details": "Invoice Details",
+    "invoice_metadata": "Invoice Metadata",
+    "client_info": "Client Info"
   },
   "cmr": {
     "place_of_loading": "Place of Loading",
@@ -1500,5 +1555,17 @@
   },
   "text_danger": "Danger",
   "text_success": "Success",
-  "text_warning": "Warning"
+  "text_warning": "Warning",
+  "document": {
+    "batch_deleted": "{n} documents deleted",
+    "deleted": "Document deleted",
+    "downloaded_zip": "Downloaded as ZIP",
+    "emailed": "Document emailed",
+    "version_added": "New version added",
+    "version_restored": "Version restored"
+  },
+  "file_filter": {
+    "all": "All Files",
+    "images": "Images"
+  }
 }
