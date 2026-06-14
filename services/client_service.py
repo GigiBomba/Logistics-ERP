@@ -1,4 +1,5 @@
 """Client service — business logic for client management."""
+import logging
 from typing import Any, Dict, List, Optional
 
 from repositories.client_repository import ClientRepository
@@ -6,6 +7,8 @@ from repositories.invoice_repository import InvoiceRepository
 from repositories.contact_repository import ContactRepository
 from repositories.tag_repository import TagRepository
 from services.operations.event_bus import EventBus
+
+logger = logging.getLogger(__name__)
 
 
 CLIENT_MERGED = "CLIENT_MERGED"
@@ -175,6 +178,9 @@ class ClientService:
     # ── Merge ───────────────────────────────────────────────────────────
 
     def merge_clients(self, from_id: int, to_id: int) -> Dict[str, int]:
+        if not self.db:
+            logger.error("ClientService: no database, cannot merge")
+            return {"trips": 0, "invoices": 0, "contacts": 0}
         moved_trips = 0
         moved_invoices = 0
         moved_contacts = 0

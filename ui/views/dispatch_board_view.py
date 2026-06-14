@@ -581,6 +581,10 @@ class QtDispatchBoardView(QWidget):
 
     def _refresh_live_indicators(self) -> None:
         try:
+            self.isWidgetType()
+        except RuntimeError:
+            return
+        try:
             from services.fleet_tracking_service import fleet_tracking_service
             if not fleet_tracking_service.is_configured():
                 return

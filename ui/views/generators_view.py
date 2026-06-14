@@ -534,6 +534,8 @@ class QtGeneratorsView(QWidget):
 
     def _auto_fill_cmr(self, trip: Dict[str, Any]) -> None:
         """Auto-fill the CMR form fields from the selected trip."""
+        if not self.db:
+            return
         trip_id = trip.get("id")
         if trip_id is not None and trip_id == self._cmr_filled_trip_id:
             return
@@ -553,8 +555,8 @@ class QtGeneratorsView(QWidget):
                 ).fetchone()
                 if row:
                     client_data = dict(row)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Could not load clients for CMR autofill: %s", e)
         if trip.get("truck_id"):
             try:
                 row = self.db.conn.execute(
@@ -562,8 +564,8 @@ class QtGeneratorsView(QWidget):
                 ).fetchone()
                 if row:
                     truck_data = dict(row)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Could not load truck for CMR autofill: %s", e)
         if trip.get("driver_id"):
             try:
                 row = self.db.conn.execute(
@@ -571,8 +573,8 @@ class QtGeneratorsView(QWidget):
                 ).fetchone()
                 if row:
                     driver_data = dict(row)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Could not load driver for CMR autofill: %s", e)
 
         if hasattr(self, "_cmr_form_view") and self._cmr_form_view is not None:
             self._cmr_form_view.fill_from_trip(trip, conf, client_data, truck_data, driver_data)
@@ -757,6 +759,9 @@ class QtGeneratorsView(QWidget):
 
             def _register() -> None:
                 if self._cmr_status_lbl is None:
+                    return
+                if not self.db:
+                    logger.warning("CMR: no database reference, skipping registration")
                     return
                 try:
                     self.db.conn.execute(
