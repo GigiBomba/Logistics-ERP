@@ -82,6 +82,7 @@ class QtCalculatorView(ScrollableFormContainer):
 
         self._build_ui()
         self._load_trucks()
+        self._load_clients()
         self._sync_from_trip_context()
 
         self._trip_listener = self._on_trip_context_changed
@@ -111,7 +112,7 @@ class QtCalculatorView(ScrollableFormContainer):
         self.add_widget(self.route_badge)
 
         # Client
-        self.e_client = StyledLineEdit(self.content, placeholder=t("main.client_label"))
+        self.e_client = StyledComboBox(self.content, values=[], state="readonly")
         self.add_widget(field(self.content, t("main.client_label"), self.e_client))
 
     def _build_finance_section(self):
@@ -244,6 +245,23 @@ class QtCalculatorView(ScrollableFormContainer):
         # Select first truck by default
         self._on_truck_selected(0)
 
+    def _load_clients(self):
+        """Populate client combo from the database."""
+        if self.client_service is None:
+            return
+        try:
+            clients = self.client_service.get_all()
+        except Exception:
+            clients = []
+        self.e_client.clear()
+        if not clients:
+            self.e_client.addItem("")
+            return
+        for c in clients:
+            name = c.get("name", "")
+            if name:
+                self.e_client.addItem(name, str(c.get("id")))
+
     def _on_truck_selected(self, index: int):
         tid = self.truck_combo.itemData(index)
         if tid is None:
@@ -355,10 +373,12 @@ class QtCalculatorView(ScrollableFormContainer):
                 if QMessageBox.question(self, t("dispatch_board.conflict_warning_title"), msg) != QMessageBox.Yes:
                     return
 
-            client_name = self.e_client.text().strip()
+            client_name = self.e_client.currentText().strip()
             client_id = None
-            if client_name and self.client_service:
-                client_id = self.client_service.get_or_create(client_name)
+            if client_name:
+                cid = self.e_client.currentData()
+                if cid is not None:
+                    client_id = int(cid)
 
             trip_data = {
                 "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),

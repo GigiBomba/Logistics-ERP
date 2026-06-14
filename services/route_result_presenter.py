@@ -50,10 +50,10 @@ def format_success_info(
     cached = route.get("cached", False)
     cache_indicator = " ⚡(cached)" if cached else ""
     lines = [
-        f"✅ {t('result.distance').format(distance)}{cache_indicator}",
+        f"✅ {t('result.distance').format(round(distance, 1))}{cache_indicator}",
         f"⏱️ {t('result.duration').format(format_duration_minutes(duration))}",
         f"📍 {t('result.stops').format(stops_count)}",
-        f"⛽ {t('result.fuel').format(float(cost_info.get('fuel_liters') or 0))}",
+        f"⛽ {t('result.fuel').format(round(float(cost_info.get('fuel_liters') or 0), 1))}",
     ]
     if cost_info.get("fuel_cost"):
         fuel_cost = float(cost_info.get("fuel_cost") or 0)
@@ -68,7 +68,7 @@ def format_success_info(
 def format_history_loaded_info(record) -> str:
     duration = float(record.duration_min or 0)
     info = t("result.history_loaded")
-    dist = t("result.distance").format(float(record.total_distance_km or 0))
+    dist = t("result.distance").format(round(float(record.total_distance_km or 0), 1))
     dur = t("result.duration").format(format_duration_minutes(duration))
     return f"📂 {info}\n✅ {dist}\n⏱️ {dur}"
 

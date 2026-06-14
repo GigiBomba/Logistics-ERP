@@ -425,7 +425,7 @@ class CMRGenerator:
             L, R, lc))
 
         # ── Carriage Payment, COD, Distance & Vehicle ──
-        payer = ctx.get("carriage_payer", "")
+        payer = str(ctx.get("carriage_payer") or "")
         pay_label = ("Sender pays / Expeditorul plateste" if payer.lower() == "sender" else
                      "Consignee pays / Destinatarul plateste" if payer.lower() == "consignee" else "—")
         left_parts = [f"<b>15. PAYMENT OF CARRIAGE / PLATA TRANSPORT:</b> {pay_label}"]

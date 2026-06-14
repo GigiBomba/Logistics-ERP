@@ -85,7 +85,17 @@ class QtAlertPanel(QFrame):
         if anchor is None:
             return
         global_pos = anchor.mapToGlobal(QPoint(0, 0))
-        self.move(global_pos.x(), global_pos.y() + anchor.height())
+        x = global_pos.x()
+        y = global_pos.y() + anchor.height()
+        # Prevent offscreen to the right
+        from PySide6.QtWidgets import QApplication
+        screen = QApplication.primaryScreen()
+        if screen:
+            screen_rect = screen.availableGeometry()
+            panel_width = self.width()
+            if x + panel_width > screen_rect.right():
+                x = screen_rect.right() - panel_width - 8
+        self.move(x, y)
         self.show()
         self.raise_()
         self.setFocus()
