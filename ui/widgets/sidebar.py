@@ -9,7 +9,7 @@ import logging
 from typing import Callable, Dict, List, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QCursor, QIcon, QPixmap, QPainter, QColor, QFont
+from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QWidget,
     QFrame,
@@ -21,12 +21,7 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
-try:
-    import qtawesome as qta
-    _HAS_QTAWESOME = True
-except ImportError:
-    qta = None
-    _HAS_QTAWESOME = False
+import qtawesome as qta
 
 from ui.design_tokens import (
     BG_SURFACE, BG_ELEVATED, BG_BASE,
@@ -62,15 +57,6 @@ NAV_ICONS = {
     "route_history":      "fa5s.archive",
     "settings":           "fa5s.cog",
 }
-
-
-def _qt_pixmap(icon_name: str, color: str, size: int = 16):
-    """Return a QPixmap for the icon, falling back to a colored square."""
-    if _HAS_QTAWESOME:
-        return qta.icon(icon_name, color=color).pixmap(size, size)
-    pm = QPixmap(size, size)
-    pm.fill(QColor(color))
-    return pm
 
 
 class Sidebar(QFrame):
@@ -314,7 +300,7 @@ class Sidebar(QFrame):
         # Icon
         icon_name = NAV_ICONS.get(key, "fa5s.circle")
         icon_lbl = QLabel()
-        icon_lbl.setPixmap(_qt_pixmap(icon_name, TEXT_MUTED, 16))
+        icon_lbl.setPixmap(qta.icon(icon_name, color=TEXT_MUTED).pixmap(16, 16))
         icon_lbl.setFixedWidth(32)
         icon_lbl.setAlignment(Qt.AlignCenter)
         layout.addWidget(icon_lbl)
@@ -342,7 +328,7 @@ class Sidebar(QFrame):
             if child.width() == 32 and child.height() == 16:
                 # This is the icon label
                 icon_name = NAV_ICONS.get(key, "fa5s.circle")
-                child.setPixmap(_qt_pixmap(icon_name, ACCENT_TEXT, 16))
+                child.setPixmap(qta.icon(icon_name, color=ACCENT_TEXT).pixmap(16, 16))
             elif child.text() and child != frame.findChildren(QLabel)[0]:
                 child.setStyleSheet(
                     f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600; background: transparent;"
@@ -358,7 +344,7 @@ class Sidebar(QFrame):
         for child in frame.findChildren(QLabel):
             if child.width() == 32 and child.height() == 16:
                 icon_name = NAV_ICONS.get(key, "fa5s.circle")
-                child.setPixmap(_qt_pixmap(icon_name, TEXT_MUTED, 16))
+                child.setPixmap(qta.icon(icon_name, color=TEXT_MUTED).pixmap(16, 16))
             elif child.text() and child != frame.findChildren(QLabel)[0]:
                 child.setStyleSheet(
                     f"color: {TEXT_SECONDARY}; font-size: 13px; background: transparent;"

@@ -9,7 +9,6 @@ from datetime import datetime
 from typing import Callable, Optional
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap, QColor
 from PySide6.QtWidgets import (
     QWidget,
     QFrame,
@@ -18,21 +17,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-try:
-    import qtawesome as qta
-    _HAS_QTAWESOME = True
-except ImportError:
-    qta = None
-    _HAS_QTAWESOME = False
-
-
-def _bell_pixmap(icon_name: str, color: str):
-    """Return a 16x16 bell pixmap using qtawesome, or a fallback colored square."""
-    if _HAS_QTAWESOME:
-        return qta.icon(icon_name, color=color).pixmap(16, 16)
-    pm = QPixmap(16, 16)
-    pm.fill(QColor(color))
-    return pm
+import qtawesome as qta
 
 from ui.design_tokens import (
     BG_BASE, BORDER_DEFAULT, ACCENT, DANGER, SUCCESS,
@@ -146,10 +131,10 @@ class TopBar(QFrame):
         if count > 0:
             self._badge.setText(str(min(count, 99)))
             self._badge.show()
-            self._bell.setPixmap(_bell_pixmap("fa5s.bell", DANGER))
+            self._bell.setPixmap(qta.icon("fa5s.bell", color=DANGER).pixmap(16, 16))
         else:
             self._badge.hide()
-        self._bell.setPixmap(_bell_pixmap("fa5r.bell", TEXT_MUTED))
+            self._bell.setPixmap(qta.icon("fa5r.bell", color=TEXT_MUTED).pixmap(16, 16))
 
     def set_alerts(self, alerts: list) -> None:
         """Store alerts data for display when the bell is clicked."""
