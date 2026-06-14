@@ -78,11 +78,13 @@ class DocumentService:
     _ocr_workers: list = []
     _ocr_running = True
     _ocr_lock = threading.Lock()
+    _ocr_db = None
 
     def __init__(self, db: DatabaseManager):
         self.db = db
         self._repo = DocumentRepository(db)
         self._event_bus = EventBus()
+        DocumentService._ocr_db = db
         DocumentService._start_ocr_workers()
 
     @classmethod
@@ -105,7 +107,11 @@ class DocumentService:
             except queue.Empty:
                 continue
             try:
-                svc = cls.__new__(cls)
+                db = cls._ocr_db
+                if db is None:
+                    logger.debug("OCR worker: no database reference, skipping")
+                    continue
+                svc = cls(db)
                 text = svc.extract_text(file_path, mime_type)
                 if text:
                     svc._repo.update(doc_id, text_content=text,
@@ -629,9 +635,9 @@ class DocumentService:
         try:
             if self.is_image(mime_type):
                 from PIL import Image
-                img = Image.open(file_path)
-                img.thumbnail(THUMB_SIZE, Image.LANCZOS)
-                img.save(thumb_path, "PNG")
+                with Image.open(file_path) as img:
+                    img.thumbnail(THUMB_SIZE, Image.LANCZOS)
+                    img.save(thumb_path, "PNG")
                 return thumb_path
             elif mime_type == "application/pdf":
                 return self._pdf_thumbnail(file_path, thumb_path)
@@ -796,8 +802,8 @@ class DocumentService:
         try:
             from PIL import Image
             import pytesseract
-            img = Image.open(file_path)
-            return pytesseract.image_to_string(img)[:MAX_OCR_TEXT_LENGTH]
+            with Image.open(file_path) as img:
+                return pytesseract.image_to_string(img)[:MAX_OCR_TEXT_LENGTH]
         except (ImportError, Exception):
             return ""
 
