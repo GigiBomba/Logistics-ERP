@@ -17,7 +17,6 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QHBoxLayout,
-    QGridLayout,
 )
 
 from services.country_avoidance import CountryAvoidanceManager
@@ -40,7 +39,7 @@ class CountryExclusionsPanel(QWidget):
         super().__init__(parent)
         self.avoidance = avoidance
         self.on_change = on_change
-        self._expanded = True
+        self._expanded = False
         self._checkboxes: List[StyledCheckBox] = []
         self._build()
 
@@ -113,6 +112,9 @@ class CountryExclusionsPanel(QWidget):
 
         layout.addWidget(section)
 
+        # Start collapsed if not expanded
+        self._chips_container.setVisible(self._expanded)
+
         self._populate_countries()
 
     def _populate_countries(self) -> None:
@@ -120,21 +122,14 @@ class CountryExclusionsPanel(QWidget):
         selected = set(self.avoidance.get_selected())
         codes = sorted(countries.items(), key=lambda x: x[1])
 
-        # Use a grid layout with 4 columns
-        grid = QGridLayout()
-        grid.setContentsMargins(0, 0, 0, 0)
-        grid.setSpacing(2)
-
-        for i, (code, name) in enumerate(codes):
-            cb = StyledCheckBox(text=f"{name}")
+        for code, name in codes:
+            cb = StyledCheckBox(text=name)
             cb.setProperty("country_code", code)
             cb.setChecked(code in selected)
             cb.stateChanged.connect(self._on_country_toggled)
-            row, col = divmod(i, 4)
-            grid.addWidget(cb, row, col)
+            self._chips_layout.addWidget(cb)
             self._checkboxes.append(cb)
 
-        self._chips_layout.addLayout(grid)
         self._update_count_label()
 
     def _on_country_toggled(self, state: int) -> None:

@@ -15,6 +15,7 @@ from typing import Callable, List, Optional, Tuple
 import folium
 
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
+from PySide6.QtGui import QColor
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 
@@ -58,6 +59,7 @@ class MapWidget(QWebEngineView):
         zoom: int = DEFAULT_ZOOM,
     ):
         super().__init__(parent)
+        self.page().setBackgroundColor(QColor("#09090b"))
         self._center = center
         self._zoom = zoom
         self._bridge = MapBridge(self)
