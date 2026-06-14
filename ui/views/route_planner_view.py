@@ -144,18 +144,13 @@ class QtRoutePlannerView(QWidget):
         hdr = SectionHeader(card1, f"\U0001f4cd {t('route.section_header')}")
         card1_layout.addWidget(hdr)
 
-        # Stop list (scrollable inside card1)
-        self._stops_scroll = QScrollArea()
-        self._stops_scroll.setWidgetResizable(True)
-        self._stops_scroll.setFrameShape(QFrame.NoFrame)
-        self._stops_scroll.setMaximumHeight(280)
+        # Stop list — always visible, no scroll wrapper
         self._stops_container = QWidget()
         self._stops_container_layout = QVBoxLayout(self._stops_container)
         self._stops_container_layout.setContentsMargins(0, 0, 0, 0)
         self._stops_container_layout.setSpacing(S["1"])
         self._stops_container_layout.setAlignment(Qt.AlignTop)
-        self._stops_scroll.setWidget(self._stops_container)
-        card1_layout.addWidget(self._stops_scroll)
+        card1_layout.addWidget(self._stops_container)
 
         # Add/Remove buttons
         btn_row = QWidget(card1)

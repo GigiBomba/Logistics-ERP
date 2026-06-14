@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QVBoxLayout,
     QHBoxLayout,
+    QGridLayout,
 )
 
 from services.country_avoidance import CountryAvoidanceManager
@@ -117,15 +118,23 @@ class CountryExclusionsPanel(QWidget):
     def _populate_countries(self) -> None:
         countries = self.avoidance.get_all_countries()
         selected = set(self.avoidance.get_selected())
+        codes = sorted(countries.items(), key=lambda x: x[1])
 
-        for code, name in countries.items():
-            cb = StyledCheckBox(self._chips_container, text=name)
+        # Use a grid layout with 4 columns
+        grid = QGridLayout()
+        grid.setContentsMargins(0, 0, 0, 0)
+        grid.setSpacing(2)
+
+        for i, (code, name) in enumerate(codes):
+            cb = StyledCheckBox(text=f"{name}")
             cb.setProperty("country_code", code)
             cb.setChecked(code in selected)
             cb.stateChanged.connect(self._on_country_toggled)
-            self._chips_layout.addWidget(cb)
+            row, col = divmod(i, 4)
+            grid.addWidget(cb, row, col)
             self._checkboxes.append(cb)
 
+        self._chips_layout.addLayout(grid)
         self._update_count_label()
 
     def _on_country_toggled(self, state: int) -> None:
