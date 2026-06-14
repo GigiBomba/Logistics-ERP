@@ -83,11 +83,9 @@ class OperationsEngine:
             self._event_bus.publish(DAILY_CHECK, {})
             if self._maintenance_engine:
                 self._maintenance_engine.evaluate_all()
-            import threading
             self._daily_timer = threading.Timer(86400, _publish_and_reschedule)
             self._daily_timer.daemon = True
             self._daily_timer.start()
-        import threading
         self._daily_timer = threading.Timer(86400, _publish_and_reschedule)
         self._daily_timer.daemon = True
         self._daily_timer.start()
@@ -321,6 +319,7 @@ class OperationsEngine:
             logger.error("migrate_existing_data trip eval failed: %s", e)
 
         logger.info("migrate_existing_data complete: %s", results)
+        return results
 
     def _on_trip_status_for_docs(self, ev: Dict[str, Any]) -> None:
         data = ev.get("data", {})
@@ -328,12 +327,13 @@ class OperationsEngine:
         trip_id = data.get("trip_id")
         if new_status != "In Transit" or not trip_id:
             return
-        import threading
         t = threading.Thread(target=self._generate_cmr, args=(trip_id,), daemon=True,
                              name=f"cmr-gen-{trip_id}")
         t.start()
 
     def _generate_cmr(self, trip_id: int) -> None:
+        if not self._db:
+            return
         try:
             from services.trip_service import TripService
             from services.invoicing.cmr_generator import CMRGenerator
@@ -351,7 +351,7 @@ class OperationsEngine:
 
             if not trip.get("cargo_description") or not trip.get("gross_weight_kg"):
                 self._alert_mgr.create_alert(
-                    AlertType.POLICY_VIOLATION, Severity.HIGH,
+                    AlertType.POLICY_VIOLATION, Severity.WARNING,
                     f"CMR blocked for trip #{trip_id}",
                     "Cargo description and gross weight are required for CMR. "
                     "Generate CMR manually via the Generators workspace.",
@@ -436,5 +436,4 @@ class OperationsEngine:
                 )
             logger.info("Auto-generated 4 CMR copies for trip %d: %s", trip_id, output_dir)
         except Exception as e:
-            logger.debug("Auto-CMR generation skipped for trip %d: %s", trip_id, e)
-        return results
+            logger.error("Auto-CMR generation failed for trip %d: %s", trip_id, e)
