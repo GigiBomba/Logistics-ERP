@@ -216,6 +216,22 @@ class QtAnalyticsView(QScrollArea):
         drivers = data[5] if len(data) > 5 else []
 
         fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=90)
+
+        # ── Empty state guard ──
+        if not data or len(data) == 0:
+            for ax in axes.flat:
+                ax.set_visible(False)
+            fig.patch.set_facecolor('#09090b')
+            fig.text(0.5, 0.55, '\u2014',
+                     ha='center', va='center',
+                     fontsize=32, color='#27272a',
+                     fontfamily='Segoe UI')
+            fig.text(0.5, 0.42, 'No data for this period',
+                     ha='center', va='center',
+                     fontsize=11, color='#52525b',
+                     fontfamily='Segoe UI')
+            return
+
         fig.patch.set_facecolor(COLORS.get("bg_base", "#09090b"))
 
         self._chart_texts = []

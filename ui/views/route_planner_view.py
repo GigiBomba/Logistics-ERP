@@ -113,7 +113,7 @@ class QtRoutePlannerView(QWidget):
         sidebar.setProperty("role", "card")
         sidebar.setFixedWidth(self.SIDEBAR_MIN_WIDTH)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(0, 0, 0, 0)
+        sidebar_layout.setContentsMargins(16, 16, 16, 16)
         sidebar_layout.setSpacing(0)
 
         self._build_sidebar(sidebar_layout)
@@ -138,9 +138,16 @@ class QtRoutePlannerView(QWidget):
         body_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
         body_layout.setSpacing(S["3"])
 
+        # ── Card 1: SMART ROUTE ──
+        card1 = QFrame()
+        card1.setProperty("role", "card")
+        card1_layout = QVBoxLayout(card1)
+        card1_layout.setContentsMargins(16, 16, 16, 16)
+        card1_layout.setSpacing(S["3"])
+
         # Section header
-        hdr = SectionHeader(body, f"\U0001f4cd {t('route.section_header')}")
-        body_layout.addWidget(hdr)
+        hdr = SectionHeader(card1, f"\U0001f4cd {t('route.section_header')}")
+        card1_layout.addWidget(hdr)
 
         # Stop list
         self._stops_scroll = QScrollArea()
@@ -153,10 +160,10 @@ class QtRoutePlannerView(QWidget):
         self._stops_container_layout.setSpacing(S["1"])
         self._stops_container_layout.setAlignment(Qt.AlignTop)
         self._stops_scroll.setWidget(self._stops_container)
-        body_layout.addWidget(self._stops_scroll)
+        card1_layout.addWidget(self._stops_scroll)
 
         # Add/Remove buttons
-        btn_row = QWidget(body)
+        btn_row = QWidget(card1)
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(0, 0, 0, 0)
         btn_layout.setSpacing(S["2"])
@@ -164,7 +171,9 @@ class QtRoutePlannerView(QWidget):
         btn_layout.addWidget(add_btn, 1)
         remove_btn = ActionButton(btn_row, t("route.remove_stop"), self._remove_stop_field, variant="secondary")
         btn_layout.addWidget(remove_btn, 1)
-        body_layout.addWidget(btn_row)
+        card1_layout.addWidget(btn_row)
+
+        body_layout.addWidget(card1)
 
         # Compliance
         self._summary_text = QLabel("")
@@ -193,16 +202,25 @@ class QtRoutePlannerView(QWidget):
         )
         body_layout.addWidget(export_btn)
 
+        # ── Card 2: SELECT TRUCK + ROUTE PROFILE ──
+        card2 = QFrame()
+        card2.setProperty("role", "card")
+        card2_layout = QVBoxLayout(card2)
+        card2_layout.setContentsMargins(16, 16, 16, 16)
+        card2_layout.setSpacing(S["3"])
+
         # Truck dropdown
-        self.truck_combo = StyledComboBox(body)
+        self.truck_combo = StyledComboBox(card2)
         self.truck_combo.currentIndexChanged.connect(self._on_truck_selected)
-        body_layout.addWidget(field(body, t("route.select_truck"), self.truck_combo))
+        card2_layout.addWidget(field(card2, t("route.select_truck"), self.truck_combo))
 
         # Profile dropdown
         self._rebuild_profile_display_names()
-        self.profile_combo = StyledComboBox(body, values=list(self._profile_key_to_display.values()))
+        self.profile_combo = StyledComboBox(card2, values=list(self._profile_key_to_display.values()))
         self.profile_combo.setCurrentText(self._profile_key_to_display.get("Recommended", "Recommended"))
-        body_layout.addWidget(field(body, t("route.profile_label"), self.profile_combo))
+        card2_layout.addWidget(field(card2, t("route.profile_label"), self.profile_combo))
+
+        body_layout.addWidget(card2)
 
         # Country exclusions
         self._exclusions_panel = CountryExclusionsPanel(
@@ -225,7 +243,7 @@ class QtRoutePlannerView(QWidget):
             footer,
             f"\U0001f50d {t('route.calculate_button')}",
             self._on_calculate_click,
-            color=COLORS.get("accent", "#6366f1"),
+            variant="primary",
         )
         footer_layout.addWidget(self.calculate_btn)
 
@@ -502,7 +520,7 @@ class QtRoutePlannerView(QWidget):
             btn_row,
             f"\U0001f4b0 {t('route.send_to_calculator')}",
             self._go_to_calculator,
-            color=COLORS.get("success", "#22c55e"),
+            variant="secondary",
         )
         btn_layout.addWidget(calc_btn, 1)
 
