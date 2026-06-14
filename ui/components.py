@@ -26,7 +26,12 @@ from ui.design_tokens import (
     FONT_FAMILY, FONT_MONO, FONT_SIZES, SP, RADIUS, STATUS,
 )
 
-import qtawesome as qta
+try:
+    import qtawesome as qta
+    _HAS_QTAWESOME = True
+except ImportError:
+    qta = None
+    _HAS_QTAWESOME = False
 
 
 def Label(parent, text="", role="", **props) -> QLabel:
@@ -70,7 +75,7 @@ def Btn(parent, text="", variant="secondary",
     btn.setProperty("variant", variant)
     if size == "sm":
         btn.setProperty("size", "sm")
-    if icon_name:
+    if icon_name and _HAS_QTAWESOME:
         color_map = {
             "primary": "white",
             "secondary": TEXT_SECONDARY,
@@ -196,8 +201,12 @@ def StatusChip(parent, status="", text="") -> QLabel:
 
 
 def Icon(name: str, color=TEXT_SECONDARY,
-         size=16) -> qta.IconWidget:
-    """Return an icon widget."""
-    return qta.IconWidget(name, options=[{
-        "color": color, "scale_factor": 1.0
-    }])
+         size=16):
+    """Return an icon widget, or a fallback QLabel if qtawesome unavailable."""
+    if _HAS_QTAWESOME:
+        return qta.IconWidget(name, options=[{
+            "color": color, "scale_factor": 1.0
+        }])
+    lbl = QLabel("●")
+    lbl.setStyleSheet(f"color: {color}; font-size: {size}px;")
+    return lbl
