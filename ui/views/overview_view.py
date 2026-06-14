@@ -59,6 +59,7 @@ class QtOverviewView(QScrollArea):
         self._event_bus = EventBus()
         self._handlers: Dict[str, Any] = {}
         self._last_refresh_ts = 0
+        self._shutting_down = False
         self._chart_render_ts = 0
         self._chart_last_size = None
         self._profit_fig = None
@@ -282,6 +283,18 @@ class QtOverviewView(QScrollArea):
     # ── Refresh / data population ──────────────────────────────────────────────
 
     def refresh(self):
+        # Guard: skip if the widget is shutting down or the underlying
+        # C++ object has been destroyed (can happen when a QTimer fires
+        # after the widget is closed in tests).
+        if getattr(self, "_shutting_down", False):
+            return
+        try:
+            # Access a property to verify the C++ object is still alive.
+            # If the widget was deleted by Qt, this raises RuntimeError.
+            self.isVisible()
+        except RuntimeError:
+            return
+
         now_ts = datetime.now().timestamp()
         if now_ts - self._last_refresh_ts < 2:
             return
@@ -715,6 +728,7 @@ class QtOverviewView(QScrollArea):
         self.refresh()
 
     def shutdown(self):
+        self._shutting_down = True
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
         if self._resize_timer is not None:
