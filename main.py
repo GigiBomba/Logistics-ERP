@@ -25,6 +25,15 @@ logger = logging.getLogger("app")
 
 def run_app() -> int:
     try:
+        # Quick pre-flight check — ensure critical dependency is available early
+        try:
+            import qtawesome  # noqa: F401
+        except ImportError:
+            print(f"\nERROR: qtawesome is not installed in this Python environment.", file=sys.stderr)
+            print(f"Python path: {sys.executable}", file=sys.stderr)
+            print(f"Run: py -3 -m pip install qtawesome\n", file=sys.stderr)
+            return 1
+
         Config.ensure_dirs()
 
         # 1. Database
@@ -85,9 +94,14 @@ def run_app() -> int:
         return result
 
     except Exception:
-        logger.critical("Startup failed: %s", traceback.format_exc())
+        tb = traceback.format_exc()
+        logger.critical("Startup failed: %s", tb)
+        print(f"\nFATAL STARTUP ERROR:\n{tb}", file=sys.stderr)
         return 1
 
 
 if __name__ == "__main__":
+    # Show Python path for diagnostics
+    print(f"Python: {sys.executable}")
+    print(f"Working dir: {os.getcwd()}")
     sys.exit(run_app())
