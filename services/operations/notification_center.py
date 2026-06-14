@@ -85,7 +85,9 @@ class NotificationCenter:
         cfg = self._smtp_config
         try:
             msg = MIMEMultipart("alternative")
-            msg["Subject"] = f"{SEVERITY_EMAIL_PREFIX.get(alert_data.get('severity', ''), '')}{alert_data.get('title', 'Alert')}"
+            title = alert_data.get("title", "Alert") or "Alert"
+            safe_title = title.replace("\r", "").replace("\n", " ")
+            msg["Subject"] = f"{SEVERITY_EMAIL_PREFIX.get(alert_data.get('severity', ''), '')}{safe_title}"
             msg["From"] = cfg["user"]
 
             recipients = self._get_alert_recipients(alert_data)

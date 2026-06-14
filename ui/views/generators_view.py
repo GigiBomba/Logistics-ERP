@@ -916,6 +916,9 @@ class QtGeneratorsView(QWidget):
 
     def wakeup(self) -> None:
         """Called when the view becomes visible (e.g. stacked widget switch)."""
+        if not getattr(self, "_listener_registered", True):
+            register_listener(self._language_callback)
+            self._listener_registered = True
         self._refresh_trip_lists()
 
     def shutdown(self) -> None:
@@ -924,3 +927,4 @@ class QtGeneratorsView(QWidget):
             unregister_listener(self._language_callback)
         except Exception:
             pass
+        self._listener_registered = False

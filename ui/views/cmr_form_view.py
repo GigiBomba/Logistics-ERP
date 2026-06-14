@@ -1662,7 +1662,9 @@ class QtCmrFormView(QWidget):
 
     def wakeup(self) -> None:
         """Register i18n listener; called when the view becomes active."""
-        register_listener(self._language_callback)
+        if not getattr(self, "_listener_registered", False):
+            register_listener(self._language_callback)
+            self._listener_registered = True
 
     def shutdown(self) -> None:
         """Unregister i18n listener; called when the view is discarded."""
@@ -1670,3 +1672,4 @@ class QtCmrFormView(QWidget):
             unregister_listener(self._language_callback)
         except Exception:
             pass
+        self._listener_registered = False

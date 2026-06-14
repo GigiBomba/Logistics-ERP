@@ -110,6 +110,11 @@ class QtFleetTrackingView(QWidget):
     def shutdown(self) -> None:
         """Stop polling and clean up resources."""
         self._stop_polling()
+        if hasattr(self, "_map") and self._map:
+            try:
+                self._map.destroy()
+            except Exception:
+                pass
 
     # ── Build ─────────────────────────────────────────────────────────
 

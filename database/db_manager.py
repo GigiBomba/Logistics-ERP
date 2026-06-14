@@ -479,10 +479,27 @@ class DatabaseManager:
 
     # --- OPERAȚIUNI CURSE (TRIPS) ---
 
+    def _valid_columns(self, table: str) -> set:
+        """Return the set of valid column names for a table (cached)."""
+        cache_key = f"_cols_{table}"
+        if not hasattr(self, cache_key):
+            rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+            setattr(self, cache_key, {r[1] for r in rows})
+        return getattr(self, cache_key)
+
+    def _validate_column_keys(self, data: dict, table: str) -> None:
+        """Raise ValueError if any dict key is not a valid column in the table."""
+        valid = self._valid_columns(table)
+        invalid = set(data.keys()) - valid
+        if invalid:
+            raise ValueError(
+                f"Invalid column(s) for {table}: {', '.join(sorted(invalid))}"
+            )
+
     # @deprecated — use TripService.add() → TripRepository.create() instead
     def add_trip(self, data: dict):
         """Salvează o cursă nouă și returnează ID-ul generat."""
-        # Use a single transaction to write the trip (single full write)
+        self._validate_column_keys(data, "trips")
         keys = ", ".join(data.keys())
         placeholders = ", ".join(["?"] * len(data))
         query = f"INSERT INTO trips ({keys}) VALUES ({placeholders})"
@@ -503,6 +520,7 @@ class DatabaseManager:
     # @deprecated — use TripService.update() → TripRepository.update() instead
     def update_trip(self, trip_id, data: dict):
         """Actualizează datele unei curse existente."""
+        self._validate_column_keys(data, "trips")
         placeholders = ", ".join([f"{key} = ?" for key in data.keys()])
         query = f"UPDATE trips SET {placeholders} WHERE id = ?"
         cur = self.conn.cursor()
@@ -769,6 +787,7 @@ class DatabaseManager:
         ).fetchone())
 
     def add_truck(self, data: dict):
+        self._validate_column_keys(data, "trucks")
         keys = ", ".join(data.keys())
         placeholders = ", ".join(["?"] * len(data))
         cursor = self.conn.execute(f"INSERT INTO trucks ({keys}) VALUES ({placeholders})", tuple(data.values()))
@@ -776,6 +795,7 @@ class DatabaseManager:
         return cursor.lastrowid
 
     def update_truck(self, truck_id, data: dict):
+        self._validate_column_keys(data, "trucks")
         placeholders = ", ".join([f"{key} = ?" for key in data.keys()])
         self.conn.execute(f"UPDATE trucks SET {placeholders} WHERE id = ?", list(data.values()) + [truck_id])
         self.conn.commit()

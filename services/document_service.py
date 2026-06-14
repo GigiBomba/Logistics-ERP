@@ -604,6 +604,10 @@ class DocumentService:
     # ── Zip Download ───────────────────────────────────────────────────
 
     def download_zip(self, doc_ids: list, output_path: str) -> str:
+        canonical = os.path.realpath(output_path)
+        safe_base = os.path.realpath(os.path.join("data", "documents"))
+        if not canonical.startswith(safe_base + os.sep) and canonical != os.path.realpath(output_path[:len(safe_base)]):
+            raise ValueError(f"Output path must be within {safe_base}")
         docs = self._repo.get_ids_by_ids(doc_ids)
         with zipfile.ZipFile(output_path, "w", zipfile.ZIP_DEFLATED) as zf:
             for doc in docs:
