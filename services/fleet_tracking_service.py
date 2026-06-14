@@ -349,6 +349,9 @@ class GenericRestAdapter(BaseTrackingAdapter):
         return v
 
     def get_positions(self) -> List[VehiclePosition]:
+        if not self.url:
+            logger.warning("Generic REST adapter: no URL configured")
+            return []
         try:
             headers = {}
             if self.auth_header:

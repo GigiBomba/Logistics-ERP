@@ -96,6 +96,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._table_ref = None
         self._i18n_widgets: List[tuple] = []
         self._chart_texts: List[tuple] = []
+        self._shutting_down = False
 
         # Data stores populated by _load_data()
         self._truck_map: Dict[int, str] = {}
@@ -167,6 +168,12 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._load_data()
 
     def _load_data(self) -> None:
+        if getattr(self, "_shutting_down", False):
+            return
+        try:
+            self.isVisible()
+        except RuntimeError:
+            return
         if self.repo is None or self.service is None:
             return
 
@@ -451,6 +458,7 @@ class QtMaintenanceAnalyticsView(QWidget):
 
     def shutdown(self) -> None:
         """Clean up i18n listener and matplotlib figure."""
+        self._shutting_down = True
         try:
             unregister_listener(self._language_callback)
         except Exception:

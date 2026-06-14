@@ -75,6 +75,7 @@ class QtFleetDashboard(QWidget):
         self._start_date: Optional[str] = None
         self._end_date: Optional[str] = None
         self._last_refresh: Optional[datetime] = None
+        self._shutting_down = False
 
         # ── Chart references (for cleanup) ──────────────────────────────────────
         self._chart_refs: List[Tuple[Any, Any]] = []
@@ -220,6 +221,7 @@ class QtFleetDashboard(QWidget):
 
     def shutdown(self) -> None:
         """Clean up timers, chart figures, and listeners."""
+        self._shutting_down = True
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
 
@@ -993,6 +995,12 @@ class QtFleetDashboard(QWidget):
 
     def _auto_refresh(self) -> None:
         """Timer-triggered refresh (debounced to avoid rapid re-entrancy)."""
+        if getattr(self, "_shutting_down", False):
+            return
+        try:
+            self.isVisible()
+        except RuntimeError:
+            return
         self.refresh_all()
 
     # ------------------------------------------------------------------
