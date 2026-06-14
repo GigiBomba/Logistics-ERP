@@ -20,6 +20,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QHBoxLayout,
     QSplitter,
+    QFrame,
     QFileDialog,
     QMessageBox,
 )
@@ -184,19 +185,55 @@ class QtRouteHistoryView(QWidget):
         footer_layout.setContentsMargins(0, 0, 0, 0)
         footer_layout.setSpacing(S["2"])
 
-        btn_data = [
-            ("route_history.refresh", self._load_page),
-            ("route_history.open_planner", self._open_in_planner),
-            ("route_history.recalculate", self._recalculate),
-            ("route_history.archive", self._archive_route),
-            ("route_history.export_json", lambda: self._export_selected("json")),
-            ("route_history.export_csv", lambda: self._export_selected("csv")),
-            ("route_history.delete", self._delete_route),
-            ("route_history.compare", self._compare_selected),
-        ]
-        for key, cmd in btn_data:
-            btn = ActionButton(footer, t(key), cmd, variant="secondary")
-            footer_layout.addWidget(btn)
+        # ── Group 1: Refresh, Open Route Planner ──
+        refresh_btn = ActionButton(footer, t("route_history.refresh"), self._load_page, variant="secondary")
+        refresh_btn.setFixedHeight(34)
+        footer_layout.addWidget(refresh_btn)
+
+        planner_btn = ActionButton(footer, t("route_history.open_planner"), self._open_in_planner, variant="secondary")
+        planner_btn.setFixedHeight(34)
+        footer_layout.addWidget(planner_btn)
+
+        # spacer
+        sp1 = QFrame()
+        sp1.setFrameShape(QFrame.VLine)
+        sp1.setFrameShadow(QFrame.Sunken)
+        sp1.setFixedWidth(2)
+        footer_layout.addWidget(sp1)
+
+        # ── Group 2: Recalculate, Duplicate, Export JSON, Export CSV ──
+        recalc_btn = ActionButton(footer, t("route_history.recalculate"), self._recalculate, variant="secondary")
+        recalc_btn.setFixedHeight(34)
+        footer_layout.addWidget(recalc_btn)
+
+        dup_btn = ActionButton(footer, t("route_history.duplicate_button"), self._duplicate_route, variant="secondary")
+        dup_btn.setFixedHeight(34)
+        footer_layout.addWidget(dup_btn)
+
+        export_json_btn = ActionButton(footer, t("route_history.export_json"), lambda: self._export_selected("json"), variant="secondary")
+        export_json_btn.setFixedHeight(34)
+        footer_layout.addWidget(export_json_btn)
+
+        export_csv_btn = ActionButton(footer, t("route_history.export_csv"), lambda: self._export_selected("csv"), variant="secondary")
+        export_csv_btn.setFixedHeight(34)
+        footer_layout.addWidget(export_csv_btn)
+
+        # spacer
+        sp2 = QFrame()
+        sp2.setFrameShape(QFrame.VLine)
+        sp2.setFrameShadow(QFrame.Sunken)
+        sp2.setFixedWidth(2)
+        footer_layout.addWidget(sp2)
+
+        # ── Group 3: Archive, Delete ──
+        archive_btn = ActionButton(footer, t("route_history.archive"), self._archive_route, variant="secondary")
+        archive_btn.setFixedHeight(34)
+        footer_layout.addWidget(archive_btn)
+
+        delete_btn = ActionButton(footer, t("route_history.delete"), self._delete_route, variant="danger")
+        delete_btn.setFixedHeight(34)
+        footer_layout.addWidget(delete_btn)
+
         footer_layout.addStretch(1)
         layout.addWidget(footer)
 
@@ -363,6 +400,13 @@ class QtRouteHistoryView(QWidget):
         if res:
             QMessageBox.information(self, t("route_history.recalculated"), t("route_history.recalculated_msg"))
             self._load_page()
+
+    def _duplicate_route(self) -> None:
+        data = self.table.selected_row_data()
+        if not data or not data.get("id"):
+            return
+        self.service.duplicate_route(int(data["id"]))
+        self._load_page()
 
     def _archive_route(self) -> None:
         data = self.table.selected_row_data()

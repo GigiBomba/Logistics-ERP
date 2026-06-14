@@ -260,6 +260,40 @@ class QtTheme:
             font-family: {cls._ff("mono")};
             font-weight: bold;
         }}
+
+        QLabel[class="page-title"] {{
+            font-size: 20px;
+            font-weight: 600;
+            color: {COLORS["text_primary"]};
+        }}
+
+        QLabel[class="section-title"] {{
+            font-size: 13px;
+            font-weight: 600;
+            color: {COLORS["text_primary"]};
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }}
+
+        QLabel[class="field-label"] {{
+            font-size: 11px;
+            color: {COLORS["text_muted"]};
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }}
+
+        QLabel[class="kpi-value"] {{
+            font-size: 22px;
+            font-weight: 700;
+            font-family: {cls._ff("mono")};
+            color: {COLORS["text_primary"]};
+        }}
+
+        QLabel[class="kpi-label"] {{
+            font-size: 11px;
+            color: {COLORS["text_muted"]};
+            text-transform: uppercase;
+        }}
         """
 
     # ── Buttons ─────────────────────────────────────────────────────────────────
@@ -303,11 +337,13 @@ class QtTheme:
         }}
 
         QPushButton[variant="danger"] {{
-            background-color: {COLORS["danger"]};
+            background-color: transparent;
+            color: {COLORS["text_danger"]};
+            border: 1px solid {COLORS["danger_dim"]};
         }}
 
         QPushButton[variant="danger"]:hover {{
-            background-color: #b91c1c;
+            background-color: {COLORS["danger_dim"]};
         }}
 
         QPushButton[variant="ghost"] {{
@@ -322,11 +358,14 @@ class QtTheme:
         }}
 
         QPushButton[variant="success"] {{
-            background-color: {COLORS["success"]};
+            background-color: {COLORS["success_dim"]};
+            color: {COLORS["text_success"]};
+            border: 1px solid {COLORS["success_dim"]};
         }}
 
         QPushButton[variant="success"]:hover {{
-            background-color: #16a34a;
+            background-color: {COLORS["success_dim"]};
+            border-color: {COLORS["text_success"]};
         }}
         """
 
@@ -563,12 +602,13 @@ class QtTheme:
         QHeaderView::section {{
             background-color: {COLORS["bg_base"]};
             color: {COLORS["text_muted"]};
-            padding: 8px;
+            padding: 8px 12px;
             border: none;
             border-bottom: 1px solid {COLORS["border"]};
-            font-weight: bold;
+            font-weight: 600;
             font-size: {cls._fs("label")}px;
             text-transform: uppercase;
+            letter-spacing: 0.08em;
         }}
 
         QHeaderView::section:hover {{
@@ -813,6 +853,46 @@ class QtTheme:
             border: 1px solid {COLORS["border"]};
             border-radius: {RADIUS_CARD}px;
         }}
+
+        QFrame[role="chip-critical"] {{
+            background-color: {COLORS["danger_dim"]};
+            color: {COLORS["text_danger"]};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 8px;
+        }}
+
+        QFrame[role="chip-warning"] {{
+            background-color: {COLORS["warning_dim"]};
+            color: {COLORS["text_warning"]};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 8px;
+        }}
+
+        QFrame[role="chip-info"] {{
+            background-color: {COLORS["info_dim"]};
+            color: {COLORS["text_accent"]};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 8px;
+        }}
+
+        QFrame[role="chip-success"] {{
+            background-color: {COLORS["success_dim"]};
+            color: {COLORS["text_success"]};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 8px;
+        }}
+
+        QFrame[role="chip-neutral"] {{
+            background-color: {COLORS["bg_elevated"]};
+            color: {COLORS["text_secondary"]};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 8px;
+        }}
         """
 
     # ── Menu / ToolTip ──────────────────────────────────────────────────────────
@@ -953,7 +1033,8 @@ class QtTheme:
         QLabel[role="nav-icon"] {{
             background-color: transparent;
             color: {COLORS["text_muted"]};
-            font-size: 14px;
+            font-family: "'Segoe UI Emoji', 'Segoe UI Symbol', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
+            font-size: 18px;
         }}
 
         QFrame[role="nav-item"][state="active"] QLabel[role="nav-icon"] {{
