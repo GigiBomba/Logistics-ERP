@@ -1,139 +1,362 @@
-import tkinter as tk
-import customtkinter as ctk
-from tkinter import ttk
-from ui.styles import Theme
+"""QtAssignmentDropdown — PySide6 popup for selecting assignable items (trucks/drivers).
+
+Replaces ``ui/widgets/assignment_dropdown.py`` (CTkToplevel).
+
+Usage::
+
+    items = self._fetch_assignable()
+    dropdown = QtAssignmentDropdown(
+        self,
+        anchor_widget=self._truck_btn,
+        title=t("dispatch_board.assign_truck"),
+        fetch_func=self._fetch_assignable,
+        on_select=self._on_truck_selected,
+    )
+    dropdown.show_anchored(self._truck_btn)
+"""
+
+from __future__ import annotations
+
+from typing import Any, Callable, Optional
+
+from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget,
+    QSizePolicy,
+)
+
+from ui.theme import COLORS, S
 from services.i18n import t
-from ui.theme import FONTS
 
 
-class AssignmentDropdown(ctk.CTkToplevel):
+_MAX_HEIGHT = 300
+_WIDTH = 280
+_ROW_HEIGHT = 44
 
-    DROPDOWN_BG = Theme.SURFACE
-    ITEM_BG = Theme.SURFACE2
-    ITEM_BG_HOVER = Theme.SURFACE3
-    ITEM_UNAVAILABLE_FG = Theme.MUTED
-    MAX_HEIGHT = 300
-    WIDTH = 280
 
-    def __init__(self, parent, anchor_widget, title: str, fetch_func, on_select, on_close=None):
-        super().__init__(parent)
-        self._anchor = anchor_widget
-        self._fetch_func = fetch_func
-        self._on_select = on_select
-        self._on_close = on_close
-        self._items = []
+class _ItemRow(QFrame):
+    """A single selectable row in the assignment dropdown.
 
-        self.overrideredirect(True)
-        self.attributes("-topmost", True)
-        self.configure(fg_color=Theme.BORDER)
+    Shows an availability dot, label, sublabel, and optional status text.
+    Unavailable items render with muted text and no hover/click interaction.
+    """
 
-        self._container = ctk.CTkFrame(self, fg_color=self.DROPDOWN_BG)
-        self._container.pack(fill="both", expand=True, padx=1, pady=1)
+    def __init__(
+        self,
+        item: dict[str, Any],
+        on_select: Callable[[Any], None],
+    ) -> None:
+        super().__init__()
+        self.setProperty("role", "assignment-row")
+        self.setFixedHeight(_ROW_HEIGHT)
 
-        header = ctk.CTkFrame(self._container, fg_color=self.DROPDOWN_BG)
-        header.pack(fill="x")
-        ctk.CTkLabel(header, text=title, fg_color=self.DROPDOWN_BG, text_color=Theme.TEXT,
-                     font=FONTS["small"]).pack(side="left")
-
-        close_btn = ctk.CTkLabel(header, text="\u2715", fg_color=self.DROPDOWN_BG, text_color=Theme.MUTED,
-                                font=FONTS["label"], cursor="hand2")
-        close_btn.pack(side="right")
-        close_btn.bind("<Button-1>", lambda e: self._close())
-
-        self._scroll_frame = ctk.CTkScrollableFrame(self._container, fg_color=self.DROPDOWN_BG, height=self.MAX_HEIGHT)
-        self._scroll_frame.pack(fill="both", expand=True)
-
-        self._spinner_lbl = ctk.CTkLabel(self._scroll_frame, text=t("dispatch_board.loading_options"),
-                                         fg_color=self.DROPDOWN_BG, text_color=Theme.MUTED,
-                                         font=FONTS["label"])
-        self._spinner_lbl.pack(pady=20)
-
-        self._position_dropdown()
-
-        self.bind("<FocusOut>", lambda e: self._close())
-        self._container.bind("<Button-1>", lambda e: self.focus_set())
-        self.focus_set()
-
-        self.after(50, self._load_items)
-
-    def _position_dropdown(self):
-        try:
-            x = self._anchor.winfo_rootx()
-            y = self._anchor.winfo_rooty() + self._anchor.winfo_height() + 2
-            screen_h = self.winfo_screenheight()
-            if y + self.MAX_HEIGHT > screen_h:
-                y = self._anchor.winfo_rooty() - self.MAX_HEIGHT - 2
-            self.geometry(f"{self.WIDTH}x{self.MAX_HEIGHT}+{x}+{y}")
-        except Exception:
-            self.geometry(f"{self.WIDTH}x{self.MAX_HEIGHT}+100+100")
-
-    def _load_items(self):
-        try:
-            items = self._fetch_func()
-            self._spinner_lbl.destroy()
-            self._items = items
-            self._render_items()
-        except Exception as e:
-            self._spinner_lbl.configure(text=f"{t('dispatch_board.load_error')}: {e}",
-                                        text_color=Theme.DANGER)
-
-    def _render_items(self):
-        for widget in self._scroll_frame.winfo_children():
-            widget.destroy()
-
-        if not self._items:
-            ctk.CTkLabel(self._scroll_frame, text=t("dispatch_board.no_options"),
-                         fg_color=self.DROPDOWN_BG, text_color=Theme.MUTED,
-                         font=FONTS["label"]).pack(pady=20)
-            return
-
-        for item in self._items:
-            self._create_item_row(item)
-
-    def _create_item_row(self, item):
         available = item.get("available", True)
         item_id = item.get("id")
         label = item.get("label", "")
         sublabel = item.get("sublabel", "")
         status_text = item.get("status_text", "")
 
-        row = ctk.CTkFrame(self._scroll_frame, fg_color=self.ITEM_BG, cursor="hand2")
-        row.pack(fill="x", pady=(0, 1))
+        self._available = available
+        self._item_id = item_id
+        self._on_select = on_select
 
-        text_frame = ctk.CTkFrame(row, fg_color=self.ITEM_BG)
-        text_frame.pack(side="left", fill="x", expand=True)
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(S["3"], 0, S["3"], 0)
+        layout.setSpacing(S["2"])
 
-        fg_color = Theme.TEXT if available else self.ITEM_UNAVAILABLE_FG
-        ctk.CTkLabel(text_frame, text=label, fg_color=self.ITEM_BG, text_color=fg_color,
-                     font=FONTS["small"]).pack(anchor="w")
+        # -- Availability dot ------------------------------------------------
+        dot = QLabel()
+        dot.setFixedSize(8, 8)
+        dot.setProperty("role", "availability-dot")
+        if available:
+            dot.setStyleSheet(
+                f"background-color: {COLORS['success']};"
+                f"border-radius: 4px;"
+            )
+        else:
+            dot.setStyleSheet(
+                f"background-color: {COLORS['text_muted']};"
+                f"border-radius: 4px;"
+            )
+        layout.addWidget(dot, 0)
+
+        # -- Text area -------------------------------------------------------
+        text_widget = QWidget()
+        text_widget.setProperty("role", "assignment-row-text")
+        text_layout = QVBoxLayout(text_widget)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(1)
+
+        text_color = COLORS["text_primary"] if available else COLORS["text_muted"]
+
+        label_widget = QLabel(label)
+        label_widget.setProperty("fontRole", "small")
+        label_widget.setStyleSheet(f"color: {text_color};")
+        text_layout.addWidget(label_widget)
 
         if sublabel:
-            ctk.CTkLabel(text_frame, text=sublabel, fg_color=self.ITEM_BG, text_color=Theme.MUTED,
-                         font=FONTS["label"]).pack(anchor="w")
+            sub_widget = QLabel(sublabel)
+            sub_widget.setProperty("fontRole", "muted")
+            text_layout.addWidget(sub_widget)
 
+        layout.addWidget(text_widget, 1)
+
+        # -- Status text (unavailable only) ----------------------------------
         if status_text and not available:
-            ctk.CTkLabel(row, text=status_text, fg_color=self.ITEM_BG, text_color=Theme.WARNING,
-                          font=FONTS["label"]).pack(side="right")
+            status_label = QLabel(status_text)
+            status_label.setProperty("fontRole", "warning")
+            layout.addWidget(status_label, 0)
 
+        # -- Click / hover behaviour -----------------------------------------
         if available:
-            row.bind("<Enter>", lambda e, r=row: r.configure(fg_color=self.ITEM_BG_HOVER))
-            row.bind("<Leave>", lambda e, r=row: r.configure(fg_color=self.ITEM_BG))
-            row.bind("<Button-1>", lambda e, iid=item_id: self._select(iid))
-            for child in row.winfo_children():
-                child.bind("<Enter>", lambda e, r=row: r.configure(fg_color=self.ITEM_BG_HOVER))
-                child.bind("<Leave>", lambda e, r=row: r.configure(fg_color=self.ITEM_BG))
-                child.bind("<Button-1>", lambda e, iid=item_id: self._select(iid))
-                for subchild in child.winfo_children():
-                    subchild.bind("<Enter>", lambda e, r=row: r.configure(fg_color=self.ITEM_BG_HOVER))
-                    subchild.bind("<Leave>", lambda e, r=row: r.configure(fg_color=self.ITEM_BG))
-                    subchild.bind("<Button-1>", lambda e, iid=item_id: self._select(iid))
+            self.setCursor(Qt.PointingHandCursor)
+            self._install_click_handler()
+        else:
+            self.setCursor(Qt.ArrowCursor)
 
-    def _select(self, item_id):
-        if self._on_select:
-            self._on_select(item_id)
-        self._close()
+    def _install_click_handler(self) -> None:
+        """Wire up mouse clicks and hover events on this row and its children."""
+        self.mousePressEvent = self._on_click  # type: ignore[assignment]
+        # Walk all child widgets so clicks land regardless of where the
+        # user presses.
+        self._walk_set_click(self)
 
-    def _close(self):
-        if self._on_close:
-            self._on_close()
-        self.destroy()
+    def _walk_set_click(self, widget: QWidget) -> None:
+        """Recursively assign click and hover handlers to *widget* and its children."""
+        original = getattr(widget, "mousePressEvent", None)
+        if original is None or original.__func__ is QWidget.mousePressEvent:
+            widget.mousePressEvent = self._on_click  # type: ignore[assignment]
+
+        for child in widget.findChildren(QWidget, options=Qt.FindChildrenRecursively):
+            if child.mousePressEvent is None or child.mousePressEvent.__func__ is QWidget.mousePressEvent:
+                child.mousePressEvent = self._on_click  # type: ignore[assignment]
+
+    def _on_click(self, event=None) -> None:
+        if self._available and self._on_select:
+            self._on_select(self._item_id)
+
+    def enterEvent(self, event) -> None:
+        if self._available:
+            self.setStyleSheet(
+                f"QFrame[role=\"assignment-row\"] {{"
+                f"  background-color: {COLORS['bg_elevated']};"
+                f"}}"
+            )
+        super().enterEvent(event)
+
+    def leaveEvent(self, event) -> None:
+        if self._available:
+            self.setStyleSheet("")
+        super().leaveEvent(event)
+
+
+class QtAssignmentDropdown(QFrame):
+    """Popup dropdown anchored below a widget, showing assignable items.
+
+    Displays a header with a title and close button, a scrollable list of
+    item rows, loading/error/empty states, and auto-closes on focus loss.
+    """
+
+    MAX_HEIGHT = _MAX_HEIGHT
+    WIDTH = _WIDTH
+
+    def __init__(
+        self,
+        parent: QWidget,
+        anchor_widget: QWidget,
+        title: str,
+        fetch_func: Callable[[], list[dict[str, Any]]],
+        on_select: Callable[[Any], None],
+        on_close: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
+        self.setProperty("role", "assignment-dropdown")
+        self.setFixedWidth(self.WIDTH)
+        self.setAttribute(Qt.WA_TranslucentBackground, False)
+
+        self._anchor = anchor_widget
+        self._fetch_func = fetch_func
+        self._on_select = on_select
+        self._on_close = on_close
+        self._items: list[dict[str, Any]] = []
+
+        # Outer container with a 1px border simulation using a QFrame border
+        # style. The QSS theme handles the visual border via role selector.
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._build_header(layout, title)
+        self._build_scroll_area(layout)
+        self._show_loading()
+
+        # Pre-position before showing so the popup appears at the correct
+        # location immediately.
+        self._pre_position()
+
+        # Start loading items after a short deferral so the UI thread
+        # has time to paint the initial state.
+        QTimer.singleShot(0, self._load_items)
+
+    # ── Public API ──────────────────────────────────────────────────────────
+
+    def show_anchored(self, anchor: QWidget) -> None:
+        """Position the dropdown below *anchor* and show it."""
+        if anchor is None:
+            return
+        self._position_at_anchor(anchor)
+        self.show()
+        self.raise_()
+        self.setFocus()
+
+    # ── Header ──────────────────────────────────────────────────────────────
+
+    def _build_header(self, layout: QVBoxLayout, title: str) -> None:
+        header = QWidget()
+        header.setProperty("role", "assignment-dropdown-header")
+        header.setFixedHeight(38)
+
+        hdr_layout = QHBoxLayout(header)
+        hdr_layout.setContentsMargins(S["3"], 0, S["2"], 0)
+        hdr_layout.setSpacing(0)
+
+        title_label = QLabel(title)
+        title_label.setProperty("fontRole", "small")
+        hdr_layout.addWidget(title_label)
+        hdr_layout.addStretch(1)
+
+        close_btn = QLabel("\u2715")
+        close_btn.setProperty("role", "assignment-dropdown-close")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.mousePressEvent = lambda _: self._close()  # type: ignore[assignment]
+        hdr_layout.addWidget(close_btn)
+
+        layout.addWidget(header)
+
+    # ── Scroll area ─────────────────────────────────────────────────────────
+
+    def _build_scroll_area(self, layout: QVBoxLayout) -> None:
+        self._scroll = QScrollArea()
+        self._scroll.setProperty("role", "assignment-dropdown-scroll")
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll.setFixedHeight(self.MAX_HEIGHT)
+
+        self._content = QWidget()
+        self._content.setProperty("role", "assignment-dropdown-list")
+        self._list_layout = QVBoxLayout(self._content)
+        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        self._list_layout.setSpacing(1)
+        self._list_layout.setAlignment(Qt.AlignTop)
+
+        self._scroll.setWidget(self._content)
+        layout.addWidget(self._scroll, 1)
+
+    # ── Loading / error / empty states ──────────────────────────────────────
+
+    def _show_loading(self) -> None:
+        """Replace list content with a loading indicator."""
+        self._clear_list()
+        spinner = QLabel(t("dispatch_board.loading_options"))
+        spinner.setProperty("fontRole", "muted")
+        spinner.setAlignment(Qt.AlignCenter)
+        spinner.setFixedHeight(self.MAX_HEIGHT)
+        self._list_layout.addWidget(spinner)
+
+    def _show_error(self, error_msg: str) -> None:
+        """Replace list content with an error message."""
+        self._clear_list()
+        err_label = QLabel(f"{t('dispatch_board.load_error')}: {error_msg}")
+        err_label.setProperty("fontRole", "danger")
+        err_label.setAlignment(Qt.AlignCenter)
+        err_label.setWordWrap(True)
+        err_label.setFixedHeight(self.MAX_HEIGHT)
+        self._list_layout.addWidget(err_label)
+
+    def _show_empty(self) -> None:
+        """Replace list content with an empty-state message."""
+        self._clear_list()
+        empty_label = QLabel(t("dispatch_board.no_options"))
+        empty_label.setProperty("fontRole", "muted")
+        empty_label.setAlignment(Qt.AlignCenter)
+        empty_label.setFixedHeight(self.MAX_HEIGHT)
+        self._list_layout.addWidget(empty_label)
+
+    def _clear_list(self) -> None:
+        """Remove all widgets from the list layout."""
+        while self._list_layout.count():
+            item = self._list_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+    # ── Data loading ────────────────────────────────────────────────────────
+
+    def _load_items(self) -> None:
+        """Execute the fetch function and render items (or show error)."""
+        try:
+            items = self._fetch_func()
+            self._items = items
+            self._render_items()
+        except Exception as exc:
+            self._show_error(str(exc))
+
+    def _render_items(self) -> None:
+        """Render item rows or show empty state."""
+        self._clear_list()
+
+        if not self._items:
+            self._show_empty()
+            return
+
+        for item in self._items:
+            row = _ItemRow(item, self._on_select)
+            self._list_layout.addWidget(row)
+
+    # ── Positioning ─────────────────────────────────────────────────────────
+
+    def _pre_position(self) -> None:
+        """Apply initial geometry before show() to avoid flicker."""
+        self.setFixedSize(self.WIDTH, self.MAX_HEIGHT + 38)  # header + scroll
+
+    def _position_at_anchor(self, anchor: QWidget) -> None:
+        """Move the dropdown below *anchor*, flipping above if off-screen."""
+        if anchor is None:
+            return
+        global_pos = anchor.mapToGlobal(QPoint(0, 0))
+        x = global_pos.x()
+        y = global_pos.y() + anchor.height() + 2
+
+        screen = self.screen()
+        if screen:
+            screen_geom = screen.availableGeometry()
+            if y + self.height() > screen_geom.bottom():
+                y = global_pos.y() - self.height() - 2
+
+        self.move(x, y)
+
+    # ── Focus-out auto-close ────────────────────────────────────────────────
+
+    def focusOutEvent(self, event) -> None:
+        """Close when focus moves outside this dropdown."""
+        super().focusOutEvent(event)
+        QTimer.singleShot(0, self._close)
+
+    # ── Close ───────────────────────────────────────────────────────────────
+
+    def _close(self) -> None:
+        """Close the dropdown and fire the *on_close* callback if set."""
+        try:
+            self.close()
+        except Exception:
+            pass
+        finally:
+            if self._on_close:
+                self._on_close()

@@ -1,22 +1,60 @@
-import tkinter as tk
-import customtkinter as ctk
+"""QtKanbanColumn — PySide6 kanban column for the dispatch board.
+
+Replaces ``ui/widgets/kanban_column.py`` (CTkFrame) with a QFrame-based
+widget that holds :class:`QtTripCard` widgets.  Appearance is driven by
+the global QSS in ``ui.qt_theme``; only dynamic state borders are set
+inline (drag-drop visual feedback).
+"""
+
+from __future__ import annotations
+
 import logging
-from tkinter import ttk
-from ui.styles import Theme
-from ui.widgets.trip_card import TripCard
+from typing import Any, Callable, Optional
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget,
+    QSizePolicy,
+)
+
+from ui.theme import COLORS, S
 from services.i18n import t
-from ui.theme import COLORS, FONTS
+from ui.widgets import ActionButton
+from ui.widgets.trip_card import QtTripCard
 
 logger = logging.getLogger(__name__)
 
 
-class KanbanColumn(ctk.CTkFrame):
+class QtKanbanColumn(QFrame):
+    """A single kanban column that displays a stack of trip cards.
+
+    Layout (top → bottom)::
+
+        ┌─────────────────────────────────┐
+        │  Accent bar (4px, status color) │
+        ├─────────────────────────────────┤
+        │  Title  • N                     │
+        ├─────────────────────────────────┤
+        │  ┌─ QScrollArea ──────────────┐ │
+        │  │  [Loading / Error]          │ │
+        │  │  Card 1                     │ │
+        │  │  Card 2                     │ │
+        │  │  …                          │ │
+        │  └─────────────────────────────┘ │
+        │  [Load older] (optional)         │
+        └─────────────────────────────────┘
+    """
 
     COLUMN_BG = COLORS["bg_base"]
     HEADER_BG = COLORS["bg_surface"]
     ACCENT_HEIGHT = 4
 
-    STATUS_COLORS = {
+    STATUS_COLORS: dict[str, str] = {
         "Planned": COLORS["chip_planned"],
         "Loading": COLORS["chip_loading"],
         "In Transit": COLORS["chip_transit"],
@@ -24,17 +62,33 @@ class KanbanColumn(ctk.CTkFrame):
         "Cancelled": COLORS["chip_cancelled"],
     }
 
-    def __init__(self, parent, status_key: str, title_key: str,
-                 accent_color: str = None, on_card_click=None,
-                 on_drag_start=None,
-                 on_assign_truck=None, on_assign_driver=None,
-                 on_select_changed=None, on_assign_both=None,
-                 show_load_older: bool = False,
-                 on_load_older=None, on_retry=None, **kwargs):
-        super().__init__(parent, fg_color=self.COLUMN_BG, **kwargs)
-        self.status_key = status_key
-        self.title_key = title_key
-        self.accent_color = accent_color or self.STATUS_COLORS.get(status_key, COLORS["chip_planned"])
+    def __init__(
+        self,
+        parent: QWidget,
+        status_key: str,
+        title_key: str,
+        accent_color: Optional[str] = None,
+        on_card_click: Optional[Callable[[dict], None]] = None,
+        on_drag_start: Optional[Callable[[dict], None]] = None,
+        on_assign_truck: Optional[Callable[[dict], None]] = None,
+        on_assign_driver: Optional[Callable[[dict], None]] = None,
+        on_select_changed: Optional[Callable[[dict, bool], None]] = None,
+        on_assign_both: Optional[Callable[[dict], None]] = None,
+        show_load_older: bool = False,
+        on_load_older: Optional[Callable[[], None]] = None,
+        on_retry: Optional[Callable[[], None]] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setProperty("role", "kanban-column")
+        self.setFrameShape(QFrame.StyledPanel)
+
+        # ── Stored config ────────────────────────────────────────────────
+        self.status_key: str = status_key
+        self.title_key: str = title_key
+        self.accent_color: str = (
+            accent_color
+            or self.STATUS_COLORS.get(status_key, COLORS["chip_planned"])
+        )
         self._on_card_click = on_card_click
         self._on_drag_start = on_drag_start
         self._on_assign_truck = on_assign_truck
@@ -44,118 +98,192 @@ class KanbanColumn(ctk.CTkFrame):
         self._show_load_older = show_load_older
         self._on_load_older = on_load_older
         self._on_retry = on_retry
-        self._cards = []
-        self._state = "idle"
 
-        self._build_header()
-        self._build_scrollable_area()
-        self._build_load_older_button()
+        # ── Runtime state ────────────────────────────────────────────────
+        self._cards: list[QtTripCard] = []
+        self._state: str = "idle"  # "idle" | "loading" | "error"
 
-    def _build_header(self):
-        accent_bar = ctk.CTkFrame(self, fg_color=self.accent_color, height=self.ACCENT_HEIGHT)
-        accent_bar.pack(fill="x")
-        accent_bar.pack_propagate(False)
+        self._build_ui()
 
-        header_frame = ctk.CTkFrame(self, fg_color=self.HEADER_BG)
-        header_frame.pack(fill="x")
+    # ══════════════════════════════════════════════════════════════════════
+    # UI construction
+    # ══════════════════════════════════════════════════════════════════════
 
-        self._title_lbl = ctk.CTkLabel(header_frame, text=t(self.title_key),
-                                       fg_color=self.HEADER_BG, text_color=Theme.TEXT,
-                                       font=FONTS["h3"])
-        self._title_lbl.pack(side="left", padx=(12, 0), pady=10)
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        self._count_lbl = ctk.CTkLabel(header_frame, text=" • 0",
-                                       fg_color=self.HEADER_BG, text_color=Theme.MUTED,
-                                        font=FONTS["small"])
-        self._count_lbl.pack(side="left", padx=(4, 12), pady=10)
+        self._build_accent_bar(layout)
+        self._build_header(layout)
+        self._build_scroll_area(layout)
+        self._build_load_older_button(layout)
 
-    def _build_scrollable_area(self):
-        self._scroll_frame = ctk.CTkScrollableFrame(self, fg_color=self.COLUMN_BG)
-        self._scroll_frame.pack(fill="both", expand=True, padx=4, pady=(4, 8))
+    # ── Accent bar ───────────────────────────────────────────────────────
 
-        self._loading_frame = ctk.CTkFrame(self._scroll_frame, fg_color=self.COLUMN_BG)
-        self._loading_lbl = ctk.CTkLabel(self._loading_frame, text="",
-                                         fg_color=self.COLUMN_BG, text_color=Theme.MUTED,
-                                         font=FONTS["label"])
-        self._loading_lbl.pack(pady=40)
+    def _build_accent_bar(self, layout: QVBoxLayout) -> None:
+        self._accent_bar = QFrame(self)
+        self._accent_bar.setFixedHeight(self.ACCENT_HEIGHT)
+        self._accent_bar.setStyleSheet(
+            f"background-color: {self.accent_color}; border: none;"
+        )
+        layout.addWidget(self._accent_bar)
 
-        self._error_frame = ctk.CTkFrame(self._scroll_frame, fg_color=self.COLUMN_BG)
-        self._error_lbl = ctk.CTkLabel(self._error_frame, text="",
-                                       fg_color=self.COLUMN_BG, text_color=Theme.DANGER,
-                                        font=FONTS["label"], wraplength=200,
-                                       justify="center")
-        self._error_lbl.pack(pady=(30, 8))
-        self._retry_btn = ctk.CTkButton(self._error_frame,
-                                        text=t("dispatch_board.retry"),
-                                        fg_color=Theme.ACCENT, text_color=Theme.TEXT,
-                                        font=FONTS["small"],
-                                        cursor="hand2",
-                                        command=self._handle_retry)
-        self._retry_btn.pack()
+    # ── Header ──────────────────────────────────────────────────────────
 
-    def _build_load_older_button(self):
+    def _build_header(self, layout: QVBoxLayout) -> None:
+        header = QWidget(self)
+        header.setProperty("role", "kanban-column-header")
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
+        header_layout.setSpacing(S["1"])
+
+        self._title_label = QLabel(t(self.title_key))
+        self._title_label.setProperty("fontRole", "kanban-column-title")
+        header_layout.addWidget(self._title_label)
+
+        self._count_label = QLabel(" \u2022 0")
+        self._count_label.setProperty("fontRole", "kanban-column-count")
+        header_layout.addWidget(self._count_label)
+
+        header_layout.addStretch(1)
+        layout.addWidget(header)
+
+    # ── Scrollable card area ─────────────────────────────────────────────
+
+    def _build_scroll_area(self, layout: QVBoxLayout) -> None:
+        self._scroll_area = QScrollArea(self)
+        self._scroll_area.setWidgetResizable(True)
+        self._scroll_area.setFrameShape(QFrame.NoFrame)
+        self._scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self._scroll_area.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
+
+        scroll_content = QWidget()
+        scroll_content.setProperty("role", "kanban-column-scroll")
+        self._scroll_layout = QVBoxLayout(scroll_content)
+        self._scroll_layout.setContentsMargins(S["1"], 0, S["1"], 0)
+        self._scroll_layout.setSpacing(S["2"])
+        self._scroll_layout.setAlignment(Qt.AlignTop)
+
+        # -- Loading state widget (hidden by default) ---------------------
+        self._loading_widget = QWidget()
+        loading_layout = QVBoxLayout(self._loading_widget)
+        loading_layout.setContentsMargins(0, S["10"], 0, 0)
+        self._loading_label = QLabel("")
+        self._loading_label.setAlignment(Qt.AlignCenter)
+        self._loading_label.setProperty("fontRole", "kanban-column-loading")
+        loading_layout.addWidget(self._loading_label)
+        self._loading_widget.hide()
+        self._scroll_layout.addWidget(self._loading_widget)
+
+        # -- Error state widget (hidden by default) -----------------------
+        self._error_widget = QWidget()
+        error_layout = QVBoxLayout(self._error_widget)
+        error_layout.setContentsMargins(S["3"], S["10"], S["3"], 0)
+        error_layout.setSpacing(S["3"])
+        self._error_label = QLabel("")
+        self._error_label.setAlignment(Qt.AlignCenter)
+        self._error_label.setWordWrap(True)
+        self._error_label.setProperty("fontRole", "kanban-column-error")
+        error_layout.addWidget(self._error_label)
+
+        self._retry_btn = ActionButton(
+            self._error_widget,
+            text=t("dispatch_board.retry"),
+            variant="primary",
+            command=self._handle_retry,
+        )
+        error_layout.addWidget(self._retry_btn, alignment=Qt.AlignCenter)
+        self._error_widget.hide()
+        self._scroll_layout.addWidget(self._error_widget)
+
+        self._scroll_area.setWidget(scroll_content)
+        layout.addWidget(self._scroll_area, 1)
+
+    # ── Load-older button (optional) ─────────────────────────────────────
+
+    def _build_load_older_button(self, layout: QVBoxLayout) -> None:
         if not self._show_load_older:
+            self._load_older_widget = None  # type: ignore[assignment]
             return
-        self._load_older_frame = ctk.CTkFrame(self, fg_color=self.COLUMN_BG)
-        self._load_older_btn = ctk.CTkButton(
-            self._load_older_frame,
+        self._load_older_widget = QWidget(self)
+        load_older_layout = QVBoxLayout(self._load_older_widget)
+        load_older_layout.setContentsMargins(
+            S["3"], S["1"], S["3"], S["1"]
+        )
+        self._load_older_btn = ActionButton(
+            self._load_older_widget,
             text=t("dispatch_board.load_older"),
-            fg_color=self.HEADER_BG, text_color=Theme.MUTED,
-            font=FONTS["label"],
-            cursor="hand2",
+            variant="ghost",
             command=self._handle_load_older,
         )
-        self._load_older_btn.pack(pady=6, padx=10)
-        self._load_older_frame.pack(fill="x", side="bottom")
+        load_older_layout.addWidget(self._load_older_btn)
+        layout.addWidget(self._load_older_widget)
 
-    def _handle_retry(self):
-        if self._on_retry:
+    # ══════════════════════════════════════════════════════════════════════
+    # Internal helpers
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _handle_retry(self) -> None:
+        if self._on_retry is not None:
             self._on_retry()
 
-    def _handle_load_older(self):
-        if self._on_load_older:
+    def _handle_load_older(self) -> None:
+        if self._on_load_older is not None:
             self._on_load_older()
 
-    def _clear_cards(self):
+    def _card_layout_start_index(self) -> int:
+        """Return the layout index where card widgets begin.
+
+        The scroll layout always has two upfront items:
+            index 0 → loading widget (hidden)
+            index 1 → error widget (hidden)
+        Cards start at index 2.
+        """
+        return 2
+
+    def _update_count(self) -> None:
+        self._count_label.setText(f" \u2022 {len(self._cards)}")
+
+    def _clear_cards(self) -> None:
+        """Remove and destroy all trip cards, hide loading/error overlays."""
         for card in self._cards:
-            card.destroy()
+            self._scroll_layout.removeWidget(card)
+            card.deleteLater()
         self._cards.clear()
-        self._loading_frame.pack_forget()
-        self._error_frame.pack_forget()
+        self._loading_widget.hide()
+        self._error_widget.hide()
 
-    def show_loading(self):
-        self._clear_cards()
-        self._state = "loading"
-        self._count_lbl.configure(text=" • ...")
-        self._loading_lbl.configure(text=t("dispatch_board.loading"))
-        self._loading_frame.pack(fill="x", pady=(0, 6))
-        if self._show_load_older:
-            self._load_older_frame.pack_forget()
+    # ══════════════════════════════════════════════════════════════════════
+    # Public API
+    # ══════════════════════════════════════════════════════════════════════
 
-    def show_error(self, error_msg: str):
-        self._clear_cards()
-        self._state = "error"
-        self._count_lbl.configure(text=" • ⚠")
-        self._error_lbl.configure(text=error_msg)
-        self._error_frame.pack(fill="x", pady=(0, 6))
-        if self._show_load_older:
-            self._load_older_frame.pack_forget()
+    # ── Trip data ────────────────────────────────────────────────────────
 
-    def set_trips(self, trips: list):
-        self._loading_frame.pack_forget()
-        self._error_frame.pack_forget()
+    def set_trips(self, trips: list[dict]) -> None:
+        """Replace the column contents with the given *trips*.
+
+        Existing cards whose ``trip_id_num`` still appears in *trips* are
+        reused and updated via :meth:`QtTripCard.update_data`.  Removed
+        cards are destroyed and new ones are created via
+        :class:`~ui.widgets.trip_card.QtTripCard`.
+        """
+        self._loading_widget.hide()
+        self._error_widget.hide()
         self._state = "idle"
 
-        # Build map of existing cards by trip_id_num for diff-based update
-        existing = {}
-        stale = list(self._cards)
-        for card in list(self._cards):
+        # Build lookup of existing cards by trip_id_num
+        existing: dict[Any, QtTripCard] = {}
+        stale: list[QtTripCard] = list(self._cards)
+        for card in self._cards:
             tid = card.trip_data.get("trip_id_num")
             if tid is not None:
                 existing[tid] = card
 
-        # Reuse or create cards; update data in place
-        new_cards = []
+        # Reuse or create cards
+        new_cards: list[QtTripCard] = []
         for trip in trips:
             tid = trip.get("trip_id_num")
             if tid is not None and tid in existing:
@@ -165,61 +293,111 @@ class KanbanColumn(ctk.CTkFrame):
                     stale.remove(card)
                 new_cards.append(card)
             else:
-                card = TripCard(self._scroll_frame, trip, on_click=self._on_card_click,
-                               on_drag_start=self._on_drag_start,
-                               on_assign_truck=self._on_assign_truck,
-                               on_assign_driver=self._on_assign_driver,
-                               on_select_changed=self._on_select_changed,
-                               on_assign_both=self._on_assign_both)
-                card.pack(fill="x", pady=(0, 6), padx=2)
+                card = QtTripCard(
+                    self._scroll_area.widget(),
+                    trip,
+                    on_click=self._on_card_click,
+                    on_drag_start=self._on_drag_start,
+                    on_assign_truck=self._on_assign_truck,
+                    on_assign_driver=self._on_assign_driver,
+                    on_select_changed=self._on_select_changed,
+                    on_assign_both=self._on_assign_both,
+                )
+                self._scroll_layout.addWidget(card)
                 new_cards.append(card)
 
-        # Remove cards no longer in the trip list
+        # Remove cards that are no longer in the trip list
         for old_card in stale:
-            old_card.destroy()
+            self._scroll_layout.removeWidget(old_card)
+            old_card.deleteLater()
 
         self._cards = new_cards
-        self._count_lbl.configure(text=f" • {len(trips)}")
+        self._count_label.setText(f" \u2022 {len(trips)}")
 
-        if self._show_load_older:
-            self._load_older_frame.pack(fill="x", side="bottom")
+        if self._show_load_older and self._load_older_widget is not None:
+            self._load_older_widget.show()
 
-    def refresh_title(self):
-        self._title_lbl.configure(text=t(self.title_key))
-        if self._show_load_older and hasattr(self, "_load_older_btn"):
-            self._load_older_btn.configure(text=t("dispatch_board.load_older"))
-        if hasattr(self, "_retry_btn"):
-            self._retry_btn.configure(text=t("dispatch_board.retry"))
+    # ── Loading / error states ───────────────────────────────────────────
 
-    def highlight_drop_zone(self):
-        self.configure(border_width=2, border_color=self.accent_color)
+    def show_loading(self) -> None:
+        """Clear cards and show a centered "Loading…" label."""
+        self._clear_cards()
+        self._state = "loading"
+        self._count_label.setText(" \u2022 ...")
+        self._loading_label.setText(t("dispatch_board.loading"))
+        self._loading_widget.show()
+        if self._show_load_older and self._load_older_widget is not None:
+            self._load_older_widget.hide()
 
-    def unhighlight_drop_zone(self):
-        self.configure(border_width=0)
+    def show_error(self, error_msg: str) -> None:
+        """Clear cards and show the given *error_msg* with a retry button."""
+        self._clear_cards()
+        self._state = "error"
+        self._count_label.setText(" \u2022 \u26a0")
+        self._error_label.setText(error_msg)
+        self._error_widget.show()
+        if self._show_load_older and self._load_older_widget is not None:
+            self._load_older_widget.hide()
 
-    def highlight_valid(self):
-        self.configure(border_width=2, border_color=COLORS["success"])
+    # ── Card manipulation ────────────────────────────────────────────────
 
-    def highlight_invalid(self):
-        self.configure(border_width=2, border_color=COLORS["danger"])
+    def add_card(self, card: QtTripCard, index: int = 0) -> None:
+        """Insert *card* at the given *index* (default 0 = top).
 
-    def add_card(self, card, index=0):
-        self._loading_frame.pack_forget()
-        self._error_frame.pack_forget()
-        card.pack(in_=self._scroll_frame, fill="x", pady=(0, 6), padx=2)
+        Hides any visible loading/error overlay before insertion.
+        """
+        self._loading_widget.hide()
+        self._error_widget.hide()
+        pos = self._card_layout_start_index() + index
+        self._scroll_layout.insertWidget(pos, card)
         if index < len(self._cards):
             self._cards.insert(index, card)
         else:
             self._cards.append(card)
         self._update_count()
 
-    def remove_card(self, card):
+    def remove_card(self, card: QtTripCard) -> None:
+        """Remove *card* from the column and schedule it for deletion."""
         if card in self._cards:
             self._cards.remove(card)
-            card.pack_forget()
+            self._scroll_layout.removeWidget(card)
+            card.deleteLater()
             self._update_count()
 
-    def _update_count(self):
-        self._count_lbl.configure(text=f" \u2022 {len(self._cards)}")
+    # ── Translation refresh ──────────────────────────────────────────────
 
+    def refresh_title(self) -> None:
+        """Re-read i18n strings for the title, load-older, and retry button."""
+        self._title_label.setText(t(self.title_key))
+        if (
+            self._show_load_older
+            and self._load_older_widget is not None
+            and hasattr(self, "_load_older_btn")
+        ):
+            self._load_older_btn.setText(t("dispatch_board.load_older"))
+        if hasattr(self, "_retry_btn"):
+            self._retry_btn.setText(t("dispatch_board.retry"))
 
+    # ── Drag-drop visual feedback ────────────────────────────────────────
+
+    def highlight_drop_zone(self) -> None:
+        """Highlight the column border with the status accent color."""
+        self.setStyleSheet(
+            f"QtKanbanColumn {{ border: 2px solid {self.accent_color}; }}"
+        )
+
+    def unhighlight_drop_zone(self) -> None:
+        """Remove the drag-drop border highlight."""
+        self.setStyleSheet("")
+
+    def highlight_valid(self) -> None:
+        """Highlight the column border green (valid drop target)."""
+        self.setStyleSheet(
+            f"QtKanbanColumn {{ border: 2px solid {COLORS['success']}; }}"
+        )
+
+    def highlight_invalid(self) -> None:
+        """Highlight the column border red (invalid drop target)."""
+        self.setStyleSheet(
+            f"QtKanbanColumn {{ border: 2px solid {COLORS['danger']}; }}"
+        )

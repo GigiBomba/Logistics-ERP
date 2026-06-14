@@ -1,0 +1,348 @@
+"""PySide6 trip history view.
+
+Replaces ``ui/history_view.py``. Displays trip records in a sortable table
+with filtering, invoice generation, PDF/Excel export, and delete actions.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from datetime import datetime, timedelta
+from typing import Optional
+
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import (
+    QWidget,
+    QLabel,
+    QLineEdit,
+    QVBoxLayout,
+    QHBoxLayout,
+    QMessageBox,
+    QInputDialog,
+)
+
+from services.i18n import t, register_listener, unregister_listener
+from services.trip_service import TripService
+from services.invoicing.service import InvoiceService
+from services.export_service import ExportService
+from services.preferences import PreferencesManager
+from ui.widgets import (
+    ActionButton,
+    StyledComboBox,
+    StyledTableWidget,
+)
+from ui.theme import COLORS, S
+
+logger = logging.getLogger(__name__)
+
+STATUS_TAGS = {
+    "Planificat": "info", "Planified": "info", "Planned": "info",
+    "In Transit": "accent", "Loading": "warning",
+    "Delivered": "success", "Livrat": "success",
+    "Invoiced": "warning", "Facturat": "warning",
+    "Paid": "success", "Platit": "success",
+    "Archived": "muted", "Arhivat": "muted",
+}
+
+STATUS_COLORS = {
+    "info": COLORS.get("info", COLORS.get("accent", "#6366f1")),
+    "warning": COLORS.get("warning", "#f59e0b"),
+    "accent": COLORS.get("accent", "#6366f1"),
+    "success": COLORS.get("success", "#22c55e"),
+    "muted": COLORS.get("text_muted", "#71717a"),
+}
+
+
+class QtHistoryView(QWidget):
+    """Trip history browser with filters, invoice generation, and export."""
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        db=None,
+        main_app=None,
+        controller=None,
+        prefs=None,
+        ops=None,
+    ):
+        super().__init__(parent)
+        self.db = db
+        self.controller = controller
+        self.prefs = prefs or (PreferencesManager(db) if db else None)
+        self.ops = ops
+        self._main_app = main_app or controller
+
+        self.trip_service = TripService(db) if db else None
+        self.invoice_service = InvoiceService(db, prefs=self.prefs) if db else None
+        self.export_service = ExportService(prefs=self.prefs) if self.prefs else None
+
+        self._limit = 200
+
+        self._build_ui()
+        self._language_callback = self._on_language_changed
+        register_listener(self._language_callback)
+        self.refresh()
+
+    # ── UI build ───────────────────────────────────────────────────────────────
+
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
+        layout.setSpacing(S["3"])
+
+        self._build_filter_bar(layout)
+        self._build_table(layout)
+        self._build_action_bar(layout)
+
+    def _build_filter_bar(self, layout: QVBoxLayout) -> None:
+        bar = QWidget()
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(0, 0, 0, 0)
+        bar_layout.setSpacing(S["2"])
+
+        lbl = QLabel(f"\U0001f50d {t('history.search_label')}")
+        lbl.setProperty("fontRole", "label")
+        bar_layout.addWidget(lbl)
+
+        self.e_search = QLineEdit()
+        self.e_search.setPlaceholderText(t("history.search_placeholder"))
+        self.e_search.returnPressed.connect(self._on_search)
+        bar_layout.addWidget(self.e_search, 1)
+
+        self.c_status = StyledComboBox(bar)
+        self.c_status.addItem("")
+        self.c_status.addItems([
+            "Planned", "In Transit", "Loading", "Delivered", "Invoiced", "Paid", "Archived",
+        ])
+        self.c_status.currentTextChanged.connect(self._on_status_filter_changed)
+        bar_layout.addWidget(self.c_status)
+
+        reset_btn = ActionButton(bar, t("history.reset_button"), self._reset, variant="secondary")
+        bar_layout.addWidget(reset_btn)
+
+        self._count_lbl = QLabel("")
+        self._count_lbl.setProperty("fontRole", "muted")
+        bar_layout.addWidget(self._count_lbl)
+
+        bar_layout.addStretch(1)
+        layout.addWidget(bar)
+
+    def _build_table(self, layout: QVBoxLayout) -> None:
+        self.table = StyledTableWidget(
+            self,
+            columns=[
+                ("id", t("history.col_id"), 50),
+                ("start_date", t("history.col_data"), 100),
+                ("truck_number", t("history.col_camion"), 120),
+                ("driver_name", t("history.col_driver"), 100),
+                ("client_name", t("history.col_client"), 120),
+                ("distance_km", t("history.col_km"), 70),
+                ("gross_per_km", t("history.col_brut_km"), 80),
+                ("net_profit", t("history.col_profit"), 90),
+                ("status", t("history.col_status"), 90),
+            ],
+        )
+        layout.addWidget(self.table, 1)
+
+    def _build_action_bar(self, layout: QVBoxLayout) -> None:
+        footer = QWidget()
+        footer_layout = QHBoxLayout(footer)
+        footer_layout.setContentsMargins(0, 0, 0, 0)
+        footer_layout.setSpacing(S["2"])
+
+        btn_data = [
+            ("history.button_invoice", self._generate_invoice),
+            ("history.button_export_pdf", self._export_pdf),
+            ("history.button_export_excel", self._export_excel),
+            ("history.button_email_invoice", self._send_invoice_email),
+            ("history.button_view_route", self._view_route),
+            ("history.button_delete", self._delete),
+            ("history.button_documents", self._open_trip_documents),
+            ("history.button_load_more", self._load_more),
+        ]
+        for key, cmd in btn_data:
+            btn = ActionButton(footer, t(key), cmd, variant="secondary")
+            footer_layout.addWidget(btn)
+        footer_layout.addStretch(1)
+        layout.addWidget(footer)
+
+    # ── Data ───────────────────────────────────────────────────────────────────
+
+    def refresh(self) -> None:
+        if self.trip_service is None:
+            return
+        search = self.e_search.text().strip()
+        status = self.c_status.currentText()
+        trips = self.trip_service.get_filtered(search=search, status=status, limit=self._limit)
+
+        data = []
+        for trip in trips:
+            profit = float(trip.get("net_profit", 0) or 0)
+            data.append({
+                "id": str(trip.get("id", "")),
+                "start_date": str(trip.get("start_date", "")),
+                "truck_number": str(trip.get("truck_number", "")),
+                "driver_name": str(trip.get("driver_name", "")),
+                "client_name": str(trip.get("client_name", "")),
+                "distance_km": str(trip.get("distance_km", "")),
+                "gross_per_km": str(trip.get("gross_per_km", "")),
+                "net_profit": str(profit),
+                "status": str(trip.get("status", "")),
+                "_raw": trip,
+            })
+        self.table.set_data(data)
+        self._apply_status_colors(data)
+        self._apply_profit_colors(data)
+        self._count_lbl.setText(f" ({len(trips)} / {self._limit})")
+
+    def _apply_status_colors(self, data: list) -> None:
+        col_idx = self.table._column_ids.index("status") if "status" in self.table._column_ids else -1
+        if col_idx < 0:
+            return
+        for r, row in enumerate(data):
+            status = row.get("status", "")
+            tag_key = STATUS_TAGS.get(status, "")
+            color = STATUS_COLORS.get(tag_key)
+            if color:
+                item = self.table.item(r, col_idx)
+                if item:
+                    from PySide6.QtGui import QColor
+                    item.setForeground(QColor(color))
+
+    def _apply_profit_colors(self, data: list) -> None:
+        col_idx = self.table._column_ids.index("net_profit") if "net_profit" in self.table._column_ids else -1
+        if col_idx < 0:
+            return
+        for r, row in enumerate(data):
+            profit = float(row.get("net_profit", 0) or 0)
+            item = self.table.item(r, col_idx)
+            if item:
+                from PySide6.QtGui import QColor
+                color = COLORS.get("success", "#22c55e") if profit > 0 else COLORS.get("danger", "#ef4444")
+                item.setForeground(QColor(color))
+
+    def _get_selection(self) -> Optional[tuple]:
+        data = self.table.selected_row_data()
+        if not data:
+            return None
+        trip_id = int(data.get("id", 0))
+        raw = data.get("_raw") or self.trip_service.get_by_id(trip_id)
+        return (trip_id, raw, data)
+
+    # ── Filters ────────────────────────────────────────────────────────────────
+
+    def _on_search(self) -> None:
+        self.refresh()
+
+    def _on_status_filter_changed(self, _text: str) -> None:
+        self.refresh()
+
+    def _reset(self) -> None:
+        self.e_search.clear()
+        self.c_status.setCurrentIndex(0)
+        self._limit = 200
+        self.refresh()
+
+    def _load_more(self) -> None:
+        self._limit *= 2
+        self.refresh()
+
+    # ── Actions ────────────────────────────────────────────────────────────────
+
+    def _generate_invoice(self) -> None:
+        sel = self._get_selection()
+        if not sel:
+            return
+        trip_id, trip_data, _ = sel
+        try:
+            self.invoice_service.generate(trip_data, mode="client")
+            due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
+            self.invoice_service.create_record(trip_id, f"INV-{trip_id}", trip_data.get("total_price_eur", 0), due_date)
+            QMessageBox.information(self, t("history.invoice_done"), t("history.invoice_done_msg"))
+        except Exception as e:
+            QMessageBox.critical(self, t("history.error"), str(e))
+
+    def _export_pdf(self) -> None:
+        sel = self._get_selection()
+        if not sel:
+            return
+        trip_id, trip_data, _ = sel
+        try:
+            path = self.export_service.export_trip_to_pdf(trip_data)
+            os.startfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, t("history.error"), str(e))
+
+    def _export_excel(self) -> None:
+        sel = self._get_selection()
+        if not sel:
+            return
+        trip_id, trip_data, _ = sel
+        try:
+            path = self.export_service.export_trip_to_excel(trip_data)
+            os.startfile(path)
+        except Exception as e:
+            QMessageBox.critical(self, t("history.error"), str(e))
+
+    def _send_invoice_email(self) -> None:
+        sel = self._get_selection()
+        if not sel:
+            return
+        trip_id, trip_data, _ = sel
+        recipient, ok = QInputDialog.getText(
+            self, t("history.email_recipient_title"), t("history.email_recipient_msg")
+        )
+        if not ok or not recipient:
+            return
+        try:
+            self.invoice_service.send_invoice_email(trip_id, recipient, None, trip_data, "client")
+            QMessageBox.information(self, t("history.email_done"), t("history.email_done_msg"))
+        except Exception as e:
+            QMessageBox.critical(self, t("history.error"), str(e))
+
+    def _view_route(self) -> None:
+        sel = self._get_selection()
+        if not sel:
+            return
+        trip_id, trip_data, _ = sel
+        if self.controller and hasattr(self.controller, "_switch_module"):
+            self.controller._switch_module("route_planner")
+
+    def _delete(self) -> None:
+        sel = self._get_selection()
+        if not sel:
+            return
+        trip_id = sel[0]
+        if QMessageBox.question(
+            self, t("history.confirm_delete_title"), t("history.confirm_delete_msg"),
+        ) == QMessageBox.Yes:
+            self.trip_service.delete(trip_id)
+            self.refresh()
+
+    def _open_trip_documents(self) -> None:
+        sel = self._get_selection()
+        if not sel:
+            return
+        trip_id = sel[0]
+        try:
+            from ui.views.document_center_view import open_entity_documents
+            open_entity_documents(self, self.db, "trip", trip_id, f"Trip #{trip_id}")
+        except Exception:
+            logger.exception("Failed to open trip documents")
+
+    # ── i18n ───────────────────────────────────────────────────────────────────
+
+    def _on_language_changed(self, lang: str) -> None:
+        QTimer.singleShot(0, self.refresh)
+
+    # ── Lifecycle ──────────────────────────────────────────────────────────────
+
+    def wakeup(self) -> None:
+        self.refresh()
+
+    def shutdown(self) -> None:
+        try:
+            unregister_listener(self._language_callback)
+        except Exception:
+            pass

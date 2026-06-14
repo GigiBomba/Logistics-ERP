@@ -1,105 +1,160 @@
-"""Search and filter bar for the dispatch board kanban."""
-import customtkinter as ctk
+"""Search and filter bar for the dispatch board kanban (PySide6).
+
+Replaces ``ui/widgets/dispatch_search_bar.py``. Provides a search entry, status
+filter checkboxes with colored indicators, and a result count label.
+"""
+
+from __future__ import annotations
+
+from typing import Callable, Optional
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+)
+
 from services.i18n import t
-from ui.theme import COLORS, FONTS
+from ui.theme import COLORS, S
+from ui.widgets import ActionButton, StyledCheckBox, StyledLineEdit
 
 
 STATUS_OPTIONS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
 
+_STATUS_COLORS: dict[str, str] = {
+    "Planned": COLORS["chip_planned"],
+    "Loading": COLORS["chip_loading"],
+    "In Transit": COLORS["chip_transit"],
+    "Delivered": COLORS["chip_delivered"],
+    "Cancelled": COLORS["chip_cancelled"],
+}
 
-class DispatchSearchBar(ctk.CTkFrame):
-    """Search + status filter bar above kanban columns."""
 
-    def __init__(self, parent, on_search=None, **kwargs):
-        super().__init__(parent, fg_color=COLORS["bg_surface"], corner_radius=8, **kwargs)
+class QtDispatchSearchBar(QFrame):
+    """Search + status filter bar above kanban columns.
+
+    Parameters
+    ----------
+    parent : QWidget or None
+        Parent widget.
+    on_search : callable or None
+        Called as ``on_search(query: str, statuses: list[str])`` whenever the
+        search query or status filter selection changes.
+    """
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        on_search: Optional[Callable[[str, list[str]], None]] = None,
+        **kwargs,
+    ):
+        super().__init__(parent, **kwargs)
         self._on_search = on_search
-        self._query_var = ctk.StringVar()
-        self._status_vars = {}
-        self._result_lbl = None
+        self._checkboxes: dict[str, StyledCheckBox] = {}
+        self._result_lbl: Optional[QLabel] = None
 
         self._build()
 
-    def _build(self):
-        inner = ctk.CTkFrame(self, fg_color="transparent")
-        inner.pack(fill="x", padx=8, pady=6)
+    # ── Layout ──────────────────────────────────────────────────────────────────
 
-        search_icon = ctk.CTkLabel(inner, text="\U0001f50d", fg_color="transparent",
-                                   text_color=COLORS["text_muted"], font=FONTS["label"])
-        search_icon.pack(side="left", padx=(4, 2))
+    def _build(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(S["2"], S["1"], S["2"], 0)
+        layout.setSpacing(S["1"])
 
-        self._entry = ctk.CTkEntry(
-            inner,
-            textvariable=self._query_var,
-            placeholder_text=t("dispatch_board.search_placeholder"),
-            fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"],
-            border_width=1,
-            text_color=COLORS["text_primary"],
-            font=FONTS["body"],
+        # Top row ----------------------------------------------------------------
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(S["2"])
+
+        # Search icon
+        icon = QLabel("\U0001f50d")
+        icon.setProperty("fontRole", "muted")
+        icon.setFixedWidth(20)
+        row_layout.addWidget(icon)
+
+        # Search entry
+        self._entry = StyledLineEdit(
+            parent=row,
+            placeholder=t("dispatch_board.search_placeholder"),
             height=30,
-            corner_radius=6,
         )
-        self._entry.pack(side="left", fill="x", expand=True, padx=(2, 8))
-        self._entry.bind("<KeyRelease>", lambda e: self._fire_search())
-        self._query_var.trace_add("write", lambda *a: self._fire_search())
+        self._entry.textEdited.connect(self._fire_search)
+        row_layout.addWidget(self._entry, 1)
 
-        status_frame = ctk.CTkFrame(inner, fg_color="transparent")
-        status_frame.pack(side="left", padx=(0, 4))
+        # Status checkboxes
+        status_frame = QWidget()
+        status_layout = QHBoxLayout(status_frame)
+        status_layout.setContentsMargins(0, 0, 0, 0)
+        status_layout.setSpacing(S["1"])
 
-        lbl = ctk.CTkLabel(status_frame, text="", fg_color="transparent",
-                          text_color=COLORS["text_muted"], font=FONTS["label"])
-        lbl.pack(side="left", padx=(0, 2))
-
-        for s in STATUS_OPTIONS:
-            var = ctk.BooleanVar(value=True)
-            self._status_vars[s] = var
-            colors_map = {
-                "Planned": COLORS["chip_planned"],
-                "Loading": COLORS["chip_loading"],
-                "In Transit": COLORS["chip_transit"],
-                "Delivered": COLORS["chip_delivered"],
-                "Cancelled": COLORS["chip_cancelled"],
-            }
-            chip_color = colors_map.get(s, COLORS["chip_idle"])
-            cb = ctk.CTkCheckBox(
-                status_frame, text=s, variable=var,
-                fg_color=chip_color, hover_color=chip_color,
-                border_color=COLORS["border"], checkmark_color="#ffffff",
-                text_color=COLORS["text_secondary"], font=FONTS["label"],
-                command=self._fire_search,
-                width=20, height=20,
+        for status in STATUS_OPTIONS:
+            cb = StyledCheckBox(parent=status_frame, text=status)
+            cb.setChecked(True)
+            chip_color = _STATUS_COLORS.get(status, COLORS["chip_idle"])
+            cb.setStyleSheet(
+                "QCheckBox::indicator:checked {"
+                f"  background-color: {chip_color};"
+                f"  border-color: {chip_color};"
+                "}"
             )
-            cb.pack(side="left", padx=2)
+            cb.stateChanged.connect(self._fire_search)
+            self._checkboxes[status] = cb
+            status_layout.addWidget(cb)
 
-        clear_btn = ctk.CTkButton(
-            inner, text="\u2715", fg_color=COLORS["bg_elevated"],
-            text_color=COLORS["text_muted"], font=FONTS["small"],
-            cursor="hand2", width=28, height=28, corner_radius=6,
-            command=self._clear,
-        )
-        clear_btn.pack(side="left", padx=(2, 0))
+        row_layout.addWidget(status_frame)
 
-        self._result_lbl = ctk.CTkLabel(
-            self, text="", fg_color="transparent",
-            text_color=COLORS["text_muted"], font=FONTS["label"]
-        )
-        self._result_lbl.pack(anchor="w", padx=12, pady=(0, 4))
+        # Clear button
+        clear_btn = ActionButton(parent=row, text="\u2715", variant="ghost")
+        clear_btn.setFixedSize(28, 28)
+        clear_btn.clicked.connect(self._clear)
+        row_layout.addWidget(clear_btn)
 
-    def _fire_search(self):
-        if self._on_search:
-            query = self._query_var.get().strip().lower()
-            statuses = [s for s, v in self._status_vars.items() if v.get()]
-            self._on_search(query, statuses)
+        layout.addWidget(row)
 
-    def _clear(self):
-        self._query_var.set("")
-        for v in self._status_vars.values():
-            v.set(True)
+        # Result count label -----------------------------------------------------
+        self._result_lbl = QLabel("")
+        self._result_lbl.setProperty("fontRole", "muted")
+        self._result_lbl.setContentsMargins(S["2"], 0, 0, S["1"])
+        layout.addWidget(self._result_lbl)
+
+    # ── Public API ──────────────────────────────────────────────────────────────
+
+    def set_result_count(self, visible: int, total: int) -> None:
+        """Update the result count label.
+
+        Shows "Showing X of Y trips" when a filter is active, or "Y trips"
+        when all results are visible.
+        """
+        if self._result_lbl is None:
+            return
+        if visible < total:
+            self._result_lbl.setText(
+                f"Showing {visible} of {total} trips"
+            )
+        else:
+            self._result_lbl.setText(f"{total} trips")
+
+    # ── Internals ───────────────────────────────────────────────────────────────
+
+    def _fire_search(self, *args: object) -> None:
+        """Collect current query and active statuses, then invoke callback."""
+        if self._on_search is None:
+            return
+        query = self._entry.text().strip().lower()
+        statuses = [s for s, cb in self._checkboxes.items() if cb.isChecked()]
+        self._on_search(query, statuses)
+
+    def _clear(self) -> None:
+        """Reset search text and check all statuses."""
+        self._entry.setText("")
+        for cb in self._checkboxes.values():
+            cb.blockSignals(True)
+            cb.setChecked(True)
+            cb.blockSignals(False)
         self._fire_search()
-
-    def set_result_count(self, visible: int, total: int):
-        if self._result_lbl:
-            if visible < total:
-                self._result_lbl.configure(text=f"Showing {visible} of {total} trips")
-            else:
-                self._result_lbl.configure(text=f"{total} trips")

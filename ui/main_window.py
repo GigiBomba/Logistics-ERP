@@ -1,171 +1,116 @@
-import tkinter as tk
-from tkinter import messagebox, ttk
-from datetime import datetime, timedelta
+"""PySide6 main window controller for Operion ERP.
+
+Replaces ``ui/main_window.py`` for the Qt branch. Manages the application shell,
+sidebar navigation, view switching via ``QStackedWidget``, and service lifecycle.
+"""
+
+from __future__ import annotations
+
 import logging
 from typing import Optional
-import customtkinter as ctk
-from ui.widgets import StyledEntry, ActionButton, section_header
-from ui.styles import Theme
-from services.trip_context import register_trip_listener, unregister_trip_listener
+
+from PySide6.QtCore import Qt, QTimer, QObject
+from PySide6.QtWidgets import (
+    QMainWindow,
+    QWidget,
+    QVBoxLayout,
+    QLabel,
+)
+
+from config import Config
+from ui.app_shell import AppShell
+from services.i18n import t
 from services.trip_service import TripService
 from services.client_service import ClientService
 from services.fleet_service import FleetService
-from services.i18n import t, register_listener, unregister_listener
 from services.fuel_price_service import FuelPriceService
-from services.operations.event_bus import EventBus, SETTINGS_UPDATED
-from utils.tk_helpers import safe_destroy
-from ui.theme import FONTS
+from services.operations.event_bus import EventBus, SETTINGS_UPDATED, ALERT_CREATED, ALERT_RESOLVED
+from ui.views import (
+    QtCalculatorView, QtOverviewView, QtRoutePlannerView,
+    QtAnalyticsView, QtRouteHistoryView, QtHistoryView,
+    QtDispatchBoardView, QtFleetTrackingView, QtFleetTab,
+    QtDriverManager, QtClientWorkspace, QtDocumentCenterView,
+    QtMaintenanceAnalyticsView, QtMaintenanceControlPanel,
+    QtTachoImportView, QtGeneratorsView, QtSettingsView,
+)
 
 logger = logging.getLogger(__name__)
 
 
-from ui.i18n_mixin import I18nMixin
+class MainWindow(QMainWindow):
+    """Main application window."""
 
-class MainWindow(I18nMixin):
-    def __init__(self, root, db, api, prefs=None, ops=None):
-        I18nMixin.__init__(self)
-        self.root = root
+    def __init__(
+        self,
+        db,
+        api,
+        prefs=None,
+        ops=None,
+    ):
+        super().__init__()
         self.db = db
         self.api = api
         self.ops = ops
-        self._suppress_tk_cleanup_errors()
+        self.prefs = prefs
+
+        self._event_bus = EventBus()
+        self._module_cache: dict = {}
+        self._active_module: Optional[str] = None
+
+        self._init_services()
+        self._build_ui()
+        self._setup_shortcuts()
+        self._init_fuel_status()
+
+        self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        self._event_bus.subscribe(ALERT_CREATED, self._on_alert_event)
+        self._event_bus.subscribe(ALERT_RESOLVED, self._on_alert_event)
+
+        # Initial alert refresh
+        QTimer.singleShot(500, self._refresh_alerts)
+
+    def _init_services(self):
         from services.preferences import PreferencesManager
-        self.prefs = prefs or PreferencesManager(db)
+
+        self.prefs = self.prefs or PreferencesManager(self.db)
+        self.prefs.load()
+
         self.fleet_service = FleetService(self.db)
         self.trip_service = TripService(self.db)
         self.client_service = ClientService(self.db)
-        self._event_bus = EventBus()
-        self._module_cache = {}
-        self._active_module = None
 
-        self.route_distance = 0.0
-        self.route_toll = 0.0
-        self.route_fuel_liters = 0.0
-        self.selected_truck_fuel = None
-        self._current_route_history_id: Optional[int] = None
-        self._main_trucks_map = {}
-        self.selected_truck = None
+        self.api = self.api
 
-        from services.calculator import TripCalculator
-        self.calculator = TripCalculator()
+        if self.ops is None:
+            from services.operations.operations_engine import OperationsEngine
+            self.ops = OperationsEngine(self.db, prefs=self.prefs)
+            self.ops.start()
 
-        self._i18n_widgets: list = []
-
-        from ui.app_shell import AppShell
-        self.app_shell = AppShell(self.root, self.db, on_nav_select=self._switch_module, prefs=self.prefs, ops=self.ops)
-        self.nav = self.app_shell.nav
-
-        self._build_nav()
-        self._setup_ui()
-        try:
-            register_trip_listener(self._on_trip_update)
-        except Exception:
-            pass
-
-        self.root.bind("<Control-s>", lambda e: self._handle_calculate())
-        self.root.bind("<Control-h>", lambda e: self._open_history())
-
-        self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        from services.fleet_tracking_service import fleet_tracking_service
+        fleet_tracking_service.initialize(self.db)
 
         self._fuel_service = FuelPriceService()
         self._fuel_service.refresh_if_stale()
-        self._init_fuel_status()
 
-    @staticmethod
-    def _suppress_tk_cleanup_errors():
-        try:
-            import tkinter as tk
-            _original = tk.Tk.report_callback_exception
-            def _quiet(_, exc, val, tb):
-                msg = str(val)
-                if "invalid command name" in msg:
-                    return
-                _original(_, exc, val, tb)
-            tk.Tk.report_callback_exception = _quiet
-        except Exception:
-            pass
+    def _build_ui(self):
+        self.setWindowTitle(Config.APP_NAME)
+        self.resize(1400, 900)
 
-    def _on_language_changed(self, lang):
-        logger.info("MainWindow language change -> %s | refreshing nav + title + combos", lang)
-        self._refresh_nav_labels()
-        self.app_shell.set_breadcrumb(self._active_module and t(f"nav.{self._active_module}") or t("nav.overview"))
+        self.app_shell = AppShell(
+            self,
+            self.db,
+            on_nav_select=self._switch_module,
+            prefs=self.prefs,
+            ops=self.ops,
+        )
+        self.nav = self.app_shell.nav
 
-    def refresh_translations(self):
-        self.root.title(t("app.title"))
-        self._update_fuel_status()
+        self._build_nav()
+        self._switch_module("overview")
 
-    def _open_fleet(self):
-        from ui.fleet_tab import FleetTab
-        FleetTab(self.root, self.db, ops=self.ops)
-
-    def _open_maintenance_analytics(self):
-        from ui.views.maintenance_analytics_view import MaintenanceAnalyticsView
-        MaintenanceAnalyticsView(self.root, self.db)
-
-    def _open_maintenance_control(self):
-        from ui.maintenance_control_panel import MaintenanceControlPanel
-        MaintenanceControlPanel(self.root, self.db, prefs=self.prefs)
-
-    def _open_dispatch_board(self):
-        from ui.views.dispatch_board_view import DispatchBoardView
-        DispatchBoardView(self.root, self.db, prefs=self.prefs, ops=self.ops)
-
-    def _open_driver_manager(self):
-        from ui.driver_manager import DriverManager
-        DriverManager(self.root, self.db, ops=self.ops)
-
-    def _load_trucks_main(self):
-        try:
-            rows = self.fleet_service.get_trucks()
-            menu = self.truck_dropdown['menu']
-            menu.delete(0, 'end')
-            self._main_trucks_map = {}
-            for r in rows:
-                tid = str(r["id"])
-                label = f"{r['plate_number']} - {r['model'] or ''}"
-                menu.add_command(label=label, command=lambda v=tid: self._on_main_truck_selected(v))
-                try:
-                    row_dict = {k: r[k] for k in r.keys()}
-                except Exception:
-                    row_dict = {'id': r['id'], 'plate_number': r['plate_number'], 'model': r['model'], 'fuel_consumption': r.get('fuel_consumption')}
-                self._main_trucks_map[tid] = row_dict
-            if rows:
-                first = str(rows[0]["id"])
-                self.truck_var.set(first)
-                self._on_main_truck_selected(first)
-        except Exception:
-            pass
-
-    def _on_main_truck_selected(self, truck_id):
-        try:
-            truck = self._main_trucks_map.get(str(truck_id))
-            self.selected_truck = truck
-            try:
-                self.selected_truck_fuel = float(truck.get('fuel_consumption') or truck.get('fuel_consumption_l_per_100km') or 34.0)
-            except Exception:
-                self.selected_truck_fuel = 34.0
-            try:
-                label = f"{truck.get('plate_number','')} - {truck.get('model','')}"
-                self.truck_var.set(label)
-            except Exception:
-                pass
-        except Exception:
-            pass
-
-    def _open_route_planner(self):
-        from ui.route_planner import RoutePlannerTab
-        RoutePlannerTab(self.root, self.db, controller=self)
-
-    def _open_route_history(self):
-        from ui.route_history_view import RouteHistoryView
-        RouteHistoryView(self.root, self.db, controller=self)
-
-    def _on_settings_updated(self, ev):
-        pass  # nav_mode no longer used
-
-    def _rebuild_nav(self):
-        """Build the full navigation sidebar (called once at init)."""
-        nav = self.app_shell.nav
+    def _build_nav(self):
+        """Build the full navigation sidebar."""
+        nav = self.nav
 
         nav.add_group(t("nav.group_overview"), "nav.group_overview")
         nav.add_item("overview", "\U0001f3e0", t("nav.overview"), i18n_key="nav.overview")
@@ -182,8 +127,10 @@ class MainWindow(I18nMixin):
         nav.add_item("driver_manager", "\U0001f464", t("nav.driver_manager"), i18n_key="nav.driver_manager")
         nav.add_item("clients", "\U0001f465", t("nav.clients"), i18n_key="nav.clients")
         nav.add_item("documents", "\U0001F4C2", t("nav.documents"), i18n_key="nav.documents")
-        nav.add_item("maintenance", "\U0001f527", t("nav.maintenance_analytics"), i18n_key="nav.maintenance_analytics")
-        nav.add_item("maintenance_control", "\U0001f529", t("nav.maintenance_control"), i18n_key="nav.maintenance_control")
+        nav.add_item("maintenance", "\U0001f527", t("nav.maintenance_analytics"),
+                     i18n_key="nav.maintenance_analytics")
+        nav.add_item("maintenance_control", "\U0001f529", t("nav.maintenance_control"),
+                     i18n_key="nav.maintenance_control")
         nav.add_item("tachograph", "\U0001f4be", t("nav.tachograph"), i18n_key="nav.tachograph")
 
         nav.add_group(t("nav.group_finance"), "nav.group_finance")
@@ -194,155 +141,40 @@ class MainWindow(I18nMixin):
         nav.add_settings_item("settings", "\u2699\ufe0f", t("nav.settings"))
         nav.select("overview")
 
-    def _build_nav(self):
-        self._rebuild_nav()
+    def _setup_shortcuts(self):
+        self._shortcut_calculate = QWidgetShortcut(self, Qt.Key_S, Qt.ControlModifier, self._open_calculator)
+        self._shortcut_history = QWidgetShortcut(self, Qt.Key_H, Qt.ControlModifier, self._open_history)
 
-    def _refresh_nav_labels(self):
-        """Refresh all nav item labels and group headers without creating duplicates."""
-        nav = self.app_shell.nav
-        # Update group labels
-        for name, i18n_key in nav._group_i18n_keys.items():
-            if name in nav._group_labels:
-                try:
-                    nav._group_labels[name].config(text=t(i18n_key))
-                except Exception:
-                    pass
-        # Update item labels
-        for key, i18n_key in nav._item_i18n_keys.items():
-            if key in nav._labels:
-                try:
-                    nav._labels[key].config(text=t(i18n_key))
-                except Exception:
-                    pass
-        logger.debug("NavPanel labels refreshed | %d items + %d groups",
-                     sum(1 for k in nav._item_i18n_keys if k in nav._labels),
-                     sum(1 for n in nav._group_i18n_keys if n in nav._group_labels))
+    def _init_fuel_status(self):
+        self._update_fuel_status()
+        self._fuel_timer = QTimer(self)
+        self._fuel_timer.timeout.connect(self._update_fuel_status)
+        self._fuel_timer.start(60_000)
 
-    def _setup_ui(self):
-        self._switch_module("overview")
-
-    def _build_overview(self, parent):
-        from ui.overview import OverviewDashboard
-        self._overview = OverviewDashboard(parent, self.db, ops=self.ops)
-        self._overview.pack(fill="both", expand=True)
-
-    def _build_calculator_form(self, parent):
-        calc_frame = ctk.CTkFrame(parent, fg_color=Theme.BG)
-        calc_frame.pack(fill="both", expand=True)
-
-        self.scrollable_frame = ctk.CTkScrollableFrame(calc_frame, fg_color=Theme.BG)
-        self.scrollable_frame.pack(fill="both", expand=True)
-
-        ident_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
-        ident_f.pack(fill="x")
-        lbl = section_header(ident_f, t("main.section_identify"), _return=True)
-        self.i18n_tag(lbl, "main.section_identify")
-        lbl = ctk.CTkLabel(ident_f, text=t("main.truck_label"), fg_color=Theme.BG, text_color=Theme.TEXT, font=FONTS["label"])
-        lbl.pack(anchor="w", pady=(8,0))
-        self.i18n_tag(lbl, "main.truck_label")
-        self.truck_var = tk.StringVar()
-        self.truck_dropdown = tk.OptionMenu(ident_f, self.truck_var, t("app.loading"))
-        Theme.style_option_menu(self.truck_dropdown)
-        self.truck_dropdown.pack(fill="x", pady=2)
-        self.e_client = self._add_field(ident_f, "main.client_label")
-        self.selected_truck = None
-        self.route_distance = 0.0
-        self.route_toll = 0.0
-        self.route_fuel_liters = 0.0
-        self.selected_truck_fuel = None
-        self._current_route_history_id: Optional[int] = None
+    def _update_fuel_status(self):
+        text = self._fuel_status_text()
+        logger.debug("Fuel status: %s", text)
         try:
-            self._load_trucks_main()
-        except Exception:
-            pass
-        try:
-            from services.trip_context import TripContextService
-            tc = getattr(TripContextService(), '_tc', None)
-            if tc and tc.truck and tc.truck.id and hasattr(self, '_main_trucks_map'):
-                truck_id = tc.truck.id
-                if truck_id in self._main_trucks_map:
-                    truck_data = self._main_trucks_map[truck_id]
-                    label = f"{truck_data.get('plate_number','')} - {truck_data.get('model','')}"
-                    self.truck_var.set(label)
-                    self._on_main_truck_selected(truck_id)
+            self.app_shell.set_fuel_status(text)
         except Exception:
             pass
 
-        fin_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
-        fin_f.pack(fill="x")
-        lbl = section_header(fin_f, t("main.section_finance"), _return=True)
-        self.i18n_tag(lbl, "main.section_finance")
-        self.e_price = self._add_field(fin_f, "main.offer_price")
+    def _fuel_status_text(self) -> str:
+        if self._fuel_service.is_available():
+            age = self._fuel_service.age_seconds()
+            if age is not None and age < 3600:
+                age_str = f"{int(age/60)}m" if age >= 60 else f"{int(age)}s"
+            elif age is not None:
+                age_str = f"{age/3600:.1f}h"
+            else:
+                age_str = "?"
+            return (
+                f"⛽ {t('main.fuel_updated_at').format(self._fuel_service.last_updated_str())}"
+                f" ({t('main.fuel_age').format(age_str)})"
+            )
+        return f"⛽ {t('main.fuel_offline')}"
 
-        # VAT checkbox + pre/post VAT fields
-        vat_row = ctk.CTkFrame(fin_f, fg_color=Theme.BG)
-        vat_row.pack(fill="x", pady=(4, 0))
-        self._vat_enabled = tk.BooleanVar(value=False)
-        self._vat_check = ctk.CTkCheckBox(vat_row, text=t("main.vat_checkbox"),
-                                          variable=self._vat_enabled,
-                                          command=self._on_vat_toggled,
-                                          font=FONTS["body"],
-                                          text_color=Theme.TEXT,
-                                          fg_color=Theme.ACCENT,
-                                          hover_color=Theme.ACCENT_HOVER)
-        self._vat_check.pack(side="left")
-        self.i18n_tag(self._vat_check, "main.vat_checkbox")
-
-        self._vat_percent_entry = ctk.CTkEntry(vat_row, placeholder_text="VAT %",
-                                               font=FONTS["body"], width=60, height=32,
-                                               fg_color=Theme.INPUT_BG,
-                                               text_color=Theme.TEXT)
-        self._vat_percent_entry.insert(0, "19")
-
-        # Pre/post VAT fields (hidden initially)
-        self._vat_fields_frame = ctk.CTkFrame(fin_f, fg_color=Theme.BG)
-        self._e_price_pre = self._add_field(self._vat_fields_frame, "main.offer_price_pre_vat")
-        self._e_price_post = self._add_field(self._vat_fields_frame, "main.offer_price_post_vat")
-        self._e_price_post.configure(state="readonly")
-
-        cost_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
-        cost_f.pack(fill="x")
-        lbl = section_header(cost_f, t("main.section_costs"), _return=True)
-        self.i18n_tag(lbl, "main.section_costs")
-        self.e_sal = self._add_field(cost_f, "main.salary_label"); self.e_sal.insert(0, "0")
-        self.e_tax = None
-        self.e_extra = self._add_field(cost_f, "main.extra_costs_label"); self.e_extra.insert(0, "0")
-
-        time_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
-        time_f.pack(fill="x")
-        lbl = section_header(time_f, t("main.section_planning"), _return=True)
-        self.i18n_tag(lbl, "main.section_planning")
-        self.e_start = self._add_field(time_f, "main.start_date_label")
-        self.e_start.insert(0, datetime.now().strftime("%d/%m/%Y"))
-        self.e_days = self._add_field(time_f, "main.duration_label"); self.e_days.insert(0, "1")
-        self.e_term = self._add_field(time_f, "main.payment_term_label"); self.e_term.insert(0, "30")
-
-        btn_f = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.BG)
-        btn_f.pack(fill="x")
-        self._calc_btn = ActionButton(btn_f, t("main.calculate_button"), self._handle_calculate,
-                     color=Theme.ACCENT_SUCCESS)
-        self._calc_btn.pack(fill="x")
-        self.i18n_tag(self._calc_btn, "main.calculate_button")
-
-        self.res_box = ctk.CTkFrame(self.scrollable_frame, fg_color=Theme.SURFACE)
-        self.res_box.pack(fill="x", padx=40, pady=(0, 50))
-        self.l_res = ctk.CTkLabel(self.res_box, text=t("main.placeholder_info"),
-                                fg_color=Theme.SURFACE, text_color=Theme.MUTED, font=FONTS["body_bold"],
-                                justify="center", wraplength=650)
-        self.l_res.pack()
-        self.i18n_tag(self.l_res, "main.placeholder_info")
-
-        self._fuel_status_lbl = ctk.CTkLabel(self.scrollable_frame, text="",
-                                          fg_color=Theme.BG, text_color=Theme.MUTED,                                           font=FONTS["label"])
-        self._fuel_status_lbl.pack(anchor="se", padx=10, pady=(0, 5))
-
-        calc_frame.bind("<Return>", lambda e: self._handle_calculate())
-        for entry in (self.e_price, self.e_sal, self.e_extra, self.e_days, self.e_term):
-            entry.bind("<Return>", lambda e: self._handle_calculate())
-
-        return calc_frame
-
-    def _switch_module(self, key):
+    def _switch_module(self, key: str):
         old_key = self._active_module
         if old_key and old_key in self._module_cache:
             cache = self._module_cache[old_key]
@@ -352,372 +184,152 @@ class MainWindow(I18nMixin):
                     obj.shutdown()
                 except Exception:
                     pass
-            frame = cache.get("frame")
-            if frame is not None:
-                try:
-                    frame.pack_forget()
-                except Exception:
-                    pass
-
-        vc = self.app_shell.view_container
-        self.app_shell.set_breadcrumb(t(f"nav.{key}") if key != "overview" else t("nav.overview"))
 
         if key not in self._module_cache:
-            self._module_cache[key] = self._create_module(key, vc)
+            self._module_cache[key] = self._create_module(key)
 
         cache = self._module_cache.get(key)
         if cache and cache.get("frame") is not None:
-            cache["frame"].pack(fill="both", expand=True)
+            frame = cache["frame"]
+            self.app_shell.view_container.setCurrentWidget(frame)
             obj = cache.get("obj")
             if obj and hasattr(obj, "wakeup"):
                 try:
                     obj.wakeup()
                 except Exception:
                     pass
+
         self._active_module = key
+        self.app_shell.set_breadcrumb(t(f"nav.{key}") if key != "overview" else t("nav.overview"))
         try:
             self.nav.highlight(key)
         except Exception:
             pass
 
-    def _create_module(self, key, parent):
+    def _create_module(self, key: str):
         """Factory for view modules."""
-        if key == "overview":
-            from ui.overview import OverviewDashboard
-            obj = OverviewDashboard(parent, self.db, ops=self.ops)
-            return {"frame": obj, "obj": obj}
-        
+        parent = self.app_shell.view_container
         if key == "calculator":
-            frame = self._build_calculator_form(parent)
-            return {"frame": frame, "obj": None}
-
-        # Lazy imports for other modules
-        view_map = {
-            "dispatch_board": ("ui.views.dispatch_board_view", "DispatchBoardView", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
-            "route_planner": ("ui.route_planner", "RoutePlannerTab", {"open_window": False, "controller": self}),
-            "fleet": ("ui.fleet_tab", "FleetTab", {"open_window": False, "ops": self.ops}),
-            "driver_manager": ("ui.driver_manager", "DriverManager", {"open_window": False, "ops": self.ops}),
-            "clients": ("ui.client_workspace", "ClientWorkspace", {"prefs": self.prefs}),
-            "documents": ("ui.views.document_center_view", "DocumentCenterView", {}),
-            "invoices": ("ui.views.generators_view", "GeneratorsView", {"prefs": self.prefs}),
-            "settings": ("ui.settings_view", "SettingsView", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
-            "dashboard": ("ui.dashboard", "FleetDashboard", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
-            "analytics": ("ui.analytics_view", "AnalyticsView", {"prefs": self.prefs, "embedded": True}),
-            "history": ("ui.history_view", "HistoryView", {"controller": self, "prefs": self.prefs, "ops": self.ops, "embedded": True}),
-            "route_history": ("ui.route_history_view", "RouteHistoryView", {"controller": self, "embedded": True}),
-            "maintenance": ("ui.views.maintenance_analytics_view", "MaintenanceAnalyticsView", {"embedded": True}),
-            "maintenance_control": ("ui.maintenance_control_panel", "MaintenanceControlPanel", {"prefs": self.prefs, "ops": self.ops, "embedded": True}),
-            "tachograph": ("ui.views.tacho_import_view", "TachoImportView", {}),
-            "tracking": ("ui.views.fleet_tracking_view", "FleetTrackingView", {
-    "on_navigate": self._switch_module,
-    "embedded": True
-}),
-        }
-
-        if key in view_map:
-            module_path, class_name, extra_args = view_map[key]
-            import importlib
-            module = importlib.import_module(module_path)
-            cls = getattr(module, class_name)
-
-            import inspect
-            sig = inspect.signature(cls.__init__)
-            valid_keys = {k for k in sig.parameters.keys() if k not in ("self", "parent", "db")}
-            filtered = {k: v for k, v in extra_args.items() if k in valid_keys}
-            obj = cls(parent, self.db, **filtered)
-
-            frame = getattr(obj, "frame", obj)
-            return {"frame": frame, "obj": obj}
-        
-        return {}
-
-    def _fuel_status_text(self):
-        if self._fuel_service.is_available():
-            age = self._fuel_service.age_seconds()
-            if age is not None and age < 3600:
-                age_str = f"{int(age/60)}m" if age >= 60 else f"{int(age)}s"
-            elif age is not None:
-                age_str = f"{age/3600:.1f}h"
-            else:
-                age_str = "?"
-            return f"⛽ {t('main.fuel_updated_at').format(self._fuel_service.last_updated_str())} ({t('main.fuel_age').format(age_str)})"
-        return f"⛽ {t('main.fuel_offline')}"
-
-    def _init_fuel_status(self):
-        self._update_fuel_status()
-        self._fuel_timer_id = self.root.after(60000, self._periodic_fuel_status)
-
-    def _periodic_fuel_status(self):
-        self._update_fuel_status()
-        self._fuel_timer_id = self.root.after(60000, self._periodic_fuel_status)
-
-    def shutdown(self):
-        """Cancel all repeating after() callbacks and clean up."""
-        if hasattr(self, "_fuel_timer_id") and self._fuel_timer_id:
-            try:
-                self.root.after_cancel(self._fuel_timer_id)
-            except Exception:
-                pass
-            self._fuel_timer_id = None
-        try:
-            self.app_shell.destroy()
-        except Exception:
-            pass
-
-    def _update_fuel_status(self):
-        text = self._fuel_status_text()
-        try:
-            self._fuel_status_lbl.config(text=text)
-        except Exception:
-            pass
-
-    def _open_settings(self):
-        from ui.settings_view import SettingsView
-        SettingsView(self.root, self.db, prefs=self.prefs, ops=self.ops)
-
-    def _add_field(self, parent, label_key):
-        lbl = ctk.CTkLabel(parent, text=t(label_key), fg_color=Theme.BG, text_color=Theme.TEXT, font=FONTS["label"])
-        lbl.pack(anchor="w", pady=(8,0))
-        self.i18n_tag(lbl, label_key)
-        e = StyledEntry(parent)
-        e.pack(fill="x", pady=2)
-        if label_key == "main.client_label":
-            self._route_badge = ctk.CTkLabel(parent, text="", fg_color=Theme.BG, text_color=Theme.ACCENT,
-                                          font=FONTS["label"])
-            self._route_badge.pack(anchor="w", pady=(2, 0))
-        return e
-
-    def _on_vat_toggled(self):
-        if self._vat_enabled.get():
-            self._vat_percent_entry.pack(side="left", padx=(6, 0))
-            self._vat_fields_frame.pack(fill="x", pady=(4, 0))
-            try:
-                price = float(self.e_price.get() or 0)
-                vat_pct = float(self._vat_percent_entry.get() or 0)
-                self._e_price_pre.delete(0, "end")
-                self._e_price_pre.insert(0, f"{price:.2f}")
-                post = round(price * (1 + vat_pct / 100), 2)
-                self._e_price_post.configure(state="normal")
-                self._e_price_post.delete(0, "end")
-                self._e_price_post.insert(0, f"{post:.2f}")
-                self._e_price_post.configure(state="readonly")
-            except ValueError:
-                pass
+            widget = QtCalculatorView(
+                parent,
+                db=self.db,
+                fleet_service=self.fleet_service,
+                trip_service=self.trip_service,
+                client_service=self.client_service,
+                prefs=self.prefs,
+                ops=self.ops,
+                fuel_service=self._fuel_service,
+                api=self.api,
+            )
+        elif key == "overview":
+            widget = QtOverviewView(parent, db=self.db, ops=self.ops)
+        elif key == "route_planner":
+            widget = QtRoutePlannerView(parent, db=self.db, controller=self)
+        elif key == "analytics":
+            widget = QtAnalyticsView(parent, db=self.db, prefs=self.prefs)
+        elif key == "history":
+            widget = QtHistoryView(parent, db=self.db, controller=self, prefs=self.prefs, ops=self.ops)
+        elif key == "route_history":
+            widget = QtRouteHistoryView(parent, db=self.db, controller=self)
+        elif key == "dispatch_board":
+            widget = QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops)
+        elif key == "tracking":
+            widget = QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module)
+        elif key == "fleet":
+            widget = QtFleetTab(parent, db=self.db, ops=self.ops)
+        elif key == "driver_manager":
+            widget = QtDriverManager(parent, db=self.db, prefs=self.prefs)
+        elif key == "clients":
+            widget = QtClientWorkspace(parent, db=self.db, prefs=self.prefs)
+        elif key == "documents":
+            widget = QtDocumentCenterView(parent, db=self.db)
+        elif key == "maintenance":
+            widget = QtMaintenanceAnalyticsView(parent, db=self.db)
+        elif key == "maintenance_control":
+            widget = QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops)
+        elif key == "tachograph":
+            widget = QtTachoImportView(parent, db=self.db)
+        elif key == "invoices":
+            widget = QtGeneratorsView(parent, db=self.db, prefs=self.prefs)
+        elif key == "settings":
+            widget = QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops)
         else:
-            self._vat_percent_entry.pack_forget()
-            self._vat_fields_frame.pack_forget()
+            widget = PlaceholderView(parent, key)
+        self.app_shell.view_container.addWidget(widget)
+        return {"frame": widget, "obj": widget}
 
-    def _handle_calculate(self):
-        try:
-            if not hasattr(self, 'e_price'):
-                self._switch_module("calculator")
-                return
-            km = float(self.route_distance or 0)
-            price_raw = float(self.e_price.get() or 0)
-            if km <= 0 or price_raw <= 0:
-                messagebox.showwarning(t("main.warning_title"), t("main.fields_required"))
-                return
-
-            # VAT handling
-            vat_enabled = self._vat_enabled.get()
-            vat_pct = 0.0
-            price_pre_vat = price_raw
-            if vat_enabled:
-                try:
-                    vat_pct = float(self._vat_percent_entry.get() or 0)
-                    price_pre_vat = float(self._e_price_pre.get() or price_raw)
-                    price = float(self._e_price_post.get() or price_raw)
-                except ValueError:
-                    price = price_raw
-                    vat_pct = 0
-            else:
-                price = price_raw
-
-            rates = self.api.get_rates()
-            currency = self.prefs.get_currency()
-            rate_eur = rates.get(currency, 1.0)
-            pret_eur = price / rate_eur
-            pret_eur_pre_vat = price_pre_vat / rate_eur if vat_enabled else pret_eur
-
-            try:
-                cons = float(self.selected_truck_fuel) if self.selected_truck_fuel is not None else 34.0
-            except Exception:
-                cons = 34.0
-
-            selected_currency = self.prefs.get_currency()
-            fuel_price = self._fuel_service.get_price("DEFAULT", selected_currency)
-
-            fuel_cost_from_route = None
-            if hasattr(self, 'route_fuel_liters') and self.route_fuel_liters > 0:
-                fuel_cost_from_route = self.route_fuel_liters * fuel_price
-
-            res = self.calculator.calculate(
-                km, pret_eur, fuel_price,
-                int(self.e_days.get() or 1), cons,
-                float(self.e_extra.get() or 0), float(self.e_sal.get() or 0), float(self.route_toll or 0),
-                fuel_cost_from_route
-            )
-
-            try:
-                dt_s = datetime.strptime(self.e_start.get(), "%d/%m/%Y")
-            except Exception:
-                dt_s = datetime.now()
-            dt_end = dt_s + timedelta(days=int(self.e_days.get() or 1))
-            dt_inc = dt_end + timedelta(days=int(self.e_term.get() or 0))
-
-            color = Theme.ACCENT_SUCCESS if res.net_profit > 400 else (Theme.TEXT if res.net_profit > 0 else Theme.DANGER)
-            summary = (
-                f"💰 {t('main.net_profit').format(res.net_profit)}\n"
-                f"📈 {t('main.gross_rate').format(res.gross_per_km, res.rate_per_km)}\n"
-                f"📊 {t('main.margin').format(res.margin_percent, dt_inc.strftime('%d/%m/%Y'))}\n"
-                f"{t('main.separator')}\n"
-                f"⛽ {t('main.cost_breakdown').format(res.fuel_cost, res.toll_cost, res.salary_cost)}"
-            )
-            self.l_res.config(text=summary, fg=color)
-
-            truck_plate = (self.selected_truck.get('plate_number') if isinstance(self.selected_truck, dict) and self.selected_truck else
-                          (self.selected_truck[1] if self.selected_truck and len(self.selected_truck) > 1 else None))
-            driver_id = (self.selected_truck.get('driver_id') if isinstance(self.selected_truck, dict) and self.selected_truck else None)
-
-            from services.conflict_service import TripConflictService
-            cfs = TripConflictService(self.db)
-            conflicts = cfs.check_conflicts({
-                "truck_plate": truck_plate or "",
-                "driver_id": driver_id,
-                "start_date": dt_s.strftime("%Y-%m-%d"),
-                "end_date": dt_end.strftime("%Y-%m-%d"),
-                "distance_km": km,
-            })
-            if conflicts:
-                conflict_msgs = [cfs.describe_conflict(c) for c in conflicts]
-                msg = t("dispatch_board.conflict_warning_title") + "\n\n" + "\n".join(conflict_msgs)
-                if not messagebox.askyesno(t("dispatch_board.conflict_warning_title"), msg):
-                    return
-
-            client_name = self.e_client.get().strip()
-            client_id = self.client_service.get_or_create(client_name) if client_name else None
-
-            trip_data = {
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "truck_number": (self.selected_truck.get('plate_number') if isinstance(self.selected_truck, dict) and self.selected_truck else (self.selected_truck[1] if self.selected_truck and len(self.selected_truck) > 1 else None)),
-                "driver_name": (self.selected_truck.get('driver_name') if isinstance(self.selected_truck, dict) and self.selected_truck and 'driver_name' in self.selected_truck else (self.selected_truck['driver_name'] if self.selected_truck and hasattr(self.selected_truck, 'keys') and 'driver_name' in self.selected_truck.keys() else None)),
-                "driver_id": (self.selected_truck.get('driver_id') if isinstance(self.selected_truck, dict) and self.selected_truck else None),
-                "client_name": client_name,
-                "client_id": client_id,
-                "distance_km": km,
-                "total_price_eur": round(pret_eur, 2),
-                "rate_per_km": res.rate_per_km,
-                "gross_per_km": res.gross_per_km,
-                "net_profit": res.net_profit,
-                "start_date": dt_s.strftime("%Y-%m-%d"),
-                "end_date": dt_end.strftime("%Y-%m-%d"),
-                "payment_date": dt_inc.strftime("%Y-%m-%d"),
-                "currency": self.prefs.get_currency(),
-                "status": "Planned",
-                "fuel_cost": res.fuel_cost,
-                "toll_cost": res.toll_cost,
-                "salary_cost": res.salary_cost,
-                "extra_costs": res.extra_costs,
-                "route_history_v2_id": self._current_route_history_id,
-                "truck_consumption_l_per_100km": self.selected_truck_fuel,
-            }
-            if vat_enabled:
-                trip_data["price_pre_vat"] = round(pret_eur_pre_vat, 2)
-                trip_data["vat_percent"] = round(vat_pct, 2)
-
-            self.trip_service.add(trip_data)
-            self._show_toast(f"✅ {t('main.save_success')}")
-
-        except Exception as e:
-            messagebox.showerror(t("main.error_title"), f"{t('main.check_data').format(str(e))}")
-
-    def _show_toast(self, msg):
-        t2 = tk.Toplevel(self.root)
-        Theme.apply(t2)
-        t2.overrideredirect(True)
-        x = self.root.winfo_x() + 300; y = self.root.winfo_y() + 200
-        t2.geometry(f"+{x}+{y}")
-        tk.Label(t2, text=msg, bg=Theme.ACCENT_SUCCESS, fg=Theme.TEXT,
-                 font=FONTS["small"], padx=25, pady=12).pack()
-        self.root.after(2500, lambda: safe_destroy(t2))
-
-    def _on_trip_update(self, tc, changed_fields):
-        try:
-            def apply_update():
-                try:
-                    if tc.route and tc.route.distance_km is not None:
-                        self.route_distance = float(tc.route.distance_km)
-                        try:
-                            self._route_badge.config(
-                                text=f"\U0001f5fa\ufe0f Route loaded: {tc.route.distance_km:,.0f} km"
-                            )
-                        except Exception:
-                            pass
-
-                    if tc.route and tc.route.route_history_v2_id is not None:
-                        self._current_route_history_id = tc.route.route_history_v2_id
-
-                    if tc.costs and tc.costs.toll_cost is not None:
-                        self.route_toll = float(tc.costs.toll_cost)
-
-                    if tc.costs and tc.costs.fuel_liters is not None:
-                        self.route_fuel_liters = float(tc.costs.fuel_liters)
-                        if tc.truck and tc.truck.fuel_consumption_l_per_100km is not None:
-                            try:
-                                self.selected_truck_fuel = float(tc.truck.fuel_consumption_l_per_100km)
-                            except Exception:
-                                logger.exception("_on_trip_update apply_inner failed")
-
-                    if tc.truck and tc.truck.id is not None and hasattr(self, '_main_trucks_map'):
-                        truck_id = tc.truck.id
-                        if truck_id in self._main_trucks_map:
-                            truck_data = self._main_trucks_map[truck_id]
-                            label = f"{truck_data.get('plate_number','')} - {truck_data.get('model','')}"
-                            self.truck_var.set(label)
-                            self._on_main_truck_selected(truck_id)
-
-                    if tc.profit and tc.profit.total_cost is not None:
-                        self.e_price.delete(0, 'end')
-                        self.e_price.insert(0, f"{tc.profit.total_cost:.2f}")
-
-                    if tc.profit and tc.profit.net_profit is not None:
-                        color = Theme.ACCENT_SUCCESS if tc.profit.net_profit > 400 else (Theme.TEXT if tc.profit.net_profit > 0 else Theme.DANGER)
-                        summary = f"💰 PROFIT NET (TRIP): {tc.profit.net_profit:.2f}"
-                        self.l_res.config(text=summary, fg=color)
-                except Exception:
-                    logger.exception("_on_trip_update apply_update failed")
-            self.root.after(0, apply_update)
-        except Exception:
-            logger.exception("_on_trip_update failed")
+    def _open_calculator(self):
+        self._switch_module("calculator")
 
     def _open_history(self):
         self._switch_module("history")
 
-    def _open_dashboard(self):
-        from ui.dashboard import FleetDashboard
-        FleetDashboard(self.root, self.db, prefs=self.prefs, ops=self.ops)
+    def _on_settings_updated(self, ev):
+        pass
 
-    def _open_analytics(self):
-        from ui.analytics_view import AnalyticsView
-        AnalyticsView(self.root, self.db, prefs=self.prefs)
+    def _on_alert_event(self, ev):
+        """Refresh alert count and data when alerts are created or resolved."""
+        QTimer.singleShot(0, self._refresh_alerts)
 
-    def get_timestamp(self):
-        return datetime.now().strftime("%Y-%m-%d %H:%M")
+    def _refresh_alerts(self):
+        """Query OperationsEngine for active alerts and push to top bar."""
+        try:
+            if self.ops is not None:
+                alerts = self.ops.get_active_alerts(limit=50)
+                count = self.ops.get_active_alert_count()
+                self.app_shell.set_alert_count(count)
+                self.app_shell.top_bar.set_alerts(alerts)
+        except Exception:
+            logger.debug("Could not refresh alerts", exc_info=True)
 
-    def destroy(self):
+    def closeEvent(self, event):
         try:
-            self._event_bus.unsubscribe(SETTINGS_UPDATED, self._on_settings_updated)
+            self.app_shell.destroy()
         except Exception:
             pass
         try:
-            unregister_trip_listener(self._on_trip_update)
+            if self.ops is not None:
+                self.ops.stop()
         except Exception:
             pass
         try:
-            unregister_listener(self._on_language_changed)
+            from services.document_service import DocumentService
+            DocumentService.shutdown()
         except Exception:
             pass
-        try:
-            self.root.after_cancel(self._fuel_timer_id)
-        except Exception:
-            pass
+        if self._fuel_timer is not None:
+            self._fuel_timer.stop()
+        event.accept()
+
+
+class PlaceholderView(QWidget):
+    """Empty placeholder view used until a module is fully migrated."""
+
+    def __init__(self, parent: Optional[QWidget], key: str):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+
+        label = QLabel(f"{key}\n(Module not yet migrated)")
+        label.setProperty("fontRole", "muted")
+        label.setAlignment(Qt.AlignCenter)
+        layout.addWidget(label)
+
+
+class QWidgetShortcut(QObject):
+    """Small helper to attach a key sequence to a QWidget callback."""
+
+    def __init__(self, parent: QWidget, key: Qt.Key, modifier: Qt.KeyboardModifier, callback):
+        super().__init__(parent)
+        self._key = key
+        self._modifier = modifier
+        self._callback = callback
+        parent.installEventFilter(self)
+
+    def eventFilter(self, obj, event):
+        from PySide6.QtCore import QEvent
+        if event.type() == QEvent.KeyPress:
+            if event.key() == self._key and event.modifiers() == self._modifier:
+                self._callback()
+                return True
+        return False
