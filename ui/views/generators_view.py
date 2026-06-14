@@ -31,13 +31,12 @@ from services.i18n import t, register_listener, unregister_listener
 from services.trip_service import TripService
 from ui.widgets import (
     ActionButton,
-    StyledLineEdit,
     StyledComboBox,
     StyledCheckBox,
-    ScrollableFormContainer,
     SectionHeader,
-    field,
 )
+from ui.views.cmr_form_view import QtCmrFormView
+from ui.views.invoice_editor import QtInvoiceEditor
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +102,6 @@ class QtGeneratorsView(QWidget):
         self._cmr_lang2_combo: Optional[StyledComboBox] = None
         self._invoice_built = False
         self._cmr_built = False
-        self._cmr_scroll: Optional[ScrollableFormContainer] = None
 
         # ── i18n tracking ───────────────────────────────────────────────
         self._i18n_labels: List[Tuple[QLabel, str]] = []
@@ -239,88 +237,11 @@ class QtGeneratorsView(QWidget):
     # ── Invoice tab content ────────────────────────────────────────────
 
     def _build_invoice_tab(self, layout: QVBoxLayout) -> None:
-        scroll = ScrollableFormContainer(self._invoice_tab)
-        layout.addWidget(scroll, 1)
-
-        header_widget = SectionHeader(scroll.content, "")
-        self._i18n_sections["generators.doc_invoice_title"] = header_widget.label
-        scroll.add_widget(header_widget)
-
-        # ── Client section ──────────────────────────────────────────
-        self._invoice_client_combo = StyledComboBox(
-            scroll.content, values=[], state="readonly",
+        """Embed the full QtInvoiceEditor in the invoice tab."""
+        self._full_invoice_editor = QtInvoiceEditor(
+            self._invoice_tab, db=self.db, prefs=self.prefs,
         )
-        scroll.add_widget(
-            field(scroll.content, t("invoice_editor.client"), self._invoice_client_combo)
-        )
-
-        # ── Invoice dates ───────────────────────────────────────────
-        self._invoice_date_entry = StyledLineEdit(
-            scroll.content, placeholder=t("invoice_editor.date_placeholder")
-        )
-        scroll.add_widget(
-            field(scroll.content, t("invoice_editor.date"), self._invoice_date_entry)
-        )
-
-        self._invoice_due_entry = StyledLineEdit(
-            scroll.content, placeholder=t("invoice_editor.due_date_placeholder")
-        )
-        scroll.add_widget(
-            field(scroll.content, t("invoice_editor.due_date"), self._invoice_due_entry)
-        )
-
-        # ── Invoice number ──────────────────────────────────────────
-        self._invoice_number_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("invoice_editor.invoice_number"), self._invoice_number_entry)
-        )
-
-        # ── Amounts ─────────────────────────────────────────────────
-        self._invoice_amount_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("invoice_editor.amount"), self._invoice_amount_entry)
-        )
-
-        self._invoice_vat_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("invoice_editor.vat"), self._invoice_vat_entry)
-        )
-
-        self._invoice_total_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("invoice_editor.total"), self._invoice_total_entry)
-        )
-
-        scroll.add_stretch()
-
-        # ── Action bar ──────────────────────────────────────────────
-        bar = QFrame()
-        bar.setProperty("role", "card")
-        bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(S["5"], S["3"], S["5"], S["3"])
-
-        bar_layout.addStretch(1)
-
-        preview_btn = ActionButton(
-            bar,
-            t("invoice_editor.preview"),
-            command=self._preview_invoice,
-            variant="secondary",
-        )
-        bar_layout.addWidget(preview_btn)
-        self._i18n_buttons.append((preview_btn, "invoice_editor.preview"))
-
-        generate_btn = ActionButton(
-            bar,
-            t("invoice_editor.generate"),
-            command=self._generate_invoice,
-            variant="primary",
-        )
-        generate_btn.setFixedWidth(160)
-        bar_layout.addWidget(generate_btn)
-        self._i18n_buttons.append((generate_btn, "invoice_editor.generate"))
-
-        layout.addWidget(bar)
+        layout.addWidget(self._full_invoice_editor, 1)
 
     # ── CMR tab content ───────────────────────────────────────────────
 
@@ -329,86 +250,34 @@ class QtGeneratorsView(QWidget):
         splitter.setHandleWidth(1)
         splitter.setChildrenCollapsible(False)
 
-        # ── LEFT panel — Scrollable form fields (≈380px) ─────────────
-        left_panel = QFrame()
-        left_panel.setProperty("role", "card")
-        left_lyt = QVBoxLayout(left_panel)
-        left_lyt.setContentsMargins(0, 0, 0, 0)
+        # ── LEFT panel — Full CMRFormView (24-box UN/CEFACT) ─────────
+        self._cmr_form_view = QtCmrFormView(self._cmr_tab, db=self.db)
+        splitter.addWidget(self._cmr_form_view)
+        splitter.setStretchFactor(0, 1)
 
-        scroll = ScrollableFormContainer(left_panel)
-        left_lyt.addWidget(scroll, 1)
-        self._cmr_scroll = scroll
-
-        header_widget = SectionHeader(scroll.content, "")
-        self._i18n_sections["generators.doc_cmr_title"] = header_widget.label
-        scroll.add_widget(header_widget)
-
-        # ── Place of loading ────────────────────────────────────────
-        self._cmr_loading_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("cmr.place_of_loading"), self._cmr_loading_entry)
-        )
-
-        # ── Destination ─────────────────────────────────────────────
-        self._cmr_destination_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("cmr.destination"), self._cmr_destination_entry)
-        )
-
-        # ── Vehicle ─────────────────────────────────────────────────
-        self._cmr_vehicle_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("cmr.vehicle"), self._cmr_vehicle_entry)
-        )
-
-        # ── Goods description ───────────────────────────────────────
-        self._cmr_goods_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("cmr.goods_description"), self._cmr_goods_entry)
-        )
-
-        # ── Gross weight ────────────────────────────────────────────
-        self._cmr_weight_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("cmr.gross_weight"), self._cmr_weight_entry)
-        )
-
-        # ── CMR number ──────────────────────────────────────────────
-        self._cmr_number_entry = StyledLineEdit(scroll.content)
-        scroll.add_widget(
-            field(scroll.content, t("cmr.cmr_number"), self._cmr_number_entry)
-        )
-
-        scroll.add_stretch()
-
-        splitter.addWidget(left_panel)
-        splitter.setStretchFactor(0, 0)
-
-        # ── CENTER panel — Options + Actions (flexible) ──────────────
-        center_panel = QWidget()
-        center_lyt = QVBoxLayout(center_panel)
-        center_lyt.setContentsMargins(0, 0, 0, 0)
-        center_lyt.setSpacing(S["3"])
+        # ── RIGHT panel — Options + Actions + Copies (≈340px) ─────────
+        right_panel = QWidget()
+        right_lyt = QVBoxLayout(right_panel)
+        right_lyt.setContentsMargins(S["3"], 0, 0, 0)
+        right_lyt.setSpacing(S["3"])
 
         # Options card (languages)
-        options_card = self._build_cmr_options_card(center_panel)
-        center_lyt.addWidget(options_card)
+        options_card = self._build_cmr_options_card(right_panel)
+        right_lyt.addWidget(options_card)
 
         # Actions card
-        actions_card = self._build_cmr_actions_card(center_panel)
-        center_lyt.addWidget(actions_card)
+        actions_card = self._build_cmr_actions_card(right_panel)
+        right_lyt.addWidget(actions_card)
 
-        center_lyt.addStretch(1)
-        splitter.addWidget(center_panel)
-        splitter.setStretchFactor(1, 1)
-
-        # ── RIGHT panel — Copies status (≈280px) ─────────────────────
+        # Copies panel
         copies_panel = self._build_cmr_copies_panel()
-        splitter.addWidget(copies_panel)
-        splitter.setStretchFactor(2, 0)
+        right_lyt.addWidget(copies_panel, 1)
 
-        # Initial sizes: left fixed-ish, center flexible, right fixed
-        splitter.setSizes([380, 200, 280])
+        splitter.addWidget(right_panel)
+        splitter.setStretchFactor(1, 0)
+
+        # Initial sizes: left gets the bulk, right fixed
+        splitter.setSizes([700, 340])
 
         layout.addWidget(splitter, 1)
 
@@ -610,22 +479,9 @@ class QtGeneratorsView(QWidget):
         """Lazy initialisation when a tab is first shown."""
         if index == 0 and not self._invoice_built:
             self._invoice_built = True
-            self._load_invoice_clients()
         elif index == 1 and not self._cmr_built:
             self._cmr_built = True
             self._refresh_trip_lists()
-
-    def _load_invoice_clients(self) -> None:
-        """Populate invoice client combo from the database."""
-        try:
-            rows = self.db.conn.execute(
-                "SELECT id, name FROM clients ORDER BY name"
-            ).fetchall()
-            names = [row["name"] for row in rows]
-            self._invoice_client_combo.clear()
-            self._invoice_client_combo.addItems(names)
-        except Exception as e:
-            logger.warning("Could not load clients for invoice: %s", e)
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Trip handling
@@ -718,44 +574,11 @@ class QtGeneratorsView(QWidget):
             except Exception:
                 pass
 
-        self._fill_cmr_from_trip(trip, conf, client_data, truck_data, driver_data)
+        if hasattr(self, "_cmr_form_view") and self._cmr_form_view is not None:
+            self._cmr_form_view.fill_from_trip(trip, conf, client_data, truck_data, driver_data)
 
         if trip.get("route_history_v2_id"):
             self._fill_stops_from_route(trip["route_history_v2_id"])
-
-    def _fill_cmr_from_trip(
-        self,
-        trip: Dict[str, Any],
-        company_conf: Dict[str, Any],
-        client_data: Dict[str, Any],
-        truck_data: Dict[str, Any],
-        driver_data: Dict[str, Any],
-    ) -> None:
-        """Populate CMR form fields with data from the trip and related records."""
-        # Loading place from origin
-        origin = trip.get("origin", "") or client_data.get("address", "")
-        if origin:
-            self._cmr_loading_entry.setText(origin)
-
-        # Destination
-        destination = trip.get("destination", "")
-        if destination:
-            self._cmr_destination_entry.setText(destination)
-
-        # Vehicle
-        plate = trip.get("truck_number", "") or truck_data.get("plate", "")
-        if plate:
-            self._cmr_vehicle_entry.setText(plate)
-
-        # Goods description from trip cargo
-        goods = trip.get("cargo_description", "") or trip.get("goods", "")
-        if goods:
-            self._cmr_goods_entry.setText(goods)
-
-        # Gross weight
-        weight = trip.get("gross_weight", "") or trip.get("weight", "")
-        if weight:
-            self._cmr_weight_entry.setText(str(weight))
 
     def _fill_stops_from_route(self, route_id: int) -> None:
         """Extract origin/destination from route stops and fill CMR fields."""
@@ -771,10 +594,16 @@ class QtGeneratorsView(QWidget):
                 return
             origin = stops[0].get("address", "")
             destination = stops[-1].get("address", "")
-            if origin:
-                self._cmr_loading_entry.setText(origin)
-            if destination:
-                self._cmr_destination_entry.setText(destination)
+            if hasattr(self, "_cmr_form_view") and self._cmr_form_view is not None:
+                entries = self._cmr_form_view._cmr_entries
+                if origin and "place_of_loading" in entries:
+                    w = entries["place_of_loading"]
+                    if hasattr(w, "setText"):
+                        w.setText(origin)
+                if destination and "destination" in entries:
+                    w = entries["destination"]
+                    if hasattr(w, "setText"):
+                        w.setText(destination)
         except Exception as e:
             logger.debug("Could not fill stops from route %d: %s", route_id, e)
 
@@ -783,92 +612,16 @@ class QtGeneratorsView(QWidget):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _preview_invoice(self) -> None:
-        """Preview the invoice (opens generated PDF if available)."""
-        data = self._collect_invoice_data()
-        if not data:
-            return
-        try:
-            from services.invoicing.service import InvoiceService
-            svc = InvoiceService(db=self.db, prefs=self.prefs)
-            # Use a dedicated preview output path
-            output_dir = os.path.join("data", "documents", "invoices", "preview")
-            os.makedirs(output_dir, exist_ok=True)
-            filepath = svc.generator.generate(data, mode="client")
-            if os.path.isfile(filepath):
-                try:
-                    os.startfile(os.path.abspath(filepath))
-                except Exception as e:
-                    logger.warning("Could not open invoice preview: %s", e)
-        except Exception as e:
-            QMessageBox.warning(
-                self,
-                t("invoice_editor.preview"),
-                str(e),
-            )
-
-    def _generate_invoice(self) -> None:
-        """Generate the invoice PDF and register it in the document centre."""
-        data = self._collect_invoice_data()
-        if not data:
-            return
-        trip_id = data.get("trip_id")
-        try:
-            from services.invoicing.service import InvoiceService
-            svc = InvoiceService(db=self.db, prefs=self.prefs)
-            filepath = svc.generate_and_record(data)
-        except Exception as e:
-            QMessageBox.critical(
-                self,
-                t("invoice_editor.generate"),
-                str(e),
-            )
-            return
-
-        try:
-            from services.document_service import DocumentService
-            ds = DocumentService(self.db)
-            ds.register_existing(
-                filepath,
-                title=f"Invoice {'#' + str(trip_id) if trip_id else ''}",
-                category="invoices",
-                entity_type="trip",
-                entity_id=trip_id,
-                tags=["invoice", "generated"],
-            )
-        except Exception:
-            logger.warning("Invoice registration in Document Center skipped", exc_info=True)
-
-        QMessageBox.information(
-            self,
-            t("invoice_editor.generate"),
-            t("invoice_editor.generated_ok").format(path=os.path.basename(filepath)),
-        )
-        logger.info("Invoice generated: %s", filepath)
-
-    def _collect_invoice_data(self) -> Optional[Dict[str, Any]]:
-        """Collect invoice form data into a dict."""
-        sel = self._trip_combo.currentText()
-        trip_id = None
-        if sel and sel in self._trip_map:
-            trip_id = self._trip_map[sel]
-
-        return {
-            "trip_id": trip_id,
-            "client": self._invoice_client_combo.currentText() if self._invoice_client_combo else "",
-            "date": self._invoice_date_entry.text() if self._invoice_date_entry else "",
-            "due_date": self._invoice_due_entry.text() if self._invoice_due_entry else "",
-            "invoice_number": self._invoice_number_entry.text() if self._invoice_number_entry else "",
-            "amount": self._invoice_amount_entry.text() if self._invoice_amount_entry else "",
-            "vat": self._invoice_vat_entry.text() if self._invoice_vat_entry else "",
-            "total": self._invoice_total_entry.text() if self._invoice_total_entry else "",
-        }
+        """Preview the invoice using the embedded editor's generator."""
+        if hasattr(self, "_full_invoice_editor") and self._full_invoice_editor is not None:
+            self._full_invoice_editor._on_generate()
 
     # ──────────────────────────────────────────────────────────────────────────
     #  CMR generation
     # ──────────────────────────────────────────────────────────────────────────
 
     def _collect_cmr_data(self) -> Optional[Dict[str, Any]]:
-        """Collect CMR form fields + language selections into a data dict."""
+        """Collect CMR form data from the embedded CMRFormView + language selections."""
         sel = self._trip_combo.currentText()
         if not sel or sel not in self._trip_map:
             return None
@@ -879,12 +632,11 @@ class QtGeneratorsView(QWidget):
 
         trip_data = dict(trip)
         trip_data["trip_id"] = trip_id
-        trip_data["place_of_loading"] = self._cmr_loading_entry.text()
-        trip_data["destination"] = self._cmr_destination_entry.text()
-        trip_data["vehicle"] = self._cmr_vehicle_entry.text()
-        trip_data["goods_description"] = self._cmr_goods_entry.text()
-        trip_data["gross_weight"] = self._cmr_weight_entry.text()
-        trip_data["cmr_number"] = self._cmr_number_entry.text()
+
+        # Get all form fields from the embedded CMRFormView
+        if hasattr(self, "_cmr_form_view") and self._cmr_form_view is not None:
+            form_data = self._cmr_form_view.get_data()
+            trip_data.update(form_data)
 
         def _extract_lang(combo: Optional[StyledComboBox]) -> Optional[str]:
             if combo is None:
