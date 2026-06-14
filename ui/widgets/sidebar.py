@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Callable, Dict, List, Optional
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QWidget,
@@ -35,6 +35,7 @@ from services.i18n import t, register_listener, unregister_listener
 logger = logging.getLogger(__name__)
 
 ITEM_H = 36
+ANIM_DURATION = 200
 
 # ── Icon mapping (qtawesome) ─────────────────────────────────────────
 # Nav items MUST use qtawesome icons — no emoji, no colored squares.
@@ -76,6 +77,7 @@ class Sidebar(QFrame):
 
         self._expanded = False
         self._active_key: Optional[str] = None
+        self._anim_group: Optional[QParallelAnimationGroup] = None
 
         self._groups: List[str] = []
         self._items: Dict[str, QFrame] = {}
@@ -353,10 +355,35 @@ class Sidebar(QFrame):
 
     # ── Expand / collapse ───────────────────────────────────────
 
-    def _set_width_immediate(self, width: int):
-        self._expanded = (width == SIDEBAR_EXPANDED)
-        self.setFixedWidth(width)
+    def _stop_animation(self):
+        if self._anim_group is not None:
+            self._anim_group.stop()
+            self._anim_group.deleteLater()
+            self._anim_group = None
+
+    def _animate_width(self, target_width: int):
+        self._expanded = (target_width == SIDEBAR_EXPANDED)
+        self._save_state()
+        self._stop_animation()
+
+        group = QParallelAnimationGroup(self)
+        for prop in (b"minimumWidth", b"maximumWidth"):
+            anim = QPropertyAnimation(self, prop)
+            anim.setDuration(ANIM_DURATION)
+            anim.setStartValue(self.width())
+            anim.setEndValue(target_width)
+            anim.setEasingCurve(QEasingCurve.OutCubic)
+            group.addAnimation(anim)
+
+        group.finished.connect(self._on_animation_finished)
+        self._anim_group = group
+        group.start()
+
+    def _on_animation_finished(self):
         if self._expanded:
+            self.setFixedWidth(SIDEBAR_EXPANDED)
+            self.setMinimumWidth(SIDEBAR_EXPANDED)
+            self.setMaximumWidth(16777215)
             self._app_name_frame.show()
             for lbl in self._group_labels.values():
                 lbl.show()
@@ -365,6 +392,9 @@ class Sidebar(QFrame):
                 if text_lbl is not None:
                     text_lbl.show()
         else:
+            self.setFixedWidth(SIDEBAR_COLLAPSED)
+            self.setMinimumWidth(SIDEBAR_COLLAPSED)
+            self.setMaximumWidth(SIDEBAR_COLLAPSED)
             self._app_name_frame.hide()
             for lbl in self._group_labels.values():
                 lbl.hide()
@@ -372,6 +402,12 @@ class Sidebar(QFrame):
                 text_lbl = self._text_label_for_item(item)
                 if text_lbl is not None:
                     text_lbl.hide()
+        self._anim_group = None
+
+    def _set_width_immediate(self, width: int):
+        self._expanded = (width == SIDEBAR_EXPANDED)
+        self.setFixedWidth(width)
+        self._on_animation_finished()
 
     def _text_label_for_item(self, item: QFrame) -> Optional[QLabel]:
         for child in item.findChildren(QLabel):
@@ -383,7 +419,7 @@ class Sidebar(QFrame):
 
     def enterEvent(self, event):
         if not self._expanded:
-            self._set_width_immediate(SIDEBAR_EXPANDED)
+            self._animate_width(SIDEBAR_EXPANDED)
         super().enterEvent(event)
 
     def leaveEvent(self, event):
@@ -393,7 +429,7 @@ class Sidebar(QFrame):
             cursor_global = QCursor.pos()
             if not (top_left.x() <= cursor_global.x() <= bottom_right.x() and
                     top_left.y() <= cursor_global.y() <= bottom_right.y()):
-                self._set_width_immediate(SIDEBAR_COLLAPSED)
+                self._animate_width(SIDEBAR_COLLAPSED)
         super().leaveEvent(event)
 
     # ── Language refresh ───────────────────────────────────────
@@ -414,4 +450,5 @@ class Sidebar(QFrame):
 
     def destroy(self) -> None:
         unregister_listener(self._language_callback)
+        self._stop_animation()
         super().deleteLater()

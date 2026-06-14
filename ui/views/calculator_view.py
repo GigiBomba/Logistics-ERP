@@ -115,9 +115,9 @@ class QtCalculatorView(QWidget):
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setFrameShape(QFrame.NoFrame)
-        left_content = QWidget()
-        left_content.setMaximumWidth(740)
-        self.left_layout = QVBoxLayout(left_content)
+        self.left_content = QWidget()
+        self.left_content.setMaximumWidth(740)
+        self.left_layout = QVBoxLayout(self.left_content)
         self.left_layout.setSpacing(SP["6"])
         self.left_layout.setAlignment(Qt.AlignTop)
 
@@ -127,7 +127,7 @@ class QtCalculatorView(QWidget):
         self._build_planning_section()
         self._build_actions_section()
 
-        left_scroll.setWidget(left_content)
+        left_scroll.setWidget(self.left_content)
         split.addWidget(left_scroll, 55)
 
         # ── Right panel: results ──

@@ -143,6 +143,7 @@ class QtGeneratorsView(QWidget):
 
         self._build_header(layout)
         self._build_tab_content(layout)
+        self._refresh_trip_lists()
 
     # ── Header row (title + trip selector) ──────────────────────────────
 
@@ -462,6 +463,9 @@ class QtGeneratorsView(QWidget):
         """Lazy initialisation when a tab is first shown."""
         if index == 0 and not self._invoice_built:
             self._invoice_built = True
+            if self._full_invoice_editor:
+                self._full_invoice_editor.wakeup()
+            self._refresh_trip_lists()
         elif index == 1 and not self._cmr_built:
             self._cmr_built = True
             self._refresh_trip_lists()
