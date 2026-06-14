@@ -94,13 +94,14 @@ class PreferencesManager:
             self._currency = currency
 
     def _get_setting(self, key: str) -> Optional[str]:
-        """Read a single setting from the DB. Use get_setting() for public access."""
+        """Read a single setting from the DB."""
         try:
             row = self._db.conn.execute(
                 "SELECT value FROM settings WHERE key = ?", (key,)
             ).fetchone()
             return row[0] if row else None
-        except Exception:
+        except Exception as e:
+            logger.warning("Failed to read setting '%s': %s", key, e)
             return None
 
     def _set_setting(self, key: str, value: str) -> None:
