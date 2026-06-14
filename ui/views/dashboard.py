@@ -38,11 +38,20 @@ from PySide6.QtWidgets import (
     QMessageBox,
 )
 
-from ui.theme import COLORS, S, CHART_PRIMARY, CHART_SECONDARY
+from ui.design_tokens import (
+    ACCENT, ACCENT_TEXT, BG_SURFACE, BG_BASE,
+    BORDER_DEFAULT, BORDER_FAINT,
+    DANGER, DANGER_TEXT, SUCCESS, SUCCESS_TEXT,
+    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    WARNING, WARNING_TEXT, SP,
+)
+from ui.components import (
+    Card, CardHeader, Btn, KPICard, PageTitle, Label, SectionTitle, MonoLabel,
+)
+from ui.theme import COLORS, CHART_PRIMARY, CHART_SECONDARY
 from services.i18n import t, register_listener, unregister_listener
 from services.preferences import safe_float
 from services.app_state import AppState
-from ui.widgets import KpiCard, ActionButton
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +92,7 @@ class QtFleetDashboard(QWidget):
 
         # ── i18n ────────────────────────────────────────────────────────────────
         self._i18n_widgets: List[Tuple[Any, str, str]] = []
-        self._period_button_refs: List[Tuple[ActionButton, str, str]] = []
+        self._period_button_refs: List[Tuple[Btn, str, str]] = []
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
@@ -289,8 +298,8 @@ class QtFleetDashboard(QWidget):
         scroll.setWidget(self._container)
 
         content_layout = QVBoxLayout(self._container)
-        content_layout.setContentsMargins(S["10"], S["6"], S["10"], S["6"])
-        content_layout.setSpacing(S["4"])
+        content_layout.setContentsMargins(SP["10"], SP["6"], SP["10"], SP["6"])
+        content_layout.setSpacing(SP["4"])
         content_layout.setAlignment(Qt.AlignTop)
 
         self._build_header(content_layout)
@@ -300,7 +309,7 @@ class QtFleetDashboard(QWidget):
         self._content_frame.setProperty("role", "card")
         self._content_layout_inner = QVBoxLayout(self._content_frame)
         self._content_layout_inner.setContentsMargins(0, 0, 0, 0)
-        self._content_layout_inner.setSpacing(S["4"])
+        self._content_layout_inner.setSpacing(SP["4"])
         content_layout.addWidget(self._content_frame, 1)
 
         layout.addWidget(scroll)
@@ -312,16 +321,15 @@ class QtFleetDashboard(QWidget):
         header_layout.setContentsMargins(0, 0, 0, 0)
 
         # Title
-        title_lbl = QLabel(t("fleet_dashboard.title"))
-        title_lbl.setProperty("fontRole", "h1")
+        title_lbl = PageTitle(None, t("fleet_dashboard.title"))
         header_layout.addWidget(title_lbl)
         self._i18n_widgets.append((title_lbl, "fleet_dashboard.title", ""))
 
         # Period buttons
         period_frame = QFrame()
         period_layout = QHBoxLayout(period_frame)
-        period_layout.setContentsMargins(S["5"], 0, 0, 0)
-        period_layout.setSpacing(S["2"])
+        period_layout.setContentsMargins(SP["5"], 0, 0, 0)
+        period_layout.setSpacing(SP["2"])
 
         periods = [
             ("today", "fleet_dashboard.today"),
@@ -331,7 +339,7 @@ class QtFleetDashboard(QWidget):
         ]
 
         for period_id, key in periods:
-            btn = ActionButton(
+            btn = Btn(
                 period_frame,
                 t(key),
                 command=lambda p=period_id: self._set_period(p),
@@ -348,13 +356,13 @@ class QtFleetDashboard(QWidget):
         refresh_frame = QFrame()
         refresh_layout = QHBoxLayout(refresh_frame)
         refresh_layout.setContentsMargins(0, 0, 0, 0)
-        refresh_layout.setSpacing(S["2"])
+        refresh_layout.setSpacing(SP["2"])
 
         self._last_refresh_lbl = QLabel("")
         self._last_refresh_lbl.setProperty("fontRole", "muted")
         refresh_layout.addWidget(self._last_refresh_lbl)
 
-        refresh_btn = ActionButton(
+        refresh_btn = Btn(
             refresh_frame,
             t("fleet_dashboard.refresh"),
             command=self.refresh_all,
@@ -380,48 +388,31 @@ class QtFleetDashboard(QWidget):
         kpi_frame = QFrame()
         kpi_layout = QHBoxLayout(kpi_frame)
         kpi_layout.setContentsMargins(0, 0, 0, 0)
-        kpi_layout.setSpacing(S["2"])
+        kpi_layout.setSpacing(SP["2"])
 
         fmt_cur = self.prefs.format_currency if self.prefs else (lambda v, _: f"€ {v:,.0f}")
 
-        kpis: List[Tuple[str, str, Optional[str]]] = [
-            (
-                "fleet_dashboard.kpi_active_trucks",
-                str(active_trucks),
-                COLORS.get("accent_text"),
-            ),
-            (
-                "fleet_dashboard.kpi_trips_today",
-                str(trips_today),
-                COLORS.get("text_success"),
-            ),
-            (
-                "fleet_dashboard.kpi_revenue",
-                fmt_cur(revenue, 0),
-                COLORS.get("accent_text"),
-            ),
-            (
-                "fleet_dashboard.kpi_avg_fuel",
-                fmt_cur(avg_fuel, 0),
-                COLORS.get("text_warning"),
-            ),
-            (
-                "fleet_dashboard.kpi_alerts",
-                str(alert_count),
-                COLORS.get("text_danger"),
-            ),
-            (
-                "fleet_dashboard.kpi_unpaid",
-                str(unpaid_count),
-                COLORS.get("text_danger"),
-            ),
+        kpi_colors = {
+            "fleet_dashboard.kpi_active_trucks": ACCENT_TEXT,
+            "fleet_dashboard.kpi_trips_today": SUCCESS_TEXT,
+            "fleet_dashboard.kpi_revenue": ACCENT_TEXT,
+            "fleet_dashboard.kpi_avg_fuel": WARNING_TEXT,
+            "fleet_dashboard.kpi_alerts": DANGER_TEXT,
+            "fleet_dashboard.kpi_unpaid": DANGER_TEXT,
+        }
+        kpi_defs: List[Tuple[str, str]] = [
+            ("fleet_dashboard.kpi_active_trucks", str(active_trucks)),
+            ("fleet_dashboard.kpi_trips_today", str(trips_today)),
+            ("fleet_dashboard.kpi_revenue", fmt_cur(revenue, 0)),
+            ("fleet_dashboard.kpi_avg_fuel", fmt_cur(avg_fuel, 0)),
+            ("fleet_dashboard.kpi_alerts", str(alert_count)),
+            ("fleet_dashboard.kpi_unpaid", str(unpaid_count)),
         ]
 
-        self._kpi_cards: Dict[str, KpiCard] = {}
-        for key, value, color in kpis:
-            card = KpiCard(kpi_frame, t(key), value)
-            if color:
-                card.value_label.setStyleSheet(f"color: {color};")
+        self._kpi_cards: Dict[str, QFrame] = {}
+        for key, value in kpi_defs:
+            card = KPICard(kpi_frame, t(key), value,
+                           value_color=kpi_colors.get(key))
             kpi_layout.addWidget(card, 1)
             self._kpi_cards[key] = card
 
@@ -432,7 +423,7 @@ class QtFleetDashboard(QWidget):
         charts_frame = QFrame()
         charts_layout = QHBoxLayout(charts_frame)
         charts_layout.setContentsMargins(0, 0, 0, 0)
-        charts_layout.setSpacing(S["4"])
+        charts_layout.setSpacing(SP["4"])
 
         self._left_chart_frame = QFrame()
         self._left_chart_frame.setSizePolicy(
@@ -500,8 +491,8 @@ class QtFleetDashboard(QWidget):
         dpi = 90
         fig, ax = plt.subplots(figsize=(cw / dpi, ch / dpi), dpi=dpi)
 
-        fig.patch.set_facecolor(COLORS["bg_surface"])
-        ax.set_facecolor(COLORS["bg_surface"])
+        fig.patch.set_facecolor(BG_SURFACE)
+        ax.set_facecolor(BG_SURFACE)
         fig.subplots_adjust(left=0.07, right=0.97, top=0.90, bottom=0.15)
 
         x = range(len(dates))
@@ -661,13 +652,13 @@ class QtFleetDashboard(QWidget):
         cards_frame = QFrame()
         cards_layout = QHBoxLayout(cards_frame)
         cards_layout.setContentsMargins(0, 0, 0, 0)
-        cards_layout.setSpacing(S["4"])
+        cards_layout.setSpacing(SP["4"])
 
         # ── Best Truck ──────────────────────────────────────────────────────────
         truck_card = self._create_info_card(cards_frame, t("fleet_dashboard.card_best_truck"))
         truck_card_layout = QVBoxLayout(truck_card)
-        truck_card_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        truck_card_layout.setSpacing(S["1"])
+        truck_card_layout.setContentsMargins(SP["4"], SP["3"], SP["4"], SP["3"])
+        truck_card_layout.setSpacing(SP["1"])
 
         if top_truck:
             plate_lbl = QLabel(top_truck[0])
@@ -698,8 +689,8 @@ class QtFleetDashboard(QWidget):
         # ── Best Driver ─────────────────────────────────────────────────────────
         driver_card = self._create_info_card(cards_frame, t("fleet_dashboard.card_best_driver"))
         driver_card_layout = QVBoxLayout(driver_card)
-        driver_card_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        driver_card_layout.setSpacing(S["1"])
+        driver_card_layout.setContentsMargins(SP["4"], SP["3"], SP["4"], SP["3"])
+        driver_card_layout.setSpacing(SP["1"])
 
         if best_driver:
             driver_name = best_driver.get("driver_name", t("common.na"))
@@ -731,8 +722,8 @@ class QtFleetDashboard(QWidget):
         # ── Highest Fuel ────────────────────────────────────────────────────────
         fuel_card = self._create_info_card(cards_frame, t("fleet_dashboard.card_highest_fuel"))
         fuel_card_layout = QVBoxLayout(fuel_card)
-        fuel_card_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        fuel_card_layout.setSpacing(S["1"])
+        fuel_card_layout.setContentsMargins(SP["4"], SP["3"], SP["4"], SP["3"])
+        fuel_card_layout.setSpacing(SP["1"])
 
         if top_fuel_truck:
             truck_data = next(
@@ -785,8 +776,8 @@ class QtFleetDashboard(QWidget):
         feed_frame = QFrame()
         feed_frame.setProperty("role", "card")
         feed_layout = QVBoxLayout(feed_frame)
-        feed_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        feed_layout.setSpacing(S["2"])
+        feed_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        feed_layout.setSpacing(SP["2"])
 
         # Header
         header = QFrame()
@@ -826,8 +817,8 @@ class QtFleetDashboard(QWidget):
         """Single row in the activity feed."""
         row = QFrame()
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(0, S["1"], 0, S["1"])
-        row_layout.setSpacing(S["3"])
+        row_layout.setContentsMargins(0, SP["1"], 0, SP["1"])
+        row_layout.setSpacing(SP["3"])
 
         # Timestamp
         timestamp = (trip.get("created_at") or t("common.na"))[:16]

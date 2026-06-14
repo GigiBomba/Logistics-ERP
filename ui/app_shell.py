@@ -18,8 +18,8 @@ from PySide6.QtWidgets import (
     QStackedWidget,
 )
 
-from ui.widgets.nav_panel import NavPanel
-from ui.widgets.top_bar import TopBar
+from ui.widgets.sidebar import Sidebar
+from ui.widgets.topbar import TopBar
 
 
 class AppShell:
@@ -48,7 +48,7 @@ class AppShell:
         central_layout.setSpacing(0)
 
         # ── Sidebar ─────────────────────────────────────────────────────────────
-        self.nav = NavPanel(
+        self.nav = Sidebar(
             central,
             on_select=self._on_nav_select,
             prefs=self.prefs,

@@ -44,8 +44,13 @@ from services.fleet_maintenance_service import (
 )
 from services.i18n import register_listener, t, unregister_listener
 from ui.icons import iconed
-from ui.theme import CHART_PALETTE, CHART_PRIMARY, CHART_SECONDARY, COLORS, S
-from ui.widgets import ActionButton, StyledTableWidget
+from ui.components import Card, Btn, PageTitle, Label
+from ui.design_tokens import (
+    BG_SURFACE, BORDER_DEFAULT, TEXT_MUTED, TEXT_SECONDARY, TEXT_PRIMARY,
+    ACCENT, SP,
+)
+from ui.theme import CHART_PALETTE, CHART_PRIMARY, CHART_SECONDARY
+from ui.widgets import StyledTableWidget
 
 logger = logging.getLogger(__name__)
 
@@ -115,31 +120,33 @@ class QtMaintenanceAnalyticsView(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["6"], S["4"], S["6"], S["4"])
-        layout.setSpacing(S["4"])
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SP["6"])
 
-        self._build_header(layout)
+        self._build_view_header(layout)
         self._build_chart_area(layout)
         self._build_table_area(layout)
 
-    def _build_header(self, layout: QVBoxLayout) -> None:
-        header = QFrame()
-        header.setProperty("role", "section-header")
+    def _build_view_header(self, layout: QVBoxLayout) -> None:
+        header = QWidget()
+        header.setFixedHeight(72)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
 
-        self._title_lbl = QLabel(iconed("maint_analytics.title"))
-        self._title_lbl.setProperty("fontRole", "h2")
+        self._title_lbl = PageTitle(header, iconed("maint_analytics.title"))
         header_layout.addWidget(self._title_lbl)
         self._i18n_widgets.append((self._title_lbl, "maint_analytics.title", ""))
 
+        subtitle = Label(header, t("maint_analytics.subtitle", default=""), role="secondary")
+        header_layout.addWidget(subtitle)
+
         header_layout.addStretch(1)
 
-        self._refresh_btn = ActionButton(
+        self._refresh_btn = Btn(
             header,
             iconed("maint.refresh"),
-            self._load_data,
             variant="primary",
+            command=self._load_data,
         )
         header_layout.addWidget(self._refresh_btn)
         self._i18n_widgets.append((self._refresh_btn, "maint.refresh", ""))
@@ -147,19 +154,23 @@ class QtMaintenanceAnalyticsView(QWidget):
         layout.addWidget(header)
 
     def _build_chart_area(self, layout: QVBoxLayout) -> None:
+        chart_card = Card()
+        chart_card.setMinimumHeight(350)
         self._chart_frame = QFrame()
         self._chart_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self._chart_frame.setMinimumHeight(350)
         self._chart_layout = QVBoxLayout(self._chart_frame)
         self._chart_layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._chart_frame, 3)
+        chart_card.layout().addWidget(self._chart_frame)
+        layout.addWidget(chart_card, 3)
 
     def _build_table_area(self, layout: QVBoxLayout) -> None:
+        table_card = Card()
         self._table_frame = QFrame()
         self._table_frame.setMinimumHeight(200)
         table_layout = QVBoxLayout(self._table_frame)
         table_layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(self._table_frame, 2)
+        table_card.layout().addWidget(self._table_frame)
+        layout.addWidget(table_card, 2)
 
     # ── Data loading ───────────────────────────────────────────────────────────
 
@@ -215,15 +226,15 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._clear_layout(self._chart_layout)
 
         fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
-        fig.patch.set_facecolor(COLORS["bg_base"])
+        fig.patch.set_facecolor(BG_SURFACE)
         for ax in (ax1, ax2):
-            ax.set_facecolor(COLORS["bg_base"])
-            ax.tick_params(colors=COLORS["text_secondary"], labelsize=9)
-            ax.xaxis.label.set_color(COLORS["text_secondary"])
-            ax.yaxis.label.set_color(COLORS["text_secondary"])
-            ax.title.set_color(COLORS["text_primary"])
+            ax.set_facecolor(BG_SURFACE)
+            ax.tick_params(colors=TEXT_MUTED, labelsize=9)
+            ax.xaxis.label.set_color(TEXT_SECONDARY)
+            ax.yaxis.label.set_color(TEXT_SECONDARY)
+            ax.title.set_color(TEXT_SECONDARY)
             for spine in ax.spines.values():
-                spine.set_edgecolor(COLORS["border"])
+                spine.set_edgecolor(BORDER_DEFAULT)
 
         self._chart_texts = []
         self._draw_cost_by_truck_month(ax1)
@@ -239,7 +250,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         """Grouped bar chart: cost per truck, per month (12-month view)."""
         title = ax.set_title(
             iconed("maint_analytics.chart_cost_per_truck"),
-            color=COLORS["text_primary"],
+            color=TEXT_SECONDARY,
             fontsize=10,
         )
         self._chart_texts.append((title, "maint_analytics.chart_cost_per_truck"))
@@ -247,7 +258,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         if not self._cost_by_truck_month:
             ax.text(
                 0.5, 0.5, iconed("maint_analytics.no_records"),
-                color=COLORS["text_muted"],
+                color=TEXT_MUTED,
                 ha="center", va="center", transform=ax.transAxes,
             )
             return
@@ -275,7 +286,7 @@ class QtMaintenanceAnalyticsView(QWidget):
                 w,
                 label=label,
                 color=color,
-                edgecolor=COLORS["bg_base"],
+                edgecolor=BG_SURFACE,
                 linewidth=0.5,
             )
 
@@ -286,21 +297,21 @@ class QtMaintenanceAnalyticsView(QWidget):
         )
         ax.set_ylabel(
             iconed("maint_analytics.cost_label"),
-            color=COLORS["text_muted"],
+            color=TEXT_MUTED,
             fontsize=8,
         )
         ax.legend(
             fontsize=6,
-            facecolor=COLORS["bg_surface"],
-            labelcolor=COLORS["text_primary"],
-            edgecolor=COLORS["border"],
+            facecolor=BG_SURFACE,
+            labelcolor=TEXT_PRIMARY,
+            edgecolor=BORDER_DEFAULT,
         )
 
     def _draw_fleet_trend(self, ax) -> None:
         """Line chart: total fleet maintenance cost per month (12-month trend)."""
         title = ax.set_title(
             iconed("maint_analytics.chart_fleet_trend"),
-            color=COLORS["text_primary"],
+            color=TEXT_SECONDARY,
             fontsize=10,
         )
         self._chart_texts.append((title, "maint_analytics.chart_fleet_trend"))
@@ -308,7 +319,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         if not self._cost_by_month:
             ax.text(
                 0.5, 0.5, iconed("maint_analytics.no_data_12mo"),
-                color=COLORS["text_muted"],
+                color=TEXT_MUTED,
                 ha="center", va="center", transform=ax.transAxes,
             )
             return
@@ -340,7 +351,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         )
         ax.set_ylabel(
             iconed("maint_analytics.total_cost_label"),
-            color=COLORS["text_muted"],
+            color=TEXT_MUTED,
             fontsize=8,
         )
         ax.yaxis.set_major_formatter(

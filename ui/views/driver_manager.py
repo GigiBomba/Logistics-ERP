@@ -42,10 +42,17 @@ from services.operations.event_bus import (
     DRIVER_DELETED,
     TRUCK_UPDATED,
 )
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    ACCENT, ACCENT_TEXT, BG_SURFACE, BG_ELEVATED,
+    BORDER_DEFAULT, DANGER, DANGER_TEXT, SUCCESS, SUCCESS_TEXT,
+    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WARNING, STATUS, SP,
+)
+from ui.components import (
+    Card, CardHeader, Btn, KPICard, StatusChip,
+    FieldLabel, SectionTitle, PageTitle, Label, Divider, MonoLabel,
+)
+from ui.theme import COLORS
 from ui.widgets import (
-    ActionButton,
-    KpiCard,
     StyledComboBox,
     StyledLineEdit,
     StyledTableWidget,
@@ -251,23 +258,23 @@ class QtDriverFormDialog(QDialog):
         # ── Button bar ─────────────────────────────────────────────────────
         btn_bar = QFrame()
         btn_layout = QHBoxLayout(btn_bar)
-        btn_layout.setContentsMargins(S["5"], S["3"], S["5"], S["4"])
+        btn_layout.setContentsMargins(SP["5"], SP["3"], SP["5"], SP["4"])
 
-        cancel_btn = ActionButton(
+        cancel_btn = Btn(
             btn_bar,
-            text=t("driver_manager.cancel"),
-            command=self.reject,
+            t("driver_manager.cancel"),
             variant="secondary",
+            command=self.reject,
         )
         btn_layout.addWidget(cancel_btn)
 
         btn_layout.addStretch()
 
-        save_btn = ActionButton(
+        save_btn = Btn(
             btn_bar,
-            text=t("driver_manager.save"),
+            t("driver_manager.save"),
+            variant="primary",
             command=self._save,
-            variant="success",
         )
         btn_layout.addWidget(save_btn)
 
@@ -370,7 +377,8 @@ class QtDriverManager(QWidget):
         self._trip_repo = TripRepository(db) if db is not None else None
         self._dta_service = DriverTruckService(db) if db is not None else None
 
-        self._kpi_cards: List[KpiCard] = []
+        self._kpi_value_labels: Dict[str, MonoLabel] = {}
+        self._kpi_strip_layout: Optional[QHBoxLayout] = None
         self._search_timer: Optional[QTimer] = None
 
         self._language_callback = self._on_language_changed
@@ -438,8 +446,7 @@ class QtDriverManager(QWidget):
         self._documents_btn.setText("\U0001f4c2 " + t("driver_manager.documents_button"))
         self._import_btn.setText(t("driver_manager.import_csv"))
 
-        for card, key in self._kpi_title_refs:
-            card.set_title(t(key))
+        # KPIs are rebuilt on full refresh; title is set at construction time
 
         self.refresh()
 
@@ -447,8 +454,8 @@ class QtDriverManager(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["5"], S["5"], S["5"], S["5"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SP["4"])
 
         self._kpi_title_refs: List[tuple] = []
 
@@ -461,20 +468,21 @@ class QtDriverManager(QWidget):
 
     def _build_header(self, parent_layout: QVBoxLayout) -> None:
         header = QFrame()
+        header.setFixedHeight(72)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
+        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        header_layout.setSpacing(SP["3"])
 
-        self._title_label = QLabel(t("driver_manager.title"))
-        self._title_label.setProperty("fontRole", "h2")
+        self._title_label = PageTitle(None, t("driver_manager.title"))
         header_layout.addWidget(self._title_label)
 
         header_layout.addStretch()
 
-        self._import_btn = ActionButton(
+        self._import_btn = Btn(
             self,
-            text=t("driver_manager.import_csv"),
-            command=self._import_csv,
+            t("driver_manager.import_csv"),
             variant="secondary",
+            command=self._import_csv,
         )
         header_layout.addWidget(self._import_btn)
 
@@ -482,9 +490,12 @@ class QtDriverManager(QWidget):
 
     def _build_kpi_row(self, parent_layout: QVBoxLayout) -> None:
         kpi_row = QFrame()
-        kpi_layout = QHBoxLayout(kpi_row)
-        kpi_layout.setContentsMargins(0, 0, 0, 0)
-        kpi_layout.setSpacing(S["3"])
+        self._kpi_strip_layout = QHBoxLayout(kpi_row)
+        self._kpi_strip_layout.setContentsMargins(0, 0, 0, 0)
+        self._kpi_strip_layout.setSpacing(SP["3"])
+
+        self._kpi_value_labels = {}
+        self._kpi_title_refs = []
 
         kpi_configs = [
             ("driver_manager.kpi_total",      "0"),
@@ -494,10 +505,12 @@ class QtDriverManager(QWidget):
         ]
 
         for title_key, initial_value in kpi_configs:
-            card = KpiCard(self, t(title_key), initial_value)
-            self._kpi_cards.append(card)
-            self._kpi_title_refs.append((card, title_key))
-            kpi_layout.addWidget(card)
+            card = KPICard(kpi_row, t(title_key), initial_value)
+            val_lbl = card.findChild(MonoLabel)
+            if val_lbl is not None:
+                self._kpi_value_labels[title_key] = val_lbl
+            self._kpi_title_refs.append((title_key, card))
+            self._kpi_strip_layout.addWidget(card)
 
         parent_layout.addWidget(kpi_row)
 
@@ -526,45 +539,51 @@ class QtDriverManager(QWidget):
 
     def _build_table(self, parent_layout: QVBoxLayout) -> None:
         columns = _columns_for_table()
+        card = Card(None)
+        title = SectionTitle(None, t("driver_manager.title"))
+        card.layout().addWidget(title)
         self.table = StyledTableWidget(self, columns=columns)
         self.table.rowSelected.connect(self._on_row_selected)
         self.table.rowDoubleClicked.connect(self._on_row_double_clicked)
-        parent_layout.addWidget(self.table, 1)
+        card.layout().addWidget(self.table, 1)
+        parent_layout.addWidget(card, 1)
 
     def _build_action_bar(self, parent_layout: QVBoxLayout) -> None:
         bar = QFrame()
         bar_layout = QHBoxLayout(bar)
         bar_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._add_btn = ActionButton(
+        self._add_btn = Btn(
             self,
-            text="+ " + t("driver_manager.add_driver"),
+            "+ " + t("driver_manager.add_driver"),
+            variant="primary",
             command=self._add_driver,
-            variant="success",
         )
         bar_layout.addWidget(self._add_btn)
 
-        self._edit_btn = ActionButton(
+        self._edit_btn = Btn(
             self,
-            text=t("driver_manager.edit_driver"),
+            t("driver_manager.edit_driver"),
+            variant="secondary",
             command=self._edit_selected,
         )
         bar_layout.addWidget(self._edit_btn)
 
         bar_layout.addStretch()
 
-        self._documents_btn = ActionButton(
+        self._documents_btn = Btn(
             self,
-            text="\U0001f4c2 " + t("driver_manager.documents_button"),
+            "\U0001f4c2 " + t("driver_manager.documents_button"),
+            variant="secondary",
             command=self._open_driver_documents,
         )
         bar_layout.addWidget(self._documents_btn)
 
-        self._delete_btn = ActionButton(
+        self._delete_btn = Btn(
             self,
-            text=t("driver_manager.delete_driver"),
-            command=self._delete_selected,
+            t("driver_manager.delete_driver"),
             variant="danger",
+            command=self._delete_selected,
         )
         bar_layout.addWidget(self._delete_btn)
 
@@ -576,7 +595,7 @@ class QtDriverManager(QWidget):
         self._tacho_container.setProperty("role", "tacho-detail")
         self._tacho_layout = QVBoxLayout(self._tacho_container)
         self._tacho_layout.setContentsMargins(0, 0, 0, 0)
-        self._tacho_layout.setSpacing(S["2"])
+        self._tacho_layout.setSpacing(SP["2"])
         self._tacho_container.hide()
         parent_layout.addWidget(self._tacho_container)
 
@@ -649,10 +668,10 @@ class QtDriverManager(QWidget):
             total = len(drivers)
             active_count = sum(1 for d in drivers if d.get("is_active", 1))
 
-            if len(self._kpi_cards) >= 1:
-                self._kpi_cards[0].set_value(str(total))
-            if len(self._kpi_cards) >= 3:
-                self._kpi_cards[2].set_value(str(len(driver_trip_ids)))
+            if "driver_manager.kpi_total" in self._kpi_value_labels:
+                self._kpi_value_labels["driver_manager.kpi_total"].setText(str(total))
+            if "driver_manager.kpi_on_trip" in self._kpi_value_labels:
+                self._kpi_value_labels["driver_manager.kpi_on_trip"].setText(str(len(driver_trip_ids)))
 
             cutoff = datetime.now() + timedelta(days=30)
             expiring = 0
@@ -668,10 +687,10 @@ class QtDriverManager(QWidget):
                                     break
                             except ValueError:
                                 pass
-            if len(self._kpi_cards) >= 2:
-                self._kpi_cards[1].set_value(str(expiring))
-            if len(self._kpi_cards) >= 4:
-                self._kpi_cards[3].set_value(str(total - active_count))
+            if "driver_manager.kpi_expiring" in self._kpi_value_labels:
+                self._kpi_value_labels["driver_manager.kpi_expiring"].setText(str(expiring))
+            if "driver_manager.kpi_unassigned" in self._kpi_value_labels:
+                self._kpi_value_labels["driver_manager.kpi_unassigned"].setText(str(total - active_count))
 
             # ── Grey out inactive rows ────────────────────────────────────
             muted = QColor(COLORS["text_muted"])
@@ -984,8 +1003,8 @@ class QtDriverManager(QWidget):
         summary_frame = QFrame()
         summary_frame.setProperty("role", "tacho-summary")
         summary_layout = QHBoxLayout(summary_frame)
-        summary_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        summary_layout.setSpacing(S["3"])
+        summary_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        summary_layout.setSpacing(SP["3"])
 
         summary_items = [
             (t("tacho.total_hours"), f"{total_driving / 60:.1f}h",
@@ -1057,7 +1076,7 @@ class QtDriverManager(QWidget):
                 row_frame = QFrame()
                 row_frame.setProperty("role", "tacho-violation-row")
                 row_layout = QHBoxLayout(row_frame)
-                row_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+                row_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
 
                 date_lbl = QLabel(str(date_str))
                 date_lbl.setProperty("fontRole", "small")
@@ -1085,7 +1104,7 @@ class QtDriverManager(QWidget):
         chip = QFrame(parent)
         chip.setProperty("role", "tacho-chip")
         chip_layout = QVBoxLayout(chip)
-        chip_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        chip_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
         chip_layout.setSpacing(0)
 
         lbl = QLabel(label_text.upper())

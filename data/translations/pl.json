@@ -330,7 +330,8 @@
     "search_placeholder": "Search trips...",
     "button_export_pdf": "Export PDF",
     "button_export_excel": "Export Excel",
-    "button_email_invoice": "Email Invoice"
+    "button_email_invoice": "Email Invoice",
+    "subtitle": "Zarządzanie operacjami i fakturowanie"
   },
   "analytics": {
     "title": "Analityka Business Intelligence",
@@ -358,7 +359,8 @@
     "expenses_label": "Expenses",
     "profit_label": "Profit",
     "error": "Chart Error",
-    "invalid_date_order": "Invalid date range"
+    "invalid_date_order": "Invalid date range",
+    "subtitle": "Analiza wydajności floty i KPI"
   },
   "invoice": {
     "section_company": "Dane Twojej firmy (Nadawca)",
@@ -496,7 +498,10 @@
     "profile_safest": "Safest",
     "profile_shortest": "Shortest",
     "click_to_add_stop": "Click map to add stop",
-    "loaded_route": "Route loaded"
+    "loaded_route": "Route loaded",
+    "options_header": "Opcje Trasy",
+    "page_subtitle": "Planuj trasy wieloprzystankowe z estymacją kosztów",
+    "page_title": "Planer Tras"
   },
   "route_history": {
     "title": "Historia tras",
@@ -566,7 +571,9 @@
     "recalculated": "Recalculated",
     "recalculated_msg": "Routes recalculated successfully.",
     "search_placeholder": "Search routes...",
-    "truck_placeholder": "Select truck..."
+    "truck_placeholder": "Select truck...",
+    "page_subtitle": "Przeglądaj i zarządzaj zapisanymi trasami",
+    "page_title": "Historia Tras"
   },
   "result": {
     "distance": "Dystans: {:.2f} km",
@@ -1086,7 +1093,8 @@
     "col_next_mileage": "Next Mileage",
     "health_downtime": "Downtime",
     "health_no_data": "No health data available",
-    "health_ok": "All systems nominal"
+    "health_ok": "All systems nominal",
+    "control_panel_subtitle": "Harmonogramy konserwacji i monitorowanie stanu"
   },
   "tacho": {
     "avg_daily": "Średnia dzienna",
@@ -1170,7 +1178,8 @@
     "month_sep": "Wrz",
     "month_oct": "Paź",
     "month_nov": "Lis",
-    "month_dec": "Gru"
+    "month_dec": "Gru",
+    "subtitle": "Koszty konserwacji floty i trendy"
   },
   "maint_timeline": {
     "detail_title": "Szczegóły wpisu",
@@ -1467,7 +1476,8 @@
     "notes_section": "Notes",
     "invoice_details": "Invoice Details",
     "invoice_metadata": "Invoice Metadata",
-    "client_info": "Client Info"
+    "client_info": "Client Info",
+    "subtitle": "Tworzenie i edycja profesjonalnych faktur"
   },
   "cmr": {
     "place_of_loading": "Place of Loading",

@@ -328,7 +328,8 @@
     "search_placeholder": "Search trips...",
     "button_export_pdf": "Export PDF",
     "button_export_excel": "Export Excel",
-    "button_email_invoice": "Email Invoice"
+    "button_email_invoice": "Email Invoice",
+    "subtitle": "Műveleti menedzsment és számlázás"
   },
   "analytics": {
     "title": "Uezleti Intelligencia Elemzes",
@@ -356,7 +357,8 @@
     "expenses_label": "Expenses",
     "profit_label": "Profit",
     "error": "Chart Error",
-    "invalid_date_order": "Invalid date range"
+    "invalid_date_order": "Invalid date range",
+    "subtitle": "Flotta teljesítményelemzés és KPI-k"
   },
   "invoice": {
     "section_company": "Az Oen Cegadatai (Felado)",
@@ -494,7 +496,10 @@
     "profile_safest": "Safest",
     "profile_shortest": "Shortest",
     "click_to_add_stop": "Click map to add stop",
-    "loaded_route": "Route loaded"
+    "loaded_route": "Route loaded",
+    "options_header": "Útvonal Beállítások",
+    "page_subtitle": "Többmegállós útvonalak tervezése költségbecsléssel",
+    "page_title": "Útvonal Tervező"
   },
   "route_history": {
     "title": "Uetvonal Előzmenyek",
@@ -564,7 +569,9 @@
     "recalculated": "Recalculated",
     "recalculated_msg": "Routes recalculated successfully.",
     "search_placeholder": "Search routes...",
-    "truck_placeholder": "Select truck..."
+    "truck_placeholder": "Select truck...",
+    "page_subtitle": "Mentett útvonalak áttekintése és kezelése",
+    "page_title": "Útvonal Előzmények"
   },
   "result": {
     "distance": "Tavolsag: {:.2f} km",
@@ -1091,7 +1098,8 @@
     "col_next_mileage": "Next Mileage",
     "health_downtime": "Downtime",
     "health_no_data": "No health data available",
-    "health_ok": "All systems nominal"
+    "health_ok": "All systems nominal",
+    "control_panel_subtitle": "Karbantartási ütemezések és állapotfigyelés"
   },
   "tacho": {
     "avg_daily": "Atlag Napi",
@@ -1175,7 +1183,8 @@
     "month_sep": "Szep",
     "month_oct": "Okt",
     "month_nov": "Nov",
-    "month_dec": "Dec"
+    "month_dec": "Dec",
+    "subtitle": "Flotta karbantartási költségek és trendek"
   },
   "maint_timeline": {
     "detail_title": "Bejegyzes Reszletei",
@@ -1465,7 +1474,8 @@
     "notes_section": "Notes",
     "invoice_details": "Invoice Details",
     "invoice_metadata": "Invoice Metadata",
-    "client_info": "Client Info"
+    "client_info": "Client Info",
+    "subtitle": "Professzionális számlák létrehozása és szerkesztése"
   },
   "cmr": {
     "place_of_loading": "Place of Loading",

@@ -23,7 +23,16 @@ from PySide6.QtWidgets import (
     QSizePolicy,
 )
 
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    ACCENT, ACCENT_TEXT, BG_SURFACE, BG_ELEVATED,
+    BORDER_DEFAULT, BORDER_FAINT,
+    DANGER, DANGER_TEXT, INFO, SUCCESS, SUCCESS_TEXT,
+    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DISABLED,
+    WARNING, WARNING_TEXT, STATUS, SP,
+)
+from ui.components import (
+    Card, KPICard, PageTitle, Label, Btn, MonoLabel,
+)
 from services.i18n import t, register_listener, unregister_listener
 from services.operations.event_bus import (
     EventBus,
@@ -37,7 +46,6 @@ from services.operations.event_bus import (
 from repositories.trip_repository import TripRepository
 from repositories.fleet_repository import FleetRepository
 from services.invoicing.config_manager import load_company_config
-from ui.widgets import KpiCard
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +99,8 @@ class QtOverviewView(QScrollArea):
         self.setWidget(self._container)
 
         layout = QVBoxLayout(self._container)
-        layout.setContentsMargins(S["10"], S["6"], S["10"], S["6"])
-        layout.setSpacing(S["4"])
+        layout.setContentsMargins(SP["10"], SP["6"], SP["10"], SP["6"])
+        layout.setSpacing(SP["4"])
         layout.setAlignment(Qt.AlignTop)
 
         self._build_header(layout)
@@ -101,69 +109,83 @@ class QtOverviewView(QScrollArea):
 
     def _build_header(self, layout):
         header = QFrame()
-        header.setProperty("role", "card")
-        header.setFixedHeight(64)
+        header.setFixedHeight(72)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(S["5"], 0, S["5"], 0)
+        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        header_layout.setSpacing(SP["3"])
 
-        name_lbl = QLabel("Operion ERP")
-        name_lbl.setProperty("fontRole", "h1")
+        name_lbl = PageTitle(None, "Operion ERP")
         header_layout.addWidget(name_lbl)
 
         conf = load_company_config()
         company = conf.get("company_name", "")
         if company:
-            company_lbl = QLabel(f"— {company}")
-            company_lbl.setProperty("fontRole", "muted")
+            company_lbl = Label(None, f"— {company}", role="secondary")
             header_layout.addWidget(company_lbl)
 
         header_layout.addStretch(1)
 
-        date_lbl = QLabel(datetime.now().strftime("%A, %d %B %Y"))
-        date_lbl.setProperty("fontRole", "muted")
+        date_lbl = Label(None, datetime.now().strftime("%A, %d %B %Y"), role="secondary")
         header_layout.addWidget(date_lbl)
 
         layout.addWidget(header)
 
     def _build_kpi_strip(self, layout):
-        strip = QFrame()
-        strip_layout = QHBoxLayout(strip)
-        strip_layout.setContentsMargins(0, 0, 0, 0)
-        strip_layout.setSpacing(S["2"])
+        self._kpi_strip = QFrame()
+        self._kpi_strip_layout = QHBoxLayout(self._kpi_strip)
+        self._kpi_strip_layout.setContentsMargins(0, 0, 0, 0)
+        self._kpi_strip_layout.setSpacing(SP["2"])
 
-        self._kpi_widgets: Dict[str, KpiCard] = {}
-        kpis = [
-            ("kpi_active_trucks", t("kpi_active_trucks", default="TRUCKS"), "0", COLORS.get("accent_text")),
-            ("kpi_trips_today", t("kpi_trips_today", default="TRIPS"), "0", None),
-            ("kpi_drivers_road", t("kpi_drivers_road", default="DRIVERS"), "0", None),
-            ("kpi_open_alerts", t("kpi_open_alerts", default="ALERTS"), "0", COLORS.get("text_warning")),
-            ("kpi_revenue", t("kpi_revenue", default="REVENUE"), "€ 0", COLORS.get("text_success")),
-            ("kpi_unpaid", t("kpi_unpaid", default="UNPAID"), "0", COLORS.get("text_danger")),
+        self._kpi_widgets: Dict[str, QFrame] = {}
+        # Build initial KPI cards (values are filled on first refresh)
+        self._rebuild_kpi_strip()
+
+        layout.addWidget(self._kpi_strip)
+
+    def _rebuild_kpi_strip(self):
+        """Clear and rebuild KPI cards so values can be updated."""
+        # Clear existing cards
+        while self._kpi_strip_layout.count():
+            item = self._kpi_strip_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._kpi_widgets.clear()
+
+        kpi_defs = [
+            ("kpi_active_trucks", t("kpi_active_trucks", default="TRUCKS"), "0"),
+            ("kpi_trips_today", t("kpi_trips_today", default="TRIPS"), "0"),
+            ("kpi_drivers_road", t("kpi_drivers_road", default="DRIVERS"), "0"),
+            ("kpi_open_alerts", t("kpi_open_alerts", default="ALERTS"), "0"),
+            ("kpi_revenue", t("kpi_revenue", default="REVENUE"), "€ 0"),
+            ("kpi_unpaid", t("kpi_unpaid", default="UNPAID"), "0"),
         ]
-        for key, label, default, color in kpis:
-            card_widget = KpiCard(strip, label, default)
-            if color:
-                card_widget.value_label.setStyleSheet(f"color: {color};")
-            strip_layout.addWidget(card_widget, 1)
-            self._kpi_widgets[key] = card_widget
-
-        layout.addWidget(strip)
+        # Store the value MonoLabel for each so _refresh_kpis can update text
+        self._kpi_value_labels: Dict[str, MonoLabel] = {}
+        for key, label, default in kpi_defs:
+            card = KPICard(self._kpi_strip, label, default)
+            # Find the MonoLabel for value updates
+            val_lbl = card.findChild(MonoLabel)
+            if val_lbl is not None:
+                self._kpi_value_labels[key] = val_lbl
+            self._kpi_strip_layout.addWidget(card, 1)
+            self._kpi_widgets[key] = card
 
     def _build_main_content(self, layout):
         main = QFrame()
         main_layout = QHBoxLayout(main)
         main_layout.setContentsMargins(0, 0, 0, 0)
-        main_layout.setSpacing(S["4"])
+        main_layout.setSpacing(SP["4"])
 
         left = QFrame()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["3"])
+        left_layout.setSpacing(SP["3"])
 
         right = QFrame()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["3"])
+        right_layout.setSpacing(SP["3"])
 
         self._build_profit_chart(left_layout)
         self._build_active_trips(left_layout)
@@ -177,20 +199,17 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(main)
 
     def _build_profit_chart(self, layout):
-        card_widget = QFrame()
-        card_widget.setProperty("role", "card")
-        card_layout = QVBoxLayout(card_widget)
-        card_layout.setContentsMargins(S["5"], S["5"], S["5"], S["3"])
+        card_widget = Card(None)
+        card_layout = card_widget.layout()
+        card_layout.setSpacing(SP["3"])
 
         header = QFrame()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        title = QLabel(t("home.profit_chart_title", default="Profit Trend"))
-        title.setProperty("fontRole", "h3")
+        title = Label(None, t("home.profit_chart_title", default="Profit Trend"), role="section-title")
         header_layout.addWidget(title)
         header_layout.addStretch(1)
-        month = QLabel(t("home.profit_30_days", default="Past 30 Days"))
-        month.setProperty("fontRole", "muted")
+        month = Label(None, t("home.profit_30_days", default="Past 30 Days"), role="muted")
         header_layout.addWidget(month)
         card_layout.addWidget(header)
 
@@ -200,29 +219,22 @@ class QtOverviewView(QScrollArea):
         QVBoxLayout(self._chart_container)
         card_layout.addWidget(self._chart_container, 1)
 
-        footer = QLabel(t("home.profit_data_source", default="Based on trip data"))
-        footer.setProperty("fontRole", "muted")
+        footer = Label(None, t("home.profit_data_source", default="Based on trip data"), role="muted")
         card_layout.addWidget(footer)
 
         layout.addWidget(card_widget)
 
     def _build_active_trips(self, layout):
-        card_widget = QFrame()
-        card_widget.setProperty("role", "card")
-        card_layout = QVBoxLayout(card_widget)
-        card_layout.setContentsMargins(S["5"], S["5"], S["5"], S["3"])
+        card_widget = Card(None)
+        card_layout = card_widget.layout()
+        card_layout.setSpacing(SP["3"])
 
         header = QFrame()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        title = QLabel(t("home.active_trips", default="Active Trips"))
-        title.setProperty("fontRole", "h3")
+        title = Label(None, t("home.active_trips", default="Active Trips"), role="section-title")
         header_layout.addWidget(title)
-        self._trips_count = QLabel("0")
-        self._trips_count.setProperty("fontRole", "small")
-        self._trips_count.setStyleSheet(
-            f"background-color: {COLORS['bg_elevated']}; border-radius: 9px; padding: 2px 6px;"
-        )
+        self._trips_count = Label(None, "0", role="muted")
         header_layout.addWidget(self._trips_count)
         card_layout.addWidget(header)
 
@@ -233,13 +245,11 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(card_widget)
 
     def _build_alert_strip(self, layout):
-        card_widget = QFrame()
-        card_widget.setProperty("role", "card")
-        card_layout = QVBoxLayout(card_widget)
-        card_layout.setContentsMargins(S["5"], S["5"], S["5"], S["3"])
+        card_widget = Card(None)
+        card_layout = card_widget.layout()
+        card_layout.setSpacing(SP["3"])
 
-        title = QLabel(t("home.active_alerts", default="Active Alerts"))
-        title.setProperty("fontRole", "h3")
+        title = Label(None, t("home.active_alerts", default="Active Alerts"), role="section-title")
         card_layout.addWidget(title)
 
         self._alerts_layout = QVBoxLayout()
@@ -249,13 +259,11 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(card_widget)
 
     def _build_top_trucks(self, layout):
-        card_widget = QFrame()
-        card_widget.setProperty("role", "card")
-        card_layout = QVBoxLayout(card_widget)
-        card_layout.setContentsMargins(S["5"], S["5"], S["5"], S["3"])
+        card_widget = Card(None)
+        card_layout = card_widget.layout()
+        card_layout.setSpacing(SP["3"])
 
-        title = QLabel(t("home.top_trucks", default="Top Trucks"))
-        title.setProperty("fontRole", "h3")
+        title = Label(None, t("home.top_trucks", default="Top Trucks"), role="section-title")
         card_layout.addWidget(title)
 
         self._top_trucks_layout = QVBoxLayout()
@@ -265,13 +273,11 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(card_widget)
 
     def _build_recent_activity(self, layout):
-        card_widget = QFrame()
-        card_widget.setProperty("role", "card")
-        card_layout = QVBoxLayout(card_widget)
-        card_layout.setContentsMargins(S["5"], S["5"], S["5"], S["3"])
+        card_widget = Card(None)
+        card_layout = card_widget.layout()
+        card_layout.setSpacing(SP["3"])
 
-        title = QLabel(t("home.recent_activity", default="Recent Activity"))
-        title.setProperty("fontRole", "h3")
+        title = Label(None, t("home.recent_activity", default="Recent Activity"), role="section-title")
         card_layout.addWidget(title)
 
         self._activity_layout = QVBoxLayout()
@@ -360,8 +366,9 @@ class QtOverviewView(QScrollArea):
             "kpi_unpaid": str(unpaid),
         }
         for key, value in updates.items():
-            if key in self._kpi_widgets:
-                self._kpi_widgets[key].set_value(value)
+            val_lbl = self._kpi_value_labels.get(key)
+            if val_lbl is not None:
+                val_lbl.setText(value)
 
     def _refresh_active_trips(self):
         self._clear_layout(self._trips_list)
@@ -390,8 +397,8 @@ class QtOverviewView(QScrollArea):
         row.setProperty("role", "card-elevated")
         row.setFixedHeight(34)
         layout = QHBoxLayout(row)
-        layout.setContentsMargins(S["3"], 0, S["3"], 0)
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
+        layout.setSpacing(SP["2"])
 
         plate = trip.get("truck_number", "—")
         plate_lbl = QLabel(plate)
@@ -410,7 +417,7 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(route_lbl, 1)
 
         status = trip.get("status", "planned").lower().replace(" ", "_")
-        chip_bg = COLORS.get(f"chip_{status}", COLORS.get("chip_idle", COLORS["bg_elevated"]))
+        chip_bg, _ = STATUS.get(status, (BG_ELEVATED, TEXT_SECONDARY))
         status_lbl = QLabel(trip.get("status", "").title())
         status_lbl.setProperty("fontRole", "label")
         status_lbl.setStyleSheet(
@@ -441,12 +448,12 @@ class QtOverviewView(QScrollArea):
             row.setProperty("role", "card-elevated")
             row.setFixedHeight(30)
             layout = QHBoxLayout(row)
-            layout.setContentsMargins(S["3"], 0, S["3"], 0)
+            layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
 
             sev_color = {
-                "CRITICAL": COLORS.get("danger", "#ef4444"),
-                "WARNING": COLORS.get("warning", "#f59e0b"),
-            }.get(getattr(a, "severity", "INFO"), COLORS.get("info", COLORS["accent"]))
+                "CRITICAL": DANGER,
+                "WARNING": WARNING,
+            }.get(getattr(a, "severity", "INFO"), INFO)
             dot = QLabel("●")
             dot.setStyleSheet(f"color: {sev_color};")
             layout.addWidget(dot)
@@ -492,7 +499,7 @@ class QtOverviewView(QScrollArea):
 
             idx = QLabel(f"#{i}")
             idx.setProperty("fontRole", "body_bold")
-            idx.setStyleSheet(f"color: {COLORS.get('accent_text', COLORS['text_accent'])};")
+            idx.setStyleSheet(f"color: {ACCENT_TEXT};")
             idx.setFixedWidth(24)
             layout.addWidget(idx)
 
@@ -502,7 +509,7 @@ class QtOverviewView(QScrollArea):
 
             rev_lbl = QLabel(f"€ {revenue:,.0f}")
             rev_lbl.setProperty("fontRole", "mono")
-            rev_lbl.setStyleSheet(f"color: {COLORS.get('text_success', '#22c55e')};")
+            rev_lbl.setStyleSheet(f"color: {SUCCESS_TEXT};")
             layout.addWidget(rev_lbl)
 
             self._top_trucks_layout.addWidget(r)
@@ -545,7 +552,7 @@ class QtOverviewView(QScrollArea):
             client_lbl.setProperty("fontRole", "small")
             layout.addWidget(client_lbl, 1)
 
-            color = COLORS.get("success", "#22c55e") if profit > 0 else COLORS.get("danger", "#ef4444")
+            color = SUCCESS_TEXT if profit > 0 else DANGER_TEXT
             profit_lbl = QLabel(f"{profit:,.0f} €")
             profit_lbl.setProperty("fontRole", "muted")
             profit_lbl.setStyleSheet(f"color: {color};")
@@ -637,15 +644,15 @@ class QtOverviewView(QScrollArea):
         fig_h = ch / dpi
 
         fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
-        fig.patch.set_facecolor(COLORS["bg_surface"])
-        ax.set_facecolor(COLORS["bg_surface"])
+        fig.patch.set_facecolor(BG_SURFACE)
+        ax.set_facecolor(BG_SURFACE)
         fig.subplots_adjust(left=0.05, right=0.98, top=0.94, bottom=0.10)
 
         for spine in ax.spines.values():
-            spine.set_edgecolor(COLORS["border"])
+            spine.set_edgecolor(BORDER_DEFAULT)
             spine.set_linewidth(0.5)
-        ax.tick_params(colors=COLORS["text_secondary"], labelsize=8, pad=4, length=3, width=0.5)
-        ax.grid(axis="y", color=COLORS["border"], linewidth=0.4, linestyle="--", alpha=0.35)
+        ax.tick_params(colors=TEXT_MUTED, labelsize=8, pad=4, length=3, width=0.5)
+        ax.grid(axis="y", color=BORDER_DEFAULT, linewidth=0.4, linestyle="--", alpha=0.35)
         ax.set_axisbelow(True)
 
         nonzero = [p for p in profits if p != 0]
@@ -670,7 +677,7 @@ class QtOverviewView(QScrollArea):
         ax.set_xlabel(
             t("home.profit_day_label", default="Day"),
             fontsize=8,
-            color=COLORS["text_secondary"],
+            color=TEXT_MUTED,
             labelpad=6,
         )
 
@@ -678,7 +685,7 @@ class QtOverviewView(QScrollArea):
         profits_arr = np.array(profits, dtype=float)
         x_smooth, y_smooth = self._smooth_data(days_arr, profits_arr, num=len(days) * 20)
 
-        line_color = COLORS.get("chart_green", "#4ADE80")
+        line_color = ACCENT
 
         ax.fill_between(x_smooth, 0, y_smooth, alpha=0.25, color=line_color, zorder=1)
         ax.plot(x_smooth, y_smooth, color=line_color, linewidth=2.0, alpha=0.85,

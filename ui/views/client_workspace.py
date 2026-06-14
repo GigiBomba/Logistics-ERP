@@ -28,16 +28,25 @@ from PySide6.QtWidgets import (
 
 from services.client_service import ClientService
 from services.i18n import t, register_listener, unregister_listener
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    ACCENT, ACCENT_TEXT, ACCENT_DIM, BG_SURFACE, BG_ELEVATED,
+    BORDER_DEFAULT, DANGER, DANGER_DIM, DANGER_TEXT,
+    SUCCESS, SUCCESS_DIM, SUCCESS_TEXT,
+    WARNING, WARNING_DIM, WARNING_TEXT,
+    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
+    STATUS, SP,
+)
+from ui.components import (
+    Card, CardHeader, Btn, KPICard, StatusChip,
+    FieldLabel, SectionTitle, PageTitle, Label, Divider, MonoLabel,
+)
+from ui.theme import COLORS
 from ui.widgets import (
-    ActionButton,
-    KpiCard,
     ScrollableFormContainer,
     StyledComboBox,
     StyledLineEdit,
     StyledTableWidget,
     field,
-    section_header,
 )
 from ui.widgets.client_activity_timeline import QtClientActivityTimeline
 from ui.widgets.client_revenue_chart import QtClientRevenueChart
@@ -241,14 +250,15 @@ class QtClientWorkspace(QWidget):
 
     def _build_top_bar(self, parent_layout: QVBoxLayout) -> None:
         top = QFrame()
+        top.setFixedHeight(72)
         top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(S["5"], S["4"], S["5"], S["3"])
+        top_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        top_layout.setSpacing(SP["3"])
 
-        self._title_label = QLabel(t("client.title"))
-        self._title_label.setProperty("fontRole", "h2")
+        self._title_label = PageTitle(None, t("client.title"))
         top_layout.addWidget(self._title_label)
 
-        top_layout.addSpacing(S["3"])
+        top_layout.addSpacing(SP["3"])
 
         self._search_entry = _SearchLineEdit()
         self._search_entry.set_placeholder(t("common.search"))
@@ -258,7 +268,7 @@ class QtClientWorkspace(QWidget):
 
         top_layout.addStretch()
 
-        self._new_btn = ActionButton(
+        self._new_btn = Btn(
             self,
             text="+ " + t("client.new_button"),
             command=self._open_form_new,
@@ -271,8 +281,8 @@ class QtClientWorkspace(QWidget):
         """Build the client table, action bar, and tabbed detail area."""
         split = QFrame()
         split_layout = QVBoxLayout(split)
-        split_layout.setContentsMargins(S["5"], 0, S["5"], S["5"])
-        split_layout.setSpacing(S["3"])
+        split_layout.setContentsMargins(SP["5"], 0, SP["5"], SP["5"])
+        split_layout.setSpacing(SP["3"])
 
         # ── Client table ───────────────────────────────────────────────────
         columns = _client_columns_for_table()
@@ -287,14 +297,14 @@ class QtClientWorkspace(QWidget):
         bar_layout = QHBoxLayout(bar)
         bar_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._edit_btn = ActionButton(
+        self._edit_btn = Btn(
             self,
             text=t("client.edit_button"),
             command=self._open_form_edit,
         )
         bar_layout.addWidget(self._edit_btn)
 
-        self._deact_btn = ActionButton(
+        self._deact_btn = Btn(
             self,
             text=t("client.deactivate_button"),
             command=self._deactivate,
@@ -607,14 +617,14 @@ class _QtClientDetailsTab(QWidget):
         cl = self._content.layout()
 
         name = client.get("name", "???")
-        header_widget = section_header(self._content, name)
+        header_widget = SectionTitle(self._content, name)
         cl.addWidget(header_widget)
 
         # Client type badge + rating + status row.
         meta_row = QFrame()
         meta_layout = QHBoxLayout(meta_row)
         meta_layout.setContentsMargins(0, 0, 0, 0)
-        meta_layout.setSpacing(S["2"])
+        meta_layout.setSpacing(SP["2"])
 
         c_type = client.get("client_type", "")
         if c_type:
@@ -658,7 +668,7 @@ class _QtClientDetailsTab(QWidget):
             details_row = QFrame()
             details_layout = QHBoxLayout(details_row)
             details_layout.setContentsMargins(0, 0, 0, 0)
-            details_layout.setSpacing(S["3"])
+            details_layout.setSpacing(SP["3"])
             for d in details:
                 lbl = QLabel(d)
                 lbl.setProperty("fontRole", "small")
@@ -680,7 +690,7 @@ class _QtClientDetailsTab(QWidget):
             extra_row = QFrame()
             extra_layout = QHBoxLayout(extra_row)
             extra_layout.setContentsMargins(0, 0, 0, 0)
-            extra_layout.setSpacing(S["3"])
+            extra_layout.setSpacing(SP["3"])
             for e in extra:
                 lbl = QLabel(e)
                 lbl.setProperty("fontRole", "small")
@@ -692,7 +702,7 @@ class _QtClientDetailsTab(QWidget):
     def _build_kpi_section(self, dash: dict) -> None:
         cl = self._content.layout()
 
-        header_widget = section_header(self._content, t("client.section_kpis"))
+        header_widget = SectionTitle(self._content, t("client.section_kpis"))
         cl.addWidget(header_widget)
 
         total_rev = dash.get("total_revenue", 0) or 0
@@ -709,34 +719,34 @@ class _QtClientDetailsTab(QWidget):
         row1 = QFrame()
         row1_layout = QHBoxLayout(row1)
         row1_layout.setContentsMargins(0, 0, 0, 0)
-        row1_layout.setSpacing(S["2"])
+        row1_layout.setSpacing(SP["2"])
 
-        row1_layout.addWidget(KpiCard(self._content, t("client.kpi_total_revenue"),
+        row1_layout.addWidget(KPICard(self._content, t("client.kpi_total_revenue"),
                                        f"\u20ac {total_rev:,.0f}"))
-        row1_layout.addWidget(KpiCard(self._content, t("client.kpi_total_trips"),
+        row1_layout.addWidget(KPICard(self._content, t("client.kpi_total_trips"),
                                        str(total_trips)))
-        row1_layout.addWidget(KpiCard(self._content, t("client.kpi_total_km"),
+        row1_layout.addWidget(KPICard(self._content, t("client.kpi_total_km"),
                                        f"{total_km:,.0f} km"))
-        row1_layout.addWidget(KpiCard(self._content, t("client.kpi_last_30d"),
+        row1_layout.addWidget(KPICard(self._content, t("client.kpi_last_30d"),
                                        str(last_30)))
         cl.addWidget(row1)
 
         row2 = QFrame()
         row2_layout = QHBoxLayout(row2)
         row2_layout.setContentsMargins(0, 0, 0, 0)
-        row2_layout.setSpacing(S["2"])
+        row2_layout.setSpacing(SP["2"])
 
-        profit_card = KpiCard(self._content, t("client.kpi_total_profit"),
+        profit_card = KPICard(self._content, t("client.kpi_total_profit"),
                                f"\u20ac {total_profit:,.0f}")
         profit_card.setProperty("role", "kpi-card")
         cl.addWidget(row2)
 
         row2_layout.addWidget(profit_card)
-        row2_layout.addWidget(KpiCard(self._content, t("client.kpi_avg_profit"),
+        row2_layout.addWidget(KPICard(self._content, t("client.kpi_avg_profit"),
                                        f"\u20ac {avg_profit:,.0f}"))
-        row2_layout.addWidget(KpiCard(self._content, t("client.kpi_outstanding"),
+        row2_layout.addWidget(KPICard(self._content, t("client.kpi_outstanding"),
                                        f"\u20ac {outstanding:,.0f}"))
-        row2_layout.addWidget(KpiCard(self._content, t("client.kpi_last_trip"),
+        row2_layout.addWidget(KPICard(self._content, t("client.kpi_last_trip"),
                                        str(last_trip)))
         cl.addWidget(row2)
 
@@ -748,14 +758,14 @@ class _QtClientDetailsTab(QWidget):
             return
 
         cl = self._content.layout()
-        header_widget = section_header(self._content, t("client.section_contacts"))
+        header_widget = SectionTitle(self._content, t("client.section_contacts"))
         cl.addWidget(header_widget)
 
         for c in contacts:
             row = QFrame()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(S["2"])
+            row_layout.setSpacing(SP["2"])
 
             name_text = c.get("full_name", "")
             if c.get("is_primary"):
@@ -780,19 +790,19 @@ class _QtClientDetailsTab(QWidget):
 
             row_layout.addStretch()
 
-            row_layout.addWidget(ActionButton(
+            row_layout.addWidget(Btn(
                 row, text="Edit",
                 command=lambda cid=c["id"]: self._edit_contact(cid, service, client_id),
-                variant="secondary", width=8,
+                variant="secondary",
             ))
-            row_layout.addWidget(ActionButton(
+            row_layout.addWidget(Btn(
                 row, text="\u2716",
                 command=lambda cid=c["id"]: self._delete_contact(cid, service),
-                variant="danger", width=6,
+                variant="danger",
             ))
             cl.addWidget(row)
 
-        cl.addWidget(ActionButton(
+        cl.addWidget(Btn(
             self._content, text="+ " + t("client.add_contact"),
             command=lambda: self._add_contact(service, client_id),
             variant="secondary",
@@ -835,7 +845,7 @@ class _QtClientDetailsTab(QWidget):
 
     def _build_tags_section(self, tags: list, service, client_id: int) -> None:
         cl = self._content.layout()
-        header_widget = section_header(self._content, t("client.section_tags"))
+        header_widget = SectionTitle(self._content, t("client.section_tags"))
         cl.addWidget(header_widget)
 
         tag_names = [t_row.get("tag", t_row) for t_row in tags]
@@ -847,7 +857,7 @@ class _QtClientDetailsTab(QWidget):
             chips_row = QFrame()
             chips_layout = QHBoxLayout(chips_row)
             chips_layout.setContentsMargins(0, 0, 0, 0)
-            chips_layout.setSpacing(S["1"])
+            chips_layout.setSpacing(SP["1"])
             for tag in tag_names:
                 chip = QLabel(f"  {tag}  ")
                 chip.setProperty("fontRole", "label")
@@ -863,17 +873,17 @@ class _QtClientDetailsTab(QWidget):
         add_row = QFrame()
         add_layout = QHBoxLayout(add_row)
         add_layout.setContentsMargins(0, 0, 0, 0)
-        add_layout.setSpacing(S["1"])
+        add_layout.setSpacing(SP["1"])
 
         self._tag_entry = StyledLineEdit(
             placeholder=t("client.tag_placeholder"),
         )
         add_layout.addWidget(self._tag_entry)
 
-        add_layout.addWidget(ActionButton(
+        add_layout.addWidget(Btn(
             add_row, text="+",
             command=lambda: self._add_tag(service, client_id),
-            variant="secondary", width=6,
+            variant="secondary",
         ))
         cl.addWidget(add_row)
 
@@ -893,24 +903,24 @@ class _QtClientDetailsTab(QWidget):
             return
 
         cl = self._content.layout()
-        header_widget = section_header(self._content, t("client.section_payment"))
+        header_widget = SectionTitle(self._content, t("client.section_payment"))
         cl.addWidget(header_widget)
 
         row = QFrame()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setSpacing(SP["2"])
 
-        row_layout.addWidget(KpiCard(
+        row_layout.addWidget(KPICard(
             self._content, "Billed", f"\u20ac {pay['total_billed']:,.0f}",
         ))
-        row_layout.addWidget(KpiCard(
+        row_layout.addWidget(KPICard(
             self._content, "Paid", f"\u20ac {pay['total_paid']:,.0f}",
         ))
-        row_layout.addWidget(KpiCard(
+        row_layout.addWidget(KPICard(
             self._content, "Unpaid", f"\u20ac {pay['unpaid']:,.0f}",
         ))
-        overdue_card = KpiCard(
+        overdue_card = KPICard(
             self._content, "Overdue", f"\u20ac {pay['overdue']:,.0f}",
         )
         row_layout.addWidget(overdue_card)
@@ -920,7 +930,7 @@ class _QtClientDetailsTab(QWidget):
 
     def _build_timeline(self, service, client_id: int) -> None:
         cl = self._content.layout()
-        header_widget = section_header(self._content, t("client.section_timeline"))
+        header_widget = SectionTitle(self._content, t("client.section_timeline"))
         cl.addWidget(header_widget)
 
         timeline = QtClientActivityTimeline(
@@ -1014,10 +1024,10 @@ class _QtClientFormDialog(QDialog):
         # Bottom button bar.
         btn_bar = QFrame()
         btn_layout = QHBoxLayout(btn_bar)
-        btn_layout.setContentsMargins(S["5"], 0, S["5"], S["4"])
+        btn_layout.setContentsMargins(SP["5"], 0, SP["5"], SP["4"])
         btn_layout.addStretch()
 
-        btn_layout.addWidget(ActionButton(
+        btn_layout.addWidget(Btn(
             btn_bar, text=t("client.save_button"),
             command=self._save, variant="success",
         ))
@@ -1154,9 +1164,9 @@ class _QtContactDialog(QDialog):
 
         btn_bar = QFrame()
         btn_layout = QHBoxLayout(btn_bar)
-        btn_layout.setContentsMargins(S["5"], 0, S["5"], S["4"])
+        btn_layout.setContentsMargins(SP["5"], 0, SP["5"], SP["4"])
         btn_layout.addStretch()
-        btn_layout.addWidget(ActionButton(
+        btn_layout.addWidget(Btn(
             btn_bar, text=t("client.save_button"),
             command=self._save, variant="success",
         ))
@@ -1216,8 +1226,8 @@ class _QtMergeDialog(QDialog):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["5"], S["5"], S["5"], S["5"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["5"], SP["5"], SP["5"], SP["5"])
+        layout.setSpacing(SP["3"])
 
         source = self.service.get_by_id(self.source_id)
         source_lbl = QLabel(
@@ -1249,7 +1259,7 @@ class _QtMergeDialog(QDialog):
 
         layout.addStretch()
 
-        layout.addWidget(ActionButton(
+        layout.addWidget(Btn(
             self, text=t("client.merge_execute"),
             command=self._execute, variant="danger",
         ))

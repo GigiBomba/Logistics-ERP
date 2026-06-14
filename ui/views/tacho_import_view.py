@@ -23,8 +23,14 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t, register_listener, unregister_listener
 from services.tacho_service import TachoService
-from ui.theme import COLORS, S
-from ui.widgets import ActionButton, StyledTableWidget, SectionHeader
+from ui.design_tokens import (
+    DANGER_TEXT, SUCCESS_TEXT, WARNING_DIM, WARNING_TEXT, BG_SURFACE, SP,
+)
+from ui.components import (
+    Card, CardHeader, Btn, PageTitle, Label, SectionTitle, Divider,
+)
+from ui.theme import COLORS
+from ui.widgets import StyledTableWidget
 
 logger = logging.getLogger(__name__)
 
@@ -51,20 +57,20 @@ class QtTachoImportView(QWidget):
 
     def _build_ui(self):
         main_layout = QHBoxLayout(self)
-        main_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        main_layout.setSpacing(S["4"])
+        main_layout.setContentsMargins(SP["5"], SP["4"], SP["5"], SP["4"])
+        main_layout.setSpacing(SP["4"])
 
         # Left panel — import controls (45 %)
         left_panel = QWidget()
         left_layout = QVBoxLayout(left_panel)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["3"])
+        left_layout.setSpacing(SP["3"])
 
         # Right panel — history table (55 %)
         right_panel = QWidget()
         right_layout = QVBoxLayout(right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["3"])
+        right_layout.setSpacing(SP["3"])
 
         main_layout.addWidget(left_panel, 45)
         main_layout.addWidget(right_panel, 55)
@@ -77,85 +83,71 @@ class QtTachoImportView(QWidget):
     # ── Left panel ────────────────────────────────────────────────────────────
 
     def _build_page_heading(self, layout: QVBoxLayout):
-        title = QLabel(t("tacho.title"))
-        title.setProperty("fontRole", "display")
-        layout.addWidget(title)
-
-        subtitle = QLabel(t("tacho.subtitle"))
-        subtitle.setProperty("fontRole", "muted")
-        layout.addWidget(subtitle)
+        header = QFrame()
+        header.setFixedHeight(72)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        header_layout.setSpacing(SP["3"])
+        title = PageTitle(None, t("tacho.title"))
+        header_layout.addWidget(title)
+        subtitle = Label(None, t("tacho.subtitle"), role="secondary")
+        header_layout.addWidget(subtitle)
+        header_layout.addStretch()
+        layout.addWidget(header)
 
     def _build_import_card(self, layout: QVBoxLayout):
-        card = QFrame()
-        card.setProperty("role", "card")
-        card.setFrameShape(QFrame.StyledPanel)
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(0, 0, 0, 0)
-        card_layout.setSpacing(0)
+        card = Card(None)
+        card_layout = card.layout()
+        card_layout.setSpacing(SP["3"])
 
-        content = QWidget()
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        content_layout.setSpacing(S["3"])
-
-        # Section header
-        content_layout.addWidget(
-            SectionHeader(content, t("tacho.import_card_title"))
-        )
+        CardHeader(card_layout, t("tacho.import_card_title"))
 
         # How-it-works info box
         info = QFrame()
         info.setProperty("role", "info-box")
         info.setFrameShape(QFrame.StyledPanel)
         info_layout = QVBoxLayout(info)
-        info_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        info_layout.setSpacing(S["1"])
+        info_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        info_layout.setSpacing(SP["1"])
 
-        info_title = QLabel(t("tacho.how_it_works"))
-        info_title.setProperty("fontRole", "body-bold")
+        info_title = Label(None, t("tacho.how_it_works"), role="section-title")
         info_layout.addWidget(info_title)
 
-        steps = QLabel(t("tacho.import_steps"))
-        steps.setProperty("fontRole", "small")
+        steps = Label(None, t("tacho.import_steps"), role="muted")
         steps.setWordWrap(True)
         info_layout.addWidget(steps)
 
-        content_layout.addWidget(info)
+        card_layout.addWidget(info)
 
         # Import buttons
-        self._btn_driver = ActionButton(
-            content,
+        self._btn_driver = Btn(
+            card,
             t("tacho.import_driver_card"),
-            command=self._import_driver_card,
             variant="primary",
+            command=self._import_driver_card,
         )
-        content_layout.addWidget(self._btn_driver)
+        card_layout.addWidget(self._btn_driver)
 
-        self._btn_vehicle = ActionButton(
-            content,
+        self._btn_vehicle = Btn(
+            card,
             t("tacho.import_vehicle_unit"),
-            command=self._import_vehicle_unit,
             variant="secondary",
+            command=self._import_vehicle_unit,
         )
-        content_layout.addWidget(self._btn_vehicle)
+        card_layout.addWidget(self._btn_vehicle)
 
         # Progress label (hidden initially)
-        self._progress_lbl = QLabel("")
-        self._progress_lbl.setProperty("fontRole", "body")
+        self._progress_lbl = Label(None, "", role="muted")
         self._progress_lbl.setVisible(False)
-        content_layout.addWidget(self._progress_lbl)
+        card_layout.addWidget(self._progress_lbl)
 
-        card_layout.addWidget(content)
         layout.addWidget(card)
 
     def _build_result_card(self, layout: QVBoxLayout):
-        self._result_card = QFrame()
-        self._result_card.setProperty("role", "card")
-        self._result_card.setFrameShape(QFrame.StyledPanel)
+        self._result_card = Card(None)
         self._result_card.setVisible(False)
-        result_layout = QVBoxLayout(self._result_card)
-        result_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        result_layout.setSpacing(S["2"])
+        result_layout = self._result_card.layout()
+        result_layout.setSpacing(SP["2"])
 
         # Large result icon (checkmark / cross)
         self._result_icon = QLabel("")
@@ -180,8 +172,8 @@ class QtTachoImportView(QWidget):
         self._result_violations.setProperty("fontRole", "label")
         self._result_violations.setVisible(False)
         self._result_violations.setStyleSheet(
-            f"background-color: {COLORS['warning_dim']};"
-            f"color: {COLORS['text_warning']};"
+            f"background-color: {WARNING_DIM};"
+            f"color: {WARNING_TEXT};"
             f"border-radius: 4px; padding: 2px 8px;"
         )
         result_layout.addWidget(self._result_violations)
@@ -191,7 +183,8 @@ class QtTachoImportView(QWidget):
     # ── Right panel ──────────────────────────────────────────────────────────
 
     def _build_history_table(self, parent: QWidget, layout: QVBoxLayout):
-        layout.addWidget(SectionHeader(parent, t("tacho.import_history")))
+        card = Card(None)
+        CardHeader(card.layout(), t("tacho.import_history"))
 
         self._history_table = StyledTableWidget(
             parent,
@@ -203,7 +196,8 @@ class QtTachoImportView(QWidget):
                 ("parse_status", t("tacho.hdr_status"), 70),
             ],
         )
-        layout.addWidget(self._history_table, 1)
+        card.layout().addWidget(self._history_table, 1)
+        layout.addWidget(card, 1)
 
     # ── History ──────────────────────────────────────────────────────────────
 
@@ -322,7 +316,7 @@ class QtTachoImportView(QWidget):
         self._result_card.setVisible(True)
         self._result_icon.setText("\u2713")  # ✓
         self._result_icon.setStyleSheet(
-            f"color: {COLORS['text_success']}; font-size: 24px;"
+            f"color: {SUCCESS_TEXT}; font-size: 24px;"
         )
         self._result_msg.setText(
             result.get("summary", t("tacho.import_successful"))
@@ -370,7 +364,7 @@ class QtTachoImportView(QWidget):
         self._result_card.setVisible(True)
         self._result_icon.setText("\u2717")  # ✗
         self._result_icon.setStyleSheet(
-            f"color: {COLORS['text_danger']}; font-size: 24px;"
+            f"color: {DANGER_TEXT}; font-size: 24px;"
         )
         self._result_msg.setText(error)
         self._result_detail.setVisible(False)

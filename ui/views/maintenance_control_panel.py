@@ -18,10 +18,10 @@ from PySide6.QtWidgets import (
     QWidget,
     QFrame,
     QLabel,
+    QPushButton,
     QVBoxLayout,
     QHBoxLayout,
     QScrollArea,
-    QPushButton,
     QCheckBox,
     QLineEdit,
     QComboBox,
@@ -29,8 +29,6 @@ from PySide6.QtWidgets import (
     QDialog,
 )
 
-from ui.theme import COLORS, S
-from ui.styles import Theme
 from services.i18n import t, register_listener, unregister_listener
 from ui.icons import iconed
 from services.operations.alert_manager import AlertType, Severity, Alert
@@ -43,7 +41,21 @@ from services.operations.event_bus import (
     MAINTENANCE_DELETED,
 )
 from services.fleet_maintenance_service import FleetMaintenanceService
-from ui.widgets import ActionButton, KpiCard
+from ui.components import (
+    Card, CardHeader, Btn, KPICard, StatusChip, FieldLabel,
+    SectionTitle, PageTitle, Label, Divider, MonoLabel,
+)
+from ui.design_tokens import (
+    BG_SURFACE, BG_ELEVATED, BG_OVERLAY,
+    BORDER_DEFAULT, BORDER_STRONG, BORDER_FAINT,
+    ACCENT, ACCENT_HOVER, ACCENT_DIM, ACCENT_TEXT,
+    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_DISABLED,
+    SUCCESS, SUCCESS_DIM, SUCCESS_TEXT,
+    WARNING, WARNING_DIM, WARNING_TEXT,
+    DANGER, DANGER_DIM, DANGER_TEXT,
+    INFO, INFO_DIM, INFO_TEXT,
+    SP, FONT_MONO,
+)
 from ui.widgets.fuel_panel import QtFuelPricePanel
 
 logger = logging.getLogger(__name__)
@@ -73,9 +85,9 @@ SEVERITY_ICONS: Dict[Severity, str] = {
 }
 
 SEVERITY_COLORS: Dict[Severity, str] = {
-    Severity.CRITICAL: Theme.DANGER,
-    Severity.WARNING: Theme.WARNING,
-    Severity.INFO: Theme.INFO,
+    Severity.CRITICAL: DANGER,
+    Severity.WARNING: WARNING,
+    Severity.INFO: INFO,
 }
 
 SEVERITY_LABELS: Dict[Severity, str] = {
@@ -191,27 +203,26 @@ class QtMaintenanceControlPanel(QWidget):
     # ── Header ───────────────────────────────────────────────────────────────
 
     def _build_header(self, layout: QVBoxLayout) -> None:
-        header = QFrame()
-        header.setProperty("role", "top-bar")
-        header.setFixedHeight(56)
+        header = QWidget()
+        header.setFixedHeight(72)
         hdr_layout = QHBoxLayout(header)
-        hdr_layout.setContentsMargins(S["5"], 0, S["5"], 0)
+        hdr_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
 
-        self._title_lbl = QLabel()
-        self._title_lbl.setProperty("fontRole", "h2")
-        self._i18n_tag(self._title_lbl, "maint.control_panel_title")
+        self._title_lbl = PageTitle(header, t("maint.control_panel_title"))
         hdr_layout.addWidget(self._title_lbl)
+
+        subtitle = Label(header, t("maint.control_panel_subtitle", default=""), role="secondary")
+        hdr_layout.addWidget(subtitle)
 
         hdr_layout.addStretch(1)
 
-        self._alert_count_lbl = QLabel()
-        self._alert_count_lbl.setProperty("fontRole", "muted")
+        self._alert_count_lbl = Label(header, "", role="muted")
         hdr_layout.addWidget(self._alert_count_lbl)
 
-        self._refresh_btn = QPushButton()
-        self._refresh_btn.setCursor(Qt.PointingHandCursor)
-        self._refresh_btn.clicked.connect(self._refresh)
-        self._i18n_tag(self._refresh_btn, "maint.refresh")
+        self._refresh_btn = Btn(
+            header, t("maint.refresh"),
+            variant="secondary", command=self._refresh,
+        )
         hdr_layout.addWidget(self._refresh_btn)
 
         layout.addWidget(header)
@@ -222,10 +233,11 @@ class QtMaintenanceControlPanel(QWidget):
         row = QFrame()
         row.setProperty("role", "card")
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        row_layout.setSpacing(S["3"])
+        row_layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
+        row_layout.setSpacing(SP["3"])
 
-        self._kpi_widgets: Dict[str, KpiCard] = {}
+        self._kpi_widgets: Dict[str, QFrame] = {}
+        self._kpi_value_labels: Dict[str, QLabel] = {}
         kpi_defs = [
             ("avg_health",            "maint.avg_health"),
             ("trucks_needing_service", "maint.due_service"),
@@ -234,38 +246,29 @@ class QtMaintenanceControlPanel(QWidget):
             ("total_cost",             "maint.total_cost_kpi"),
         ]
         for key, title_key in kpi_defs:
-            card = KpiCard(row, iconed(title_key), "\u2026")
+            card = KPICard(row, t(title_key), "\u2026")
+            # Store reference to the value label (second child: MonoLabel)
+            val_label = card.layout().itemAt(1).widget()
             row_layout.addWidget(card, 1)
             self._kpi_widgets[key] = card
+            self._kpi_value_labels[key] = val_label
 
         layout.addWidget(row)
 
     # ── Tachograph status ────────────────────────────────────────────────────
 
     def _build_tachograph_status(self, layout: QVBoxLayout) -> None:
-        section = QFrame()
-        section_layout = QVBoxLayout(section)
-        section_layout.setContentsMargins(S["5"], S["3"], S["5"], S["2"])
-        section_layout.setSpacing(S["2"])
-
-        # ── Header row ───────────────────────────────────────────────────
-        hdr = QFrame()
-        hdr_layout = QHBoxLayout(hdr)
-        hdr_layout.setContentsMargins(0, 0, 0, 0)
-
-        tacho_title = QLabel(t("tacho.section_status_title"))
-        tacho_title.setProperty("fontRole", "section")
-        hdr_layout.addWidget(tacho_title)
-
-        hdr_layout.addStretch(1)
-
-        import_btn = QPushButton(t("tacho.import_now"))
-        import_btn.setCursor(Qt.PointingHandCursor)
-        import_btn.setFixedSize(100, 24)
-        import_btn.clicked.connect(self._navigate_to_tachograph)
-        hdr_layout.addWidget(import_btn)
-
-        section_layout.addWidget(hdr)
+        card = Card()
+        card_layout = card.layout()
+        card_header = CardHeader(
+            card_layout,
+            title=t("tacho.section_status_title"),
+            right_widget=Btn(
+                None, t("tacho.import_now"),
+                variant="secondary", size="sm",
+                command=self._navigate_to_tachograph,
+            ),
+        )
 
         # ── Scrollable table ─────────────────────────────────────────────
         self._tacho_scroll = QScrollArea()
@@ -281,22 +284,19 @@ class QtMaintenanceControlPanel(QWidget):
         self._tacho_layout.setAlignment(Qt.AlignTop)
 
         self._tacho_scroll.setWidget(self._tacho_content)
-        section_layout.addWidget(self._tacho_scroll)
+        card_layout.addWidget(self._tacho_scroll)
 
-        layout.addWidget(section)
+        layout.addWidget(card)
 
     # ── Filter bar ───────────────────────────────────────────────────────────
 
     def _build_filter_bar(self, layout: QVBoxLayout) -> None:
-        fb = QFrame()
-        fb.setProperty("role", "card")
-        fb_layout = QHBoxLayout(fb)
-        fb_layout.setContentsMargins(S["5"], S["2"], S["5"], S["2"])
-        fb_layout.setSpacing(S["3"])
+        fb = Card()
+        fb_layout = QHBoxLayout()
+        fb.layout().addLayout(fb_layout)
 
         # -- Severity checkboxes ------------------------------------------
-        sev_lbl = QLabel(t("maint.filter_severity"))
-        sev_lbl.setProperty("fontRole", "label")
+        sev_lbl = FieldLabel(None, t("maint.filter_severity"))
         fb_layout.addWidget(sev_lbl)
 
         self._cb_critical = QCheckBox(t("maint.severity_critical"))
@@ -315,8 +315,7 @@ class QtMaintenanceControlPanel(QWidget):
         fb_layout.addWidget(self._cb_info)
 
         # -- Type combobox ------------------------------------------------
-        type_lbl = QLabel(t("maint.filter_type"))
-        type_lbl.setProperty("fontRole", "label")
+        type_lbl = FieldLabel(None, t("maint.filter_type"))
         fb_layout.addWidget(type_lbl)
 
         self._c_type = QComboBox()
@@ -327,8 +326,7 @@ class QtMaintenanceControlPanel(QWidget):
         fb_layout.addWidget(self._c_type)
 
         # -- Truck filter -------------------------------------------------
-        truck_lbl = QLabel(t("maint.filter_truck"))
-        truck_lbl.setProperty("fontRole", "label")
+        truck_lbl = FieldLabel(None, t("maint.filter_truck"))
         fb_layout.addWidget(truck_lbl)
 
         self._e_truck = QLineEdit()
@@ -336,8 +334,7 @@ class QtMaintenanceControlPanel(QWidget):
         fb_layout.addWidget(self._e_truck)
 
         # -- Trip filter --------------------------------------------------
-        trip_lbl = QLabel(t("maint.filter_trip"))
-        trip_lbl.setProperty("fontRole", "label")
+        trip_lbl = FieldLabel(None, t("maint.filter_trip"))
         fb_layout.addWidget(trip_lbl)
 
         self._e_trip = QLineEdit()
@@ -351,8 +348,7 @@ class QtMaintenanceControlPanel(QWidget):
 
         fb_layout.addStretch(1)
 
-        self._summary_lbl = QLabel()
-        self._summary_lbl.setProperty("fontRole", "muted")
+        self._summary_lbl = Label(None, "", role="muted")
         fb_layout.addWidget(self._summary_lbl)
 
         layout.addWidget(fb)
@@ -366,9 +362,9 @@ class QtMaintenanceControlPanel(QWidget):
     # ── Alert centre (scrollable) ────────────────────────────────────────────
 
     def _build_alert_centre(self, layout: QVBoxLayout) -> None:
-        container = QFrame()
-        container_layout = QVBoxLayout(container)
-        container_layout.setContentsMargins(S["5"], S["2"], S["5"], S["5"])
+        container = Card()
+        container_layout = container.layout()
+        container_layout.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
 
         self._alert_scroll = QScrollArea()
         self._alert_scroll.setWidgetResizable(True)
@@ -378,7 +374,7 @@ class QtMaintenanceControlPanel(QWidget):
         self._alert_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._alert_layout = QVBoxLayout(self._alert_content)
         self._alert_layout.setContentsMargins(0, 0, 0, 0)
-        self._alert_layout.setSpacing(S["4"])
+        self._alert_layout.setSpacing(SP["4"])
         self._alert_layout.setAlignment(Qt.AlignTop)
 
         self._alert_scroll.setWidget(self._alert_content)
@@ -451,33 +447,38 @@ class QtMaintenanceControlPanel(QWidget):
             summary = svc.get_summary()
             for key, card in self._kpi_widgets.items():
                 val = summary.get(key, t("common.na"))
+                val_lbl = self._kpi_value_labels.get(key)
+                if val_lbl is None:
+                    continue
                 if key == "avg_health":
                     color = (
-                        Theme.SUCCESS if val >= 80
-                        else Theme.WARNING if val >= 50
-                        else Theme.DANGER
+                        SUCCESS if val >= 80
+                        else WARNING if val >= 50
+                        else DANGER
                     )
-                    card.set_value(f"{val}/100")
-                    card.value_label.setStyleSheet(f"color: {color};")
+                    val_lbl.setText(f"{val}/100")
+                    val_lbl.setStyleSheet(f"color: {color};")
                 elif key == "overdue_schedules":
-                    color = Theme.DANGER if val > 0 else Theme.SUCCESS
-                    card.set_value(str(val))
-                    card.value_label.setStyleSheet(f"color: {color};")
+                    color = DANGER if val > 0 else SUCCESS
+                    val_lbl.setText(str(val))
+                    val_lbl.setStyleSheet(f"color: {color};")
                 elif key in ("cost_30d", "total_cost"):
-                    card.set_value(f"{float(val):,.0f}\u20AC")
-                    card.value_label.setStyleSheet(f"color: {Theme.INFO};")
+                    val_lbl.setText(f"{float(val):,.0f}\u20AC")
+                    val_lbl.setStyleSheet(f"color: {INFO};")
                 elif key == "trucks_needing_service":
-                    color = Theme.WARNING if int(val) > 0 else Theme.SUCCESS
-                    card.set_value(str(val))
-                    card.value_label.setStyleSheet(f"color: {color};")
+                    color = WARNING if int(val) > 0 else SUCCESS
+                    val_lbl.setText(str(val))
+                    val_lbl.setStyleSheet(f"color: {color};")
                 else:
-                    card.set_value(str(val))
-                    card.value_label.setStyleSheet("")
+                    val_lbl.setText(str(val))
+                    val_lbl.setStyleSheet("")
         except Exception as e:
             logger.debug("Maintenance KPIs unavailable: %s", e)
-            for card in self._kpi_widgets.values():
-                card.set_value(t("common.na"))
-                card.value_label.setStyleSheet("")
+            for key in self._kpi_widgets:
+                val_lbl = self._kpi_value_labels.get(key)
+                if val_lbl:
+                    val_lbl.setText(t("common.na"))
+                    val_lbl.setStyleSheet("")
 
     # ── Tachograph status ────────────────────────────────────────────────────
 
@@ -515,8 +516,8 @@ class QtMaintenanceControlPanel(QWidget):
         header_row.setProperty("role", "input")
         header_row.setFixedHeight(24)
         hdr_layout = QHBoxLayout(header_row)
-        hdr_layout.setContentsMargins(S["2"], 0, S["2"], 0)
-        hdr_layout.setSpacing(S["3"])
+        hdr_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
+        hdr_layout.setSpacing(SP["3"])
 
         for col_key, width in [
             ("fleet.table_plate", 120),
@@ -539,11 +540,11 @@ class QtMaintenanceControlPanel(QWidget):
 
     def _build_tacho_row(self, truck: dict, latest: Optional[dict]) -> None:
         row = QFrame()
-        row.setProperty("role", "card")
+        row.setObjectName("card")
         row.setFixedHeight(28)
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(S["2"], 0, S["2"], 0)
-        row_layout.setSpacing(S["3"])
+        row_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
+        row_layout.setSpacing(SP["3"])
 
         plate = truck.get("plate_number", "\u2014")
         plate_lbl = QLabel(plate)
@@ -553,13 +554,11 @@ class QtMaintenanceControlPanel(QWidget):
         if not latest or not latest.get("calibration_expiry"):
             for _ in range(3):
                 dash = QLabel("\u2014")
-                dash.setProperty("fontRole", "muted")
+                dash.setStyleSheet(f"color: {TEXT_MUTED};")
                 dash.setFixedWidth(120)
                 row_layout.addWidget(dash)
-            chip = QLabel(t("tacho.status_no_data"))
-            chip.setProperty("fontRole", "label")
+            chip = StatusChip(row, "no_data", t("tacho.status_no_data"))
             chip.setFixedWidth(80)
-            chip.setAlignment(Qt.AlignCenter)
             row_layout.addWidget(chip)
             row_layout.addStretch(1)
             self._tacho_layout.addWidget(row)
@@ -611,29 +610,21 @@ class QtMaintenanceControlPanel(QWidget):
 
         if days_left is None:
             chip_text = t("tacho.status_no_data")
-            chip_color = COLORS["border"]
+            chip = StatusChip(row, "no_data", chip_text)
         elif days_left < 0:
             chip_text = t("tacho.status_expired")
-            chip_color = COLORS["danger"]
+            chip = StatusChip(row, "cancelled", chip_text)
         elif days_left <= 7:
             chip_text = f"{days_left}d"
-            chip_color = COLORS["danger"]
+            chip = StatusChip(row, "cancelled", chip_text)
         elif days_left <= 30:
             chip_text = f"{days_left}d"
-            chip_color = COLORS["warning"]
+            chip = StatusChip(row, "loading", chip_text)
         else:
             chip_text = t("tacho.status_valid")
-            chip_color = COLORS["success"]
+            chip = StatusChip(row, "delivered", chip_text)
 
-        chip = QLabel(chip_text)
-        chip.setProperty("fontRole", "label")
         chip.setFixedWidth(80)
-        chip.setAlignment(Qt.AlignCenter)
-        chip.setStyleSheet(
-            f"background-color: {chip_color};"
-            f"color: {COLORS['text_primary']};"
-            f"border-radius: 4px; padding: 2px 6px;"
-        )
         row_layout.addWidget(chip)
         row_layout.addStretch(1)
 
@@ -772,34 +763,27 @@ class QtMaintenanceControlPanel(QWidget):
         label = t(SEVERITY_LABELS[severity])
         count = len(alerts)
 
-        section = QFrame()
-        section_layout = QVBoxLayout(section)
-        section_layout.setContentsMargins(0, 0, 0, 0)
-        section_layout.setSpacing(S["2"])
+        section = Card()
+        section_layout = section.layout()
+        section_layout.setSpacing(SP["2"])
 
         # ── Section header ───────────────────────────────────────────────
         header = QFrame()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(S["2"])
+        header_layout.setSpacing(SP["2"])
 
         strip = QFrame()
-        strip.setFixedWidth(4)
+        strip.setFixedWidth(3)
         strip.setFixedHeight(20)
         strip.setStyleSheet(f"background-color: {colour}; border-radius: 2px;")
         header_layout.addWidget(strip)
 
-        title_lbl = QLabel(f"{icon}  {label} ({count})")
-        title_lbl.setProperty("fontRole", "h3")
+        title_lbl = Label(None, f"{icon}  {label} ({count})", role="section-title")
         title_lbl.setStyleSheet(f"color: {colour};")
         header_layout.addWidget(title_lbl)
 
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setStyleSheet(
-            f"background-color: {COLORS['border']}; max-height: 1px;"
-        )
-        sep.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        sep = Divider(None)
         header_layout.addWidget(sep)
 
         section_layout.addWidget(header)
@@ -811,39 +795,39 @@ class QtMaintenanceControlPanel(QWidget):
         self._alert_layout.addWidget(section)
 
     def _build_alert_card(self, parent: QFrame, alert: Alert) -> None:
-        sev_colour = SEVERITY_COLORS.get(alert.severity, COLORS["text_muted"])
+        sev_colour = SEVERITY_COLORS.get(alert.severity, TEXT_MUTED)
         icon = ALERT_ICONS.get(alert.type, "\u2753")
 
         card = QFrame()
-        card.setProperty("role", "card")
+        card.setObjectName("card")
         card_layout = QHBoxLayout(card)
         card_layout.setContentsMargins(0, 0, 0, 0)
         card_layout.setSpacing(0)
 
-        # ── Colour strip ────────────────────────────────────────────────
+        # ── Left accent border (3px) ────────────────────────────────────
         strip = QFrame()
-        strip.setFixedWidth(4)
-        strip.setStyleSheet(f"background-color: {sev_colour}; border-radius: 2px;")
+        strip.setFixedWidth(3)
+        strip.setStyleSheet(f"background-color: {sev_colour}; border: none;")
         strip.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
         card_layout.addWidget(strip)
 
         # ── Inner content ───────────────────────────────────────────────
         inner = QFrame()
         inner_layout = QVBoxLayout(inner)
-        inner_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        inner_layout.setSpacing(S["1"])
+        inner_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        inner_layout.setSpacing(SP["1"])
 
         # Row 1: icon + title + timestamp
         row1 = QFrame()
         row1_layout = QHBoxLayout(row1)
         row1_layout.setContentsMargins(0, 0, 0, 0)
-        row1_layout.setSpacing(S["2"])
+        row1_layout.setSpacing(SP["2"])
 
         icon_lbl = QLabel(icon)
         row1_layout.addWidget(icon_lbl)
 
         title_lbl = QLabel(alert.title)
-        title_lbl.setProperty("fontRole", "small")
+        title_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
         title_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row1_layout.addWidget(title_lbl)
 
@@ -851,14 +835,14 @@ class QtMaintenanceControlPanel(QWidget):
         if ts and len(ts) > 16:
             ts = ts[:16].replace("T", " ")
         ts_lbl = QLabel(ts or "")
-        ts_lbl.setProperty("fontRole", "muted")
+        ts_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
         row1_layout.addWidget(ts_lbl)
 
         inner_layout.addWidget(row1)
 
         # Row 2: message
         msg_lbl = QLabel(alert.message)
-        msg_lbl.setProperty("fontRole", "muted")
+        msg_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
         msg_lbl.setWordWrap(True)
         inner_layout.addWidget(msg_lbl)
 
@@ -870,48 +854,45 @@ class QtMaintenanceControlPanel(QWidget):
             refs.append(iconed("maint.label_trip", trip_id=alert.trip_id))
         if refs:
             ref_lbl = QLabel("  \u2022  ".join(refs))
-            ref_lbl.setProperty("fontRole", "small")
-            ref_lbl.setStyleSheet(f"color: {COLORS['info']};")
+            ref_lbl.setStyleSheet(f"color: {INFO_TEXT}; font-size: 11px;")
             inner_layout.addWidget(ref_lbl)
 
         # Row 4: action buttons
         actions = QFrame()
         actions_layout = QHBoxLayout(actions)
         actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(S["2"])
+        actions_layout.setSpacing(SP["2"])
 
-        self._action_btn(
-            actions,
-            iconed("maint.action_resolve"),
-            "success",
-            lambda aid=alert.id: self._resolve_alert(aid),
+        # Resolve → variant="primary" size="sm"
+        actions_layout.addWidget(
+            Btn(actions, iconed("maint.action_resolve"),
+                variant="primary", size="sm",
+                command=lambda aid=alert.id: self._resolve_alert(aid))
         )
-        if alert.truck_id:
-            self._action_btn(
-                actions,
-                iconed("maint.action_truck"),
-                "primary",
-                lambda tid=alert.truck_id: self._open_truck(tid),
-            )
         if alert.trip_id:
-            self._action_btn(
-                actions,
-                iconed("maint.action_trip"),
-                "primary",
-                lambda tip=alert.trip_id: self._open_trip(tip),
+            # View Trip → variant="secondary" size="sm"
+            actions_layout.addWidget(
+                Btn(actions, iconed("maint.action_trip"),
+                    variant="secondary", size="sm",
+                    command=lambda tip=alert.trip_id: self._open_trip(tip))
+            )
+        if alert.truck_id:
+            actions_layout.addWidget(
+                Btn(actions, iconed("maint.action_truck"),
+                    variant="secondary", size="sm",
+                    command=lambda tid=alert.truck_id: self._open_truck(tid))
             )
         if alert.truck_id and alert.severity in (Severity.CRITICAL, Severity.WARNING):
-            self._action_btn(
-                actions,
-                iconed("maint.action_maint"),
-                "danger",
-                lambda tid=alert.truck_id: self._schedule_maint(tid),
+            actions_layout.addWidget(
+                Btn(actions, iconed("maint.action_maint"),
+                    variant="danger", size="sm",
+                    command=lambda tid=alert.truck_id: self._schedule_maint(tid))
             )
-        self._action_btn(
-            actions,
-            iconed("maint.action_remind"),
-            "ghost",
-            lambda a=alert: self._generate_reminder(a),
+        # Remind → variant="ghost" size="sm"
+        actions_layout.addWidget(
+            Btn(actions, iconed("maint.action_remind"),
+                variant="ghost", size="sm",
+                command=lambda a=alert: self._generate_reminder(a))
         )
 
         actions_layout.addStretch(1)
@@ -921,22 +902,6 @@ class QtMaintenanceControlPanel(QWidget):
 
         # Add card to the parent (section) layout
         parent.layout().addWidget(card)
-
-    def _action_btn(
-        self,
-        parent: QFrame,
-        text: str,
-        variant: str,
-        command,
-    ) -> None:
-        """Add a small action button to the given parent layout."""
-        btn = ActionButton(
-            parent,
-            text=text,
-            command=command,
-            variant=variant,
-        )
-        parent.layout().addWidget(btn)
 
     # ── Alert actions ────────────────────────────────────────────────────────
 
@@ -960,7 +925,7 @@ class QtMaintenanceControlPanel(QWidget):
 
     def _flash_msg(self, msg: str) -> None:
         self._alert_count_lbl.setText(msg)
-        self._alert_count_lbl.setStyleSheet(f"color: {Theme.WARNING};")
+        self._alert_count_lbl.setStyleSheet(f"color: {WARNING};")
         total = len(self._filtered_alerts)
         alert_word = iconed("maint.alert_s") if total == 1 else iconed("maint.alert_plural")
         QTimer.singleShot(2500, lambda: self._restore_alert_count(total, alert_word))

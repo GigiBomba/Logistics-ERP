@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QLabel,
     QVBoxLayout,
     QHBoxLayout,
+    QScrollArea,
     QMessageBox,
 )
 
@@ -33,17 +34,18 @@ from ui.widgets import (
     StyledLineEdit,
     StyledComboBox,
     StyledCheckBox,
-    ActionButton,
-    SectionHeader,
-    ScrollableFormContainer,
     field,
 )
 from ui.widgets.toast import Toast
+from ui.design_tokens import SP, SUCCESS, DANGER
+from ui.components import (
+    Card, CardHeader, Btn, PageTitle, Label, MonoLabel, Divider,
+)
 
 logger = logging.getLogger(__name__)
 
 
-class QtCalculatorView(ScrollableFormContainer):
+class QtCalculatorView(QWidget):
     """Profit calculator with full save/conflict-check flow."""
 
     def __init__(
@@ -58,7 +60,7 @@ class QtCalculatorView(ScrollableFormContainer):
         fuel_service=None,
         api=None,
     ):
-        super().__init__(parent, max_width=800)
+        super().__init__(parent)
         self.db = db
         self.fleet_service = fleet_service
         self.trip_service = trip_service
@@ -91,38 +93,86 @@ class QtCalculatorView(ScrollableFormContainer):
     # ── UI build ───────────────────────────────────────────────────────────────
 
     def _build_ui(self):
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(SP["10"], 0, SP["10"], SP["10"])
+        outer.setSpacing(SP["6"])
+
+        # Header — 72px with 40px horizontal margins
+        hdr = QWidget()
+        hdr_layout = QVBoxLayout(hdr)
+        hdr_layout.setContentsMargins(0, SP["2"], 0, 0)
+        hdr_layout.setSpacing(SP["1"])
+        hdr.setFixedHeight(72)
+        hdr_layout.addWidget(PageTitle(hdr, t("app.title", default="Profit Calculator")))
+        hdr_layout.addWidget(Label(hdr, t("main.placeholder_info", default="Calculate trip profitability"), role="secondary"))
+        outer.addWidget(hdr)
+
+        # Horizontal split: left (55%) form cards, right (45%) results
+        split = QHBoxLayout()
+        split.setSpacing(SP["6"])
+
+        # ── Left panel: scrollable form in cards ──
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setFrameShape(QFrame.NoFrame)
+        left_content = QWidget()
+        left_content.setMaximumWidth(740)
+        self.left_layout = QVBoxLayout(left_content)
+        self.left_layout.setSpacing(SP["6"])
+        self.left_layout.setAlignment(Qt.AlignTop)
+
         self._build_identification_section()
         self._build_finance_section()
         self._build_costs_section()
         self._build_planning_section()
         self._build_actions_section()
+
+        left_scroll.setWidget(left_content)
+        split.addWidget(left_scroll, 55)
+
+        # ── Right panel: results ──
+        self.results_card = Card(self)
+        self.results_card.setMaximumWidth(500)
         self._build_result_section()
+        split.addWidget(self.results_card, 45)
+
+        outer.addLayout(split)
+
+        # Return key triggers calculation on most inputs
+        for widget in (self.e_price, self.e_sal, self.e_extra, self.e_days, self.e_term):
+            widget.returnPressed.connect(self._handle_calculate)
 
     def _build_identification_section(self):
-        self.add_widget(SectionHeader(self.content, t("main.section_identify")))
+        card = Card(self.left_content)
+        cl = card.layout()
+        CardHeader(cl, t("main.section_identify"))
 
         # Truck dropdown
-        self.truck_combo = StyledComboBox(self.content)
+        self.truck_combo = StyledComboBox(card)
         self.truck_combo.currentIndexChanged.connect(self._on_truck_selected)
-        self.add_widget(field(self.content, t("main.truck_label"), self.truck_combo))
+        cl.addWidget(field(card, t("main.truck_label"), self.truck_combo))
 
         # Route badge (distance loaded from route planner)
         self.route_badge = QLabel("")
         self.route_badge.setProperty("fontRole", "muted")
-        self.add_widget(self.route_badge)
+        cl.addWidget(self.route_badge)
 
         # Client
-        self.e_client = StyledComboBox(self.content, values=[], state="readonly")
-        self.add_widget(field(self.content, t("main.client_label"), self.e_client))
+        self.e_client = StyledComboBox(card, values=[], state="readonly")
+        cl.addWidget(field(card, t("main.client_label"), self.e_client))
+
+        self.left_layout.addWidget(card)
 
     def _build_finance_section(self):
-        self.add_widget(SectionHeader(self.content, t("main.section_finance")))
+        card = Card(self.left_content)
+        cl = card.layout()
+        CardHeader(cl, t("main.section_finance"))
 
-        self.e_price = StyledLineEdit(self.content, placeholder=t("main.offer_price"))
-        self.add_widget(field(self.content, t("main.offer_price"), self.e_price))
+        self.e_price = StyledLineEdit(card, placeholder=t("main.offer_price"))
+        cl.addWidget(field(card, t("main.offer_price"), self.e_price))
 
         # VAT row
-        vat_row = QWidget(self.content)
+        vat_row = QWidget(card)
         vat_layout = QHBoxLayout(vat_row)
         vat_layout.setContentsMargins(0, 0, 0, 0)
         vat_layout.setSpacing(8)
@@ -136,10 +186,10 @@ class QtCalculatorView(ScrollableFormContainer):
         self._vat_percent.setEnabled(False)
         vat_layout.addWidget(self._vat_percent)
         vat_layout.addStretch(1)
-        self.add_widget(vat_row)
+        cl.addWidget(vat_row)
 
         # Pre/post VAT fields
-        self._vat_fields_frame = QFrame(self.content)
+        self._vat_fields_frame = QFrame(card)
         vat_ff_layout = QVBoxLayout(self._vat_fields_frame)
         vat_ff_layout.setContentsMargins(0, 0, 0, 0)
         vat_ff_layout.setSpacing(8)
@@ -151,64 +201,73 @@ class QtCalculatorView(ScrollableFormContainer):
         self._e_price_post.setReadOnly(True)
         vat_ff_layout.addWidget(field(self._vat_fields_frame, t("main.offer_price_post_vat"), self._e_price_post))
 
-        self.add_widget(self._vat_fields_frame)
+        cl.addWidget(self._vat_fields_frame)
         self._vat_fields_frame.hide()
 
+        self.left_layout.addWidget(card)
+
     def _build_costs_section(self):
-        self.add_widget(SectionHeader(self.content, t("main.section_costs")))
+        card = Card(self.left_content)
+        cl = card.layout()
+        CardHeader(cl, t("main.section_costs"))
 
-        self.e_sal = StyledLineEdit(self.content, text="0", placeholder=t("main.salary_label"))
-        self.add_widget(field(self.content, t("main.salary_label"), self.e_sal))
+        self.e_sal = StyledLineEdit(card, text="0", placeholder=t("main.salary_label"))
+        cl.addWidget(field(card, t("main.salary_label"), self.e_sal))
 
-        self.e_extra = StyledLineEdit(self.content, text="0", placeholder=t("main.extra_costs_label"))
-        self.add_widget(field(self.content, t("main.extra_costs_label"), self.e_extra))
+        self.e_extra = StyledLineEdit(card, text="0", placeholder=t("main.extra_costs_label"))
+        cl.addWidget(field(card, t("main.extra_costs_label"), self.e_extra))
+
+        self.left_layout.addWidget(card)
 
     def _build_planning_section(self):
-        self.add_widget(SectionHeader(self.content, t("main.section_planning")))
+        card = Card(self.left_content)
+        cl = card.layout()
+        CardHeader(cl, t("main.section_planning"))
 
         self.e_start = StyledLineEdit(
-            self.content,
+            card,
             text=datetime.now().strftime("%d/%m/%Y"),
             placeholder=t("main.start_date_label"),
         )
-        self.add_widget(field(self.content, t("main.start_date_label"), self.e_start))
+        cl.addWidget(field(card, t("main.start_date_label"), self.e_start))
 
-        self.e_days = StyledLineEdit(self.content, text="1", placeholder=t("main.duration_label"))
-        self.add_widget(field(self.content, t("main.duration_label"), self.e_days))
+        self.e_days = StyledLineEdit(card, text="1", placeholder=t("main.duration_label"))
+        cl.addWidget(field(card, t("main.duration_label"), self.e_days))
 
-        self.e_term = StyledLineEdit(self.content, text="30", placeholder=t("main.payment_term_label"))
-        self.add_widget(field(self.content, t("main.payment_term_label"), self.e_term))
+        self.e_term = StyledLineEdit(card, text="30", placeholder=t("main.payment_term_label"))
+        cl.addWidget(field(card, t("main.payment_term_label"), self.e_term))
+
+        self.left_layout.addWidget(card)
 
     def _build_actions_section(self):
-        self.calculate_btn = ActionButton(
-            self.content,
+        self.calculate_btn = Btn(
+            self.left_content,
             t("main.calculate_button"),
+            variant="primary",
             command=self._handle_calculate,
-            color=self._color("success"),
         )
-        self.add_widget(self.calculate_btn)
+        self.left_layout.addWidget(self.calculate_btn)
 
     def _build_result_section(self):
-        self.result_frame = QFrame(self.content)
-        self.result_frame.setProperty("role", "card")
-        result_layout = QVBoxLayout(self.result_frame)
-        result_layout.setContentsMargins(16, 16, 16, 16)
+        cl = self.results_card.layout()
 
-        self.l_res = QLabel(t("main.placeholder_info"))
-        self.l_res.setProperty("fontRole", "muted")
-        self.l_res.setAlignment(Qt.AlignCenter)
-        self.l_res.setWordWrap(True)
-        result_layout.addWidget(self.l_res)
+        self._profit_label = MonoLabel(self.results_card, t("main.placeholder_info"), size="xl")
+        self._profit_label.setAlignment(Qt.AlignCenter)
+        self._profit_label.setWordWrap(True)
+        cl.addWidget(self._profit_label)
 
-        self.add_widget(self.result_frame)
+        self._breakdown_container = QWidget(self.results_card)
+        self._breakdown_layout = QVBoxLayout(self._breakdown_container)
+        self._breakdown_layout.setContentsMargins(0, 0, 0, 0)
+        self._breakdown_layout.setSpacing(SP["2"])
+        cl.addWidget(self._breakdown_container)
 
-        self._fuel_status_lbl = QLabel("")
-        self._fuel_status_lbl.setProperty("fontRole", "muted")
-        self.add_widget(self._fuel_status_lbl)
+        cl.addWidget(Divider(self.results_card))
 
-        # Return key triggers calculation on most inputs
-        for widget in (self.e_price, self.e_sal, self.e_extra, self.e_days, self.e_term):
-            widget.returnPressed.connect(self._handle_calculate)
+        self._fuel_status_lbl = Label(self.results_card, "", role="muted")
+        cl.addWidget(self._fuel_status_lbl)
+
+        cl.addStretch()
 
     # ── Truck loading / selection ──────────────────────────────────────────────
 
@@ -419,27 +478,41 @@ class QtCalculatorView(ScrollableFormContainer):
             )
 
     def _display_result(self, res, dt_inc: datetime):
-        if res.net_profit > 400:
-            color_name = "text_success"
-        elif res.net_profit > 0:
-            color_name = "text_primary"
-        else:
-            color_name = "text_danger"
-        color = self._color(color_name)
-        summary = (
-            f"💰 {t('main.net_profit').format(res.net_profit)}\n"
-            f"📈 {t('main.gross_rate').format(res.gross_per_km, res.rate_per_km)}\n"
-            f"📊 {t('main.margin').format(res.margin_percent, dt_inc.strftime('%d/%m/%Y'))}\n"
-            f"{t('main.separator')}\n"
-            f"⛽ {t('main.cost_breakdown').format(res.fuel_cost, res.toll_cost, res.salary_cost)}"
-        )
-        self.l_res.setText(summary)
-        self.l_res.setProperty("fontRole", "")
-        self.l_res.setStyleSheet(f"color: {color};")
+        # Update profit number with SUCCESS/DANGER color
+        color = SUCCESS if res.net_profit >= 0 else DANGER
+        self._profit_label.setText(f"{res.net_profit:,.2f} €")
+        self._profit_label.setStyleSheet(f"color: {color};")
 
-    def _color(self, name: str) -> str:
-        from ui.theme import COLORS
-        return COLORS.get(name, "#ffffff")
+        # Clear and rebuild breakdown rows
+        while self._breakdown_layout.count():
+            item = self._breakdown_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+
+        rows = [
+            (t("main.gross_rate"), f"{res.gross_per_km:.2f} / {res.rate_per_km:.2f} €/km"),
+            (t("main.margin"), f"{res.margin_percent:.1f}%  |  {dt_inc.strftime('%d/%m/%Y')}"),
+        ]
+        for label_text, value in rows:
+            row = QWidget(self._breakdown_container)
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.setSpacing(SP["2"])
+            lb = Label(row, label_text, role="secondary")
+            vl = Label(row, value)
+            row_layout.addWidget(lb)
+            row_layout.addStretch()
+            row_layout.addWidget(vl)
+            self._breakdown_layout.addWidget(row)
+
+        # Cost breakdown
+        cost_label = QLabel(
+            f"⛽ {res.fuel_cost:.2f} € Fuel  |  {res.toll_cost:.2f} € Toll  |  {res.salary_cost:.2f} € Salary"
+        )
+        cost_label.setProperty("role", "muted")
+        cost_label.setWordWrap(True)
+        self._breakdown_layout.addWidget(cost_label)
 
     # ── TripContext sync ───────────────────────────────────────────────────────
 

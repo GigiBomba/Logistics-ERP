@@ -257,7 +257,8 @@
     "search_placeholder": "Search trips...",
     "button_export_pdf": "Export PDF",
     "button_export_excel": "Export Excel",
-    "button_email_invoice": "Email Invoice"
+    "button_email_invoice": "Email Invoice",
+    "subtitle": "Operations management and invoicing"
   },
   "analytics": {
     "title": "Business Intelligence Analytics",
@@ -285,7 +286,8 @@
     "expenses_label": "Expenses",
     "profit_label": "Profit",
     "error": "Chart Error",
-    "invalid_date_order": "Invalid date range"
+    "invalid_date_order": "Invalid date range",
+    "subtitle": "Fleet performance analytics and KPIs"
   },
   "invoice": {
     "section_company": "Your Company Data (Sender)",
@@ -423,7 +425,10 @@
     "profile_safest": "Safest",
     "profile_shortest": "Shortest",
     "click_to_add_stop": "Click map to add stop",
-    "loaded_route": "Route loaded"
+    "loaded_route": "Route loaded",
+    "options_header": "Route Options",
+    "page_subtitle": "Plan multi-stop routes with cost estimation",
+    "page_title": "Route Planner"
   },
   "route_history": {
     "title": "Route History",
@@ -493,7 +498,9 @@
     "recalculated": "Recalculated",
     "recalculated_msg": "Routes recalculated successfully.",
     "search_placeholder": "Search routes...",
-    "truck_placeholder": "Select truck..."
+    "truck_placeholder": "Select truck...",
+    "page_subtitle": "Review and manage saved routes",
+    "page_title": "Route History"
   },
   "result": {
     "distance": "Distance: {:.2f} km",
@@ -1015,7 +1022,8 @@
     "col_next_mileage": "Next Mileage",
     "health_downtime": "Downtime",
     "health_no_data": "No health data available",
-    "health_ok": "All systems nominal"
+    "health_ok": "All systems nominal",
+    "control_panel_subtitle": "Maintenance schedules and health monitoring"
   },
   "tacho": {
     "avg_daily": "Avg Daily",
@@ -1099,7 +1107,8 @@
     "month_sep": "Sep",
     "month_oct": "Oct",
     "month_nov": "Nov",
-    "month_dec": "Dec"
+    "month_dec": "Dec",
+    "subtitle": "Fleet maintenance costs and trends"
   },
   "maint_timeline": {
     "detail_title": "Maintenance Details",
@@ -1381,7 +1390,8 @@
     "notes_section": "Notes",
     "invoice_details": "Invoice Details",
     "invoice_metadata": "Invoice Metadata",
-    "client_info": "Client Info"
+    "client_info": "Client Info",
+    "subtitle": "Create and edit professional invoices"
   },
   "cmr": {
     "place_of_loading": "Place of Loading",

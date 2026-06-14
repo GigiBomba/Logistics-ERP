@@ -328,7 +328,8 @@
     "search_placeholder": "Search trips...",
     "button_export_pdf": "Export PDF",
     "button_export_excel": "Export Excel",
-    "button_email_invoice": "Email Invoice"
+    "button_email_invoice": "Email Invoice",
+    "subtitle": "Management operațiuni și facturare"
   },
   "analytics": {
     "title": "Analiza Business Intelligence",
@@ -356,7 +357,8 @@
     "expenses_label": "Expenses",
     "profit_label": "Profit",
     "error": "Chart Error",
-    "invalid_date_order": "Invalid date range"
+    "invalid_date_order": "Invalid date range",
+    "subtitle": "Analiza performanței flotei și KPI-uri"
   },
   "invoice": {
     "section_company": "Datele Firmei Tale (Furnizor)",
@@ -494,7 +496,10 @@
     "profile_safest": "Cel mai Sigur",
     "profile_shortest": "Cel mai Scurt",
     "click_to_add_stop": "Click map to add stop",
-    "loaded_route": "Route loaded"
+    "loaded_route": "Route loaded",
+    "options_header": "Opțiuni Rută",
+    "page_subtitle": "Planificați rute multi-stop cu estimare costuri",
+    "page_title": "Planificator Rute"
   },
   "route_history": {
     "title": "Istoric Rute",
@@ -564,7 +569,9 @@
     "recalculated": "Recalculated",
     "recalculated_msg": "Routes recalculated successfully.",
     "search_placeholder": "Search routes...",
-    "truck_placeholder": "Select truck..."
+    "truck_placeholder": "Select truck...",
+    "page_subtitle": "Revizuiți și gestionați rutele salvate",
+    "page_title": "Istoric Rute"
   },
   "result": {
     "distance": "Distanță: {:.2f} km",
@@ -1091,7 +1098,8 @@
     "col_next_mileage": "Next Mileage",
     "health_downtime": "Downtime",
     "health_no_data": "No health data available",
-    "health_ok": "All systems nominal"
+    "health_ok": "All systems nominal",
+    "control_panel_subtitle": "Planificare mentenanță și monitorizare stare"
   },
   "tacho": {
     "avg_daily": "Medie Zilnica",
@@ -1175,7 +1183,8 @@
     "month_sep": "Sep",
     "month_oct": "Oct",
     "month_nov": "Noi",
-    "month_dec": "Dec"
+    "month_dec": "Dec",
+    "subtitle": "Costuri mentenanță flotă și tendințe"
   },
   "maint_timeline": {
     "detail_title": "Detalii Intrare",
@@ -1465,7 +1474,8 @@
     "notes_section": "Notes",
     "invoice_details": "Invoice Details",
     "invoice_metadata": "Invoice Metadata",
-    "client_info": "Client Info"
+    "client_info": "Client Info",
+    "subtitle": "Creare și editare facturi profesionale"
   },
   "cmr": {
     "place_of_loading": "Place of Loading",
