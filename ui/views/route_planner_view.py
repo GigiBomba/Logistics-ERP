@@ -119,14 +119,16 @@ class QtRoutePlannerView(QWidget):
         hdr_layout.addWidget(Label(hdr, t("route.page_subtitle", default="Plan and optimise routes"), role="secondary"))
         outer.addWidget(hdr)
 
-        content = QHBoxLayout()
+        self._content_widget = QWidget()
+        content = QHBoxLayout(self._content_widget)
         content.setContentsMargins(0, 0, 0, 0)
         content.setSpacing(0)
 
         # Sidebar
-        sidebar = QFrame(self)
+        sidebar = QFrame(self._content_widget)
         sidebar.setObjectName("card")
         sidebar.setFixedWidth(self.SIDEBAR_MIN_WIDTH)
+        sidebar.setMinimumWidth(self.SIDEBAR_MIN_WIDTH)
         sidebar_layout = QVBoxLayout(sidebar)
         sidebar_layout.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
         sidebar_layout.setSpacing(SP["3"])
@@ -135,13 +137,14 @@ class QtRoutePlannerView(QWidget):
         content.addWidget(sidebar)
 
         # Map
-        self.map_widget = MapWidget(self)
+        self.map_widget = MapWidget(self._content_widget)
         self._map_renderer = QtRouteMapRenderer(self.map_widget)
         self.map_widget.set_click_callback(self._on_map_click)
+        self.map_widget.setMinimumWidth(1)
         self._click_to_add_enabled = False
         content.addWidget(self.map_widget, 1)
 
-        outer.addLayout(content)
+        outer.addWidget(self._content_widget, 1)
 
     def _build_sidebar(self, layout: QVBoxLayout) -> None:
         # Body — scrollable section between header and footer
@@ -683,13 +686,13 @@ class QtRoutePlannerView(QWidget):
             self.map_widget.isWidgetType()
         except RuntimeError:
             from ui.map.map_widget import MapWidget
-            self.map_widget = MapWidget(self)
+            self.map_widget = MapWidget(self._content_widget)
             self._map_renderer = QtRouteMapRenderer(self.map_widget)
             self.map_widget.set_click_callback(self._on_map_click)
-            # Re-add to layout — find the parent's layout and add the map widget
-            parent_layout = self.layout()
-            if parent_layout:
-                parent_layout.addWidget(self.map_widget, 1)
+            self.map_widget.setMinimumWidth(1)
+            content_layout = self._content_widget.layout()
+            if content_layout:
+                content_layout.addWidget(self.map_widget, 1)
 
     def shutdown(self) -> None:
         try:

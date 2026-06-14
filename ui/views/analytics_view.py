@@ -30,11 +30,13 @@ from ui.components import Card, Btn, Label, PageTitle, Divider
 from ui.design_tokens import (
     BG_SURFACE, BORDER_DEFAULT, TEXT_MUTED, TEXT_SECONDARY, ACCENT, SP,
 )
+from ui.charts import (
+    apply_dark_style, apply_global_empty, apply_empty_state,
+    make_bar_chart, make_line_chart, make_pie_chart,
+    CHART_ACCENT, CHART_SECONDARY,
+)
 
 logger = logging.getLogger(__name__)
-
-CHART_PRIMARY = ACCENT
-CHART_SECONDARY = "#818cf8"
 
 
 class QtAnalyticsView(QScrollArea):
@@ -235,120 +237,70 @@ class QtAnalyticsView(QScrollArea):
         trucks = data[4] if len(data) > 4 else []
         drivers = data[5] if len(data) > 5 else []
 
-        fig, axes = plt.subplots(2, 2, figsize=(12, 8), dpi=90)
+        fig, axes = plt.subplots(2, 2, figsize=(14, 9), dpi=90)
+        fig.subplots_adjust(hspace=0.45, wspace=0.35)
 
-        # ── Empty state guard ──
         if not data or len(data) == 0:
-            for ax in axes.flat:
-                ax.set_visible(False)
-                ax.set_axis_off()
-            fig.patch.set_facecolor(BG_SURFACE)
-            fig.text(0.5, 0.55, '\u2014',
-                     ha='center', va='center',
-                     fontsize=32, color=BORDER_DEFAULT,
-                     fontfamily='Segoe UI')
-            fig.text(0.5, 0.42, 'No data for this period',
-                     ha='center', va='center',
-                     fontsize=11, color=TEXT_MUTED,
-                     fontfamily='Segoe UI')
+            apply_global_empty(fig, t("common.no_data"))
             return
-
-        fig.patch.set_facecolor(BG_SURFACE)
 
         self._chart_texts = []
 
-        # ── Chart 1: Top Trucks (barh) ──
-        ax1 = axes[0, 0]
-        ax1.set_facecolor(BG_SURFACE)
+        # Chart 1: Top Trucks (bar)
+        names = []
+        profits = []
         if trucks:
-            top_trucks = sorted(trucks, key=lambda x: x[1] if len(x) > 1 else 0, reverse=True)[:8]
-            names = [t[0] for t in top_trucks]
-            profits = [abs(t[1] if len(t) > 1 else 0) for t in top_trucks]
-            colors = [ACCENT] * len(names)
-            if profits:
-                max_idx = profits.index(max(profits))
-                colors[max_idx] = CHART_SECONDARY
-            ax1.barh(names, profits, color=colors)
-        else:
-            ax1.text(0.5, 0.5, t("common.no_data"), ha="center", va="center",
-                     transform=ax1.transAxes, color=TEXT_MUTED)
+            top = sorted(trucks, key=lambda x: x[1] if len(x) > 1 else 0, reverse=True)[:8]
+            names = [t[0] for t in top]
+            profits = [t[1] if len(t) > 1 else 0 for t in top]
+        make_bar_chart(
+            fig, axes[0, 0], names, profits,
+            title=t("analytics.top_trucks_title"),
+            color=CHART_ACCENT, highlight_max=True,
+            empty_message=t("common.no_data"),
+        )
+        t1 = axes[0, 0].get_title()
+        self._chart_texts.append((axes[0, 0], "analytics.top_trucks_title"))
 
-        title1 = ax1.set_title(t("analytics.top_trucks_title"), color=TEXT_SECONDARY, fontsize=10)
-        self._chart_texts.append((title1, "analytics.top_trucks_title"))
-        ax1.tick_params(colors=TEXT_MUTED, labelsize=8)
-
-        for spine in ax1.spines.values():
-            spine.set_edgecolor(BORDER_DEFAULT)
-
-        # ── Chart 2: Revenue vs Expenses (line) ──
-        ax2 = axes[0, 1]
-        ax2.set_facecolor(BG_SURFACE)
+        # Chart 2: Revenue vs Expenses (line)
+        months = rev_exp[0] if len(rev_exp) > 0 else []
         revenue = rev_exp[1] if len(rev_exp) > 1 else []
         expenses = rev_exp[2] if len(rev_exp) > 2 else []
-        months = rev_exp[0] if len(rev_exp) > 0 else []
-
-        if months and revenue and expenses:
-            idx = list(range(len(months)))
-            ax2.plot(idx, revenue, color=ACCENT, label=t("analytics.revenue_label"), linewidth=2)
-            ax2.fill_between(idx, 0, revenue, alpha=0.1, color=ACCENT)
-            ax2.plot(idx, expenses, color=CHART_SECONDARY, label=t("analytics.expenses_label"), linewidth=2)
-            ax2.fill_between(idx, 0, expenses, alpha=0.1, color=CHART_SECONDARY)
-            ax2.set_xticks(idx)
-            ax2.set_xticklabels(months, rotation=45, ha="right", fontsize=7)
-            ax2.legend(loc="upper left", fontsize=7)
-        else:
-            ax2.text(0.5, 0.5, t("common.no_data"), ha="center", va="center",
-                     transform=ax2.transAxes, color=TEXT_MUTED)
-
-        title2 = ax2.set_title(
-            t("analytics.revenue_expenses_title"), color=TEXT_SECONDARY, fontsize=10,
+        make_line_chart(
+            fig, axes[0, 1], months,
+            [(revenue, t("analytics.revenue_label"), CHART_ACCENT),
+             (expenses, t("analytics.expenses_label"), CHART_SECONDARY)],
+            title=t("analytics.revenue_expenses_title"),
+            empty_message=t("common.no_data"),
         )
-        self._chart_texts.append((title2, "analytics.revenue_expenses_title"))
-        ax2.tick_params(colors=TEXT_MUTED, labelsize=8)
-        for spine in ax2.spines.values():
-            spine.set_edgecolor(BORDER_DEFAULT)
+        self._chart_texts.append((axes[0, 1], "analytics.revenue_expenses_title"))
 
-        # ── Chart 3: Profit per Driver (bar) ──
-        ax3 = axes[1, 0]
-        ax3.set_facecolor(BG_SURFACE)
+        # Chart 3: Profit per Driver (bar)
+        dnames = []
+        dprofits = []
         if drivers:
-            top_drivers = sorted(drivers, key=lambda x: x[1] if len(x) > 1 else 0, reverse=True)[:8]
-            dnames = [d[0] for d in top_drivers]
-            dprofits = [abs(d[1] if len(d) > 1 else 0) for d in top_drivers]
-            colors_d = [ACCENT] * len(dnames)
-            if dprofits:
-                colors_d[dprofits.index(max(dprofits))] = CHART_SECONDARY
-            ax3.bar(dnames, dprofits, color=colors_d)
-            ax3.tick_params(axis="x", rotation=45, labelsize=7)
-        else:
-            ax3.text(0.5, 0.5, t("common.no_data"), ha="center", va="center",
-                     transform=ax3.transAxes, color=TEXT_MUTED)
-
-        title3 = ax3.set_title(
-            t("analytics.driver_profit_title"), color=TEXT_SECONDARY, fontsize=10,
+            top_d = sorted(drivers, key=lambda x: x[1] if len(x) > 1 else 0, reverse=True)[:8]
+            dnames = [d[0] for d in top_d]
+            dprofits = [d[1] if len(d) > 1 else 0 for d in top_d]
+        make_bar_chart(
+            fig, axes[1, 0], dnames, dprofits,
+            title=t("analytics.driver_profit_title"),
+            color=CHART_ACCENT, horizontal=False, highlight_max=True,
+            empty_message=t("common.no_data"),
         )
-        self._chart_texts.append((title3, "analytics.driver_profit_title"))
-        ax3.tick_params(colors=TEXT_MUTED, labelsize=8)
-        for spine in ax3.spines.values():
-            spine.set_edgecolor(BORDER_DEFAULT)
+        self._chart_texts.append((axes[1, 0], "analytics.driver_profit_title"))
 
-        # ── Chart 4: Profit/Expenses Ratio (pie) ──
-        ax4 = axes[1, 1]
-        ax4.set_facecolor(BG_SURFACE)
+        # Chart 4: Profit/Expenses Ratio (pie)
         total_profit = sum(abs(t[1] if len(t) > 1 else 0) for t in trucks) if trucks else 0
         total_exp = sum(expenses) if expenses else 0
-        if total_profit > 0 or total_exp > 0:
-            sizes = [total_profit, total_exp]
-            labels_pie = [t("analytics.profit_label"), t("analytics.expenses_label")]
-            ax4.pie(sizes, labels=labels_pie, autopct="%1.0f%%",
-                    colors=[ACCENT, CHART_SECONDARY],
-                    textprops={"color": TEXT_SECONDARY, "fontsize": 8})
-        else:
-            ax4.text(0.5, 0.5, t("common.no_data"), ha="center", va="center",
-                     transform=ax4.transAxes, color=TEXT_MUTED)
-
-        title4 = ax4.set_title(t("analytics.profit_ratio_title"), color=TEXT_SECONDARY, fontsize=10)
-        self._chart_texts.append((title4, "analytics.profit_ratio_title"))
+        make_pie_chart(
+            fig, axes[1, 1],
+            [total_profit, total_exp],
+            [t("analytics.profit_label"), t("analytics.expenses_label")],
+            title=t("analytics.profit_ratio_title"),
+            empty_message=t("common.no_data"),
+        )
+        self._chart_texts.append((axes[1, 1], "analytics.profit_ratio_title"))
 
         fig.tight_layout(pad=2.0)
 
@@ -364,9 +316,10 @@ class QtAnalyticsView(QScrollArea):
         QTimer.singleShot(0, self._refresh_translations)
 
     def _refresh_translations(self) -> None:
-        for text_obj, key in self._chart_texts:
+        from ui.design_tokens import TEXT_SECONDARY
+        for ax, key in self._chart_texts:
             try:
-                text_obj.set_text(t(key))
+                ax.set_title(t(key), color=TEXT_SECONDARY, fontsize=10)
             except Exception:
                 pass
         self._load_data()

@@ -25,6 +25,8 @@ from typing import Any, Dict, List, Optional
 import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
 
+from ui.charts import apply_dark_style, apply_empty_state, make_trend_chart
+
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
     QWidget,
