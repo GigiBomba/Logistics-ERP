@@ -82,7 +82,7 @@ class TopBar(QFrame):
         alert_layout.setSpacing(4)
 
         self._bell = QLabel()
-        self._bell.setPixmap(qta.icon("fa5r.bell", color=TEXT_MUTED).pixmap(16, 16))
+        self._bell.setPixmap(qta.icon("fa5s.bell", color=TEXT_MUTED).pixmap(16, 16))
         self._bell.setCursor(Qt.PointingHandCursor)
         self._bell.setToolTip("Show alerts")
         self._bell.mousePressEvent = self._on_bell_clicked
@@ -134,7 +134,7 @@ class TopBar(QFrame):
             self._bell.setPixmap(qta.icon("fa5s.bell", color=DANGER).pixmap(16, 16))
         else:
             self._badge.hide()
-            self._bell.setPixmap(qta.icon("fa5r.bell", color=TEXT_MUTED).pixmap(16, 16))
+            self._bell.setPixmap(qta.icon("fa5s.bell", color=TEXT_MUTED).pixmap(16, 16))
 
     def set_alerts(self, alerts: list) -> None:
         """Store alerts data for display when the bell is clicked."""
