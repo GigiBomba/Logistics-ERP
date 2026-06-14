@@ -101,6 +101,23 @@ class AlertManager:
 
     # ── CRUD ───────────────────────────────────────────────────────
 
+    def _find_duplicate(self, alert_type: AlertType, truck_id: Optional[str],
+                        trip_id: Optional[str], message: str) -> Optional[Alert]:
+        """Find an existing active alert that would be a duplicate of a new one."""
+        for a in self._alerts.values():
+            if a.resolved:
+                continue
+            if a.type != alert_type:
+                continue
+            if a.truck_id != truck_id:
+                continue
+            if a.trip_id != trip_id:
+                continue
+            if a.message != message:
+                continue
+            return a
+        return None
+
     def create_alert(
         self,
         alert_type: AlertType,
@@ -111,6 +128,12 @@ class AlertManager:
         trip_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Alert:
+        # Deduplicate: resolve any existing active alert with same type + entity + message
+        dup = self._find_duplicate(alert_type, truck_id, trip_id, message)
+        if dup is not None:
+            logger.debug("Duplicate alert found, resolving old one: %s", dup.id)
+            self.resolve_alert(dup.id)
+
         alert = Alert(
             type=alert_type,
             severity=severity,
@@ -134,6 +157,8 @@ class AlertManager:
                 logger.debug("Evicted oldest alert (all active): %s", oldest.id)
         self._event_bus.publish(ALERT_CREATED, {"alert": alert.to_dict()})
         logger.info("Alert created: [%s] %s — %s", severity.value, alert_type.value, title)
+        # Play notification sound in a background thread
+        self._play_notification()
         return alert
 
     def resolve_alert(self, alert_id: str) -> Optional[Alert]:
@@ -205,6 +230,18 @@ class AlertManager:
             if new_message is not None:
                 alert.message = new_message
             logger.info("Alert %s severity updated to %s", alert_id, severity.value)
+
+    def _play_notification(self) -> None:
+        """Play a notification sound in a background thread."""
+        def _play():
+            try:
+                import winsound
+                winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
+            except ImportError:
+                pass  # Not on Windows
+            except Exception:
+                pass  # Sound system not available
+        threading.Thread(target=_play, daemon=True).start()
 
     def cleanup_old(self, days: int = 90) -> int:
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
