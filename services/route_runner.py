@@ -39,17 +39,9 @@ class RouteRunner:
             getattr(self.logger, level)(message, **kwargs)
 
     def _safe_invoke(self, cb: Optional[Callable[[Any], None]], data: Any):
-        """Invoke callback on UI/main thread when possible, otherwise call directly."""
+        """Invoke callback directly. Thread marshaling is handled by the UI layer."""
         if not cb:
             return
-        try:
-            import tkinter as tk
-            root = getattr(tk, '_default_root', None)
-            if root is not None:
-                root.after(0, lambda: cb(data))
-                return
-        except Exception:
-            pass
         try:
             cb(data)
         except Exception:

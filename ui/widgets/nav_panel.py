@@ -27,7 +27,7 @@ class NavPanel(ctk.CTkFrame):
         self._on_select = on_select
         self._prefs = prefs
         self._active_key = None
-        self._expanded = True
+        self._expanded = False
         self._groups = []
         self._items = {}      # key -> widget dict
         self._labels = {}     # key -> text label widget
@@ -37,7 +37,6 @@ class NavPanel(ctk.CTkFrame):
         self._tooltip = None
         self._tooltip_id = None
 
-        self._load_state()
         self._build()
         register_listener(self._on_language_changed)
 
@@ -403,7 +402,6 @@ class NavPanel(ctk.CTkFrame):
         if should_expand == self._expanded:
             return
         self._expanded = should_expand
-        self._save_state()
         self.configure(width=width)
 
         if self._expanded:
