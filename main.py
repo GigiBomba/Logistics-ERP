@@ -17,7 +17,7 @@ from PySide6.QtCore import Qt  # noqa: E402
 from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from config import Config  # noqa: E402
-from ui.theme_engine import QtTheme  # noqa: E402
+from ui.stylesheet import build_stylesheet  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
@@ -67,7 +67,7 @@ def run_app() -> int:
         app.setApplicationName(Config.APP_NAME)
         app.setApplicationDisplayName(Config.APP_NAME)
 
-        QtTheme.apply(app)
+        app.setStyleSheet(build_stylesheet())
 
         from ui.main_window import MainWindow  # noqa: E402
         window = MainWindow(db, api, prefs=prefs, ops=ops)

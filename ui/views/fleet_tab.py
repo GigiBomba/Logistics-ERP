@@ -29,7 +29,20 @@ from PySide6.QtWidgets import (
     QHeaderView,
 )
 
-from ui.theme import COLORS, S, CHART_PRIMARY, CHART_SECONDARY, CHART_INDIGO, apply_chart_style
+from ui.design_tokens import (
+    ACCENT, ACCENT_HOVER, ACCENT_DIM, ACCENT_TEXT,
+    BG_SURFACE, BG_ELEVATED, BG_OVERLAY,
+    BORDER_DEFAULT, BORDER_STRONG, BORDER_FAINT,
+    DANGER, DANGER_TEXT, WARNING, WARNING_TEXT,
+    SUCCESS, SUCCESS_TEXT, INFO, INFO_TEXT,
+    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_DISABLED,
+    FONT_SIZES, SP, RADIUS, STATUS,
+)
+from ui.components import (
+    Card, CardHeader, Btn, KPICard, StatusChip,
+    FieldLabel, SectionTitle, PageTitle, Label, Divider, MonoLabel,
+)
+from ui.theme import COLORS, CHART_PRIMARY, CHART_SECONDARY, CHART_INDIGO, apply_chart_style
 from ui.styles import Theme
 from services.i18n import t, register_listener, unregister_listener
 from services.operations.event_bus import EventBus, TRUCK_UPDATED
@@ -38,13 +51,10 @@ from services.driver_truck_service import DriverTruckService
 from services.export_service import ExportService
 from repositories.fleet_repository import FleetRepository
 from ui.widgets import (
-    ActionButton,
     StyledLineEdit,
     StyledComboBox,
     StyledTableWidget,
-    KpiCard,
     StyledCheckBox,
-    section_header,
     field,
 )
 
@@ -111,8 +121,8 @@ class _TruckFormDialog(QDialog):
 
         content = QWidget()
         self._form_layout = QVBoxLayout(content)
-        self._form_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        self._form_layout.setSpacing(S["3"])
+        self._form_layout.setContentsMargins(SP["5"], SP["4"], SP["5"], SP["4"])
+        self._form_layout.setSpacing(SP["3"])
         self._form_layout.setAlignment(Qt.AlignTop)
 
         truck = self._truck or {}
@@ -208,13 +218,13 @@ class _TruckFormDialog(QDialog):
 
         # -- Buttons --
         btn_row = QHBoxLayout()
-        btn_row.setSpacing(S["3"])
+        btn_row.setSpacing(SP["3"])
 
-        save_btn = ActionButton(
-            None, t("fleet.save_button"), self._save, variant="success"
+        save_btn = Btn(
+            None, t("fleet.save_button"), variant="primary", command=self._save
         )
-        cancel_btn = ActionButton(
-            None, t("fleet.cancel_button"), self.reject, variant="secondary"
+        cancel_btn = Btn(
+            None, t("fleet.cancel_button"), variant="secondary", command=self.reject
         )
         btn_row.addWidget(save_btn)
         btn_row.addWidget(cancel_btn)
@@ -383,7 +393,7 @@ class QtFleetTab(QWidget):
         self._canvas: Optional[FigureCanvas] = None
 
         # -- KPI card references --
-        self._kpi_cards: Dict[str, KpiCard] = {}
+        self._kpi_value_labels: Dict[str, MonoLabel] = {}
 
         # -- UI --
         self._build_ui()
@@ -441,19 +451,19 @@ class QtFleetTab(QWidget):
         # Main split: left (table) + right (alerts, charts, quick-add)
         main = QFrame()
         main_layout = QHBoxLayout(main)
-        main_layout.setContentsMargins(S["3"], S["2"], S["3"], S["3"])
-        main_layout.setSpacing(S["3"])
+        main_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["3"])
+        main_layout.setSpacing(SP["3"])
 
         left = QFrame()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["2"])
+        left_layout.setSpacing(SP["2"])
 
         right = QFrame()
         right.setFixedWidth(380)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["3"])
+        right_layout.setSpacing(SP["3"])
 
         self._build_search_bar(left_layout)
         self._build_table(left_layout)
@@ -471,11 +481,12 @@ class QtFleetTab(QWidget):
 
     def _build_header(self, layout: QVBoxLayout) -> None:
         header = QFrame()
+        header.setFixedHeight(72)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(S["3"], S["3"], S["3"], S["2"])
+        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        header_layout.setSpacing(SP["3"])
 
-        title = QLabel(t("fleet.title"))
-        title.setProperty("fontRole", "h1")
+        title = PageTitle(None, t("fleet.title"))
         header_layout.addWidget(title)
 
         header_layout.addStretch(1)
@@ -485,9 +496,7 @@ class QtFleetTab(QWidget):
             ("fleet.export_excel", self._export_excel),
             ("fleet.export_pdf", self._export_pdf),
         ):
-            btn = ActionButton(
-                None, t(label_key), callback, variant="secondary"
-            )
+            btn = Btn(None, t(label_key), variant="secondary", command=callback)
             header_layout.addWidget(btn)
 
         layout.addWidget(header)
@@ -495,10 +504,24 @@ class QtFleetTab(QWidget):
     # -- KPI strip ---------------------------------------------------------
 
     def _build_kpi_strip(self, layout: QVBoxLayout) -> None:
-        strip = QFrame()
-        strip_layout = QHBoxLayout(strip)
-        strip_layout.setContentsMargins(S["3"], 0, S["3"], S["2"])
-        strip_layout.setSpacing(S["2"])
+        self._kpi_strip = QFrame()
+        self._kpi_strip_layout = QHBoxLayout(self._kpi_strip)
+        self._kpi_strip_layout.setContentsMargins(SP["3"], 0, SP["3"], SP["2"])
+        self._kpi_strip_layout.setSpacing(SP["2"])
+
+        self._kpi_value_labels: Dict[str, MonoLabel] = {}
+        self._rebuild_kpi_strip()
+
+        layout.addWidget(self._kpi_strip)
+
+    def _rebuild_kpi_strip(self) -> None:
+        """Clear and rebuild KPI cards with current translations."""
+        while self._kpi_strip_layout.count():
+            item = self._kpi_strip_layout.takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._kpi_value_labels.clear()
 
         kpi_defs = [
             ("kpi_total", "fleet.kpi_total_trucks", "0"),
@@ -507,11 +530,11 @@ class QtFleetTab(QWidget):
             ("kpi_alerts", "fleet.kpi_alerts", "0"),
         ]
         for key, title_key, default_val in kpi_defs:
-            card = KpiCard(None, t(title_key), default_val)
-            strip_layout.addWidget(card, 1)
-            self._kpi_cards[key] = card
-
-        layout.addWidget(strip)
+            card = KPICard(self._kpi_strip, t(title_key), default_val)
+            val_lbl = card.findChild(MonoLabel)
+            if val_lbl is not None:
+                self._kpi_value_labels[key] = val_lbl
+            self._kpi_strip_layout.addWidget(card, 1)
 
     # -- Search bar --------------------------------------------------------
 
@@ -519,7 +542,7 @@ class QtFleetTab(QWidget):
         search_row = QFrame()
         search_layout = QHBoxLayout(search_row)
         search_layout.setContentsMargins(0, 0, 0, 0)
-        search_layout.setSpacing(S["2"])
+        search_layout.setSpacing(SP["2"])
 
         # General text search
         search_label = QLabel(t("fleet.search_label"))
@@ -530,11 +553,11 @@ class QtFleetTab(QWidget):
         self._e_search.textChanged.connect(self._filter_table)
         search_layout.addWidget(self._e_search, 1)
 
-        reset_btn = ActionButton(
+        reset_btn = Btn(
             None,
             t("fleet.reset_button"),
-            lambda: (self._e_search.clear(), self._filter_table()),
             variant="secondary",
+            command=lambda: (self._e_search.clear(), self._filter_table()),
         )
         search_layout.addWidget(reset_btn)
 
@@ -547,11 +570,11 @@ class QtFleetTab(QWidget):
         self._e_plate_search.setFixedWidth(120)
         search_layout.addWidget(self._e_plate_search)
 
-        find_btn = ActionButton(
+        find_btn = Btn(
             None,
             t("fleet.find_button"),
-            self._find_plate,
             variant="secondary",
+            command=self._find_plate,
         )
         search_layout.addWidget(find_btn)
 
@@ -575,33 +598,33 @@ class QtFleetTab(QWidget):
         btn_row = QFrame()
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(S["2"])
+        btn_layout.setSpacing(SP["2"])
 
-        add_btn = ActionButton(
-            None, t("fleet.add_truck"), self._add_truck_win, variant="success"
+        add_btn = Btn(
+            None, t("fleet.add_truck"), variant="primary", command=self._add_truck_win
         )
         btn_layout.addWidget(add_btn)
 
-        edit_btn = ActionButton(
-            None, t("fleet.edit_button"), self._edit_truck_selected, variant="primary"
+        edit_btn = Btn(
+            None, t("fleet.edit_button"), variant="secondary", command=self._edit_truck_selected
         )
         btn_layout.addWidget(edit_btn)
 
         btn_layout.addStretch(1)
 
-        docs_btn = ActionButton(
+        docs_btn = Btn(
             None,
             t("fleet.documents_button"),
-            self._open_truck_documents,
             variant="secondary",
+            command=self._open_truck_documents,
         )
         btn_layout.addWidget(docs_btn)
 
-        delete_btn = ActionButton(
+        delete_btn = Btn(
             None,
             t("fleet.delete_button"),
-            self._delete_truck,
             variant="danger",
+            command=self._delete_truck,
         )
         btn_layout.addWidget(delete_btn)
 
@@ -610,7 +633,7 @@ class QtFleetTab(QWidget):
     # -- Alerts panel ------------------------------------------------------
 
     def _build_alerts_panel(self, layout: QVBoxLayout) -> None:
-        section_header(self, text=t("fleet.section_alerts"))
+        SectionTitle(self, t("fleet.section_alerts"))
 
         self._alerts_container = QFrame()
         self._alerts_container_layout = QVBoxLayout(self._alerts_container)
@@ -622,7 +645,7 @@ class QtFleetTab(QWidget):
     # -- Chart area --------------------------------------------------------
 
     def _build_chart_area(self, layout: QVBoxLayout) -> None:
-        section_header(self, text=t("fleet.section_charts"))
+        SectionTitle(self, t("fleet.section_charts"))
 
         self._chart_area = QFrame()
         self._chart_area.setMinimumHeight(200)
@@ -649,12 +672,12 @@ class QtFleetTab(QWidget):
     # -- Quick add form ----------------------------------------------------
 
     def _build_quick_add(self, layout: QVBoxLayout) -> None:
-        section_header(self, text=t("fleet.section_quick_add"))
+        SectionTitle(self, t("fleet.section_quick_add"))
 
         quick_form = QFrame()
         qf_layout = QVBoxLayout(quick_form)
         qf_layout.setContentsMargins(0, 0, 0, 0)
-        qf_layout.setSpacing(S["2"])
+        qf_layout.setSpacing(SP["2"])
 
         plate_lbl = QLabel(t("fleet.plate_quick"))
         plate_lbl.setProperty("fontRole", "label")
@@ -674,11 +697,11 @@ class QtFleetTab(QWidget):
         self._q_rate = StyledLineEdit(text="0")
         qf_layout.addWidget(self._q_rate)
 
-        save_quick_btn = ActionButton(
+        save_quick_btn = Btn(
             None,
             t("fleet.save_quick"),
-            self._save_quick,
-            variant="success",
+            variant="primary",
+            command=self._save_quick,
         )
         qf_layout.addWidget(save_quick_btn)
 
@@ -739,9 +762,12 @@ class QtFleetTab(QWidget):
         active = sum(
             1 for r in rows if r.get("active_status") in (1, True)
         )
-        self._kpi_cards["kpi_total"].set_value(str(total))
-        self._kpi_cards["kpi_active"].set_value(str(active))
-        self._kpi_cards["kpi_leasing"].set_value("")
+        if "kpi_total" in self._kpi_value_labels:
+            self._kpi_value_labels["kpi_total"].setText(str(total))
+        if "kpi_active" in self._kpi_value_labels:
+            self._kpi_value_labels["kpi_active"].setText(str(active))
+        if "kpi_leasing" in self._kpi_value_labels:
+            self._kpi_value_labels["kpi_leasing"].setText("")
 
         alert_count = 0
         if self.ops:
@@ -749,9 +775,10 @@ class QtFleetTab(QWidget):
                 alert_count = self.ops.get_active_alert_count()
             except Exception:
                 pass
-        self._kpi_cards["kpi_alerts"].set_value(
-            str(alert_count) if self.ops else "N/A"
-        )
+        if "kpi_alerts" in self._kpi_value_labels:
+            self._kpi_value_labels["kpi_alerts"].setText(
+                str(alert_count) if self.ops else "N/A"
+            )
 
         self._refresh_alerts()
         self._draw_charts(rows)
@@ -841,7 +868,7 @@ class QtFleetTab(QWidget):
                 f"border-left: 3px solid {sev_color};"
             )
             card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+            card_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
             card_layout.setSpacing(2)
 
             title_text = getattr(a, "title", getattr(a, "message", "Alert"))
@@ -1051,15 +1078,15 @@ class QtFleetTab(QWidget):
         dlg.setModal(True)
 
         main_layout = QHBoxLayout(dlg)
-        main_layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
-        main_layout.setSpacing(S["3"])
+        main_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
+        main_layout.setSpacing(SP["3"])
 
         # Left panel — info
         left = QFrame()
         left.setFixedWidth(320)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["2"])
+        left_layout.setSpacing(SP["2"])
 
         header_lbl = QLabel(
             f"{row.get('plate_number', '')} - {row.get('model', '')}"
@@ -1084,22 +1111,22 @@ class QtFleetTab(QWidget):
 
         self._build_maintenance_kpi_strip(left_layout, truck_id, row)
 
-        edit_btn = ActionButton(
+        edit_btn = Btn(
             None,
             t("fleet.detail_edit_button"),
-            lambda: (
+            variant="primary",
+            command=lambda: (
                 dlg.reject(),
                 self._open_edit_from_detail(truck_id),
             ),
-            variant="primary",
         )
         left_layout.addWidget(edit_btn)
 
-        export_btn = ActionButton(
+        export_btn = Btn(
             None,
             t("fleet.detail_export_button"),
-            lambda: self._export_truck_csv(row),
             variant="secondary",
+            command=lambda: self._export_truck_csv(row),
         )
         left_layout.addWidget(export_btn)
 
@@ -1119,13 +1146,13 @@ class QtFleetTab(QWidget):
         # Maintenance tab
         maint_tab = QWidget()
         maint_tab_layout = QVBoxLayout(maint_tab)
-        open_maint = ActionButton(
+        open_maint = Btn(
             None,
             t("fleet.open_maintenance_manager"),
-            lambda: QtMaintenanceView(
+            variant="primary",
+            command=lambda: QtMaintenanceView(
                 dlg, self.db, row["id"], row.get("plate_number", "")
             ).exec_(),
-            variant="primary",
         )
         maint_tab_layout.addWidget(open_maint, 0, Qt.AlignCenter)
         maint_desc = QLabel(t("fleet.maint_history_desc"))
@@ -1166,7 +1193,7 @@ class QtFleetTab(QWidget):
         kpi_frame = QFrame()
         kpi_layout = QHBoxLayout(kpi_frame)
         kpi_layout.setContentsMargins(0, 0, 0, 0)
-        kpi_layout.setSpacing(S["2"])
+        kpi_layout.setSpacing(SP["2"])
 
         # Odometer
         odometer_km = truck_row.get("mileage", 0) or 0
@@ -1253,7 +1280,7 @@ class QtFleetTab(QWidget):
         card.setProperty("role", "card")
         card.setStyleSheet(f"border-left: 3px solid {accent_color};")
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        card_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
         card_layout.setSpacing(1)
 
         title_lbl = QLabel(title.upper())
@@ -1280,8 +1307,8 @@ class QtFleetTab(QWidget):
             pass
 
         layout = QVBoxLayout(parent)
-        layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
+        layout.setSpacing(SP["2"])
 
         # Expenses table
         exp_cols: List[Tuple[str, str, int]] = [
@@ -1318,7 +1345,7 @@ class QtFleetTab(QWidget):
         form = QFrame()
         form_layout = QVBoxLayout(form)
         form_layout.setContentsMargins(0, 0, 0, 0)
-        form_layout.setSpacing(S["2"])
+        form_layout.setSpacing(SP["2"])
 
         form_title = QLabel(t("fleet.add_expense"))
         form_title.setProperty("fontRole", "section")
@@ -1367,11 +1394,11 @@ class QtFleetTab(QWidget):
                     str(ex),
                 )
 
-        save_exp_btn = ActionButton(
+        save_exp_btn = Btn(
             None,
             t("fleet.save_expense"),
-            save_expense,
-            variant="success",
+            variant="primary",
+            command=save_expense,
         )
         form_layout.addWidget(save_exp_btn)
 

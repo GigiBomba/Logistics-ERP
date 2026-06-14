@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QFrame,
     QLabel,
+    QPushButton,
     QVBoxLayout,
     QHBoxLayout,
     QScrollArea,
@@ -27,9 +28,10 @@ from services.fleet_tracking_service import (
     fleet_tracking_service,
 )
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import SP
+from ui.components import Btn, Label, PageTitle, SectionTitle
+from ui.theme import COLORS
 from ui.map.map_widget import MapWidget
-from ui.widgets import ActionButton
 
 logger = logging.getLogger(__name__)
 
@@ -83,7 +85,7 @@ class QtFleetTrackingView(QWidget):
         self._vehicle_list_layout: Optional[QVBoxLayout] = None
         self._detail_panel: Optional[QFrame] = None
         self._detail_layout: Optional[QVBoxLayout] = None
-        self._refresh_btn: Optional[ActionButton] = None
+        self._refresh_btn: Optional[QPushButton] = None
         self._updated_lbl: Optional[QLabel] = None
         self._selected_position: Optional[VehiclePosition] = None
         self._selected_truck_id: Optional[int] = None
@@ -148,7 +150,7 @@ class QtFleetTrackingView(QWidget):
         container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         cl = QVBoxLayout(container)
         cl.setAlignment(Qt.AlignCenter)
-        cl.setSpacing(S["3"])
+        cl.setSpacing(SP["3"])
 
         # Globe icon
         icon_lbl = QLabel("\U0001f5fa")
@@ -173,11 +175,11 @@ class QtFleetTrackingView(QWidget):
         cl.addWidget(hint_lbl)
 
         # Settings button
-        settings_btn = ActionButton(
+        settings_btn = Btn(
             container,
             t("tracking.go_to_settings"),
-            command=lambda: self._navigate_settings(),
             variant="primary",
+            command=lambda: self._navigate_settings(),
         )
         btn_wrapper = QFrame()
         btn_wrapper_layout = QHBoxLayout(btn_wrapper)
@@ -207,8 +209,8 @@ class QtFleetTrackingView(QWidget):
         header = QFrame()
         header.setFixedHeight(52)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(S["5"], 0, S["3"], 0)
-        header_layout.setSpacing(S["2"])
+        header_layout.setContentsMargins(SP["5"], 0, SP["3"], 0)
+        header_layout.setSpacing(SP["2"])
 
         title_lbl = QLabel(t("tracking.panel_title"))
         title_lbl.setProperty("fontRole", "h3")
@@ -223,11 +225,11 @@ class QtFleetTrackingView(QWidget):
         header_layout.addWidget(self._updated_lbl)
 
         # Refresh button
-        self._refresh_btn = ActionButton(
+        self._refresh_btn = Btn(
             header,
             "\u21bb",
-            command=self._force_refresh,
             variant="ghost",
+            command=self._force_refresh,
         )
         header_layout.addWidget(self._refresh_btn)
 
@@ -266,8 +268,8 @@ class QtFleetTrackingView(QWidget):
         self._detail_panel = QFrame()
         self._detail_panel.setFixedHeight(200)
         self._detail_layout = QVBoxLayout(self._detail_panel)
-        self._detail_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        self._detail_layout.setSpacing(S["1"])
+        self._detail_layout.setContentsMargins(SP["5"], SP["4"], SP["5"], SP["4"])
+        self._detail_layout.setSpacing(SP["1"])
         self._detail_layout.setAlignment(Qt.AlignTop)
         layout.addWidget(self._detail_panel)
 
@@ -295,7 +297,7 @@ class QtFleetTrackingView(QWidget):
         row.setStyleSheet(
             "QFrame {"
             f"  background-color: transparent;"
-            f"  border-radius: {S['1']}px;"
+            f"  border-radius: {SP['1']}px;"
             "}"
             "QFrame:hover {"
             f"  background-color: {COLORS['bg_elevated']};"
@@ -303,8 +305,8 @@ class QtFleetTrackingView(QWidget):
         )
 
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(S["3"], 0, S["3"], 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
+        row_layout.setSpacing(SP["2"])
 
         # ── Status indicator dot ───────────────────────────────────────
         dot_color = self._STATUS_DOT_COLORS.get(
@@ -408,7 +410,7 @@ class QtFleetTrackingView(QWidget):
             row_f.setStyleSheet("background-color: transparent;")
             row_f_layout = QHBoxLayout(row_f)
             row_f_layout.setContentsMargins(0, 0, 0, 0)
-            row_f_layout.setSpacing(S["2"])
+            row_f_layout.setSpacing(SP["2"])
 
             label_w = QLabel(label_text)
             label_w.setProperty("fontRole", "label")
@@ -430,11 +432,11 @@ class QtFleetTrackingView(QWidget):
                 if self._on_navigate:
                     self._on_navigate("fleet")
 
-            fleet_btn = ActionButton(
+            fleet_btn = Btn(
                 self._detail_panel,
                 t("tracking.btn_fleet_detail"),
-                command=on_fleet_detail,
                 variant="ghost",
+                command=on_fleet_detail,
             )
             self._detail_layout.addWidget(fleet_btn)
 

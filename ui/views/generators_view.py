@@ -27,6 +27,8 @@ from PySide6.QtWidgets import (
 )
 
 from ui.theme import COLORS, S
+from ui.design_tokens import SP
+from ui.components import Card, CardHeader, Btn, Label, PageTitle, SectionTitle, FieldLabel, Divider, StatusChip
 from services.i18n import t, register_listener, unregister_listener
 from services.trip_service import TripService
 from ui.widgets import (
@@ -146,23 +148,21 @@ class QtGeneratorsView(QWidget):
 
     def _build_header(self, parent_layout: QVBoxLayout) -> None:
         header = QFrame()
-        header.setProperty("role", "card")
+        header.setObjectName("card")
         header.setFixedHeight(72)
         hdr_layout = QHBoxLayout(header)
-        hdr_layout.setContentsMargins(S["8"], S["4"], S["8"], S["4"])
+        hdr_layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
 
         title_block = QWidget()
         title_vlyt = QVBoxLayout(title_block)
         title_vlyt.setContentsMargins(0, 0, 0, 0)
-        title_vlyt.setSpacing(S["1"])
+        title_vlyt.setSpacing(SP["1"])
 
-        title_lbl = QLabel(t("generators.title"))
-        title_lbl.setProperty("fontRole", "h1")
+        title_lbl = PageTitle(header, t("generators.title"))
         title_vlyt.addWidget(title_lbl)
         self._i18n_labels.append((title_lbl, "generators.title"))
 
-        subtitle_lbl = QLabel(t("generators.subtitle"))
-        subtitle_lbl.setProperty("fontRole", "muted")
+        subtitle_lbl = Label(header, t("generators.subtitle"), role="secondary")
         title_vlyt.addWidget(subtitle_lbl)
         self._i18n_labels.append((subtitle_lbl, "generators.subtitle"))
 
@@ -172,10 +172,9 @@ class QtGeneratorsView(QWidget):
         trip_block = QWidget()
         trip_hlyt = QHBoxLayout(trip_block)
         trip_hlyt.setContentsMargins(0, 0, 0, 0)
-        trip_hlyt.setSpacing(S["2"])
+        trip_hlyt.setSpacing(SP["2"])
 
-        trip_label = QLabel(t("generators.trip_label"))
-        trip_label.setProperty("fontRole", "label")
+        trip_label = FieldLabel(trip_block, t("generators.trip_label"))
         trip_hlyt.addWidget(trip_label)
         self._i18n_labels.append((trip_label, "generators.trip_label"))
 
@@ -188,7 +187,7 @@ class QtGeneratorsView(QWidget):
         self._trip_combo.currentTextChanged.connect(self._on_global_trip_selected)
         trip_hlyt.addWidget(self._trip_combo)
 
-        refresh_btn = ActionButton(
+        refresh_btn = Btn(
             trip_block,
             "\u21BB",
             command=self._refresh_trip_lists,
@@ -258,8 +257,8 @@ class QtGeneratorsView(QWidget):
         # ── RIGHT panel — Options + Actions + Copies (≈340px) ─────────
         right_panel = QWidget()
         right_lyt = QVBoxLayout(right_panel)
-        right_lyt.setContentsMargins(S["3"], 0, 0, 0)
-        right_lyt.setSpacing(S["3"])
+        right_lyt.setContentsMargins(SP["3"], 0, 0, 0)
+        right_lyt.setSpacing(SP["3"])
 
         # Options card (languages)
         options_card = self._build_cmr_options_card(right_panel)
@@ -285,15 +284,11 @@ class QtGeneratorsView(QWidget):
 
     def _build_cmr_options_card(self, parent: QWidget) -> QFrame:
         """Language selection card for the centre panel."""
-        card = QFrame()
-        card.setProperty("role", "card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        card_layout.setSpacing(S["2"])
-
-        header = SectionHeader(card, t("generators.cmr_options_title"))
-        card_layout.addWidget(header)
-        self._i18n_sections["generators.cmr_options_title"] = header.label
+        card = Card(parent)
+        title_lbl = SectionTitle(card, t("generators.cmr_options_title"))
+        card.layout().addWidget(title_lbl)
+        self._i18n_sections["generators.cmr_options_title"] = title_lbl
+        card.layout().addWidget(Divider(card))
 
         lang_codes = self.prefs.get_available_languages() if self.prefs else ["en", "ro"]
         lang_display = []
@@ -306,12 +301,12 @@ class QtGeneratorsView(QWidget):
 
         self._cmr_lang1_container, self._cmr_lang1_combo = self._build_lang_combo(
             card, t("generators.cmr_primary_language"), lang_display, 0)
-        card_layout.addWidget(self._cmr_lang1_container)
+        card.layout().addWidget(self._cmr_lang1_container)
 
         self._cmr_lang2_container, self._cmr_lang2_combo = self._build_lang_combo(
             card, t("generators.cmr_secondary_language"), lang_display,
             1 if len(lang_display) > 1 else 0)
-        card_layout.addWidget(self._cmr_lang2_container)
+        card.layout().addWidget(self._cmr_lang2_container)
 
         return card
 
@@ -319,34 +314,30 @@ class QtGeneratorsView(QWidget):
 
     def _build_cmr_actions_card(self, parent: QWidget) -> QFrame:
         """Action buttons card for the centre panel."""
-        card = QFrame()
-        card.setProperty("role", "card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        card_layout.setSpacing(S["2"])
+        card = Card(parent)
+        title_lbl = SectionTitle(card, t("generators.cmr_actions_title"))
+        card.layout().addWidget(title_lbl)
+        self._i18n_sections["generators.cmr_actions_title"] = title_lbl
+        card.layout().addWidget(Divider(card))
 
-        header = SectionHeader(card, t("generators.cmr_actions_title"))
-        card_layout.addWidget(header)
-        self._i18n_sections["generators.cmr_actions_title"] = header.label
-
-        btn_single = ActionButton(
+        btn_single = Btn(
             card,
             f"\U0001F4E4  {t('generators.cmr_generate_single')}",
             command=self._generate_cmr,
             variant="secondary",
         )
         btn_single.setFixedHeight(38)
-        card_layout.addWidget(btn_single)
+        card.layout().addWidget(btn_single)
         self._i18n_buttons.append((btn_single, "generators.cmr_generate_single"))
 
-        btn_all = ActionButton(
+        btn_all = Btn(
             card,
             f"\U0001F680  {t('generators.cmr_generate_all')}",
             command=self._generate_all_copies,
             variant="primary",
         )
         btn_all.setFixedHeight(42)
-        card_layout.addWidget(btn_all)
+        card.layout().addWidget(btn_all)
         self._i18n_buttons.append((btn_all, "generators.cmr_generate_all"))
 
         return card
@@ -355,25 +346,20 @@ class QtGeneratorsView(QWidget):
 
     def _build_cmr_copies_panel(self) -> QWidget:
         """Right-side panel showing copy rows with accent bars + status chips."""
-        panel = QFrame()
-        panel.setProperty("role", "card")
-        panel_layout = QVBoxLayout(panel)
-        panel_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        panel_layout.setSpacing(S["2"])
+        panel = Card(self._cmr_tab)
+        title_lbl = SectionTitle(panel, t("generators.cmr_copies_title"))
+        panel.layout().addWidget(title_lbl)
+        self._i18n_sections["generators.cmr_copies_title"] = title_lbl
+        panel.layout().addWidget(Divider(panel))
 
-        header = SectionHeader(panel, t("generators.cmr_copies_title"))
-        panel_layout.addWidget(header)
-        self._i18n_sections["generators.cmr_copies_title"] = header.label
-
-        self._cmr_status_lbl = QLabel(t("generators.cmr_status_ready"))
-        self._cmr_status_lbl.setProperty("fontRole", "small")
-        panel_layout.addWidget(self._cmr_status_lbl)
+        self._cmr_status_lbl = Label(panel, t("generators.cmr_status_ready"), role="muted")
+        panel.layout().addWidget(self._cmr_status_lbl)
         self._i18n_labels.append((self._cmr_status_lbl, "generators.cmr_status_ready"))
 
         copies_grid = QWidget()
         copies_grid_vlyt = QVBoxLayout(copies_grid)
         copies_grid_vlyt.setContentsMargins(0, 0, 0, 0)
-        copies_grid_vlyt.setSpacing(S["1"])
+        copies_grid_vlyt.setSpacing(SP["1"])
 
         self._copy_labels = {}
         for suffix in ["Sender", "Consignee", "Carrier", "Administrative"]:
@@ -402,23 +388,21 @@ class QtGeneratorsView(QWidget):
             # Content area
             content = QWidget()
             content_lyt = QHBoxLayout(content)
-            content_lyt.setContentsMargins(S["2"], 0, S["2"], 0)
-            content_lyt.setSpacing(S["2"])
+            content_lyt.setContentsMargins(SP["2"], 0, SP["2"], 0)
+            content_lyt.setSpacing(SP["2"])
 
             icon_lbl = QLabel(meta["icon"])
             icon_lbl.setFixedWidth(22)
             icon_lbl.setStyleSheet(f"color: {meta['color']}; font-size: 12px;")
             content_lyt.addWidget(icon_lbl)
 
-            copy_name_lbl = QLabel(t(suffix_key))
-            copy_name_lbl.setProperty("fontRole", "small")
+            copy_name_lbl = Label(content, t(suffix_key), role="muted")
             content_lyt.addWidget(copy_name_lbl)
 
-            copy_status_lbl = QLabel(t("generators.cmr_not_generated"))
-            copy_status_lbl.setProperty("fontRole", "small")
+            copy_status_lbl = Label(content, t("generators.cmr_not_generated"), role="muted")
             content_lyt.addWidget(copy_status_lbl, 1)
 
-            open_btn = ActionButton(
+            open_btn = Btn(
                 content,
                 t("generators.open_pdf"),
                 command=lambda s=suffix: self._open_copy(s),
@@ -433,8 +417,8 @@ class QtGeneratorsView(QWidget):
             copies_grid_vlyt.addWidget(row)
             self._copy_labels[suffix] = (copy_name_lbl, copy_status_lbl, open_btn)
 
-        panel_layout.addWidget(copies_grid)
-        panel_layout.addStretch(1)
+        panel.layout().addWidget(copies_grid)
+        panel.layout().addStretch(1)
         return panel
 
     def _build_lang_combo(
@@ -452,10 +436,9 @@ class QtGeneratorsView(QWidget):
         container = QWidget()
         vlyt = QVBoxLayout(container)
         vlyt.setContentsMargins(0, 0, 0, 0)
-        vlyt.setSpacing(S["1"])
+        vlyt.setSpacing(SP["1"])
 
-        lbl = QLabel(label_text)
-        lbl.setProperty("fontRole", "label")
+        lbl = FieldLabel(container, label_text)
         vlyt.addWidget(lbl)
 
         combo = StyledComboBox(values=values, state="readonly")
@@ -704,9 +687,9 @@ class QtGeneratorsView(QWidget):
         self._cmr_status_lbl.setText(
             t("generators.cmr_generated").format(path=os.path.basename(filepath))
         )
-        self._cmr_status_lbl.setStyleSheet(
-            f"color: {COLORS['text_success']};"
-        )
+        self._cmr_status_lbl.setProperty("role", "success")
+        self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
+        self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
         self._update_copy_status("Sender", filepath)
         logger.info("CMR generated for trip %d: %s", trip_id, filepath)
 
@@ -727,9 +710,9 @@ class QtGeneratorsView(QWidget):
         self._cmr_status_lbl.setText(
             t("generators.cmr_status_generating")
         )
-        self._cmr_status_lbl.setStyleSheet(
-            f"color: {COLORS['text_warning']};"
-        )
+        self._cmr_status_lbl.setProperty("role", "warning")
+        self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
+        self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
 
         from services.invoicing.cmr_generator import CMRGenerator
         gen = CMRGenerator(db=self.db, prefs=self.prefs)
@@ -750,9 +733,9 @@ class QtGeneratorsView(QWidget):
                         self._cmr_status_lbl.setText(
                             t("generators.cmr_error").format(error=str(e))
                         )
-                        self._cmr_status_lbl.setStyleSheet(
-                            f"color: {COLORS['danger']};"
-                        )
+                        self._cmr_status_lbl.setProperty("role", "danger")
+                        self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
+                        self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
                 QTimer.singleShot(0, _err)
                 logger.error("CMR generation failed: %s", e)
                 return
@@ -795,9 +778,9 @@ class QtGeneratorsView(QWidget):
                 self._cmr_status_lbl.setText(
                     t("generators.cmr_all_generated").format(path=base)
                 )
-                self._cmr_status_lbl.setStyleSheet(
-                    f"color: {COLORS['text_success']};"
-                )
+                self._cmr_status_lbl.setProperty("role", "success")
+                self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
+                self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
                 for suffix, path in registered_paths.items():
                     self._update_copy_status(suffix, path)
 
@@ -814,7 +797,7 @@ class QtGeneratorsView(QWidget):
             status_lbl.setText(
                 t("generators.cmr_generated_status", "generated")
             )
-            status_lbl.setProperty("fontRole", "success")
+            status_lbl.setProperty("role", "success")
             status_lbl.style().unpolish(status_lbl)
             status_lbl.style().polish(status_lbl)
             btn.setEnabled(True)
@@ -880,13 +863,13 @@ class QtGeneratorsView(QWidget):
             name_lbl.setText(t(suffix_key))
             if suffix not in self._cmr_last_paths:
                 status_lbl.setText(not_gen)
-                status_lbl.setProperty("fontRole", "small")
+                status_lbl.setProperty("role", "muted")
                 status_lbl.style().unpolish(status_lbl)
                 status_lbl.style().polish(status_lbl)
                 btn.setEnabled(False)
             else:
                 status_lbl.setText(gen_text)
-                status_lbl.setProperty("fontRole", "success")
+                status_lbl.setProperty("role", "success")
                 status_lbl.style().unpolish(status_lbl)
                 status_lbl.style().polish(status_lbl)
 

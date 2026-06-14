@@ -53,15 +53,14 @@ from repositories.client_repository import ClientRepository
 from services.operations.event_bus import EventBus, SETTINGS_UPDATED
 from services.preferences import PreferencesManager
 from ui.theme import COLORS, S
+from ui.components import Card, Btn, PageTitle, Label, Divider, SectionTitle
 from ui.widgets import (
-    ActionButton,
     StyledLineEdit,
     StyledComboBox,
     StyledTextEdit,
     StyledCheckBox,
     StyledTableWidget,
     ScrollableFormContainer,
-    SectionHeader,
     field,
 )
 
@@ -204,6 +203,10 @@ class QtInvoiceEditor(QWidget):
 
     def _retranslate_ui(self) -> None:
         """Update all translatable labels and headers."""
+        # Page header
+        self._page_title.setText(t("invoice_editor.title"))
+        self._page_subtitle.setText(t("invoice_editor.subtitle", ""))
+
         # Top bar
         self._client_label.setText(t("invoice_editor.select_client"))
         self._trip_label.setText(t("invoice_editor.select_trip"))
@@ -301,6 +304,9 @@ class QtInvoiceEditor(QWidget):
         self._scroll = ScrollableFormContainer(self, max_width=1400)
         main_layout.addWidget(self._scroll, 1)
 
+        # View header (PageTitle + secondary label)
+        self._build_view_header()
+
         # Build sections inside the scrollable content
         self._build_client_section()       # From / Bill To
         self._build_invoice_details_section()
@@ -326,8 +332,7 @@ class QtInvoiceEditor(QWidget):
         layout.setSpacing(S["3"])
 
         # Client selector
-        self._client_label = QLabel(t("invoice_editor.select_client"))
-        self._client_label.setProperty("fontRole", "label")
+        self._client_label = Label(self._top_bar, t("invoice_editor.select_client"), role="field-label")
         layout.addWidget(self._client_label)
 
         self._client_combo = StyledComboBox()
@@ -346,8 +351,9 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(self._trip_combo)
 
         # Auto-fill button
-        self._auto_btn = ActionButton(self._top_bar, t("invoice_editor.auto_fill"),
-                                       variant="primary", width=90)
+        self._auto_btn = Btn(self._top_bar, t("invoice_editor.auto_fill"),
+                              variant="primary")
+        self._auto_btn.setFixedWidth(90)
         self._auto_btn.clicked.connect(self._auto_fill_all)
         layout.addWidget(self._auto_btn)
 
@@ -362,12 +368,34 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(self._cb_internal)
 
         # Refresh button
-        self._refresh_btn = ActionButton(self._top_bar, "\U0001F504",
-                                          variant="ghost", width=34)
+        self._refresh_btn = Btn(self._top_bar, "\U0001F504",
+                                 variant="ghost")
+        self._refresh_btn.setFixedWidth(34)
         self._refresh_btn.clicked.connect(self._refresh_all)
         layout.addWidget(self._refresh_btn)
 
         layout.addStretch()
+
+    # ── View Header ──────────────────────────────────────────────────────────
+
+    def _build_view_header(self) -> None:
+        """Build the page header with title and description."""
+        header = QWidget()
+        layout = QVBoxLayout(header)
+        layout.setContentsMargins(0, 0, 0, S["3"])
+        layout.setSpacing(S["1"])
+
+        self._page_title = PageTitle(header, t("invoice_editor.title"))
+        layout.addWidget(self._page_title)
+
+        self._page_subtitle = Label(
+            header,
+            t("invoice_editor.subtitle", "Create and manage invoices"),
+            role="secondary",
+        )
+        layout.addWidget(self._page_subtitle)
+
+        self._scroll.add_widget(header)
 
     # ── Client Section (From / Bill To) ──────────────────────────────────────
 
@@ -378,7 +406,7 @@ class QtInvoiceEditor(QWidget):
         layout.setSpacing(S["3"])
 
         # Section header
-        header = SectionHeader(container, t("invoice_editor.client_info").upper())
+        header = SectionTitle(container, t("invoice_editor.client_info"))
         layout.addWidget(header)
 
         # Two-column: From / Bill To
@@ -410,9 +438,8 @@ class QtInvoiceEditor(QWidget):
         self._c_company_email = self._make_canvas_label(from_card, "")
         from_layout.addWidget(self._c_company_email)
 
-        edit_company_btn = QPushButton("\u270F")
+        edit_company_btn = Btn(from_card, "\u270F", variant="ghost")
         edit_company_btn.setFixedSize(28, 28)
-        edit_company_btn.setProperty("variant", "ghost")
         edit_company_btn.clicked.connect(self._open_company_editor)
         from_layout.addWidget(edit_company_btn)
         from_layout.addStretch()
@@ -446,10 +473,7 @@ class QtInvoiceEditor(QWidget):
         self._scroll.add_widget(container)
 
     def _make_card(self) -> QFrame:
-        card = QFrame()
-        card.setProperty("role", "card")
-        card.setFrameShape(QFrame.StyledPanel)
-        return card
+        return Card()
 
     def _make_canvas_label(self, parent: QWidget, text: str, bold: bool = False) -> QLabel:
         lbl = QLabel(text)
@@ -497,7 +521,7 @@ class QtInvoiceEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(S["3"])
 
-        header = SectionHeader(container, t("invoice_editor.invoice_details").upper())
+        header = SectionTitle(container, t("invoice_editor.invoice_details"))
         layout.addWidget(header)
 
         card = self._make_card()
@@ -608,7 +632,7 @@ class QtInvoiceEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(S["3"])
 
-        header = SectionHeader(container, t("invoice_editor.trip_details").upper())
+        header = SectionTitle(container, t("invoice_editor.trip_details"))
         layout.addWidget(header)
 
         card = self._make_card()
@@ -696,7 +720,7 @@ class QtInvoiceEditor(QWidget):
         for i, stop in enumerate(self._loading_stops):
             self._build_stop_row(i, "loading")
 
-        add_load_btn = ActionButton(
+        add_load_btn = Btn(
             self._stops_container,
             "+ " + t("invoice_editor.add_loading_stop"),
             variant="ghost",
@@ -705,11 +729,7 @@ class QtInvoiceEditor(QWidget):
         self._stops_layout.addWidget(add_load_btn)
 
         # Divider
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setProperty("role", "divider")
-        sep.setFixedHeight(1)
-        self._stops_layout.addWidget(sep)
+        self._stops_layout.addWidget(Divider())
 
         # Unloading stops
         unload_label = QLabel(t("invoice_editor.unloading_stops"))
@@ -719,7 +739,7 @@ class QtInvoiceEditor(QWidget):
         for i, stop in enumerate(self._unloading_stops):
             self._build_stop_row(i, "unloading")
 
-        add_unload_btn = ActionButton(
+        add_unload_btn = Btn(
             self._stops_container,
             "+ " + t("invoice_editor.add_unloading_stop"),
             variant="ghost",
@@ -748,9 +768,8 @@ class QtInvoiceEditor(QWidget):
         row_layout.addWidget(entry, 1)
 
         if len(stops_list) > 1:
-            remove_btn = QPushButton("\u2716")
+            remove_btn = Btn(row, "\u2716", variant="ghost")
             remove_btn.setFixedSize(22, 22)
-            remove_btn.setProperty("variant", "ghost")
             remove_btn.clicked.connect(
                 lambda checked, i=idx, t=stop_type: self._remove_stop(i, t)
             )
@@ -785,7 +804,7 @@ class QtInvoiceEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(S["3"])
 
-        self._lit_header_label = SectionHeader(container, t("invoice_editor.line_items").upper())
+        self._lit_header_label = SectionTitle(container, t("invoice_editor.line_items"))
         layout.addWidget(self._lit_header_label)
 
         card = self._make_card()
@@ -813,13 +832,13 @@ class QtInvoiceEditor(QWidget):
         btn_row_layout.setContentsMargins(0, 0, 0, 0)
         btn_row_layout.setSpacing(S["2"])
 
-        self._add_row_btn = ActionButton(
+        self._add_row_btn = Btn(
             btn_row, "+ " + t("invoice_editor.add_row"), variant="secondary"
         )
         self._add_row_btn.clicked.connect(self._add_addon_row)
         btn_row_layout.addWidget(self._add_row_btn)
 
-        remove_btn = ActionButton(
+        remove_btn = Btn(
             btn_row, "\u2716 " + t("invoice_editor.remove_row"), variant="ghost"
         )
         remove_btn.clicked.connect(self._remove_selected_addon)
@@ -901,7 +920,7 @@ class QtInvoiceEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(S["3"])
 
-        header = SectionHeader(container, t("invoice_editor.totals").upper())
+        header = SectionTitle(container, t("invoice_editor.totals"))
         layout.addWidget(header)
 
         card = self._make_card()
@@ -990,11 +1009,7 @@ class QtInvoiceEditor(QWidget):
         card_layout.addWidget(curr_row)
 
         # Separator
-        sep = QFrame()
-        sep.setFrameShape(QFrame.HLine)
-        sep.setProperty("role", "divider")
-        sep.setFixedHeight(1)
-        card_layout.addWidget(sep)
+        card_layout.addWidget(Divider())
 
         # Totals display
         self._subtotal_title = QLabel(t("invoice_editor.subtotal"))
@@ -1021,11 +1036,7 @@ class QtInvoiceEditor(QWidget):
         self._discount_lbl.setAlignment(Qt.AlignRight)
         card_layout.addWidget(self._discount_lbl)
 
-        sep2 = QFrame()
-        sep2.setFrameShape(QFrame.HLine)
-        sep2.setProperty("role", "divider")
-        sep2.setFixedHeight(1)
-        card_layout.addWidget(sep2)
+        card_layout.addWidget(Divider())
 
         self._grand_title = QLabel(t("invoice_editor.grand_total"))
         self._grand_title.setProperty("fontRole", "body-bold")
@@ -1066,11 +1077,7 @@ class QtInvoiceEditor(QWidget):
         self._canvas_discount.setAlignment(Qt.AlignRight)
         canvas_totals_layout.addWidget(self._canvas_discount)
 
-        sep3 = QFrame()
-        sep3.setFrameShape(QFrame.HLine)
-        sep3.setProperty("role", "divider")
-        sep3.setFixedHeight(1)
-        canvas_totals_layout.addWidget(sep3)
+        canvas_totals_layout.addWidget(Divider())
 
         self._canvas_grand_label = QLabel(t("invoice_editor.grand_total"))
         self._canvas_grand_label.setProperty("fontRole", "body-bold")
@@ -1111,7 +1118,7 @@ class QtInvoiceEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(S["3"])
 
-        self._branding_header = SectionHeader(container, t("invoice_editor.branding").upper())
+        self._branding_header = SectionTitle(container, t("invoice_editor.branding"))
         layout.addWidget(self._branding_header)
 
         card = self._make_card()
@@ -1139,8 +1146,9 @@ class QtInvoiceEditor(QWidget):
         self._color_swatch.setStyleSheet(f"background-color: {self._company_color};")
         color_row_layout.addWidget(self._color_swatch)
 
-        self._color_btn = ActionButton(color_row, t("invoice_editor.pick_color"),
-                                        variant="secondary", width=80)
+        self._color_btn = Btn(color_row, t("invoice_editor.pick_color"),
+                                        variant="secondary")
+        self._color_btn.setFixedWidth(80)
         self._color_btn.clicked.connect(self._pick_color)
         color_row_layout.addWidget(self._color_btn)
         color_row_layout.addStretch()
@@ -1175,7 +1183,8 @@ class QtInvoiceEditor(QWidget):
         setattr(self, f"_{tag}_entry", entry)
         row_layout.addWidget(entry, 1)
 
-        btn = ActionButton(row, t("invoice_editor.browse"), variant="ghost", width=50)
+        btn = Btn(row, t("invoice_editor.browse"), variant="ghost")
+        btn.setFixedWidth(80)
         btn.clicked.connect(browse_cmd)
         setattr(self, f"_browse_{tag}_btn", btn)
         row_layout.addWidget(btn)
@@ -1242,7 +1251,7 @@ class QtInvoiceEditor(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(S["3"])
 
-        header = SectionHeader(container, t("invoice_editor.notes_section").upper())
+        header = SectionTitle(container, t("invoice_editor.notes_section"))
         layout.addWidget(header)
 
         card = self._make_card()
@@ -1284,27 +1293,27 @@ class QtInvoiceEditor(QWidget):
             ("\U0001F4C2 " + t("invoice_editor.load_draft"), self._load_draft, "secondary"),
         ]
 
-        self._preview_btn = ActionButton(self._bottom_bar, actions[0][0],
+        self._preview_btn = Btn(self._bottom_bar, actions[0][0],
                                           command=actions[0][1], variant=actions[0][2])
         layout.addWidget(self._preview_btn)
 
-        self._generate_btn = ActionButton(self._bottom_bar, actions[1][0],
+        self._generate_btn = Btn(self._bottom_bar, actions[1][0],
                                            command=actions[1][1], variant=actions[1][2])
         layout.addWidget(self._generate_btn)
 
-        self._print_btn = ActionButton(self._bottom_bar, actions[2][0],
+        self._print_btn = Btn(self._bottom_bar, actions[2][0],
                                         command=actions[2][1], variant=actions[2][2])
         layout.addWidget(self._print_btn)
 
-        self._email_btn = ActionButton(self._bottom_bar, actions[3][0],
+        self._email_btn = Btn(self._bottom_bar, actions[3][0],
                                         command=actions[3][1], variant=actions[3][2])
         layout.addWidget(self._email_btn)
 
-        self._save_draft_btn = ActionButton(self._bottom_bar, actions[4][0],
+        self._save_draft_btn = Btn(self._bottom_bar, actions[4][0],
                                              command=actions[4][1], variant=actions[4][2])
         layout.addWidget(self._save_draft_btn)
 
-        self._load_draft_btn = ActionButton(self._bottom_bar, actions[5][0],
+        self._load_draft_btn = Btn(self._bottom_bar, actions[5][0],
                                              command=actions[5][1], variant=actions[5][2])
         layout.addWidget(self._load_draft_btn)
 
@@ -2096,12 +2105,12 @@ class CompanyEditorQtDialog(QDialog):
         btn_frame_layout.setContentsMargins(0, 0, 0, 0)
         btn_frame_layout.setSpacing(S["2"])
 
-        save_btn = ActionButton(btn_frame, t("invoice.save_company"),
+        save_btn = Btn(btn_frame, t("invoice.save_company"),
                                  variant="primary")
         save_btn.clicked.connect(self._save_and_close)
         btn_frame_layout.addWidget(save_btn)
 
-        cancel_btn = ActionButton(btn_frame, t("invoice_editor.cancel"),
+        cancel_btn = Btn(btn_frame, t("invoice_editor.cancel"),
                                    variant="ghost")
         cancel_btn.clicked.connect(self.reject)
         btn_frame_layout.addWidget(cancel_btn)

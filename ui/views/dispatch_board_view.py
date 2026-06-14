@@ -54,8 +54,10 @@ from repositories.driver_repository import DriverRepository
 from repositories.route_repository import RouteRepository
 from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
 from utils.dates import parse_date
-from ui.theme import COLORS, S
-from ui.widgets import ActionButton
+from ui.components import Btn, PageTitle, Label
+from ui.design_tokens import (
+    BORDER_DEFAULT, WARNING, INFO, SUCCESS, DANGER, SP,
+)
 from ui.widgets.dispatch_search_bar import QtDispatchSearchBar, STATUS_OPTIONS
 from ui.widgets.dispatch_tabs import QtDispatchTabs
 from ui.widgets.kanban_column import QtKanbanColumn
@@ -91,11 +93,11 @@ STATUS_TO_COLUMN = {
 }
 
 COLUMN_DEFS = [
-    ("Planned", "dispatch_board.col_planned", COLORS["chip_planned"]),
-    ("Loading", "dispatch_board.col_loading", COLORS["chip_loading"]),
-    ("In Transit", "dispatch_board.col_in_transit", COLORS["chip_transit"]),
-    ("Delivered", "dispatch_board.col_delivered", COLORS["chip_delivered"]),
-    ("Cancelled", "dispatch_board.col_cancelled", COLORS["chip_cancelled"]),
+    ("Planned", "dispatch_board.col_planned", BORDER_DEFAULT),
+    ("Loading", "dispatch_board.col_loading", WARNING),
+    ("In Transit", "dispatch_board.col_in_transit", INFO),
+    ("Delivered", "dispatch_board.col_delivered", SUCCESS),
+    ("Cancelled", "dispatch_board.col_cancelled", DANGER),
 ]
 
 DELIVERED_DEFAULT_DAYS = 30
@@ -193,42 +195,35 @@ class QtDispatchBoardView(QWidget):
         layout.setSpacing(0)
 
         # ── Header ───────────────────────────────────────────────────────────
-        header = QFrame()
-        header.setProperty("role", "dispatch-board-header")
-        header.setFixedHeight(48)
+        header = QWidget()
+        header.setFixedHeight(72)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(S["4"], 0, S["4"], 0)
-        header_layout.setSpacing(S["3"])
+        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
 
-        self._title_lbl = QLabel(t("dispatch_board.title"))
-        self._title_lbl.setProperty("fontRole", "h2")
+        self._title_lbl = PageTitle(header, t("dispatch_board.title"))
         header_layout.addWidget(self._title_lbl)
 
-        self._subtitle_lbl = QLabel(t("dispatch_board.subtitle"))
-        self._subtitle_lbl.setProperty("fontRole", "muted")
+        self._subtitle_lbl = Label(header, t("dispatch_board.subtitle"), role="secondary")
         header_layout.addWidget(self._subtitle_lbl)
 
         header_layout.addStretch(1)
 
-        self._export_csv_btn = ActionButton(
-            header, text=t("dispatch_board.export_csv"),
-            variant="ghost",
-            command=self._export_csv,
+        self._export_csv_btn = Btn(
+            header, t("dispatch_board.export_csv"),
+            variant="ghost", command=self._export_csv,
         )
         header_layout.addWidget(self._export_csv_btn)
 
-        self._export_pdf_btn = ActionButton(
-            header, text=t("dispatch_board.export_pdf"),
-            variant="ghost",
-            command=self._export_pdf,
+        self._export_pdf_btn = Btn(
+            header, t("dispatch_board.export_pdf"),
+            variant="ghost", command=self._export_pdf,
         )
         header_layout.addWidget(self._export_pdf_btn)
 
-        self._refresh_btn = ActionButton(
+        self._refresh_btn = Btn(
             header,
-            text=f"\u21bb {t('dispatch_board.refresh')}",
-            variant="primary",
-            command=self._start_load,
+            f"\u21bb {t('dispatch_board.refresh')}",
+            variant="primary", command=self._start_load,
         )
         header_layout.addWidget(self._refresh_btn)
 
@@ -256,8 +251,8 @@ class QtDispatchBoardView(QWidget):
         self._bulk_toolbar.setProperty("role", "bulk-toolbar")
         self._bulk_toolbar.setFixedHeight(36)
         bulk_layout = QHBoxLayout(self._bulk_toolbar)
-        bulk_layout.setContentsMargins(S["3"], 0, S["3"], 0)
-        bulk_layout.setSpacing(S["2"])
+        bulk_layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
+        bulk_layout.setSpacing(SP["2"])
 
         self._bulk_count_lbl = QLabel("")
         self._bulk_count_lbl.setProperty("fontRole", "small")
@@ -265,25 +260,25 @@ class QtDispatchBoardView(QWidget):
 
         bulk_layout.addStretch(1)
 
-        self._bulk_clear_btn = ActionButton(
+        self._bulk_clear_btn = Btn(
             self._bulk_toolbar,
-            text=t("dispatch_board.bulk_clear_selection"),
+            t("dispatch_board.bulk_clear_selection"),
             variant="ghost",
             command=self._clear_all_selections,
         )
         bulk_layout.addWidget(self._bulk_clear_btn)
 
-        self._bulk_assign_driver_btn = ActionButton(
+        self._bulk_assign_driver_btn = Btn(
             self._bulk_toolbar,
-            text=t("dispatch_board.bulk_assign_driver"),
+            t("dispatch_board.bulk_assign_driver"),
             variant="primary",
             command=self._on_bulk_assign_driver,
         )
         bulk_layout.addWidget(self._bulk_assign_driver_btn)
 
-        self._bulk_assign_truck_btn = ActionButton(
+        self._bulk_assign_truck_btn = Btn(
             self._bulk_toolbar,
-            text=t("dispatch_board.bulk_assign_truck"),
+            t("dispatch_board.bulk_assign_truck"),
             variant="primary",
             command=self._on_bulk_assign_truck,
         )
@@ -303,8 +298,8 @@ class QtDispatchBoardView(QWidget):
         columns_container = QWidget()
         columns_container.setProperty("role", "kanban-columns-container")
         columns_layout = QHBoxLayout(columns_container)
-        columns_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        columns_layout.setSpacing(S["3"])
+        columns_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        columns_layout.setSpacing(SP["3"])
 
         for i, (status_key, title_key, accent_color) in enumerate(COLUMN_DEFS):
             is_delivered = status_key == "Delivered"
@@ -332,7 +327,7 @@ class QtDispatchBoardView(QWidget):
         # ── Tab: Alerts ──────────────────────────────────────────────────────
         self._alerts_tab = QWidget()
         alerts_layout = QVBoxLayout(self._alerts_tab)
-        alerts_layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
+        alerts_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
 
         self._alerts_panel = QtDispatchAlertsPanel(
             self._alerts_tab, self.db, ops=self.ops,
@@ -345,7 +340,7 @@ class QtDispatchBoardView(QWidget):
         # ── Tab: Timeline ────────────────────────────────────────────────────
         self._timeline_tab = QWidget()
         timeline_layout = QVBoxLayout(self._timeline_tab)
-        timeline_layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
+        timeline_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
 
         self._timeline = QtDispatchTimeline(self._timeline_tab)
         timeline_layout.addWidget(self._timeline)

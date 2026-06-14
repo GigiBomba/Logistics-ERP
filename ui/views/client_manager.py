@@ -22,9 +22,14 @@ from PySide6.QtWidgets import (
 
 from services.client_service import ClientService
 from services.i18n import t, register_listener, unregister_listener
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    TEXT_MUTED, TEXT_PRIMARY, SP,
+)
+from ui.components import (
+    Card, Btn, PageTitle, Label, SectionTitle,
+)
+from ui.theme import COLORS
 from ui.widgets import (
-    ActionButton,
     ScrollableFormContainer,
     StyledLineEdit,
     StyledTableWidget,
@@ -162,8 +167,8 @@ class QtClientManager(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["5"], S["5"], S["5"], S["5"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SP["4"])
 
         self._build_top_bar(layout)
         self._build_table(layout)
@@ -171,14 +176,15 @@ class QtClientManager(QWidget):
 
     def _build_top_bar(self, parent_layout: QVBoxLayout) -> None:
         top = QFrame()
+        top.setFixedHeight(72)
         top_layout = QHBoxLayout(top)
-        top_layout.setContentsMargins(0, 0, 0, 0)
+        top_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        top_layout.setSpacing(SP["3"])
 
-        self._title_label = QLabel(t("client.title"))
-        self._title_label.setProperty("fontRole", "h2")
+        self._title_label = PageTitle(None, t("client.title"))
         top_layout.addWidget(self._title_label)
 
-        top_layout.addSpacing(S["3"])
+        top_layout.addSpacing(SP["3"])
 
         self._search_entry = _SearchLineEdit()
         self._search_entry.set_placeholder(t("common.search"))
@@ -188,7 +194,7 @@ class QtClientManager(QWidget):
 
         top_layout.addStretch()
 
-        self._new_btn = ActionButton(
+        self._new_btn = Btn(
             self,
             text="+ " + t("client.new_button"),
             command=self._open_form_new,
@@ -209,14 +215,14 @@ class QtClientManager(QWidget):
         bar_layout = QHBoxLayout(bar)
         bar_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._edit_btn = ActionButton(
+        self._edit_btn = Btn(
             self,
             text=t("client.edit_button"),
             command=self._open_form_edit,
         )
         bar_layout.addWidget(self._edit_btn)
 
-        self._deact_btn = ActionButton(
+        self._deact_btn = Btn(
             self,
             text=t("client.deactivate_button"),
             command=self._deactivate,
@@ -383,10 +389,10 @@ class QtClientFormDialog(QDialog):
         # Bottom button bar.
         btn_bar = QFrame()
         btn_layout = QHBoxLayout(btn_bar)
-        btn_layout.setContentsMargins(S["5"], 0, S["5"], S["4"])
+        btn_layout.setContentsMargins(SP["5"], 0, SP["5"], SP["4"])
 
         btn_layout.addStretch()
-        save_btn = ActionButton(
+        save_btn = Btn(
             btn_bar,
             text=t("client.save_button"),
             command=self._save,

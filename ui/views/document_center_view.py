@@ -39,6 +39,8 @@ from PySide6.QtWidgets import (
 )
 
 from ui.theme import COLORS, S
+from ui.design_tokens import SP
+from ui.components import Card, Btn, Label, PageTitle, SectionTitle, FieldLabel, Divider
 from services.i18n import t, register_listener, unregister_listener
 from services.document_service import DocumentService, IMAGE_MIME
 from ui.widgets import (
@@ -179,20 +181,21 @@ class _DocRow(QFrame):
         actions_layout.setContentsMargins(0, 0, 0, 0)
         actions_layout.setSpacing(2)
 
-        view_btn = ActionButton(
+        view_btn = Btn(
             actions, text=t("docs.view"), command=lambda: on_open(doc),
+            variant="secondary",
         )
         view_btn.setFixedSize(40, 24)
         actions_layout.addWidget(view_btn)
 
-        email_btn = ActionButton(
+        email_btn = Btn(
             actions, text=t("docs.email"), command=lambda: on_email(doc),
             variant="secondary",
         )
         email_btn.setFixedSize(40, 24)
         actions_layout.addWidget(email_btn)
 
-        del_btn = ActionButton(
+        del_btn = Btn(
             actions, text=t("docs.delete"), command=lambda: on_delete(doc),
             variant="ghost",
         )
@@ -380,9 +383,8 @@ class QtDocumentCenterView(QWidget):
         layout.addWidget(self._cat_frame)
 
         # Filter toggle
-        self._filter_toggle = QPushButton(t("docs.filters"), self._sidebar)
+        self._filter_toggle = Btn(self._sidebar, t("docs.filters"), variant="ghost")
         self._filter_toggle.setProperty("role", "filter-toggle")
-        self._filter_toggle.setFlat(True)
         self._filter_toggle.setCursor(Qt.PointingHandCursor)
         self._filter_toggle.clicked.connect(self._toggle_filters)
         layout.addWidget(self._filter_toggle)
@@ -398,10 +400,11 @@ class QtDocumentCenterView(QWidget):
         layout.addStretch()
 
         # Upload button
-        self._upload_btn = ActionButton(
+        self._upload_btn = Btn(
             self._sidebar,
             text=f"  {t('docs.upload')}",
             command=self._upload_dialog,
+            variant="primary",
         )
         layout.addWidget(self._upload_btn)
 
@@ -416,9 +419,7 @@ class QtDocumentCenterView(QWidget):
         self._clear_layout(self._filter_panel_layout)
 
         # Entity type
-        entity_lbl = QLabel(t("docs.filter_entity"), self._filter_panel)
-        entity_lbl.setProperty("fontRole", "label")
-        entity_lbl.setProperty("role", "filter-label")
+        entity_lbl = FieldLabel(self._filter_panel, t("docs.filter_entity"))
         self._filter_panel_layout.addWidget(entity_lbl)
 
         etypes = [""] + (self._service.get_entity_types() if self._service else [])
@@ -431,9 +432,7 @@ class QtDocumentCenterView(QWidget):
         self._filter_panel_layout.addWidget(self._entity_type_combo)
 
         # Date from
-        df_lbl = QLabel(t("docs.filter_date_from"), self._filter_panel)
-        df_lbl.setProperty("fontRole", "label")
-        df_lbl.setProperty("role", "filter-label")
+        df_lbl = FieldLabel(self._filter_panel, t("docs.filter_date_from"))
         self._filter_panel_layout.addWidget(df_lbl)
 
         self._date_from_entry = StyledLineEdit(
@@ -442,9 +441,7 @@ class QtDocumentCenterView(QWidget):
         self._filter_panel_layout.addWidget(self._date_from_entry)
 
         # Date to
-        dt_lbl = QLabel(t("docs.filter_date_to"), self._filter_panel)
-        dt_lbl.setProperty("fontRole", "label")
-        dt_lbl.setProperty("role", "filter-label")
+        dt_lbl = FieldLabel(self._filter_panel, t("docs.filter_date_to"))
         self._filter_panel_layout.addWidget(dt_lbl)
 
         self._date_to_entry = StyledLineEdit(
@@ -453,9 +450,7 @@ class QtDocumentCenterView(QWidget):
         self._filter_panel_layout.addWidget(self._date_to_entry)
 
         # Mime type
-        mt_lbl = QLabel(t("docs.filter_type"), self._filter_panel)
-        mt_lbl.setProperty("fontRole", "label")
-        mt_lbl.setProperty("role", "filter-label")
+        mt_lbl = FieldLabel(self._filter_panel, t("docs.filter_type"))
         self._filter_panel_layout.addWidget(mt_lbl)
 
         mtypes = [""] + [
@@ -476,12 +471,13 @@ class QtDocumentCenterView(QWidget):
         btn_row_layout.setContentsMargins(0, 0, 0, 0)
         btn_row_layout.setSpacing(S["2"])
 
-        apply_btn = ActionButton(
+        apply_btn = Btn(
             btn_row, text=t("docs.filter_apply"), command=self._apply_filters,
+            variant="primary",
         )
         btn_row_layout.addWidget(apply_btn)
 
-        clear_btn = ActionButton(
+        clear_btn = Btn(
             btn_row, text=t("docs.filter_clear"), command=self._clear_filters,
             variant="ghost",
         )
@@ -573,13 +569,13 @@ class QtDocumentCenterView(QWidget):
         batch_layout.setContentsMargins(0, 0, 0, 0)
         batch_layout.setSpacing(S["2"])
 
-        self._batch_zip_btn = ActionButton(
+        self._batch_zip_btn = Btn(
             self._batch_bar, text=t("docs.download_zip"),
             command=self._download_zip_selected, variant="secondary",
         )
         batch_layout.addWidget(self._batch_zip_btn)
 
-        self._batch_del_btn = ActionButton(
+        self._batch_del_btn = Btn(
             self._batch_bar, text=t("docs.batch_delete"),
             command=self._batch_delete_selected, variant="danger",
         )
@@ -615,13 +611,13 @@ class QtDocumentCenterView(QWidget):
 
         pager_layout.addStretch()
 
-        self._prev_btn = ActionButton(
+        self._prev_btn = Btn(
             pager, text=t("docs.prev"), command=self._prev_page,
             variant="secondary",
         )
         pager_layout.addWidget(self._prev_btn)
 
-        self._next_btn = ActionButton(
+        self._next_btn = Btn(
             pager, text=t("docs.next"), command=self._next_page,
             variant="secondary",
         )
@@ -893,9 +889,10 @@ class QtDocumentCenterView(QWidget):
         self._tag_entry = StyledLineEdit(add_tag_row, placeholder=t("docs.add_tag"))
         add_tag_layout.addWidget(self._tag_entry, 1)
 
-        add_tag_btn = ActionButton(
+        add_tag_btn = Btn(
             add_tag_row, text="+",
             command=lambda: self._add_tag_action(doc["id"]),
+            variant="ghost",
         )
         add_tag_btn.setFixedWidth(24)
         add_tag_layout.addWidget(add_tag_btn)
@@ -932,9 +929,10 @@ class QtDocumentCenterView(QWidget):
         )
         exp_layout.addWidget(self._expiry_entry, 1)
 
-        set_exp_btn = ActionButton(
+        set_exp_btn = Btn(
             exp_row, text=t("docs.set_expiry"),
             command=lambda: self._set_expiry(doc["id"]),
+            variant="secondary",
         )
         exp_layout.addWidget(set_exp_btn)
 
@@ -960,7 +958,7 @@ class QtDocumentCenterView(QWidget):
                 v_lbl.setProperty("fontRole", "small")
                 vlayout.addWidget(v_lbl, 1)
 
-                restore_btn = ActionButton(
+                restore_btn = Btn(
                     vframe, text=t("docs.restore"), variant="ghost",
                     command=lambda d=doc, vn=v["version_number"]: self._restore_version(d["id"], vn),
                 )
@@ -969,7 +967,7 @@ class QtDocumentCenterView(QWidget):
                 cl.addWidget(vframe)
 
         # Upload version button
-        upload_ver_btn = ActionButton(
+        upload_ver_btn = Btn(
             c, text=t("docs.upload_version"), variant="secondary",
             command=lambda d=doc: self._upload_version_dialog(d["id"]),
         )
@@ -979,24 +977,25 @@ class QtDocumentCenterView(QWidget):
         act = self._detail_actions
         al = self._detail_actions_layout
 
-        view_btn = ActionButton(
+        view_btn = Btn(
             act, text=t("docs.view"), command=lambda: self._open_document(doc),
+            variant="primary",
         )
         al.addWidget(view_btn)
 
-        dl_btn = ActionButton(
+        dl_btn = Btn(
             act, text=t("docs.download_zip"), variant="secondary",
             command=lambda: self._download_single_zip(doc),
         )
         al.addWidget(dl_btn)
 
-        email_btn = ActionButton(
+        email_btn = Btn(
             act, text=t("docs.email"), variant="secondary",
             command=lambda: self._email_document(doc),
         )
         al.addWidget(email_btn)
 
-        archive_btn = ActionButton(
+        archive_btn = Btn(
             act, text=t("docs.archive"), variant="ghost",
             command=lambda: self._archive_document(doc),
         )
@@ -1325,7 +1324,7 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
     count_label.setProperty("fontRole", "h3")
     header_layout.addWidget(count_label, 1)
 
-    upload_btn = ActionButton(dlg, t("docs.upload"), variant="primary")
+    upload_btn = Btn(dlg, t("docs.upload"), variant="primary")
     header_layout.addWidget(upload_btn)
     layout.addWidget(header)
 
@@ -1392,12 +1391,12 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
             row_layout.addWidget(info, 1)
 
             # Actions
-            view_btn = ActionButton(row, t("docs.view"), variant="ghost")
+            view_btn = Btn(row, t("docs.view"), variant="ghost")
             view_btn.setFixedWidth(50)
             view_btn.clicked.connect(lambda checked, d=doc: service.open_file(d["id"]))
             row_layout.addWidget(view_btn)
 
-            unlink_btn = ActionButton(row, t("docs.unlink"), variant="ghost")
+            unlink_btn = Btn(row, t("docs.unlink"), variant="ghost")
             unlink_btn.setFixedWidth(50)
             unlink_btn.clicked.connect(
                 lambda checked, d=doc: _unlink_and_refresh(d["id"])

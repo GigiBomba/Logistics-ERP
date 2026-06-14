@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from services.country_avoidance import CountryAvoidanceManager
 from services.i18n import t
 from ui.widgets import StyledCheckBox
-from ui.theme import COLORS
+from ui.design_tokens import BG_ELEVATED, TEXT_MUTED
 
 logger = logging.getLogger(__name__)
 
@@ -88,15 +88,19 @@ class CountryExclusionsPanel(QWidget):
         header_layout.addWidget(self._toggle_btn)
 
         self._header_label = QLabel(t("route.exclusions_label"))
-        self._header_label.setProperty("fontRole", "body_bold")
+        self._header_label.setProperty("role", "section-title")
+        self._header_label.style().unpolish(self._header_label)
+        self._header_label.style().polish(self._header_label)
         header_layout.addWidget(self._header_label)
 
         header_layout.addStretch(1)
 
         self._count_label = QLabel("0")
-        self._count_label.setProperty("fontRole", "small")
+        self._count_label.setProperty("role", "muted")
+        self._count_label.style().unpolish(self._count_label)
+        self._count_label.style().polish(self._count_label)
         self._count_label.setStyleSheet(
-            f"background-color: {COLORS.get('bg_elevated', '#27272a')};"
+            f"background-color: {BG_ELEVATED};"
             " border-radius: 8px; padding: 2px 8px;"
         )
         header_layout.addWidget(self._count_label)

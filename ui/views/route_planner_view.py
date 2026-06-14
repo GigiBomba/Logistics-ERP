@@ -15,7 +15,6 @@ from PySide6.QtWidgets import (
     QWidget,
     QFrame,
     QLabel,
-    QPushButton,
     QVBoxLayout,
     QHBoxLayout,
     QScrollArea,
@@ -37,11 +36,13 @@ from ui.widgets import (
     StyledLineEdit,
     StyledComboBox,
     StyledCheckBox,
-    ActionButton,
-    SectionHeader,
     field,
 )
-from ui.theme import COLORS, S
+from ui.design_tokens import SP
+from ui.components import (
+    Card, CardHeader, Btn, PageTitle, Label,
+)
+from ui.theme import COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -104,152 +105,163 @@ class QtRoutePlannerView(QWidget):
     # ── UI construction ────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        layout = QHBoxLayout(self)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(0)
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+
+        # Header
+        hdr = QWidget()
+        hdr_layout = QVBoxLayout(hdr)
+        hdr_layout.setContentsMargins(40, 0, 40, 0)
+        hdr_layout.setSpacing(SP["1"])
+        hdr.setFixedHeight(72)
+        hdr_layout.addWidget(PageTitle(hdr, t("route.page_title", default="Route Planner")))
+        hdr_layout.addWidget(Label(hdr, t("route.page_subtitle", default="Plan and optimise routes"), role="secondary"))
+        outer.addWidget(hdr)
+
+        content = QHBoxLayout()
+        content.setContentsMargins(0, 0, 0, 0)
+        content.setSpacing(0)
 
         # Sidebar
         sidebar = QFrame(self)
-        sidebar.setProperty("role", "card")
+        sidebar.setObjectName("card")
         sidebar.setFixedWidth(self.SIDEBAR_MIN_WIDTH)
         sidebar_layout = QVBoxLayout(sidebar)
-        sidebar_layout.setContentsMargins(16, 16, 16, 16)
-        sidebar_layout.setSpacing(0)
+        sidebar_layout.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
+        sidebar_layout.setSpacing(SP["3"])
 
         self._build_sidebar(sidebar_layout)
-        layout.addWidget(sidebar)
+        content.addWidget(sidebar)
 
         # Map
         self.map_widget = MapWidget(self)
         self._map_renderer = QtRouteMapRenderer(self.map_widget)
         self.map_widget.set_click_callback(self._on_map_click)
         self._click_to_add_enabled = False
-        layout.addWidget(self.map_widget, 1)
+        content.addWidget(self.map_widget, 1)
+
+        outer.addLayout(content)
 
     def _build_sidebar(self, layout: QVBoxLayout) -> None:
-        # Body — no scroll, all sections visible
-        body = QWidget()
-        body_layout = QVBoxLayout(body)
-        body_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        body_layout.setSpacing(S["3"])
+        # Body — scrollable section between header and footer
+        body = QScrollArea()
+        body.setWidgetResizable(True)
+        body.setFrameShape(QFrame.NoFrame)
+        body_widget = QWidget()
+        body_layout = QVBoxLayout(body_widget)
+        body_layout.setContentsMargins(0, 0, 0, 0)
+        body_layout.setSpacing(SP["3"])
+        body_layout.setAlignment(Qt.AlignTop)
 
-        # ── Card 1: SMART ROUTE ──
-        card1 = QFrame()
-        card1.setProperty("role", "card")
-        card1_layout = QVBoxLayout(card1)
-        card1_layout.setContentsMargins(16, 16, 16, 16)
-        card1_layout.setSpacing(S["3"])
-
-        # Section header
-        hdr = SectionHeader(card1, f"\U0001f4cd {t('route.section_header')}")
-        card1_layout.addWidget(hdr)
+        # ── Card 1: Route Inputs ──
+        card1 = Card(body_widget)
+        c1l = card1.layout()
+        CardHeader(c1l, t("route.section_header"))
 
         # Stop list — always visible, no scroll wrapper
         self._stops_container = QWidget()
         self._stops_container_layout = QVBoxLayout(self._stops_container)
         self._stops_container_layout.setContentsMargins(0, 0, 0, 0)
-        self._stops_container_layout.setSpacing(S["1"])
+        self._stops_container_layout.setSpacing(SP["1"])
         self._stops_container_layout.setAlignment(Qt.AlignTop)
-        card1_layout.addWidget(self._stops_container)
+        c1l.addWidget(self._stops_container)
 
         # Add/Remove buttons
         btn_row = QWidget(card1)
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(S["2"])
-        add_btn = ActionButton(btn_row, t("route.add_stop"), self._add_stop_field, variant="secondary")
+        btn_layout.setSpacing(SP["2"])
+        add_btn = Btn(btn_row, t("route.add_stop"), variant="ghost", size="sm", command=self._add_stop_field)
         btn_layout.addWidget(add_btn, 1)
-        remove_btn = ActionButton(btn_row, t("route.remove_stop"), self._remove_stop_field, variant="secondary")
+        remove_btn = Btn(btn_row, t("route.remove_stop"), variant="ghost", size="sm", command=self._remove_stop_field)
         btn_layout.addWidget(remove_btn, 1)
-        card1_layout.addWidget(btn_row)
+        c1l.addWidget(btn_row)
 
         body_layout.addWidget(card1)
 
-        # Compliance
-        self._summary_text = QLabel("")
-        self._summary_text.setProperty("fontRole", "muted")
-        self._summary_text.setWordWrap(True)
-        body_layout.addWidget(self._summary_text)
-
-        self._explanation_text = QLabel("")
-        self._explanation_text.setProperty("fontRole", "helper")
-        self._explanation_text.setWordWrap(True)
-        body_layout.addWidget(self._explanation_text)
-
-        # Comparison checkbox
-        self._compare_check = StyledCheckBox(body, text=t("route.show_comparison"))
-        self._compare_check.setChecked(True)
-        body_layout.addWidget(self._compare_check)
-
-        # Click map to add stop toggle
-        self._click_add_check = StyledCheckBox(body, text=t("route.click_to_add_stop"))
-        self._click_add_check.stateChanged.connect(self._toggle_click_add)
-        body_layout.addWidget(self._click_add_check)
-
-        # Export button
-        export_btn = ActionButton(
-            body, t("route.export_metadata"), self._export_route_metadata, variant="secondary",
-        )
-        body_layout.addWidget(export_btn)
-
-        # ── Card 2: SELECT TRUCK + ROUTE PROFILE ──
-        card2 = QFrame()
-        card2.setProperty("role", "card")
-        card2_layout = QVBoxLayout(card2)
-        card2_layout.setContentsMargins(16, 16, 16, 16)
-        card2_layout.setSpacing(S["3"])
+        # ── Card 2: Options ──
+        card2 = Card(body_widget)
+        c2l = card2.layout()
+        CardHeader(c2l, t("route.options_header", default="OPTIONS"))
 
         # Truck dropdown
         self.truck_combo = StyledComboBox(card2)
         self.truck_combo.currentIndexChanged.connect(self._on_truck_selected)
-        card2_layout.addWidget(field(card2, t("route.select_truck"), self.truck_combo))
+        c2l.addWidget(field(card2, t("route.select_truck"), self.truck_combo))
 
         # Profile dropdown
         self._rebuild_profile_display_names()
         self.profile_combo = StyledComboBox(card2, values=list(self._profile_key_to_display.values()))
         self.profile_combo.setCurrentText(self._profile_key_to_display.get("Recommended", "Recommended"))
-        card2_layout.addWidget(field(card2, t("route.profile_label"), self.profile_combo))
+        c2l.addWidget(field(card2, t("route.profile_label"), self.profile_combo))
 
         body_layout.addWidget(card2)
 
         # Country exclusions
         self._exclusions_panel = CountryExclusionsPanel(
-            body,
+            body_widget,
             self._core.country_avoidance,
             on_change=self._on_exclusions_changed,
         )
         body_layout.addWidget(self._exclusions_panel)
 
+        # Compliance checkboxes (between cards 2 and 3)
+        self._compare_check = StyledCheckBox(body_widget, text=t("route.show_comparison"))
+        self._compare_check.setChecked(True)
+        body_layout.addWidget(self._compare_check)
+
+        self._click_add_check = StyledCheckBox(body_widget, text=t("route.click_to_add_stop"))
+        self._click_add_check.stateChanged.connect(self._toggle_click_add)
+        body_layout.addWidget(self._click_add_check)
+
+        body_layout.addStretch()
+        body.setWidget(body_widget)
         layout.addWidget(body, 1)
 
-        # Footer (fixed at bottom of sidebar)
-        footer = QFrame()
-        footer_layout = QVBoxLayout(footer)
-        footer_layout.setContentsMargins(S["5"], S["2"], S["5"], S["4"])
-        footer_layout.setSpacing(S["2"])
+        # ── Card 3: Results & Actions (fixed at bottom) ──
+        card3 = Card()
+        c3l = card3.layout()
 
-        self.calculate_btn = ActionButton(
-            footer,
-            f"\U0001f50d {t('route.calculate_button')}",
-            self._on_calculate_click,
+        self.calculate_btn = Btn(
+            card3,
+            t("route.calculate_button"),
             variant="primary",
+            command=self._on_calculate_click,
         )
-        footer_layout.addWidget(self.calculate_btn)
+        c3l.addWidget(self.calculate_btn)
+
+        # Export button
+        export_btn = Btn(
+            card3, t("route.export_metadata"), variant="secondary", size="sm",
+            command=self._export_route_metadata,
+        )
+        c3l.addWidget(export_btn)
 
         self.lbl_info = QLabel(t("route.info_placeholder"))
         self.lbl_info.setProperty("fontRole", "muted")
         self.lbl_info.setWordWrap(True)
-        footer_layout.addWidget(self.lbl_info)
+        c3l.addWidget(self.lbl_info)
+
+        # Compliance texts
+        self._summary_text = QLabel("")
+        self._summary_text.setProperty("fontRole", "muted")
+        self._summary_text.setWordWrap(True)
+        c3l.addWidget(self._summary_text)
+
+        self._explanation_text = QLabel("")
+        self._explanation_text.setProperty("fontRole", "helper")
+        self._explanation_text.setWordWrap(True)
+        c3l.addWidget(self._explanation_text)
 
         self._dispatch_container = QWidget()
         self._dispatch_container_layout = QVBoxLayout(self._dispatch_container)
         self._dispatch_container_layout.setContentsMargins(0, 0, 0, 0)
-        self._dispatch_container_layout.setSpacing(S["2"])
+        self._dispatch_container_layout.setSpacing(SP["2"])
         self._dispatch_container.hide()
-        footer_layout.addWidget(self._dispatch_container)
+        c3l.addWidget(self._dispatch_container)
 
-        self.sidebar_footer = footer
-        layout.addWidget(footer)
+        layout.addWidget(card3)
 
         self._load_trucks()
 
@@ -335,8 +347,8 @@ class QtRoutePlannerView(QWidget):
 
             row = QWidget(self._stops_container)
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(S["1"], 0, S["1"], 0)
-            row_layout.setSpacing(S["2"])
+            row_layout.setContentsMargins(SP["1"], 0, SP["1"], 0)
+            row_layout.setSpacing(SP["2"])
 
             if stop["type"] == "start":
                 label_text = t("route.stop_start")
@@ -357,10 +369,8 @@ class QtRoutePlannerView(QWidget):
             row_layout.addWidget(entry, 1)
 
             if stop["type"] == "stop":
-                del_btn = QPushButton("\U0001f5d1")
-                del_btn.setProperty("role", "nav-toggle")
+                del_btn = Btn(row, "", variant="ghost", icon_name="mdi6.delete", command=lambda i=idx: self._remove_stop_index(i))
                 del_btn.setFixedSize(28, 28)
-                del_btn.clicked.connect(lambda checked=False, i=idx: self._remove_stop_index(i))
                 row_layout.addWidget(del_btn)
 
             self._stops_container_layout.addWidget(row)
@@ -503,20 +513,18 @@ class QtRoutePlannerView(QWidget):
         btn_row = QWidget()
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(S["2"])
+        btn_layout.setSpacing(SP["2"])
 
-        calc_btn = ActionButton(
+        calc_btn = Btn(
             btn_row,
-            f"\U0001f4b0 {t('route.send_to_calculator')}",
-            self._go_to_calculator,
+            t("route.send_to_calculator"),
             variant="secondary",
+            command=self._go_to_calculator,
         )
         btn_layout.addWidget(calc_btn, 1)
 
-        discard_btn = QPushButton("\U0001f5d1")
+        discard_btn = Btn(btn_row, "", variant="danger", icon_name="mdi6.delete", command=self._discard_route)
         discard_btn.setFixedSize(36, 36)
-        discard_btn.setProperty("variant", "danger")
-        discard_btn.clicked.connect(self._discard_route)
         btn_layout.addWidget(discard_btn)
 
         self._dispatch_container_layout.addWidget(btn_row)

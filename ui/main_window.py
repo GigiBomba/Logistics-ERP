@@ -114,32 +114,32 @@ class MainWindow(QMainWindow):
         nav = self.nav
 
         nav.add_group(t("nav.group_overview"), "nav.group_overview")
-        nav.add_item("overview", "\U0001f3e0", t("nav.overview"), i18n_key="nav.overview")
-        nav.add_item("analytics", "\U0001f4c8", t("nav.analytics"), i18n_key="nav.analytics")
+        nav.add_item("overview", t("nav.overview"), i18n_key="nav.overview")
+        nav.add_item("analytics", t("nav.analytics"), i18n_key="nav.analytics")
 
         nav.add_group(t("nav.group_operations"), "nav.group_operations")
-        nav.add_item("route_planner", "\U0001f5fa", t("nav.routes"), i18n_key="nav.routes")
-        nav.add_item("calculator", "\U0001f4b0", t("nav.calculator"), i18n_key="nav.calculator")
-        nav.add_item("dispatch_board", "\U0001f69a", t("nav.dispatch_board"), i18n_key="nav.dispatch_board")
-        nav.add_item("tracking", "\U0001f4cd", t("nav.live_tracking"), i18n_key="nav.live_tracking")
+        nav.add_item("route_planner", t("nav.routes"), i18n_key="nav.routes")
+        nav.add_item("calculator", t("nav.calculator"), i18n_key="nav.calculator")
+        nav.add_item("dispatch_board", t("nav.dispatch_board"), i18n_key="nav.dispatch_board")
+        nav.add_item("tracking", t("nav.live_tracking"), i18n_key="nav.live_tracking")
 
         nav.add_group(t("nav.group_fleet"), "nav.group_fleet")
-        nav.add_item("fleet", "\U0001f69b", t("nav.fleet"), i18n_key="nav.fleet")
-        nav.add_item("driver_manager", "\U0001f464", t("nav.driver_manager"), i18n_key="nav.driver_manager")
-        nav.add_item("clients", "\U0001f465", t("nav.clients"), i18n_key="nav.clients")
-        nav.add_item("documents", "\U0001F4C2", t("nav.documents"), i18n_key="nav.documents")
-        nav.add_item("maintenance", "\U0001f527", t("nav.maintenance_analytics"),
+        nav.add_item("fleet", t("nav.fleet"), i18n_key="nav.fleet")
+        nav.add_item("driver_manager", t("nav.driver_manager"), i18n_key="nav.driver_manager")
+        nav.add_item("clients", t("nav.clients"), i18n_key="nav.clients")
+        nav.add_item("documents", t("nav.documents"), i18n_key="nav.documents")
+        nav.add_item("maintenance", t("nav.maintenance_analytics"),
                      i18n_key="nav.maintenance_analytics")
-        nav.add_item("maintenance_control", "\U0001f529", t("nav.maintenance_control"),
+        nav.add_item("maintenance_control", t("nav.maintenance_control"),
                      i18n_key="nav.maintenance_control")
-        nav.add_item("tachograph", "\U0001f4be", t("nav.tachograph"), i18n_key="nav.tachograph")
+        nav.add_item("tachograph", t("nav.tachograph"), i18n_key="nav.tachograph")
 
         nav.add_group(t("nav.group_finance"), "nav.group_finance")
-        nav.add_item("invoices", "\U0001f9fe", t("nav.generators"), i18n_key="nav.generators")
-        nav.add_item("history", "\U0001f4cb", t("nav.history"), i18n_key="nav.history")
-        nav.add_item("route_history", "\U0001f5c2", t("nav.route_history"), i18n_key="nav.route_history")
+        nav.add_item("invoices", t("nav.generators"), i18n_key="nav.generators")
+        nav.add_item("history", t("nav.history"), i18n_key="nav.history")
+        nav.add_item("route_history", t("nav.route_history"), i18n_key="nav.route_history")
 
-        nav.add_settings_item("settings", "\u2699\ufe0f", t("nav.settings"))
+        nav.add_settings_item("settings", t("nav.settings"))
         nav.select("overview")
 
     def _setup_shortcuts(self):
@@ -321,7 +321,9 @@ class PlaceholderView(QWidget):
         layout.setAlignment(Qt.AlignCenter)
 
         label = QLabel(f"{key}\n(Module not yet migrated)")
-        label.setProperty("fontRole", "muted")
+        label.setProperty("role", "muted")
+        label.style().unpolish(label)
+        label.style().polish(label)
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
 

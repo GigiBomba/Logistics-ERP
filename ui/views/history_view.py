@@ -14,6 +14,7 @@ from typing import Optional
 from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
     QWidget,
+    QFrame,
     QLabel,
     QLineEdit,
     QVBoxLayout,
@@ -34,6 +35,8 @@ from ui.widgets import (
     StyledTableWidget,
 )
 from ui.theme import COLORS, S
+from ui.design_tokens import SP
+from ui.components import Card, Btn, Label, PageTitle, SectionTitle, FieldLabel, Divider
 
 logger = logging.getLogger(__name__)
 
@@ -89,21 +92,36 @@ class QtHistoryView(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["10"], SP["6"], SP["10"], SP["10"])
+        layout.setSpacing(0)
 
+        self._build_header(layout)
         self._build_filter_bar(layout)
-        self._build_table(layout)
+        self._build_table_card(layout)
         self._build_action_bar(layout)
+
+    def _build_header(self, parent_layout: QVBoxLayout) -> None:
+        header = QFrame()
+        header.setObjectName("card")
+        header.setFixedHeight(72)
+        hdr_layout = QVBoxLayout(header)
+        hdr_layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
+
+        title = PageTitle(header, t("history.title"))
+        hdr_layout.addWidget(title)
+
+        subtitle = Label(header, t("history.subtitle"), role="secondary")
+        hdr_layout.addWidget(subtitle)
+
+        parent_layout.addWidget(header)
 
     def _build_filter_bar(self, layout: QVBoxLayout) -> None:
         bar = QWidget()
         bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(0, 0, 0, 0)
-        bar_layout.setSpacing(S["2"])
+        bar_layout.setContentsMargins(0, SP["2"], 0, SP["2"])
+        bar_layout.setSpacing(SP["2"])
 
-        lbl = QLabel(f"\U0001f50d {t('history.search_label')}")
-        lbl.setProperty("fontRole", "label")
+        lbl = FieldLabel(bar, f"\U0001f50d {t('history.search_label')}")
         bar_layout.addWidget(lbl)
 
         self.e_search = QLineEdit()
@@ -119,17 +137,16 @@ class QtHistoryView(QWidget):
         self.c_status.currentTextChanged.connect(self._on_status_filter_changed)
         bar_layout.addWidget(self.c_status)
 
-        reset_btn = ActionButton(bar, t("history.reset_button"), self._reset, variant="secondary")
+        reset_btn = Btn(bar, t("history.reset_button"), command=self._reset, variant="secondary")
         bar_layout.addWidget(reset_btn)
 
-        self._count_lbl = QLabel("")
-        self._count_lbl.setProperty("fontRole", "muted")
+        self._count_lbl = Label(bar, "", role="muted")
         bar_layout.addWidget(self._count_lbl)
 
         bar_layout.addStretch(1)
         layout.addWidget(bar)
 
-    def _build_table(self, layout: QVBoxLayout) -> None:
+    def _build_table_card(self, layout: QVBoxLayout) -> None:
         columns = [
             ("id", t("history.col_id"), 60),
             ("status", t("history.col_status"), 80),
@@ -141,33 +158,35 @@ class QtHistoryView(QWidget):
             ("gross_per_km", t("history.col_brut_km"), 70),
             ("net_profit", t("history.col_profit"), 80),
         ]
+        card = Card(padding=False)
         self.table = StyledTableWidget(
-            self,
+            card,
             columns=columns,
         )
         self.table.horizontalHeader().setStretchLastSection(False)
         for i in range(len(columns)):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
-        layout.addWidget(self.table, 1)
+        card.layout().addWidget(self.table)
+        layout.addWidget(card, 1)
 
     def _build_action_bar(self, layout: QVBoxLayout) -> None:
         footer = QWidget()
         footer_layout = QHBoxLayout(footer)
-        footer_layout.setContentsMargins(0, 0, 0, 0)
-        footer_layout.setSpacing(S["2"])
+        footer_layout.setContentsMargins(0, SP["2"], 0, 0)
+        footer_layout.setSpacing(SP["2"])
 
         btn_data = [
-            ("history.button_invoice", self._generate_invoice),
-            ("history.button_export_pdf", self._export_pdf),
-            ("history.button_export_excel", self._export_excel),
-            ("history.button_email_invoice", self._send_invoice_email),
-            ("history.button_view_route", self._view_route),
-            ("history.button_delete", self._delete),
-            ("history.button_documents", self._open_trip_documents),
-            ("history.button_load_more", self._load_more),
+            ("history.button_invoice", self._generate_invoice, "primary"),
+            ("history.button_export_pdf", self._export_pdf, "secondary"),
+            ("history.button_export_excel", self._export_excel, "secondary"),
+            ("history.button_email_invoice", self._send_invoice_email, "secondary"),
+            ("history.button_view_route", self._view_route, "secondary"),
+            ("history.button_delete", self._delete, "danger"),
+            ("history.button_documents", self._open_trip_documents, "secondary"),
+            ("history.button_load_more", self._load_more, "secondary"),
         ]
-        for key, cmd in btn_data:
-            btn = ActionButton(footer, t(key), cmd, variant="secondary")
+        for key, cmd, variant in btn_data:
+            btn = Btn(footer, t(key), command=cmd, variant=variant)
             footer_layout.addWidget(btn)
         footer_layout.addStretch(1)
         layout.addWidget(footer)

@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
 )
 
 from ui.theme import COLORS, S
+from ui.design_tokens import SP
 from ui.styles import Theme
 from ui.widgets import (
     StyledLineEdit,
@@ -40,6 +41,7 @@ from ui.widgets import (
     ScrollableFormContainer,
     field,
 )
+from ui.components import Card, Btn, Label, PageTitle, SectionTitle, FieldLabel, Divider
 from services.i18n import t, register_listener, unregister_listener
 from services.preferences import PreferencesManager
 from services.invoicing.config_manager import load_company_config, save_company_config
@@ -176,17 +178,15 @@ class QtSettingsView(QWidget):
 
     def _build_header(self, parent_layout: QVBoxLayout) -> None:
         header = QFrame()
-        header.setProperty("role", "card")
+        header.setObjectName("card")
         header.setFixedHeight(72)
         hdr_layout = QVBoxLayout(header)
-        hdr_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
+        hdr_layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
 
-        title = QLabel(t("settings.title"))
-        title.setProperty("fontRole", "h1")
+        title = PageTitle(header, t("settings.title"))
         hdr_layout.addWidget(title)
 
-        subtitle = QLabel(t("settings.subtitle"))
-        subtitle.setProperty("fontRole", "muted")
+        subtitle = Label(header, t("settings.subtitle"), role="secondary")
         hdr_layout.addWidget(subtitle)
 
         parent_layout.addWidget(header)
@@ -196,30 +196,22 @@ class QtSettingsView(QWidget):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _section_card(self, title_key: str) -> QFrame:
-        """Build a QFrame card with a SectionHeader and a dedicated content area.
+        """Build a Card with a SectionTitle and a dedicated content area.
 
         Returns the card; its content layout is stored at ``card._content_layout``
         so callers can ``.addWidget()`` field rows into it.
         """
-        card = QFrame()
-        card.setProperty("role", "card")
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(0, 0, 0, 0)
-        card_layout.setSpacing(0)
+        card = Card(self._scroll)
 
-        header = SectionHeader(card, t(title_key))
-        self._section_headings[title_key] = header.label
-        card_layout.addWidget(header)
+        title_lbl = SectionTitle(card, t(title_key))
+        card.layout().addWidget(title_lbl)
+        self._section_headings[title_key] = title_lbl
 
-        content = QWidget(card)
-        content.setProperty("role", "card-content")
-        content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(S["5"], S["3"], S["5"], S["5"])
-        content_layout.setSpacing(S["3"])
-        card_layout.addWidget(content)
+        div = Divider(card)
+        card.layout().addWidget(div)
 
-        card._content_layout = content_layout
-        card._content_widget = content  # keep a reference for cleanup
+        card._content_layout = card.layout()
+        card._content_widget = card
         return card
 
     def _add_labeled_field(
@@ -231,14 +223,24 @@ class QtSettingsView(QWidget):
     ) -> QWidget:
         """Append a label + widget row inside a section card.
 
-        Uses the global ``field()`` helper and wires i18n tracking.
+        Uses FieldLabel() from the design system and wires i18n tracking.
         Returns the container widget.
         """
-        container = field(card._content_widget, t(label_key), widget, helper_text)
-        # The first (and only) QLabel child is the field label
-        lbl = container.findChild(QLabel)
-        if lbl is not None:
-            self._i18n_labels.append((lbl, label_key))
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SP["1"])
+
+        label = FieldLabel(container, t(label_key))
+        layout.addWidget(label)
+        self._i18n_labels.append((label, label_key))
+
+        layout.addWidget(widget)
+
+        if helper_text:
+            helper = Label(container, helper_text, role="muted")
+            layout.addWidget(helper)
+
         card._content_layout.addWidget(container)
         return container
 
@@ -284,22 +286,21 @@ class QtSettingsView(QWidget):
             container = QWidget()
             vlyt = QVBoxLayout(container)
             vlyt.setContentsMargins(0, 0, 0, 0)
-            vlyt.setSpacing(S["1"])
+            vlyt.setSpacing(SP["1"])
 
-            lbl = QLabel(t(label_key))
-            lbl.setProperty("fontRole", "label")
+            lbl = FieldLabel(container, t(label_key))
             vlyt.addWidget(lbl)
             self._i18n_labels.append((lbl, label_key))
 
             row = QWidget()
             hlyt = QHBoxLayout(row)
             hlyt.setContentsMargins(0, 0, 0, 0)
-            hlyt.setSpacing(S["2"])
+            hlyt.setSpacing(SP["2"])
 
             entry = StyledLineEdit(text=value)
             hlyt.addWidget(entry, 1)
 
-            browse_btn = ActionButton(row, "...", command=lambda: on_browse(entry), variant="ghost")
+            browse_btn = Btn(row, "...", variant="ghost", command=lambda: on_browse(entry))
             browse_btn.setFixedWidth(32)
             hlyt.addWidget(browse_btn)
 
@@ -318,17 +319,16 @@ class QtSettingsView(QWidget):
         colour_container = QWidget()
         colour_vlyt = QVBoxLayout(colour_container)
         colour_vlyt.setContentsMargins(0, 0, 0, 0)
-        colour_vlyt.setSpacing(S["1"])
+        colour_vlyt.setSpacing(SP["1"])
 
-        colour_lbl = QLabel(t("settings.field_color"))
-        colour_lbl.setProperty("fontRole", "label")
+        colour_lbl = FieldLabel(colour_container, t("settings.field_color"))
         colour_vlyt.addWidget(colour_lbl)
         self._i18n_labels.append((colour_lbl, "settings.field_color"))
 
         colour_row = QWidget()
         colour_hlyt = QHBoxLayout(colour_row)
         colour_hlyt.setContentsMargins(0, 0, 0, 0)
-        colour_hlyt.setSpacing(S["2"])
+        colour_hlyt.setSpacing(SP["2"])
 
         e_colour = StyledLineEdit(text=conf.get("company_color", "#6366f1"))
         colour_hlyt.addWidget(e_colour, 1)
@@ -344,11 +344,11 @@ class QtSettingsView(QWidget):
         )
         colour_hlyt.addWidget(swatch)
 
-        pick_btn = ActionButton(
+        pick_btn = Btn(
             colour_row,
             t("invoice_editor.pick_color"),
-            command=lambda: self._pick_brand_color(e_colour, swatch),
             variant="ghost",
+            command=lambda: self._pick_brand_color(e_colour, swatch),
         )
         colour_hlyt.addWidget(pick_btn)
 
@@ -493,9 +493,9 @@ class QtSettingsView(QWidget):
         btn_row = QWidget()
         btn_hlyt = QHBoxLayout(btn_row)
         btn_hlyt.setContentsMargins(0, 0, 0, 0)
-        btn_hlyt.setSpacing(S["2"])
+        btn_hlyt.setSpacing(SP["2"])
 
-        test_btn = ActionButton(
+        test_btn = Btn(
             btn_row, t("settings.test_connection"),
             command=self._test_smtp,
             variant="secondary",
@@ -503,7 +503,7 @@ class QtSettingsView(QWidget):
         btn_hlyt.addWidget(test_btn)
         self._i18n_buttons.append((test_btn, "settings.test_connection"))
 
-        logs_btn = ActionButton(
+        logs_btn = Btn(
             btn_row, t("settings.email_logs"),
             command=self._view_email_logs,
             variant="secondary",
@@ -522,8 +522,7 @@ class QtSettingsView(QWidget):
         self._scroll.add_widget(card)
 
         # Hint label
-        hint = QLabel(t("tracking.setup_hint"))
-        hint.setProperty("fontRole", "muted")
+        hint = Label(card, t("tracking.setup_hint"), role="muted")
         hint.setWordWrap(True)
         card._content_layout.addWidget(hint)
 
@@ -575,19 +574,23 @@ class QtSettingsView(QWidget):
         # Add each tracked field row to the card
         for key, label_key, _ in tracking_defs:
             row_widget, entry = self._tracking_rows[key]
-            container = field(card._content_widget, t(label_key), row_widget)
-            lbl = container.findChild(QLabel)
-            if lbl is not None:
-                self._i18n_labels.append((lbl, label_key))
+            container = QWidget()
+            vlyt = QVBoxLayout(container)
+            vlyt.setContentsMargins(0, 0, 0, 0)
+            vlyt.setSpacing(SP["1"])
+            lbl = FieldLabel(container, t(label_key))
+            vlyt.addWidget(lbl)
+            self._i18n_labels.append((lbl, label_key))
+            vlyt.addWidget(row_widget)
             card._content_layout.addWidget(container)
 
         # Test button row
         test_row = QWidget()
         test_hlyt = QHBoxLayout(test_row)
         test_hlyt.setContentsMargins(0, 0, 0, 0)
-        test_hlyt.setSpacing(S["2"])
+        test_hlyt.setSpacing(SP["2"])
 
-        test_btn = ActionButton(
+        test_btn = Btn(
             test_row, t("tracking.btn_test"),
             command=self._test_tracking_connection,
             variant="secondary",
@@ -595,8 +598,7 @@ class QtSettingsView(QWidget):
         test_hlyt.addWidget(test_btn)
         self._i18n_buttons.append((test_btn, "tracking.btn_test"))
 
-        self._tracking_test_label = QLabel("")
-        self._tracking_test_label.setProperty("fontRole", "small")
+        self._tracking_test_label = Label(test_row, "", role="muted")
         test_hlyt.addWidget(self._tracking_test_label)
 
         card._content_layout.addWidget(test_row)
@@ -724,12 +726,12 @@ class QtSettingsView(QWidget):
 
     def _build_save_bar(self, parent_layout: QVBoxLayout) -> None:
         bar = QFrame()
-        bar.setProperty("role", "card")
+        bar.setObjectName("card")
         bar.setFixedHeight(64)
         bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(S["5"], S["3"], S["5"], S["3"])
+        bar_layout.setContentsMargins(SP["10"], SP["3"], SP["10"], SP["3"])
 
-        reset_btn = ActionButton(
+        reset_btn = Btn(
             bar, t("settings.reset"),
             command=self._reset,
             variant="secondary",
@@ -739,7 +741,7 @@ class QtSettingsView(QWidget):
 
         bar_layout.addStretch(1)
 
-        save_btn = ActionButton(
+        save_btn = Btn(
             bar, t("settings.save"),
             command=self._save_all,
             variant="primary",

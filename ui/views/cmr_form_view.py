@@ -36,14 +36,13 @@ from PySide6.QtWidgets import (
 )
 
 from ui.theme import COLORS, S
+from ui.components import Card, CardHeader, Btn, PageTitle, Label, Divider
 from services.i18n import t, register_listener, unregister_listener
 from ui.widgets import (
-    ActionButton,
     StyledComboBox,
     StyledLineEdit,
     StyledTextEdit,
     ScrollableFormContainer,
-    SectionHeader,
     field,
 )
 from ui.widgets.signature_pad import QtSignaturePad
@@ -123,20 +122,20 @@ class QtCmrFormView(QWidget):
     def _build_page_heading(self):
         heading = QWidget()
         heading_layout = QVBoxLayout(heading)
-        heading_layout.setContentsMargins(0, 0, 0, S["2"])
+        heading_layout.setContentsMargins(0, 0, 0, S["3"])
         heading_layout.setSpacing(S["1"])
 
-        title = QLabel(t("cmr.title", "CMR International Consignment Note"))
-        title.setProperty("fontRole", "h1")
-        title.setStyleSheet(f"color: {COLORS['text_primary']};")
-        heading_layout.addWidget(title)
-
-        subtitle = QLabel(
-            t("cmr.subtitle", "UN/CEFACT 24-Box Layout — Boxes 1 to 24 in order")
+        self._page_title = PageTitle(
+            heading, t("cmr.title", "CMR International Consignment Note")
         )
-        subtitle.setProperty("fontRole", "small")
-        subtitle.setStyleSheet(f"color: {COLORS['text_muted']};")
-        heading_layout.addWidget(subtitle)
+        heading_layout.addWidget(self._page_title)
+
+        self._page_subtitle = Label(
+            heading,
+            t("cmr.subtitle", "UN/CEFACT 24-Box Layout — Boxes 1 to 24 in order"),
+            role="secondary",
+        )
+        heading_layout.addWidget(self._page_subtitle)
 
         # Mini box navigator
         nav = QWidget()
@@ -160,22 +159,19 @@ class QtCmrFormView(QWidget):
         self._scroll_container.add_widget(heading)
 
     def _build_role_selector(self):
-        card = self._make_card()
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(S["5"], S["5"], S["5"], S["5"])
-        card_layout.setSpacing(S["2"])
+        card = Card()
+        card.layout().setSpacing(S["2"])
 
-        label = QLabel(t("cmr.select_role", "SELECT YOUR ROLE"))
-        label.setProperty("fontRole", "label")
-        label.setStyleSheet(f"color: {COLORS['text_muted']};")
-        card_layout.addWidget(label)
+        label = Label(card, t("cmr.select_role", "SELECT YOUR ROLE"), role="section-title")
+        card.layout().addWidget(label)
+        card.layout().addWidget(Divider())
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(S["2"])
 
-        self._role_consignor_btn = ActionButton(
+        self._role_consignor_btn = Btn(
             row,
             t("cmr.role_consignor", "I am the Consignor (Sender)"),
             command=lambda: self._set_role(True),
@@ -184,7 +180,7 @@ class QtCmrFormView(QWidget):
         self._role_consignor_btn.setFixedHeight(42)
         row_layout.addWidget(self._role_consignor_btn, 1)
 
-        self._role_consignee_btn = ActionButton(
+        self._role_consignee_btn = Btn(
             row,
             t("cmr.role_consignee", "I am the Consignee (Receiver)"),
             command=lambda: self._set_role(False),
@@ -193,51 +189,26 @@ class QtCmrFormView(QWidget):
         self._role_consignee_btn.setFixedHeight(42)
         row_layout.addWidget(self._role_consignee_btn, 1)
 
-        card_layout.addWidget(row)
+        card.layout().addWidget(row)
         self._scroll_container.add_widget(card)
 
     def _make_card(self) -> QFrame:
-        """Create a section card QFrame with role="card"."""
-        card = QFrame()
-        card.setProperty("role", "card")
-        card.setFrameShape(QFrame.StyledPanel)
-        return card
+        """Create a section card using the design system Card()."""
+        return Card()
 
     def _section_card(self, title: str, subtitle: str) -> QWidget:
-        """Create a themed card with SectionHeader and return the content widget.
+        """Create a themed card with CardHeader and return the content widget.
 
         Callers pack form fields into the returned widget's layout.
         """
-        card = self._make_card()
-        card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(0, 0, 0, 0)
-        card_layout.setSpacing(0)
-
-        header = SectionHeader(card, title)
-        card_layout.addWidget(header)
-
-        if subtitle:
-            sub = QLabel(subtitle)
-            sub.setProperty("fontRole", "small")
-            sub.setStyleSheet(f"color: {COLORS['text_muted']};")
-            sub.setContentsMargins(S["5"], S["1"], S["5"], 0)
-            card_layout.addWidget(sub)
-
-        # Divider line
-        divider = QFrame()
-        divider.setFrameShape(QFrame.HLine)
-        divider.setFrameShadow(QFrame.Plain)
-        divider.setFixedHeight(1)
-        divider.setStyleSheet(f"background-color: {COLORS['border']};")
-        divider.setContentsMargins(0, 0, 0, 0)
-        card_layout.addWidget(divider)
+        card = Card()
+        CardHeader(card.layout(), title=title, subtitle=subtitle)
 
         content = QWidget()
-        content.setContentsMargins(S["5"], S["4"], S["5"], S["5"])
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
         content_layout.setSpacing(S["3"])
-        card_layout.addWidget(content)
+        card.layout().addWidget(content)
 
         self._scroll_container.add_widget(card)
         return content
@@ -606,7 +577,7 @@ class QtCmrFormView(QWidget):
         self._adr_content_layout.setSpacing(S["2"])
         adr_wrapper_layout.addWidget(self._adr_content)
 
-        self._adr_add_btn = ActionButton(
+        self._adr_add_btn = Btn(
             self._adr_content_wrapper,
             t("cmr.add_adr", "+ Add ADR Row"),
             command=self._add_adr_row,
@@ -639,7 +610,7 @@ class QtCmrFormView(QWidget):
             e = StyledLineEdit(row, placeholder=lbl, height=28)
             row_layout.addWidget(e, 1)
 
-        remove_btn = ActionButton(
+        remove_btn = Btn(
             row, "X", variant="danger",
             command=lambda r=row: self._remove_adr_row(r),
         )
@@ -767,7 +738,7 @@ class QtCmrFormView(QWidget):
         self._succ_container_layout.setSpacing(S["2"])
         sc_layout.addWidget(self._succ_container)
 
-        self._succ_add_btn = ActionButton(
+        self._succ_add_btn = Btn(
             sc_container,
             t("cmr.add_successive_carrier", "+ Add Successive Carrier"),
             command=self._add_successive_carrier_row,
@@ -793,7 +764,7 @@ class QtCmrFormView(QWidget):
             e = StyledLineEdit(row, placeholder=lbl, height=28)
             row_layout.addWidget(e, 1)
 
-        remove_btn = ActionButton(
+        remove_btn = Btn(
             row, "X", variant="danger",
             command=lambda r=row: self._remove_successive_carrier_row(r),
         )
@@ -843,12 +814,7 @@ class QtCmrFormView(QWidget):
         content.layout().addWidget(hdr)
 
         # Divider
-        div = QFrame()
-        div.setFrameShape(QFrame.HLine)
-        div.setFrameShadow(QFrame.Plain)
-        div.setFixedHeight(1)
-        div.setStyleSheet(f"background-color: {COLORS['border']};")
-        content.layout().addWidget(div)
+        content.layout().addWidget(Divider())
 
         # Cost rows
         cost_rows = [
@@ -1030,7 +996,7 @@ class QtCmrFormView(QWidget):
         bar_layout.setContentsMargins(0, S["4"], 0, 0)
         bar_layout.setSpacing(S["3"])
 
-        self._btn_generate = ActionButton(
+        self._btn_generate = Btn(
             bar,
             t("cmr.generate", "Generate CMR"),
             variant="primary",
@@ -1038,7 +1004,7 @@ class QtCmrFormView(QWidget):
         self._btn_generate.setFixedHeight(38)
         bar_layout.addWidget(self._btn_generate)
 
-        self._btn_print = ActionButton(
+        self._btn_print = Btn(
             bar,
             t("cmr.print", "Print"),
             variant="secondary",
@@ -1048,7 +1014,7 @@ class QtCmrFormView(QWidget):
 
         bar_layout.addStretch(1)
 
-        self._btn_save = ActionButton(
+        self._btn_save = Btn(
             bar,
             t("cmr.save", "Save"),
             variant="secondary",

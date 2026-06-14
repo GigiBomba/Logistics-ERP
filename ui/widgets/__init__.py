@@ -30,7 +30,8 @@ from PySide6.QtWidgets import (
     QAbstractItemView,
 )
 
-from ui.theme import COLORS, S
+from ui.design_tokens import SP as S, RADIUS, TEXT_MUTED, TEXT_PRIMARY, BG_SURFACE, BORDER_DEFAULT, ACCENT, ACCENT_TEXT, ACCENT_DIM
+from ui.theme import COLORS
 from ui.styles import Theme
 
 
@@ -50,7 +51,7 @@ class StyledLineEdit(QLineEdit):
         self,
         parent: Optional[QWidget] = None,
         placeholder: Optional[str] = None,
-        height: int = 38,
+        height: int = 36,
         text: str = "",
         **kwargs,
     ):
@@ -215,7 +216,9 @@ class SectionHeader(QWidget):
         layout.setSpacing(S["3"])
 
         self.label = QLabel(text)
-        self.label.setProperty("fontRole", "section")
+        self.label.setProperty("role", "section-title")
+        self.label.style().unpolish(self.label)
+        self.label.style().polish(self.label)
         layout.addWidget(self.label)
 
         line = QFrame()
@@ -247,11 +250,15 @@ class KpiCard(QFrame):
         layout.setSpacing(S["1"])
 
         self.title_label = QLabel(title)
-        self.title_label.setProperty("fontRole", "kpi-title")
+        self.title_label.setProperty("role", "kpi-label")
+        self.title_label.style().unpolish(self.title_label)
+        self.title_label.style().polish(self.title_label)
         layout.addWidget(self.title_label)
 
         self.value_label = QLabel(value)
-        self.value_label.setProperty("fontRole", "kpi-value")
+        self.value_label.setProperty("role", "kpi-value")
+        self.value_label.style().unpolish(self.value_label)
+        self.value_label.style().polish(self.value_label)
         layout.addWidget(self.value_label)
 
     def set_title(self, text: str) -> None:
@@ -267,7 +274,7 @@ class ScrollableFormContainer(QScrollArea):
     Add widgets/layouts to ``.content`` via ``add_widget()`` / ``add_layout()``.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None, max_width: int = 720):
+    def __init__(self, parent: Optional[QWidget] = None, max_width: int = 740):
         super().__init__(parent)
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
@@ -277,8 +284,8 @@ class ScrollableFormContainer(QScrollArea):
         self.content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         self.layout = QVBoxLayout(self.content)
-        self.layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        self.layout.setSpacing(S["4"])
+        self.layout.setContentsMargins(S["10"], S["6"], S["10"], S["10"])
+        self.layout.setSpacing(S["6"])
         self.layout.setAlignment(Qt.AlignTop)
 
         self.setWidget(self.content)
@@ -364,14 +371,18 @@ def field(
     layout.setSpacing(S["1"])
 
     label = QLabel(label_text)
-    label.setProperty("fontRole", "label")
+    label.setProperty("role", "field-label")
+    label.style().unpolish(label)
+    label.style().polish(label)
     layout.addWidget(label)
 
     layout.addWidget(widget)
 
     if helper_text:
         helper = QLabel(helper_text)
-        helper.setProperty("fontRole", "helper")
+        helper.setProperty("role", "muted")
+        helper.style().unpolish(helper)
+        helper.style().polish(helper)
         layout.addWidget(helper)
 
     return container

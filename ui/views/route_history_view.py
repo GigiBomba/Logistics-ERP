@@ -24,17 +24,21 @@ from PySide6.QtWidgets import (
     QFileDialog,
     QMessageBox,
     QHeaderView,
+    QSizePolicy,
 )
 
 from services.i18n import t, register_listener, unregister_listener
 from services.route_history_service import RouteHistoryRecord, RouteHistoryService
 from services.route_result_presenter import format_duration_minutes
 from ui.widgets import (
-    ActionButton,
     StyledCheckBox,
     StyledTableWidget,
 )
-from ui.theme import COLORS, S
+from ui.design_tokens import SP
+from ui.components import (
+    Card, CardHeader, Btn, PageTitle, Label, Divider,
+)
+from ui.theme import COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -84,18 +88,33 @@ class QtRouteHistoryView(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["10"], 0, SP["10"], SP["10"])
+        layout.setSpacing(SP["3"])
 
+        # Header
+        hdr = QWidget()
+        hdr_layout = QVBoxLayout(hdr)
+        hdr_layout.setContentsMargins(0, 0, 0, 0)
+        hdr_layout.setSpacing(SP["1"])
+        hdr.setFixedHeight(72)
+        hdr_layout.addWidget(PageTitle(hdr, t("route_history.page_title", default="Route History")))
+        hdr_layout.addWidget(Label(hdr, t("route_history.page_subtitle", default="Browse, compare, and re-use past routes"), role="secondary"))
+        layout.addWidget(hdr)
+
+        # Filter strip — compact, no card
         self._build_filter_bar(layout)
+
+        # Main content: table card + map preview card
         self._build_main_split(layout)
+
+        # Bottom bar
         self._build_footer(layout)
 
     def _build_filter_bar(self, layout: QVBoxLayout) -> None:
         bar = QWidget()
         bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(0, 0, 0, 0)
-        bar_layout.setSpacing(S["2"])
+        bar_layout.setContentsMargins(0, SP["2"], 0, SP["2"])
+        bar_layout.setSpacing(SP["2"])
 
         self.e_search = QLineEdit()
         self.e_search.setPlaceholderText(t("route_history.search_placeholder"))
@@ -116,9 +135,9 @@ class QtRouteHistoryView(QWidget):
         self._archived_check.stateChanged.connect(lambda s: self._reset_and_load())
         bar_layout.addWidget(self._archived_check)
 
-        apply_btn = ActionButton(bar, t("route_history.apply_button"), self._reset_and_load, variant="secondary")
+        apply_btn = Btn(bar, t("route_history.apply_button"), variant="secondary", command=self._reset_and_load)
         bar_layout.addWidget(apply_btn)
-        reset_btn = ActionButton(bar, t("route_history.reset_button"), self._reset_filters, variant="secondary")
+        reset_btn = Btn(bar, t("route_history.reset_button"), variant="secondary", command=self._reset_filters)
         bar_layout.addWidget(reset_btn)
 
         bar_layout.addStretch(1)
@@ -127,7 +146,9 @@ class QtRouteHistoryView(QWidget):
     def _build_main_split(self, layout: QVBoxLayout) -> None:
         splitter = QSplitter(Qt.Horizontal)
 
-        # Left: table
+        # Left: table in a Card with no padding
+        table_card = Card(self, padding=False)
+        table_card_layout = table_card.layout()
         columns = [
             ("origin", t("route_history.table_origin"), 100),
             ("destination", t("route_history.table_destination"), 100),
@@ -144,43 +165,38 @@ class QtRouteHistoryView(QWidget):
         self.table.horizontalHeader().sectionClicked.connect(self._on_header_clicked)
         self.table.rowSelected.connect(self._on_row_selected)
         self.table.rowDoubleClicked.connect(lambda d: self._open_in_planner())
-        splitter.addWidget(self.table)
+        table_card_layout.addWidget(self.table)
+        splitter.addWidget(table_card)
 
-        # Right: preview
-        preview = QWidget()
-        preview.setMinimumWidth(280)
-        prev_layout = QVBoxLayout(preview)
-        prev_layout.setContentsMargins(S["3"], 0, 0, 0)
-        prev_layout.setSpacing(S["2"])
+        # Right: map preview in a Card
+        preview_card = Card(self)
+        preview_card.setMinimumWidth(280)
+        pc_layout = preview_card.layout()
 
-        # Map placeholder
+        # Map placeholder (empty state)
         self._map_placeholder = QLabel(t("route_history.map_loading"))
-        self._map_placeholder.setProperty("fontRole", "muted")
+        self._map_placeholder.setProperty("role", "muted")
         self._map_placeholder.setAlignment(Qt.AlignCenter)
         self._map_placeholder.setMinimumHeight(200)
-        self._map_placeholder.setStyleSheet(
-            f"background-color: {COLORS.get('bg_surface', '#18181b')};"
-            f" border: 1px solid {COLORS.get('border', '#27272a')}; border-radius: 6px;"
-        )
-        prev_layout.addWidget(self._map_placeholder)
+        pc_layout.addWidget(self._map_placeholder)
 
         # Map widget (lazy-created)
         self._map_widget = None
 
         # Route info
         self._route_info = QLabel("")
-        self._route_info.setProperty("fontRole", "small")
+        self._route_info.setProperty("role", "secondary")
         self._route_info.setWordWrap(True)
-        prev_layout.addWidget(self._route_info)
+        pc_layout.addWidget(self._route_info)
 
         # Stats
         self._stats_text = QLabel(t("route_history.loading_placeholder"))
-        self._stats_text.setProperty("fontRole", "helper")
+        self._stats_text.setProperty("role", "muted")
         self._stats_text.setWordWrap(True)
-        prev_layout.addWidget(self._stats_text)
+        pc_layout.addWidget(self._stats_text)
 
-        prev_layout.addStretch(1)
-        splitter.addWidget(preview)
+        pc_layout.addStretch()
+        splitter.addWidget(preview_card)
         splitter.setSizes([600, 300])
         layout.addWidget(splitter, 1)
 
@@ -188,55 +204,37 @@ class QtRouteHistoryView(QWidget):
         footer = QWidget()
         footer_layout = QHBoxLayout(footer)
         footer_layout.setContentsMargins(0, 0, 0, 0)
-        footer_layout.setSpacing(S["2"])
+        footer_layout.setSpacing(SP["2"])
 
         # ── Group 1: Refresh, Open Route Planner ──
-        refresh_btn = ActionButton(footer, t("route_history.refresh"), self._load_page, variant="secondary")
-        refresh_btn.setFixedHeight(34)
+        refresh_btn = Btn(footer, t("route_history.refresh"), variant="secondary", command=self._load_page)
         footer_layout.addWidget(refresh_btn)
 
-        planner_btn = ActionButton(footer, t("route_history.open_planner"), self._open_in_planner, variant="secondary")
-        planner_btn.setFixedHeight(34)
+        planner_btn = Btn(footer, t("route_history.open_planner"), variant="secondary", command=self._open_in_planner)
         footer_layout.addWidget(planner_btn)
 
-        # spacer
-        sp1 = QFrame()
-        sp1.setFrameShape(QFrame.VLine)
-        sp1.setFrameShadow(QFrame.Sunken)
-        sp1.setFixedWidth(2)
-        footer_layout.addWidget(sp1)
+        footer_layout.addWidget(Divider(footer, vertical=True))
 
         # ── Group 2: Recalculate, Duplicate, Export JSON, Export CSV ──
-        recalc_btn = ActionButton(footer, t("route_history.recalculate"), self._recalculate, variant="secondary")
-        recalc_btn.setFixedHeight(34)
+        recalc_btn = Btn(footer, t("route_history.recalculate"), variant="secondary", command=self._recalculate)
         footer_layout.addWidget(recalc_btn)
 
-        dup_btn = ActionButton(footer, t("route_history.duplicate_button"), self._duplicate_route, variant="secondary")
-        dup_btn.setFixedHeight(34)
+        dup_btn = Btn(footer, t("route_history.duplicate_button"), variant="secondary", command=self._duplicate_route)
         footer_layout.addWidget(dup_btn)
 
-        export_json_btn = ActionButton(footer, t("route_history.export_json"), lambda: self._export_selected("json"), variant="secondary")
-        export_json_btn.setFixedHeight(34)
+        export_json_btn = Btn(footer, t("route_history.export_json"), variant="secondary", command=lambda: self._export_selected("json"))
         footer_layout.addWidget(export_json_btn)
 
-        export_csv_btn = ActionButton(footer, t("route_history.export_csv"), lambda: self._export_selected("csv"), variant="secondary")
-        export_csv_btn.setFixedHeight(34)
+        export_csv_btn = Btn(footer, t("route_history.export_csv"), variant="secondary", command=lambda: self._export_selected("csv"))
         footer_layout.addWidget(export_csv_btn)
 
-        # spacer
-        sp2 = QFrame()
-        sp2.setFrameShape(QFrame.VLine)
-        sp2.setFrameShadow(QFrame.Sunken)
-        sp2.setFixedWidth(2)
-        footer_layout.addWidget(sp2)
+        footer_layout.addWidget(Divider(footer, vertical=True))
 
         # ── Group 3: Archive, Delete ──
-        archive_btn = ActionButton(footer, t("route_history.archive"), self._archive_route, variant="secondary")
-        archive_btn.setFixedHeight(34)
+        archive_btn = Btn(footer, t("route_history.archive"), variant="secondary", command=self._archive_route)
         footer_layout.addWidget(archive_btn)
 
-        delete_btn = ActionButton(footer, t("route_history.delete"), self._delete_route, variant="danger")
-        delete_btn.setFixedHeight(34)
+        delete_btn = Btn(footer, t("route_history.delete"), variant="danger", command=self._delete_route)
         footer_layout.addWidget(delete_btn)
 
         footer_layout.addStretch(1)
