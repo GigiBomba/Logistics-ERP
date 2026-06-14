@@ -284,6 +284,15 @@ class MainWindow(QMainWindow):
             logger.debug("Could not refresh alerts", exc_info=True)
 
     def closeEvent(self, event):
+        # Shut down all cached view modules
+        for key, cached in list(self._module_cache.items()):
+            try:
+                obj = cached.get("obj") or cached.get("frame")
+                if obj is not None and hasattr(obj, "shutdown"):
+                    obj.shutdown()
+            except Exception:
+                logger.debug("Error shutting down module %s", key, exc_info=True)
+        self._module_cache.clear()
         try:
             self.app_shell.destroy()
         except Exception:

@@ -106,13 +106,16 @@ class PreferencesManager:
     def _set_setting(self, key: str, value: str) -> None:
         """Write a single setting to the DB. Use save_setting() for public access."""
         try:
+            if self._db is None:
+                logger.warning("Cannot save setting %s: no database", key)
+                return
             self._db.conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
                 (key, value),
             )
             self._db.conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error("Failed to save setting %s: %s", key, e)
 
     # --- Public settings API (canonical access layer) --------------------
 

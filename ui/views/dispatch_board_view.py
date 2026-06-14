@@ -11,7 +11,7 @@ import json
 import logging
 import threading
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from PySide6.QtCore import Qt, QMimeData, QPoint, QTimer
 from PySide6.QtGui import QDrag, QMouseEvent
@@ -366,6 +366,8 @@ class QtDispatchBoardView(QWidget):
         if self._loading:
             return
         self._loading = True
+        # Clear shared state on main thread before starting bg work
+        self._alert_counts.clear()
         if self.ops:
             try:
                 self.ops.undo_stack.clear()
@@ -378,7 +380,6 @@ class QtDispatchBoardView(QWidget):
 
     def _load_data_background(self) -> None:
         try:
-            self._alert_counts.clear()
             self._preload_alerts()
 
             all_statuses = list(STATUS_TO_COLUMN.keys())
@@ -405,11 +406,11 @@ class QtDispatchBoardView(QWidget):
                 card_data = self._build_card_data(trip)
                 column_trips[column].append(card_data)
 
-            QTimer.singleShot(0, lambda ct=column_trips: self._populate_columns(ct))
+            self._dispatch(lambda ct=column_trips: self._populate_columns(ct))
 
         except Exception as e:
             logger.exception("Dispatch board data load failed")
-            QTimer.singleShot(0, lambda err=str(e): self._show_error_all(err))
+            self._dispatch(lambda err=str(e): self._show_error_all(err))
 
     def _preload_alerts(self) -> None:
         if not self.ops:
