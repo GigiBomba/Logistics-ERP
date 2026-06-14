@@ -95,6 +95,7 @@ class MainWindow(QMainWindow):
     def _build_ui(self):
         self.setWindowTitle(Config.APP_NAME)
         self.resize(1400, 900)
+        self.setMinimumSize(1024, 600)
 
         self.app_shell = AppShell(
             self,
