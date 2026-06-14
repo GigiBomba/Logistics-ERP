@@ -879,16 +879,9 @@ class RouteService:
 
     def calculate_route_async(self, stops: List[Any], callback: Optional[Callable[[Any], None]] = None, profile: str = "truck", truck: Optional[Dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[List[str]] = None) -> threading.Thread:
         def _safe_invoke(cb: Callable[[Any], None], data: Any) -> None:
+            """Invoke callback directly. Thread marshaling is handled by the UI layer."""
             if not cb:
                 return
-            try:
-                import tkinter as tk
-                root = getattr(tk, "_default_root", None)
-                if root is not None:
-                    root.after(0, lambda: cb(data))
-                    return
-            except Exception:
-                pass
             try:
                 cb(data)
             except Exception:

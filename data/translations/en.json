@@ -1233,6 +1233,13 @@
     "select_driver_first": "Select a driver first."
   },
   "generators": {
+    "title": "Document Generators",
+    "subtitle": "Create invoices and international CMR waybills for your trips.",
+    "trip_label": "Trip:",
+    "doc_invoice_title": "Invoice",
+    "doc_invoice_desc": "Generate a professional PDF invoice for the selected trip.",
+    "doc_cmr_title": "CMR Waybill",
+    "doc_cmr_desc": "Generate an international road consignment note (CMR) with all 4 copies.",
     "tab_invoice": "Invoice",
     "tab_cmr": "CMR",
     "cmr_title": "Generate CMR Waybill",
@@ -1245,6 +1252,7 @@
     "cmr_generate": "Generate CMR",
     "cmr_open": "Open PDF",
     "cmr_generated": "CMR generated: {path}",
+    "cmr_all_generated": "All copies generated: {path}",
     "cmr_select_trip": "Please select a trip first.",
     "cmr_error": "CMR generation failed: {error}",
     "cmr_primary_language": "Primary Language",
@@ -1263,7 +1271,12 @@
     "cmr_copy_carrier": "Carrier Copy",
     "cmr_copy_admin": "Administrative Copy",
     "cmr_not_generated": "not generated",
-    "cmr_copies_title": "Generated Copies"
+    "cmr_copies_title": "Generated Copies",
+    "cmr_options_title": "Options",
+    "cmr_actions_title": "Actions",
+    "cmr_status_ready": "Ready to generate.",
+    "cmr_status_generating": "Generating 4 copies...",
+    "open_pdf": "Open"
   },
   "invoice_editor": {
     "select_client": "Client:",

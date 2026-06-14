@@ -884,6 +884,13 @@
     "title": "Cronologie Mentenanta"
   },
   "generators": {
+    "title": "Generatoare Documente",
+    "subtitle": "Creati facturi si scrisori de trasura CMR internationale pentru cursele selectate.",
+    "trip_label": "Cursa:",
+    "doc_invoice_title": "Factura",
+    "doc_invoice_desc": "Generati o factura PDF profesionala pentru cursa selectata.",
+    "doc_cmr_title": "Scrisoare de Trasura CMR",
+    "doc_cmr_desc": "Generati o scrisoare de trasura rutiera internationala (CMR) cu toate cele 4 copii.",
     "tab_invoice": "Factura",
     "tab_cmr": "CMR",
     "cmr_title": "Genereaza Scrisoare de Trasura CMR",
@@ -896,6 +903,7 @@
     "cmr_generate": "Genereaza CMR",
     "cmr_open": "Deschide PDF",
     "cmr_generated": "CMR generat: {path}",
+    "cmr_all_generated": "Toate copiile generate: {path}",
     "cmr_select_trip": "Selectati mai intai o cursa.",
     "cmr_error": "Generarea CMR a esuat: {error}",
     "cmr_primary_language": "Limba Principala",
@@ -914,6 +922,11 @@
     "cmr_copy_carrier": "Copie Transportator",
     "cmr_copy_admin": "Copie Administrativa",
     "cmr_not_generated": "negenerat",
-    "cmr_copies_title": "Copii Generate"
+    "cmr_copies_title": "Copii Generate",
+    "cmr_options_title": "Optiuni",
+    "cmr_actions_title": "Actiuni",
+    "cmr_status_ready": "Pregatit pentru generare.",
+    "cmr_status_generating": "Se genereaza cele 4 copii...",
+    "open_pdf": "Deschide"
   }
 }
