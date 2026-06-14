@@ -127,12 +127,7 @@ class QtRoutePlannerView(QWidget):
         layout.addWidget(self.map_widget, 1)
 
     def _build_sidebar(self, layout: QVBoxLayout) -> None:
-        # Scrollable body
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setProperty("role", "card")
-
+        # Body — no scroll, all sections visible
         body = QWidget()
         body_layout = QVBoxLayout(body)
         body_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
@@ -149,7 +144,7 @@ class QtRoutePlannerView(QWidget):
         hdr = SectionHeader(card1, f"\U0001f4cd {t('route.section_header')}")
         card1_layout.addWidget(hdr)
 
-        # Stop list
+        # Stop list (scrollable inside card1)
         self._stops_scroll = QScrollArea()
         self._stops_scroll.setWidgetResizable(True)
         self._stops_scroll.setFrameShape(QFrame.NoFrame)
@@ -230,8 +225,7 @@ class QtRoutePlannerView(QWidget):
         )
         body_layout.addWidget(self._exclusions_panel)
 
-        scroll.setWidget(body)
-        layout.addWidget(scroll, 1)
+        layout.addWidget(body, 1)
 
         # Footer (fixed at bottom of sidebar)
         footer = QFrame()
@@ -681,6 +675,18 @@ class QtRoutePlannerView(QWidget):
         if self._pending_clear:
             self._pending_clear = False
             self._clear_route_state()
+        # Recreate map widget if it was destroyed by shutdown()
+        try:
+            self.map_widget.isWidgetType()
+        except RuntimeError:
+            from ui.map.map_widget import MapWidget
+            self.map_widget = MapWidget(self)
+            self._map_renderer = QtRouteMapRenderer(self.map_widget)
+            self.map_widget.set_click_callback(self._on_map_click)
+            # Re-add to layout — find the parent's layout and add the map widget
+            parent_layout = self.layout()
+            if parent_layout:
+                parent_layout.addWidget(self.map_widget, 1)
 
     def shutdown(self) -> None:
         try:
