@@ -21,11 +21,13 @@ class AlertType(str, Enum):
     INACTIVE_TRUCK = "inactive_truck"
     ROUTE_ISSUE = "route_issue"
     COMPLIANCE_WARNING = "compliance_warning"
+    COMPLIANCE_RISK = "compliance_risk"
     TACHOGRAPH_EXPIRY = "tachograph_expiry"
     DRIVER_HOURS_WEEKLY = "driver_hours_weekly"
     DRIVER_HOURS_DAILY = "driver_hours_daily"
     DOCUMENT_EXPIRY = "document_expiry"
     CONTRACT_EXPIRY = "contract_expiry"
+    POLICY_VIOLATION = "policy_violation"
 
 
 class Severity(str, Enum):
@@ -43,6 +45,8 @@ _alert_types_display = {
     AlertType.INACTIVE_TRUCK: "Inactive Truck",
     AlertType.ROUTE_ISSUE: "Route Issue",
     AlertType.COMPLIANCE_WARNING: "Compliance Warning",
+    AlertType.COMPLIANCE_RISK: "Compliance Risk",
+    AlertType.POLICY_VIOLATION: "Policy Violation",
     AlertType.TACHOGRAPH_EXPIRY: "Tachograph Calibration",
     AlertType.DRIVER_HOURS_WEEKLY: "Driver Hours Weekly",
     AlertType.DRIVER_HOURS_DAILY: "Driver Hours Daily",

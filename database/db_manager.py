@@ -121,6 +121,7 @@ class DatabaseManager:
 
     def _init_db(self):
         """Creează tabelele și indecșii necesari."""
+        self.conn.execute("BEGIN")
         self.conn.execute(TABLE_TRIPS)
         self.conn.execute(TABLE_INVOICES)
         self.conn.execute(TABLE_TRUCKS)
