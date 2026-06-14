@@ -459,8 +459,8 @@ class RouteService:
         self._reverse_lock = threading.Lock()
 
         # segmentation defaults
-        self.segment_distance_threshold_km = 1800.0
-        self.min_segment_distance_km = 700.0
+        self.segment_distance_threshold_km = 800.0
+        self.min_segment_distance_km = 350.0
         self.max_segmentation_depth = 2
         self.max_segment_count = 4
 
@@ -724,6 +724,31 @@ class RouteService:
 
         dist_km = GraphHopperClient._haversine_distance(a[0], a[1], b[0], b[1])
         self.debug_logger.info(f"[Segmentation] depth={depth} dist={dist_km:.1f}km segments={segment_state.get('segments_total')} request={a[:2]}->{b[:2]}")
+
+        # Proactive splitting: if a single pair exceeds the threshold
+        # with excluded countries, split it without even trying the direct
+        # route (it will be ~60-120s and produce massive geometry anyway).
+        segs = segment_state.get("segments_total", 1)
+        if (exclusions
+            and dist_km >= self.segment_distance_threshold_km
+            and depth < self.max_segmentation_depth
+            and segs < self.max_segment_count):
+            self.debug_logger.info(
+                "[Segmentation] Proactive pair split: %.0fkm with %d exclusions at depth %d — using midpoint",
+                dist_km, len(exclusions or []), depth,
+            )
+            mid = self._segment_midpoint(a, b)
+            self._validate_segment([a, mid, b], context=f"proactive midpoint depth={depth}")
+            segment_state["segments_total"] = segs + 1
+            left = self._route_pair_recursive(a, mid, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
+            right = self._route_pair_recursive(mid, b, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
+            merged = self._merge_segment_results([left, right], resolved_stops)
+            try:
+                self._route_cache.set(pair, profile, merged, exclusions=exclusions)
+            except Exception:
+                pass
+            return merged
+
         try:
             # Tag meta with segment depth for request logging
             seg_params = dict(gh_params)
@@ -801,20 +826,25 @@ class RouteService:
             f"[Segmentation] Route distance estimate: {est_km:.1f} km "
             f"stops={len(resolved_stops)} ch.disable={gh_params.get('ch.disable', False)}"
         )
-        self.debug_logger.info("[Segmentation] Attempting direct route first...")
-        try:
-            res = self.client.route(resolved_stops, profile=profile, params=gh_params)
-        except Exception as direct_exc:
-            self.debug_logger.warning(f"Direct multi-stop failed: {direct_exc}")
-            if not self._should_segment_route(distance_km=est_km, exc=direct_exc):
-                raise
-            self.debug_logger.info("[Segmentation] Direct route failed, splitting into pairs...")
+
+        # Proactive segmentation: for long routes with excluded countries,
+        # multi-stop POST routes are extremely slow (60-120s) and produce
+        # massive geometries (15K+ points). Split into pair segments upfront.
+        has_exclusions = bool(avoid_countries) and len(avoid_countries or []) > 0
+        should_segment = (
+            has_exclusions
+            and est_km >= self.segment_distance_threshold_km
+            and est_km >= self.min_segment_distance_km
+        )
+
+        if should_segment:
+            self.debug_logger.info(
+                "[Segmentation] Proactive segmentation: %d excluded countries, %.0fkm — splitting into pairs",
+                len(avoid_countries or []), est_km,
+            )
             parts: List[Dict[str, Any]] = []
             pair_count = len(resolved_stops) - 1
-            for i in range(pair_count):
-                if i >= 4:
-                    self.debug_logger.warning("[Segmentation] Truncating to max 4 segment pairs")
-                    break
+            for i in range(min(pair_count, self.max_segment_count)):
                 a = resolved_stops[i]
                 b = resolved_stops[i + 1]
                 seg = self._route_pair_recursive(a, b, profile, gh_params, depth=0, resolved_stops=resolved_stops)
@@ -822,6 +852,25 @@ class RouteService:
             if not parts:
                 raise RuntimeError("Segmentation produced no valid segments")
             res = self._merge_segment_results(parts, resolved_stops)
+        else:
+            self.debug_logger.info("[Segmentation] Attempting direct route first...")
+            try:
+                res = self.client.route(resolved_stops, profile=profile, params=gh_params)
+            except Exception as direct_exc:
+                self.debug_logger.warning(f"Direct multi-stop failed: {direct_exc}")
+                if not self._should_segment_route(distance_km=est_km, exc=direct_exc):
+                    raise
+                self.debug_logger.info("[Segmentation] Direct route failed, splitting into pairs...")
+                parts: List[Dict[str, Any]] = []
+                pair_count = len(resolved_stops) - 1
+                for i in range(min(pair_count, self.max_segment_count)):
+                    a = resolved_stops[i]
+                    b = resolved_stops[i + 1]
+                    seg = self._route_pair_recursive(a, b, profile, gh_params, depth=0, resolved_stops=resolved_stops)
+                    parts.append(seg)
+                if not parts:
+                    raise RuntimeError("Segmentation produced no valid segments")
+                res = self._merge_segment_results(parts, resolved_stops)
 
         try:
             from services.country_borders import countries_from_points
