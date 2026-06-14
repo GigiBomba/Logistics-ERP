@@ -826,7 +826,19 @@ class RouteService:
         try:
             from services.country_borders import countries_from_points
             geom_points = res.get('geometry', [])
-            all_pts = [(float(lat), float(lon)) for lat, lon in resolved_stops] + geom_points
+
+            # Downsample geometry to max 500 pts before country detection
+            # (avoids O(n×m) ray-casting on massive routes like 1800km/18k pts)
+            MAX_COUNTRY_SAMPLE_PTS = 500
+            if len(geom_points) > MAX_COUNTRY_SAMPLE_PTS:
+                step = max(1, len(geom_points) // MAX_COUNTRY_SAMPLE_PTS)
+                sampled_geom = [geom_points[i] for i in range(0, len(geom_points), step)]
+                if geom_points and sampled_geom and sampled_geom[-1] != geom_points[-1]:
+                    sampled_geom.append(geom_points[-1])
+                all_pts = [(float(lat), float(lon)) for lat, lon in resolved_stops] + sampled_geom
+            else:
+                all_pts = [(float(lat), float(lon)) for lat, lon in resolved_stops] + geom_points
+
             countries = countries_from_points(all_pts)
             res['detected_countries'] = countries
         except Exception:
