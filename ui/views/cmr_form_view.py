@@ -1,894 +1,1128 @@
-"""CMR WYSIWYG form view — UN/CEFACT-aligned, 24-box consignment note editor.
+"""PySide6 CMR consignment note form view — UN/CEFACT-aligned, 24-box editor.
 
-Renders a clean, two-column form organised into sequential section cards that
-mirror the standard international road consignment note. Boxes are presented
-in order 1 → 24 with prominent badges, bilingual labels, and modern styling.
+Replaces ``ui/views/cmr_form_view.py`` (CustomTkinter).  Renders a clean,
+scrollable form organised into sequential section cards that mirror the standard
+international road consignment note.  Boxes are presented in order 1 → 24 with
+prominent badges, bilingual labels, and modern dark styling.
 
 Supports auto-fill from trip/client selectors with a consignor/consignee role
 toggle, ADR dangerous goods, successive carriers, financial split, and
-electronic signature pads.
+electronic signature pads (via ``QtSignaturePad``).
+
+Usage as embedded widget::
+
+    view = QtCmrFormView(parent_widget, db)
+    some_layout.addWidget(view)
 """
+
+from __future__ import annotations
 
 import json
 import logging
-import tkinter as tk
-import customtkinter as ctk
+from datetime import date, datetime
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from ui.theme import (
-    COLORS, FONTS, S,
-    RADIUS_CARD, RADIUS_INPUT, RADIUS_BUTTON, RADIUS_CHIP,
-    card, card_header, field, two_col_row, btn, divider,
+from PySide6.QtCore import Qt, QDate
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QDateEdit,
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QPlainTextEdit,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
+
+from ui.theme import COLORS, S
+from services.i18n import t, register_listener, unregister_listener
+from ui.widgets import (
+    ActionButton,
+    StyledComboBox,
+    StyledLineEdit,
+    StyledTextEdit,
+    ScrollableFormContainer,
+    SectionHeader,
+    field,
+)
+from ui.widgets.signature_pad import QtSignaturePad
 
 logger = logging.getLogger(__name__)
 
 PAYMENT_OPTIONS = ["", "Sender", "Consignee"]
 
 
-class CMRFormView(ctk.CTkFrame):
-    def __init__(self, parent, db, prefs=None, **kwargs):
-        kwargs.setdefault("fg_color", COLORS["bg_base"])
-        super().__init__(parent, **kwargs)
+class QtCmrFormView(QWidget):
+    """CMR consignment note form — UN/CEFACT 24-box editor.
+
+    Wraps a ``ScrollableFormContainer`` with heading, role selector, section
+    cards for each CMR box group, and a bottom action bar.
+    """
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        db=None,
+        prefs=None,
+    ):
+        super().__init__(parent)
         self.db = db
         self.prefs = prefs
-        self._adr_rows = []
-        self._successive_carrier_rows = []
-        self._financial_rows = []
-        self._cmr_entries = {}
 
-        self._role_var = tk.StringVar(value="consignor")
-        self._last_trip_data = None
+        # ── State ──────────────────────────────────────────────────────────────
+        self._adr_rows: List[QWidget] = []
+        self._successive_carrier_rows: List[QWidget] = []
+        self._financial_rows: List[Tuple[str, str]] = []
+        self._cmr_entries: Dict[str, Any] = {}
 
+        self._consignor_role_active: bool = True
+        self._last_trip_data: Optional[dict] = None
+
+        # i18n
+        self._language_callback: Callable[[str], None] = self._on_language_changed
+
+        # ── Build ──────────────────────────────────────────────────────────────
         self._build_ui()
-        self.clear()
 
-    # ═══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
     # UI Construction
-    # ═══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════════
 
     def _build_ui(self):
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(0, weight=1)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        self._scroll = ctk.CTkScrollableFrame(
-            self,
-            fg_color=COLORS["bg_base"],
-            scrollbar_button_color=COLORS["border"],
-            scrollbar_button_hover_color=COLORS["border_hover"],
+        # Scrollable form container holds everything
+        self._scroll_container = ScrollableFormContainer(self, max_width=720)
+        self._scroll_container.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        self._scroll.grid(row=0, column=0, sticky="nsew")
-        self._scroll.columnconfigure(0, weight=1)
+        layout.addWidget(self._scroll_container, 1)
 
-        self._container = ctk.CTkFrame(
-            self._scroll, fg_color="transparent"
-        )
-        self._container.grid(row=0, column=0, sticky="new",
-                             padx=S["10"], pady=(S["10"], S["10"]))
-        self._container.columnconfigure(0, weight=1)
+        # Shortcut to the content widget inside the scroll container
+        self._content = self._scroll_container.content
 
         self._build_page_heading()
         self._build_role_selector()
-        self._build_parties_card()          # Boxes 1–2
-        self._build_route_card()            # Boxes 3–5
-        self._build_vehicle_card()          # Vehicle & driver (supporting)
-        self._build_cargo_card()            # Boxes 6–12
-        self._build_instructions_card()     # Boxes 13–17
-        self._build_carrier_card()          # Boxes 18–19
-        self._build_charges_card()          # Box 20
-        self._build_issue_signatures_card() # Boxes 21–24
+        self._build_parties_card()            # Boxes 1–2
+        self._build_route_card()              # Boxes 3–5
+        self._build_vehicle_card()            # Vehicle & driver
+        self._build_cargo_card()              # Boxes 6–12
+        self._build_instructions_card()       # Boxes 13–17
+        self._build_carrier_card()            # Boxes 18–19
+        self._build_charges_card()            # Box 20
+        self._build_issue_signatures_card()   # Boxes 21–24
 
-        self._bottom_frame = ctk.CTkFrame(self._container, fg_color="transparent")
-        self._bottom_frame.grid(row=self._container.grid_size()[1], column=0,
-                                sticky="ew", pady=(S["6"], 0))
-        self._bottom_frame.columnconfigure(0, weight=1)
+        # Bottom action bar (inside the scroll so it scrolls with the form)
+        self._build_action_bar()
 
-        self._apply_validation()
+    # ── Helpers ─────────────────────────────────────────────────────────────
 
     def _build_page_heading(self):
-        f = ctk.CTkFrame(self._container, fg_color="transparent")
-        f.grid(row=0, column=0, sticky="ew", pady=(0, S["6"]))
-        f.columnconfigure(0, weight=1)
+        heading = QWidget()
+        heading_layout = QVBoxLayout(heading)
+        heading_layout.setContentsMargins(0, 0, 0, S["2"])
+        heading_layout.setSpacing(S["1"])
 
-        left = ctk.CTkFrame(f, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(
-            left, text="CMR International Consignment Note",
-            font=FONTS["h1"], text_color=COLORS["text_primary"], anchor="w"
-        ).pack(anchor="w")
-        ctk.CTkLabel(
-            left, text="UN/CEFACT 24-Box Layout — Boxes 1 to 24 in order",
-            font=FONTS["small"], text_color=COLORS["text_muted"], anchor="w"
-        ).pack(anchor="w", pady=(S["1"], 0))
+        title = QLabel(t("cmr.title", "CMR International Consignment Note"))
+        title.setProperty("fontRole", "h1")
+        title.setStyleSheet(f"color: {COLORS['text_primary']};")
+        heading_layout.addWidget(title)
+
+        subtitle = QLabel(
+            t("cmr.subtitle", "UN/CEFACT 24-Box Layout — Boxes 1 to 24 in order")
+        )
+        subtitle.setProperty("fontRole", "small")
+        subtitle.setStyleSheet(f"color: {COLORS['text_muted']};")
+        heading_layout.addWidget(subtitle)
 
         # Mini box navigator
-        nav = ctk.CTkFrame(f, fg_color="transparent")
-        nav.grid(row=0, column=1, sticky="e")
+        nav = QWidget()
+        nav_layout = QHBoxLayout(nav)
+        nav_layout.setContentsMargins(0, S["1"], 0, 0)
+        nav_layout.setSpacing(2)
         for i in range(1, 25):
-            badge = ctk.CTkFrame(
-                nav, fg_color=COLORS["accent_dim"],
-                corner_radius=RADIUS_CHIP, width=18, height=18
+            badge = QLabel(str(i))
+            badge.setFixedSize(18, 18)
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setProperty("role", "box-badge")
+            badge.setStyleSheet(
+                f"background-color: {COLORS['accent_dim']};"
+                f"color: {COLORS['accent_text']};"
+                f"border-radius: 4px; font-size: 7px; font-weight: bold;"
             )
-            badge.pack(side="left", padx=(0, 2))
-            badge.pack_propagate(False)
-            ctk.CTkLabel(
-                badge, text=str(i), font=("Segoe UI", 7),
-                text_color=COLORS["accent_text"]
-            ).place(relx=0.5, rely=0.5, anchor="center")
+            nav_layout.addWidget(badge)
+        nav_layout.addStretch(1)
+        heading_layout.addWidget(nav)
+
+        self._scroll_container.add_widget(heading)
 
     def _build_role_selector(self):
-        inner = card(self._container)
-        inner._outer.grid(row=1, column=0, sticky="ew", pady=(0, S["6"]))
+        card = self._make_card()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(S["5"], S["5"], S["5"], S["5"])
+        card_layout.setSpacing(S["2"])
 
-        content = ctk.CTkFrame(inner, fg_color="transparent")
-        content.pack(fill="x", padx=S["5"], pady=S["5"])
+        label = QLabel(t("cmr.select_role", "SELECT YOUR ROLE"))
+        label.setProperty("fontRole", "label")
+        label.setStyleSheet(f"color: {COLORS['text_muted']};")
+        card_layout.addWidget(label)
 
-        ctk.CTkLabel(
-            content, text="SELECT YOUR ROLE",
-            font=FONTS["label"], text_color=COLORS["text_muted"], anchor="w"
-        ).pack(anchor="w", pady=(0, S["2"]))
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(S["2"])
 
-        row = ctk.CTkFrame(content, fg_color="transparent")
-        row.pack(fill="x")
-        row.columnconfigure((0, 1), weight=1)
-
-        self._role_consignor_btn = ctk.CTkButton(
-            row, text="I am the Consignor (Sender)",
-            font=FONTS["body_bold"], height=42,
-            corner_radius=RADIUS_BUTTON,
-            command=lambda: self._set_role("consignor")
+        self._role_consignor_btn = ActionButton(
+            row,
+            t("cmr.role_consignor", "I am the Consignor (Sender)"),
+            command=lambda: self._set_role(True),
+            variant="primary",
         )
-        self._role_consignor_btn.grid(row=0, column=0, sticky="ew", padx=(0, S["2"]))
+        self._role_consignor_btn.setFixedHeight(42)
+        row_layout.addWidget(self._role_consignor_btn, 1)
 
-        self._role_consignee_btn = ctk.CTkButton(
-            row, text="I am the Consignee (Receiver)",
-            font=FONTS["body_bold"], height=42,
-            corner_radius=RADIUS_BUTTON,
-            command=lambda: self._set_role("consignee")
+        self._role_consignee_btn = ActionButton(
+            row,
+            t("cmr.role_consignee", "I am the Consignee (Receiver)"),
+            command=lambda: self._set_role(False),
+            variant="secondary",
         )
-        self._role_consignee_btn.grid(row=0, column=1, sticky="ew")
+        self._role_consignee_btn.setFixedHeight(42)
+        row_layout.addWidget(self._role_consignee_btn, 1)
 
-        self._update_role_buttons()
-        self._role_var.trace_add("write", lambda *a: self._update_role_buttons())
+        card_layout.addWidget(row)
+        self._scroll_container.add_widget(card)
 
-    def _set_role(self, role):
-        if self._role_var.get() == role:
-            return
-        self._role_var.set(role)
-        if self._last_trip_data:
-            self.fill_from_trip(**self._last_trip_data)
+    def _make_card(self) -> QFrame:
+        """Create a section card QFrame with role="card"."""
+        card = QFrame()
+        card.setProperty("role", "card")
+        card.setFrameShape(QFrame.StyledPanel)
+        return card
 
-    def _update_role_buttons(self):
-        active = self._role_var.get()
-        active_style = dict(
-            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
-            text_color="#ffffff", border_width=0
-        )
-        inactive_style = dict(
-            fg_color="transparent", hover_color=COLORS["bg_elevated"],
-            text_color=COLORS["text_secondary"], border_width=1,
-            border_color=COLORS["border"]
-        )
-        if active == "consignor":
-            self._role_consignor_btn.configure(**active_style)
-            self._role_consignee_btn.configure(**inactive_style)
-        else:
-            self._role_consignor_btn.configure(**inactive_style)
-            self._role_consignee_btn.configure(**active_style)
+    def _section_card(self, title: str, subtitle: str) -> QWidget:
+        """Create a themed card with SectionHeader and return the content widget.
 
-    # ── Shared helpers ───────────────────────────────────────────
+        Callers pack form fields into the returned widget's layout.
+        """
+        card = self._make_card()
+        card_layout = QVBoxLayout(card)
+        card_layout.setContentsMargins(0, 0, 0, 0)
+        card_layout.setSpacing(0)
 
-    def _section_card(self, title, subtitle):
-        """Create a themed card with header and return the content frame."""
-        inner = card(self._container)
-        inner._outer.grid(row=self._container.grid_size()[1], column=0,
-                          sticky="ew", pady=(0, S["6"]))
-        card_header(inner, title, subtitle)
-        content = ctk.CTkFrame(inner, fg_color="transparent")
-        content.pack(fill="x", padx=S["5"], pady=(0, S["5"]))
+        header = SectionHeader(card, title)
+        card_layout.addWidget(header)
+
+        if subtitle:
+            sub = QLabel(subtitle)
+            sub.setProperty("fontRole", "small")
+            sub.setStyleSheet(f"color: {COLORS['text_muted']};")
+            sub.setContentsMargins(S["5"], S["1"], S["5"], 0)
+            card_layout.addWidget(sub)
+
+        # Divider line
+        divider = QFrame()
+        divider.setFrameShape(QFrame.HLine)
+        divider.setFrameShadow(QFrame.Plain)
+        divider.setFixedHeight(1)
+        divider.setStyleSheet(f"background-color: {COLORS['border']};")
+        divider.setContentsMargins(0, 0, 0, 0)
+        card_layout.addWidget(divider)
+
+        content = QWidget()
+        content.setContentsMargins(S["5"], S["4"], S["5"], S["5"])
+        content_layout = QVBoxLayout(content)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(S["3"])
+        card_layout.addWidget(content)
+
+        self._scroll_container.add_widget(card)
         return content
 
-    def _two_col_pane(self, parent):
-        """Return (left, right) frames with a vertical divider between them."""
-        wrapper = ctk.CTkFrame(parent, fg_color="transparent")
-        wrapper.pack(fill="x", expand=True)
-        wrapper.columnconfigure(0, weight=1, uniform="twocol")
-        wrapper.columnconfigure(1, weight=0)   # divider
-        wrapper.columnconfigure(2, weight=1, uniform="twocol")
+    def _two_col_pane(self, parent: QWidget) -> Tuple[QWidget, QWidget]:
+        """Return (left, right) widgets with a vertical divider between them."""
+        wrapper = QWidget()
+        wrapper_layout = QHBoxLayout(wrapper)
+        wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        wrapper_layout.setSpacing(S["3"])
 
-        left = ctk.CTkFrame(wrapper, fg_color="transparent")
-        left.grid(row=0, column=0, sticky="nsew", padx=(0, S["4"]))
+        left = QWidget()
+        left_layout = QVBoxLayout(left)
+        left_layout.setContentsMargins(0, 0, 0, 0)
+        left_layout.setSpacing(S["3"])
+        wrapper_layout.addWidget(left, 1)
 
-        vline = ctk.CTkFrame(wrapper, fg_color=COLORS["border"], width=1)
-        vline.grid(row=0, column=1, sticky="ns", padx=S["1"])
+        vline = QFrame()
+        vline.setFrameShape(QFrame.VLine)
+        vline.setFrameShadow(QFrame.Plain)
+        vline.setFixedWidth(1)
+        vline.setStyleSheet(f"background-color: {COLORS['border']};")
+        wrapper_layout.addWidget(vline)
 
-        right = ctk.CTkFrame(wrapper, fg_color="transparent")
-        right.grid(row=0, column=2, sticky="nsew", padx=(S["4"], 0))
+        right = QWidget()
+        right_layout = QVBoxLayout(right)
+        right_layout.setContentsMargins(0, 0, 0, 0)
+        right_layout.setSpacing(S["3"])
+        wrapper_layout.addWidget(right, 1)
 
+        parent_layout = parent.layout()
+        if parent_layout is None:
+            parent.setLayout(QVBoxLayout())
+            parent_layout = parent.layout()
+            parent_layout.setContentsMargins(0, 0, 0, 0)
+            parent_layout.setSpacing(0)
+        parent_layout.addWidget(wrapper)
         return left, right
 
-    def _box_badge(self, parent, box_num):
-        """Create a prominent box-number badge."""
-        badge = ctk.CTkFrame(
-            parent, fg_color=COLORS["accent_dim"],
-            corner_radius=RADIUS_CHIP, width=30, height=20
-        )
-        badge.pack(side="left", padx=(0, S["2"]))
-        badge.pack_propagate(False)
-        ctk.CTkLabel(
-            badge, text=f"{box_num}", font=("Segoe UI", 10, "bold"),
-            text_color=COLORS["accent_text"]
-        ).place(relx=0.5, rely=0.5, anchor="center")
-        return badge
-
-    def _box_field(self, parent, box_num, label_en, label_ro,
-                   kind="entry", **kwargs):
+    def _box_field(
+        self,
+        parent: QWidget,
+        box_num: Optional[int],
+        label_en: str,
+        label_ro: str,
+        kind: str = "entry",
+        **kwargs,
+    ) -> QWidget:
         """Themed field with accent badge + bilingual label.
 
-        Pass box_num=None to omit the numbered badge (for supplementary fields
-        that don't belong to a standard CMR box).
+        Parameters
+        ----------
+        parent : QWidget
+            Container to add the field into.
+        box_num : int or None
+            CMR box number (None for supplementary fields).
+        label_en, label_ro : str
+            Bilingual field labels.
+        kind : str
+            ``"entry"`` (single-line), ``"textbox"`` (multi-line),
+            ``"combobox"`` (dropdown).
+        **kwargs
+            Forwarded to the underlying widget constructor.
         """
-        # Map shorthand 'placeholder' → CTkEntry's 'placeholder_text'
-        _placeholder = kwargs.pop("placeholder", None)
-        if kind == "entry" and _placeholder is not None:
-            kwargs["placeholder_text"] = _placeholder
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(S["1"])
 
-        wrapper = ctk.CTkFrame(parent, fg_color="transparent")
-        wrapper.pack(fill="x", pady=(0, S["4"]))
-
-        lbl_frame = ctk.CTkFrame(wrapper, fg_color="transparent")
-        lbl_frame.pack(anchor="w", fill="x", pady=(0, S["1"]))
+        # Label row with optional badge
+        lbl_row = QWidget()
+        lbl_layout = QHBoxLayout(lbl_row)
+        lbl_layout.setContentsMargins(0, 0, 0, 0)
+        lbl_layout.setSpacing(S["2"])
 
         if box_num is not None:
-            self._box_badge(lbl_frame, box_num)
+            badge = QLabel(str(box_num))
+            badge.setFixedSize(30, 20)
+            badge.setAlignment(Qt.AlignCenter)
+            badge.setStyleSheet(
+                f"background-color: {COLORS['accent_dim']};"
+                f"color: {COLORS['accent_text']};"
+                f"border-radius: 4px; font-weight: bold; font-size: 10px;"
+            )
+            lbl_layout.addWidget(badge)
 
-        ctk.CTkLabel(
-            lbl_frame, text=f"{label_en} / {label_ro}",
-            font=FONTS["label"], text_color=COLORS["text_muted"], anchor="w"
-        ).pack(side="left")
+        label = QLabel(f"{label_en} / {label_ro}")
+        label.setProperty("fontRole", "label")
+        label.setStyleSheet(f"color: {COLORS['text_muted']};")
+        lbl_layout.addWidget(label)
+        lbl_layout.addStretch(1)
 
-        base = dict(
-            fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"],
-            border_width=1,
-            text_color=COLORS["text_primary"],
-            font=FONTS["body"],
-            height=38,
-            corner_radius=RADIUS_INPUT,
-        )
+        container_layout.addWidget(lbl_row)
 
+        # Input widget
+        placeholder = kwargs.pop("placeholder", None)
         if kind == "entry":
-            base["placeholder_text_color"] = COLORS["text_muted"]
-            w = ctk.CTkEntry(wrapper, **{**base, **kwargs})
+            w = StyledLineEdit(container, placeholder=placeholder, **kwargs)
         elif kind == "textbox":
-            h = kwargs.pop("height", 90)
-            base_no_height = {k: v for k, v in base.items() if k != "height"}
-            w = ctk.CTkTextbox(wrapper, height=h, **{**base_no_height, **kwargs})
+            height = kwargs.pop("height", 90)
+            w = StyledTextEdit(container, placeholder=placeholder, height=height, **kwargs)
         elif kind == "combobox":
-            base.update(dict(
-                button_color=COLORS["bg_elevated"],
-                button_hover_color=COLORS["border_hover"],
-                dropdown_fg_color=COLORS["bg_surface"],
-                dropdown_text_color=COLORS["text_primary"],
-                dropdown_hover_color=COLORS["bg_elevated"],
-            ))
-            w = ctk.CTkComboBox(wrapper, **{**base, **kwargs})
+            values = kwargs.pop("values", [])
+            w = StyledComboBox(container, values=values, **kwargs)
         else:
-            w = ctk.CTkEntry(wrapper, **{**base, **kwargs})
+            w = StyledLineEdit(container, placeholder=placeholder, **kwargs)
 
-        w.pack(fill="x")
+        container_layout.addWidget(w)
+
+        # Add to parent layout
+        parent_layout = parent.layout()
+        if parent_layout is None:
+            parent_layout = QVBoxLayout(parent)
+            parent_layout.setContentsMargins(0, 0, 0, 0)
+            parent_layout.setSpacing(S["3"])
+            parent.setLayout(parent_layout)
+        parent_layout.addWidget(container)
+
         return w
 
-    def _compact_box(self, parent, box_num, label, col, max_col=3):
-        """Compact grid cell for the goods table."""
-        cell = ctk.CTkFrame(parent, fg_color="transparent")
-        cell.grid(row=0, column=col, sticky="ew",
-                  padx=(0, S["3"]) if col < max_col else (0, 0))
-        cell.columnconfigure(0, weight=1)
+    def _compact_box(
+        self, parent: QWidget, box_num: int, label: str, col: int, max_col: int = 3
+    ) -> StyledLineEdit:
+        """Compact grid cell for the goods table (single-line entry)."""
+        # We use a simple vertical layout approach since we can't easily
+        # grid inside a horizontal layout. Instead, the caller should use
+        # a QGridLayout or QHBoxLayout-based approach.
+        container = QWidget()
+        container_layout = QVBoxLayout(container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        container_layout.setSpacing(S["1"])
 
-        lbl_frame = ctk.CTkFrame(cell, fg_color="transparent")
-        lbl_frame.pack(anchor="w", fill="x", pady=(0, S["1"]))
-        self._box_badge(lbl_frame, box_num)
-        ctk.CTkLabel(
-            lbl_frame, text=label, font=("Segoe UI", 10),
-            text_color=COLORS["text_muted"], anchor="w"
-        ).pack(side="left")
+        lbl_row = QWidget()
+        lbl_layout = QHBoxLayout(lbl_row)
+        lbl_layout.setContentsMargins(0, 0, 0, 0)
+        lbl_layout.setSpacing(S["1"])
 
-        e = ctk.CTkEntry(
-            cell, height=32,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"],
-            corner_radius=RADIUS_INPUT
+        badge = QLabel(str(box_num))
+        badge.setFixedSize(26, 18)
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setStyleSheet(
+            f"background-color: {COLORS['accent_dim']};"
+            f"color: {COLORS['accent_text']};"
+            f"border-radius: 3px; font-weight: bold; font-size: 8px;"
         )
-        e.pack(fill="x")
+        lbl_layout.addWidget(badge)
+
+        lbl = QLabel(label)
+        lbl.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px;")
+        lbl_layout.addWidget(lbl)
+        lbl_layout.addStretch(1)
+
+        container_layout.addWidget(lbl_row)
+
+        e = StyledLineEdit(container, height=32)
+        container_layout.addWidget(e)
+
+        # Add to parent layout — assumes parent uses QHBoxLayout or QGridLayout
+        parent_layout = parent.layout()
+        if parent_layout and isinstance(parent_layout, QHBoxLayout):
+            parent_layout.addWidget(container, 1)
+        elif parent_layout and hasattr(parent_layout, "addWidget"):
+            parent_layout.addWidget(container, col, 0)
+
         return e
 
-    # ── Section: Parties (Boxes 1, 2) ────────────────────────────
+    # ── Section: Parties (Boxes 1, 2) ──────────────────────────────────────
 
     def _build_parties_card(self):
         content = self._section_card(
-            "Parties", "Boxes 1 & 2 — Consignor (Sender) and Consignee (Receiver)")
+            t("cmr.section_parties", "Parties"),
+            t("cmr.section_parties_sub",
+              "Boxes 1 & 2 — Consignor (Sender) and Consignee (Receiver)"),
+        )
         left, right = self._two_col_pane(content)
 
         self._cmr_entries["consignor_name"] = self._box_field(
-            left, 1, "Sender (Consignor)", "Expeditor",
-            kind="textbox", height=90)
+            left, 1,
+            t("cmr.consignor", "Sender (Consignor)"),
+            t("cmr.consignor_ro", "Expeditor"),
+            kind="textbox", height=90,
+        )
         self._cmr_entries["consignee_name"] = self._box_field(
-            right, 2, "Consignee", "Destinatar",
-            kind="textbox", height=90)
+            right, 2,
+            t("cmr.consignee", "Consignee"),
+            t("cmr.consignee_ro", "Destinatar"),
+            kind="textbox", height=90,
+        )
 
-    # ── Section: Route & Documents (Boxes 3, 4, 5) ───────────────
+    # ── Section: Route & Documents (Boxes 3, 4, 5) ─────────────────────────
 
     def _build_route_card(self):
         content = self._section_card(
-            "Route & Documents", "Boxes 3, 4 & 5 — Taking over, delivery and attached documents")
+            t("cmr.section_route", "Route & Documents"),
+            t("cmr.section_route_sub",
+              "Boxes 3, 4 & 5 — Taking over, delivery and attached documents"),
+        )
         left, right = self._two_col_pane(content)
 
+        # Box 3: Place of taking over
         self._cmr_entries["place_of_loading"] = self._box_field(
-            left, 3, "Place of Taking Over", "Locul Predarii",
-            placeholder="Locality, Country")
+            left, 3,
+            t("cmr.place_of_loading", "Place of Taking Over"),
+            t("cmr.place_of_loading_ro", "Locul Predarii"),
+            placeholder=t("cmr.locality_country", "Locality, Country"),
+        )
 
+        # Box 4: Place of delivery
         self._cmr_entries["destination"] = self._box_field(
-            right, 4, "Place of Delivery", "Locul Livrarii",
-            placeholder="Locality, Country")
+            right, 4,
+            t("cmr.destination", "Place of Delivery"),
+            t("cmr.destination_ro", "Locul Livrarii"),
+            placeholder=t("cmr.locality_country", "Locality, Country"),
+        )
 
         # Date row for Box 3
-        date_row = ctk.CTkFrame(left, fg_color="transparent")
-        date_row.pack(fill="x", pady=(0, S["4"]))
-        ctk.CTkLabel(
-            date_row, text="Date:", font=FONTS["small"],
-            text_color=COLORS["text_muted"], anchor="w"
-        ).pack(side="left")
-        from ui.widgets.date_picker import make_date_entry
-        wld = make_date_entry(
-            date_row, date_pattern="y-mm-dd",
-            placeholder="YYYY-MM-DD", height=32)
-        wld.pack(side="left", fill="x", expand=True, padx=(S["2"], 0))
+        date_container = QWidget()
+        date_layout = QHBoxLayout(date_container)
+        date_layout.setContentsMargins(0, 0, 0, 0)
+        date_layout.setSpacing(S["2"])
+
+        date_label = QLabel(t("cmr.date", "Date:"))
+        date_label.setProperty("fontRole", "small")
+        date_label.setStyleSheet(f"color: {COLORS['text_muted']};")
+        date_layout.addWidget(date_label)
+
+        wld = QDateEdit()
+        wld.setDisplayFormat("yyyy-MM-dd")
+        wld.setCalendarPopup(True)
+        wld.setDate(QDate.currentDate())
+        wld.setFixedHeight(32)
+        wld.setStyleSheet(
+            f"background-color: {COLORS['bg_input']};"
+            f"color: {COLORS['text_primary']};"
+            f"border: 1px solid {COLORS['border']};"
+            f"border-radius: 4px; padding: 2px 6px;"
+        )
+        date_layout.addWidget(wld, 1)
+
+        left.layout().addWidget(date_container)
         self._cmr_entries["place_of_loading_date"] = wld
 
         # ISO country row for Box 3 / 4
-        iso_row = ctk.CTkFrame(left, fg_color="transparent")
-        iso_row.pack(fill="x", pady=(0, S["4"]))
-        ctk.CTkLabel(
-            iso_row, text="Loading Country ISO:", font=FONTS["small"],
-            text_color=COLORS["text_muted"], anchor="w"
-        ).pack(side="left")
-        wlc = ctk.CTkEntry(
-            iso_row, height=32, width=60,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"],
-            corner_radius=RADIUS_INPUT)
-        wlc.pack(side="left", padx=(S["2"], 0))
-        self._cmr_entries["loading_country"] = wlc
+        iso_container = QWidget()
+        iso_layout = QHBoxLayout(iso_container)
+        iso_layout.setContentsMargins(0, 0, 0, 0)
+        iso_layout.setSpacing(S["2"])
 
-        ctk.CTkLabel(
-            iso_row, text="Delivery Country ISO:", font=FONTS["small"],
-            text_color=COLORS["text_muted"], anchor="w"
-        ).pack(side="left", padx=(S["4"], 0))
-        wdc = ctk.CTkEntry(
-            iso_row, height=32, width=60,
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"],
-            corner_radius=RADIUS_INPUT)
-        wdc.pack(side="left", padx=(S["2"], 0))
+        iso_label_a = QLabel(t("cmr.loading_country", "Loading Country ISO:"))
+        iso_label_a.setProperty("fontRole", "small")
+        iso_label_a.setStyleSheet(f"color: {COLORS['text_muted']};")
+        iso_layout.addWidget(iso_label_a)
+
+        wlc = StyledLineEdit(height=32)
+        wlc.setFixedWidth(60)
+        wlc.setMaxLength(2)
+        iso_layout.addWidget(wlc)
+
+        iso_label_b = QLabel(t("cmr.delivery_country", "Delivery Country ISO:"))
+        iso_label_b.setProperty("fontRole", "small")
+        iso_label_b.setStyleSheet(f"color: {COLORS['text_muted']};")
+        iso_layout.addWidget(iso_label_b)
+
+        wdc = StyledLineEdit(height=32)
+        wdc.setFixedWidth(60)
+        wdc.setMaxLength(2)
+        iso_layout.addWidget(wdc)
+
+        left.layout().addWidget(iso_container)
+        self._cmr_entries["loading_country"] = wlc
         self._cmr_entries["delivery_country"] = wdc
 
+        # Box 5: Documents attached
         self._cmr_entries["documents_attached"] = self._box_field(
-            right, 5, "Documents Attached", "Documente Atasate",
-            kind="textbox", height=90)
+            right, 5,
+            t("cmr.documents", "Documents Attached"),
+            t("cmr.documents_ro", "Documente Atasate"),
+            kind="textbox", height=90,
+        )
 
-    # ── Section: Vehicle & Driver (supporting, no box number) ─────
+    # ── Section: Vehicle & Driver ──────────────────────────────────────────
 
     def _build_vehicle_card(self):
         content = self._section_card(
-            "Vehicle & Driver", "Transport means and driver information")
+            t("cmr.section_vehicle", "Vehicle & Driver"),
+            t("cmr.section_vehicle_sub", "Transport means and driver information"),
+        )
         left, right = self._two_col_pane(content)
 
         self._cmr_entries["truck_plate"] = field(
-            left, "Truck Plate / Numar Camion")
+            left, t("cmr.truck_plate", "Truck Plate / Numar Camion"),
+            StyledLineEdit(left, height=38),
+        )
         self._cmr_entries["driver_name"] = field(
-            left, "Driver / Sofer")
-
+            left, t("cmr.driver_name", "Driver / Sofer"),
+            StyledLineEdit(left, height=38),
+        )
         self._cmr_entries["trailer_plate"] = field(
-            right, "Trailer Plate / Numar Remorca")
+            right, t("cmr.trailer_plate", "Trailer Plate / Numar Remorca"),
+            StyledLineEdit(right, height=38),
+        )
         self._cmr_entries["driver_license"] = field(
-            right, "License / Permis")
+            right, t("cmr.driver_license", "License / Permis"),
+            StyledLineEdit(right, height=38),
+        )
 
-    # ── Section: Goods (Boxes 6–12) ───────────────────────────────
+    # ── Section: Goods (Boxes 6–12) ────────────────────────────────────────
 
     def _build_cargo_card(self):
         content = self._section_card(
-            "Goods Specifications", "Boxes 6 to 12 — Cargo details, weight, volume and HS code")
+            t("cmr.section_cargo", "Goods Specifications"),
+            t("cmr.section_cargo_sub",
+              "Boxes 6 to 12 — Cargo details, weight, volume and HS code"),
+        )
 
         # Row 1: Boxes 6–9
-        r1 = ctk.CTkFrame(content, fg_color="transparent")
-        r1.pack(fill="x", pady=(0, S["3"]))
-        r1.columnconfigure((0, 1, 2, 3), weight=1)
+        r1 = QWidget()
+        r1_layout = QHBoxLayout(r1)
+        r1_layout.setContentsMargins(0, 0, 0, 0)
+        r1_layout.setSpacing(S["3"])
 
         self._cmr_entries["cargo_marks"] = self._compact_box(r1, 6, "Marks & Numbers", 0)
         self._cmr_entries["package_count"] = self._compact_box(r1, 7, "No. of Packages", 1)
         self._cmr_entries["package_type"] = self._compact_box(r1, 8, "Method of Packing", 2)
         self._cmr_entries["cargo_description"] = self._compact_box(r1, 9, "Nature of Goods", 3)
 
+        content.layout().addWidget(r1)
+
         # Row 2: Boxes 10–12
-        r2 = ctk.CTkFrame(content, fg_color="transparent")
-        r2.pack(fill="x", pady=(0, S["3"]))
-        r2.columnconfigure((0, 1, 2), weight=1)
+        r2 = QWidget()
+        r2_layout = QHBoxLayout(r2)
+        r2_layout.setContentsMargins(0, 0, 0, 0)
+        r2_layout.setSpacing(S["3"])
 
         self._cmr_entries["hs_code"] = self._compact_box(r2, 10, "HS Code", 0, max_col=2)
         self._cmr_entries["gross_weight_kg"] = self._compact_box(r2, 11, "Gross Weight (kg)", 1, max_col=2)
         self._cmr_entries["volume_m3"] = self._compact_box(r2, 12, "Volume (m\u00b3)", 2, max_col=2)
 
+        content.layout().addWidget(r2)
+
         # ADR section
         self._build_adr_section(content)
 
-    def _build_adr_section(self, parent):
-        adr_frame = ctk.CTkFrame(parent, fg_color="transparent")
-        adr_frame.pack(fill="x", pady=(S["3"], 0))
-
-        self._adr_toggle_var = tk.BooleanVar(value=False)
-        self._adr_toggle = ctk.CTkCheckBox(
-            adr_frame,
-            text="Contains DANGEROUS GOODS (ADR)",
-            variable=self._adr_toggle_var,
-            command=self._on_adr_toggle,
-            font=FONTS["body"],
-            text_color=COLORS["text_primary"],
-            fg_color=COLORS["danger"],
-            hover_color=COLORS.get("danger_hover", COLORS["danger"]),
-            border_color=COLORS["border"],
-            checkbox_width=22, checkbox_height=22
+    def _build_adr_section(self, parent: QWidget):
+        self._adr_toggle = QCheckBox(
+            t("cmr.adr_toggle", "Contains DANGEROUS GOODS (ADR)")
         )
-        self._adr_toggle.pack(anchor="w")
+        self._adr_toggle.setStyleSheet(
+            f"color: {COLORS['text_primary']};"
+            f"font-weight: bold;"
+            f"spacing: 6px;"
+        )
+        self._adr_toggle.stateChanged.connect(self._on_adr_toggle)
+        parent.layout().addWidget(self._adr_toggle)
 
-        self._adr_content_wrapper = ctk.CTkFrame(parent, fg_color="transparent")
-        self._adr_content = ctk.CTkFrame(
-            self._adr_content_wrapper, fg_color="transparent")
-        self._adr_content.pack(fill="x")
+        # Wrapper for ADR content (shown/hidden on toggle)
+        self._adr_content_wrapper = QWidget()
+        self._adr_content_wrapper.setVisible(False)
+        adr_wrapper_layout = QVBoxLayout(self._adr_content_wrapper)
+        adr_wrapper_layout.setContentsMargins(0, S["2"], 0, 0)
+        adr_wrapper_layout.setSpacing(S["2"])
 
-        self._adr_add_btn = btn(
-            self._adr_content_wrapper, "+ Add ADR Row",
-            variant="danger", height=28,
-            command=self._add_adr_row)
-        self._adr_add_btn.pack(anchor="w", pady=(S["2"], 0))
+        self._adr_content = QWidget()
+        self._adr_content_layout = QVBoxLayout(self._adr_content)
+        self._adr_content_layout.setContentsMargins(0, 0, 0, 0)
+        self._adr_content_layout.setSpacing(S["2"])
+        adr_wrapper_layout.addWidget(self._adr_content)
 
-    def _on_adr_toggle(self):
-        if self._adr_toggle_var.get():
-            self._adr_content_wrapper.pack(fill="x", pady=(S["2"], 0))
-            if not self._adr_rows:
-                self._add_adr_row()
-            self._adr_toggle.configure(text_color=COLORS["text_danger"])
-        else:
-            self._adr_content_wrapper.pack_forget()
-            for f in self._adr_rows:
-                f.destroy()
-            self._adr_rows.clear()
-            self._adr_toggle.configure(text_color=COLORS["text_primary"])
+        self._adr_add_btn = ActionButton(
+            self._adr_content_wrapper,
+            t("cmr.add_adr", "+ Add ADR Row"),
+            command=self._add_adr_row,
+            variant="danger",
+        )
+        self._adr_add_btn.setFixedHeight(28)
+        adr_wrapper_layout.addWidget(self._adr_add_btn)
+
+        parent.layout().addWidget(self._adr_content_wrapper)
+
+    def _on_adr_toggle(self, state: int):
+        checked = state == Qt.Checked
+        self._adr_content_wrapper.setVisible(checked)
+        if checked and not self._adr_rows:
+            self._add_adr_row()
 
     def _add_adr_row(self):
-        row = ctk.CTkFrame(
-            self._adr_content, fg_color=COLORS["bg_elevated"],
-            corner_radius=RADIUS_INPUT)
-        row.pack(fill="x", pady=(0, S["2"]))
+        row = QFrame()
+        row.setFrameShape(QFrame.StyledPanel)
+        row.setStyleSheet(
+            f"background-color: {COLORS['bg_elevated']};"
+            f"border-radius: 4px;"
+        )
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        row_layout.setSpacing(S["2"])
+
         labels = ["UN No", "Class", "Pack. Grp", "Tunnel", "Qty", "Net Wt(kg)"]
-        for i, lbl in enumerate(labels):
-            e = ctk.CTkEntry(
-                row, width=70, height=28, placeholder_text=lbl,
-                fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-                text_color=COLORS["text_primary"], font=FONTS["body"],
-                corner_radius=RADIUS_INPUT)
-            e.pack(side="left", fill="x", expand=True,
-                   padx=(0, S["2"]) if i < len(labels) - 1 else 0)
-        btn(
-            row, "X", variant="danger", width=28, height=28,
-            command=lambda f=row: self._remove_adr_row(f)
-        ).pack(side="left")
+        for lbl in labels:
+            e = StyledLineEdit(row, placeholder=lbl, height=28)
+            row_layout.addWidget(e, 1)
+
+        remove_btn = ActionButton(
+            row, "X", variant="danger",
+            command=lambda r=row: self._remove_adr_row(r),
+        )
+        remove_btn.setFixedSize(28, 28)
+        row_layout.addWidget(remove_btn)
+
+        self._adr_content_layout.addWidget(row)
         self._adr_rows.append(row)
 
-    def _remove_adr_row(self, frame):
-        frame.destroy()
+    def _remove_adr_row(self, frame: QWidget):
+        frame.deleteLater()
         if frame in self._adr_rows:
             self._adr_rows.remove(frame)
 
-    def _get_adr_data(self):
-        if not self._adr_toggle_var.get():
-            return None
-        items = []
-        for row in self._adr_rows:
-            children = [c for c in row.winfo_children()
-                        if isinstance(c, ctk.CTkEntry)]
-            if len(children) >= 6:
-                items.append({
-                    "un_no": children[0].get().strip(),
-                    "adr_class": children[1].get().strip(),
-                    "packing_group": children[2].get().strip(),
-                    "tunnel_code": children[3].get().strip(),
-                    "quantity": children[4].get().strip(),
-                    "net_weight": children[5].get().strip(),
-                })
-        return items if items else None
-
-    # ── Section: Instructions & Agreements (Boxes 13–17) ─────────
+    # ── Section: Instructions & Agreements (Boxes 13–17) ──────────────────
 
     def _build_instructions_card(self):
         content = self._section_card(
-            "Instructions & Agreements",
-            "Boxes 13 to 17 — Instructions, reservations, payment, COD and special agreements")
+            t("cmr.section_instructions", "Instructions & Agreements"),
+            t("cmr.section_instructions_sub",
+              "Boxes 13 to 17 — Instructions, reservations, payment,"
+              " COD and special agreements"),
+        )
         left, right = self._two_col_pane(content)
 
         # Box 13: Sender's instructions
         self._cmr_entries["carrier_instructions"] = self._box_field(
-            left, 13, "Sender's Instructions", "Instructiuni Expeditor",
-            kind="textbox", height=80)
+            left, 13,
+            t("cmr.sender_instructions", "Sender's Instructions"),
+            t("cmr.sender_instructions_ro", "Instructiuni Expeditor"),
+            kind="textbox", height=80,
+        )
 
         # Box 14: Carrier's reservations
         self._cmr_entries["carrier_reservations"] = self._box_field(
-            right, 14, "Carrier's Reservations", "Rezerve Transportator",
-            kind="textbox", height=80)
+            right, 14,
+            t("cmr.carrier_reservations", "Carrier's Reservations"),
+            t("cmr.carrier_reservations_ro", "Rezerve Transportator"),
+            kind="textbox", height=80,
+        )
 
         # Box 15: Payment instruction
         self._cmr_entries["carriage_payer"] = self._box_field(
-            left, 15, "Instruction as to Payment", "Plata Transport",
-            kind="combobox", values=PAYMENT_OPTIONS)
-        if PAYMENT_OPTIONS:
-            self._cmr_entries["carriage_payer"].set(PAYMENT_OPTIONS[0])
+            left, 15,
+            t("cmr.payment_instruction", "Instruction as to Payment"),
+            t("cmr.payment_instruction_ro", "Plata Transport"),
+            kind="combobox", values=PAYMENT_OPTIONS,
+        )
 
         # Box 16: Cash on delivery
         self._cmr_entries["cod_amount"] = self._box_field(
-            right, 16, "Cash on Delivery (COD)", "Ramburs",
-            placeholder="Amount (EUR)")
+            right, 16,
+            t("cmr.cod", "Cash on Delivery (COD)"),
+            t("cmr.cod_ro", "Ramburs"),
+            placeholder=t("cmr.amount_eur", "Amount (EUR)"),
+        )
 
         # Box 17: Special agreements
         self._cmr_entries["special_agreements"] = self._box_field(
-            right, 17, "Special Agreements", "Acorduri Speciale",
-            kind="textbox", height=80)
+            right, 17,
+            t("cmr.special_agreements", "Special Agreements"),
+            t("cmr.special_agreements_ro", "Acorduri Speciale"),
+            kind="textbox", height=80,
+        )
 
-        # Distance is supporting info, not a numbered box; keep it below the numbered boxes
+        # Distance (supplementary, no box number)
         self._cmr_entries["distance_km"] = self._box_field(
-            content, None, "Distance (km)", "Distanta (km)",
-            placeholder="Distance in kilometres")
+            content, None,
+            t("cmr.distance", "Distance (km)"),
+            t("cmr.distance_ro", "Distanta (km)"),
+            placeholder=t("cmr.distance_placeholder", "Distance in kilometres"),
+        )
 
-    # ── Section: Carrier (Boxes 18, 19) ──────────────────────────
+    # ── Section: Carrier (Boxes 18, 19) ───────────────────────────────────
 
     def _build_carrier_card(self):
         content = self._section_card(
-            "Carrier", "Boxes 18 & 19 — Carrier and successive carriers")
+            t("cmr.section_carrier", "Carrier"),
+            t("cmr.section_carrier_sub",
+              "Boxes 18 & 19 — Carrier and successive carriers"),
+        )
         left, right = self._two_col_pane(content)
 
         self._cmr_entries["carrier_name"] = self._box_field(
-            left, 18, "Carrier", "Transportator",
-            kind="textbox", height=90)
+            left, 18,
+            t("cmr.carrier", "Carrier"),
+            t("cmr.carrier_ro", "Transportator"),
+            kind="textbox", height=90,
+        )
 
         # Box 19: Successive carriers
-        sc_frame = ctk.CTkFrame(right, fg_color="transparent")
-        sc_frame.pack(fill="x")
+        sc_container = QWidget()
+        sc_layout = QVBoxLayout(sc_container)
+        sc_layout.setContentsMargins(0, 0, 0, 0)
+        sc_layout.setSpacing(S["2"])
 
-        lbl_frame = ctk.CTkFrame(sc_frame, fg_color="transparent")
-        lbl_frame.pack(anchor="w", fill="x", pady=(0, S["1"]))
-        self._box_badge(lbl_frame, 19)
-        ctk.CTkLabel(
-            lbl_frame, text="Successive Carriers / Transportatori Successivi",
-            font=FONTS["label"], text_color=COLORS["text_muted"], anchor="w"
-        ).pack(side="left")
+        sc_lbl_row = QWidget()
+        sc_lbl_layout = QHBoxLayout(sc_lbl_row)
+        sc_lbl_layout.setContentsMargins(0, 0, 0, 0)
+        sc_lbl_layout.setSpacing(S["2"])
 
-        self._succ_container = ctk.CTkFrame(sc_frame, fg_color="transparent")
-        self._succ_container.pack(fill="x", pady=(0, S["2"]))
+        badge = QLabel("19")
+        badge.setFixedSize(30, 20)
+        badge.setAlignment(Qt.AlignCenter)
+        badge.setStyleSheet(
+            f"background-color: {COLORS['accent_dim']};"
+            f"color: {COLORS['accent_text']};"
+            f"border-radius: 4px; font-weight: bold; font-size: 10px;"
+        )
+        sc_lbl_layout.addWidget(badge)
 
-        btn(
-            sc_frame, "+ Add Successive Carrier",
-            variant="secondary", height=32,
-            command=self._add_successive_carrier_row
-        ).pack(anchor="w")
+        sc_lbl = QLabel(
+            t("cmr.successive_carriers", "Successive Carriers / Transportatori Successivi")
+        )
+        sc_lbl.setProperty("fontRole", "label")
+        sc_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        sc_lbl_layout.addWidget(sc_lbl)
+        sc_lbl_layout.addStretch(1)
+
+        sc_layout.addWidget(sc_lbl_row)
+
+        self._succ_container = QWidget()
+        self._succ_container_layout = QVBoxLayout(self._succ_container)
+        self._succ_container_layout.setContentsMargins(0, 0, 0, 0)
+        self._succ_container_layout.setSpacing(S["2"])
+        sc_layout.addWidget(self._succ_container)
+
+        self._succ_add_btn = ActionButton(
+            sc_container,
+            t("cmr.add_successive_carrier", "+ Add Successive Carrier"),
+            command=self._add_successive_carrier_row,
+            variant="secondary",
+        )
+        self._succ_add_btn.setFixedHeight(32)
+        sc_layout.addWidget(self._succ_add_btn)
+
+        right.layout().addWidget(sc_container)
 
     def _add_successive_carrier_row(self):
-        row = ctk.CTkFrame(
-            self._succ_container, fg_color=COLORS["bg_elevated"],
-            corner_radius=RADIUS_INPUT
+        row = QFrame()
+        row.setFrameShape(QFrame.StyledPanel)
+        row.setStyleSheet(
+            f"background-color: {COLORS['bg_elevated']};"
+            f"border-radius: 4px;"
         )
-        row.pack(fill="x", pady=(0, S["2"]))
-        for i, lbl in enumerate(
-            ["Name", "Address", "Country", "Plate", "Trailer", "Driver", "From", "To"]
-        ):
-            e = ctk.CTkEntry(
-                row, height=28, placeholder_text=lbl,
-                fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-                text_color=COLORS["text_primary"], font=FONTS["small"],
-                corner_radius=RADIUS_INPUT
-            )
-            e.pack(side="left", fill="x", expand=True,
-                   padx=(0, S["2"]) if i < 7 else 0)
-        btn(
-            row, "X", variant="danger", width=28, height=28,
-            command=lambda r=row: self._remove_successive_carrier_row(r)
-        ).pack(side="left")
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        row_layout.setSpacing(S["2"])
+
+        for lbl in ["Name", "Address", "Country", "Plate", "Trailer", "Driver", "From", "To"]:
+            e = StyledLineEdit(row, placeholder=lbl, height=28)
+            row_layout.addWidget(e, 1)
+
+        remove_btn = ActionButton(
+            row, "X", variant="danger",
+            command=lambda r=row: self._remove_successive_carrier_row(r),
+        )
+        remove_btn.setFixedSize(28, 28)
+        row_layout.addWidget(remove_btn)
+
+        self._succ_container_layout.addWidget(row)
         self._successive_carrier_rows.append(row)
 
-    def _remove_successive_carrier_row(self, frame):
-        frame.destroy()
+    def _remove_successive_carrier_row(self, frame: QWidget):
+        frame.deleteLater()
         if frame in self._successive_carrier_rows:
             self._successive_carrier_rows.remove(frame)
 
-    def _get_successive_carriers(self):
-        result = []
-        for frame in self._successive_carrier_rows:
-            entries = [c for c in frame.winfo_children()
-                       if isinstance(c, ctk.CTkEntry)]
-            if len(entries) >= 6:
-                result.append({
-                    "carrier_name": entries[0].get().strip(),
-                    "carrier_address": entries[1].get().strip(),
-                    "carrier_country": entries[2].get().strip(),
-                    "vehicle_plate": entries[3].get().strip(),
-                    "trailer_plate": entries[4].get().strip(),
-                    "driver_name": entries[5].get().strip(),
-                    "from_location": entries[6].get().strip()
-                    if len(entries) > 6 else "",
-                    "to_location": entries[7].get().strip()
-                    if len(entries) > 7 else "",
-                })
-        return result
-
-    # ── Section: Charges (Box 20) ────────────────────────────────
+    # ── Section: Charges (Box 20) ─────────────────────────────────────────
 
     def _build_charges_card(self):
         content = self._section_card(
-            "Box 20 — To Be Paid By",
-            "Charges to be paid by the Sender or the Consignee")
+            t("cmr.section_charges", "Box 20 — To Be Paid By"),
+            t("cmr.section_charges_sub",
+              "Charges to be paid by the Sender or the Consignee"),
+        )
 
         # Table header
-        hdr = ctk.CTkFrame(content, fg_color="transparent")
-        hdr.pack(fill="x", pady=(0, S["3"]))
-        hdr.columnconfigure(0, weight=2)
-        hdr.columnconfigure(1, weight=1)
-        hdr.columnconfigure(2, weight=1)
+        hdr = QWidget()
+        hdr_layout = QHBoxLayout(hdr)
+        hdr_layout.setContentsMargins(0, 0, 0, 0)
+        hdr_layout.setSpacing(S["3"])
 
-        ctk.CTkLabel(
-            hdr, text="Cost Type", font=FONTS["label"],
-            text_color=COLORS["text_muted"]
-        ).grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(
-            hdr, text="Sender", font=FONTS["label"],
-            text_color=COLORS["text_muted"]
-        ).grid(row=0, column=1, sticky="e")
-        ctk.CTkLabel(
-            hdr, text="Consignee", font=FONTS["label"],
-            text_color=COLORS["text_muted"]
-        ).grid(row=0, column=2, sticky="e")
+        cost_type_lbl = QLabel(t("cmr.cost_type", "Cost Type"))
+        cost_type_lbl.setProperty("fontRole", "label")
+        cost_type_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        hdr_layout.addWidget(cost_type_lbl, 2)
 
-        divider(content)
+        sender_lbl = QLabel(t("cmr.sender", "Sender"))
+        sender_lbl.setProperty("fontRole", "label")
+        sender_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        sender_lbl.setAlignment(Qt.AlignRight)
+        hdr_layout.addWidget(sender_lbl, 1)
 
+        consignee_lbl = QLabel(t("cmr.consignee_short", "Consignee"))
+        consignee_lbl.setProperty("fontRole", "label")
+        consignee_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        consignee_lbl.setAlignment(Qt.AlignRight)
+        hdr_layout.addWidget(consignee_lbl, 1)
+
+        content.layout().addWidget(hdr)
+
+        # Divider
+        div = QFrame()
+        div.setFrameShape(QFrame.HLine)
+        div.setFrameShadow(QFrame.Plain)
+        div.setFixedHeight(1)
+        div.setStyleSheet(f"background-color: {COLORS['border']};")
+        content.layout().addWidget(div)
+
+        # Cost rows
         cost_rows = [
             ("Carriage charges", "carriage_sender", "carriage_consignee"),
             ("Supplementary charges", "supplementary_sender", "supplementary_consignee"),
             ("Customs duties", "customs_sender", "customs_consignee"),
             ("Other costs", "other_sender", "other_consignee"),
         ]
-        self._financial_rows = []
+        self._financial_rows.clear()
         for label, sk, ck in cost_rows:
             self._build_financial_row(content, label, sk, ck)
 
-    def _build_financial_row(self, parent, label, sender_key, consignee_key):
-        row = ctk.CTkFrame(parent, fg_color="transparent")
-        row.pack(fill="x", pady=(S["2"], 0))
-        row.columnconfigure(0, weight=2)
-        row.columnconfigure(1, weight=1)
-        row.columnconfigure(2, weight=1)
+    def _build_financial_row(
+        self, parent: QWidget, label: str, sender_key: str, consignee_key: str
+    ):
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(S["3"])
 
-        ctk.CTkLabel(
-            row, text=label, font=FONTS["small"],
-            text_color=COLORS["text_secondary"]
-        ).grid(row=0, column=0, sticky="w")
+        lbl = QLabel(label)
+        lbl.setProperty("fontRole", "small")
+        lbl.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        row_layout.addWidget(lbl, 2)
 
-        se = ctk.CTkEntry(
-            row, height=32, placeholder_text="EUR",
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["small"],
-            corner_radius=RADIUS_INPUT)
-        se.grid(row=0, column=1, sticky="ew", padx=(0, S["3"]))
+        se = StyledLineEdit(row, placeholder="EUR", height=32)
+        row_layout.addWidget(se, 1)
         self._cmr_entries[sender_key] = se
 
-        ce = ctk.CTkEntry(
-            row, height=32, placeholder_text="EUR",
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["small"],
-            corner_radius=RADIUS_INPUT)
-        ce.grid(row=0, column=2, sticky="ew")
+        ce = StyledLineEdit(row, placeholder="EUR", height=32)
+        row_layout.addWidget(ce, 1)
         self._cmr_entries[consignee_key] = ce
 
         self._financial_rows.append((sender_key, consignee_key))
+        parent.layout().addWidget(row)
 
-    def _get_financial_data(self):
-        result = {}
-        for sk, ck in self._financial_rows:
-            s_val = self._cmr_entries.get(sk)
-            c_val = self._cmr_entries.get(ck)
-            result[sk] = s_val.get().strip() if s_val and s_val.winfo_exists() else ""
-            result[ck] = c_val.get().strip() if c_val and c_val.winfo_exists() else ""
-        return result
-
-    # ── Section: Issue & Signatures (Boxes 21–24) ─────────────────
+    # ── Section: Issue & Signatures (Boxes 21–24) ─────────────────────────
 
     def _build_issue_signatures_card(self):
         content = self._section_card(
-            "Issue & Signatures", "Boxes 21 to 24 — Place/date of issue and party signatures")
-
-        # Box 21
-        b21 = ctk.CTkFrame(content, fg_color="transparent")
-        b21.pack(fill="x", pady=(0, S["4"]))
-
-        lbl_frame = ctk.CTkFrame(b21, fg_color="transparent")
-        lbl_frame.pack(anchor="w", fill="x", pady=(0, S["1"]))
-        self._box_badge(lbl_frame, 21)
-        ctk.CTkLabel(
-            lbl_frame, text="Established in / Intocmit in",
-            font=FONTS["label"], text_color=COLORS["text_muted"], anchor="w"
-        ).pack(side="left")
-
-        row21 = ctk.CTkFrame(b21, fg_color="transparent")
-        row21.pack(fill="x")
-        row21.columnconfigure((0, 1), weight=1)
-
-        place_frame = ctk.CTkFrame(row21, fg_color="transparent")
-        place_frame.grid(row=0, column=0, sticky="ew", padx=(0, S["3"]))
-        ctk.CTkLabel(
-            place_frame, text="Place:", font=FONTS["small"],
-            text_color=COLORS["text_muted"], anchor="w"
-        ).pack(anchor="w")
-        self._cmr_entries["issue_place"] = ctk.CTkEntry(
-            place_frame, height=32, placeholder_text="City, Country",
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["body"],
-            corner_radius=RADIUS_INPUT)
-        self._cmr_entries["issue_place"].pack(fill="x")
-
-        date_frame = ctk.CTkFrame(row21, fg_color="transparent")
-        date_frame.grid(row=0, column=1, sticky="ew")
-        ctk.CTkLabel(
-            date_frame, text="Date:", font=FONTS["small"],
-            text_color=COLORS["text_muted"], anchor="w"
-        ).pack(anchor="w")
-        from ui.widgets.date_picker import make_date_entry
-        w21d = make_date_entry(
-            date_frame, date_pattern="y-mm-dd",
-            placeholder="YYYY-MM-DD", height=32)
-        w21d.pack(fill="x")
-        self._cmr_entries["issue_date"] = w21d
-
-        # Signatures 22-24
-        sig_frame = ctk.CTkFrame(content, fg_color="transparent")
-        sig_frame.pack(fill="x", pady=(S["4"], 0))
-        sig_frame.columnconfigure((0, 1, 2), weight=1)
-
-        sig_labels = [
-            (22, "Signature of Sender", "sender"),
-            (23, "Signature of Carrier", "carrier"),
-            (24, "Signature of Consignee", "consignee"),
-        ]
-        for col_i, (num, label, key) in enumerate(sig_labels):
-            col = ctk.CTkFrame(
-                sig_frame, fg_color="transparent")
-            col.grid(row=0, column=col_i, sticky="nsew",
-                     padx=(0, S["3"]) if col_i < 2 else (0, 0))
-            col.columnconfigure(0, weight=1)
-
-            lbl_frame = ctk.CTkFrame(col, fg_color="transparent")
-            lbl_frame.pack(anchor="w", fill="x", pady=(0, S["1"]))
-            self._box_badge(lbl_frame, num)
-            ctk.CTkLabel(
-                lbl_frame, text=label, font=FONTS["label"],
-                text_color=COLORS["text_muted"], anchor="w"
-            ).pack(side="left")
-
-            from ui.widgets.signature_pad import SignaturePad
-            pad = SignaturePad(col, label="")
-            pad.pack(fill="x", pady=(0, S["1"]))
-            setattr(self, f"sig_{key}_pad", pad)
-
-    # ═══════════════════════════════════════════════════════════════
-    # Validation
-    # ═══════════════════════════════════════════════════════════════
-
-    def _apply_validation(self):
-        from services.invoicing.cmr_validator import FieldValidator
-        self._field_validator = FieldValidator()
-        self._error_labels = {}
-
-        vcmd_numeric = self.register(
-            lambda field_key, proposed:
-            self._field_validator.validate_keystroke(field_key, proposed)
+            t("cmr.section_issue", "Issue & Signatures"),
+            t("cmr.section_issue_sub",
+              "Boxes 21 to 24 — Place/date of issue and party signatures"),
         )
 
-        for widget_key in self._cmr_entries:
-            if not self._field_validator.field_has_numeric_rule(widget_key) and \
-               not self._field_validator.field_has_blur_rule(widget_key):
-                continue
+        # Box 21: Established in
+        b21 = QWidget()
+        b21_layout = QVBoxLayout(b21)
+        b21_layout.setContentsMargins(0, 0, 0, 0)
+        b21_layout.setSpacing(S["1"])
 
-            w = self._cmr_entries.get(widget_key)
-            if w is None or not w.winfo_exists():
-                continue
+        b21_lbl_row = QWidget()
+        b21_lbl_layout = QHBoxLayout(b21_lbl_row)
+        b21_lbl_layout.setContentsMargins(0, 0, 0, 0)
+        b21_lbl_layout.setSpacing(S["2"])
 
-            if isinstance(w, ctk.CTkEntry):
-                if self._field_validator.field_has_numeric_rule(widget_key):
-                    w.configure(
-                        validate="key",
-                        validatecommand=(vcmd_numeric, widget_key, "%P"),
-                    )
-                if self._field_validator.field_has_blur_rule(widget_key):
-                    w.bind("<FocusOut>",
-                           lambda e, key=widget_key, widget=w:
-                           self._on_field_blur(key, widget))
-                    w.bind("<FocusIn>",
-                           lambda e, key=widget_key, widget=w:
-                           self._on_field_focus(key, widget))
+        badge21 = QLabel("21")
+        badge21.setFixedSize(30, 20)
+        badge21.setAlignment(Qt.AlignCenter)
+        badge21.setStyleSheet(
+            f"background-color: {COLORS['accent_dim']};"
+            f"color: {COLORS['accent_text']};"
+            f"border-radius: 4px; font-weight: bold; font-size: 10px;"
+        )
+        b21_lbl_layout.addWidget(badge21)
 
-    def _on_field_blur(self, field_key, widget):
-        err = self._field_validator.validate_blur(field_key, widget.get())
-        if err:
-            widget.configure(border_color=COLORS["danger"])
-            self._show_error_label(field_key, widget, err)
-        else:
-            widget.configure(border_color=COLORS["border"])
-            self._hide_error_label(field_key)
+        b21_title = QLabel(
+            t("cmr.established_in", "Established in / Intocmit in")
+        )
+        b21_title.setProperty("fontRole", "label")
+        b21_title.setStyleSheet(f"color: {COLORS['text_muted']};")
+        b21_lbl_layout.addWidget(b21_title)
+        b21_lbl_layout.addStretch(1)
 
-    def _on_field_focus(self, field_key, widget):
-        widget.configure(border_color=COLORS["border_focus"])
-        self._hide_error_label(field_key)
+        b21_layout.addWidget(b21_lbl_row)
 
-    def _show_error_label(self, field_key, widget, message):
-        if field_key in self._error_labels:
-            self._error_labels[field_key].configure(text=message)
+        # Row with place + date
+        row21 = QWidget()
+        row21_layout = QHBoxLayout(row21)
+        row21_layout.setContentsMargins(0, 0, 0, 0)
+        row21_layout.setSpacing(S["3"])
+
+        place_col = QWidget()
+        place_col_layout = QVBoxLayout(place_col)
+        place_col_layout.setContentsMargins(0, 0, 0, 0)
+        place_col_layout.setSpacing(S["1"])
+        place_label = QLabel(t("cmr.place", "Place:"))
+        place_label.setProperty("fontRole", "small")
+        place_label.setStyleSheet(f"color: {COLORS['text_muted']};")
+        place_col_layout.addWidget(place_label)
+        self._cmr_entries["issue_place"] = StyledLineEdit(
+            place_col, placeholder=t("cmr.city_country", "City, Country"), height=32,
+        )
+        place_col_layout.addWidget(self._cmr_entries["issue_place"])
+        row21_layout.addWidget(place_col, 1)
+
+        date_col = QWidget()
+        date_col_layout = QVBoxLayout(date_col)
+        date_col_layout.setContentsMargins(0, 0, 0, 0)
+        date_col_layout.setSpacing(S["1"])
+        date_label = QLabel(t("cmr.date", "Date:"))
+        date_label.setProperty("fontRole", "small")
+        date_label.setStyleSheet(f"color: {COLORS['text_muted']};")
+        date_col_layout.addWidget(date_label)
+        w21d = QDateEdit()
+        w21d.setDisplayFormat("yyyy-MM-dd")
+        w21d.setCalendarPopup(True)
+        w21d.setDate(QDate.currentDate())
+        w21d.setFixedHeight(32)
+        w21d.setStyleSheet(
+            f"background-color: {COLORS['bg_input']};"
+            f"color: {COLORS['text_primary']};"
+            f"border: 1px solid {COLORS['border']};"
+            f"border-radius: 4px; padding: 2px 6px;"
+        )
+        date_col_layout.addWidget(w21d)
+        row21_layout.addWidget(date_col, 1)
+        self._cmr_entries["issue_date"] = w21d
+
+        b21_layout.addWidget(row21)
+        content.layout().addWidget(b21)
+
+        # Signatures 22-24
+        sig_row = QWidget()
+        sig_layout = QHBoxLayout(sig_row)
+        sig_layout.setContentsMargins(0, 0, 0, 0)
+        sig_layout.setSpacing(S["3"])
+
+        sig_specs = [
+            (22, t("cmr.sig_sender", "Signature of Sender"), "sender"),
+            (23, t("cmr.sig_carrier", "Signature of Carrier"), "carrier"),
+            (24, t("cmr.sig_consignee", "Signature of Consignee"), "consignee"),
+        ]
+
+        for col_i, (num, label_text, key) in enumerate(sig_specs):
+            col = QWidget()
+            col_layout = QVBoxLayout(col)
+            col_layout.setContentsMargins(0, 0, 0, 0)
+            col_layout.setSpacing(S["1"])
+
+            # Badge + label
+            sig_lbl_row = QWidget()
+            sig_lbl_layout = QHBoxLayout(sig_lbl_row)
+            sig_lbl_layout.setContentsMargins(0, 0, 0, 0)
+            sig_lbl_layout.setSpacing(S["1"])
+
+            sig_badge = QLabel(str(num))
+            sig_badge.setFixedSize(26, 18)
+            sig_badge.setAlignment(Qt.AlignCenter)
+            sig_badge.setStyleSheet(
+                f"background-color: {COLORS['accent_dim']};"
+                f"color: {COLORS['accent_text']};"
+                f"border-radius: 3px; font-weight: bold; font-size: 8px;"
+            )
+            sig_lbl_layout.addWidget(sig_badge)
+
+            sig_lbl = QLabel(label_text)
+            sig_lbl.setProperty("fontRole", "label")
+            sig_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+            sig_lbl_layout.addWidget(sig_lbl)
+            sig_lbl_layout.addStretch(1)
+
+            col_layout.addWidget(sig_lbl_row)
+
+            pad = QtSignaturePad(col, label="")
+            col_layout.addWidget(pad)
+            setattr(self, f"sig_{key}_pad", pad)
+
+            sig_layout.addWidget(col, 1)
+
+        content.layout().addWidget(sig_row)
+
+    # ── Bottom action bar ────────────────────────────────────────────────
+
+    def _build_action_bar(self):
+        """Action buttons for Generate, Print, Save."""
+        bar = QWidget()
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(0, S["4"], 0, 0)
+        bar_layout.setSpacing(S["3"])
+
+        self._btn_generate = ActionButton(
+            bar,
+            t("cmr.generate", "Generate CMR"),
+            variant="primary",
+        )
+        self._btn_generate.setFixedHeight(38)
+        bar_layout.addWidget(self._btn_generate)
+
+        self._btn_print = ActionButton(
+            bar,
+            t("cmr.print", "Print"),
+            variant="secondary",
+        )
+        self._btn_print.setFixedHeight(38)
+        bar_layout.addWidget(self._btn_print)
+
+        bar_layout.addStretch(1)
+
+        self._btn_save = ActionButton(
+            bar,
+            t("cmr.save", "Save"),
+            variant="secondary",
+        )
+        self._btn_save.setFixedHeight(38)
+        bar_layout.addWidget(self._btn_save)
+
+        self._bottom_bar = bar
+        self._scroll_container.add_widget(bar)
+
+    # ── Role selection ────────────────────────────────────────────────────
+
+    def _set_role(self, is_consignor: bool):
+        if self._consignor_role_active == is_consignor:
             return
-        lbl = ctk.CTkLabel(
-            widget.master, text=message,
-            font=("Segoe UI", 9),
-            text_color=COLORS["danger"],
-            anchor="w")
-        pack_info = widget.pack_info()
-        if "side" in pack_info:
-            pack_order = [c for c in widget.master.pack_slaves()
-                          if c is widget]
-            if pack_order:
-                lbl.pack(after=widget, fill="x", padx=(S["1"], 0))
-                self._error_labels[field_key] = lbl
-                return
-        lbl.pack(fill="x")
-        self._error_labels[field_key] = lbl
+        self._consignor_role_active = is_consignor
+        self._update_role_buttons()
+        if self._last_trip_data:
+            self.fill_from_trip(**self._last_trip_data)
 
-    def _hide_error_label(self, field_key):
-        if field_key in self._error_labels:
-            self._error_labels[field_key].destroy()
-            del self._error_labels[field_key]
+    def _update_role_buttons(self):
+        if self._consignor_role_active:
+            self._role_consignor_btn.setProperty("variant", "primary")
+            self._role_consignee_btn.setProperty("variant", "secondary")
+        else:
+            self._role_consignor_btn.setProperty("variant", "secondary")
+            self._role_consignee_btn.setProperty("variant", "primary")
+        # Force style refresh
+        self._role_consignor_btn.style().unpolish(self._role_consignor_btn)
+        self._role_consignor_btn.style().polish(self._role_consignor_btn)
+        self._role_consignee_btn.style().unpolish(self._role_consignee_btn)
+        self._role_consignee_btn.style().polish(self._role_consignee_btn)
 
-    # ═══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
     # Data collection
-    # ═══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
 
-    def collect_data(self, trip_base=None):
+    def collect_data(self, trip_base: Optional[dict] = None) -> dict:
+        """Collect all form field values into a flat dictionary.
+
+        Mirrors the original ``CMRFormView.collect_data()`` but returns
+        Qt widget values instead of tkinter string vars.
+        """
         data = dict(trip_base) if trip_base else {}
-        data["generating_role"] = self._role_var.get()
+        data["generating_role"] = "consignor" if self._consignor_role_active else "consignee"
 
-        def _get(key, widget_key, default=""):
-            if widget_key in self._cmr_entries:
-                w = self._cmr_entries[widget_key]
-                if w.winfo_exists():
-                    import datetime as _dt
-                    if isinstance(w, ctk.CTkTextbox):
-                        val = w.get("1.0", "end-1c").strip()
-                    elif isinstance(w, ctk.CTkComboBox):
-                        val = w.get().strip()
-                    elif isinstance(w, _dt.date):
-                        val = w.isoformat()
-                    elif hasattr(w, "get_date"):
-                        v = w.get_date()
-                        val = v.isoformat() if isinstance(v, _dt.date) else str(v)
-                    else:
-                        raw = w.get()
-                        if isinstance(raw, _dt.date):
-                            val = raw.isoformat()
-                        else:
-                            val = str(raw).strip()
-                    data[key] = val if val else default
-                    return
-            data.setdefault(key, default)
+        def _get(key: str, widget_key: str, default: str = "") -> None:
+            w = self._cmr_entries.get(widget_key)
+            if w is None:
+                data.setdefault(key, default)
+                return
+
+            if isinstance(w, QPlainTextEdit):
+                val = w.toPlainText().strip()
+            elif isinstance(w, StyledTextEdit):
+                val = w.toPlainText().strip()
+            elif isinstance(w, StyledComboBox):
+                val = w.currentText().strip()
+            elif isinstance(w, QDateEdit):
+                qdate = w.date()
+                if qdate.isValid():
+                    val = qdate.toString("yyyy-MM-dd")
+                else:
+                    val = default
+            elif isinstance(w, StyledLineEdit):
+                val = w.text().strip()
+            else:
+                # Fallback: try text() or currentText()
+                try:
+                    val = w.text().strip()
+                except Exception:
+                    val = default
+
+            data[key] = val if val else default
 
         # Party data
         _get("consignor_name", "consignor_name")
@@ -977,16 +1211,71 @@ class CMRFormView(ctk.CTkFrame):
 
         return data
 
-    # ═══════════════════════════════════════════════════════════════
-    # Auto-fill
-    # ═══════════════════════════════════════════════════════════════
+    def _get_adr_data(self) -> Optional[List[dict]]:
+        if not self._adr_toggle.isChecked():
+            return None
+        items = []
+        for row in self._adr_rows:
+            entries = [
+                c for c in row.findChildren(StyledLineEdit)
+            ]
+            if len(entries) >= 6:
+                items.append({
+                    "un_no": entries[0].text().strip(),
+                    "adr_class": entries[1].text().strip(),
+                    "packing_group": entries[2].text().strip(),
+                    "tunnel_code": entries[3].text().strip(),
+                    "quantity": entries[4].text().strip(),
+                    "net_weight": entries[5].text().strip(),
+                })
+        return items if items else None
 
-    def fill_from_trip(self, trip, company_conf=None, client_data=None,
-                       truck_data=None, driver_data=None):
+    def _get_successive_carriers(self) -> List[dict]:
+        result = []
+        for frame in self._successive_carrier_rows:
+            entries = frame.findChildren(StyledLineEdit)
+            if len(entries) >= 6:
+                result.append({
+                    "carrier_name": entries[0].text().strip(),
+                    "carrier_address": entries[1].text().strip(),
+                    "carrier_country": entries[2].text().strip(),
+                    "vehicle_plate": entries[3].text().strip(),
+                    "trailer_plate": entries[4].text().strip(),
+                    "driver_name": entries[5].text().strip(),
+                    "from_location": entries[6].text().strip()
+                    if len(entries) > 6 else "",
+                    "to_location": entries[7].text().strip()
+                    if len(entries) > 7 else "",
+                })
+        return result
+
+    def _get_financial_data(self) -> dict:
+        result = {}
+        for sk, ck in self._financial_rows:
+            s_w = self._cmr_entries.get(sk)
+            c_w = self._cmr_entries.get(ck)
+            result[sk] = s_w.text().strip() if s_w else ""
+            result[ck] = c_w.text().strip() if c_w else ""
+        return result
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Auto-fill
+    # ══════════════════════════════════════════════════════════════════════
+
+    def fill_from_trip(
+        self,
+        trip: Optional[dict] = None,
+        company_conf: Optional[dict] = None,
+        client_data: Optional[dict] = None,
+        truck_data: Optional[dict] = None,
+        driver_data: Optional[dict] = None,
+    ):
+        """Populate form fields from trip, company, and client data."""
         self._last_trip_data = dict(
             trip=trip, company_conf=company_conf,
             client_data=client_data, truck_data=truck_data,
-            driver_data=driver_data)
+            driver_data=driver_data,
+        )
         if not trip:
             return
 
@@ -994,10 +1283,9 @@ class CMRFormView(ctk.CTkFrame):
         client = client_data or {}
         truck = truck_data or {}
         driver = driver_data or {}
-        role = self._role_var.get()
 
-        if role == "consignor":
-            # Company -> Box 1 (Consignor)
+        if self._consignor_role_active:
+            # Company → Box 1 (Consignor / Sender)
             sender_lines = []
             sender_lines.append(conf.get("company_name", ""))
             sender_lines.append(conf.get("address", ""))
@@ -1012,9 +1300,10 @@ class CMRFormView(ctk.CTkFrame):
                 sender_lines.append(f"Tel: {phone}")
             self._set_entry(
                 self._cmr_entries.get("consignor_name"),
-                "\n".join(line for line in sender_lines if line))
+                "\n".join(line for line in sender_lines if line),
+            )
 
-            # Client -> Box 2 (Consignee)
+            # Client → Box 2 (Consignee)
             c_lines = []
             c_lines.append(trip.get("client_name", client.get("name", "")))
             c_lines.append(client.get("address", ""))
@@ -1030,9 +1319,10 @@ class CMRFormView(ctk.CTkFrame):
                 c_lines.append(f"Contact: {c_contact}, {c_phone}".strip(", "))
             self._set_entry(
                 self._cmr_entries.get("consignee_name"),
-                "\n".join(line for line in c_lines if line))
+                "\n".join(line for line in c_lines if line),
+            )
         else:
-            # Client -> Box 1 (Consignor)
+            # Client → Box 1 (Consignor)
             sender_lines = []
             sender_lines.append(trip.get("client_name", client.get("name", "")))
             sender_lines.append(client.get("address", ""))
@@ -1048,9 +1338,10 @@ class CMRFormView(ctk.CTkFrame):
                 sender_lines.append(f"Contact: {c_contact}, {c_phone}".strip(", "))
             self._set_entry(
                 self._cmr_entries.get("consignor_name"),
-                "\n".join(line for line in sender_lines if line))
+                "\n".join(line for line in sender_lines if line),
+            )
 
-            # Company -> Box 2 (Consignee)
+            # Company → Box 2 (Consignee)
             c_lines = []
             c_lines.append(conf.get("company_name", ""))
             c_lines.append(conf.get("address", ""))
@@ -1065,7 +1356,8 @@ class CMRFormView(ctk.CTkFrame):
                 c_lines.append(f"Tel: {phone}")
             self._set_entry(
                 self._cmr_entries.get("consignee_name"),
-                "\n".join(line for line in c_lines if line))
+                "\n".join(line for line in c_lines if line),
+            )
 
         # Carrier — always from company config
         carr_lines = []
@@ -1082,7 +1374,8 @@ class CMRFormView(ctk.CTkFrame):
             carr_lines.append(f"Reg No: {c_reg}")
         self._set_entry(
             self._cmr_entries.get("carrier_name"),
-            "\n".join(line for line in carr_lines if line))
+            "\n".join(line for line in carr_lines if line),
+        )
 
         # Vehicle plates
         plate = truck.get("plate_number", trip.get("truck_number", ""))
@@ -1099,77 +1392,99 @@ class CMRFormView(ctk.CTkFrame):
         # Locations
         self._set_entry(
             self._cmr_entries.get("destination"),
-            trip.get("destination", trip.get("unloading_address", "")))
+            trip.get("destination", trip.get("unloading_address", "")),
+        )
         self._set_entry(
             self._cmr_entries.get("delivery_country"),
-            trip.get("delivery_country", ""))
+            trip.get("delivery_country", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("place_of_loading"),
             trip.get("place_of_loading",
-                     trip.get("loading_address", trip.get("origin", ""))))
+                     trip.get("loading_address", trip.get("origin", ""))),
+        )
         self._set_entry(
             self._cmr_entries.get("place_of_loading_date"),
-            trip.get("place_of_loading_date", trip.get("start_date", "")))
+            trip.get("place_of_loading_date", trip.get("start_date", "")),
+        )
         self._set_entry(
             self._cmr_entries.get("loading_country"),
-            trip.get("loading_country", ""))
+            trip.get("loading_country", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("documents_attached"),
-            trip.get("documents_attached", ""))
+            trip.get("documents_attached", ""),
+        )
 
         # Cargo
         self._set_entry(
             self._cmr_entries.get("cargo_marks"),
-            trip.get("cargo_marks", ""))
+            trip.get("cargo_marks", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("cargo_description"),
-            trip.get("cargo_description", ""))
+            trip.get("cargo_description", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("package_count"),
-            trip.get("package_count", ""))
+            trip.get("package_count", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("package_type"),
-            trip.get("package_type", ""))
+            trip.get("package_type", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("gross_weight_kg"),
-            trip.get("gross_weight_kg", ""))
+            trip.get("gross_weight_kg", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("volume_m3"),
-            trip.get("volume_m3", ""))
+            trip.get("volume_m3", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("hs_code"),
-            trip.get("hs_code", ""))
+            trip.get("hs_code", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("carrier_reservations"),
-            trip.get("carrier_reservations", ""))
+            trip.get("carrier_reservations", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("carrier_instructions"),
-            trip.get("carrier_instructions", ""))
+            trip.get("carrier_instructions", ""),
+        )
 
         # Payment
         payer = trip.get("carriage_payer", "")
-        payer_entry = self._cmr_entries.get("carriage_payer")
-        if payer_entry and payer_entry.winfo_exists() and payer in ["Sender", "Consignee"]:
-            payer_entry.set(payer)
+        payer_w = self._cmr_entries.get("carriage_payer")
+        if payer_w and payer in ["Sender", "Consignee"]:
+            idx = payer_w.findText(payer)
+            if idx >= 0:
+                payer_w.setCurrentIndex(idx)
 
         # Special agreements
         self._set_entry(
             self._cmr_entries.get("special_agreements"),
-            trip.get("special_agreements", ""))
+            trip.get("special_agreements", ""),
+        )
 
         # COD & Issue
         self._set_entry(
             self._cmr_entries.get("cod_amount"),
-            trip.get("cod_amount", ""))
+            trip.get("cod_amount", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("distance_km"),
-            trip.get("distance_km", ""))
+            trip.get("distance_km", ""),
+        )
         self._set_entry(
             self._cmr_entries.get("issue_place"),
-            trip.get("issue_place", conf.get("address", "")))
+            trip.get("issue_place", conf.get("address", "")),
+        )
         self._set_entry(
             self._cmr_entries.get("issue_date"),
-            trip.get("issue_date", ""))
+            trip.get("issue_date", ""),
+        )
 
         # Signature paths from config
         sig_path = conf.get("signature_path", "")
@@ -1178,84 +1493,103 @@ class CMRFormView(ctk.CTkFrame):
             if pad is not None and sig_path:
                 pad.set_path(sig_path)
 
-    # ═══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
     # Helpers
-    # ═══════════════════════════════════════════════════════════════
+    # ══════════════════════════════════════════════════════════════════════
 
-    def get_bottom_frame(self):
-        """Return the frame at the bottom of the scrollable container.
+    def get_bottom_frame(self) -> Optional[QWidget]:
+        """Return the bottom action bar for adding additional controls.
 
-        Parent views can pack their controls (generate buttons, language
-        selectors, status) here so they scroll with the form instead of
-        being pinned outside.
+        Parent views can pack their controls here so they scroll with the form.
         """
-        return self._bottom_frame
+        return getattr(self, "_bottom_bar", None) or self
 
     def clear(self):
+        """Reset all form fields to their default / empty state."""
         for _, widget in self._cmr_entries.items():
             try:
-                if not widget.winfo_exists():
-                    continue
-                if isinstance(widget, ctk.CTkTextbox):
-                    widget.delete("1.0", "end")
-                elif isinstance(widget, ctk.CTkComboBox):
-                    try:
-                        widget.set("")
-                    except Exception:
-                        pass
-                elif isinstance(widget, ctk.CTkEntry):
-                    widget.delete(0, "end")
+                if isinstance(widget, StyledTextEdit):
+                    widget.clear()
+                elif isinstance(widget, StyledComboBox):
+                    widget.setCurrentIndex(0)
+                elif isinstance(widget, StyledLineEdit):
+                    widget.clear()
+                elif isinstance(widget, QDateEdit):
+                    widget.setDate(QDate.currentDate())
             except Exception:
                 pass
 
         for row in self._adr_rows:
-            row.destroy()
+            row.deleteLater()
         self._adr_rows.clear()
 
         for row in self._successive_carrier_rows:
-            row.destroy()
+            row.deleteLater()
         self._successive_carrier_rows.clear()
 
-        if hasattr(self, "_adr_toggle_var"):
-            self._adr_toggle_var.set(False)
-            self._on_adr_toggle()
+        self._adr_toggle.setChecked(False)
+        self._adr_content_wrapper.setVisible(False)
 
         for k in ["sender", "carrier", "consignee"]:
             pad = getattr(self, f"sig_{k}_pad", None)
             if pad is not None:
                 pad._clear()
 
-        self._role_var.set("consignor")
+        self._consignor_role_active = True
+        self._update_role_buttons()
         self._last_trip_data = None
 
-    def _set_entry(self, widget, value):
+    def _set_entry(self, widget: Optional[QWidget], value: Any):
+        """Set the value of a form widget, handling different widget types."""
         if widget is None:
             return
+        str_val = str(value) if value is not None else ""
+
+        if isinstance(widget, StyledTextEdit):
+            widget.clear()
+            if str_val:
+                widget.setPlainText(str_val)
+        elif isinstance(widget, StyledComboBox):
+            idx = widget.findText(str_val)
+            if idx >= 0:
+                widget.setCurrentIndex(idx)
+            else:
+                widget.setCurrentIndex(0)
+        elif isinstance(widget, QDateEdit):
+            if str_val:
+                try:
+                    qd = QDate.fromString(str_val, "yyyy-MM-dd")
+                    if qd.isValid():
+                        widget.setDate(qd)
+                except Exception:
+                    pass
+        elif isinstance(widget, StyledLineEdit):
+            widget.setText(str_val)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # i18n
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _on_language_changed(self, _lang: str) -> None:
+        """Refresh translatable strings when the UI language changes.
+
+        Currently a no-op placeholder — the form is built once with English
+        labels.  In a future iteration, translatable labels should be refreshed
+        here.
+        """
+        pass
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Lifecycle
+    # ══════════════════════════════════════════════════════════════════════
+
+    def wakeup(self) -> None:
+        """Register i18n listener; called when the view becomes active."""
+        register_listener(self._language_callback)
+
+    def shutdown(self) -> None:
+        """Unregister i18n listener; called when the view is discarded."""
         try:
-            if not widget.winfo_exists():
-                return
+            unregister_listener(self._language_callback)
         except Exception:
-            return
-        if hasattr(widget, "set_date_str") and value:
-            try:
-                widget.set_date_str(str(value))
-                return
-            except Exception:
-                pass
-        if isinstance(widget, ctk.CTkComboBox):
-            try:
-                widget.set(str(value) if value else "")
-            except Exception:
-                pass
-            return
-        try:
-            widget.delete("1.0", "end")
-            if value:
-                widget.insert("1.0", str(value))
-        except Exception:
-            try:
-                widget.delete(0, "end")
-                if value:
-                    widget.insert(0, str(value))
-            except Exception:
-                pass
+            pass

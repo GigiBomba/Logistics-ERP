@@ -1,102 +1,238 @@
-"""Gantt timeline view for trip scheduling on the dispatch board."""
-import customtkinter as ctk
-from datetime import datetime, timedelta
+"""Gantt-like timeline for truck scheduling (PySide6).
+
+Replaces ``ui/widgets/dispatch_timeline.py``. Displays a scrollable timeline
+view showing each truck's trips as colour-coded bars grouped by plate.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from typing import Any, Optional
+
+from PySide6.QtCore import Qt
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget,
+)
+
 from services.i18n import t
-from ui.theme import COLORS, FONTS
+from ui.theme import COLORS, S
 from utils.dates import parse_date
 
+# Status values that are considered terminal/finalised and should be hidden.
+_DONE_STATUSES = frozenset({
+    "Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced",
+})
 
-class DispatchTimeline(ctk.CTkFrame):
-    """Simplified Gantt chart showing truck scheduling over time."""
+# Map trip status to chip colour token.
+_STATUS_COLORS: dict[str, str] = {
+    "Planned":   COLORS["chip_planned"],
+    "Loading":   COLORS["chip_loading"],
+    "In Transit": COLORS["chip_transit"],
+}
 
-    def __init__(self, parent, db, **kwargs):
-        super().__init__(parent, fg_color=COLORS["bg_base"], **kwargs)
-        self._db = db
-        self._scroll = ctk.CTkScrollableFrame(self, fg_color=COLORS["bg_base"],
-                                               scrollbar_button_color=COLORS["border"])
-        self._scroll.pack(fill="both", expand=True)
 
-    def refresh(self, cards_data: list = None):
-        for w in self._scroll.winfo_children():
-            w.destroy()
+class QtDispatchTimeline(QWidget):
+    """Scrollable Gantt-like timeline of truck trips.
 
-        if not cards_data:
-            ctk.CTkLabel(self._scroll, text=t("dispatch_board.timeline_no_data"),
-                        fg_color="transparent", text_color=COLORS["text_muted"],
-                        font=FONTS["body"]).pack(pady=60)
+    Parameters
+    ----------
+    parent : QWidget or None
+        Parent widget.
+    """
+
+    def __init__(self, parent: Optional[QWidget] = None) -> None:
+        super().__init__(parent)
+        self.setObjectName("qtDispatchTimeline")
+
+        # ── Scroll area ──────────────────────────────────────────────────
+        self._scroll = QScrollArea(self)
+        self._scroll.setWidgetResizable(True)
+        self._scroll.setFrameShape(QFrame.NoFrame)
+        self._scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        # ── Content widget ───────────────────────────────────────────────
+        self._content = QWidget()
+        self._content.setObjectName("timelineContent")
+        self._layout = QVBoxLayout(self._content)
+        self._layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
+        self._layout.setSpacing(S["1"])
+        self._layout.setAlignment(Qt.AlignTop)
+
+        self._scroll.setWidget(self._content)
+
+        # Outer layout — scroll area fills the whole widget.
+        outer = QVBoxLayout(self)
+        outer.setContentsMargins(0, 0, 0, 0)
+        outer.setSpacing(0)
+        outer.addWidget(self._scroll)
+
+    # ── Public API ─────────────────────────────────────────────────────────
+
+    def refresh(self, cards_data: Optional[list[dict[str, Any]]] = None) -> None:
+        """Rebuild the timeline from *cards_data*.
+
+        Each dict in the list should contain (at minimum): ``truck_plate``,
+        ``status``, ``trip_id``, ``departure_date``, and ``eta``.
+        Trips whose status is in the done/cancelled set are filtered out.
+        """
+        self._clear()
+
+        # ── Empty / no-data guard ────────────────────────────────────────
+        active = list(self._filter_active(cards_data or []))
+
+        if not active:
+            self._show_empty_state()
             return
 
-        active_trips = [cd for cd in cards_data
-                       if cd.get("status", "") not in
-                       ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced")
-                       and cd.get("truck_plate")]
-
-        if not active_trips:
-            ctk.CTkLabel(self._scroll, text=t("dispatch_board.timeline_no_data"),
-                        fg_color="transparent", text_color=COLORS["text_muted"],
-                        font=FONTS["body"]).pack(pady=60)
-            return
-
-        trucks = {}
-        for trip in active_trips:
-            plate = trip.get("truck_plate", "")
-            if plate not in trucks:
-                trucks[plate] = []
-            trucks[plate].append(trip)
-
+        # ── Now header ───────────────────────────────────────────────────
         now = datetime.now()
         now_str = now.strftime("%H:%M")
-        ctk.CTkLabel(self._scroll, text=f"{t('dispatch_board.timeline_now')}: {now_str}",
-                    fg_color="transparent", text_color=COLORS["accent"],
-                    font=FONTS["h3"]).pack(anchor="w", padx=12, pady=(8, 4))
+        header_label = QLabel(
+            f"{t('dispatch_board.timeline_now')}: {now_str}"
+        )
+        header_label.setProperty("fontRole", "accent")
+        header_label.setContentsMargins(S["2"], 0, 0, 0)
+        self._layout.addWidget(header_label)
 
-        ctk.CTkFrame(self._scroll, fg_color=COLORS["border"], height=1).pack(fill="x", padx=8, pady=2)
+        # ── Divider ──────────────────────────────────────────────────────
+        divider = QFrame()
+        divider.setProperty("role", "divider")
+        divider.setFixedHeight(1)
+        divider.setContentsMargins(0, 0, 0, 0)
+        self._layout.addWidget(divider)
 
-        header = ctk.CTkFrame(self._scroll, fg_color="transparent")
-        header.pack(fill="x", padx=8, pady=(4, 2))
-        ctk.CTkLabel(header, text="Truck", fg_color="transparent",
-                    text_color=COLORS["text_muted"], font=FONTS["label"],
-                    width=120, anchor="w").pack(side="left")
-        ctk.CTkLabel(header, text="Schedule", fg_color="transparent",
-                    text_color=COLORS["text_muted"], font=FONTS["label"],
-                    anchor="w").pack(side="left", fill="x", expand=True)
+        # ── Column headers ───────────────────────────────────────────────
+        header_row = QFrame()
+        header_row.setContentsMargins(0, 0, 0, 0)
+        header_layout = QHBoxLayout(header_row)
+        header_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        header_layout.setSpacing(0)
 
-        status_colors = {
-            "Planned": COLORS["chip_planned"],
-            "Loading": COLORS["chip_loading"],
-            "In Transit": COLORS["chip_transit"],
-        }
+        truck_header = QLabel("Truck")
+        truck_header.setProperty("fontRole", "label")
+        truck_header.setFixedWidth(120)
+        header_layout.addWidget(truck_header)
 
-        for plate, trips in sorted(trucks.items()):
-            row = ctk.CTkFrame(self._scroll, fg_color=COLORS["bg_surface"], corner_radius=4)
-            row.pack(fill="x", padx=8, pady=2)
+        sched_header = QLabel("Schedule")
+        sched_header.setProperty("fontRole", "label")
+        sched_header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        header_layout.addWidget(sched_header)
 
-            ctk.CTkLabel(row, text=plate, fg_color="transparent",
-                        text_color=COLORS["text_primary"], font=FONTS["small"],
-                        width=120, anchor="w").pack(side="left", padx=6, pady=6)
+        self._layout.addWidget(header_row)
 
-            bar_frame = ctk.CTkFrame(row, fg_color="transparent")
-            bar_frame.pack(side="left", fill="x", expand=True, padx=4, pady=4)
+        # ── Group trips by truck plate ───────────────────────────────────
+        trucks: dict[str, list[dict]] = {}
+        for trip in active:
+            plate = trip.get("truck_plate", "")
+            if not plate:
+                continue
+            trucks.setdefault(plate, []).append(trip)
 
-            for trip in trips:
-                dep_raw = trip.get("departure_date", "")
-                eta_raw = trip.get("eta", "")
-                trip_id = trip.get("trip_id", "")
-                status = trip.get("status", "Planned")
-                color = status_colors.get(status, COLORS["chip_planned"])
+        # ── Per-truck rows ───────────────────────────────────────────────
+        for plate in sorted(trucks.keys()):
+            trips = trucks[plate]
+            self._add_truck_row(plate, trips)
 
-                dep_dt = parse_date(dep_raw, "%d/%m/%Y")
-                eta_dt = parse_date(eta_raw, "%d/%m/%Y")
+    # ── Internal helpers ───────────────────────────────────────────────────
 
-                if dep_dt and eta_dt:
-                    dep_str = dep_dt.strftime("%d/%m %H:%M") if hasattr(dep_dt, 'strftime') else dep_raw
-                    eta_str = eta_dt.strftime("%d/%m %H:%M") if hasattr(eta_dt, 'strftime') else eta_raw
-                    label = f"{trip_id} ({dep_str} - {eta_str})"
-                else:
-                    label = f"{trip_id} ({dep_raw} - {eta_raw})"
+    def _clear(self) -> None:
+        """Remove all widgets from the content layout."""
+        while self._layout.count():
+            item = self._layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
 
-                bar = ctk.CTkFrame(bar_frame, fg_color=color, height=22, corner_radius=4)
-                bar.pack(fill="x", pady=1)
-                ctk.CTkLabel(bar, text=label, fg_color=color,
-                            text_color=COLORS["text_primary"], font=FONTS["label"],
-                            anchor="w").pack(side="left", padx=6, pady=2)
+    def _show_empty_state(self) -> None:
+        """Display a centred 'No data' message."""
+        msg = QLabel(t("dispatch_board.timeline_no_data"))
+        msg.setProperty("fontRole", "muted")
+        msg.setAlignment(Qt.AlignCenter)
+        msg.setContentsMargins(0, S["10"], 0, S["10"])
+        self._layout.addWidget(msg)
+
+    @staticmethod
+    def _filter_active(cards_data: list[dict]) -> list[dict]:
+        """Yield only non-terminal trips that have a truck plate."""
+        return [
+            cd for cd in cards_data
+            if cd.get("status", "") not in _DONE_STATUSES
+            and cd.get("truck_plate")
+        ]
+
+    def _add_truck_row(self, plate: str, trips: list[dict]) -> None:
+        """Build a single truck row: plate label + trip bars."""
+        row = QFrame()
+        row.setProperty("role", "card")
+        row.setContentsMargins(0, 0, 0, 0)
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        row_layout.setSpacing(S["1"])
+
+        # ── Truck plate label ────────────────────────────────────────────
+        plate_label = QLabel(plate)
+        plate_label.setProperty("fontRole", "mono")
+        plate_label.setFixedWidth(120)
+        plate_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        row_layout.addWidget(plate_label)
+
+        # ── Trip bars container ──────────────────────────────────────────
+        bar_frame = QWidget()
+        bar_frame.setContentsMargins(0, 0, 0, 0)
+        bar_layout = QVBoxLayout(bar_frame)
+        bar_layout.setContentsMargins(0, 0, 0, 0)
+        bar_layout.setSpacing(2)  # px gap between bars
+
+        for trip in trips:
+            self._add_trip_bar(bar_layout, trip)
+
+        row_layout.addWidget(bar_frame, 1)
+
+        self._layout.addWidget(row)
+
+    def _add_trip_bar(self, parent_layout: QVBoxLayout, trip: dict) -> None:
+        """Append a single coloured trip bar to *parent_layout*."""
+        trip_id = trip.get("trip_id", "")
+        dep_raw = trip.get("departure_date", "")
+        eta_raw = trip.get("eta", "")
+        status = trip.get("status", "Planned")
+
+        # Resolve colour.
+        bar_color = _STATUS_COLORS.get(status, COLORS["chip_planned"])
+
+        # Format the date range label.
+        dep_dt = parse_date(dep_raw, "%d/%m/%Y")
+        eta_dt = parse_date(eta_raw, "%d/%m/%Y")
+        if dep_dt and eta_dt:
+            dep_str = dep_dt.strftime("%d/%m %H:%M")
+            eta_str = eta_dt.strftime("%d/%m %H:%M")
+            label = f"{trip_id} ({dep_str} - {eta_str})"
+        else:
+            label = f"{trip_id} ({dep_raw} - {eta_raw})"
+
+        # ── Bar frame ────────────────────────────────────────────────────
+        bar = QFrame()
+        bar.setFixedHeight(24)
+        bar.setStyleSheet(
+            f"background-color: {bar_color}; border-radius: 4px;"
+        )
+
+        bar_bar_layout = QHBoxLayout(bar)
+        bar_bar_layout.setContentsMargins(S["2"], 0, S["2"], 0)
+        bar_bar_layout.setSpacing(0)
+
+        bar_label = QLabel(label)
+        bar_label.setProperty("fontRole", "small")
+        bar_label.setStyleSheet(
+            f"background-color: transparent; color: {COLORS['text_primary']};"
+        )
+        bar_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
+        bar_bar_layout.addWidget(bar_label)
+
+        parent_layout.addWidget(bar)

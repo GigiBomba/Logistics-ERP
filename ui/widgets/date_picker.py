@@ -1,139 +1,216 @@
-"""Dark-themed DateEntry wrapper that integrates with the Operion ERP colour system.
+"""Custom dark-themed date picker for the PySide6 branch.
 
-Wraps tkcalendar.DateEntry and applies COLORS from ui/theme.py so the calendar
-popup and entry field match the application's dark aesthetic.
+Replaces ``tkcalendar.DateEntry`` with a composite widget composed of a read-only
+line edit and a calendar button. Clicking the button opens a popup ``QDialog``
+containing a fully dark-styled ``QCalendarWidget``.
 """
 
-import os
-import sys
-import tkinter as tk
-from tkcalendar import DateEntry, Calendar
+from __future__ import annotations
 
-_theme_applied = False
+from typing import Optional, Union
+from datetime import date, datetime
 
-
-def _apply_calendar_theme(cal: Calendar) -> None:
-    """Push dark-theme colours into the Calendar popup widget."""
-    from ui.theme import COLORS
-    cal.configure(
-        background=COLORS["bg_surface"],
-        foreground=COLORS["text_primary"],
-        selectbackground=COLORS["accent"],
-        selectforeground="#ffffff",
-        normalbackground=COLORS["bg_surface"],
-        weekendbackground=COLORS["bg_surface"],
-        othermonthbackground=COLORS["bg_base"],
-        othermonthforeground=COLORS["text_muted"],
-        othermonthwebackground=COLORS["bg_base"],
-        othermonthweforeground=COLORS["text_muted"],
-        weekendforeground=COLORS["accent"],
-        headersbackground=COLORS["bg_elevated"],
-        headersforeground=COLORS["text_secondary"],
-        bordercolor=COLORS["border"],
-        titleforeground=COLORS["text_primary"],
-        arrowcolor=COLORS["text_secondary"],
-        font=("Segoe UI", 10),
-    )
+from PySide6.QtCore import Qt, QDate, QPoint, Signal
+from PySide6.QtWidgets import (
+    QWidget,
+    QLineEdit,
+    QPushButton,
+    QHBoxLayout,
+    QVBoxLayout,
+    QCalendarWidget,
+    QDialog,
+    QDialogButtonBox,
+    QSizePolicy,
+    QApplication,
+)
 
 
-def make_date_entry(parent, date_pattern="y-mm-dd",
-                    placeholder="YYYY-MM-DD", height=38):
-    """Create a dark-themed DateEntry that matches CTkEntry dimensions.
+class QtDatePicker(QWidget):
+    """Composite date picker with a dark calendar popup.
 
-    Args:
-        parent: parent widget
-        date_pattern: tkcalendar date pattern ('y-mm-dd' = ISO format)
-        placeholder: shown when field is empty
-        height: entry height in px
-
-    Returns:
-        tkcalendar.DateEntry instance (tk.Entry subclass)
+    Signals:
+        date_changed(QDate): emitted when the selected date changes.
     """
-    from ui.theme import COLORS
 
-    global _theme_applied
-    if not _theme_applied:
-        _original_init = Calendar.__init__
+    date_changed = Signal(QDate)
 
-        def _patched_init(self_cal, master=None, **kw):
-            kw.setdefault("background", COLORS["bg_surface"])
-            kw.setdefault("foreground", COLORS["text_primary"])
-            kw.setdefault("selectbackground", COLORS["accent"])
-            kw.setdefault("selectforeground", "#ffffff")
-            kw.setdefault("normalbackground", COLORS["bg_surface"])
-            kw.setdefault("weekendbackground", COLORS["bg_surface"])
-            kw.setdefault("othermonthbackground", COLORS["bg_base"])
-            kw.setdefault("othermonthforeground", COLORS["text_muted"])
-            kw.setdefault("othermonthwebackground", COLORS["bg_base"])
-            kw.setdefault("othermonthweforeground", COLORS["text_muted"])
-            kw.setdefault("weekendforeground", COLORS["accent"])
-            kw.setdefault("headersbackground", COLORS["bg_elevated"])
-            kw.setdefault("headersforeground", COLORS["text_secondary"])
-            kw.setdefault("bordercolor", COLORS["border"])
-            kw.setdefault("titleforeground", COLORS["text_primary"])
-            kw.setdefault("arrowcolor", COLORS["text_secondary"])
-            kw.setdefault("font", ("Segoe UI", 10))
-            _original_init(self_cal, master, **kw)
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        date_pattern: str = "yyyy-MM-dd",
+        placeholder: str = "YYYY-MM-DD",
+        height: int = 38,
+        initial_date: Optional[Union[QDate, date, str]] = None,
+    ):
+        super().__init__(parent)
+        self._date_pattern = date_pattern
+        self._placeholder = placeholder
 
-        Calendar.__init__ = _patched_init
-        _theme_applied = True
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-    entry_style_kw = {
-        "background": COLORS["bg_input"],
-        "foreground": COLORS["text_primary"],
-        "insertbackground": COLORS["text_primary"],
-        "borderwidth": 0,
-        "highlightthickness": 0,
-        "relief": "flat",
-    }
+        self.line_edit = QLineEdit(self)
+        self.line_edit.setReadOnly(True)
+        self.line_edit.setPlaceholderText(placeholder)
+        self.line_edit.setFixedHeight(height)
+        self.line_edit.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        layout.addWidget(self.line_edit)
 
-    entry_style_kw["disabledbackground"] = COLORS["bg_base"]
-    entry_style_kw["disabledforeground"] = COLORS["text_muted"]
+        self.calendar_button = QPushButton("\u25BC", self)  # ▼
+        self.calendar_button.setFixedSize(height, height)
+        self.calendar_button.setProperty("variant", "ghost")
+        self.calendar_button.setToolTip("Open calendar")
+        layout.addWidget(self.calendar_button)
 
-    date_entry = DateEntry(
-        parent,
-        date_pattern=date_pattern,
-        width=0,
-        height=1,
-        **entry_style_kw,
-    )
-    date_entry.configure(font=("Segoe UI", 13))
-    try:
-        date_entry.configure(highlightbackground=COLORS["border"])
-    except (AttributeError, tk.TclError):
-        pass
+        self.calendar_button.clicked.connect(self._open_calendar)
 
-    date_entry.delete(0, "end")
-    date_entry._set_text("")
-    date_entry._top_cal = None
-    date_entry._placeholder = placeholder
+        self._current_date: Optional[QDate] = None
+        if initial_date is not None:
+            self.set_date(initial_date)
+        else:
+            self.clear()
 
-    _orig_dropdown = date_entry.drop_down
+    # ── Public API ─────────────────────────────────────────────────────────────
 
-    def _wrapped_dropdown():
-        _orig_dropdown()
-        if date_entry._top_cal:
-            cal = date_entry._top_cal
-            if cal.winfo_exists():
-                _apply_calendar_theme(cal)
+    def date(self) -> Optional[QDate]:
+        """Return the currently selected ``QDate`` or ``None``."""
+        return self._current_date
 
-    date_entry.drop_down = _wrapped_dropdown
+    def date_py(self) -> Optional[date]:
+        """Return the currently selected ``datetime.date`` or ``None``."""
+        if self._current_date is None or not self._current_date.isValid():
+            return None
+        return date(self._current_date.year(), self._current_date.month(), self._current_date.day())
 
-    def set_date(value):
-        if value:
+    def text(self) -> str:
+        """Return the formatted date string shown in the field."""
+        return self.line_edit.text()
+
+    def set_date(self, value: Union[QDate, date, str, datetime, None]) -> None:
+        """Set the picker date from a QDate, datetime.date, string, or datetime."""
+        qdate = self._to_qdate(value)
+        if qdate is None or not qdate.isValid():
+            self.clear()
+            return
+
+        self._current_date = qdate
+        self.line_edit.setText(qdate.toString(self._date_pattern))
+        self.date_changed.emit(qdate)
+
+    def set_date_str(self, value: str) -> None:
+        """Compatibility alias for ``set_date`` with a string."""
+        self.set_date(value)
+
+    def get_date(self) -> Optional[date]:
+        """Compatibility alias returning ``datetime.date``."""
+        return self.date_py()
+
+    def clear(self) -> None:
+        """Clear the current selection."""
+        self._current_date = None
+        self.line_edit.clear()
+        self.line_edit.setPlaceholderText(self._placeholder)
+
+    # ── Internals ──────────────────────────────────────────────────────────────
+
+    def _to_qdate(self, value: Union[QDate, date, str, datetime, None]) -> Optional[QDate]:
+        if value is None:
+            return None
+        if isinstance(value, QDate):
+            return value
+        if isinstance(value, date):
+            return QDate(value.year, value.month, value.day)
+        if isinstance(value, datetime):
+            return QDate(value.year, value.month, value.day)
+        if isinstance(value, str):
+            text = value.strip()
+            if not text:
+                return None
+            # Try common formats.
+            for fmt in ("yyyy-MM-dd", "dd/MM/yyyy", "MM/dd/yyyy", "yyyy/MM/dd"):
+                qdate = QDate.fromString(text, fmt)
+                if qdate.isValid():
+                    return qdate
+            # Fallback to ISO parsing.
             try:
-                date_entry.set_date(value)
+                parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                return QDate(parsed.year, parsed.month, parsed.day)
             except Exception:
-                date_entry.delete(0, "end")
-                date_entry.insert(0, str(value))
+                return None
+        return None
 
-    def clear_date():
-        try:
-            date_entry.delete(0, "end")
-        except Exception:
-            pass
+    def _open_calendar(self) -> None:
+        dialog = _CalendarDialog(self, self._current_date)
+        dialog.position_below(self)
+        if dialog.exec() == QDialog.Accepted:
+            selected = dialog.selected_date()
+            if selected is not None and selected.isValid():
+                self.set_date(selected)
 
-    date_entry.set_date_str = set_date
-    date_entry.clear = clear_date
 
-    return date_entry
+class _CalendarDialog(QDialog):
+    """Modal popup dialog containing a dark-styled QCalendarWidget."""
+
+    def __init__(self, parent: Optional[QWidget], initial_date: Optional[QDate] = None):
+        super().__init__(parent)
+        self.setWindowTitle("Select date")
+        self.setModal(True)
+        self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
+        self.setFixedSize(280, 300)
+
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self.calendar = QCalendarWidget(self)
+        self.calendar.setGridVisible(False)
+        self.calendar.setVerticalHeaderFormat(QCalendarWidget.NoVerticalHeader)
+        if initial_date is not None and initial_date.isValid():
+            self.calendar.setSelectedDate(initial_date)
+        layout.addWidget(self.calendar)
+
+        buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
+        layout.addWidget(buttons)
+
+    def position_below(self, anchor: QWidget) -> None:
+        """Move the popup so it appears directly below ``anchor``."""
+        global_pos = anchor.mapToGlobal(QPoint(0, anchor.height()))
+
+        # Ensure the popup stays within the available screen geometry.
+        screen = QApplication.screenAt(global_pos) or QApplication.primaryScreen()
+        if screen is None:
+            self.move(global_pos)
+            return
+
+        geo = screen.availableGeometry()
+        dialog_size = self.sizeHint() if not self.isFixedSize() else self.size()
+        x = global_pos.x()
+        y = global_pos.y()
+
+        if x + dialog_size.width() > geo.right():
+            x = geo.right() - dialog_size.width()
+        if y + dialog_size.height() > geo.bottom():
+            y = anchor.mapToGlobal(QPoint(0, 0)).y() - dialog_size.height()
+
+        self.move(max(geo.left(), x), max(geo.top(), y))
+
+    def selected_date(self) -> QDate:
+        return self.calendar.selectedDate()
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Factory matching the old ``ui.widgets.date_picker.make_date_entry`` signature.
+# ──────────────────────────────────────────────────────────────────────────────
+
+
+def make_date_entry(
+    parent: QWidget,
+    date_pattern: str = "yyyy-MM-dd",
+    placeholder: str = "YYYY-MM-DD",
+    height: int = 38,
+):
+    """Create and return a dark-themed ``QtDatePicker``."""
+    return QtDatePicker(parent, date_pattern=date_pattern, placeholder=placeholder, height=height)

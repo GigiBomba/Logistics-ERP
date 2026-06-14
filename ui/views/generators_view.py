@@ -1,22 +1,42 @@
-﻿"""Generators workspace — unified Invoice + CMR document generation UI.
+"""PySide6 generators view — unified Invoice + CMR document generation UI.
 
-The view is organised around a single, persistent trip selector at the top.
-Below it the user picks the document type (Invoice or CMR waybill) via small
-segmented-tab buttons. The active editor fills the content area. For CMR a
-control bar with language, generate actions and copy status sits at the bottom.
+Replaces ``ui/views/generators_view.py``. A persistent trip selector sits at the
+top; below it a ``QTabWidget`` switches between invoice editing and CMR document
+generation with language control, action buttons and copy-status tracking.
 """
+
+from __future__ import annotations
 
 import json
 import logging
 import os
 import threading
-from tkinter import messagebox
+from typing import Any, Dict, List, Optional, Tuple
 
-import customtkinter as ctk
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (
+    QWidget,
+    QFrame,
+    QLabel,
+    QVBoxLayout,
+    QHBoxLayout,
+    QTabWidget,
+    QSizePolicy,
+    QMessageBox,
+)
 
-from ui.theme import COLORS, FONTS, S, RADIUS_CARD, btn
-from services.i18n import t
+from ui.theme import COLORS, S
+from services.i18n import t, register_listener, unregister_listener
 from services.trip_service import TripService
+from ui.widgets import (
+    ActionButton,
+    StyledLineEdit,
+    StyledComboBox,
+    StyledCheckBox,
+    ScrollableFormContainer,
+    SectionHeader,
+    field,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -24,220 +44,340 @@ _COPY_META = {
     "Sender":        {"color": COLORS["text_danger"],  "bg": COLORS["danger_dim"],  "icon": "\U0001F4E4"},
     "Consignee":     {"color": COLORS["info"],         "bg": COLORS["info_dim"],     "icon": "\U0001F4E5"},
     "Carrier":       {"color": COLORS["text_success"], "bg": COLORS["success_dim"],  "icon": "\U0001F69B"},
-    "Administrative":{"color": COLORS["text_secondary"],"bg": COLORS["bg_elevated"], "icon": "\U0001F4C1"},
+    "Administrative": {"color": COLORS["text_secondary"], "bg": COLORS["bg_elevated"], "icon": "\U0001F4C1"},
 }
 
 
-class GeneratorsView(ctk.CTkFrame):
-    def __init__(self, parent, db, prefs=None, **kwargs):
-        kwargs.setdefault("fg_color", COLORS["bg_base"])
-        super().__init__(parent, **kwargs)
+# ══════════════════════════════════════════════════════════════════════════════
+#  QtGeneratorsView
+# ══════════════════════════════════════════════════════════════════════════════
+
+
+class QtGeneratorsView(QWidget):
+    """Generators workspace — tabbed Invoice + CMR document generation.
+
+    Designed for embedded use in a QStackedWidget.  A persistent trip
+    selector sits at the top; below it a QTabWidget switches between:
+
+    * **Invoice** — scrollable form for building and previewing invoices.
+    * **CMR** — consignment note form with language selectors, generate
+      actions, and per-copy open/status tracking.
+    """
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        db=None,
+        prefs: Optional[Any] = None,
+    ):
+        super().__init__(parent)
         self.db = db
         self.prefs = prefs
-        self._frame = self
-        self._trip_svc_instance = None
+        self._trip_svc_instance: Optional[TripService] = None
         self._cmr_doc_service = None
 
-        self._trips_list = []
-        self._trip_map = {}
-        self._cmr_last_paths = {}
-        self._cmr_filled_trip_id = None
+        # ── State ───────────────────────────────────────────────────────
+        self._trips_list: List[Dict[str, Any]] = []
+        self._trip_map: Dict[str, Any] = {}
+        self._cmr_last_paths: Dict[str, str] = {}
+        self._cmr_filled_trip_id: Optional[int] = None
 
-        self._invoice_editor = None
-        self._cmr_form = None
-        self._cmr_content_frame = None
-        self._copy_labels = {}
-        self._cmr_status_lbl = None
-        self._cmr_lang1 = None
-        self._cmr_lang2 = None
-
-        self._current_doc = None
+        self._copy_labels: Dict[str, Tuple[QLabel, ActionButton]] = {}
+        self._cmr_status_lbl: Optional[QLabel] = None
+        self._cmr_lang1_combo: Optional[StyledComboBox] = None
+        self._cmr_lang2_combo: Optional[StyledComboBox] = None
         self._invoice_built = False
         self._cmr_built = False
+        self._cmr_scroll: Optional[ScrollableFormContainer] = None
 
-        self._build()
+        # ── i18n tracking ───────────────────────────────────────────────
+        self._i18n_labels: List[Tuple[QLabel, str]] = []
+        self._i18n_buttons: List[Tuple[ActionButton, str]] = []
+        self._i18n_sections: Dict[str, QLabel] = {}
+        self._language_callback = self._on_language_changed
+
+        # ── Build ───────────────────────────────────────────────────────
+        self._build_ui()
+        register_listener(self._language_callback)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  Properties / lazy services
+    # ──────────────────────────────────────────────────────────────────────────
 
     @property
-    def _trip_svc(self):
+    def _trip_svc(self) -> TripService:
         if self._trip_svc_instance is None:
             self._trip_svc_instance = TripService(self.db)
         return self._trip_svc_instance
 
-    @property
-    def frame(self):
-        return self._frame
-
-    def wakeup(self):
-        self._refresh_trip_lists()
-        if self._invoice_editor is not None and hasattr(self._invoice_editor, "lazy_load"):
-            try:
-                self._invoice_editor.lazy_load()
-            except Exception as e:
-                logger.warning("Could not refresh invoice editor: %s", e)
-
     def _lazy_cmr_doc_service(self):
+        """Lazy import + singleton for document registration."""
         if self._cmr_doc_service is None:
             from services.document_service import DocumentService
             self._cmr_doc_service = DocumentService(self.db)
         return self._cmr_doc_service
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Main layout
-    # ═══════════════════════════════════════════════════════════════════
+    # ──────────────────────────────────────────────────────────────────────────
+    #  UI Build
+    # ──────────────────────────────────────────────────────────────────────────
 
-    def _build(self):
-        self.columnconfigure(0, weight=1)
-        self.rowconfigure(2, weight=1)
+    def _build_ui(self) -> None:
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
-        self._build_header()
-        self._build_document_tabs()
+        self._build_header(layout)
+        self._build_tab_content(layout)
 
-        self._content = ctk.CTkFrame(self, fg_color="transparent")
-        self._content.grid(row=2, column=0, sticky="nsew",
-                           padx=S["8"], pady=(S["4"], S["8"]))
-        self._content.columnconfigure(0, weight=1)
-        self._content.rowconfigure(0, weight=1)
+    # ── Header row (title + trip selector) ──────────────────────────────
 
-        self._switch_document("invoice")
+    def _build_header(self, parent_layout: QVBoxLayout) -> None:
+        header = QFrame()
+        header.setProperty("role", "card")
+        header.setFixedHeight(72)
+        hdr_layout = QHBoxLayout(header)
+        hdr_layout.setContentsMargins(S["8"], S["4"], S["8"], S["4"])
 
-    def _build_header(self):
-        header = ctk.CTkFrame(self, fg_color="transparent")
-        header.grid(row=0, column=0, sticky="ew",
-                    padx=S["8"], pady=(S["8"], S["4"]))
-        header.columnconfigure(0, weight=1)
-        header.columnconfigure(1, weight=0)
+        title_block = QWidget()
+        title_vlyt = QVBoxLayout(title_block)
+        title_vlyt.setContentsMargins(0, 0, 0, 0)
+        title_vlyt.setSpacing(S["1"])
 
-        title_block = ctk.CTkFrame(header, fg_color="transparent")
-        title_block.grid(row=0, column=0, sticky="w")
-        ctk.CTkLabel(
-            title_block, text=t("generators.title"),
-            font=FONTS["h1"], text_color=COLORS["text_primary"], anchor="w",
-        ).pack(anchor="w")
-        ctk.CTkLabel(
-            title_block, text=t("generators.subtitle"),
-            font=FONTS["small"], text_color=COLORS["text_muted"], anchor="w",
-        ).pack(anchor="w", pady=(S["1"], 0))
+        title_lbl = QLabel(t("generators.title"))
+        title_lbl.setProperty("fontRole", "h1")
+        title_vlyt.addWidget(title_lbl)
+        self._i18n_labels.append((title_lbl, "generators.title"))
 
-        trip_block = ctk.CTkFrame(header, fg_color="transparent")
-        trip_block.grid(row=0, column=1, sticky="e")
-        ctk.CTkLabel(
-            trip_block, text=t("generators.trip_label"),
-            font=FONTS["small"], text_color=COLORS["text_muted"],
-        ).pack(side="left", padx=(0, S["2"]))
-        self._trip_combo = ctk.CTkComboBox(
-            trip_block, values=[], state="readonly", width=340,
-            font=FONTS["body"], fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"], button_color=COLORS["bg_elevated"],
-            button_hover_color=COLORS["border_hover"],
-            text_color=COLORS["text_primary"],
-            dropdown_fg_color=COLORS["bg_surface"],
-            dropdown_text_color=COLORS["text_primary"],
-            dropdown_hover_color=COLORS["bg_elevated"],
-            command=self._on_global_trip_selected,
+        subtitle_lbl = QLabel(t("generators.subtitle"))
+        subtitle_lbl.setProperty("fontRole", "muted")
+        title_vlyt.addWidget(subtitle_lbl)
+        self._i18n_labels.append((subtitle_lbl, "generators.subtitle"))
+
+        hdr_layout.addWidget(title_block, 1)
+
+        # ── Trip selector ────────────────────────────────────────────
+        trip_block = QWidget()
+        trip_hlyt = QHBoxLayout(trip_block)
+        trip_hlyt.setContentsMargins(0, 0, 0, 0)
+        trip_hlyt.setSpacing(S["2"])
+
+        trip_label = QLabel(t("generators.trip_label"))
+        trip_label.setProperty("fontRole", "label")
+        trip_hlyt.addWidget(trip_label)
+        self._i18n_labels.append((trip_label, "generators.trip_label"))
+
+        self._trip_combo = StyledComboBox(
+            trip_block,
+            values=[],
+            state="readonly",
         )
-        self._trip_combo.pack(side="left", padx=(0, S["2"]))
-        btn(trip_block, text="\u21BB", variant="secondary", width=36, height=36,
-            font=FONTS["body_bold"], command=self._refresh_trip_lists,
-        ).pack(side="left")
+        self._trip_combo.setMinimumWidth(340)
+        self._trip_combo.currentTextChanged.connect(self._on_global_trip_selected)
+        trip_hlyt.addWidget(self._trip_combo)
 
-    # ── Document tabs ──────────────────────────────────────────────
+        refresh_btn = ActionButton(
+            trip_block,
+            "\u21BB",
+            command=self._refresh_trip_lists,
+            variant="secondary",
+        )
+        refresh_btn.setFixedWidth(36)
+        refresh_btn.setFixedHeight(36)
+        trip_hlyt.addWidget(refresh_btn)
 
-    def _build_document_tabs(self):
-        tab_bar = ctk.CTkFrame(self, fg_color="transparent")
-        tab_bar.grid(row=1, column=0, sticky="w",
-                     padx=S["8"], pady=(0, S["3"]))
+        hdr_layout.addWidget(trip_block)
 
-        self._tab_btns = {}
-        for col, (key, icon, label_key) in enumerate([
-            ("invoice", "\U0001F5B9", "generators.doc_invoice_title"),
-            ("cmr", "\U0001F4C4", "generators.doc_cmr_title"),
-        ]):
-            b = ctk.CTkButton(
-                tab_bar,
-                text=f" {icon}  {t(label_key)} ",
-                font=FONTS["body"],
-                height=32,
-                corner_radius=RADIUS_CARD,
-                cursor="hand2",
-                command=lambda k=key: self._switch_document(k),
-            )
-            b.grid(row=0, column=col, sticky="w",
-                   padx=(0, S["2"] if col == 0 else 0))
-            self._tab_btns[key] = b
+        parent_layout.addWidget(header)
 
-    def _switch_document(self, doc_type: str):
-        if self._current_doc == doc_type:
-            return
-        self._current_doc = doc_type
+    # ── QTabWidget ─────────────────────────────────────────────────────
 
-        for widget in self._content.winfo_children():
-            widget.destroy()
-        self._invoice_editor = None
-        self._cmr_form = None
-        self._cmr_content_frame = None
+    def _build_tab_content(self, parent_layout: QVBoxLayout) -> None:
+        self._tab_widget = QTabWidget()
+        self._tab_widget.setProperty("role", "generators-tabs")
+        self._tab_widget.currentChanged.connect(self._on_tab_changed)
+        parent_layout.addWidget(self._tab_widget, 1)
 
-        if doc_type == "invoice":
-            self._build_invoice_content()
-        else:
-            self._build_cmr_content()
+        # Invoice tab
+        self._invoice_tab = QWidget()
+        invoice_layout = QVBoxLayout(self._invoice_tab)
+        invoice_layout.setContentsMargins(0, 0, 0, 0)
+        self._build_invoice_tab(invoice_layout)
+        self._tab_widget.addTab(self._invoice_tab, "")
 
-        self._update_tab_state()
+        # CMR tab
+        self._cmr_tab = QWidget()
+        cmr_layout = QVBoxLayout(self._cmr_tab)
+        cmr_layout.setContentsMargins(0, 0, 0, 0)
+        cmr_layout.setSpacing(0)
+        self._build_cmr_tab(cmr_layout)
+        self._tab_widget.addTab(self._cmr_tab, "")
 
-    def _update_tab_state(self):
-        for key, btn_widget in self._tab_btns.items():
-            active = key == self._current_doc
-            btn_widget.configure(
-                fg_color=COLORS["accent"] if active else COLORS["bg_elevated"],
-                text_color="#ffffff" if active else COLORS["text_secondary"],
-                hover_color=COLORS["accent_hover"] if active else COLORS["border_hover"],
-            )
+        # Set tab text after construction so refresh_translations can
+        # update them later.
+        self._refresh_tab_titles()
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Invoice content
-    # ═══════════════════════════════════════════════════════════════════
+    def _refresh_tab_titles(self) -> None:
+        """Update QTabWidget tab labels from translation keys."""
+        self._tab_widget.setTabText(0, t("generators.doc_invoice_title"))
+        self._tab_widget.setTabText(1, t("generators.doc_cmr_title"))
 
-    def _build_invoice_content(self):
-        from ui.invoice_editor import InvoiceEditor
-        self._invoice_editor = InvoiceEditor(self._content, self.db, prefs=self.prefs)
-        self._invoice_editor.frame.pack(fill="both", expand=True)
-        self._invoice_editor.lazy_load()
-        self._invoice_built = True
+    # ── Invoice tab content ────────────────────────────────────────────
 
-    # ═══════════════════════════════════════════════════════════════════
-    # CMR content — controls scroll with the form at the bottom
-    # ═══════════════════════════════════════════════════════════════════
+    def _build_invoice_tab(self, layout: QVBoxLayout) -> None:
+        scroll = ScrollableFormContainer(self._invoice_tab)
+        layout.addWidget(scroll, 1)
 
-    def _build_cmr_content(self):
-        self._cmr_content_frame = ctk.CTkFrame(
-            self._content, fg_color="transparent")
-        self._cmr_content_frame.pack(fill="both", expand=True)
+        header_widget = SectionHeader(scroll.content, "")
+        self._i18n_sections["generators.doc_invoice_title"] = header_widget.label
+        scroll.add_widget(header_widget)
 
-        from ui.views.cmr_form_view import CMRFormView
-        self._cmr_form = CMRFormView(
-            self._cmr_content_frame, self.db, prefs=self.prefs)
-        self._cmr_form.pack(fill="both", expand=True)
+        # ── Client section ──────────────────────────────────────────
+        self._invoice_client_combo = StyledComboBox(
+            scroll.content, values=[], state="readonly",
+        )
+        scroll.add_widget(
+            field(scroll.content, t("invoice_editor.client"), self._invoice_client_combo)
+        )
 
-        bottom = self._build_cmr_bottom_bar(self._cmr_form.get_bottom_frame())
-        bottom.pack(fill="x")
+        # ── Invoice dates ───────────────────────────────────────────
+        self._invoice_date_entry = StyledLineEdit(
+            scroll.content, placeholder=t("invoice_editor.date_placeholder")
+        )
+        scroll.add_widget(
+            field(scroll.content, t("invoice_editor.date"), self._invoice_date_entry)
+        )
 
-        self._cmr_built = True
+        self._invoice_due_entry = StyledLineEdit(
+            scroll.content, placeholder=t("invoice_editor.due_date_placeholder")
+        )
+        scroll.add_widget(
+            field(scroll.content, t("invoice_editor.due_date"), self._invoice_due_entry)
+        )
 
-        current = self._trip_combo.get()
-        if current and current in self._trip_map:
-            self._on_global_trip_selected(current)
+        # ── Invoice number ──────────────────────────────────────────
+        self._invoice_number_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("invoice_editor.invoice_number"), self._invoice_number_entry)
+        )
 
-    def _build_cmr_bottom_bar(self, parent):
-        bar = ctk.CTkFrame(parent, fg_color=COLORS["bg_surface"],
-                           corner_radius=RADIUS_CARD)
-        bar.columnconfigure((0, 1, 2), weight=1)
+        # ── Amounts ─────────────────────────────────────────────────
+        self._invoice_amount_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("invoice_editor.amount"), self._invoice_amount_entry)
+        )
 
-        # ── Languages ──
-        lang_col = ctk.CTkFrame(bar, fg_color="transparent")
-        lang_col.grid(row=0, column=0, sticky="nsew",
-                      padx=(S["5"], S["4"]), pady=S["4"])
-        ctk.CTkLabel(lang_col, text=t("generators.cmr_options_title").upper(),
-                     font=FONTS["label"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", pady=(0, S["2"]))
+        self._invoice_vat_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("invoice_editor.vat"), self._invoice_vat_entry)
+        )
+
+        self._invoice_total_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("invoice_editor.total"), self._invoice_total_entry)
+        )
+
+        scroll.add_stretch()
+
+        # ── Action bar ──────────────────────────────────────────────
+        bar = QFrame()
+        bar.setProperty("role", "card")
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(S["5"], S["3"], S["5"], S["3"])
+
+        bar_layout.addStretch(1)
+
+        preview_btn = ActionButton(
+            bar,
+            t("invoice_editor.preview"),
+            command=self._preview_invoice,
+            variant="secondary",
+        )
+        bar_layout.addWidget(preview_btn)
+        self._i18n_buttons.append((preview_btn, "invoice_editor.preview"))
+
+        generate_btn = ActionButton(
+            bar,
+            t("invoice_editor.generate"),
+            command=self._generate_invoice,
+            variant="primary",
+        )
+        generate_btn.setFixedWidth(160)
+        bar_layout.addWidget(generate_btn)
+        self._i18n_buttons.append((generate_btn, "invoice_editor.generate"))
+
+        layout.addWidget(bar)
+
+    # ── CMR tab content ───────────────────────────────────────────────
+
+    def _build_cmr_tab(self, layout: QVBoxLayout) -> None:
+        scroll = ScrollableFormContainer(self._cmr_tab)
+        layout.addWidget(scroll, 1)
+        self._cmr_scroll = scroll
+
+        header_widget = SectionHeader(scroll.content, "")
+        self._i18n_sections["generators.doc_cmr_title"] = header_widget.label
+        scroll.add_widget(header_widget)
+
+        # ── Place of loading ────────────────────────────────────────
+        self._cmr_loading_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("cmr.place_of_loading"), self._cmr_loading_entry)
+        )
+
+        # ── Destination ─────────────────────────────────────────────
+        self._cmr_destination_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("cmr.destination"), self._cmr_destination_entry)
+        )
+
+        # ── Vehicle ─────────────────────────────────────────────────
+        self._cmr_vehicle_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("cmr.vehicle"), self._cmr_vehicle_entry)
+        )
+
+        # ── Goods description ───────────────────────────────────────
+        self._cmr_goods_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("cmr.goods_description"), self._cmr_goods_entry)
+        )
+
+        # ── Gross weight ────────────────────────────────────────────
+        self._cmr_weight_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("cmr.gross_weight"), self._cmr_weight_entry)
+        )
+
+        # ── CMR number ──────────────────────────────────────────────
+        self._cmr_number_entry = StyledLineEdit(scroll.content)
+        scroll.add_widget(
+            field(scroll.content, t("cmr.cmr_number"), self._cmr_number_entry)
+        )
+
+        scroll.add_stretch()
+
+        # ── Bottom control bar (languages / actions / copies) ───────
+        bottom_bar = self._build_cmr_bottom_bar()
+        layout.addWidget(bottom_bar)
+
+    def _build_cmr_bottom_bar(self) -> QFrame:
+        """Build the bottom control bar — languages, generate actions, copy status."""
+        bar = QFrame()
+        bar.setProperty("role", "card")
+        bar_layout = QHBoxLayout(bar)
+        bar_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
+        bar_layout.setSpacing(S["4"])
+
+        # ── Languages column ────────────────────────────────────────
+        lang_col = QWidget()
+        lang_vlyt = QVBoxLayout(lang_col)
+        lang_vlyt.setContentsMargins(0, 0, 0, 0)
+        lang_vlyt.setSpacing(S["2"])
+
+        lang_title = QLabel(t("generators.cmr_options_title").upper())
+        lang_title.setProperty("fontRole", "label")
+        lang_vlyt.addWidget(lang_title)
+        self._i18n_labels.append((lang_title, "generators.cmr_options_title"))
 
         lang_codes = self.prefs.get_available_languages() if self.prefs else ["en", "ro"]
         lang_display = []
@@ -248,115 +388,180 @@ class GeneratorsView(ctk.CTkFrame):
             except Exception:
                 lang_display.append(c)
 
-        self._cmr_lang1 = self._lang_field(
+        self._cmr_lang1_container, self._cmr_lang1_combo = self._build_lang_combo(
             lang_col, t("generators.cmr_primary_language"), lang_display, 0)
-        self._cmr_lang2 = self._lang_field(
+        lang_vlyt.addWidget(self._cmr_lang1_container)
+
+        self._cmr_lang2_container, self._cmr_lang2_combo = self._build_lang_combo(
             lang_col, t("generators.cmr_secondary_language"), lang_display,
             1 if len(lang_display) > 1 else 0)
+        lang_vlyt.addWidget(self._cmr_lang2_container)
 
-        # ── Actions ──
-        actions_col = ctk.CTkFrame(bar, fg_color="transparent")
-        actions_col.grid(row=0, column=1, sticky="nsew",
-                         padx=S["4"], pady=S["4"])
-        ctk.CTkLabel(actions_col, text=t("generators.cmr_actions_title").upper(),
-                     font=FONTS["label"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", pady=(0, S["2"]))
+        bar_layout.addWidget(lang_col, 1)
 
-        btn(actions_col,
-            text=f"\U0001F4E4  {t('generators.cmr_generate_single')}",
-            variant="secondary", height=38,
+        # ── Actions column ──────────────────────────────────────────
+        actions_col = QWidget()
+        actions_vlyt = QVBoxLayout(actions_col)
+        actions_vlyt.setContentsMargins(0, 0, 0, 0)
+        actions_vlyt.setSpacing(S["2"])
+
+        actions_title = QLabel(t("generators.cmr_actions_title").upper())
+        actions_title.setProperty("fontRole", "label")
+        actions_vlyt.addWidget(actions_title)
+        self._i18n_labels.append((actions_title, "generators.cmr_actions_title"))
+
+        btn_single = ActionButton(
+            actions_col,
+            f"\U0001F4E4  {t('generators.cmr_generate_single')}",
             command=self._generate_cmr,
-        ).pack(fill="x", pady=(0, S["2"]))
-        btn(actions_col,
-            text=f"\U0001F680  {t('generators.cmr_generate_all')}",
-            variant="primary", height=42,
-            command=self._generate_all_copies,
-        ).pack(fill="x")
-
-        # ── Copies status ──
-        copies_col = ctk.CTkFrame(bar, fg_color="transparent")
-        copies_col.grid(row=0, column=2, sticky="nsew",
-                        padx=(S["4"], S["5"]), pady=S["4"])
-        ctk.CTkLabel(copies_col, text=t("generators.cmr_copies_title").upper(),
-                     font=FONTS["label"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", pady=(0, S["2"]))
-
-        self._cmr_status_lbl = ctk.CTkLabel(
-            copies_col, text=t("generators.cmr_status_ready"),
-            font=FONTS["small"], text_color=COLORS["text_secondary"], anchor="w",
+            variant="secondary",
         )
-        self._cmr_status_lbl.pack(fill="x", pady=(0, S["2"]))
+        btn_single.setFixedHeight(38)
+        actions_vlyt.addWidget(btn_single)
+        self._i18n_buttons.append((btn_single, "generators.cmr_generate_single"))
 
-        copies_grid = ctk.CTkFrame(copies_col, fg_color="transparent")
-        copies_grid.pack(fill="x")
+        btn_all = ActionButton(
+            actions_col,
+            f"\U0001F680  {t('generators.cmr_generate_all')}",
+            command=self._generate_all_copies,
+            variant="primary",
+        )
+        btn_all.setFixedHeight(42)
+        actions_vlyt.addWidget(btn_all)
+        self._i18n_buttons.append((btn_all, "generators.cmr_generate_all"))
+
+        bar_layout.addWidget(actions_col, 1)
+
+        # ── Copies status column ────────────────────────────────────
+        copies_col = QWidget()
+        copies_vlyt = QVBoxLayout(copies_col)
+        copies_vlyt.setContentsMargins(0, 0, 0, 0)
+        copies_vlyt.setSpacing(S["2"])
+
+        copies_title = QLabel(t("generators.cmr_copies_title").upper())
+        copies_title.setProperty("fontRole", "label")
+        copies_vlyt.addWidget(copies_title)
+        self._i18n_labels.append((copies_title, "generators.cmr_copies_title"))
+
+        self._cmr_status_lbl = QLabel(t("generators.cmr_status_ready"))
+        self._cmr_status_lbl.setProperty("fontRole", "small")
+        copies_vlyt.addWidget(self._cmr_status_lbl)
+        self._i18n_labels.append((self._cmr_status_lbl, "generators.cmr_status_ready"))
+
+        copies_grid = QWidget()
+        copies_grid_vlyt = QVBoxLayout(copies_grid)
+        copies_grid_vlyt.setContentsMargins(0, 0, 0, 0)
+        copies_grid_vlyt.setSpacing(S["1"])
+
         self._copy_labels = {}
-
         for suffix in ["Sender", "Consignee", "Carrier", "Administrative"]:
             meta = self._copy_meta(suffix)
-            row = ctk.CTkFrame(copies_grid, fg_color=meta["bg"],
-                               corner_radius=RADIUS_CARD)
-            row.pack(fill="x", pady=(0, S["1"]))
-            row.columnconfigure(1, weight=1)
-
-            ctk.CTkLabel(
-                row, text=meta["icon"], font=("Segoe UI", 12),
-                text_color=meta["color"], width=22,
-            ).pack(side="left", padx=(S["2"], 0))
-
-            lbl = ctk.CTkLabel(
-                row, text=f"{suffix}: {t('generators.cmr_not_generated')}",
-                font=FONTS["small"], text_color=COLORS["text_secondary"], anchor="w",
+            row = QFrame()
+            row.setStyleSheet(
+                f"background-color: {meta['bg']}; border-radius: 4px;"
             )
-            lbl.pack(side="left", fill="x", expand=True, padx=(S["2"], 0))
+            row_hlyt = QHBoxLayout(row)
+            row_hlyt.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+            row_hlyt.setSpacing(S["2"])
 
-            open_btn = btn(
-                row, text=t("generators.open_pdf"), variant="ghost",
-                height=22, width=46, font=FONTS["small"],
-                state="disabled",
+            icon_lbl = QLabel(meta["icon"])
+            icon_lbl.setFixedWidth(22)
+            icon_lbl.setStyleSheet(f"color: {meta['color']}; font-size: 12px;")
+            row_hlyt.addWidget(icon_lbl)
+
+            copy_lbl = QLabel(f"{suffix}: {t('generators.cmr_not_generated')}")
+            copy_lbl.setProperty("fontRole", "small")
+            row_hlyt.addWidget(copy_lbl, 1)
+
+            open_btn = ActionButton(
+                row,
+                t("generators.open_pdf"),
                 command=lambda s=suffix: self._open_copy(s),
+                variant="ghost",
             )
-            open_btn.pack(side="right", padx=S["2"])
-            self._copy_labels[suffix] = (lbl, open_btn)
+            open_btn.setFixedHeight(22)
+            open_btn.setFixedWidth(46)
+            open_btn.setEnabled(False)
+            row_hlyt.addWidget(open_btn)
+
+            copies_grid_vlyt.addWidget(row)
+            self._copy_labels[suffix] = (copy_lbl, open_btn)
+
+        copies_vlyt.addWidget(copies_grid)
+        bar_layout.addWidget(copies_col, 1)
 
         return bar
 
-    def _lang_field(self, parent, label, values, default_index):
-        wrapper = ctk.CTkFrame(parent, fg_color="transparent")
-        wrapper.pack(fill="x", pady=(0, S["2"]))
-        ctk.CTkLabel(wrapper, text=label, font=FONTS["small"],
-                     text_color=COLORS["text_muted"], anchor="w",
-        ).pack(anchor="w", pady=(0, S["1"]))
-        combo = ctk.CTkComboBox(
-            wrapper, values=values, state="readonly",
-            font=FONTS["body"], fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"], button_color=COLORS["bg_elevated"],
-            button_hover_color=COLORS["border_hover"],
-            text_color=COLORS["text_primary"],
-            dropdown_fg_color=COLORS["bg_surface"],
-            dropdown_text_color=COLORS["text_primary"],
-            dropdown_hover_color=COLORS["bg_elevated"],
-        )
-        combo.pack(fill="x")
-        if values:
-            combo.set(values[default_index])
-        return combo
+    def _build_lang_combo(
+        self,
+        parent: QWidget,
+        label_text: str,
+        values: List[str],
+        default_index: int,
+    ) -> Tuple[QWidget, StyledComboBox]:
+        """Build a labelled language combo-box.
+
+        Returns ``(container, combo)`` so callers can reference both for
+        layout and value extraction.
+        """
+        container = QWidget()
+        vlyt = QVBoxLayout(container)
+        vlyt.setContentsMargins(0, 0, 0, 0)
+        vlyt.setSpacing(S["1"])
+
+        lbl = QLabel(label_text)
+        lbl.setProperty("fontRole", "label")
+        vlyt.addWidget(lbl)
+
+        combo = StyledComboBox(values=values, state="readonly")
+        vlyt.addWidget(combo)
+        if values and 0 <= default_index < len(values):
+            combo.setCurrentIndex(default_index)
+
+        return container, combo
 
     @staticmethod
-    def _copy_meta(suffix: str):
-        return _COPY_META.get(suffix, {"color": COLORS["text_secondary"],
-                                       "bg": COLORS["bg_surface"],
-                                       "icon": "\U0001F4C4"})
+    def _copy_meta(suffix: str) -> Dict[str, Any]:
+        return _COPY_META.get(suffix, {
+            "color": COLORS["text_secondary"],
+            "bg": COLORS["bg_surface"],
+            "icon": "\U0001F4C4",
+        })
 
-    # ═══════════════════════════════════════════════════════════════════
-    # Trip handling
-    # ═══════════════════════════════════════════════════════════════════
+    # ── Tab switching ──────────────────────────────────────────────────
 
-    def _refresh_trip_lists(self):
+    def _on_tab_changed(self, index: int) -> None:
+        """Lazy initialisation when a tab is first shown."""
+        if index == 0 and not self._invoice_built:
+            self._invoice_built = True
+            self._load_invoice_clients()
+        elif index == 1 and not self._cmr_built:
+            self._cmr_built = True
+            self._refresh_trip_lists()
+
+    def _load_invoice_clients(self) -> None:
+        """Populate invoice client combo from the database."""
+        try:
+            rows = self.db.conn.execute(
+                "SELECT id, name FROM clients ORDER BY name"
+            ).fetchall()
+            names = [row["name"] for row in rows]
+            self._invoice_client_combo.clear()
+            self._invoice_client_combo.addItems(names)
+        except Exception as e:
+            logger.warning("Could not load clients for invoice: %s", e)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  Trip handling
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _refresh_trip_lists(self) -> None:
+        """Fetch trips from the database and populate the trip combo."""
         try:
             trips = self._trip_svc.get_all()
             self._trips_list = trips
             self._trip_map = {}
-            labels = []
+            labels: List[str] = []
             for trip in trips:
                 label = t("invoice.trip_list_format").format(
                     id=trip["id"],
@@ -367,40 +572,36 @@ class GeneratorsView(ctk.CTkFrame):
                 self._trip_map[label] = trip["id"]
                 labels.append(label)
 
-            current = self._trip_combo.get() if self._trip_combo.winfo_exists() else ""
-            self._trip_combo.configure(values=labels)
+            current_text = self._trip_combo.currentText()
+            self._trip_combo.clear()
+            self._trip_combo.addItems(labels)
 
             if labels:
-                if current not in labels:
-                    self._trip_combo.set(labels[0])
+                if current_text in labels:
+                    self._trip_combo.setCurrentText(current_text)
+                else:
+                    self._trip_combo.setCurrentIndex(0)
                     self._on_global_trip_selected(labels[0])
             else:
-                self._trip_combo.set("")
-
-            if self._invoice_editor is not None and hasattr(self._invoice_editor, "_load_trips"):
-                try:
-                    self._invoice_editor._load_trips()
-                except Exception as e:
-                    logger.warning("Could not refresh invoice editor trips: %s", e)
+                self._trip_combo.setCurrentText("")
 
         except Exception as e:
             logger.warning("Could not refresh trip lists: %s", e)
 
-    def _on_global_trip_selected(self, choice: str):
+    def _on_global_trip_selected(self, choice: str) -> None:
         if not choice or choice not in self._trip_map:
             return
         trip_id = self._trip_map[choice]
         trip = self._trip_svc.get_by_id(trip_id)
         if not trip:
             return
-        if self._cmr_built and self._cmr_form is not None:
+        if self._cmr_built:
             if trip.get("id") != self._cmr_filled_trip_id:
                 self._cmr_filled_trip_id = None
             self._auto_fill_cmr(trip)
 
-    def _auto_fill_cmr(self, trip):
-        if self._cmr_form is None:
-            return
+    def _auto_fill_cmr(self, trip: Dict[str, Any]) -> None:
+        """Auto-fill the CMR form fields from the selected trip."""
         trip_id = trip.get("id")
         if trip_id is not None and trip_id == self._cmr_filled_trip_id:
             return
@@ -409,7 +610,10 @@ class GeneratorsView(ctk.CTkFrame):
         from services.invoicing.config_manager import load_company_config
         conf = load_company_config()
 
-        client_data, truck_data, driver_data = {}, {}, {}
+        client_data: Dict[str, Any] = {}
+        truck_data: Dict[str, Any] = {}
+        driver_data: Dict[str, Any] = {}
+
         if trip.get("client_id"):
             try:
                 row = self.db.conn.execute(
@@ -438,14 +642,47 @@ class GeneratorsView(ctk.CTkFrame):
             except Exception:
                 pass
 
-        self._cmr_form.fill_from_trip(trip, conf, client_data, truck_data, driver_data)
+        self._fill_cmr_from_trip(trip, conf, client_data, truck_data, driver_data)
 
         if trip.get("route_history_v2_id"):
             self._fill_stops_from_route(trip["route_history_v2_id"])
 
+    def _fill_cmr_from_trip(
+        self,
+        trip: Dict[str, Any],
+        company_conf: Dict[str, Any],
+        client_data: Dict[str, Any],
+        truck_data: Dict[str, Any],
+        driver_data: Dict[str, Any],
+    ) -> None:
+        """Populate CMR form fields with data from the trip and related records."""
+        # Loading place from origin
+        origin = trip.get("origin", "") or client_data.get("address", "")
+        if origin:
+            self._cmr_loading_entry.setText(origin)
+
+        # Destination
+        destination = trip.get("destination", "")
+        if destination:
+            self._cmr_destination_entry.setText(destination)
+
+        # Vehicle
+        plate = trip.get("truck_number", "") or truck_data.get("plate", "")
+        if plate:
+            self._cmr_vehicle_entry.setText(plate)
+
+        # Goods description from trip cargo
+        goods = trip.get("cargo_description", "") or trip.get("goods", "")
+        if goods:
+            self._cmr_goods_entry.setText(goods)
+
+        # Gross weight
+        weight = trip.get("gross_weight", "") or trip.get("weight", "")
+        if weight:
+            self._cmr_weight_entry.setText(str(weight))
+
     def _fill_stops_from_route(self, route_id: int) -> None:
-        if self._cmr_form is None:
-            return
+        """Extract origin/destination from route stops and fill CMR fields."""
         try:
             row = self.db.conn.execute(
                 "SELECT stops_json FROM route_history_v2 WHERE id = ?",
@@ -458,36 +695,125 @@ class GeneratorsView(ctk.CTkFrame):
                 return
             origin = stops[0].get("address", "")
             destination = stops[-1].get("address", "")
-            entries = getattr(self._cmr_form, "_cmr_entries", {})
-            if origin and "place_of_loading" in entries:
-                self._cmr_form._set_entry(entries["place_of_loading"], origin)
-            if destination and "destination" in entries:
-                self._cmr_form._set_entry(entries["destination"], destination)
+            if origin:
+                self._cmr_loading_entry.setText(origin)
+            if destination:
+                self._cmr_destination_entry.setText(destination)
         except Exception as e:
             logger.debug("Could not fill stops from route %d: %s", route_id, e)
 
-    # ═══════════════════════════════════════════════════════════════════
-    # CMR generation
-    # ═══════════════════════════════════════════════════════════════════
+    # ──────────────────────────────────────────────────────────────────────────
+    #  Invoice actions
+    # ──────────────────────────────────────────────────────────────────────────
 
-    def _collect_cmr_data(self):
-        if self._cmr_form is None:
-            return None
-        sel = self._trip_combo.get()
+    def _preview_invoice(self) -> None:
+        """Preview the invoice (opens generated PDF if available)."""
+        data = self._collect_invoice_data()
+        if not data:
+            return
+        try:
+            from services.invoicing.service import InvoiceService
+            svc = InvoiceService(db=self.db, prefs=self.prefs)
+            # Use a dedicated preview output path
+            output_dir = os.path.join("data", "documents", "invoices", "preview")
+            os.makedirs(output_dir, exist_ok=True)
+            filepath = svc.generator.generate(data, mode="client")
+            if os.path.isfile(filepath):
+                try:
+                    os.startfile(os.path.abspath(filepath))
+                except Exception as e:
+                    logger.warning("Could not open invoice preview: %s", e)
+        except Exception as e:
+            QMessageBox.warning(
+                self,
+                t("invoice_editor.preview"),
+                str(e),
+            )
+
+    def _generate_invoice(self) -> None:
+        """Generate the invoice PDF and register it in the document centre."""
+        data = self._collect_invoice_data()
+        if not data:
+            return
+        trip_id = data.get("trip_id")
+        try:
+            from services.invoicing.service import InvoiceService
+            svc = InvoiceService(db=self.db, prefs=self.prefs)
+            filepath = svc.generate_and_record(data)
+        except Exception as e:
+            QMessageBox.critical(
+                self,
+                t("invoice_editor.generate"),
+                str(e),
+            )
+            return
+
+        try:
+            from services.document_service import DocumentService
+            ds = DocumentService(self.db)
+            ds.register_existing(
+                filepath,
+                title=f"Invoice {'#' + str(trip_id) if trip_id else ''}",
+                category="invoices",
+                entity_type="trip",
+                entity_id=trip_id,
+                tags=["invoice", "generated"],
+            )
+        except Exception:
+            logger.warning("Invoice registration in Document Center skipped", exc_info=True)
+
+        QMessageBox.information(
+            self,
+            t("invoice_editor.generate"),
+            t("invoice_editor.generated_ok").format(path=os.path.basename(filepath)),
+        )
+        logger.info("Invoice generated: %s", filepath)
+
+    def _collect_invoice_data(self) -> Optional[Dict[str, Any]]:
+        """Collect invoice form data into a dict."""
+        sel = self._trip_combo.currentText()
+        trip_id = None
+        if sel and sel in self._trip_map:
+            trip_id = self._trip_map[sel]
+
+        return {
+            "trip_id": trip_id,
+            "client": self._invoice_client_combo.currentText() if self._invoice_client_combo else "",
+            "date": self._invoice_date_entry.text() if self._invoice_date_entry else "",
+            "due_date": self._invoice_due_entry.text() if self._invoice_due_entry else "",
+            "invoice_number": self._invoice_number_entry.text() if self._invoice_number_entry else "",
+            "amount": self._invoice_amount_entry.text() if self._invoice_amount_entry else "",
+            "vat": self._invoice_vat_entry.text() if self._invoice_vat_entry else "",
+            "total": self._invoice_total_entry.text() if self._invoice_total_entry else "",
+        }
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  CMR generation
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _collect_cmr_data(self) -> Optional[Dict[str, Any]]:
+        """Collect CMR form fields + language selections into a data dict."""
+        sel = self._trip_combo.currentText()
         if not sel or sel not in self._trip_map:
             return None
         trip_id = self._trip_map[sel]
         trip = self._trip_svc.get_by_id(trip_id)
         if not trip:
             return None
+
         trip_data = dict(trip)
         trip_data["trip_id"] = trip_id
-        form_data = self._cmr_form.collect_data(trip_data)
+        trip_data["place_of_loading"] = self._cmr_loading_entry.text()
+        trip_data["destination"] = self._cmr_destination_entry.text()
+        trip_data["vehicle"] = self._cmr_vehicle_entry.text()
+        trip_data["goods_description"] = self._cmr_goods_entry.text()
+        trip_data["gross_weight"] = self._cmr_weight_entry.text()
+        trip_data["cmr_number"] = self._cmr_number_entry.text()
 
-        def _extract_lang(combo):
+        def _extract_lang(combo: Optional[StyledComboBox]) -> Optional[str]:
             if combo is None:
                 return None
-            val = combo.get()
+            val = combo.currentText()
             if not val:
                 return None
             parts = val.split("(")
@@ -495,22 +821,26 @@ class GeneratorsView(ctk.CTkFrame):
                 return parts[-1].rstrip(")").strip()
             return val.strip()
 
-        lang1 = _extract_lang(self._cmr_lang1)
-        lang2 = _extract_lang(self._cmr_lang2)
+        lang1 = _extract_lang(self._cmr_lang1_combo)
+        lang2 = _extract_lang(self._cmr_lang2_combo)
         if lang1:
-            form_data["cmr_language"] = lang1
+            trip_data["cmr_language"] = lang1
         if lang2:
-            form_data["cmr_language_secondary"] = lang2
+            trip_data["cmr_language_secondary"] = lang2
 
-        return form_data
+        return trip_data
 
-    def _generate_cmr(self):
-        if self._cmr_form is None or self._cmr_status_lbl is None:
+    def _generate_cmr(self) -> None:
+        """Generate a single CMR document for the selected trip."""
+        if self._cmr_status_lbl is None:
             return
         trip_data = self._collect_cmr_data()
         if trip_data is None:
-            messagebox.showwarning(t("generators.cmr_generate"),
-                                   t("generators.cmr_select_trip"))
+            QMessageBox.warning(
+                self,
+                t("generators.cmr_generate"),
+                t("generators.cmr_select_trip"),
+            )
             return
         trip_id = trip_data["trip_id"]
         try:
@@ -520,43 +850,56 @@ class GeneratorsView(ctk.CTkFrame):
             os.makedirs(output_dir, exist_ok=True)
             filepath = gen.generate(trip_data, output_dir)
         except Exception as e:
-            messagebox.showerror(t("generators.cmr_generate"),
-                                 t("generators.cmr_error").format(error=str(e)))
+            QMessageBox.critical(
+                self,
+                t("generators.cmr_generate"),
+                t("generators.cmr_error").format(error=str(e)),
+            )
             return
 
         try:
             ds = self._lazy_cmr_doc_service()
             ds.register_existing(
-                filepath, title=f"CMR Trip #{trip_id}", category="trips",
-                entity_type="trip", entity_id=trip_id,
+                filepath,
+                title=f"CMR Trip #{trip_id}",
+                category="trips",
+                entity_type="trip",
+                entity_id=trip_id,
                 tags=["cmr", "generated"],
             )
         except Exception:
             logger.warning("CMR registration in Document Center skipped", exc_info=True)
 
         self._cmr_last_paths["Sender"] = filepath
-        self._cmr_status_lbl.configure(
-            text=t("generators.cmr_generated").format(path=os.path.basename(filepath)),
-            text_color=COLORS["text_success"],
+        self._cmr_status_lbl.setText(
+            t("generators.cmr_generated").format(path=os.path.basename(filepath))
+        )
+        self._cmr_status_lbl.setStyleSheet(
+            f"color: {COLORS['text_success']};"
         )
         self._update_copy_status("Sender", filepath)
         logger.info("CMR generated for trip %d: %s", trip_id, filepath)
 
-    def _generate_all_copies(self):
-        if self._cmr_form is None or self._cmr_status_lbl is None:
+    def _generate_all_copies(self) -> None:
+        """Generate all CMR copies (Sender, Consignee, Carrier, Administrative)."""
+        if self._cmr_status_lbl is None:
             return
         trip_data = self._collect_cmr_data()
         if trip_data is None:
-            messagebox.showwarning(t("generators.cmr_generate"),
-                                   t("generators.cmr_select_trip"))
+            QMessageBox.warning(
+                self,
+                t("generators.cmr_generate"),
+                t("generators.cmr_select_trip"),
+            )
             return
         trip_id = trip_data["trip_id"]
 
-        self._cmr_status_lbl.configure(
-            text=t("generators.cmr_status_generating"),
-            text_color=COLORS["text_warning"],
+        self._cmr_status_lbl.setText(
+            t("generators.cmr_status_generating")
         )
-        self._cmr_status_lbl.update_idletasks()
+        self._cmr_status_lbl.setStyleSheet(
+            f"color: {COLORS['text_warning']};"
+        )
 
         from services.invoicing.cmr_generator import CMRGenerator
         gen = CMRGenerator(db=self.db, prefs=self.prefs)
@@ -564,30 +907,33 @@ class GeneratorsView(ctk.CTkFrame):
         trip_data["cmr_number"] = cmr_number
         trip_data["cmr_sequence"] = cmr_seq
 
-        def _run():
-            registered_paths = {}
+        def _run() -> None:
+            registered_paths: Dict[str, str] = {}
             try:
                 output_dir = os.path.join("data", "documents", "trips", str(trip_id))
                 os.makedirs(output_dir, exist_ok=True)
                 copies = gen.generate_all_copies(trip_data, output_dir, skip_db_update=True)
                 registered_paths = dict(copies)
             except Exception as e:
-                def _err():
-                    if self._cmr_status_lbl is not None and self._cmr_status_lbl.winfo_exists():
-                        self._cmr_status_lbl.configure(
-                            text=t("generators.cmr_error").format(error=str(e)),
-                            text_color=COLORS["danger"],
+                def _err() -> None:
+                    if self._cmr_status_lbl is not None:
+                        self._cmr_status_lbl.setText(
+                            t("generators.cmr_error").format(error=str(e))
                         )
-                self.after(0, _err)
+                        self._cmr_status_lbl.setStyleSheet(
+                            f"color: {COLORS['danger']};"
+                        )
+                QTimer.singleShot(0, _err)
                 logger.error("CMR generation failed: %s", e)
                 return
 
-            def _register():
+            def _register() -> None:
                 if self._cmr_status_lbl is None:
                     return
                 try:
                     self.db.conn.execute(
-                        "UPDATE trips SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ?",
+                        "UPDATE trips SET cmr_number = ?, cmr_sequence = ?, "
+                        "cmr_status = 'generated' WHERE id = ?",
                         (cmr_number, cmr_seq, trip_id),
                     )
                     self.db.conn.commit()
@@ -601,7 +947,8 @@ class GeneratorsView(ctk.CTkFrame):
                             ds.register_existing(
                                 path,
                                 title=f"CMR Trip #{trip_id} - {suffix.upper()} COPY",
-                                category="trips", entity_type="trip",
+                                category="trips",
+                                entity_type="trip",
                                 entity_id=trip_id,
                                 tags=["cmr", suffix.lower(), "generated"],
                             )
@@ -610,35 +957,132 @@ class GeneratorsView(ctk.CTkFrame):
                 except Exception:
                     pass
 
-                if self._cmr_status_lbl.winfo_exists():
-                    self._cmr_last_paths.update(registered_paths)
-                    base = os.path.basename(list(registered_paths.values())[0]) if registered_paths else ""
-                    self._cmr_status_lbl.configure(
-                        text=t("generators.cmr_all_generated").format(path=base),
-                        text_color=COLORS["text_success"],
-                    )
-                    for suffix, path in registered_paths.items():
-                        self._update_copy_status(suffix, path)
+                self._cmr_last_paths.update(registered_paths)
+                base = os.path.basename(list(registered_paths.values())[0]) if registered_paths else ""
+                self._cmr_status_lbl.setText(
+                    t("generators.cmr_all_generated").format(path=base)
+                )
+                self._cmr_status_lbl.setStyleSheet(
+                    f"color: {COLORS['text_success']};"
+                )
+                for suffix, path in registered_paths.items():
+                    self._update_copy_status(suffix, path)
 
-            self.after(0, _register)
+            QTimer.singleShot(0, _register)
 
         threading.Thread(target=_run, daemon=True, name=f"cmr-gen-{trip_id}").start()
 
-    def _update_copy_status(self, suffix, path):
+    def _update_copy_status(self, suffix: str, path: str) -> None:
+        """Update the status label and enable the open button for a given copy."""
         if suffix in self._copy_labels:
             lbl, btn = self._copy_labels[suffix]
-            lbl.configure(text=f"{suffix}: {os.path.basename(path)}")
-            btn.configure(state="normal")
-            btn.configure(command=lambda p=path: self._open_path(p))
+            lbl.setText(f"{suffix}: {os.path.basename(path)}")
+            btn.setEnabled(True)
+            btn.clicked.disconnect()
+            btn.clicked.connect(lambda checked=False, p=path: self._open_path(p))
 
-    def _open_copy(self, suffix):
+    def _open_copy(self, suffix: str) -> None:
+        """Open the last generated PDF for the given copy suffix."""
         if suffix in self._cmr_last_paths:
             path = self._cmr_last_paths[suffix]
             self._open_path(path)
 
-    def _open_path(self, path: str):
+    def _open_path(self, path: str) -> None:
+        """Open a file with the OS default application."""
         if path and os.path.isfile(path):
             try:
                 os.startfile(os.path.abspath(path))
             except Exception as e:
                 logger.warning("Could not open %s: %s", path, e)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  i18n
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _on_language_changed(self, lang: str) -> None:
+        """React to language change events from the i18n service."""
+        QTimer.singleShot(0, self.refresh_translations)
+
+    def refresh_translations(self) -> None:
+        """Update all visible text to the current language."""
+        # Static labels
+        for widget, key in self._i18n_labels:
+            try:
+                widget.setText(t(key))
+            except Exception:
+                pass
+
+        # Buttons
+        for widget, key in self._i18n_buttons:
+            try:
+                widget.setText(t(key))
+            except Exception:
+                pass
+
+        # Section header labels
+        for text_key, lbl in self._i18n_sections.items():
+            try:
+                lbl.setText(t(text_key))
+            except Exception:
+                pass
+
+        # Tab titles
+        self._refresh_tab_titles()
+
+        # Trip combo items (they contain translated format strings)
+        self._rebuild_trip_combo_labels()
+
+        # Copy status rows show "Not generated" text
+        not_gen = t("generators.cmr_not_generated")
+        for suffix, (lbl, btn) in self._copy_labels.items():
+            if suffix not in self._cmr_last_paths:
+                lbl.setText(f"{suffix}: {not_gen}")
+                btn.setEnabled(False)
+
+    def _rebuild_trip_combo_labels(self) -> None:
+        """Rebuild trip combo display labels when the language changes."""
+        if not self._trips_list:
+            return
+        current_id = None
+        current_text = self._trip_combo.currentText()
+        if current_text in self._trip_map:
+            current_id = self._trip_map[current_text]
+
+        self._trip_map.clear()
+        labels: List[str] = []
+        for trip in self._trips_list:
+            label = t("invoice.trip_list_format").format(
+                id=trip["id"],
+                truck_number=trip.get("truck_number", ""),
+                client_name=trip.get("client_name", ""),
+                created_at=trip.get("created_at", "")[:10] if trip.get("created_at") else "",
+            )
+            self._trip_map[label] = trip["id"]
+            labels.append(label)
+
+        self._trip_combo.clear()
+        self._trip_combo.addItems(labels)
+
+        # Restore selection
+        if current_id is not None:
+            for label, tid in self._trip_map.items():
+                if tid == current_id:
+                    self._trip_combo.setCurrentText(label)
+                    break
+        elif labels:
+            self._trip_combo.setCurrentIndex(0)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  Lifecycle
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def wakeup(self) -> None:
+        """Called when the view becomes visible (e.g. stacked widget switch)."""
+        self._refresh_trip_lists()
+
+    def shutdown(self) -> None:
+        """Clean up resources when the view is destroyed / hidden."""
+        try:
+            unregister_listener(self._language_callback)
+        except Exception:
+            pass

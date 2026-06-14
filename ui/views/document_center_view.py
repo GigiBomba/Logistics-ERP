@@ -1,194 +1,511 @@
-"""Document Center view — centralized document management UI with P1 features."""
+"""PySide6 document management view.
+
+Replaces ``ui/views/document_center_view.py``.  Provides a three-panel layout
+with category/filter sidebar, a scrollable document list with rich rows, and
+a detail/preview panel with tag, expiry, version management.
+
+Usage as embedded widget::
+
+    doc_view = QtDocumentCenterView(parent_widget, db)
+    some_layout.addWidget(doc_view)
+"""
+
+from __future__ import annotations
+
 import json
 import logging
 import os
-import tkinter as tk
-from tkinter import filedialog, messagebox, simpledialog
 from datetime import datetime
-import customtkinter as ctk
+from typing import Any, Callable, Dict, List, Optional
 
-from ui.theme import COLORS, FONTS, S, btn
-from services.i18n import t
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QPixmap
+from PySide6.QtWidgets import (
+    QCheckBox,
+    QComboBox,
+    QFileDialog,
+    QFrame,
+    QHBoxLayout,
+    QInputDialog,
+    QLabel,
+    QLineEdit,
+    QMessageBox,
+    QPushButton,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
+    QDialog,
+)
+
+from ui.theme import COLORS, S
+from services.i18n import t, register_listener, unregister_listener
 from services.document_service import DocumentService, IMAGE_MIME
+from ui.widgets import (
+    ActionButton,
+    StyledLineEdit,
+    StyledComboBox,
+    StyledTableWidget,
+    SectionHeader,
+)
 
 logger = logging.getLogger(__name__)
 
 PAGE_SIZE = 20
 
 
-class DocumentCenterView(ctk.CTkFrame):
-    def __init__(self, parent, db, **kwargs):
-        kwargs.setdefault("fg_color", COLORS["bg_base"])
-        super().__init__(parent, **kwargs)
+class _CategoryButton(QPushButton):
+    """A flat category button in the sidebar."""
+
+    def __init__(
+        self,
+        parent: QWidget,
+        text: str,
+        active: bool = False,
+        command=None,
+    ):
+        super().__init__(text, parent)
+        self.setProperty("category-btn", "true")
+        self.setProperty("active", "true" if active else "false")
+        self.setFlat(True)
+        self.setCursor(Qt.PointingHandCursor)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        if command:
+            self.clicked.connect(command)
+
+
+class _DocRow(QFrame):
+    """A rich document row widget used inside the scrollable list."""
+
+    def __init__(
+        self,
+        parent: QWidget,
+        doc: dict,
+        on_toggle_select: Callable[[int, bool], None],
+        on_show_detail: Callable[[Optional[dict]], None],
+        on_open: Callable[[dict], None],
+        on_email: Callable[[dict], None],
+        on_delete: Callable[[dict], None],
+        selected_ids: set,
+    ):
+        super().__init__(parent)
+        self._doc = doc
+        self._doc_id = doc["id"]
+        self._on_toggle_select = on_toggle_select
+        self._on_show_detail = on_show_detail
+        self.setProperty("role", "doc-row")
+        self.setCursor(Qt.PointingHandCursor)
+
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
+        layout.setSpacing(S["2"])
+
+        # ── Checkbox ──────────────────────────────────────────────────────
+        self._cb = QCheckBox(self)
+        self._cb.setChecked(self._doc_id in selected_ids)
+        self._cb.stateChanged.connect(self._on_check_changed)
+        layout.addWidget(self._cb)
+
+        # ── Icon / thumbnail ──────────────────────────────────────────────
+        self._icon_label = QLabel(self)
+        self._icon_label.setFixedSize(48, 48)
+        self._icon_label.setAlignment(Qt.AlignCenter)
+        self._icon_label.setProperty("role", "doc-icon")
+        thumb = self._get_thumbnail()
+        if thumb:
+            pm = QPixmap(thumb)
+            if not pm.isNull():
+                pm = pm.scaled(44, 33, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                self._icon_label.setPixmap(pm)
+        if not self._icon_label.pixmap() or self._icon_label.pixmap().isNull():
+            self._icon_label.setText(self._icon_for(doc.get("mime_type", "")))
+        layout.addWidget(self._icon_label)
+
+        # ── Info column ───────────────────────────────────────────────────
+        info_col = QWidget(self)
+        info_col.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
+        info_layout = QVBoxLayout(info_col)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(2)
+
+        title_text = doc.get("title", doc.get("file_name", ""))[:70]
+        title_lbl = QLabel(title_text, info_col)
+        title_lbl.setProperty("fontRole", "body_bold")
+        title_lbl.setProperty("role", "doc-title")
+        info_layout.addWidget(title_lbl)
+
+        meta_parts: List[str] = []
+        doc_num = doc.get("doc_number", "")
+        if doc_num:
+            meta_parts.append(doc_num)
+        size = doc.get("file_size", 0)
+        if size < 1024:
+            meta_parts.append(f"{size} B")
+        elif size < 1024 * 1024:
+            meta_parts.append(f"{size / 1024:.1f} KB")
+        else:
+            meta_parts.append(f"{size / (1024 * 1024):.1f} MB")
+        upload = doc.get("uploaded_at", "")[:10]
+        if upload:
+            meta_parts.append(upload)
+        meta_lbl = QLabel("  ".join(meta_parts), info_col)
+        meta_lbl.setProperty("fontRole", "small")
+        meta_lbl.setProperty("role", "doc-meta")
+        info_layout.addWidget(meta_lbl)
+
+        # Tags
+        tags_str = doc.get("tags", "[]")
+        try:
+            tag_list = json.loads(tags_str)
+        except (json.JSONDecodeError, TypeError):
+            tag_list = []
+        if tag_list:
+            tag_row = QWidget(info_col)
+            tag_row_layout = QHBoxLayout(tag_row)
+            tag_row_layout.setContentsMargins(0, 0, 0, 0)
+            tag_row_layout.setSpacing(2)
+            for tg in tag_list[:4]:
+                chip = QLabel(tg, tag_row)
+                chip.setProperty("role", "tag-chip")
+                tag_row_layout.addWidget(chip)
+            tag_row_layout.addStretch()
+            info_layout.addWidget(tag_row)
+
+        layout.addWidget(info_col, 1)
+
+        # ── Action buttons ────────────────────────────────────────────────
+        actions = QWidget(self)
+        actions_layout = QHBoxLayout(actions)
+        actions_layout.setContentsMargins(0, 0, 0, 0)
+        actions_layout.setSpacing(2)
+
+        view_btn = ActionButton(
+            actions, text=t("docs.view"), command=lambda: on_open(doc),
+        )
+        view_btn.setFixedSize(40, 24)
+        actions_layout.addWidget(view_btn)
+
+        email_btn = ActionButton(
+            actions, text=t("docs.email"), command=lambda: on_email(doc),
+            variant="secondary",
+        )
+        email_btn.setFixedSize(40, 24)
+        actions_layout.addWidget(email_btn)
+
+        del_btn = ActionButton(
+            actions, text=t("docs.delete"), command=lambda: on_delete(doc),
+            variant="ghost",
+        )
+        del_btn.setFixedSize(40, 24)
+        actions_layout.addWidget(del_btn)
+
+        layout.addWidget(actions)
+
+        # ── Click detail binding ──────────────────────────────────────────
+        self.mousePressEvent = lambda e: on_show_detail(doc)
+        title_lbl.mousePressEvent = lambda e: on_show_detail(doc)
+        meta_lbl.mousePressEvent = lambda e: on_show_detail(doc)
+
+    def _get_thumbnail(self) -> Optional[str]:
+        """Resolve the thumbnail path from the current app context."""
+        # We rely on a service call — the caller will set up a reference.
+        return None
+
+    @staticmethod
+    def _icon_for(mime_type: str) -> str:
+        if mime_type == "application/pdf":
+            return "\U0001F4C4"
+        if mime_type in IMAGE_MIME:
+            return "\U0001F5BC"
+        if "spreadsheet" in mime_type or mime_type == "text/csv":
+            return "\U0001F4CA"
+        if "word" in mime_type or mime_type == "text/plain":
+            return "\U0001F4C3"
+        if mime_type == "application/zip":
+            return "\U0001F4E6"
+        return "\U0001F4CE"
+
+    def _on_check_changed(self, state: int) -> None:
+        checked = state == Qt.Checked
+        self._on_toggle_select(self._doc_id, checked)
+
+
+class QtDocumentCenterView(QWidget):
+    """Document management view for embedding in a QStackedWidget.
+
+    Three-panel layout:
+        Left sidebar   — categories + filters
+        Center list    — search, sort, document rows, pager
+        Right sidebar  — detail preview + actions
+    """
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        db=None,
+    ):
+        super().__init__(parent)
         self.db = db
-        self._service = DocumentService(db)
+        self._service = DocumentService(db) if db is not None else None
         self._page = 0
         self._total = 0
         self._total_pages = 0
-        self._docs = []
-        self._active_category = ""
-        self._sort_order = "uploaded_at DESC"
+        self._docs: List[Dict[str, Any]] = []
+        self._active_category: str = ""
+        self._sort_order: str = "uploaded_at DESC"
         self._filters_visible = False
-        self._selected_ids = set()
-        self._frame = self
-        self._build()
+        self._selected_ids: set = set()
+        self._current_detail_doc: Optional[Dict[str, Any]] = None
+        self._thumbnail_service = self._service  # for resolving thumbnails
 
-    @property
-    def frame(self):
-        return self._frame
+        # ── i18n ──────────────────────────────────────────────────────────
+        self._language_callback = self._on_language_changed
+        register_listener(self._language_callback)
 
-    def wakeup(self):
-        self._load()
+        # ── Build UI ──────────────────────────────────────────────────────
+        self._build_ui()
 
-    def _build(self):
-        self.columnconfigure(0, weight=20)
-        self.columnconfigure(1, weight=50)
-        self.columnconfigure(2, weight=30)
-        self.rowconfigure(0, weight=1)
+        # ── Cleanup hook ──────────────────────────────────────────────────
+        self.destroyed.connect(self._cleanup)
 
-        self._build_sidebar()
-        self._build_main()
-        self._build_detail_sidebar()
-        self._load()
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
-    # ── Left Sidebar (categories + filters) ─────────────────────────────
-
-    def _build_sidebar(self):
-        left = ctk.CTkFrame(self, fg_color=COLORS["bg_surface"])
-        left.grid(row=0, column=0, sticky="nsew")
-        left.columnconfigure(0, weight=1)
-
-        hdr = ctk.CTkFrame(left, fg_color="transparent")
-        hdr.grid(row=0, column=0, sticky="ew", padx=S["3"], pady=S["4"])
-        ctk.CTkLabel(hdr, text=t("docs.title"), font=FONTS["h3"],
-                     text_color=COLORS["text_primary"],
-                     anchor="w").pack(anchor="w")
-
-        self._cat_frame = ctk.CTkFrame(left, fg_color="transparent")
-        self._cat_frame.grid(row=1, column=0, sticky="ew", padx=S["3"])
-
-        self._filter_toggle = ctk.CTkButton(
-            left, text=t("docs.filters"), fg_color="transparent",
-            hover_color=COLORS["bg_elevated"],
-            text_color=COLORS["text_secondary"], font=FONTS["body"],
-            anchor="w", command=self._toggle_filters,
-        )
-        self._filter_toggle.grid(row=2, column=0, sticky="ew", padx=S["3"], pady=(S["3"], 0))
-
-        self._filter_panel = ctk.CTkFrame(left, fg_color="transparent")
-        self._build_filter_panel()
-
-        self._upload_btn = btn(left, f"  {t('docs.upload')}", self._upload_dialog,
-                               variant="primary")
-        self._upload_btn.grid(row=4, column=0, sticky="ew", padx=S["3"],
-                              pady=(S["6"], S["3"]))
-
-    def _build_filter_panel(self):
-        self._entity_type_var = tk.StringVar(value="")
-        self._date_from_var = tk.StringVar(value="")
-        self._date_to_var = tk.StringVar(value="")
-        self._mime_type_var = tk.StringVar(value="")
-
-    def _toggle_filters(self):
-        if self._filters_visible:
-            self._filter_panel.grid_forget()
-            self._filters_visible = False
-        else:
-            self._filter_panel.grid(row=3, column=0, sticky="ew", padx=S["3"],
-                                    pady=(S["2"], 0))
-            self._populate_filter_panel()
-            self._filters_visible = True
-
-    def _populate_filter_panel(self):
-        for w in self._filter_panel.winfo_children():
-            w.destroy()
-
-        ctk.CTkLabel(self._filter_panel, text=t("docs.filter_entity"),
-                     font=FONTS["label"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", pady=(S["2"], 0))
-        etypes = [""] + self._service.get_entity_types()
-        ctk.CTkComboBox(self._filter_panel, values=etypes,
-                        variable=self._entity_type_var, width=140,
-                        command=lambda _: self._apply_filters(),
-                        fg_color=COLORS["bg_input"],
-                        border_color=COLORS["border"],
-                        button_color=COLORS["bg_elevated"],
-                        text_color=COLORS["text_primary"],
-                        font=FONTS["body"]).pack(fill="x", pady=(0, S["2"]))
-
-        ctk.CTkLabel(self._filter_panel, text=t("docs.filter_date_from"),
-                     font=FONTS["label"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w")
-        df_entry = ctk.CTkEntry(self._filter_panel, textvariable=self._date_from_var,
-                                placeholder_text="YYYY-MM-DD",
-                                fg_color=COLORS["bg_input"],
-                                border_color=COLORS["border"],
-                                text_color=COLORS["text_primary"],
-                                font=FONTS["body"], height=28)
-        df_entry.pack(fill="x", pady=(0, S["2"]))
-
-        ctk.CTkLabel(self._filter_panel, text=t("docs.filter_date_to"),
-                     font=FONTS["label"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w")
-        dt_entry = ctk.CTkEntry(self._filter_panel, textvariable=self._date_to_var,
-                                placeholder_text="YYYY-MM-DD",
-                                fg_color=COLORS["bg_input"],
-                                border_color=COLORS["border"],
-                                text_color=COLORS["text_primary"],
-                                font=FONTS["body"], height=28)
-        dt_entry.pack(fill="x", pady=(0, S["2"]))
-
-        ctk.CTkLabel(self._filter_panel, text=t("docs.filter_type"),
-                     font=FONTS["label"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w")
-        mtypes = [""] + [m.split("/")[-1] if "/" in m else m for m in self._service.get_mime_types()]
-        ctk.CTkComboBox(self._filter_panel, values=mtypes,
-                        variable=self._mime_type_var, width=140,
-                        command=lambda _: self._apply_filters(),
-                        fg_color=COLORS["bg_input"],
-                        border_color=COLORS["border"],
-                        button_color=COLORS["bg_elevated"],
-                        text_color=COLORS["text_primary"],
-                        font=FONTS["body"]).pack(fill="x", pady=(0, S["2"]))
-
-        ctk.CTkButton(self._filter_panel, text=t("docs.filter_apply"),
-                      fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
-                      text_color="#ffffff", font=FONTS["body"], height=28,
-                      command=self._apply_filters).pack(fill="x", pady=(S["2"], 0))
-        ctk.CTkButton(self._filter_panel, text=t("docs.filter_clear"),
-                      fg_color="transparent", hover_color=COLORS["bg_elevated"],
-                      text_color=COLORS["text_muted"], font=FONTS["body"], height=28,
-                      command=self._clear_filters).pack(fill="x", pady=(S["1"], 0))
-
-    def _apply_filters(self):
-        self._page = 0
-        self._selected_ids.clear()
+    def refresh(self) -> None:
+        """Re-fetch categories and documents from the service."""
+        if self._service is None:
+            return
+        self._load_categories()
         self._load_documents()
 
-    def _clear_filters(self):
-        self._entity_type_var.set("")
-        self._date_from_var.set("")
-        self._date_to_var.set("")
-        self._mime_type_var.set("")
-        self._apply_filters()
+    def wakeup(self) -> None:
+        """Called when the view becomes active (e.g. tab switch)."""
+        self.refresh()
 
-    def _build_category_tree(self, categories):
-        for w in self._cat_frame.winfo_children():
-            w.destroy()
+    def shutdown(self) -> None:
+        """Clean up listeners and resources."""
+        self._cleanup()
 
-        all_btn = ctk.CTkButton(
+    # ------------------------------------------------------------------
+    # Lifecycle
+    # ------------------------------------------------------------------
+
+    def _cleanup(self) -> None:
+        try:
+            unregister_listener(self._language_callback)
+        except Exception:
+            pass
+
+    # ------------------------------------------------------------------
+    # i18n
+    # ------------------------------------------------------------------
+
+    def _on_language_changed(self, _lang: str) -> None:
+        """Rebuild translatable text when the language changes."""
+        self._update_translations()
+        self.refresh()
+
+    def _update_translations(self) -> None:
+        """Update all visible translated labels."""
+        # Sidebar
+        self._sidebar_header.label.setText(t("docs.title"))
+        self._filter_toggle.setText(t("docs.filters"))
+        self._upload_btn.setText(f"  {t('docs.upload')}")
+
+        # Center toolbar
+        self._sort_combo.setItemText(0, t("docs.sort_newest"))
+        self._sort_combo.setItemText(1, t("docs.sort_oldest"))
+        self._sort_combo.setItemText(2, t("docs.sort_name_az"))
+        self._sort_combo.setItemText(3, t("docs.sort_name_za"))
+        self._sort_combo.setItemText(4, t("docs.sort_size_lg"))
+        self._sort_combo.setItemText(5, t("docs.sort_size_sm"))
+        self._search_entry.setPlaceholderText(t("docs.search_placeholder"))
+
+        # Batch bar
+        if hasattr(self, "_batch_zip_btn") and self._batch_zip_btn is not None:
+            self._batch_zip_btn.setText(t("docs.download_zip"))
+        if hasattr(self, "_batch_del_btn") and self._batch_del_btn is not None:
+            self._batch_del_btn.setText(t("docs.batch_delete"))
+
+        # Pager
+        self._update_page_label()
+
+        # Detail sidebar
+        self._detail_header.label.setText(t("docs.details"))
+
+        # Filter panel
+        self._rebuild_filter_panel_if_visible()
+
+    # ------------------------------------------------------------------
+    # UI Construction
+    # ------------------------------------------------------------------
+
+    def _build_ui(self) -> None:
+        """Build the complete three-panel widget hierarchy."""
+        main_layout = QHBoxLayout(self)
+        main_layout.setContentsMargins(0, 0, 0, 0)
+        main_layout.setSpacing(0)
+
+        # Column weights matching the original 20:50:30 ratio
+        self._build_sidebar()
+        main_layout.addWidget(self._sidebar, 20)
+
+        self._build_center()
+        main_layout.addWidget(self._center_panel, 50)
+
+        self._build_detail_sidebar()
+        main_layout.addWidget(self._detail_panel, 30)
+
+        self.refresh()
+
+    # ── Left sidebar ───────────────────────────────────────────────────
+
+    def _build_sidebar(self) -> None:
+        self._sidebar = QWidget(self)
+        self._sidebar.setProperty("role", "sidebar")
+        layout = QVBoxLayout(self._sidebar)
+        layout.setContentsMargins(S["3"], S["4"], S["3"], S["4"])
+        layout.setSpacing(S["2"])
+
+        # Header
+        self._sidebar_header = SectionHeader(self._sidebar, t("docs.title"))
+        layout.addWidget(self._sidebar_header)
+
+        # Category frame
+        self._cat_frame = QWidget(self._sidebar)
+        self._cat_layout = QVBoxLayout(self._cat_frame)
+        self._cat_layout.setContentsMargins(0, 0, 0, 0)
+        self._cat_layout.setSpacing(1)
+        layout.addWidget(self._cat_frame)
+
+        # Filter toggle
+        self._filter_toggle = QPushButton(t("docs.filters"), self._sidebar)
+        self._filter_toggle.setProperty("role", "filter-toggle")
+        self._filter_toggle.setFlat(True)
+        self._filter_toggle.setCursor(Qt.PointingHandCursor)
+        self._filter_toggle.clicked.connect(self._toggle_filters)
+        layout.addWidget(self._filter_toggle)
+
+        # Filter panel (hidden initially)
+        self._filter_panel = QWidget(self._sidebar)
+        self._filter_panel_layout = QVBoxLayout(self._filter_panel)
+        self._filter_panel_layout.setContentsMargins(0, 0, 0, 0)
+        self._filter_panel_layout.setSpacing(S["2"])
+        self._filter_panel.setVisible(False)
+        layout.addWidget(self._filter_panel)
+
+        layout.addStretch()
+
+        # Upload button
+        self._upload_btn = ActionButton(
+            self._sidebar,
+            text=f"  {t('docs.upload')}",
+            command=self._upload_dialog,
+        )
+        layout.addWidget(self._upload_btn)
+
+    def _toggle_filters(self) -> None:
+        self._filters_visible = not self._filters_visible
+        self._filter_panel.setVisible(self._filters_visible)
+        if self._filters_visible:
+            self._populate_filter_panel()
+
+    def _populate_filter_panel(self) -> None:
+        # Clear existing filter widgets
+        self._clear_layout(self._filter_panel_layout)
+
+        # Entity type
+        entity_lbl = QLabel(t("docs.filter_entity"), self._filter_panel)
+        entity_lbl.setProperty("fontRole", "label")
+        entity_lbl.setProperty("role", "filter-label")
+        self._filter_panel_layout.addWidget(entity_lbl)
+
+        etypes = [""] + (self._service.get_entity_types() if self._service else [])
+        self._entity_type_combo = StyledComboBox(
+            self._filter_panel, values=etypes,
+        )
+        self._entity_type_combo.currentTextChanged.connect(
+            lambda _: self._apply_filters()
+        )
+        self._filter_panel_layout.addWidget(self._entity_type_combo)
+
+        # Date from
+        df_lbl = QLabel(t("docs.filter_date_from"), self._filter_panel)
+        df_lbl.setProperty("fontRole", "label")
+        df_lbl.setProperty("role", "filter-label")
+        self._filter_panel_layout.addWidget(df_lbl)
+
+        self._date_from_entry = StyledLineEdit(
+            self._filter_panel, placeholder="YYYY-MM-DD",
+        )
+        self._filter_panel_layout.addWidget(self._date_from_entry)
+
+        # Date to
+        dt_lbl = QLabel(t("docs.filter_date_to"), self._filter_panel)
+        dt_lbl.setProperty("fontRole", "label")
+        dt_lbl.setProperty("role", "filter-label")
+        self._filter_panel_layout.addWidget(dt_lbl)
+
+        self._date_to_entry = StyledLineEdit(
+            self._filter_panel, placeholder="YYYY-MM-DD",
+        )
+        self._filter_panel_layout.addWidget(self._date_to_entry)
+
+        # Mime type
+        mt_lbl = QLabel(t("docs.filter_type"), self._filter_panel)
+        mt_lbl.setProperty("fontRole", "label")
+        mt_lbl.setProperty("role", "filter-label")
+        self._filter_panel_layout.addWidget(mt_lbl)
+
+        mtypes = [""] + [
+            m.split("/")[-1] if "/" in m else m
+            for m in (self._service.get_mime_types() if self._service else [])
+        ]
+        self._mime_type_combo = StyledComboBox(
+            self._filter_panel, values=mtypes,
+        )
+        self._mime_type_combo.currentTextChanged.connect(
+            lambda _: self._apply_filters()
+        )
+        self._filter_panel_layout.addWidget(self._mime_type_combo)
+
+        # Apply / Clear buttons
+        btn_row = QWidget(self._filter_panel)
+        btn_row_layout = QHBoxLayout(btn_row)
+        btn_row_layout.setContentsMargins(0, 0, 0, 0)
+        btn_row_layout.setSpacing(S["2"])
+
+        apply_btn = ActionButton(
+            btn_row, text=t("docs.filter_apply"), command=self._apply_filters,
+        )
+        btn_row_layout.addWidget(apply_btn)
+
+        clear_btn = ActionButton(
+            btn_row, text=t("docs.filter_clear"), command=self._clear_filters,
+            variant="ghost",
+        )
+        btn_row_layout.addWidget(clear_btn)
+
+        self._filter_panel_layout.addWidget(btn_row)
+
+    def _rebuild_filter_panel_if_visible(self) -> None:
+        if self._filters_visible:
+            self._populate_filter_panel()
+
+    def _build_category_tree(self, categories: List[Dict[str, Any]]) -> None:
+        self._clear_layout(self._cat_layout)
+
+        total_count = self._service._repo.count() if self._service else 0
+        all_btn = _CategoryButton(
             self._cat_frame,
-            text=f"  {t('docs.cat_all')}  ({self._service._repo.count()})",
-            fg_color="transparent" if self._active_category else COLORS["bg_elevated"],
-            hover_color=COLORS["bg_elevated"],
-            text_color=COLORS["text_primary"],
-            font=FONTS["body"],
-            anchor="w",
+            text=f"  {t('docs.cat_all')}  ({total_count})",
+            active=(self._active_category == ""),
             command=lambda: self._filter_category(""),
         )
-        all_btn.pack(fill="x", pady=(0, S["1"]))
+        self._cat_layout.addWidget(all_btn)
 
-        cat_labels = {
+        cat_labels: Dict[str, str] = {
             "maintenance": t("docs.cat_maintenance"),
             "invoices": t("docs.cat_invoices"),
             "trips": t("docs.cat_trips"),
@@ -201,735 +518,265 @@ class DocumentCenterView(ctk.CTkFrame):
             count = cat_counts.get(cat_key, 0)
             label = cat_labels.get(cat_key, cat_key)
             active = self._active_category == cat_key
-            ctk.CTkButton(
+            btn = _CategoryButton(
                 self._cat_frame,
                 text=f"  {label}  ({count})",
-                fg_color=COLORS["bg_elevated"] if active else "transparent",
-                hover_color=COLORS["bg_elevated"],
-                text_color=COLORS["text_secondary"],
-                font=FONTS["body"], anchor="w",
+                active=active,
                 command=lambda c=cat_key: self._filter_category(c),
-            ).pack(fill="x", pady=1)
+            )
+            self._cat_layout.addWidget(btn)
 
-    # ── Main list area ──────────────────────────────────────────────────
+    # ── Center list area ──────────────────────────────────────────────
 
-    def _build_main(self):
-        center = ctk.CTkFrame(self, fg_color="transparent")
-        center.grid(row=0, column=1, sticky="nsew", padx=(S["4"], S["4"]))
-        center.columnconfigure(0, weight=1)
-        center.rowconfigure(0, weight=0)
-        center.rowconfigure(1, weight=0)
-        center.rowconfigure(2, weight=1)
-        center.rowconfigure(3, weight=0)
+    def _build_center(self) -> None:
+        self._center_panel = QWidget(self)
+        self._center_panel.setProperty("role", "center-panel")
+        layout = QVBoxLayout(self._center_panel)
+        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
+        layout.setSpacing(S["2"])
 
-        toolbar = ctk.CTkFrame(center, fg_color="transparent")
-        toolbar.grid(row=0, column=0, sticky="ew", pady=(0, S["2"]))
-        toolbar.columnconfigure(1, weight=1)
+        # ── Toolbar ───────────────────────────────────────────────────────
+        toolbar = QWidget(self._center_panel)
+        toolbar_layout = QHBoxLayout(toolbar)
+        toolbar_layout.setContentsMargins(0, 0, 0, 0)
+        toolbar_layout.setSpacing(S["3"])
 
-        sort_vals = [t("docs.sort_newest"), t("docs.sort_oldest"),
-                     t("docs.sort_name_az"), t("docs.sort_name_za"),
-                     t("docs.sort_size_lg"), t("docs.sort_size_sm")]
-        sort_keys = ["uploaded_at DESC", "uploaded_at ASC",
-                     "title ASC", "title DESC",
-                     "file_size DESC", "file_size ASC"]
-        self._sort_combo = ctk.CTkComboBox(
-            toolbar, values=sort_vals, width=120,
-            command=self._on_sort_change,
-            fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"],
-            button_color=COLORS["bg_elevated"],
-            text_color=COLORS["text_primary"],
-            font=FONTS["body"],
+        # Sort combo
+        sort_vals = [
+            t("docs.sort_newest"), t("docs.sort_oldest"),
+            t("docs.sort_name_az"), t("docs.sort_name_za"),
+            t("docs.sort_size_lg"), t("docs.sort_size_sm"),
+        ]
+        self._sort_combo = StyledComboBox(toolbar, values=sort_vals)
+        self._sort_combo.setCurrentIndex(0)
+        self._sort_combo.currentTextChanged.connect(self._on_sort_change)
+        toolbar_layout.addWidget(self._sort_combo)
+
+        # Search entry
+        self._search_entry = StyledLineEdit(
+            toolbar, placeholder=t("docs.search_placeholder"),
         )
-        self._sort_combo.set(sort_vals[0])
-        self._sort_combo.grid(row=0, column=0, padx=(0, S["3"]))
+        self._search_entry.textChanged.connect(self._on_search)
+        toolbar_layout.addWidget(self._search_entry, 1)
 
-        self._search_var = tk.StringVar()
-        self._search_var.trace_add("write", lambda *_: self._on_search())
-        search_entry = ctk.CTkEntry(
-            toolbar, textvariable=self._search_var,
-            placeholder_text=t("docs.search_placeholder"),
-            fg_color=COLORS["bg_input"],
-            border_color=COLORS["border"], border_width=1,
-            text_color=COLORS["text_primary"],
-            font=FONTS["body"], height=34, corner_radius=6,
-        )
-        search_entry.grid(row=0, column=1, sticky="ew", padx=S["3"])
+        # Select all
+        self._select_all_cb = QCheckBox(toolbar)
+        self._select_all_cb.stateChanged.connect(self._toggle_select_all)
+        toolbar_layout.addWidget(self._select_all_cb)
 
-        self._select_all_var = tk.BooleanVar(value=False)
-        self._select_all_cb = ctk.CTkCheckBox(
-            toolbar, text="", variable=self._select_all_var,
-            command=self._toggle_select_all,
-            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
-            border_color=COLORS["border"], width=18, height=18,
-        )
-        self._select_all_cb.grid(row=0, column=2, padx=(0, S["2"]))
+        layout.addWidget(toolbar)
 
-        self._batch_bar = ctk.CTkFrame(center, fg_color="transparent")
+        # ── Batch bar ─────────────────────────────────────────────────────
+        self._batch_bar = QWidget(self._center_panel)
+        self._batch_bar.setVisible(False)
+        batch_layout = QHBoxLayout(self._batch_bar)
+        batch_layout.setContentsMargins(0, 0, 0, 0)
+        batch_layout.setSpacing(S["2"])
 
-        batch_zip_btn = ctk.CTkButton(
+        self._batch_zip_btn = ActionButton(
             self._batch_bar, text=t("docs.download_zip"),
-            fg_color=COLORS["info"], hover_color=COLORS["info_dim"],
-            text_color="#ffffff", font=FONTS["small"], height=28,
-            command=self._download_zip_selected,
+            command=self._download_zip_selected, variant="secondary",
         )
-        batch_zip_btn.pack(side="left", padx=(0, S["2"]))
+        batch_layout.addWidget(self._batch_zip_btn)
 
-        batch_del_btn = ctk.CTkButton(
+        self._batch_del_btn = ActionButton(
             self._batch_bar, text=t("docs.batch_delete"),
-            fg_color=COLORS["danger"], hover_color=COLORS["danger_dim"],
-            text_color="#ffffff", font=FONTS["small"], height=28,
-            command=self._batch_delete_selected,
+            command=self._batch_delete_selected, variant="danger",
         )
-        batch_del_btn.pack(side="left")
+        batch_layout.addWidget(self._batch_del_btn)
 
-        self._list_frame = ctk.CTkScrollableFrame(
-            center, fg_color=COLORS["bg_base"],
-            scrollbar_button_color=COLORS["border"],
-            scrollbar_button_hover_color=COLORS["border_hover"],
+        batch_layout.addStretch()
+        layout.addWidget(self._batch_bar)
+
+        # ── Document list (scroll area) ───────────────────────────────────
+        self._list_scroll = QScrollArea(self._center_panel)
+        self._list_scroll.setWidgetResizable(True)
+        self._list_scroll.setFrameShape(QFrame.NoFrame)
+        self._list_scroll.setProperty("role", "doc-list-scroll")
+
+        self._list_content = QWidget(self._list_scroll)
+        self._list_layout = QVBoxLayout(self._list_content)
+        self._list_layout.setContentsMargins(0, 0, 0, 0)
+        self._list_layout.setSpacing(S["2"])
+        self._list_layout.setAlignment(Qt.AlignTop)
+        self._list_scroll.setWidget(self._list_content)
+
+        layout.addWidget(self._list_scroll, 1)
+
+        # ── Pager ─────────────────────────────────────────────────────────
+        pager = QWidget(self._center_panel)
+        pager_layout = QHBoxLayout(pager)
+        pager_layout.setContentsMargins(0, 0, 0, 0)
+
+        self._page_label = QLabel("", pager)
+        self._page_label.setProperty("fontRole", "small")
+        self._page_label.setProperty("role", "page-label")
+        pager_layout.addWidget(self._page_label)
+
+        pager_layout.addStretch()
+
+        self._prev_btn = ActionButton(
+            pager, text=t("docs.prev"), command=self._prev_page,
+            variant="secondary",
         )
-        self._list_frame.grid(row=2, column=0, sticky="nsew")
+        pager_layout.addWidget(self._prev_btn)
 
-        self._setup_drag_drop()
+        self._next_btn = ActionButton(
+            pager, text=t("docs.next"), command=self._next_page,
+            variant="secondary",
+        )
+        pager_layout.addWidget(self._next_btn)
 
-        pager = ctk.CTkFrame(center, fg_color="transparent")
-        pager.grid(row=3, column=0, sticky="ew", pady=(S["3"], 0))
+        layout.addWidget(pager)
 
-        self._page_label = ctk.CTkLabel(pager, text="", font=FONTS["small"],
-                                        text_color=COLORS["text_muted"])
-        self._page_label.pack(side="left")
+    # ── Detail sidebar ────────────────────────────────────────────────
 
-        btn(pager, t("docs.prev"), self._prev_page, variant="secondary").pack(
-            side="right", padx=(S["2"], 0))
-        btn(pager, t("docs.next"), self._next_page, variant="secondary").pack(
-            side="right")
+    def _build_detail_sidebar(self) -> None:
+        self._detail_panel = QWidget(self)
+        self._detail_panel.setProperty("role", "detail-sidebar")
+        layout = QVBoxLayout(self._detail_panel)
+        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
+        layout.setSpacing(S["2"])
 
-    def _setup_drag_drop(self):
-        try:
-            self._list_frame.drop_target_register("DND_Files")
-            self._list_frame.dnd_bind("<<DragEnter>>", self._on_drag_enter)
-            self._list_frame.dnd_bind("<<DragLeave>>", self._on_drag_leave)
-            self._list_frame.dnd_bind("<<Drop>>", self._on_drop)
-            self._list_frame.dnd_enable(True)
-        except Exception:
-            pass
+        # Header
+        self._detail_header = SectionHeader(self._detail_panel, t("docs.details"))
+        layout.addWidget(self._detail_header)
 
-    def _on_drag_enter(self, event):
-        try:
-            self._list_frame.configure(fg_color=COLORS["accent_dim"])
-        except Exception:
-            pass
+        # Detail content (scrollable)
+        self._detail_scroll = QScrollArea(self._detail_panel)
+        self._detail_scroll.setWidgetResizable(True)
+        self._detail_scroll.setFrameShape(QFrame.NoFrame)
 
-    def _on_drag_leave(self, event):
-        try:
-            self._list_frame.configure(fg_color=COLORS["bg_base"])
-        except Exception:
-            pass
+        self._detail_content = QWidget(self._detail_scroll)
+        self._detail_content_layout = QVBoxLayout(self._detail_content)
+        self._detail_content_layout.setContentsMargins(0, 0, 0, 0)
+        self._detail_content_layout.setSpacing(S["2"])
+        self._detail_content_layout.setAlignment(Qt.AlignTop)
+        self._detail_scroll.setWidget(self._detail_content)
 
-    def _on_drop(self, event):
-        try:
-            self._list_frame.configure(fg_color=COLORS["bg_base"])
-            data = event.data
-            if data:
-                paths = self._parse_drop_paths(data)
-                if paths:
-                    self._process_batch_upload(paths)
-        except Exception:
-            pass
+        layout.addWidget(self._detail_scroll, 1)
 
-    @staticmethod
-    def _parse_drop_paths(data):
-        paths = []
-        for item in data.strip().split():
-            item = item.strip()
-            if item.startswith("{") and item.endswith("}"):
-                item = item[1:-1]
-            if os.path.isfile(item):
-                paths.append(item)
-        return paths
+        # Action buttons at bottom
+        self._detail_actions = QWidget(self._detail_panel)
+        self._detail_actions_layout = QVBoxLayout(self._detail_actions)
+        self._detail_actions_layout.setContentsMargins(0, 0, 0, 0)
+        self._detail_actions_layout.setSpacing(S["2"])
+        layout.addWidget(self._detail_actions)
 
-    # ── Detail sidebar ──────────────────────────────────────────────────
-
-    def _build_detail_sidebar(self):
-        right = ctk.CTkFrame(self, fg_color=COLORS["bg_surface"])
-        right.grid(row=0, column=2, sticky="nsew")
-        right.columnconfigure(0, weight=1)
-
-        hdr = ctk.CTkFrame(right, fg_color="transparent")
-        hdr.grid(row=0, column=0, sticky="ew", padx=S["4"], pady=S["4"])
-        ctk.CTkLabel(hdr, text=t("docs.details"), font=FONTS["h3"],
-                     text_color=COLORS["text_primary"],
-                     anchor="w").pack(anchor="w")
-
-        self._detail_content = ctk.CTkFrame(right, fg_color="transparent")
-        self._detail_content.grid(row=1, column=0, sticky="nsew", padx=S["4"])
-
-        self._detail_actions = ctk.CTkFrame(right, fg_color="transparent")
-        self._detail_actions.grid(row=2, column=0, sticky="ew", padx=S["4"],
-                                  pady=(0, S["4"]))
         self._show_detail(None)
 
-    # ── Data loading ───────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Data Loading
+    # ------------------------------------------------------------------
 
-    def _load(self):
-        self._load_categories()
-        self._load_documents()
-
-    def _load_categories(self):
+    def _load_categories(self) -> None:
+        if self._service is None:
+            return
         categories = self._service.get_categories()
         self._build_category_tree(categories)
 
-    def _load_documents(self):
-        for w in self._list_frame.winfo_children():
-            w.destroy()
+    def _load_documents(self) -> None:
+        if self._service is None:
+            return
+        self._clear_layout(self._list_layout)
 
-        query = self._search_var.get().strip()
-        date_from = self._date_from_var.get().strip() if self._filters_visible else ""
-        date_to = self._date_to_var.get().strip() if self._filters_visible else ""
-        entity_type = self._entity_type_var.get().strip() if self._filters_visible else ""
-        mime_filter = self._mime_type_var.get().strip() if self._filters_visible else ""
+        query = self._search_entry.text().strip()
+        date_from = self._date_from_entry.text().strip() if (
+            self._filters_visible and hasattr(self, "_date_from_entry")
+        ) else ""
+        date_to = self._date_to_entry.text().strip() if (
+            self._filters_visible and hasattr(self, "_date_to_entry")
+        ) else ""
+        entity_type = self._entity_type_combo.currentText().strip() if (
+            self._filters_visible and hasattr(self, "_entity_type_combo")
+        ) else ""
+        mime_filter = self._mime_type_combo.currentText().strip() if (
+            self._filters_visible and hasattr(self, "_mime_type_combo")
+        ) else ""
 
-        if query:
-            result = self._service.fts_search(
-                query=query, category=self._active_category,
-                entity_type=entity_type, order=self._sort_order,
-                page=self._page, page_size=PAGE_SIZE,
-            )
-        else:
-            result = self._service.advanced_search(
-                query=query, category=self._active_category,
-                entity_type=entity_type, date_from=date_from, date_to=date_to,
-                mime_type=mime_filter, order=self._sort_order,
-                page=self._page, page_size=PAGE_SIZE,
-            )
+        try:
+            if query:
+                result = self._service.fts_search(
+                    query=query, category=self._active_category,
+                    entity_type=entity_type, order=self._sort_order,
+                    page=self._page, page_size=PAGE_SIZE,
+                )
+            else:
+                result = self._service.advanced_search(
+                    query=query, category=self._active_category,
+                    entity_type=entity_type, date_from=date_from, date_to=date_to,
+                    mime_type=mime_filter, order=self._sort_order,
+                    page=self._page, page_size=PAGE_SIZE,
+                )
+        except Exception as exc:
+            logger.exception("Document search failed")
+            result = {"items": [], "total": 0, "total_pages": 0}
+
         self._docs = result["items"]
         self._total = result["total"]
         self._total_pages = result["total_pages"]
         self._update_page_label()
 
-        if self._selected_ids:
-            self._show_batch_bar()
-        else:
-            self._batch_bar.grid_forget()
+        # Show/hide batch bar
+        self._batch_bar.setVisible(bool(self._selected_ids))
 
         if not self._docs:
-            empty = ctk.CTkLabel(self._list_frame, text=t("docs.no_documents"),
-                                 font=FONTS["body"],
-                                 text_color=COLORS["text_muted"],
-                                 anchor="center")
-            empty.pack(pady=S["8"])
+            empty_lbl = QLabel(t("docs.no_documents"), self._list_content)
+            empty_lbl.setProperty("fontRole", "body")
+            empty_lbl.setProperty("role", "empty-label")
+            empty_lbl.setAlignment(Qt.AlignCenter)
+            self._list_layout.addWidget(empty_lbl, 0, Qt.AlignCenter)
             self._show_detail(None)
             return
 
         for doc in self._docs:
-            self._build_doc_row(doc)
-
-    def _build_doc_row(self, doc):
-        did = doc["id"]
-        mime_type = doc.get("mime_type", "")
-
-        row = ctk.CTkFrame(self._list_frame, fg_color=COLORS["bg_surface"],
-                           corner_radius=6)
-        row.pack(fill="x", pady=(0, S["2"]))
-
-        cb_var = tk.BooleanVar(value=did in self._selected_ids)
-        cb = ctk.CTkCheckBox(
-            row, text="", variable=cb_var,
-            command=lambda d=did, v=cb_var: self._toggle_select(d, v),
-            fg_color=COLORS["accent"], hover_color=COLORS["accent_hover"],
-            border_color=COLORS["border"], width=18, height=18,
-        )
-        cb.pack(side="left", padx=(S["3"], S["2"]), pady=S["3"])
-
-        thumb = self._service.get_thumbnail_path(did)
-        icon_zone = ctk.CTkFrame(row, fg_color="transparent", width=48, height=48)
-        icon_zone.pack(side="left", padx=(0, S["2"]), pady=S["2"])
-        icon_zone.pack_propagate(False)
-
-        if thumb and os.path.isfile(thumb):
-            try:
-                from PIL import Image as PILImage
-                from PIL import ImageTk
-                img = PILImage.open(thumb)
-                img = img.resize((44, 33), PILImage.LANCZOS)
-                photo = ImageTk.PhotoImage(img)
-                thumb_lbl = ctk.CTkLabel(icon_zone, text="", image=photo)
-                thumb_lbl.image = photo
-                thumb_lbl.pack(expand=True)
-            except Exception:
-                self._icon_label(icon_zone, mime_type)
-        else:
-            self._icon_label(icon_zone, mime_type)
-
-        info = ctk.CTkFrame(row, fg_color="transparent")
-        info.pack(side="left", fill="x", expand=True, pady=S["2"])
-
-        title_text = doc.get("title", doc.get("file_name", ""))
-        ctk.CTkLabel(info, text=title_text[:70], font=FONTS["body_bold"],
-                     text_color=COLORS["text_primary"], anchor="w").pack(anchor="w")
-
-        meta_parts = [doc.get("doc_number", "")]
-        size = doc.get("file_size", 0)
-        if size < 1024:
-            meta_parts.append(f"{size} B")
-        elif size < 1024 * 1024:
-            meta_parts.append(f"{size / 1024:.1f} KB")
-        else:
-            meta_parts.append(f"{size / (1024 * 1024):.1f} MB")
-        upload = doc.get("uploaded_at", "")[:10]
-        if upload:
-            meta_parts.append(upload)
-        ctk.CTkLabel(info, text="  ".join(meta_parts), font=FONTS["small"],
-                     text_color=COLORS["text_muted"], anchor="w").pack(anchor="w")
-
-        tags_str = doc.get("tags", "[]")
-        try:
-            tag_list = json.loads(tags_str)
-        except (json.JSONDecodeError, TypeError):
-            tag_list = []
-        if tag_list:
-            tag_frame = ctk.CTkFrame(info, fg_color="transparent")
-            tag_frame.pack(anchor="w", pady=(S["1"], 0))
-            for tg in tag_list[:4]:
-                chip = ctk.CTkFrame(tag_frame, fg_color=COLORS["accent_dim"],
-                                    corner_radius=3)
-                chip.pack(side="left", padx=(0, 2))
-                ctk.CTkLabel(chip, text=tg, font=FONTS["label"],
-                             text_color=COLORS["accent_text"]).pack(
-                    padx=4, pady=1)
-
-        actions = ctk.CTkFrame(row, fg_color="transparent")
-        actions.pack(side="right", padx=S["3"])
-
-        ctk.CTkButton(actions, text=t("docs.view"),
-                      fg_color=COLORS["accent"],
-                      hover_color=COLORS["accent_hover"],
-                      text_color="#ffffff", font=FONTS["small"],
-                      width=40, height=24, corner_radius=4,
-                      command=lambda d=doc: self._open_document(d)).pack(side="left", padx=1)
-
-        ctk.CTkButton(actions, text=t("docs.email"),
-                      fg_color=COLORS["info"],
-                      hover_color=COLORS["info_dim"],
-                      text_color="#ffffff", font=FONTS["small"],
-                      width=40, height=24, corner_radius=4,
-                      command=lambda d=doc: self._email_document(d)).pack(side="left", padx=1)
-
-        ctk.CTkButton(actions, text=t("docs.delete"),
-                      fg_color="transparent",
-                      hover_color=COLORS["danger_dim"],
-                      text_color=COLORS["text_muted"], font=FONTS["small"],
-                      width=40, height=24, corner_radius=4,
-                      command=lambda d=doc: self._delete_document(d)).pack(side="left", padx=1)
-
-        for w in (row, info):
-            w.bind("<Enter>", lambda e, r=row: r.configure(fg_color=COLORS["bg_elevated"]))
-            w.bind("<Leave>", lambda e, r=row: r.configure(fg_color=COLORS["bg_surface"]))
-
-        row.bind("<Button-1>", lambda e, d=doc: self._show_detail(d))
-        info.bind("<Button-1>", lambda e, d=doc: self._show_detail(d))
-        for c in info.winfo_children():
-            c.bind("<Button-1>", lambda e, d=doc: self._show_detail(d))
-
-    @staticmethod
-    def _icon_label(parent, mime_type):
-        icon = DocumentCenterView._icon_for(mime_type)
-        ctk.CTkLabel(parent, text=icon, font=("Segoe UI", 20),
-                     text_color=COLORS["text_secondary"]).pack(expand=True)
-
-    # ── Detail panel (right sidebar) ──────────────────────────────────
-
-    def _show_detail(self, doc):
-        for w in self._detail_content.winfo_children():
-            w.destroy()
-        for w in self._detail_actions.winfo_children():
-            w.destroy()
-
-        if doc is None:
-            ctk.CTkLabel(self._detail_content, text=t("docs.select_document"),
-                         font=FONTS["small"],
-                         text_color=COLORS["text_muted"],
-                         anchor="w").pack(pady=S["4"])
-            return
-
-        c = self._detail_content
-        title = doc.get("title", doc.get("file_name", ""))
-        ctk.CTkLabel(c, text=title, font=FONTS["body_bold"],
-                     text_color=COLORS["text_primary"], anchor="w",
-                     wraplength=180).pack(anchor="w", pady=(0, S["2"]))
-
-        ctk.CTkLabel(c, text=doc.get("doc_number", ""), font=FONTS["mono"],
-                     text_color=COLORS["text_secondary"],
-                     anchor="w").pack(anchor="w")
-
-        size = doc.get("file_size", 0)
-        if size < 1024:
-            sz = f"{size} B"
-        elif size < 1024 * 1024:
-            sz = f"{size / 1024:.1f} KB"
-        else:
-            sz = f"{size / (1024 * 1024):.1f} MB"
-        ctk.CTkLabel(c, text=f"{sz} | {doc.get('mime_type', '')}", font=FONTS["small"],
-                     text_color=COLORS["text_muted"], anchor="w",
-                     wraplength=180).pack(anchor="w", pady=(0, S["2"]))
-
-        ctk.CTkLabel(c, text=t("docs.tags_label"), font=FONTS["label"],
-                     text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", pady=(S["3"], 0))
-
-        tag_frame = ctk.CTkFrame(c, fg_color="transparent")
-        tag_frame.pack(anchor="w", fill="x", pady=(S["1"], S["2"]))
-
-        tags_str = doc.get("tags", "[]")
-        try:
-            tag_list = json.loads(tags_str)
-        except (json.JSONDecodeError, TypeError):
-            tag_list = []
-
-        for tg in tag_list:
-            chip = ctk.CTkFrame(tag_frame, fg_color=COLORS["accent_dim"],
-                                corner_radius=3)
-            chip.pack(side="left", padx=(0, 3), pady=2)
-            ctk.CTkLabel(chip, text=tg, font=FONTS["label"],
-                         text_color=COLORS["accent_text"]).pack(
-                side="left", padx=4, pady=1)
-            ctk.CTkButton(chip, text="\u2716", width=16, height=16,
-                          fg_color="transparent",
-                          hover_color=COLORS["danger_dim"],
-                          text_color=COLORS["text_muted"],
-                          font=FONTS["label"],
-                          command=lambda t=tg, d=doc: self._remove_tag(d["id"], t)).pack(
-                side="left", padx=(0, 2))
-
-        add_tag_frame = ctk.CTkFrame(c, fg_color="transparent")
-        add_tag_frame.pack(anchor="w", fill="x", pady=(0, S["3"]))
-        self._tag_entry = ctk.CTkEntry(
-            add_tag_frame, placeholder_text=t("docs.add_tag"),
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["small"],
-            height=26, width=100,
-        )
-        self._tag_entry.pack(side="left", fill="x", expand=True)
-        self._tag_entry.bind("<Return>", lambda e, d=doc: self._add_tag_action(d["id"]))
-        ctk.CTkButton(add_tag_frame, text="+", width=24, height=26,
-                      fg_color=COLORS["accent"],
-                      hover_color=COLORS["accent_hover"],
-                      text_color="#ffffff",
-                      font=FONTS["body"],
-                      command=lambda d=doc: self._add_tag_action(d["id"])).pack(
-            side="left", padx=(S["2"], 0))
-
-        links = self._service.get_links(doc["id"])
-        if links:
-            ctk.CTkLabel(c, text=t("docs.linked_to"), font=FONTS["label"],
-                         text_color=COLORS["text_muted"],
-                         anchor="w").pack(anchor="w", pady=(S["3"], 0))
-            for lk in links:
-                ctk.CTkLabel(c, text=f"  {lk['linked_entity_type']} #{lk['linked_entity_id']}",
-                             font=FONTS["small"],
-                             text_color=COLORS["text_secondary"],
-                             anchor="w").pack(anchor="w")
-
-        expiry = doc.get("expiry_date", "")
-        ctk.CTkLabel(c, text=t("docs.expiry_label"), font=FONTS["label"],
-                     text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", pady=(S["3"], 0))
-        expiry_frame = ctk.CTkFrame(c, fg_color="transparent")
-        expiry_frame.pack(anchor="w", fill="x", pady=(S["1"], 0))
-        self._expiry_var = tk.StringVar(value=expiry)
-        exp_entry = ctk.CTkEntry(
-            expiry_frame, textvariable=self._expiry_var,
-            placeholder_text="YYYY-MM-DD",
-            fg_color=COLORS["bg_input"], border_color=COLORS["border"],
-            text_color=COLORS["text_primary"], font=FONTS["small"],
-            height=26, width=100,
-        )
-        exp_entry.pack(side="left", fill="x", expand=True)
-        exp_entry.bind("<Return>", lambda e, d=doc: self._set_expiry(d["id"]))
-        ctk.CTkButton(expiry_frame, text=t("docs.set_expiry"), width=28, height=26,
-                      fg_color=COLORS["accent"],
-                      hover_color=COLORS["accent_hover"],
-                      text_color="#ffffff", font=FONTS["small"],
-                      command=lambda d=doc: self._set_expiry(d["id"])).pack(
-            side="left", padx=(S["2"], 0))
-
-        versions = self._service.get_versions(doc["id"])
-        if versions:
-            ctk.CTkLabel(c, text=t("docs.versions_label"), font=FONTS["label"],
-                         text_color=COLORS["text_muted"],
-                         anchor="w").pack(anchor="w", pady=(S["3"], 0))
-            for v in versions[:5]:
-                vtext = f"  v{v['version_number']}: {v.get('comment', v['created_at'][:10])}"
-                vframe = ctk.CTkFrame(c, fg_color="transparent")
-                vframe.pack(anchor="w", fill="x")
-                ctk.CTkLabel(vframe, text=vtext, font=FONTS["small"],
-                             text_color=COLORS["text_secondary"],
-                             anchor="w").pack(side="left", fill="x", expand=True)
-                ctk.CTkButton(vframe, text=t("docs.restore"), width=28, height=20,
-                              fg_color="transparent",
-                              hover_color=COLORS["accent_dim"],
-                              text_color=COLORS["accent_text"],
-                              font=FONTS["label"],
-                              command=lambda d=doc, vn=v["version_number"]: self._restore_version(d["id"], vn)).pack(
-                    side="right")
-
-        ctk.CTkButton(c, text=t("docs.upload_version"), fg_color=COLORS["bg_elevated"],
-                      hover_color=COLORS["border_hover"],
-                      text_color=COLORS["text_primary"], font=FONTS["small"],
-                      height=26,
-                      command=lambda d=doc: self._upload_version_dialog(d["id"])).pack(
-            fill="x", pady=(S["3"], 0))
-
-        act = self._detail_actions
-        ctk.CTkButton(act, text=t("docs.view"), fg_color=COLORS["accent"],
-                      hover_color=COLORS["accent_hover"],
-                      text_color="#ffffff", font=FONTS["body"], height=30,
-                      command=lambda d=doc: self._open_document(d)).pack(
-            fill="x", pady=(0, S["2"]))
-        ctk.CTkButton(act, text=t("docs.download_zip"),
-                      fg_color=COLORS["info"],
-                      hover_color=COLORS["info_dim"],
-                      text_color="#ffffff", font=FONTS["body"], height=30,
-                      command=lambda d=doc: self._download_single_zip(d)).pack(
-            fill="x", pady=(0, S["2"]))
-        ctk.CTkButton(act, text=t("docs.email"),
-                      fg_color=COLORS["bg_elevated"],
-                      hover_color=COLORS["border_hover"],
-                      text_color=COLORS["text_primary"], font=FONTS["body"],
-                      height=30,
-                      command=lambda d=doc: self._email_document(d)).pack(
-            fill="x", pady=(0, S["2"]))
-        ctk.CTkButton(act, text=t("docs.archive"),
-                      fg_color="transparent",
-                      hover_color=COLORS["bg_elevated"],
-                      text_color=COLORS["text_muted"], font=FONTS["body"],
-                      height=30,
-                      command=lambda d=doc: self._archive_document(d)).pack(
-            fill="x")
-
-    def _add_tag_action(self, doc_id):
-        tag = self._tag_entry.get().strip() if hasattr(self, '_tag_entry') else ""
-        if tag:
-            self._service.add_tag(doc_id, tag)
-            self._tag_entry.delete(0, "end")
-            self._refresh_detail(doc_id)
-
-    def _remove_tag(self, doc_id, tag):
-        self._service.remove_tag(doc_id, tag)
-        self._refresh_detail(doc_id)
-
-    def _set_expiry(self, doc_id):
-        date = self._expiry_var.get().strip() if hasattr(self, '_expiry_var') else ""
-        if date:
-            self._service.set_expiry_date(doc_id, date)
-            self._show_toast("Expiry date saved")
-            self._refresh_detail(doc_id)
-
-    def _restore_version(self, doc_id, version_number):
-        if messagebox.askyesno(t("docs.confirm_restore"),
-                                t("docs.confirm_restore_msg").format(v=version_number)):
-            self._service.restore_version(doc_id, version_number)
-            self._show_toast(f"Restored version {version_number}")
-            self._refresh_detail(doc_id)
-
-    def _upload_version_dialog(self, doc_id):
-        path = filedialog.askopenfilename(
-            title=t("docs.upload_version"),
-            filetypes=[("All Supported",
-                       "*.pdf;*.png;*.jpg;*.jpeg;*.docx;*.xlsx;*.csv;*.txt;*.zip")],
-        )
-        if not path:
-            return
-        comment = simpledialog.askstring("Version Comment", "What changed?", parent=self) or ""
-        try:
-            self._service.upload_new_version(doc_id, path, comment, "user")
-            self._show_toast("New version uploaded")
-        except Exception as e:
-            messagebox.showerror("Version Error", str(e))
-        self._refresh_detail(doc_id)
-
-    def _refresh_detail(self, doc_id):
-        doc = self._service.get_by_id(doc_id)
-        if doc:
-            self._show_detail(doc)
-
-    # ── Actions ────────────────────────────────────────────────────────
-
-    def _open_document(self, doc):
-        self._service.open_file(doc["id"])
-
-    def _upload_dialog(self):
-        paths = filedialog.askopenfilenames(
-            title=t("docs.upload_title"),
-            filetypes=[
-                ("All Supported",
-                 "*.pdf;*.png;*.jpg;*.jpeg;*.docx;*.xlsx;*.csv;*.txt;*.zip;*.gif"),
-                ("PDF", "*.pdf"),
-                ("Images", "*.png;*.jpg;*.jpeg;*.gif"),
-                ("Documents", "*.docx;*.xlsx;*.csv;*.txt"),
-                ("All Files", "*.*"),
-            ],
-        )
-        if not paths:
-            return
-        self._process_batch_upload(paths)
-
-    def _process_batch_upload(self, paths):
-        result = self._service.batch_upload(
-            paths=paths,
-            category=self._active_category or "",
-            uploaded_by="user",
-        )
-        self._load()
-        uploaded = len(result["uploaded"])
-        dups = len(result["duplicates"])
-        failed = len(result["rejected"]) + len(result["failed"])
-
-        msg_parts = []
-        if uploaded:
-            msg_parts.append(f"Uploaded: {uploaded}")
-        if dups:
-            msg_parts.append(f"Duplicates skipped: {dups}")
-        if failed:
-            msg_parts.append(f"Failed: {failed}")
-
-        if uploaded > 0:
-            self._show_toast(" | ".join(msg_parts))
-        if failed > 0:
-            details = "\n".join(
-                [f"  {r['file']}: {r.get('reason', 'Unknown')}" for r in (
-                    result["rejected"] + result["failed"]
-                )][:10]
+            row = _DocRow(
+                self._list_content,
+                doc,
+                on_toggle_select=self._toggle_select,
+                on_show_detail=self._show_detail,
+                on_open=self._open_document,
+                on_email=self._email_document,
+                on_delete=self._delete_document,
+                selected_ids=self._selected_ids,
             )
-            messagebox.showwarning(
-                t("docs.upload_title"),
-                f"Some files were rejected:\n{details}",
-            )
+            self._list_layout.addWidget(row)
 
-    def _email_document(self, doc):
-        recipient = simpledialog.askstring(
-            t("docs.email_title"), t("docs.email_prompt"),
-            parent=self,
-        )
-        if not recipient:
-            return
-        try:
-            ok = self._service.email_document(doc["id"], recipient)
-            if ok:
-                messagebox.showinfo(t("docs.email_title"),
-                                    t("docs.email_sent"))
-            else:
-                messagebox.showerror(t("docs.email_title"),
-                                     "SMTP not configured. Check settings.")
-        except Exception as e:
-            messagebox.showerror(t("docs.email_title"), str(e))
+        # Add stretcher to keep rows top-aligned
+        self._list_layout.addStretch(1)
 
-    def _download_zip_selected(self):
-        if not self._selected_ids:
-            return
-        path = filedialog.asksaveasfilename(
-            defaultextension=".zip",
-            filetypes=[("ZIP archive", "*.zip")],
-            title=t("docs.download_zip"),
-        )
-        if not path:
-            return
-        try:
-            self._service.download_zip(list(self._selected_ids), path)
-            messagebox.showinfo(t("docs.download_zip"), f"Saved: {path}")
-        except Exception as e:
-            messagebox.showerror(t("docs.download_zip"), str(e))
+    # ------------------------------------------------------------------
+    # Filter actions
+    # ------------------------------------------------------------------
 
-    def _download_single_zip(self, doc):
-        path = filedialog.asksaveasfilename(
-            defaultextension=".zip",
-            filetypes=[("ZIP archive", "*.zip")],
-            title=t("docs.download_zip"),
-        )
-        if not path:
-            return
-        try:
-            self._service.download_zip([doc["id"]], path)
-            messagebox.showinfo(t("docs.download_zip"), f"Saved: {path}")
-        except Exception as e:
-            messagebox.showerror(t("docs.download_zip"), str(e))
-
-    def _delete_document(self, doc):
-        if not messagebox.askyesno(
-            t("docs.confirm_delete_title"),
-            t("docs.confirm_delete_msg").format(
-                name=doc.get("title", doc.get("file_name", ""))
-            ),
-        ):
-            return
-        try:
-            self._service.delete(doc["id"])
-            self._selected_ids.discard(doc["id"])
-        except Exception as e:
-            logger.error("Failed to delete document %d: %s", doc["id"], e)
-            messagebox.showerror(t("docs.confirm_delete_title"), str(e))
-        self._load()
-
-    def _archive_document(self, doc):
-        self._service.archive(doc["id"])
-        self._selected_ids.discard(doc["id"])
-        self._load()
-
-    def _batch_delete_selected(self):
-        if not self._selected_ids:
-            return
-        n = len(self._selected_ids)
-        if not messagebox.askyesno(t("docs.confirm_delete_title"),
-                                   f"Delete {n} selected document(s)?"):
-            return
-        try:
-            self._service.delete_batch(list(self._selected_ids))
-            self._selected_ids.clear()
-        except Exception as e:
-            messagebox.showerror(t("docs.confirm_delete_title"), str(e))
-        self._load()
-
-    # ── Selection ──────────────────────────────────────────────────────
-
-    def _toggle_select(self, doc_id, var):
-        if var.get():
-            self._selected_ids.add(doc_id)
-        else:
-            self._selected_ids.discard(doc_id)
-        if self._selected_ids:
-            self._show_batch_bar()
-        else:
-            self._batch_bar.grid_forget()
-
-    def _toggle_select_all(self):
-        if self._select_all_var.get():
-            self._selected_ids = {d["id"] for d in self._docs}
-        else:
-            self._selected_ids.clear()
+    def _apply_filters(self) -> None:
+        self._page = 0
+        self._selected_ids.clear()
         self._load_documents()
-        if self._selected_ids:
-            self._show_batch_bar()
-        else:
-            self._batch_bar.grid_forget()
 
-    def _show_batch_bar(self):
-        self._batch_bar.grid(row=1, column=0, sticky="ew",
-                             pady=(0, S["2"]))
+    def _clear_filters(self) -> None:
+        if hasattr(self, "_entity_type_combo"):
+            self._entity_type_combo.setCurrentIndex(0)
+        if hasattr(self, "_date_from_entry"):
+            self._date_from_entry.clear()
+        if hasattr(self, "_date_to_entry"):
+            self._date_to_entry.clear()
+        if hasattr(self, "_mime_type_combo"):
+            self._mime_type_combo.setCurrentIndex(0)
+        self._apply_filters()
 
-    # ── Navigation / filters ───────────────────────────────────────────
-
-    def _filter_category(self, category):
+    def _filter_category(self, category: str) -> None:
         self._active_category = category
         self._page = 0
         self._selected_ids.clear()
-        self._load()
+        self.refresh()
 
-    def _on_search(self):
+    def _on_search(self) -> None:
         self._page = 0
         self._selected_ids.clear()
-        self._load()
+        self._load_documents()
 
-    def _on_sort_change(self, choice):
+    def _on_sort_change(self, choice: str) -> None:
         sort_map = {
             t("docs.sort_newest"): "uploaded_at DESC",
             t("docs.sort_oldest"): "uploaded_at ASC",
@@ -943,176 +790,663 @@ class DocumentCenterView(ctk.CTkFrame):
         self._selected_ids.clear()
         self._load_documents()
 
-    def _prev_page(self):
+    # ------------------------------------------------------------------
+    # Paging
+    # ------------------------------------------------------------------
+
+    def _prev_page(self) -> None:
         if self._page > 0:
             self._page -= 1
             self._selected_ids.clear()
             self._load_documents()
 
-    def _next_page(self):
+    def _next_page(self) -> None:
         if self._page < self._total_pages - 1:
             self._page += 1
             self._selected_ids.clear()
             self._load_documents()
 
-    def _update_page_label(self):
-        self._page_label.configure(
-            text=f"{self._page + 1} / {max(1, self._total_pages)}  ({self._total})"
+    def _update_page_label(self) -> None:
+        self._page_label.setText(
+            f"{self._page + 1} / {max(1, self._total_pages)}  ({self._total})"
         )
 
-    # ── Toast ───────────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Detail panel
+    # ------------------------------------------------------------------
 
-    def _show_toast(self, msg):
-        t2 = tk.Toplevel(self)
+    def _show_detail(self, doc: Optional[Dict[str, Any]]) -> None:
+        self._current_detail_doc = doc
+        self._clear_layout(self._detail_content_layout)
+        self._clear_layout(self._detail_actions_layout)
+
+        if doc is None:
+            select_lbl = QLabel(t("docs.select_document"), self._detail_content)
+            select_lbl.setProperty("fontRole", "small")
+            select_lbl.setProperty("role", "detail-placeholder")
+            select_lbl.setWordWrap(True)
+            self._detail_content_layout.addWidget(select_lbl)
+            return
+
+        c = self._detail_content
+        cl = self._detail_content_layout
+
+        # Title
+        title = doc.get("title", doc.get("file_name", ""))
+        title_lbl = QLabel(title, c)
+        title_lbl.setProperty("fontRole", "body_bold")
+        title_lbl.setWordWrap(True)
+        cl.addWidget(title_lbl)
+
+        # Document number
+        doc_num = doc.get("doc_number", "")
+        if doc_num:
+            num_lbl = QLabel(doc_num, c)
+            num_lbl.setProperty("fontRole", "mono")
+            cl.addWidget(num_lbl)
+
+        # Size + mime
+        size = doc.get("file_size", 0)
+        if size < 1024:
+            sz = f"{size} B"
+        elif size < 1024 * 1024:
+            sz = f"{size / 1024:.1f} KB"
+        else:
+            sz = f"{size / (1024 * 1024):.1f} MB"
+        size_lbl = QLabel(f"{sz} | {doc.get('mime_type', '')}", c)
+        size_lbl.setProperty("fontRole", "small")
+        size_lbl.setWordWrap(True)
+        cl.addWidget(size_lbl)
+
+        # ── Tags ──────────────────────────────────────────────────────────
+        tags_header = QLabel(t("docs.tags_label"), c)
+        tags_header.setProperty("fontRole", "label")
+        cl.addWidget(tags_header)
+
+        tag_frame = QWidget(c)
+        tag_frame_layout = QHBoxLayout(tag_frame)
+        tag_frame_layout.setContentsMargins(0, 0, 0, 0)
+        tag_frame_layout.setSpacing(3)
+
+        tags_str = doc.get("tags", "[]")
         try:
-            from ui.styles import Theme
-            Theme.apply(t2)
-        except Exception:
-            pass
-        t2.overrideredirect(True)
-        t2.geometry(f"+{self.winfo_rootx() + 100}+{self.winfo_rooty() + 100}")
-        tk.Label(t2, text=msg, bg=COLORS["success"],
-                 fg=COLORS["text_primary"],
-                 font=FONTS["small"], padx=20, pady=10).pack()
-        self.after(2000, t2.destroy)
+            tag_list = json.loads(tags_str)
+        except (json.JSONDecodeError, TypeError):
+            tag_list = []
+
+        for tg in tag_list:
+            chip = QLabel(tg, tag_frame)
+            chip.setProperty("role", "tag-chip")
+            chip.setProperty("removable", "true")
+            chip.mousePressEvent = lambda e, t=tg, d=doc: self._remove_tag(d["id"], t)
+            tag_frame_layout.addWidget(chip)
+
+        tag_frame_layout.addStretch()
+        cl.addWidget(tag_frame)
+
+        # Add tag entry
+        add_tag_row = QWidget(c)
+        add_tag_layout = QHBoxLayout(add_tag_row)
+        add_tag_layout.setContentsMargins(0, 0, 0, 0)
+        add_tag_layout.setSpacing(S["2"])
+
+        self._tag_entry = StyledLineEdit(add_tag_row, placeholder=t("docs.add_tag"))
+        add_tag_layout.addWidget(self._tag_entry, 1)
+
+        add_tag_btn = ActionButton(
+            add_tag_row, text="+",
+            command=lambda: self._add_tag_action(doc["id"]),
+        )
+        add_tag_btn.setFixedWidth(24)
+        add_tag_layout.addWidget(add_tag_btn)
+
+        cl.addWidget(add_tag_row)
+
+        # ── Linked entities ───────────────────────────────────────────────
+        links = self._service.get_links(doc["id"]) if self._service else []
+        if links:
+            links_header = QLabel(t("docs.linked_to"), c)
+            links_header.setProperty("fontRole", "label")
+            cl.addWidget(links_header)
+            for lk in links:
+                lk_lbl = QLabel(
+                    f"  {lk['linked_entity_type']} #{lk['linked_entity_id']}",
+                    c,
+                )
+                lk_lbl.setProperty("fontRole", "small")
+                cl.addWidget(lk_lbl)
+
+        # ── Expiry date ───────────────────────────────────────────────────
+        expiry = doc.get("expiry_date", "")
+        exp_header = QLabel(t("docs.expiry_label"), c)
+        exp_header.setProperty("fontRole", "label")
+        cl.addWidget(exp_header)
+
+        exp_row = QWidget(c)
+        exp_layout = QHBoxLayout(exp_row)
+        exp_layout.setContentsMargins(0, 0, 0, 0)
+        exp_layout.setSpacing(S["2"])
+
+        self._expiry_entry = StyledLineEdit(
+            exp_row, text=expiry, placeholder="YYYY-MM-DD",
+        )
+        exp_layout.addWidget(self._expiry_entry, 1)
+
+        set_exp_btn = ActionButton(
+            exp_row, text=t("docs.set_expiry"),
+            command=lambda: self._set_expiry(doc["id"]),
+        )
+        exp_layout.addWidget(set_exp_btn)
+
+        cl.addWidget(exp_row)
+
+        # ── Versions ──────────────────────────────────────────────────────
+        versions = self._service.get_versions(doc["id"]) if self._service else []
+        if versions:
+            ver_header = QLabel(t("docs.versions_label"), c)
+            ver_header.setProperty("fontRole", "label")
+            cl.addWidget(ver_header)
+            for v in versions[:5]:
+                vframe = QWidget(c)
+                vlayout = QHBoxLayout(vframe)
+                vlayout.setContentsMargins(0, 0, 0, 0)
+                vlayout.setSpacing(S["2"])
+
+                vtext = (
+                    f"v{v['version_number']}: "
+                    f"{v.get('comment', v['created_at'][:10])}"
+                )
+                v_lbl = QLabel(vtext, vframe)
+                v_lbl.setProperty("fontRole", "small")
+                vlayout.addWidget(v_lbl, 1)
+
+                restore_btn = ActionButton(
+                    vframe, text=t("docs.restore"), variant="ghost",
+                    command=lambda d=doc, vn=v["version_number"]: self._restore_version(d["id"], vn),
+                )
+                vlayout.addWidget(restore_btn)
+
+                cl.addWidget(vframe)
+
+        # Upload version button
+        upload_ver_btn = ActionButton(
+            c, text=t("docs.upload_version"), variant="secondary",
+            command=lambda d=doc: self._upload_version_dialog(d["id"]),
+        )
+        cl.addWidget(upload_ver_btn)
+
+        # ── Bottom action buttons ─────────────────────────────────────────
+        act = self._detail_actions
+        al = self._detail_actions_layout
+
+        view_btn = ActionButton(
+            act, text=t("docs.view"), command=lambda: self._open_document(doc),
+        )
+        al.addWidget(view_btn)
+
+        dl_btn = ActionButton(
+            act, text=t("docs.download_zip"), variant="secondary",
+            command=lambda: self._download_single_zip(doc),
+        )
+        al.addWidget(dl_btn)
+
+        email_btn = ActionButton(
+            act, text=t("docs.email"), variant="secondary",
+            command=lambda: self._email_document(doc),
+        )
+        al.addWidget(email_btn)
+
+        archive_btn = ActionButton(
+            act, text=t("docs.archive"), variant="ghost",
+            command=lambda: self._archive_document(doc),
+        )
+        al.addWidget(archive_btn)
+
+    def _add_tag_action(self, doc_id: int) -> None:
+        tag = self._tag_entry.text().strip() if hasattr(self, "_tag_entry") else ""
+        if tag and self._service:
+            self._service.add_tag(doc_id, tag)
+            self._tag_entry.clear()
+            self._refresh_detail(doc_id)
+
+    def _remove_tag(self, doc_id: int, tag: str) -> None:
+        if self._service:
+            self._service.remove_tag(doc_id, tag)
+            self._refresh_detail(doc_id)
+
+    def _set_expiry(self, doc_id: int) -> None:
+        date = self._expiry_entry.text().strip() if hasattr(self, "_expiry_entry") else ""
+        if date and self._service:
+            self._service.set_expiry_date(doc_id, date)
+            self._show_toast(t("docs.expiry_saved") if hasattr(t, "__call__") else "Expiry date saved")
+            self._refresh_detail(doc_id)
+
+    def _restore_version(self, doc_id: int, version_number: int) -> None:
+        reply = QMessageBox.question(
+            self,
+            t("docs.confirm_restore"),
+            t("docs.confirm_restore_msg").format(v=version_number),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply == QMessageBox.Yes and self._service:
+            self._service.restore_version(doc_id, version_number)
+            self._show_toast(f"Restored version {version_number}")
+            self._refresh_detail(doc_id)
+
+    def _upload_version_dialog(self, doc_id: int) -> None:
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            t("docs.upload_version"),
+            "",
+            "All Supported (*.pdf *.png *.jpg *.jpeg *.docx *.xlsx *.csv *.txt *.zip);;All Files (*.*)",
+        )
+        if not path:
+            return
+        comment, ok = QInputDialog.getText(
+            self, t("docs.upload_version"), t("docs.version_comment"),
+        )
+        if not ok:
+            comment = ""
+        try:
+            if self._service:
+                self._service.upload_new_version(doc_id, path, comment or "", "user")
+                self._show_toast(t("docs.version_uploaded") if hasattr(t, "__call__") else "New version uploaded")
+        except Exception as e:
+            QMessageBox.critical(self, t("docs.version_error"), str(e))
+        self._refresh_detail(doc_id)
+
+    def _refresh_detail(self, doc_id: int) -> None:
+        if self._service is None:
+            return
+        doc = self._service.get_by_id(doc_id)
+        if doc:
+            self._show_detail(doc)
+
+    # ------------------------------------------------------------------
+    # Selection
+    # ------------------------------------------------------------------
+
+    def _toggle_select(self, doc_id: int, checked: bool) -> None:
+        if checked:
+            self._selected_ids.add(doc_id)
+        else:
+            self._selected_ids.discard(doc_id)
+        self._batch_bar.setVisible(bool(self._selected_ids))
+
+    def _toggle_select_all(self) -> None:
+        if self._select_all_cb.isChecked():
+            self._selected_ids = {d["id"] for d in self._docs}
+        else:
+            self._selected_ids.clear()
+        self._load_documents()
+        self._batch_bar.setVisible(bool(self._selected_ids))
+
+    # ------------------------------------------------------------------
+    # Document Actions
+    # ------------------------------------------------------------------
+
+    def _open_document(self, doc: Dict[str, Any]) -> None:
+        if self._service:
+            self._service.open_file(doc["id"])
+
+    def _upload_dialog(self) -> None:
+        paths, _ = QFileDialog.getOpenFileNames(
+            self,
+            t("docs.upload_title"),
+            "",
+            "All Supported (*.pdf *.png *.jpg *.jpeg *.docx *.xlsx *.csv *.txt *.zip *.gif);;"
+            "PDF (*.pdf);;"
+            "Images (*.png *.jpg *.jpeg *.gif);;"
+            "Documents (*.docx *.xlsx *.csv *.txt);;"
+            "All Files (*.*)",
+        )
+        if not paths:
+            return
+        self._process_batch_upload(paths)
+
+    def _process_batch_upload(self, paths: List[str]) -> None:
+        if self._service is None:
+            return
+        result = self._service.batch_upload(
+            paths=paths,
+            category=self._active_category or "",
+            uploaded_by="user",
+        )
+        self.refresh()
+        uploaded = len(result["uploaded"])
+        dups = len(result["duplicates"])
+        failed = len(result["rejected"]) + len(result["failed"])
+
+        msg_parts: List[str] = []
+        if uploaded:
+            msg_parts.append(f"Uploaded: {uploaded}")
+        if dups:
+            msg_parts.append(f"Duplicates skipped: {dups}")
+        if failed:
+            msg_parts.append(f"Failed: {failed}")
+
+        if uploaded > 0:
+            self._show_toast(" | ".join(msg_parts))
+        if failed > 0:
+            details = "\n".join(
+                [
+                    f"  {r['file']}: {r.get('reason', 'Unknown')}"
+                    for r in (result["rejected"] + result["failed"])
+                ][:10]
+            )
+            QMessageBox.warning(
+                self,
+                t("docs.upload_title"),
+                f"Some files were rejected:\n{details}",
+            )
+
+    def _email_document(self, doc: Dict[str, Any]) -> None:
+        recipient, ok = QInputDialog.getText(
+            self,
+            t("docs.email_title"),
+            t("docs.email_prompt"),
+        )
+        if not ok or not recipient:
+            return
+        try:
+            if self._service:
+                ok_sent = self._service.email_document(doc["id"], recipient)
+                if ok_sent:
+                    QMessageBox.information(
+                        self, t("docs.email_title"), t("docs.email_sent"),
+                    )
+                else:
+                    QMessageBox.critical(
+                        self, t("docs.email_title"),
+                        "SMTP not configured. Check settings.",
+                    )
+        except Exception as e:
+            QMessageBox.critical(self, t("docs.email_title"), str(e))
+
+    def _download_zip_selected(self) -> None:
+        if not self._selected_ids:
+            return
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            t("docs.download_zip"),
+            "",
+            "ZIP archive (*.zip)",
+        )
+        if not path:
+            return
+        try:
+            if self._service:
+                self._service.download_zip(list(self._selected_ids), path)
+                QMessageBox.information(
+                    self, t("docs.download_zip"), f"Saved: {path}",
+                )
+        except Exception as e:
+            QMessageBox.critical(self, t("docs.download_zip"), str(e))
+
+    def _download_single_zip(self, doc: Dict[str, Any]) -> None:
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            t("docs.download_zip"),
+            "",
+            "ZIP archive (*.zip)",
+        )
+        if not path:
+            return
+        try:
+            if self._service:
+                self._service.download_zip([doc["id"]], path)
+                QMessageBox.information(
+                    self, t("docs.download_zip"), f"Saved: {path}",
+                )
+        except Exception as e:
+            QMessageBox.critical(self, t("docs.download_zip"), str(e))
+
+    def _delete_document(self, doc: Dict[str, Any]) -> None:
+        name = doc.get("title", doc.get("file_name", ""))
+        reply = QMessageBox.question(
+            self,
+            t("docs.confirm_delete_title"),
+            t("docs.confirm_delete_msg").format(name=name),
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            if self._service:
+                self._service.delete(doc["id"])
+                self._selected_ids.discard(doc["id"])
+        except Exception as e:
+            logger.error("Failed to delete document %d: %s", doc["id"], e)
+            QMessageBox.critical(self, t("docs.confirm_delete_title"), str(e))
+        self.refresh()
+
+    def _archive_document(self, doc: Dict[str, Any]) -> None:
+        if self._service:
+            self._service.archive(doc["id"])
+            self._selected_ids.discard(doc["id"])
+            self.refresh()
+
+    def _batch_delete_selected(self) -> None:
+        if not self._selected_ids:
+            return
+        n = len(self._selected_ids)
+        reply = QMessageBox.question(
+            self,
+            t("docs.confirm_delete_title"),
+            f"Delete {n} selected document(s)?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if reply != QMessageBox.Yes:
+            return
+        try:
+            if self._service:
+                self._service.delete_batch(list(self._selected_ids))
+                self._selected_ids.clear()
+        except Exception as e:
+            QMessageBox.critical(self, t("docs.confirm_delete_title"), str(e))
+        self.refresh()
+
+    # ------------------------------------------------------------------
+    # Toast
+    # ------------------------------------------------------------------
+
+    def _show_toast(self, msg: str) -> None:
+        """Show a temporary toast notification."""
+        try:
+            from ui.widgets.toast import Toast
+
+            Toast.show_success(self, msg, anchor=self)
+        except ImportError:
+            logger.info("Toast widget unavailable; message: %s", msg)
+
+    # ------------------------------------------------------------------
+    # Helpers
+    # ------------------------------------------------------------------
 
     @staticmethod
-    def _icon_for(mime_type):
-        if mime_type == "application/pdf":
-            return "\U0001F4C4"
-        if mime_type in IMAGE_MIME:
-            return "\U0001F5BC"
-        if "spreadsheet" in mime_type or mime_type == "text/csv":
-            return "\U0001F4CA"
-        if "word" in mime_type or mime_type == "text/plain":
-            return "\U0001F4C3"
-        if mime_type == "application/zip":
-            return "\U0001F4E6"
-        return "\U0001F4CE"
+    def _clear_layout(layout) -> None:
+        """Remove all widgets from a layout."""
+        if layout is None:
+            return
+        while layout.count():
+            item = layout.takeAt(0)
+            widget = item.widget()
+            if widget:
+                widget.deleteLater()
+            else:
+                if item.layout():
+                    QtDocumentCenterView._clear_layout(item.layout())
 
 
-def open_entity_documents(parent, db, entity_type, entity_id, title=""):
-    win = ctk.CTkToplevel(parent)
-    win.title(f"Documents — {title}" if title else "Entity Documents")
-    win.geometry("650x500")
-    try:
-        from ui.styles import Theme
-        Theme.apply(win)
-    except Exception:
-        pass
-    win.configure(fg_color=COLORS["bg_base"])
+# ──────────────────────────────────────────────────────────────────────────────
+# Standalone document dialog opener
+# ──────────────────────────────────────────────────────────────────────────────
+
+def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int, title: str = ""):
+    """Open a modal dialog showing documents linked to an entity.
+
+    This is the PySide6 equivalent of the CTk ``open_entity_documents`` helper.
+    It creates a QDialog with a document list, upload button, and view/unlink
+    actions per row.
+
+    Args:
+        parent:  The parent QWidget for the dialog.
+        db:      The database instance.
+        entity_type: "trip", "truck", "driver", etc.
+        entity_id:   Primary key of the entity.
+        title:   Optional display title for the dialog header.
+    """
+    from ui.widgets import ActionButton
 
     service = DocumentService(db)
-    docs = service.get_documents_for_entity(entity_type, entity_id)
 
-    header = ctk.CTkFrame(win, fg_color="transparent")
-    header.pack(fill="x", padx=S["4"], pady=S["4"])
-    ctk.CTkLabel(header, text=f"{title} ({len(docs)} docs)",
-                 font=FONTS["h3"], text_color=COLORS["text_primary"],
-                 anchor="w").pack(side="left")
-
-    upload_btn = ctk.CTkButton(
-        header, text=t("docs.upload"), fg_color=COLORS["accent"],
-        hover_color=COLORS["accent_hover"],
-        text_color="#ffffff", font=FONTS["body"], height=30,
-        command=lambda: _upload_to_entity(win, service, entity_type, entity_id, refresh_fn),
+    dlg = QDialog(parent)
+    dlg.setWindowTitle(f"Documents — {title}" if title else "Entity Documents")
+    dlg.setMinimumSize(650, 500)
+    dlg.setStyleSheet(
+        f"QDialog {{ background-color: {COLORS['bg_base']}; }}"
+        f"QLabel {{ color: {COLORS['text_primary']}; }}"
     )
-    upload_btn.pack(side="right")
 
-    list_frame = ctk.CTkScrollableFrame(
-        win, fg_color=COLORS["bg_base"],
-        scrollbar_button_color=COLORS["border"],
-        scrollbar_button_hover_color=COLORS["border_hover"],
+    layout = QVBoxLayout(dlg)
+    layout.setContentsMargins(S["5"], S["5"], S["5"], S["5"])
+    layout.setSpacing(S["3"])
+
+    # ── Header ────────────────────────────────────────────────────────────
+    header = QFrame()
+    header.setStyleSheet("QFrame { background: transparent; }")
+    header_layout = QHBoxLayout(header)
+    header_layout.setContentsMargins(0, 0, 0, 0)
+
+    count_label = QLabel(f"{title} (0 docs)")
+    count_label.setProperty("fontRole", "h3")
+    header_layout.addWidget(count_label, 1)
+
+    upload_btn = ActionButton(dlg, t("docs.upload"), variant="primary")
+    header_layout.addWidget(upload_btn)
+    layout.addWidget(header)
+
+    # ── Scrollable list area ───────────────────────────────────────────────
+    scroll = QScrollArea()
+    scroll.setWidgetResizable(True)
+    scroll.setFrameShape(QFrame.NoFrame)
+    scroll.setStyleSheet(
+        f"QScrollArea {{ background-color: {COLORS['bg_base']}; border: none; }}"
     )
-    list_frame.pack(fill="both", expand=True, padx=S["4"])
+    list_container = QWidget()
+    list_container.setStyleSheet(f"QWidget {{ background-color: {COLORS['bg_base']}; }}")
+    list_layout = QVBoxLayout(list_container)
+    list_layout.setContentsMargins(0, 0, 0, 0)
+    list_layout.setSpacing(S["2"])
+    list_layout.setAlignment(Qt.AlignTop)
+    scroll.setWidget(list_container)
+    layout.addWidget(scroll, 1)
 
-    def _build_list():
-        for w in list_frame.winfo_children():
-            w.destroy()
-        current_docs = service.get_documents_for_entity(entity_type, entity_id)
-        if not current_docs:
-            ctk.CTkLabel(list_frame, text=t("docs.no_documents"),
-                         font=FONTS["body"],
-                         text_color=COLORS["text_muted"],
-                         anchor="center").pack(pady=S["8"])
+    # ── Build / refresh list ───────────────────────────────────────────────
+    def _refresh():
+        # Clear existing rows
+        while list_layout.count():
+            item = list_layout.takeAt(0)
+            w = item.widget()
+            if w:
+                w.deleteLater()
+
+        docs = service.get_documents_for_entity(entity_type, entity_id)
+        count_label.setText(f"{title} ({len(docs)} docs)")
+
+        if not docs:
+            empty = QLabel(t("docs.no_documents"))
+            empty.setProperty("fontRole", "muted")
+            empty.setAlignment(Qt.AlignCenter)
+            list_layout.addWidget(empty)
             return
-        for doc in current_docs:
-            row = ctk.CTkFrame(list_frame, fg_color=COLORS["bg_surface"],
-                               corner_radius=6)
-            row.pack(fill="x", pady=(0, S["2"]))
 
-            icon = DocumentCenterView._icon_for(doc.get("mime_type", ""))
-            ctk.CTkLabel(row, text=icon, font=("Segoe UI", 18),
-                         text_color=COLORS["text_secondary"],
-                         width=30).pack(side="left", padx=S["3"], pady=S["2"])
+        for doc in docs:
+            row = QFrame()
+            row.setProperty("role", "card")
+            row_layout = QHBoxLayout(row)
+            row_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
+            row_layout.setSpacing(S["3"])
 
-            info = ctk.CTkFrame(row, fg_color="transparent")
-            info.pack(side="left", fill="x", expand=True, pady=S["2"])
-            ctk.CTkLabel(info, text=doc.get("title", doc.get("file_name", "")),
-                         font=FONTS["body_bold"],
-                         text_color=COLORS["text_primary"],
-                         anchor="w").pack(anchor="w")
+            # Icon
+            mime = doc.get("mime_type", "")
+            icon_char = "\U0001F4C1" if mime and "folder" in mime else (
+                "\U0001F4CE" if mime and "image" in mime else "\U0001F4C4"
+            )
+            icon_lbl = QLabel(icon_char)
+            icon_lbl.setFixedWidth(30)
+            icon_lbl.setAlignment(Qt.AlignCenter)
+            row_layout.addWidget(icon_lbl)
 
-            size = doc.get("file_size", 0)
-            if size < 1024:
-                sz = f"{size} B"
-            elif size < 1024 * 1024:
-                sz = f"{size / 1024:.1f} KB"
-            else:
-                sz = f"{size / (1024 * 1024):.1f} MB"
-            ctk.CTkLabel(info, text=f"{doc.get('doc_number', '')} | {sz} | {doc.get('uploaded_at', '')[:10]}",
-                         font=FONTS["small"],
-                         text_color=COLORS["text_muted"],
-                         anchor="w").pack(anchor="w")
+            # Info
+            info = QLabel(
+                f"{doc.get('title', doc.get('file_name', ''))}\n"
+                f"{doc.get('doc_number', '')} | "
+                f"{_fmt_size(doc.get('file_size', 0))} | "
+                f"{str(doc.get('uploaded_at', ''))[:10]}"
+            )
+            info.setProperty("fontRole", "body")
+            row_layout.addWidget(info, 1)
 
-            act = ctk.CTkFrame(row, fg_color="transparent")
-            act.pack(side="right", padx=S["3"])
-            ctk.CTkButton(act, text=t("docs.view"),
-                          fg_color=COLORS["accent"],
-                          hover_color=COLORS["accent_hover"],
-                          text_color="#ffffff", font=FONTS["small"],
-                          width=36, height=22, corner_radius=4,
-                          command=lambda d=doc: service.open_file(d["id"])).pack(
-                side="left", padx=1)
-            ctk.CTkButton(act, text=t("docs.unlink"),
-                          fg_color="transparent",
-                          hover_color=COLORS["danger_dim"],
-                          text_color=COLORS["text_muted"],
-                          font=FONTS["small"],
-                          width=36, height=22, corner_radius=4,
-                          command=lambda d=doc: _unlink_and_refresh(service, d["id"], entity_type, entity_id)).pack(
-                side="left", padx=1)
+            # Actions
+            view_btn = ActionButton(row, t("docs.view"), variant="ghost")
+            view_btn.setFixedWidth(50)
+            view_btn.clicked.connect(lambda checked, d=doc: service.open_file(d["id"]))
+            row_layout.addWidget(view_btn)
 
-    def refresh_fn():
-        _build_list()
-        current = service.get_documents_for_entity(entity_type, entity_id)
-        header.winfo_children()[0].configure(text=f"{title} ({len(current)} docs)")
+            unlink_btn = ActionButton(row, t("docs.unlink"), variant="ghost")
+            unlink_btn.setFixedWidth(50)
+            unlink_btn.clicked.connect(
+                lambda checked, d=doc: _unlink_and_refresh(d["id"])
+            )
+            row_layout.addWidget(unlink_btn)
 
-    def _unlink_and_refresh(svc, doc_id, etype, eid):
-        links = svc.get_links(doc_id)
+            list_layout.addWidget(row)
+
+    def _unlink_and_refresh(doc_id: int):
+        links = service.get_links(doc_id)
         for lk in links:
-            if lk["linked_entity_type"] == etype and lk["linked_entity_id"] == eid:
-                svc.unlink_document(lk["id"])
+            if (lk["linked_entity_type"] == entity_type
+                    and lk["linked_entity_id"] == entity_id):
+                service.unlink_document(lk["id"])
                 break
-        refresh_fn()
+        _refresh()
 
-    _build_list()
+    def _upload():
+        paths, _ = QFileDialog.getOpenFileNames(
+            dlg,
+            t("docs.upload_title"),
+            "",
+            "All Supported (*.pdf *.png *.jpg *.jpeg *.docx *.xlsx *.csv *.txt *.zip);;All Files (*.*)",
+        )
+        if not paths:
+            return
+        for src in paths:
+            try:
+                service.upload(
+                    source_path=src,
+                    entity_type=entity_type,
+                    entity_id=entity_id,
+                    uploaded_by="user",
+                )
+            except Exception:
+                pass
+        _refresh()
+
+    upload_btn.clicked.connect(_upload)
+    _refresh()
+
+    dlg.exec()
 
 
-def _upload_to_entity(win, service, entity_type, entity_id, refresh_fn):
-    paths = filedialog.askopenfilenames(
-        title=t("docs.upload_title"),
-        filetypes=[
-            ("All Supported", "*.pdf;*.png;*.jpg;*.jpeg;*.docx;*.xlsx;*.csv;*.txt;*.zip"),
-            ("All Files", "*.*"),
-        ],
-    )
-    if not paths:
-        return
-    for src in paths:
-        try:
-            service.upload(source_path=src, entity_type=entity_type,
-                          entity_id=entity_id, uploaded_by="user")
-        except Exception:
-            pass
-    refresh_fn()
+def _fmt_size(size: int) -> str:
+    """Format file size in human-readable form."""
+    if size < 1024:
+        return f"{size} B"
+    elif size < 1024 * 1024:
+        return f"{size / 1024:.1f} KB"
+    else:
+        return f"{size / (1024 * 1024):.1f} MB"

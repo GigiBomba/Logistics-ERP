@@ -1,447 +1,552 @@
-"""Live Fleet Tracking view — map + vehicle list with polling."""
+"""PySide6 live fleet tracking view — map + vehicle list with polling.
+
+Replaces ``ui/views/fleet_tracking_view.py``. Uses ``MapWidget`` for the map
+and ``QTimer`` for polling. Fully embedded as a QWidget.
+"""
+
+from __future__ import annotations
+
 import logging
 import threading
-import tkinter as tk
 from datetime import datetime
-from typing import List, Optional
+from typing import Callable, List, Optional
 
-import customtkinter as ctk
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtWidgets import (
+    QWidget,
+    QFrame,
+    QLabel,
+    QVBoxLayout,
+    QHBoxLayout,
+    QScrollArea,
+    QSizePolicy,
+)
 
 from services.fleet_tracking_service import (
     VehiclePosition,
     fleet_tracking_service,
 )
 from services.i18n import t
-from ui.theme import COLORS, FONTS, S, RADIUS_CHIP, btn, divider
+from ui.theme import COLORS, S
+from ui.map.map_widget import MapWidget
+from ui.widgets import ActionButton
 
 logger = logging.getLogger(__name__)
 
 
-class FleetTrackingView:
-    def __init__(self, parent, db, prefs=None, ops=None,
-                 embedded=False, on_navigate=None):
+class QtFleetTrackingView(QWidget):
+    """Live fleet tracking map with a sidebar vehicle list.
+
+    Call ``wakeup()`` when the view becomes active and ``shutdown()`` when
+    hidden to manage the polling timer.
+    """
+
+    POLL_INTERVAL_MS = 30_000
+
+    # Emitted from background thread; main thread slot applies the update
+    _positionsFetched = Signal(list)
+
+    # Status → leaflet marker color name for MapWidget
+    _STATUS_MARKER_COLORS = {
+        "moving":  "green",
+        "stopped": "grey",
+        "idle":    "orange",
+        "offline": "red",
+    }
+
+    # Status → indicator dot colour (hex)
+    _STATUS_DOT_COLORS = {
+        "moving":  COLORS["success"],
+        "stopped": COLORS["text_muted"],
+        "idle":    COLORS["warning"],
+        "offline": COLORS["danger"],
+    }
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        db=None,
+        prefs=None,
+        ops=None,
+        on_navigate: Optional[Callable[[str], None]] = None,
+    ):
+        super().__init__(parent)
         self.db = db
         self.prefs = prefs
         self.ops = ops
         self._on_navigate = on_navigate
-        self._embedded = embedded
 
-        self._map = None
-        self._markers = {}
-        self._vehicle_list = None
-        self._detail_panel = None
-        self._refresh_btn = None
-        self._updated_lbl = None
-        self._after_ids = []
-        self._selected_position = None
+        # ── State ──────────────────────────────────────────────────────
+        self._map: Optional[MapWidget] = None
+        self._vehicle_list_scroll: Optional[QScrollArea] = None
+        self._vehicle_list_content: Optional[QWidget] = None
+        self._vehicle_list_layout: Optional[QVBoxLayout] = None
+        self._detail_panel: Optional[QFrame] = None
+        self._detail_layout: Optional[QVBoxLayout] = None
+        self._refresh_btn: Optional[ActionButton] = None
+        self._updated_lbl: Optional[QLabel] = None
+        self._selected_position: Optional[VehiclePosition] = None
+        self._selected_truck_id: Optional[int] = None
 
-        if embedded:
-            self.win = None
-            self.frame = ctk.CTkFrame(parent, fg_color=COLORS["bg_base"])
-            self.frame.pack(fill="both", expand=True)
-            self._tk_root = parent.winfo_toplevel()
-        else:
-            self.win = ctk.CTkToplevel(parent)
-            self.win.title(f"\U0001f4cd {t('tracking.section_title')}")
-            self.win.geometry("1200x750")
-            self.frame = self.win
-            self._tk_root = self.win
+        # ── Signal: thread-safe UI updates ─────────────────────────────
+        self._positionsFetched.connect(self._apply_update)
 
-        self._build()
+        # ── Polling timer ──────────────────────────────────────────────
+        self._poll_timer = QTimer(self)
+        self._poll_timer.timeout.connect(self._poll_and_update)
+
+        # ── Build ──────────────────────────────────────────────────────
+        self._build_ui()
 
     # ── Lifecycle ─────────────────────────────────────────────────────
 
-    def wakeup(self):
-        """Called when view becomes active."""
+    def wakeup(self) -> None:
+        """Start polling if the tracking service is configured."""
         if fleet_tracking_service.is_configured():
             self._start_polling()
 
-    def shutdown(self):
-        """Called when view is hidden."""
+    def shutdown(self) -> None:
+        """Stop polling and clean up resources."""
         self._stop_polling()
 
     # ── Build ─────────────────────────────────────────────────────────
 
-    def _build(self):
-        self.frame.configure(fg_color=COLORS["bg_base"])
+    def _build_ui(self) -> None:
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
 
         if not fleet_tracking_service.is_configured():
-            self._build_not_configured_state()
+            self._build_not_configured_state(layout)
             return
 
-        self.frame.columnconfigure(0, weight=72)
-        self.frame.columnconfigure(1, weight=28)
-        self.frame.rowconfigure(0, weight=1)
+        # ── Map area (72 %) ────────────────────────────────────────────
+        map_container = QFrame()
+        map_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._build_map(map_container)
+        layout.addWidget(map_container, 72)
 
-        map_frame = ctk.CTkFrame(self.frame, fg_color=COLORS["bg_base"],
-                                 corner_radius=0)
-        map_frame.grid(row=0, column=0, sticky="nsew")
+        # ── Vehicle panel (28 %) ───────────────────────────────────────
+        panel = QFrame()
+        panel.setStyleSheet(
+            f"background-color: {COLORS['bg_surface']};"
+            f"border-left: 1px solid {COLORS['border']};"
+        )
+        panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
 
-        panel = ctk.CTkFrame(self.frame,
-                             fg_color=COLORS["bg_surface"],
-                             corner_radius=0)
-        panel.grid(row=0, column=1, sticky="nsew")
+        panel_layout = QVBoxLayout(panel)
+        panel_layout.setContentsMargins(0, 0, 0, 0)
+        panel_layout.setSpacing(0)
 
-        # 1px left border on right panel
-        ctk.CTkFrame(panel, fg_color=COLORS["border"],
-                     width=1, corner_radius=0).pack(
-                         side="left", fill="y")
-
-        self._build_map(map_frame)
         self._build_vehicle_panel(panel)
 
-    def _build_not_configured_state(self):
-        """Shown when no tracking platform is configured."""
-        f = ctk.CTkFrame(self.frame, fg_color="transparent")
-        f.place(relx=0.5, rely=0.5, anchor="center")
-        ctk.CTkLabel(f, text="\U0001f5fa",
-                     font=("Segoe UI", 64),
-                     text_color=COLORS["text_muted"]
-                     ).pack()
-        ctk.CTkLabel(f, text=t("tracking.not_configured_title"),
-                     font=FONTS["h2"],
-                     text_color=COLORS["text_primary"]
-                     ).pack(pady=(S["4"], S["2"]))
-        ctk.CTkLabel(f, text=t("tracking.not_configured_hint"),
-                     font=FONTS["body"],
-                     text_color=COLORS["text_muted"],
-                     wraplength=360
-                     ).pack()
+        layout.addWidget(panel, 28)
 
-        def go_to_settings():
-            if self._on_navigate:
-                self._on_navigate("settings")
+    def _build_not_configured_state(self, layout: QHBoxLayout) -> None:
+        """Centred message when no tracking platform is configured."""
+        container = QFrame()
+        container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        cl = QVBoxLayout(container)
+        cl.setAlignment(Qt.AlignCenter)
+        cl.setSpacing(S["3"])
 
-        btn(f, t("tracking.go_to_settings"),
-            command=go_to_settings,
-            variant="primary"
-            ).pack(pady=S["6"])
+        # Globe icon
+        icon_lbl = QLabel("\U0001f5fa")
+        icon_lbl.setStyleSheet(f"font-size: 64px; color: {COLORS['text_muted']};")
+        icon_lbl.setAlignment(Qt.AlignCenter)
+        cl.addWidget(icon_lbl)
 
-    def _build_map(self, parent):
-        try:
-            import tkintermapview
-            self._map = tkintermapview.TkinterMapView(
-                parent,
-                corner_radius=0
-            )
-            self._map.pack(fill="both", expand=True)
-            # Default center: Romania
-            self._map.set_position(45.9432, 24.9668)
-            self._map.set_zoom(7)
-            self._map.set_tile_server(
-                "https://a.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            )
-            self._markers = {}
-        except ImportError:
-            ctk.CTkLabel(
-                parent,
-                text=t("tracking.mapview_missing"),
-                font=FONTS["body"],
-                text_color=COLORS["text_muted"]
-            ).place(relx=0.5, rely=0.5, anchor="center")
-            self._map = None
+        # Title
+        title_lbl = QLabel(t("tracking.not_configured_title"))
+        title_lbl.setProperty("fontRole", "h2")
+        title_lbl.setAlignment(Qt.AlignCenter)
+        title_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        cl.addWidget(title_lbl)
 
-    def _build_vehicle_panel(self, parent):
-        # Header
-        header = ctk.CTkFrame(parent, fg_color="transparent",
-                              height=52)
-        header.pack(fill="x")
-        header.pack_propagate(False)
+        # Hint
+        hint_lbl = QLabel(t("tracking.not_configured_hint"))
+        hint_lbl.setProperty("fontRole", "body")
+        hint_lbl.setAlignment(Qt.AlignCenter)
+        hint_lbl.setMaximumWidth(360)
+        hint_lbl.setWordWrap(True)
+        hint_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        cl.addWidget(hint_lbl)
 
-        ctk.CTkLabel(header, text=t("tracking.panel_title"),
-                     font=FONTS["h3"],
-                     text_color=COLORS["text_primary"]
-                     ).pack(side="left", padx=S["5"], anchor="center")
+        # Settings button
+        settings_btn = ActionButton(
+            container,
+            t("tracking.go_to_settings"),
+            command=lambda: self._navigate_settings(),
+            variant="primary",
+        )
+        btn_wrapper = QFrame()
+        btn_wrapper_layout = QHBoxLayout(btn_wrapper)
+        btn_wrapper_layout.setContentsMargins(0, 0, 0, 0)
+        btn_wrapper_layout.setAlignment(Qt.AlignCenter)
+        btn_wrapper_layout.addWidget(settings_btn)
+        cl.addWidget(btn_wrapper)
 
-        # Refresh button + last updated time
-        self._refresh_btn = btn(
+        layout.addWidget(container)
+
+    def _navigate_settings(self) -> None:
+        if self._on_navigate:
+            self._on_navigate("settings")
+
+    def _build_map(self, parent: QFrame) -> None:
+        map_layout = QVBoxLayout(parent)
+        map_layout.setContentsMargins(0, 0, 0, 0)
+        map_layout.setSpacing(0)
+
+        self._map = MapWidget(parent)
+        map_layout.addWidget(self._map)
+
+    def _build_vehicle_panel(self, parent: QFrame) -> None:
+        layout: QVBoxLayout = parent.layout()  # type: ignore[assignment]
+
+        # ── Header row ─────────────────────────────────────────────────
+        header = QFrame()
+        header.setFixedHeight(52)
+        header_layout = QHBoxLayout(header)
+        header_layout.setContentsMargins(S["5"], 0, S["3"], 0)
+        header_layout.setSpacing(S["2"])
+
+        title_lbl = QLabel(t("tracking.panel_title"))
+        title_lbl.setProperty("fontRole", "h3")
+        header_layout.addWidget(title_lbl)
+
+        header_layout.addStretch(1)
+
+        # Last-updated label
+        self._updated_lbl = QLabel("")
+        self._updated_lbl.setProperty("fontRole", "label")
+        self._updated_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        header_layout.addWidget(self._updated_lbl)
+
+        # Refresh button
+        self._refresh_btn = ActionButton(
             header,
             "\u21bb",
             command=self._force_refresh,
-            variant="ghost"
+            variant="ghost",
         )
-        self._refresh_btn.pack(side="right", padx=S["3"])
+        header_layout.addWidget(self._refresh_btn)
 
-        self._updated_lbl = ctk.CTkLabel(
-            header, text="",
-            font=FONTS["label"],
-            text_color=COLORS["text_muted"]
+        layout.addWidget(header)
+
+        # ── Divider ────────────────────────────────────────────────────
+        layout.addWidget(self._make_divider())
+
+        # ── Vehicle list (scrollable) ──────────────────────────────────
+        self._vehicle_list_scroll = QScrollArea()
+        self._vehicle_list_scroll.setWidgetResizable(True)
+        self._vehicle_list_scroll.setFrameShape(QFrame.NoFrame)
+        self._vehicle_list_scroll.setHorizontalScrollBarPolicy(
+            Qt.ScrollBarAlwaysOff
         )
-        self._updated_lbl.pack(side="right")
-
-        divider(parent)
-
-        # Vehicle list (scrollable)
-        self._vehicle_list = ctk.CTkScrollableFrame(
-            parent,
-            fg_color="transparent",
-            scrollbar_button_color=COLORS["border"]
+        self._vehicle_list_scroll.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        self._vehicle_list.pack(fill="both", expand=True)
 
-        # Selected vehicle detail (bottom, fixed height)
-        divider(parent)
-        self._detail_panel = ctk.CTkFrame(
-            parent,
-            fg_color="transparent",
-            height=200
+        self._vehicle_list_content = QWidget()
+        self._vehicle_list_content.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        self._detail_panel.pack(fill="x")
-        self._detail_panel.pack_propagate(False)
+        self._vehicle_list_layout = QVBoxLayout(self._vehicle_list_content)
+        self._vehicle_list_layout.setContentsMargins(0, 0, 0, 0)
+        self._vehicle_list_layout.setSpacing(1)
+        self._vehicle_list_layout.setAlignment(Qt.AlignTop)
+
+        self._vehicle_list_scroll.setWidget(self._vehicle_list_content)
+        layout.addWidget(self._vehicle_list_scroll, 1)
+
+        # ── Divider ────────────────────────────────────────────────────
+        layout.addWidget(self._make_divider())
+
+        # ── Detail panel (bottom, fixed height) ────────────────────────
+        self._detail_panel = QFrame()
+        self._detail_panel.setFixedHeight(200)
+        self._detail_layout = QVBoxLayout(self._detail_panel)
+        self._detail_layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
+        self._detail_layout.setSpacing(S["1"])
+        self._detail_layout.setAlignment(Qt.AlignTop)
+        layout.addWidget(self._detail_panel)
+
+    # ── Helpers ───────────────────────────────────────────────────────
+
+    @staticmethod
+    def _make_divider() -> QFrame:
+        line = QFrame()
+        line.setFrameShape(QFrame.HLine)
+        line.setStyleSheet(f"color: {COLORS['border']};")
+        line.setFixedHeight(1)
+        return line
 
     # ── Vehicle rows ──────────────────────────────────────────────────
 
-    def _build_vehicle_row(self, position: VehiclePosition,
-                           matched_truck_id: Optional[int]) -> None:
-        row = ctk.CTkFrame(
-            self._vehicle_list,
-            fg_color="transparent",
-            corner_radius=RADIUS_CHIP,
-            height=52,
-            cursor="hand2"
+    def _build_vehicle_row(
+        self,
+        position: VehiclePosition,
+        matched_truck_id: Optional[int],
+    ) -> None:
+        row = QFrame()
+        row.setFixedHeight(52)
+        row.setCursor(Qt.PointingHandCursor)
+        row.setProperty("class", "vehicle-row")
+        row.setStyleSheet(
+            "QFrame {"
+            f"  background-color: transparent;"
+            f"  border-radius: {S['1']}px;"
+            "}"
+            "QFrame:hover {"
+            f"  background-color: {COLORS['bg_elevated']};"
+            "}"
         )
-        row.pack(fill="x", padx=S["2"], pady=1)
-        row.pack_propagate(False)
 
-        # Status indicator dot
-        status_color = {
-            "moving":  COLORS["success"],
-            "stopped": COLORS["text_muted"],
-            "idle":    COLORS["warning"],
-            "offline": COLORS["danger"],
-        }.get(position.status, COLORS["text_muted"])
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(S["3"], 0, S["3"], 0)
+        row_layout.setSpacing(S["2"])
 
-        dot = ctk.CTkLabel(row, text="\u25cf",
-                           font=FONTS["small"],
-                           text_color=status_color,
-                           width=20)
-        dot.pack(side="left", padx=(S["3"], 0))
-
-        # Vehicle name
-        info = ctk.CTkFrame(row, fg_color="transparent")
-        info.pack(side="left", fill="x", expand=True, padx=S["2"])
-
-        ctk.CTkLabel(info, text=position.name,
-                     font=FONTS["body_bold"],
-                     text_color=COLORS["text_primary"],
-                     anchor="w").pack(anchor="w")
-
-        detail_str = (
-            f"{position.speed_kmh:.0f} km/h" if position.speed_kmh > 3
-            else (position.address[:30] + "\u2026"
-                  if position.address and len(position.address) > 30
-                  else position.address or t("tracking.stopped"))
+        # ── Status indicator dot ───────────────────────────────────────
+        dot_color = self._STATUS_DOT_COLORS.get(
+            position.status, COLORS["text_muted"]
         )
-        ctk.CTkLabel(info, text=detail_str,
-                     font=FONTS["small"],
-                     text_color=COLORS["text_secondary"],
-                     anchor="w").pack(anchor="w")
+        dot = QFrame()
+        dot.setFixedSize(10, 10)
+        dot.setStyleSheet(
+            f"background-color: {dot_color}; border-radius: 5px;"
+        )
+        row_layout.addWidget(dot)
 
-        # Hover effects
-        def on_enter(e):
-            row.configure(fg_color=COLORS["bg_elevated"])
+        # ── Vehicle info ───────────────────────────────────────────────
+        info = QFrame()
+        info.setStyleSheet("background-color: transparent;")
+        info_layout = QVBoxLayout(info)
+        info_layout.setContentsMargins(0, 0, 0, 0)
+        info_layout.setSpacing(0)
 
-        def on_leave(e):
-            row.configure(fg_color="transparent")
+        name_lbl = QLabel(position.name)
+        name_lbl.setProperty("fontRole", "body_bold")
+        info_layout.addWidget(name_lbl)
 
+        detail_str = self._vehicle_detail_text(position)
+        detail_lbl = QLabel(detail_str)
+        detail_lbl.setProperty("fontRole", "small")
+        detail_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; "
+                                 "background-color: transparent;")
+        info_layout.addWidget(detail_lbl)
+
+        row_layout.addWidget(info, 1)
+
+        # ── Click handler ──────────────────────────────────────────────
         def on_click(e, p=position, tid=matched_truck_id):
             self._select_vehicle(p, tid)
 
-        for w in (row, dot, info):
-            w.bind("<Enter>", on_enter)
-            w.bind("<Leave>", on_leave)
-            w.bind("<Button-1>", on_click)
+        row.mousePressEvent = on_click
 
-    def _select_vehicle(self, position: VehiclePosition,
-                        truck_id: Optional[int]) -> None:
-        """Pan map to vehicle + show detail panel."""
+        self._vehicle_list_layout.addWidget(row)
+
+    @staticmethod
+    def _vehicle_detail_text(position: VehiclePosition) -> str:
+        if position.speed_kmh > 3:
+            return f"{position.speed_kmh:.0f} km/h"
+        if position.address:
+            return position.address[:30] + "\u2026" if len(position.address) > 30 else position.address
+        return t("tracking.stopped")
+
+    def _select_vehicle(
+        self,
+        position: VehiclePosition,
+        truck_id: Optional[int],
+    ) -> None:
+        """Pan map to vehicle and show detail panel."""
+        self._selected_position = position
+        self._selected_truck_id = truck_id
+
         if self._map and position.latitude and position.longitude:
-            self._map.set_position(position.latitude, position.longitude)
-            self._map.set_zoom(14)
+            self._map.set_view(position.latitude, position.longitude, zoom=14)
 
-        # Build detail panel
-        for w in self._detail_panel.winfo_children():
-            w.destroy()
+        self._show_detail_panel(position, truck_id)
 
-        f = ctk.CTkFrame(self._detail_panel,
-                         fg_color="transparent")
-        f.pack(fill="both", expand=True, padx=S["5"], pady=S["4"])
+    def _show_detail_panel(
+        self,
+        position: VehiclePosition,
+        truck_id: Optional[int],
+    ) -> None:
+        """Rebuild the detail panel for the selected vehicle."""
+        # Clear existing detail content
+        while self._detail_layout.count():
+            item = self._detail_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
-        ctk.CTkLabel(f, text=position.name,
-                     font=FONTS["h3"],
-                     text_color=COLORS["text_primary"],
-                     anchor="w").pack(anchor="w")
+        # Name
+        name_lbl = QLabel(position.name)
+        name_lbl.setProperty("fontRole", "h3")
+        name_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        self._detail_layout.addWidget(name_lbl)
 
-        details = [
-            (t("tracking.d_status"),  position.status.title()),
-            (t("tracking.d_speed"),   f"{position.speed_kmh:.0f} km/h"),
-            (t("tracking.d_updated"), position.timestamp.strftime("%H:%M:%S")),
+        # Detail rows
+        details: List[tuple] = [
+            (t("tracking.d_status"), position.status.title()),
+            (t("tracking.d_speed"), f"{position.speed_kmh:.0f} km/h"),
+            (t("tracking.d_updated"),
+             position.timestamp.strftime("%H:%M:%S")),
         ]
         if position.odometer_km:
-            details.append((t("tracking.d_odometer"),
-                            f"{position.odometer_km:,.0f} km"))
+            details.append(
+                (t("tracking.d_odometer"),
+                 f"{position.odometer_km:,.0f} km"),
+            )
         if position.address:
-            addr = (position.address[:40] + "\u2026"
-                    if len(position.address) > 40
-                    else position.address)
+            addr = position.address[:40] + "\u2026" if len(
+                position.address) > 40 else position.address
             details.append((t("tracking.d_address"), addr))
 
-        for label, value in details:
-            row = ctk.CTkFrame(f, fg_color="transparent")
-            row.pack(fill="x", pady=1)
-            ctk.CTkLabel(row, text=label,
-                         font=FONTS["label"],
-                         text_color=COLORS["text_muted"],
-                         width=90, anchor="w").pack(side="left")
-            ctk.CTkLabel(row, text=value,
-                         font=FONTS["small"],
-                         text_color=COLORS["text_primary"],
-                         anchor="w").pack(side="left")
+        for label_text, value_text in details:
+            row_f = QFrame()
+            row_f.setStyleSheet("background-color: transparent;")
+            row_f_layout = QHBoxLayout(row_f)
+            row_f_layout.setContentsMargins(0, 0, 0, 0)
+            row_f_layout.setSpacing(S["2"])
 
+            label_w = QLabel(label_text)
+            label_w.setProperty("fontRole", "label")
+            label_w.setStyleSheet(f"color: {COLORS['text_muted']};")
+            label_w.setFixedWidth(90)
+            row_f_layout.addWidget(label_w)
+
+            value_w = QLabel(value_text)
+            value_w.setProperty("fontRole", "small")
+            value_w.setStyleSheet(f"color: {COLORS['text_primary']};")
+            row_f_layout.addWidget(value_w)
+
+            row_f_layout.addStretch(1)
+            self._detail_layout.addWidget(row_f)
+
+        # Fleet detail button (when a db match exists)
         if truck_id:
-            def view_fleet():
+            def on_fleet_detail():
                 if self._on_navigate:
                     self._on_navigate("fleet")
 
-            btn(f, t("tracking.btn_fleet_detail"),
-                command=view_fleet,
-                variant="ghost"
-                ).pack(anchor="w", pady=(S["3"], 0))
+            fleet_btn = ActionButton(
+                self._detail_panel,
+                t("tracking.btn_fleet_detail"),
+                command=on_fleet_detail,
+                variant="ghost",
+            )
+            self._detail_layout.addWidget(fleet_btn)
 
     # ── Map markers ───────────────────────────────────────────────────
 
-    def _update_map_markers(self,
-                            positions: List[VehiclePosition]) -> None:
+    def _update_map_markers(self, positions: List[VehiclePosition]) -> None:
         if not self._map:
             return
 
-        current_ids = {p.device_id for p in positions}
+        self._map.clear_overlays()
 
-        # Remove markers for vehicles no longer in data
-        for device_id in list(self._markers.keys()):
-            if device_id not in current_ids:
-                try:
-                    self._markers[device_id].delete()
-                except Exception:
-                    pass
-                del self._markers[device_id]
-
-        # Add or update markers
         for pos in positions:
             if not pos.latitude or not pos.longitude:
                 continue
 
-            # Marker color based on status
-            color = {
-                "moving":  "#22c55e",
-                "stopped": "#94a3b8",
-                "idle":    "#f59e0b",
-                "offline": "#ef4444",
-            }.get(pos.status, "#94a3b8")
+            color = self._STATUS_MARKER_COLORS.get(pos.status, "grey")
 
             marker_text = f"\U0001f69b {pos.name}"
             if pos.speed_kmh > 3:
                 marker_text += f" {pos.speed_kmh:.0f}km/h"
 
-            if pos.device_id in self._markers:
-                # Update position
-                self._markers[pos.device_id].set_position(
-                    pos.latitude, pos.longitude
-                )
-                self._markers[pos.device_id].set_text(marker_text)
-            else:
-                # Create new marker
-                try:
-                    marker = self._map.set_marker(
-                        pos.latitude, pos.longitude,
-                        text=marker_text,
-                        marker_color_circle=color,
-                        marker_color_outside=color,
-                    )
-                    self._markers[pos.device_id] = marker
-                except Exception as e:
-                    logger.warning("Could not add marker: %s", e)
+            self._map.add_marker(
+                pos.latitude, pos.longitude,
+                label=marker_text,
+                color=color,
+            )
 
     # ── Vehicle list refresh ──────────────────────────────────────────
 
-    def _refresh_vehicle_list(self,
-                              positions: List[VehiclePosition]) -> None:
-        for w in self._vehicle_list.winfo_children():
-            w.destroy()
+    def _refresh_vehicle_list(self, positions: List[VehiclePosition]) -> None:
+        """Clear and rebuild the vehicle list."""
+        # Remove existing rows
+        while self._vehicle_list_layout.count():
+            item = self._vehicle_list_layout.takeAt(0)
+            widget = item.widget()
+            if widget is not None:
+                widget.deleteLater()
 
         if not positions:
-            ctk.CTkLabel(self._vehicle_list,
-                         text=t("tracking.no_vehicles"),
-                         font=FONTS["body"],
-                         text_color=COLORS["text_muted"]
-                         ).pack(pady=S["8"])
+            no_data = QLabel(t("tracking.no_vehicles"))
+            no_data.setProperty("fontRole", "body")
+            no_data.setStyleSheet(f"color: {COLORS['text_muted']};")
+            no_data.setAlignment(Qt.AlignCenter)
+            no_data.setFixedHeight(80)
+            self._vehicle_list_layout.addWidget(no_data)
             return
 
-        for pos in sorted(positions,
-                           key=lambda p: p.name.lower()):
+        for pos in sorted(positions, key=lambda p: p.name.lower()):
             truck_id = fleet_tracking_service.match_to_truck(pos)
             self._build_vehicle_row(pos, truck_id)
 
-        self._updated_lbl.configure(
-            text=datetime.now().strftime("%H:%M:%S")
-        )
+        self._updated_lbl.setText(datetime.now().strftime("%H:%M:%S"))
 
     # ── Polling ───────────────────────────────────────────────────────
 
     def _poll_and_update(self) -> None:
-        """Runs in background thread — fetches positions."""
+        """Start a background thread to fetch positions."""
+        thread = threading.Thread(target=self._fetch_positions, daemon=True)
+        thread.start()
+
+    def _fetch_positions(self) -> None:
+        """Fetch positions in background — emits signal to update UI."""
         try:
             positions = fleet_tracking_service.get_positions(
-                force_refresh=True
+                force_refresh=True,
             )
-            # Update UI on main thread
-            self.frame.after(0, lambda p=positions: self._apply_update(p))
+            self._positionsFetched.emit(positions)
         except Exception as e:
             logger.error("Tracking poll error: %s", e)
 
     def _apply_update(self, positions: List[VehiclePosition]) -> None:
+        """Main-thread slot: update map markers and vehicle list."""
         self._update_map_markers(positions)
         self._refresh_vehicle_list(positions)
-        # Schedule next poll
-        self._schedule_next_poll()
-
-    def _schedule_next_poll(self):
-        try:
-            aid = self._tk_root.after(30_000, self._poll_and_update)
-            self._after_ids.append(aid)
-        except tk.TclError:
-            pass
 
     def _start_polling(self) -> None:
         # Initial load immediately
         self._poll_and_update()
+        # Start timer for subsequent polls
+        self._poll_timer.start(self.POLL_INTERVAL_MS)
 
     def _stop_polling(self) -> None:
-        for aid in self._after_ids:
-            try:
-                self._tk_root.after_cancel(aid)
-            except tk.TclError:
-                pass
-        self._after_ids.clear()
+        self._poll_timer.stop()
 
     # ── Refresh button ────────────────────────────────────────────────
 
     def _force_refresh(self) -> None:
-        self._refresh_btn.configure(state="disabled")
+        if self._refresh_btn:
+            self._refresh_btn.setEnabled(False)
 
         def do():
             try:
                 positions = fleet_tracking_service.get_positions(
-                    force_refresh=True
+                    force_refresh=True,
                 )
-                self.frame.after(0, lambda p=positions: (
-                    self._apply_update(p),
-                    self._refresh_btn.configure(state="normal")
-                ))
+                # Re-enable button on main thread
+                QTimer.singleShot(0, self._enable_refresh_btn)
+                self._positionsFetched.emit(positions)
             except Exception as e:
                 logger.error("Force refresh failed: %s", e)
-                self.frame.after(0, lambda: (
-                    self._refresh_btn.configure(state="normal")
-                ))
+                QTimer.singleShot(0, self._enable_refresh_btn)
 
-        threading.Thread(target=do, daemon=True).start()
+        thread = threading.Thread(target=do, daemon=True)
+        thread.start()
+
+    def _enable_refresh_btn(self) -> None:
+        if self._refresh_btn:
+            self._refresh_btn.setEnabled(True)
+
+    # ── Cleanup ───────────────────────────────────────────────────────
+
+    def closeEvent(self, event) -> None:
+        """Ensure cleanup on close."""
+        self.shutdown()
+        super().closeEvent(event)

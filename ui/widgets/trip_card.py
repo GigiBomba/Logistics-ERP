@@ -1,21 +1,60 @@
-import tkinter as tk
-import customtkinter as ctk
+"""QtTripCard — PySide6 trip card widget for the dispatch board.
+
+Replaces ``ui/widgets/trip_card.py`` (CTkFrame). A self-contained card
+showing trip ID, status chip, truck/driver assignment rows, route,
+dates, alerts, and live GPS position. Supports click-to-select with
+Ctrl+modifier, drag initiation, clickable assignment labels, and
+inline error messages with auto-dismiss.
+
+All styling is driven by the global QSS theme via the ``role="card"``
+property selector and per-widget ``fontRole`` properties. Minimal inline
+stylesheets are used only for dynamic state (hover, selection, delayed).
+"""
+
+from __future__ import annotations
+
 import logging
-from ui.styles import Theme
-from ui.theme import COLORS, FONTS
+from typing import Any, Callable, Optional
+
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QMouseEvent
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
+)
+
+from ui.theme import COLORS, S
 from services.i18n import t
-from utils.tk_helpers import safe_destroy
 
 logger = logging.getLogger(__name__)
 
 
-class TripCard(ctk.CTkFrame):
+class QtTripCard(QFrame):
+    """Dispatch board trip card with status chip, assignments, and live position.
 
-    CARD_BG = Theme.SURFACE2
-    CARD_BG_HOVER = Theme.SURFACE3
-    CARD_BORDER = Theme.BORDER
-    CARD_BORDER_HOVER = Theme.ACCENT
-    CORNER_RADIUS = 8
+    A QFrame-based card that reproduces the CTkFrame ``TripCard`` API for the
+    PySide6 migration. Appearance is controlled by the global QSS theme via
+    the ``role="card"`` property, with dynamic inline overrides for hover
+    and selection states.
+
+    Layout (vertical content area, left accent bar):
+        Row 1 — trip ID + status chip + delayed chip
+        Row 2 — truck icon + truck plate (clickable) + clear button
+        Row 3 — "⚡ Assign Both" link (clickable)
+        Row 4 — driver icon + driver name (clickable) + clear button
+        Row 5 — route text (origin → destination)
+        Row 6 — departure / ETA dates
+        Row 7 — alerts count banner (conditional)
+        Row 8 — live position indicator (hidden by default)
+    """
+
+    CARD_BG = COLORS["bg_surface"]
+    CARD_BG_HOVER = COLORS["bg_elevated"]
+    CARD_BORDER = COLORS["border"]
+    CARD_BORDER_HOVER = COLORS["accent"]
     LEFT_ACCENT_WIDTH = 4
 
     STATUS_COLORS = {
@@ -37,433 +76,630 @@ class TripCard(ctk.CTkFrame):
     DELAYED_COLOR = COLORS["danger"]
     DELAYED_BG = COLORS["danger_dim"]
 
-    def __init__(self, parent, trip_data: dict, on_click=None, on_drag_start=None,
-                 on_assign_truck=None, on_assign_driver=None, on_select_changed=None,
-                 on_assign_both=None, **kwargs):
-        super().__init__(parent, fg_color=self.CARD_BG, **kwargs)
-        self.trip_data = trip_data
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        trip_data: Optional[dict[str, Any]] = None,
+        on_click: Optional[Callable[[dict[str, Any]], None]] = None,
+        on_drag_start: Optional[Callable[[QWidget, QMouseEvent], None]] = None,
+        on_assign_truck: Optional[Callable[[QWidget], None]] = None,
+        on_assign_driver: Optional[Callable[[QWidget], None]] = None,
+        on_select_changed: Optional[Callable[[QWidget, bool], None]] = None,
+        on_assign_both: Optional[Callable[[QWidget], None]] = None,
+    ) -> None:
+        super().__init__(parent)
+        self.setProperty("role", "card")
+        self.setFrameShape(QFrame.StyledPanel)
+
+        self.trip_data: dict[str, Any] = trip_data or {}
         self._on_click = on_click
         self._on_drag_start = on_drag_start
         self._on_assign_truck = on_assign_truck
         self._on_assign_driver = on_assign_driver
         self._on_select_changed = on_select_changed
         self._on_assign_both = on_assign_both
+
+        # ── State flags ───────────────────────────────────────────────────
         self._hovered = False
-        self._drag_data = {"x": 0, "y": 0, "dragging": False}
-        self._active_dropdown = None
-        self._delayed = False
         self._selected = False
+        self._delayed = False
+        self._drag_start_pos: Optional[QMouseEvent] = None
+        self._dragging = False
 
-        self._truck_lbl = None
-        self._truck_clear_btn = None
-        self._driver_lbl = None
-        self._driver_clear_btn = None
-        self._accent_bar = None
-        self._date_lbl = None
-        self._delayed_chip = None
-        self._content_frame = None
-
-        self.configure(border_width=1, border_color=self.CARD_BORDER, corner_radius=8)
+        # ── Widget references (populated by _build_card) ──────────────────
+        self._accent_bar: Optional[QFrame] = None
+        self._content_widget: Optional[QWidget] = None
+        self._chip_frame: Optional[QFrame] = None
+        self._chip_lbl: Optional[QLabel] = None
+        self._delayed_chip: Optional[QFrame] = None
+        self._truck_lbl: Optional[QLabel] = None
+        self._truck_clear_btn: Optional[QLabel] = None
+        self._driver_lbl: Optional[QLabel] = None
+        self._driver_clear_btn: Optional[QLabel] = None
+        self._both_lbl: Optional[QLabel] = None
+        self._route_lbl: Optional[QLabel] = None
+        self._date_lbl: Optional[QLabel] = None
+        self._alert_frame: Optional[QFrame] = None
+        self._live_row: Optional[QWidget] = None
+        self._live_speed: Optional[QLabel] = None
+        self._error_lbl: Optional[QLabel] = None
+        self._error_timer: Optional[QTimer] = None
 
         self._build_card()
-        self.bind("<Enter>", self._on_enter)
-        self.bind("<Leave>", self._on_leave)
-        self.bind("<ButtonPress-1>", self._on_press)
-        self.bind("<B1-Motion>", self._on_motion)
-        self.bind("<ButtonRelease-1>", self._on_release)
-        if on_click:
-            self.configure(cursor="hand2")
 
-    def _build_card(self):
+        if on_click:
+            self.setCursor(Qt.PointingHandCursor)
+
+    # ── Card construction ──────────────────────────────────────────────────
+
+    def _build_card(self) -> None:
+        """Build the complete card UI from ``self.trip_data``."""
         d = self.trip_data
         status = d.get("status", "Planned")
         accent_color = self.STATUS_COLORS.get(status, COLORS["chip_planned"])
 
-        self._accent_bar = ctk.CTkFrame(self, fg_color=accent_color, width=self.LEFT_ACCENT_WIDTH)
-        self._accent_bar.pack(side="left", fill="y")
-        self._accent_bar.pack_propagate(False)
+        # Outer horizontal layout: accent bar | content
+        outer_layout = QHBoxLayout(self)
+        outer_layout.setContentsMargins(0, 0, 0, 0)
+        outer_layout.setSpacing(0)
 
-        self._content_frame = ctk.CTkFrame(self, fg_color=self.CARD_BG)
-        self._content_frame.pack(side="left", fill="both", expand=True)
+        # ── Left accent bar ─────────────────────────────────────────────
+        self._accent_bar = QFrame()
+        self._accent_bar.setFixedWidth(self.LEFT_ACCENT_WIDTH)
+        self._accent_bar.setStyleSheet(
+            f"background-color: {accent_color}; border: none; border-radius: 0px;"
+        )
+        outer_layout.addWidget(self._accent_bar)
 
-        self._content_frame.bind("<Enter>", self._on_enter)
-        self._content_frame.bind("<Leave>", self._on_leave)
-        self._content_frame.bind("<ButtonPress-1>", self._on_press)
-        self._content_frame.bind("<B1-Motion>", self._on_motion)
-        self._content_frame.bind("<ButtonRelease-1>", self._on_release)
+        # ── Content area ────────────────────────────────────────────────
+        self._content_widget = QWidget()
+        content_layout = QVBoxLayout(self._content_widget)
+        content_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
+        content_layout.setSpacing(S["1"])
 
-        row1 = ctk.CTkFrame(self._content_frame, fg_color="transparent")
-        row1.pack(fill="x", pady=(0, 3))
-        self._bind_row(row1)
+        # Row 1 — trip ID + status chip + delayed chip
+        row1 = QWidget()
+        row1_layout = QHBoxLayout(row1)
+        row1_layout.setContentsMargins(0, 0, 0, 0)
+        row1_layout.setSpacing(S["1"])
 
         trip_id = d.get("trip_id", t("common.na"))
-        id_lbl = ctk.CTkLabel(row1, text=trip_id, fg_color="transparent", text_color=Theme.TEXT,
-                              font=FONTS["small"])
-        id_lbl.pack(side="left")
-        self._bind_label(row1, id_lbl)
+        id_lbl = QLabel(str(trip_id))
+        id_lbl.setProperty("fontRole", "small")
+        row1_layout.addWidget(id_lbl)
 
-        chip_container = ctk.CTkFrame(row1, fg_color="transparent")
-        chip_container.pack(side="right")
+        row1_layout.addStretch(1)
 
-        self._delayed_chip = ctk.CTkFrame(chip_container, fg_color=self.DELAYED_COLOR)
-        delayed_lbl = ctk.CTkLabel(self._delayed_chip, text=t("dispatch_board.delayed"),
-                                   fg_color=self.DELAYED_COLOR, text_color=COLORS["text_primary"],
-                                    font=FONTS["label"])
-        delayed_lbl.pack()
+        # Delayed chip (hidden by default)
+        self._delayed_chip = QFrame()
+        self._delayed_chip.setStyleSheet(
+            f"background-color: {self.DELAYED_COLOR}; border-radius: 3px;"
+        )
+        delayed_chip_layout = QHBoxLayout(self._delayed_chip)
+        delayed_chip_layout.setContentsMargins(S["1"], 1, S["1"], 1)
+        delayed_chip_layout.setSpacing(0)
+        delayed_lbl = QLabel(t("dispatch_board.delayed"))
+        delayed_lbl.setProperty("fontRole", "label")
+        delayed_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        delayed_chip_layout.addWidget(delayed_lbl)
+        if d.get("delayed", False):
+            row1_layout.addWidget(self._delayed_chip)
+        else:
+            self._delayed_chip.hide()
 
-        self._chip_frame = ctk.CTkFrame(chip_container, fg_color=accent_color)
-        self._chip_frame.pack(side="right", padx=(4, 0))
-        self._chip_lbl = ctk.CTkLabel(self._chip_frame, text=t(self.STATUS_TRANSLATION_KEYS.get(status, status)), fg_color=accent_color, text_color=COLORS["text_primary"],
-                                      font=FONTS["label"])
-        self._chip_lbl.pack()
+        # Status chip
+        self._chip_frame = QFrame()
+        self._chip_frame.setStyleSheet(
+            f"background-color: {accent_color}; border-radius: 3px;"
+        )
+        chip_frame_layout = QHBoxLayout(self._chip_frame)
+        chip_frame_layout.setContentsMargins(S["1"], 1, S["1"], 1)
+        chip_frame_layout.setSpacing(0)
+        translation_key = self.STATUS_TRANSLATION_KEYS.get(status)
+        self._chip_lbl = QLabel(
+            t(translation_key if translation_key is not None else status)
+        )
+        self._chip_lbl.setProperty("fontRole", "label")
+        self._chip_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        chip_frame_layout.addWidget(self._chip_lbl)
+        row1_layout.addWidget(self._chip_frame)
 
-        truck_row = ctk.CTkFrame(self._content_frame, fg_color="transparent")
-        truck_row.pack(fill="x", pady=(0, 2))
-        truck_row.bind("<Enter>", self._on_enter)
-        truck_row.bind("<Leave>", self._on_leave)
+        content_layout.addWidget(row1)
 
-        truck_icon = ctk.CTkLabel(truck_row, text="\U0001f69a", fg_color="transparent", text_color=Theme.MUTED,
-                                  font=FONTS["label"])
-        truck_icon.pack(side="left")
+        # Row 2 — truck icon + truck plate (clickable)
+        truck_row = QWidget()
+        truck_row.setSizePolicy(
+            truck_row.sizePolicy().horizontalPolicy(),
+            truck_row.sizePolicy().verticalPolicy(),
+        )
+        truck_row_layout = QHBoxLayout(truck_row)
+        truck_row_layout.setContentsMargins(0, 0, 0, 0)
+        truck_row_layout.setSpacing(S["1"])
+
+        truck_icon = QLabel("\U0001f69a")
+        truck_icon.setProperty("fontRole", "label")
+        truck_icon.setStyleSheet(f"color: {COLORS['text_muted']};")
+        truck_row_layout.addWidget(truck_icon)
 
         plate = d.get("truck_plate", "")
         plate_text = plate if plate else t("dispatch_board.assign_truck")
-        plate_color = Theme.TEXT if plate else Theme.MUTED
-        self._truck_lbl = ctk.CTkLabel(truck_row, text=plate_text, fg_color="transparent", text_color=plate_color,
-                                        font=FONTS["label"], cursor="hand2")
-        self._truck_lbl.pack(side="left", padx=(4, 0))
-        self._truck_lbl.bind("<Button-1>", self._on_truck_click)
-        self._truck_lbl.bind("<Enter>", lambda e: self._truck_lbl.configure(text_color=Theme.ACCENT))
-        self._truck_lbl.bind("<Leave>", lambda e: self._truck_lbl.configure(text_color=plate_color))
+        plate_color = COLORS["text_primary"] if plate else COLORS["text_muted"]
+        self._truck_lbl = QLabel(plate_text)
+        self._truck_lbl.setProperty("fontRole", "small")
+        self._truck_lbl.setStyleSheet(f"color: {plate_color};")
+        self._truck_lbl.setCursor(Qt.PointingHandCursor)
+        self._truck_lbl.mousePressEvent = self._on_truck_click  # type: ignore[assignment]
+        truck_row_layout.addWidget(self._truck_lbl)
 
+        truck_row_layout.addStretch(1)
+
+        # Clear button (only if plate is set)
         if plate:
-            self._truck_clear_btn = ctk.CTkLabel(truck_row, text="\u2715", fg_color="transparent",
-                                                  text_color=Theme.MUTED, font=FONTS["label"],
-                                                cursor="hand2")
-            self._truck_clear_btn.pack(side="right", padx=(4, 0))
-            self._truck_clear_btn.bind("<Button-1>", self._on_truck_clear)
+            self._truck_clear_btn = QLabel("\u2715")
+            self._truck_clear_btn.setProperty("fontRole", "label")
+            self._truck_clear_btn.setStyleSheet(f"color: {COLORS['text_muted']};")
+            self._truck_clear_btn.setCursor(Qt.PointingHandCursor)
+            self._truck_clear_btn.mousePressEvent = self._on_truck_clear  # type: ignore[assignment]
+            truck_row_layout.addWidget(self._truck_clear_btn)
 
-        both_row = ctk.CTkFrame(self._content_frame, fg_color="transparent")
-        both_row.pack(fill="x", pady=(0, 1))
-        both_label = ctk.CTkLabel(both_row, text="\u26a1 " + t("dispatch_board.assign_both"),
-                                  fg_color="transparent", text_color=Theme.ACCENT,
-                                  font=FONTS["label"], cursor="hand2")
-        both_label.pack(side="left", padx=(20, 0))
-        both_label.bind("<Button-1>", self._on_both_click)
-        both_label.bind("<Enter>", lambda e: both_label.configure(text_color=Theme.ACCENT_HOVER))
-        both_label.bind("<Leave>", lambda e: both_label.configure(text_color=Theme.ACCENT))
+        content_layout.addWidget(truck_row)
 
-        driver_row = ctk.CTkFrame(self._content_frame, fg_color="transparent")
-        driver_row.pack(fill="x", pady=(0, 2))
-        driver_row.bind("<Enter>", self._on_enter)
-        driver_row.bind("<Leave>", self._on_leave)
+        # Row 3 — "⚡ Assign Both" link (clickable)
+        both_row = QWidget()
+        both_row_layout = QHBoxLayout(both_row)
+        both_row_layout.setContentsMargins(S["5"], 0, 0, 0)
+        both_row_layout.setSpacing(0)
 
-        driver_icon = ctk.CTkLabel(driver_row, text="\U0001f464", fg_color="transparent", text_color=Theme.MUTED,
-                                  font=FONTS["label"])
-        driver_icon.pack(side="left")
+        self._both_lbl = QLabel("\u26a1 " + t("dispatch_board.assign_both"))
+        self._both_lbl.setProperty("fontRole", "small")
+        self._both_lbl.setStyleSheet(f"color: {COLORS['accent']};")
+        self._both_lbl.setCursor(Qt.PointingHandCursor)
+        self._both_lbl.mousePressEvent = self._on_both_click  # type: ignore[assignment]
+        both_row_layout.addWidget(self._both_lbl)
+        both_row_layout.addStretch(1)
+
+        content_layout.addWidget(both_row)
+
+        # Row 4 — driver icon + driver name (clickable)
+        driver_row = QWidget()
+        driver_row_layout = QHBoxLayout(driver_row)
+        driver_row_layout.setContentsMargins(0, 0, 0, 0)
+        driver_row_layout.setSpacing(S["1"])
+
+        driver_icon = QLabel("\U0001f464")
+        driver_icon.setProperty("fontRole", "label")
+        driver_icon.setStyleSheet(f"color: {COLORS['text_muted']};")
+        driver_row_layout.addWidget(driver_icon)
 
         driver = d.get("driver_name", "")
         driver_text = driver if driver else t("dispatch_board.assign_driver")
-        driver_color = Theme.TEXT if driver else Theme.MUTED
-        self._driver_lbl = ctk.CTkLabel(driver_row, text=driver_text, fg_color="transparent", text_color=driver_color,
-                                        font=FONTS["label"], cursor="hand2")
-        self._driver_lbl.pack(side="left", padx=(4, 0))
-        self._driver_lbl.bind("<Button-1>", self._on_driver_click)
-        self._driver_lbl.bind("<Enter>", lambda e: self._driver_lbl.configure(text_color=Theme.ACCENT))
-        self._driver_lbl.bind("<Leave>", lambda e: self._driver_lbl.configure(text_color=driver_color))
+        driver_color = COLORS["text_primary"] if driver else COLORS["text_muted"]
+        self._driver_lbl = QLabel(driver_text)
+        self._driver_lbl.setProperty("fontRole", "small")
+        self._driver_lbl.setStyleSheet(f"color: {driver_color};")
+        self._driver_lbl.setCursor(Qt.PointingHandCursor)
+        self._driver_lbl.mousePressEvent = self._on_driver_click  # type: ignore[assignment]
+        driver_row_layout.addWidget(self._driver_lbl)
 
+        driver_row_layout.addStretch(1)
+
+        # Clear button (only if driver is set)
         if driver:
-            self._driver_clear_btn = ctk.CTkLabel(driver_row, text="\u2715", fg_color="transparent",
-                                                  text_color=Theme.MUTED, font=FONTS["label"],
-                                                 cursor="hand2")
-            self._driver_clear_btn.pack(side="right", padx=(4, 0))
-            self._driver_clear_btn.bind("<Button-1>", self._on_driver_clear)
+            self._driver_clear_btn = QLabel("\u2715")
+            self._driver_clear_btn.setProperty("fontRole", "label")
+            self._driver_clear_btn.setStyleSheet(f"color: {COLORS['text_muted']};")
+            self._driver_clear_btn.setCursor(Qt.PointingHandCursor)
+            self._driver_clear_btn.mousePressEvent = self._on_driver_clear  # type: ignore[assignment]
+            driver_row_layout.addWidget(self._driver_clear_btn)
 
-        row3 = ctk.CTkFrame(self._content_frame, fg_color="transparent")
-        row3.pack(fill="x", pady=(0, 2))
-        self._bind_row(row3)
+        content_layout.addWidget(driver_row)
+
+        # Row 5 — route text (origin → destination)
+        route_row = QWidget()
+        route_row_layout = QHBoxLayout(route_row)
+        route_row_layout.setContentsMargins(0, 0, 0, 0)
+        route_row_layout.setSpacing(0)
 
         origin = d.get("origin", "?")
         destination = d.get("destination", "?")
         route_text = f"{origin} \u2192 {destination}"
-        route_lbl = ctk.CTkLabel(row3, text=route_text, fg_color="transparent", text_color=Theme.MUTED,
-                                 font=FONTS["label"], anchor="w", wraplength=220,
-                                 justify="left")
-        route_lbl.pack(side="left", fill="x", expand=True)
-        self._bind_label(row3, route_lbl)
+        self._route_lbl = QLabel(route_text)
+        self._route_lbl.setProperty("fontRole", "muted")
+        self._route_lbl.setWordWrap(True)
+        route_row_layout.addWidget(self._route_lbl)
 
-        row4 = ctk.CTkFrame(self._content_frame, fg_color="transparent")
-        row4.pack(fill="x", pady=(0, 2))
-        self._bind_row(row4)
+        content_layout.addWidget(route_row)
+
+        # Row 6 — departure / ETA dates
+        date_row = QWidget()
+        date_row_layout = QHBoxLayout(date_row)
+        date_row_layout.setContentsMargins(0, 0, 0, 0)
+        date_row_layout.setSpacing(0)
 
         departure = d.get("departure_date", "")
         eta = d.get("eta", "")
-        date_parts = []
+        date_parts: list[str] = []
         if departure:
             date_parts.append(f"\u25b6 {departure}")
         if eta:
             date_parts.append(f"\u25c0 {eta}")
         date_text = "  ".join(date_parts) if date_parts else ""
         if date_text:
-            self._date_lbl = ctk.CTkLabel(row4, text=date_text, fg_color="transparent", text_color=Theme.MUTED,
-                                          font=FONTS["label"])
-            self._date_lbl.pack(side="left")
-            self._bind_label(row4, self._date_lbl)
+            self._date_lbl = QLabel(date_text)
+            self._date_lbl.setProperty("fontRole", "muted")
+            date_row_layout.addWidget(self._date_lbl)
+            content_layout.addWidget(date_row)
 
+        # Row 7 — alerts count (conditional)
         alerts_count = d.get("alerts_count", 0)
         if alerts_count and alerts_count > 0:
-            alert_frame = ctk.CTkFrame(self._content_frame, fg_color=Theme.DANGER)
-            alert_frame.pack(fill="x", pady=(3, 0))
-            alert_lbl = ctk.CTkLabel(alert_frame,
-                                     text=f"\u26a0 {alerts_count} {t('dispatch_board.alerts')}",
-                                     fg_color=Theme.DANGER, text_color=COLORS["text_primary"],
-                                font=FONTS["label"])
-            alert_lbl.pack()
-
-        # Live indicator row (hidden by default)
-        self._live_row = ctk.CTkFrame(self._content_frame, fg_color="transparent")
-        self._live_dot = ctk.CTkLabel(
-            self._live_row, text="\u25cf " + t("dispatch_board.live"),
-            font=FONTS["label"],
-            text_color=COLORS["success"],
-        )
-        self._live_dot.pack(side="left")
-        self._live_speed = ctk.CTkLabel(
-            self._live_row,
-            text="",
-            font=FONTS["mono"],
-            text_color=COLORS["text_secondary"]
-        )
-        self._live_speed.pack(side="right")
-
-    def set_live_position(self, position):
-        """Show or hide live speed indicator on the card."""
-        if position and position.status == "moving" and position.speed_kmh > 3:
-            self._live_speed.configure(
-                text=f"{position.speed_kmh:.0f} km/h"
+            self._alert_frame = QFrame()
+            self._alert_frame.setStyleSheet(
+                f"background-color: {COLORS['danger']}; border-radius: 3px;"
             )
-            self._live_row.pack(fill="x", padx=2, pady=(0, 2))
+            alert_layout = QHBoxLayout(self._alert_frame)
+            alert_layout.setContentsMargins(S["1"], 1, S["1"], 1)
+            alert_layout.setSpacing(0)
+            alert_lbl = QLabel(
+                f"\u26a0 {alerts_count} {t('dispatch_board.alerts')}"
+            )
+            alert_lbl.setProperty("fontRole", "label")
+            alert_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+            alert_layout.addWidget(alert_lbl)
+            content_layout.addWidget(self._alert_frame)
+
+        # Row 8 — live position indicator (hidden by default)
+        self._live_row = QWidget()
+        live_layout = QHBoxLayout(self._live_row)
+        live_layout.setContentsMargins(0, 0, 0, 0)
+        live_layout.setSpacing(S["1"])
+
+        live_dot = QLabel("\u25cf " + t("dispatch_board.live"))
+        live_dot.setProperty("fontRole", "label")
+        live_dot.setStyleSheet(f"color: {COLORS['success']};")
+        live_layout.addWidget(live_dot)
+
+        self._live_speed = QLabel("")
+        self._live_speed.setProperty("fontRole", "mono")
+        self._live_speed.setStyleSheet(f"color: {COLORS['text_secondary']};")
+        live_layout.addWidget(self._live_speed)
+        live_layout.addStretch(1)
+
+        self._live_row.hide()
+        content_layout.addWidget(self._live_row)
+
+        # Finalise layout
+        outer_layout.addWidget(self._content_widget, 1)
+
+    # ── Public API ─────────────────────────────────────────────────────────
+
+    def set_live_position(self, position: Any) -> None:
+        """Show or hide the live-speed indicator on the card.
+
+        *position* must be an object with ``.status`` and ``.speed_kmh``
+        attributes (e.g. a named tuple or dataclass).
+        """
+        if position and position.status == "moving" and position.speed_kmh > 3:
+            self._live_speed.setText(f"{position.speed_kmh:.0f} km/h")
+            self._live_row.show()
         else:
-            self._live_row.pack_forget()
+            self._live_row.hide()
 
-    def _bind_row(self, frame):
-        frame.bind("<ButtonPress-1>", self._on_press)
-        frame.bind("<B1-Motion>", self._on_motion)
-        frame.bind("<ButtonRelease-1>", self._on_release)
-        frame.bind("<Enter>", self._on_enter)
-        frame.bind("<Leave>", self._on_leave)
-
-    def _bind_label(self, parent, label):
-        label.bind("<ButtonPress-1>", self._on_press)
-        label.bind("<B1-Motion>", self._on_motion)
-        label.bind("<ButtonRelease-1>", self._on_release)
-        label.bind("<Enter>", self._on_enter)
-        label.bind("<Leave>", self._on_leave)
-
-    def _on_enter(self, event=None):
-        self._hovered = True
-        self.configure(fg_color=self.DELAYED_BG if self._delayed else self.CARD_BG_HOVER,
-                       border_color=self.CARD_BORDER_HOVER)
-        if self._content_frame:
-            self._content_frame.configure(fg_color=self.DELAYED_BG if self._delayed else self.CARD_BG_HOVER)
-
-    def _on_leave(self, event=None):
-        self._hovered = False
-        self.configure(fg_color=self.DELAYED_BG if self._delayed else self.CARD_BG,
-                       border_color=self.CARD_BORDER)
-        if self._content_frame:
-            self._content_frame.configure(fg_color=self.DELAYED_BG if self._delayed else self.CARD_BG)
-
-    def _on_click_handler(self, event=None):
-        if self._on_click:
-            self._on_click(self.trip_data)
-
-    def _on_press(self, event):
-        self._drag_data["x"] = event.x
-        self._drag_data["y"] = event.y
-        self._drag_data["dragging"] = False
-
-    def _on_motion(self, event):
-        if not self._drag_data["dragging"]:
-            dx = abs(event.x - self._drag_data["x"])
-            dy = abs(event.y - self._drag_data["y"])
-            if dx > 5 or dy > 5:
-                self._drag_data["dragging"] = True
-                if self._on_drag_start:
-                    self._on_drag_start(self, event)
-        elif self._on_drag_start:
-            self._on_drag_start(self, event)
-
-    def _on_release(self, event):
-        if not self._drag_data["dragging"]:
-            if event.state & 0x0004:
-                self._selected = not self._selected
-                self._update_selection_visual()
-                if self._on_select_changed:
-                    self._on_select_changed(self, self._selected)
-            else:
-                self._on_click_handler(event)
-        self._drag_data["dragging"] = False
-
-    def set_selected(self, selected: bool):
-        if self._selected != selected:
-            self._selected = selected
-            self._update_selection_visual()
-
-    def is_selected(self) -> bool:
-        return self._selected
-
-    def _update_selection_visual(self):
-        if self._selected:
-            self.configure(border_color=Theme.ACCENT, border_width=2)
-        else:
-            self.configure(border_color=self.CARD_BORDER, border_width=1)
-
-    def _on_truck_click(self, event):
-        if self._active_dropdown:
-            return
-        if self._on_assign_truck:
-            self._on_assign_truck(self)
-
-    def _on_driver_click(self, event):
-        if self._active_dropdown:
-            return
-        if self._on_assign_driver:
-            self._on_assign_driver(self)
-
-    def _on_both_click(self, event):
-        if self._on_assign_both:
-            self._on_assign_both(self)
-
-    def _on_truck_clear(self, event):
-        if self._on_assign_truck:
-            self._on_assign_truck(self, clear=True)
-
-    def _on_driver_clear(self, event):
-        if self._on_assign_driver:
-            self._on_assign_driver(self, clear=True)
-
-    def update_truck(self, truck_plate: str, truck_id=None):
+    def update_truck(self, truck_plate: str, truck_id: Any = None) -> None:
+        """Update the displayed truck plate and optionally store the ID."""
         self.trip_data["truck_plate"] = truck_plate
         if truck_id is not None:
             self.trip_data["truck_id"] = truck_id
 
         if truck_plate:
-            self._truck_lbl.configure(text=truck_plate, text_color=Theme.TEXT)
-            if not self._truck_clear_btn:
-                self._truck_clear_btn = ctk.CTkLabel(self._truck_lbl.master, text="\u2715",
-                                                    fg_color="transparent", text_color=Theme.MUTED,
-                                                     font=FONTS["label"], cursor="hand2")
-                self._truck_clear_btn.pack(side="right", padx=(4, 0))
-                self._truck_clear_btn.bind("<Button-1>", self._on_truck_clear)
+            self._truck_lbl.setText(truck_plate)
+            self._truck_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+            if self._truck_clear_btn is None:
+                truck_row = self._truck_lbl.parent()
+                if truck_row is not None:
+                    self._truck_clear_btn = QLabel("\u2715")
+                    self._truck_clear_btn.setProperty("fontRole", "label")
+                    self._truck_clear_btn.setStyleSheet(
+                        f"color: {COLORS['text_muted']};"
+                    )
+                    self._truck_clear_btn.setCursor(Qt.PointingHandCursor)
+                    self._truck_clear_btn.mousePressEvent = self._on_truck_clear  # type: ignore[assignment]
+                    # Insert clear button before the stretch (last widget)
+                    truck_row.layout().addWidget(self._truck_clear_btn)
         else:
-            self._truck_lbl.configure(text=t("dispatch_board.assign_truck"), text_color=Theme.MUTED)
-            if self._truck_clear_btn:
-                self._truck_clear_btn.destroy()
+            self._truck_lbl.setText(t("dispatch_board.assign_truck"))
+            self._truck_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+            if self._truck_clear_btn is not None:
+                self._truck_clear_btn.deleteLater()
                 self._truck_clear_btn = None
 
-    def update_driver(self, driver_name: str, driver_id=None):
+    def update_driver(self, driver_name: str, driver_id: Any = None) -> None:
+        """Update the displayed driver name and optionally store the ID."""
         self.trip_data["driver_name"] = driver_name
         if driver_id is not None:
             self.trip_data["driver_id"] = driver_id
 
         if driver_name:
-            self._driver_lbl.configure(text=driver_name, text_color=Theme.TEXT)
-            if not self._driver_clear_btn:
-                self._driver_clear_btn = ctk.CTkLabel(self._driver_lbl.master, text="\u2715",
-                                                     fg_color="transparent", text_color=Theme.MUTED,
-                                                    font=FONTS["label"], cursor="hand2")
-                self._driver_clear_btn.pack(side="right", padx=(4, 0))
-                self._driver_clear_btn.bind("<Button-1>", self._on_driver_clear)
+            self._driver_lbl.setText(driver_name)
+            self._driver_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+            if self._driver_clear_btn is None:
+                driver_row = self._driver_lbl.parent()
+                if driver_row is not None:
+                    self._driver_clear_btn = QLabel("\u2715")
+                    self._driver_clear_btn.setProperty("fontRole", "label")
+                    self._driver_clear_btn.setStyleSheet(
+                        f"color: {COLORS['text_muted']};"
+                    )
+                    self._driver_clear_btn.setCursor(Qt.PointingHandCursor)
+                    self._driver_clear_btn.mousePressEvent = self._on_driver_clear  # type: ignore[assignment]
+                    driver_row.layout().addWidget(self._driver_clear_btn)
         else:
-            self._driver_lbl.configure(text=t("dispatch_board.assign_driver"), text_color=Theme.MUTED)
-            if self._driver_clear_btn:
-                self._driver_clear_btn.destroy()
+            self._driver_lbl.setText(t("dispatch_board.assign_driver"))
+            self._driver_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+            if self._driver_clear_btn is not None:
+                self._driver_clear_btn.deleteLater()
                 self._driver_clear_btn = None
 
-    def set_dropdown(self, dropdown):
-        self._active_dropdown = dropdown
-
-    def show_error(self, field: str, message: str):
-        error_lbl = ctk.CTkLabel(self, text=message, fg_color=Theme.DANGER, text_color=Theme.TEXT,
-                                font=FONTS["label"], padx=6, pady=2)
-        error_lbl.pack(fill="x", pady=(2, 0))
-        try:
-            self.after(3000, lambda: safe_destroy(error_lbl))
-        except tk.TclError:
-            pass
-
-    def set_delayed(self, delayed: bool, minutes_overdue: int = 0):
+    def set_delayed(self, delayed: bool, minutes_overdue: int = 0) -> None:
+        """Toggle delayed state and optionally display overdue duration."""
         if delayed == self._delayed:
             return
         self._delayed = delayed
 
         if delayed:
-            self._accent_bar.configure(fg_color=self.DELAYED_COLOR)
-            self._delayed_chip.pack(side="right", padx=(0, 4))
-            self.configure(fg_color=self.DELAYED_BG)
-            if self._content_frame:
-                self._content_frame.configure(fg_color=self.DELAYED_BG)
-            if self._date_lbl:
+            self._accent_bar.setStyleSheet(
+                f"background-color: {self.DELAYED_COLOR}; border: none; border-radius: 0px;"
+            )
+            self._delayed_chip.show()
+            self._update_card_style()
+            if self._date_lbl is not None:
                 if minutes_overdue >= 60:
                     hours = minutes_overdue // 60
                     overdue_text = t("dispatch_board.hours_overdue").format(hours)
                 else:
-                    overdue_text = t("dispatch_board.minutes_overdue").format(minutes_overdue)
-                self._date_lbl.configure(text=overdue_text, text_color=self.DELAYED_COLOR)
+                    overdue_text = t("dispatch_board.minutes_overdue").format(
+                        minutes_overdue
+                    )
+                self._date_lbl.setText(overdue_text)
+                self._date_lbl.setStyleSheet(f"color: {self.DELAYED_COLOR};")
         else:
             status = self.trip_data.get("status", "Planned")
             accent_color = self.STATUS_COLORS.get(status, COLORS["chip_planned"])
-            self._accent_bar.configure(fg_color=accent_color)
-            self._delayed_chip.pack_forget()
-            self.configure(fg_color=self.CARD_BG)
-            if self._content_frame:
-                self._content_frame.configure(fg_color=self.CARD_BG)
-            if self._date_lbl:
+            self._accent_bar.setStyleSheet(
+                f"background-color: {accent_color}; border: none; border-radius: 0px;"
+            )
+            self._delayed_chip.hide()
+            self._update_card_style()
+            if self._date_lbl is not None:
                 departure = self.trip_data.get("departure_date", "")
                 eta = self.trip_data.get("eta", "")
-                date_parts = []
+                date_parts: list[str] = []
                 if departure:
                     date_parts.append(f"\u25b6 {departure}")
                 if eta:
                     date_parts.append(f"\u25c0 {eta}")
                 date_text = "  ".join(date_parts) if date_parts else ""
-                self._date_lbl.configure(text=date_text, text_color=Theme.MUTED)
+                self._date_lbl.setText(date_text)
+                self._date_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
 
-    def update_data(self, new_data: dict):
+    def update_data(self, new_data: dict[str, Any]) -> None:
+        """Bulk-update the card from a new data dictionary.
+
+        Updates status, truck plate, driver name, and alerts count.
+        The internal ``trip_data`` dict is replaced with a shallow copy.
+        """
         old_status = self.trip_data.get("status", "")
         new_status = new_data.get("status", "")
         self.trip_data = dict(new_data)
 
-        # Update status chip + accent bar
         if new_status != old_status:
             self._set_status(new_status)
 
-        # Update truck plate
-        if self._truck_lbl:
+        if self._truck_lbl is not None:
             new_plate = new_data.get("truck_plate", "")
             self.trip_data["truck_plate"] = new_plate
             if new_plate:
-                self._truck_lbl.configure(text=new_plate, text_color=Theme.TEXT)
+                self._truck_lbl.setText(new_plate)
+                self._truck_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
             else:
-                self._truck_lbl.configure(text=t("dispatch_board.assign_truck"), text_color=Theme.MUTED)
+                self._truck_lbl.setText(t("dispatch_board.assign_truck"))
+                self._truck_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
 
-        # Update driver name
-        if self._driver_lbl:
+        if self._driver_lbl is not None:
             new_driver = new_data.get("driver_name", "")
             self.trip_data["driver_name"] = new_driver
             if new_driver:
-                self._driver_lbl.configure(text=new_driver, text_color=Theme.TEXT)
+                self._driver_lbl.setText(new_driver)
+                self._driver_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
             else:
-                self._driver_lbl.configure(text=t("dispatch_board.assign_driver"), text_color=Theme.MUTED)
+                self._driver_lbl.setText(t("dispatch_board.assign_driver"))
+                self._driver_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
 
-        # Update alerts count
         new_alerts = new_data.get("alerts_count", 0)
         self.trip_data["alerts_count"] = new_alerts
 
-    def _set_status(self, status: str):
+    def set_selected(self, selected: bool) -> None:
+        """Set the selected state and update the card border."""
+        if self._selected != selected:
+            self._selected = selected
+            self._update_selection_visual()
+
+    def is_selected(self) -> bool:
+        """Return whether the card is currently selected."""
+        return self._selected
+
+    def show_error(self, field: str, message: str) -> None:
+        """Display an inline error banner that auto-dismisses after 3 seconds.
+
+        *field* is accepted for API compatibility but currently unused.
+        """
+        # Remove any existing error indicator
+        self._dismiss_error()
+
+        self._error_lbl = QLabel(message)
+        self._error_lbl.setProperty("fontRole", "label")
+        self._error_lbl.setStyleSheet(
+            f"background-color: {COLORS['danger']};"
+            f"color: {COLORS['text_primary']};"
+            f"padding: 2px 6px;"
+            f"border-radius: 3px;"
+        )
+        self._error_lbl.setWordWrap(True)
+
+        if self._content_widget is not None:
+            self._content_widget.layout().addWidget(self._error_lbl)
+
+        self._error_timer = QTimer(self)
+        self._error_timer.setSingleShot(True)
+        self._error_timer.timeout.connect(self._dismiss_error)
+        self._error_timer.start(3000)
+
+    # ── Internal helpers ───────────────────────────────────────────────────
+
+    def _dismiss_error(self) -> None:
+        """Remove the error banner and stop the dismiss timer."""
+        if self._error_lbl is not None:
+            self._error_lbl.deleteLater()
+            self._error_lbl = None
+        if self._error_timer is not None:
+            self._error_timer.stop()
+            self._error_timer = None
+
+    def _set_status(self, status: str) -> None:
+        """Update accent bar, chip colour, and chip text for a new status."""
         self.trip_data["status"] = status
         accent_color = self.STATUS_COLORS.get(status, COLORS["chip_planned"])
-        self._accent_bar.configure(fg_color=accent_color)
-        self._chip_frame.configure(fg_color=accent_color)
-        self._chip_lbl.configure(text=t(self.STATUS_TRANSLATION_KEYS.get(status, status)), fg_color=accent_color)
+        self._accent_bar.setStyleSheet(
+            f"background-color: {accent_color}; border: none; border-radius: 0px;"
+        )
+        self._chip_frame.setStyleSheet(
+            f"background-color: {accent_color}; border-radius: 3px;"
+        )
+        translation_key = self.STATUS_TRANSLATION_KEYS.get(status)
+        self._chip_lbl.setText(
+            t(translation_key if translation_key is not None else status)
+        )
+        self._chip_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+
+    def _update_card_style(self) -> None:
+        """Recompute the card background from current hover/delayed state."""
+        bg = self.DELAYED_BG if self._delayed else (
+            self.CARD_BG_HOVER if self._hovered else self.CARD_BG
+        )
+        self.setStyleSheet(
+            f"QtTripCard {{"
+            f"  background-color: {bg};"
+            f"}}"
+        )
+        if self._content_widget is not None:
+            self._content_widget.setStyleSheet(
+                f"QWidget {{"
+                f"  background-color: {bg};"
+                f"}}"
+            )
+
+    def _update_selection_visual(self) -> None:
+        """Set the card border to reflect selection state.
+
+        Calls ``_update_card_style`` for the background, then applies
+        the appropriate border via an inline stylesheet on ``self``.
+        """
+        self._update_card_style()
+
+        if self._selected:
+            # accent border — overrides global QSS via inline stylesheet
+            self.setStyleSheet(
+                self.styleSheet() + "\n"
+                f"QtTripCard {{"
+                f"  border: 2px solid {COLORS['accent']};"
+                f"}}"
+            )
+        else:
+            # Restore the default border from global QSS by clearing
+            # the border override and re-applying only the background.
+            self.setStyleSheet(
+                f"QtTripCard {{"
+                f"  background-color: {self.DELAYED_BG if self._delayed else (self.CARD_BG_HOVER if self._hovered else self.CARD_BG)};"
+                f"}}"
+            )
+
+    # ── Hover events ───────────────────────────────────────────────────────
+
+    def enterEvent(self, event: Any) -> None:
+        """Apply hover background and accent border colour."""
+        self._hovered = True
+        self._update_card_style()
+        super().enterEvent(event)
+
+    def leaveEvent(self, event: Any) -> None:
+        """Restore default background and border colour."""
+        self._hovered = False
+        self._update_card_style()
+        super().leaveEvent(event)
+
+    # ── Mouse / drag events ────────────────────────────────────────────────
+
+    def mousePressEvent(self, event: QMouseEvent) -> None:
+        """Record the press position for drag detection."""
+        self._drag_start_pos = event
+        self._dragging = False
+        super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event: QMouseEvent) -> None:
+        """Initiate drag if the pointer moves past the threshold (5 px)."""
+        if self._drag_start_pos is None:
+            return
+
+        if not self._dragging:
+            dx = abs(event.pos().x() - self._drag_start_pos.pos().x())
+            dy = abs(event.pos().y() - self._drag_start_pos.pos().y())
+            if dx > 5 or dy > 5:
+                self._dragging = True
+                if self._on_drag_start is not None:
+                    self._on_drag_start(self, event)
+        elif self._on_drag_start is not None:
+            self._on_drag_start(self, event)
+
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event: QMouseEvent) -> None:
+        """On release without drag: handle click or Ctrl+click select."""
+        if not self._dragging:
+            if event.modifiers() & Qt.ControlModifier:
+                self._selected = not self._selected
+                self._update_selection_visual()
+                if self._on_select_changed is not None:
+                    self._on_select_changed(self, self._selected)
+            elif self._on_click is not None:
+                self._on_click(self.trip_data)
+
+        self._dragging = False
+        self._drag_start_pos = None
+        super().mouseReleaseEvent(event)
+
+    # ── Click handlers for assignment labels ───────────────────────────────
+
+    def _on_truck_click(self, event: QMouseEvent) -> None:
+        """Trigger the *on_assign_truck* callback."""
+        if self._on_assign_truck is not None:
+            self._on_assign_truck(self)
+
+    def _on_driver_click(self, event: QMouseEvent) -> None:
+        """Trigger the *on_assign_driver* callback."""
+        if self._on_assign_driver is not None:
+            self._on_assign_driver(self)
+
+    def _on_both_click(self, event: QMouseEvent) -> None:
+        """Trigger the *on_assign_both* callback."""
+        if self._on_assign_both is not None:
+            self._on_assign_both(self)
+
+    def _on_truck_clear(self, event: QMouseEvent) -> None:
+        """Trigger the *on_assign_truck* callback with ``clear=True``."""
+        if self._on_assign_truck is not None:
+            self._on_assign_truck(self, clear=True)
+
+    def _on_driver_clear(self, event: QMouseEvent) -> None:
+        """Trigger the *on_assign_driver* callback with ``clear=True``."""
+        if self._on_assign_driver is not None:
+            self._on_assign_driver(self, clear=True)

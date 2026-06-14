@@ -1,118 +1,247 @@
-"""AlertPanel — dropdown notification panel for the top bar bell icon."""
-import tkinter as tk
-import customtkinter as ctk
+"""QtAlertPanel — PySide6 popup notification panel for the alert bell icon.
+
+Replaces ``ui/widgets/alert_panel.py`` (CTkToplevel).
+
+Usage::
+
+    panel = QtAlertPanel(self, alerts, on_navigate=self._navigate)
+    panel.show_anchored(self._bell)
+"""
+
+from __future__ import annotations
+
 from datetime import datetime
-from ui.theme import COLORS, FONTS, S
+from typing import Callable, Optional
+
+from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtWidgets import (
+    QFrame,
+    QLabel,
+    QScrollArea,
+    QVBoxLayout,
+    QHBoxLayout,
+    QWidget,
+)
+
+from ui.theme import COLORS, S
 from services.i18n import t
 
 
-class AlertPanel(ctk.CTkToplevel):
-    """Popup panel showing alerts. Anchored below the bell button."""
+_SEVERITY_COLORS: dict[str, str] = {
+    "CRITICAL": COLORS["danger"],
+    "WARNING": COLORS["warning"],
+}
 
-    def __init__(self, parent, alerts, on_navigate):
+_NAV_DESTINATIONS: dict[str, str] = {
+    "trip_delay": "dispatch_board",
+    "maintenance": "maintenance_control",
+    "inspection": "maintenance_control",
+    "insurance": "fleet",
+    "overdue_invoice": "invoices",
+    "inactive_truck": "fleet",
+    "route_issue": "route_planner",
+    "compliance_warning": "maintenance",
+}
+
+
+class QtAlertPanel(QFrame):
+    """Popup alert panel anchored below the bell icon.
+
+    Positioned via :meth:`show_anchored`. Displays up to 20 alerts sorted
+    by ``created_at``, each with a severity chip, title, relative timestamp,
+    and navigation chevron.
+    """
+
+    MAX_WIDTH = 340
+    MAX_HEIGHT = 420
+
+    def __init__(
+        self,
+        parent: QWidget,
+        alerts: list,
+        on_navigate: Optional[Callable[[str], None]] = None,
+    ) -> None:
         super().__init__(parent)
-        self.on_navigate = on_navigate
-        self.overrideredirect(True)
-        self.configure(fg_color=COLORS["bg_elevated"])
-        self.attributes("-topmost", True)
-        self.resizable(False, False)
-        self._build(alerts)
-        self.after(80, lambda: self.focus_set())
-        self.bind("<FocusOut>", self._on_focus_out)
+        self.setWindowFlags(Qt.Popup)
+        self.setProperty("role", "alert-panel")
+        self.setFixedWidth(self.MAX_WIDTH)
 
-    def _build(self, alerts):
-        # Header
-        header = ctk.CTkFrame(self, fg_color=COLORS["bg_elevated"], corner_radius=0, height=42)
-        header.pack(fill="x")
-        header.pack_propagate(False)
-        ctk.CTkLabel(header, text=t("alerts.panel_title"),
-                     font=FONTS["h3"], text_color=COLORS["text_primary"]).pack(
-            side="left", padx=16, pady=10)
+        self._on_navigate = on_navigate
 
-        # Scrollable list
-        scroll = ctk.CTkScrollableFrame(self, fg_color=COLORS["bg_elevated"],
-                                         scrollbar_button_color=COLORS["border"])
-        scroll.pack(fill="both", expand=True, padx=0, pady=0)
+        layout = QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+
+        self._build_header(layout)
+        self._build_list(layout, alerts)
+
+        # Size the panel to content height, capped at MAX_HEIGHT.
+        self._apply_max_height()
+
+    # ── Public API ──────────────────────────────────────────────────────────
+
+    def show_anchored(self, anchor: QWidget) -> None:
+        """Position the panel below ``anchor`` and show it."""
+        if anchor is None:
+            return
+        global_pos = anchor.mapToGlobal(QPoint(0, 0))
+        self.move(global_pos.x(), global_pos.y() + anchor.height())
+        self.show()
+        self.raise_()
+        self.setFocus()
+
+    # ── Header ──────────────────────────────────────────────────────────────
+
+    def _build_header(self, layout: QVBoxLayout) -> None:
+        header = QWidget()
+        header.setProperty("role", "alert-panel-header")
+        header.setFixedHeight(42)
+
+        hdr_layout = QHBoxLayout(header)
+        hdr_layout.setContentsMargins(S["4"], 0, S["2"], 0)
+        hdr_layout.setSpacing(0)
+
+        title = QLabel(t("alerts.panel_title"))
+        title.setProperty("fontRole", "alert-panel-title")
+        hdr_layout.addWidget(title)
+        hdr_layout.addStretch(1)
+
+        close_btn = QLabel("\u2715")
+        close_btn.setProperty("role", "alert-panel-close")
+        close_btn.setCursor(Qt.PointingHandCursor)
+        close_btn.mousePressEvent = lambda _: self._close()  # type: ignore[assignment]
+        hdr_layout.addWidget(close_btn)
+
+        layout.addWidget(header)
+
+    # ── List ────────────────────────────────────────────────────────────────
+
+    def _build_list(self, layout: QVBoxLayout, alerts: list) -> None:
+        scroll = QScrollArea()
+        scroll.setProperty("role", "alert-panel-scroll")
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
+        content = QWidget()
+        content.setProperty("role", "alert-panel-list")
+        list_layout = QVBoxLayout(content)
+        list_layout.setContentsMargins(0, 0, 0, 0)
+        list_layout.setSpacing(2)
+        list_layout.setAlignment(Qt.AlignTop)
 
         if not alerts:
-            ctk.CTkLabel(scroll, text=t("alerts.none_active"),
-                         font=FONTS["body"], text_color=COLORS["text_muted"]).pack(pady=40)
-            return
+            empty = QLabel(t("alerts.none_active"))
+            empty.setProperty("fontRole", "alert-panel-empty")
+            empty.setAlignment(Qt.AlignCenter)
+            empty.setFixedHeight(120)
+            list_layout.addWidget(empty)
+        else:
+            sorted_alerts = sorted(
+                alerts,
+                key=lambda a: getattr(a, "created_at", "") or "",
+                reverse=True,
+            )[:20]
+            for alert in sorted_alerts:
+                self._build_row(list_layout, alert)
 
-        sorted_alerts = sorted(alerts, key=lambda a: a.created_at or "", reverse=True)[:20]
-        for alert in sorted_alerts:
-            self._build_row(scroll, alert)
+        scroll.setWidget(content)
+        layout.addWidget(scroll, 1)
 
-        # Resize after building
-        self.update_idletasks()
-        h = min(self.winfo_reqheight(), 420)
-        self.geometry(f"340x{h}")
+    # ── Row ─────────────────────────────────────────────────────────────────
 
-    def _build_row(self, parent, alert):
-        row = ctk.CTkFrame(parent, fg_color=COLORS["bg_elevated"], corner_radius=4, cursor="hand2")
-        row.pack(fill="x", padx=8, pady=2)
+    def _build_row(self, layout: QVBoxLayout, alert) -> None:
+        row = QFrame()
+        row.setProperty("role", "alert-row")
+        row.setCursor(Qt.PointingHandCursor)
+        row.setFixedHeight(48)
 
-        row.bind("<Enter>", lambda e: row.configure(fg_color=COLORS["bg_elevated"]))
-        row.bind("<Leave>", lambda e: row.configure(fg_color=COLORS["bg_elevated"]))
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(S["2"], 0, S["3"], 0)
+        row_layout.setSpacing(S["2"])
 
-        # Severity chip
+        # -- Severity chip ---------------------------------------------------
         sev = str(getattr(alert.severity, "value", alert.severity)).upper()
-        sev_color = {"CRITICAL": COLORS["danger"], "WARNING": COLORS["warning"]}.get(
-            sev, COLORS["info"])
-        sev_translation_key = f"alerts.severity_{sev.lower()}"
-        chip = ctk.CTkLabel(row, text=t(sev_translation_key), fg_color=sev_color, text_color="white",
-                            font=FONTS["label"], corner_radius=4, width=64, height=22)
-        chip.pack(side="left", padx=(10, 0), pady=10)
+        sev_color = _SEVERITY_COLORS.get(sev, COLORS["info"])
+        sev_key = f"alerts.severity_{sev.lower()}"
+        chip = QLabel(t(sev_key))
+        chip.setProperty("role", "alert-chip")
+        chip.setFixedSize(60, 22)
+        chip.setAlignment(Qt.AlignCenter)
+        chip.setStyleSheet(
+            f"background-color: {sev_color}; color: #ffffff;"
+            f"border-radius: 4px; font-size: 11px; font-weight: bold;"
+        )
+        row_layout.addWidget(chip)
 
-        # Text
-        text_frame = ctk.CTkFrame(row, fg_color="transparent")
-        text_frame.pack(side="left", padx=10, pady=8, fill="x", expand=True)
-        ctk.CTkLabel(text_frame, text=alert.title or alert.message,
-                     font=FONTS["body"], text_color=COLORS["text_primary"],
-                     anchor="w", wraplength=210).pack(anchor="w")
-        ctk.CTkLabel(text_frame, text=self._time_ago(alert.created_at),
-                     font=FONTS["small"], text_color=COLORS["text_muted"],
-                     anchor="w").pack(anchor="w", pady=(2, 0))
+        # -- Text area -------------------------------------------------------
+        text_widget = QWidget()
+        text_widget.setProperty("role", "alert-row-text")
+        text_layout = QVBoxLayout(text_widget)
+        text_layout.setContentsMargins(0, 0, 0, 0)
+        text_layout.setSpacing(1)
 
-        # Chevron
-        ctk.CTkLabel(row, text="\u203a", font=FONTS["h2"],
-                     text_color=COLORS["text_muted"]).pack(side="right", padx=12)
+        title_text = getattr(alert, "title", None) or getattr(alert, "message", "")
+        title_label = QLabel(title_text)
+        title_label.setProperty("fontRole", "alert-title")
+        title_label.setWordWrap(True)
+        text_layout.addWidget(title_label)
 
-        # Click binds
-        for w in (row, chip, text_frame):
-            w.bind("<Button-1>", lambda e, a=alert: self._go(a))
+        time_label = QLabel(self._time_ago(getattr(alert, "created_at", None)))
+        time_label.setProperty("fontRole", "alert-time")
+        text_layout.addWidget(time_label)
 
-    def _go(self, alert):
+        row_layout.addWidget(text_widget, 1)
+
+        # -- Chevron ---------------------------------------------------------
+        chevron = QLabel("\u203a")
+        chevron.setProperty("role", "alert-chevron")
+        row_layout.addWidget(chevron)
+
+        # -- Click handling --------------------------------------------------
+        row.mousePressEvent = lambda e, a=alert: self._go(a)  # type: ignore[assignment]
+        chip.mousePressEvent = lambda e, a=alert: self._go(a)  # type: ignore[assignment]
+        text_widget.mousePressEvent = lambda e, a=alert: self._go(a)  # type: ignore[assignment]
+
+        layout.addWidget(row)
+
+    # ── Navigation ──────────────────────────────────────────────────────────
+
+    def _go(self, alert) -> None:
         self._close()
         alert_type = str(getattr(alert.type, "value", alert.type))
-        destination = {
-            "trip_delay": "dispatch_board",
-            "maintenance": "maintenance_control",
-            "inspection": "maintenance_control",
-            "insurance": "fleet",
-            "overdue_invoice": "invoices",
-            "inactive_truck": "fleet",
-            "route_issue": "route_planner",
-            "compliance_warning": "maintenance",
-        }.get(alert_type, "overview")
-        if self.on_navigate:
-            self.on_navigate(destination)
+        destination = _NAV_DESTINATIONS.get(alert_type, "overview")
+        if self._on_navigate:
+            self._on_navigate(destination)
 
-    def _on_focus_out(self, event):
-        # Only close if focus moved outside this panel
-        try:
-            if event.widget != self and not str(event.widget).startswith(str(self)):
-                self._close()
-        except Exception:
-            self._close()
+    # ── Focus-out close ─────────────────────────────────────────────────────
 
-    def _close(self):
+    def focusOutEvent(self, event) -> None:
+        """Close when focus moves outside this panel."""
+        super().focusOutEvent(event)
+        # Defer so any child click event propagates first.
+        QTimer.singleShot(0, self._close)
+
+    # ── Close ───────────────────────────────────────────────────────────────
+
+    def _close(self) -> None:
         try:
-            self.destroy()
+            self.close()
         except Exception:
             pass
 
-    def _time_ago(self, dt_str):
+    # ── Sizing helper ──────────────────────────────────────────────────────
+
+    def _apply_max_height(self) -> None:
+        """Cap panel height at MAX_HEIGHT based on actual content."""
+        self.adjustSize()
+        if self.height() > self.MAX_HEIGHT:
+            self.setFixedHeight(self.MAX_HEIGHT)
+
+    # ── Time helper ─────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _time_ago(dt_str: Optional[str]) -> str:
         if not dt_str:
             return ""
         try:
@@ -125,7 +254,7 @@ class AlertPanel(ctk.CTkToplevel):
         if secs < 60:
             return t("time.just_now")
         if secs < 3600:
-            return t("time.minutes_ago").format(n=secs // 60)
+            return t("time.minutes_ago", n=secs // 60)
         if secs < 86400:
-            return t("time.hours_ago").format(n=secs // 3600)
-        return t("time.days_ago").format(n=delta.days)
+            return t("time.hours_ago", n=secs // 3600)
+        return t("time.days_ago", n=delta.days)
