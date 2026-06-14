@@ -198,7 +198,7 @@ class QtFleetTrackingView(QWidget):
         map_layout.setSpacing(0)
 
         self._map = MapWidget(parent)
-        map_layout.addWidget(self._map)
+        map_layout.addWidget(self._map, 1)
 
     def _build_vehicle_panel(self, parent: QFrame) -> None:
         layout: QVBoxLayout = parent.layout()  # type: ignore[assignment]

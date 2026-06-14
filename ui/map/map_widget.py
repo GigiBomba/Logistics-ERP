@@ -14,6 +14,8 @@ from typing import Callable, List, Optional, Tuple
 
 import folium
 
+from PySide6.QtWidgets import QSizePolicy
+
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWebChannel import QWebChannel
@@ -59,6 +61,7 @@ class MapWidget(QWebEngineView):
         zoom: int = DEFAULT_ZOOM,
     ):
         super().__init__(parent)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.page().setBackgroundColor(QColor("#09090b"))
         self.setStyleSheet("QWebEngineView { background-color: #09090b; border: none; margin: 0; padding: 0; }")
         self._center = center
@@ -85,14 +88,19 @@ class MapWidget(QWebEngineView):
 
         html = m._repr_html_()
 
-        # Set dark background on body and html to prevent white flash
+        # Set dark background and full-bleed styling
         html = html.replace(
             "<html>",
-            '<html style="background-color:#09090b">'
+            '<html style="background-color:#09090b; height:100%">'
         )
         html = html.replace(
             "<body>",
-            '<body style="background-color:#09090b; margin:0; padding:0">'
+            '<body style="background-color:#09090b; margin:0; padding:0; height:100%">'
+        )
+        # Force the folium map div to fill the entire viewport
+        html = html.replace(
+            '<div id="map"',
+            '<div id="map" style="position:absolute;top:0;bottom:0;left:0;right:0"'
         )
 
         qwc = _qwebchannel_js()
