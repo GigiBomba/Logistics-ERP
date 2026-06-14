@@ -98,7 +98,9 @@ class TestQtCalculatorView:
         calc_view.e_days.setText("1")
         calc_view.e_sal.setText("100")
         calc_view.e_extra.setText("50")
-        calc_view.e_client.setText("ACME")
+        calc_view.e_client.clear()
+        calc_view.e_client.addItem("ACME", "1")
+        calc_view.e_client.setCurrentIndex(0)
         calc_view._on_truck_selected(0)
 
         calc_view._handle_calculate()

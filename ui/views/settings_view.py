@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
     QWidget,
     QFrame,
     QLabel,
+    QLineEdit,
     QVBoxLayout,
     QHBoxLayout,
     QSizePolicy,
@@ -484,7 +485,7 @@ class QtSettingsView(QWidget):
         for key, label_key in zip(smtp_keys, smtp_labels):
             entry = StyledLineEdit(text=smtp_cfg.get(key, ""))
             if key == "smtp_password":
-                entry.setEchoMode(entry.Password)
+                entry.setEchoMode(QLineEdit.EchoMode.Password)
             self._add_labeled_field(card, label_key, entry)
             self.smtp_inputs[key] = entry
 
@@ -564,7 +565,7 @@ class QtSettingsView(QWidget):
                 ),
             )
             if is_password:
-                entry.setEchoMode(entry.Password)
+                entry.setEchoMode(QLineEdit.EchoMode.Password)
             row_layout.addWidget(entry)
             # The field label is added via _add_labeled_field, but we track
             # field rows separately so _on_tracking_platform_changed can
