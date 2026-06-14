@@ -7,8 +7,10 @@ control. Map-click events flow back to Python via a QWebChannel slot.
 
 from __future__ import annotations
 
+import html as html_module
 import json
 import logging
+import re
 from pathlib import Path
 from typing import Callable, List, Optional, Tuple
 
@@ -86,28 +88,39 @@ class MapWidget(QWebEngineView):
         )
         map_var = m.get_name()
 
-        html = m._repr_html_()
+        # Get the raw iframe HTML from folium's figure
+        raw = m._repr_html_()
 
-        # Set dark background and full-bleed styling
-        html = html.replace(
+        # Extract the srcdoc content from the iframe to get the raw HTML doc
+        # Folium wraps the map in a responsive container with padding-bottom:60%.
+        # We strip that and use the inner HTML doc directly.
+        match = re.search(r'srcdoc="([^"]+)"', raw)
+        if match:
+            inner_html = html_module.unescape(match.group(1))
+        else:
+            # Fallback: use the raw HTML as-is
+            inner_html = raw
+
+        # Ensure full-viewport dark styling
+        inner_html = inner_html.replace(
             "<html>",
-            '<html style="background-color:#09090b; height:100%">'
+            '<html style="background-color:#09090b; height:100%;">'
         )
-        html = html.replace(
+        inner_html = inner_html.replace(
             "<body>",
-            '<body style="background-color:#09090b; margin:0; padding:0; height:100%">'
+            '<body style="background-color:#09090b; margin:0; padding:0; height:100%;">'
         )
-        # Force the folium map div to fill the entire viewport
-        html = html.replace(
+        # Make the leaflet map div fill the viewport
+        inner_html = inner_html.replace(
             '<div id="map"',
-            '<div id="map" style="position:absolute;top:0;bottom:0;left:0;right:0"'
+            '<div id="map" style="position:absolute;top:0;bottom:0;left:0;right:0;width:100%;height:100%;"'
         )
 
         qwc = _qwebchannel_js()
         bridge_script = self._bridge_script(map_var, qwc)
-        html = html.replace("</body>", bridge_script + "\n</body>")
+        inner_html = inner_html.replace("</body>", bridge_script + "\n</body>")
 
-        self.setHtml(html, QUrl("about:blank"))
+        self.setHtml(inner_html, QUrl("about:blank"))
         self._map_ready = False
         self.loadFinished.connect(self._on_load_finished)
 
