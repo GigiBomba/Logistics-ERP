@@ -1567,11 +1567,122 @@ class QtCmrFormView(QWidget):
             widget.setText(str_val)
 
     # ══════════════════════════════════════════════════════════════════════
+    # Data export
+    # ══════════════════════════════════════════════════════════════════════
+
+    def get_data(self) -> Dict[str, Any]:
+        """Collect all form fields into a flat dict for the CMR generator.
+
+        Returns a dict compatible with ``CMRGenerator.generate()`` /
+        ``generate_all_copies()``.
+        """
+        data: Dict[str, Any] = {}
+        for key, widget in self._cmr_entries.items():
+            if isinstance(widget, StyledLineEdit):
+                data[key] = widget.text()
+            elif isinstance(widget, StyledTextEdit):
+                data[key] = widget.toPlainText()
+            elif isinstance(widget, QDateEdit):
+                data[key] = widget.date().toString("yyyy-MM-dd")
+            elif isinstance(widget, QCheckBox):
+                data[key] = widget.isChecked()
+
+        data["generating_role"] = "consignor" if self._consignor_role_active else "consignee"
+
+        # Role-based autofill: fill in company name/address based on role
+        if self._last_trip_data:
+            conf = self._last_trip_data.get("company_conf") or {}
+            if self._consignor_role_active and not data.get("consignor_name"):
+                data["consignor_name"] = conf.get("company_name", "")
+                data["consignor_address"] = conf.get("address", "")
+                data["consignor_vat"] = conf.get("cui", "")
+                data["consignor_phone"] = conf.get("phone", "")
+                data["consignor_eori"] = ""
+                data["client_name"] = data.get("consignee_name", "")
+                data["client_address"] = data.get("consignee_address", "")
+            else:
+                data["consignor_name"] = data.get("consignor_name", "")
+                data["consignor_address"] = data.get("consignor_address", "")
+                data["client_name"] = data.get("consignor_name", "")
+                data["client_address"] = data.get("consignor_address", "")
+                data["consignee_name"] = conf.get("company_name", "")
+                data["consignee_address"] = conf.get("address", "")
+                data["consignee_vat"] = conf.get("cui", "")
+                data["consignee_phone"] = conf.get("phone", "")
+
+        # Signature pad paths
+        sig_pad_keys = [
+            ("sig_sender_path", "Sender"),
+            ("sig_carrier_path", "Carrier"),
+            ("sig_consignee_path", "Consignee"),
+        ]
+        for data_key, _ in sig_pad_keys:
+            if data_key in self._cmr_entries:
+                pad = self._cmr_entries[data_key]
+                if hasattr(pad, "save_path") and pad.save_path:
+                    data[data_key] = pad.save_path
+                elif hasattr(pad, "image_path") and pad.image_path:
+                    data[data_key] = pad.image_path
+
+        # ADR rows
+        adr_entries = []
+        try:
+            for row_data in self._adr_rows:
+                row_dict: Dict[str, Any] = {}
+                for k, w in row_data.items():
+                    if isinstance(w, StyledLineEdit):
+                        row_dict[k] = w.text()
+                adr_entries.append(row_dict)
+        except AttributeError:
+            pass
+        if adr_entries:
+            data["adr_info_json"] = json.dumps(adr_entries)
+
+        # Successive carriers
+        successive = []
+        try:
+            for row_data in self._successive_rows:
+                row_dict = {}
+                for k, w in row_data.items():
+                    if isinstance(w, StyledLineEdit):
+                        row_dict[k] = w.text()
+                successive.append(row_dict)
+        except AttributeError:
+            pass
+        if successive:
+            data["successive_carriers_json"] = json.dumps(successive)
+
+        # Financial grid (Box 20)
+        financial = {}
+        for key in ["sender_carriage", "consignee_carriage",
+                     "sender_supplementary", "consignee_supplementary",
+                     "sender_customs", "consignee_customs",
+                     "sender_other", "consignee_other"]:
+            w = self._cmr_entries.get(key)
+            if w is not None:
+                financial[key] = w.text() if hasattr(w, "text") else str(w)
+        if financial:
+            data["financial_grid"] = financial
+
+        # Truck/driver fields from CMR boxes
+        data["truck_plate"] = data.get("truck_plate", "")
+        data["driver_name"] = data.get("driver_name", "")
+
+        # Place and country fields
+        data["place_of_loading"] = data.get("place_of_loading", "")
+        data["destination"] = data.get("destination", "")
+        data["loading_country"] = data.get("loading_country", "")
+        data["delivery_country"] = data.get("delivery_country", "")
+        data["distance_km"] = data.get("distance_km", "")
+
+        return data
+
+    # ══════════════════════════════════════════════════════════════════════
     # i18n
     # ══════════════════════════════════════════════════════════════════════
 
-    def _on_language_changed(self, _lang: str) -> None:
-        """Refresh translatable strings when the UI language changes.
+    def _on_language_changed(self, lang: str) -> None:
+        """React to language changes.
 
         Currently a no-op placeholder — the form is built once with English
         labels.  In a future iteration, translatable labels should be refreshed
