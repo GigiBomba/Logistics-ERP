@@ -60,6 +60,7 @@ class MapWidget(QWebEngineView):
     ):
         super().__init__(parent)
         self.page().setBackgroundColor(QColor("#09090b"))
+        self.setStyleSheet("QWebEngineView { background-color: #09090b; border: none; margin: 0; padding: 0; }")
         self._center = center
         self._zoom = zoom
         self._bridge = MapBridge(self)
@@ -83,6 +84,16 @@ class MapWidget(QWebEngineView):
         map_var = m.get_name()
 
         html = m._repr_html_()
+
+        # Set dark background on body and html to prevent white flash
+        html = html.replace(
+            "<html>",
+            '<html style="background-color:#09090b">'
+        )
+        html = html.replace(
+            "<body>",
+            '<body style="background-color:#09090b; margin:0; padding:0">'
+        )
 
         qwc = _qwebchannel_js()
         bridge_script = self._bridge_script(map_var, qwc)
