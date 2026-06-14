@@ -740,6 +740,16 @@ class QtOverviewView(QScrollArea):
             except Exception:
                 pass
             self._profit_fig = None
+        # Remove chart canvas widgets from layout
+        if self._chart_container is not None:
+            layout = self._chart_container.layout()
+            if layout is not None:
+                while layout.count():
+                    item = layout.takeAt(0)
+                    if item is not None:
+                        w = item.widget()
+                        if w is not None:
+                            w.deleteLater()
         try:
             unregister_listener(self._language_callback)
         except Exception:
