@@ -133,6 +133,7 @@ class QtHistoryView(QWidget):
             self,
             columns=[
                 ("id", t("history.col_id"), 50),
+                ("status", t("history.col_status"), 80),
                 ("start_date", t("history.col_data"), 100),
                 ("truck_number", t("history.col_camion"), 120),
                 ("driver_name", t("history.col_driver"), 100),
@@ -140,7 +141,6 @@ class QtHistoryView(QWidget):
                 ("distance_km", t("history.col_km"), 70),
                 ("gross_per_km", t("history.col_brut_km"), 80),
                 ("net_profit", t("history.col_profit"), 90),
-                ("status", t("history.col_status"), 90),
             ],
         )
         layout.addWidget(self.table, 1)

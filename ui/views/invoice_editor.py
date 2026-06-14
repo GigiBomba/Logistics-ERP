@@ -298,7 +298,7 @@ class QtInvoiceEditor(QWidget):
         main_layout.addWidget(self._top_bar)
 
         # Scrollable form container
-        self._scroll = ScrollableFormContainer(self, max_width=1000)
+        self._scroll = ScrollableFormContainer(self, max_width=1400)
         main_layout.addWidget(self._scroll, 1)
 
         # Build sections inside the scrollable content

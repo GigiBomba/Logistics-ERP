@@ -95,7 +95,7 @@ class QtCmrFormView(QWidget):
         layout.setSpacing(0)
 
         # Scrollable form container holds everything
-        self._scroll_container = ScrollableFormContainer(self, max_width=720)
+        self._scroll_container = ScrollableFormContainer(self, max_width=1200)
         self._scroll_container.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
