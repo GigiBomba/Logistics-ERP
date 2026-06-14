@@ -287,7 +287,9 @@ class CMRGenerator:
 
     def generate(self, trip_data: dict, output_dir: str) -> str:
         ctx = self._gather_context(trip_data)
-        filepath = self._build_single_copy(ctx, "Sender", output_dir)
+        role = ctx.get("generating_role", "consignor")
+        suffix = "Sender" if role == "consignor" else "Consignee"
+        filepath = self._build_single_copy(ctx, suffix, output_dir)
         return filepath
 
     def generate_all_copies(self, trip_data: dict, output_dir: str,
@@ -316,7 +318,8 @@ class CMRGenerator:
                            output_dir: str, color_hex: str = "#D32F2F",
                            bar_text: str = "", desig_text: str = "") -> str:
         cmr_number = ctx["cmr_number"]
-        filename = f"CMR_{suffix}_Copy.pdf"
+        safe_num = cmr_number.replace("/", "_").replace("\\", "_").replace(" ", "_")
+        filename = f"CMR_{safe_num}_{suffix}_Copy.pdf"
         filepath = os.path.join(output_dir, filename)
 
         doc = SimpleDocTemplate(

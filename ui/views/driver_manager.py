@@ -398,6 +398,8 @@ class QtDriverManager(QWidget):
 
     def shutdown(self) -> None:
         """Called when this view is hidden / removed from the stack."""
+        if hasattr(self, "_search_timer") and self._search_timer is not None:
+            self._search_timer.stop()
         try:
             unregister_listener(self._language_callback)
         except Exception:

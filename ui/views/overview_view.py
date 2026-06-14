@@ -718,8 +718,9 @@ class QtOverviewView(QScrollArea):
             TRUCK_UPDATED: self._on_data_changed,
         }
         for ev_type, handler in events.items():
-            self._event_bus.subscribe(ev_type, handler)
-            self._handlers[ev_type] = handler
+            if ev_type not in self._handlers:
+                self._event_bus.subscribe(ev_type, handler)
+                self._handlers[ev_type] = handler
 
     def _on_data_changed(self, ev):
         QTimer.singleShot(0, self.refresh)
