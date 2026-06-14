@@ -162,6 +162,7 @@ def KPICard(parent, label="", value="",
     layout.addWidget(lbl)
 
     val = MonoLabel(card, value, size="lg")
+    val.setObjectName("kpi-value")
     if value_color:
         val.setStyleSheet(f"color: {value_color};")
     layout.addWidget(val)

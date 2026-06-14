@@ -165,7 +165,7 @@ class QtOverviewView(QScrollArea):
         for key, label, default in kpi_defs:
             card = KPICard(self._kpi_strip, label, default)
             # Find the MonoLabel for value updates
-            val_lbl = card.findChild(MonoLabel)
+            val_lbl = card.findChild(QLabel, "kpi-value")
             if val_lbl is not None:
                 self._kpi_value_labels[key] = val_lbl
             self._kpi_strip_layout.addWidget(card, 1)

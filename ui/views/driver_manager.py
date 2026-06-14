@@ -506,7 +506,7 @@ class QtDriverManager(QWidget):
 
         for title_key, initial_value in kpi_configs:
             card = KPICard(kpi_row, t(title_key), initial_value)
-            val_lbl = card.findChild(MonoLabel)
+            val_lbl = card.findChild(QLabel, "kpi-value")
             if val_lbl is not None:
                 self._kpi_value_labels[title_key] = val_lbl
             self._kpi_title_refs.append((title_key, card))

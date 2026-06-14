@@ -531,7 +531,7 @@ class QtFleetTab(QWidget):
         ]
         for key, title_key, default_val in kpi_defs:
             card = KPICard(self._kpi_strip, t(title_key), default_val)
-            val_lbl = card.findChild(MonoLabel)
+            val_lbl = card.findChild(QLabel, "kpi-value")
             if val_lbl is not None:
                 self._kpi_value_labels[key] = val_lbl
             self._kpi_strip_layout.addWidget(card, 1)
