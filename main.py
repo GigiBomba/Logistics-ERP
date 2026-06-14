@@ -74,7 +74,15 @@ def run_app() -> int:
         window.show()
 
         logger.info("PySide6 application started")
-        return app.exec()
+        result = app.exec()
+
+        # 8. Cleanup — close DB after Qt event loop ends
+        ops.stop()
+        try:
+            db.close()
+        except Exception:
+            pass
+        return result
 
     except Exception:
         logger.critical("Startup failed: %s", traceback.format_exc())

@@ -109,6 +109,14 @@ class DatabaseManager:
         self.conn.row_factory = sqlite3.Row
         self._init_db()
 
+    def close(self):
+        """Close the database connection. Safe to call multiple times."""
+        if hasattr(self, "conn") and self.conn:
+            try:
+                self.conn.close()
+            except Exception:
+                pass
+
     @staticmethod
     def row_to_dict(row):
         if row is None:

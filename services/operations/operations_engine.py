@@ -77,6 +77,8 @@ class OperationsEngine:
         logger.info("OperationsEngine started")
 
     def _schedule_daily_check(self):
+        if hasattr(self, "_daily_timer"):
+            self._daily_timer.cancel()
         def _publish_and_reschedule():
             if not self._running:
                 return
@@ -153,6 +155,9 @@ class OperationsEngine:
 
     def force_trip_status(self, trip_id: int, new_status: str, skip_undo: bool = False) -> bool:
         """Force a trip to a specific status, updating odometer if completed."""
+        if not self._trip_service:
+            logger.error("force_trip_status: TripService not available")
+            return False
         try:
             trip = self._trip_service.get_by_id(trip_id)
             if not trip:
@@ -169,8 +174,14 @@ class OperationsEngine:
                 "InProgress": "In Transit",
             }.get(old_status, old_status)
 
+            normalized_new = {
+                "InTransit": "In Transit",
+                "Active": "In Transit",
+                "InProgress": "In Transit",
+            }.get(new_status, new_status)
+
             valid_targets = VALID_TRANSITIONS.get(normalized_old, [])
-            if new_status not in valid_targets:
+            if normalized_new not in valid_targets:
                 logger.warning(
                     "force_trip_status: invalid transition %s -> %s for trip %d",
                     old_status, new_status, trip_id,
@@ -312,7 +323,7 @@ class OperationsEngine:
                             )
                             results["overdue_invoices"] += 1
                     except Exception:
-                        pass
+                        logger.debug("migrate_existing_data: failed to evaluate trip #%d", trip_id, exc_info=True)
             logger.info("migrate_existing_data: checked %d trips, %d overdue invoices",
                         results["trips"], results["overdue_invoices"])
         except Exception as e:
@@ -325,7 +336,9 @@ class OperationsEngine:
         data = ev.get("data", {})
         new_status = data.get("new_status", "")
         trip_id = data.get("trip_id")
-        if new_status != "In Transit" or not trip_id:
+
+        transit_aliases = {"In Transit", "InTransit", "Active", "InProgress"}
+        if new_status not in transit_aliases or not trip_id:
             return
         t = threading.Thread(target=self._generate_cmr, args=(trip_id,), daemon=True,
                              name=f"cmr-gen-{trip_id}")
@@ -401,7 +414,7 @@ class OperationsEngine:
                         ctx["driver_license"] = d.get("license_number", "")
                         ctx["driver_name"] = d.get("name", trip.get("driver_name", ""))
                 except Exception:
-                    pass
+                    logger.debug("CMR: driver lookup failed for driver_id=%s", trip.get("driver_id"))
             if trip.get("truck_id"):
                 try:
                     tr = self._db.conn.execute(
@@ -412,7 +425,7 @@ class OperationsEngine:
                         ctx["trailer_plate"] = t.get("trailer_plate", "")
                         ctx["cmr_insurance_number"] = t.get("cmr_insurance_number", "")
                 except Exception:
-                    pass
+                    logger.debug("CMR: truck lookup failed for truck_id=%s", trip.get("truck_id"))
             if trip.get("client_id"):
                 try:
                     cl = self._db.conn.execute(
@@ -423,7 +436,7 @@ class OperationsEngine:
                         ctx["consignee_vat"] = c.get("vat_number", "")
                         ctx["consignee_eori"] = c.get("eori_number", "")
                 except Exception:
-                    pass
+                    logger.debug("CMR: client lookup failed for client_id=%s", trip.get("client_id"))
 
             copies = gen.generate_all_copies(ctx, output_dir)
             for suffix, path in copies.items():
