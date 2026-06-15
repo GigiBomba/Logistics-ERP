@@ -695,8 +695,8 @@ class DatabaseManager:
     def get_route_profitability(self, from_date=None, to_date=None):
         clause, params = self._date_clause(from_date, to_date)
         return self.rows_to_dicts(self.conn.execute(f"""
-            SELECT COALESCE(NULLIF(place_of_loading, ''), 'Origin') || ' → ' ||
-                   COALESCE(NULLIF(trip_id, ''), COALESCE(NULLIF(route_id, ''), 'Unknown'))
+            SELECT COALESCE(NULLIF(place_of_loading, ''), 'Route') || ' → ' ||
+                   COALESCE(NULLIF(delivery_country, ''), COALESCE(NULLIF(loading_country, ''), 'Dest'))
                    AS route_label,
                    AVG(distance_km) AS avg_km,
                    AVG(net_profit) AS avg_profit,
@@ -767,8 +767,8 @@ class DatabaseManager:
 
     def get_maintenance_alerts(self):
         return self.rows_to_dicts(self.conn.execute("""
-            SELECT t.plate_number AS truck, s.description,
-                   s.fixed_expiry_date AS next_due_date, 0 AS next_due_mileage
+            SELECT t.plate_number AS truck, s.maintenance_type AS description,
+                   s.fixed_expiry_date AS next_due_date, s.interval_km AS next_due_mileage
             FROM maintenance_schedules s
             JOIN trucks t ON t.id = s.truck_id
             WHERE s.active = 1
