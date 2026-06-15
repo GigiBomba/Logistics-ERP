@@ -7,7 +7,7 @@ sidebar navigation, view switching via ``QStackedWidget``, and service lifecycle
 from __future__ import annotations
 
 import logging
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from PySide6.QtCore import Qt, QTimer, QObject
 from PySide6.QtWidgets import (
@@ -175,7 +175,7 @@ class MainWindow(QMainWindow):
             )
         return f"⛽ {t('main.fuel_offline')}"
 
-    def _switch_module(self, key: str):
+    def _switch_module(self, key: str, data: Optional[Dict[str, Any]] = None):
         old_key = self._active_module
         if old_key and old_key in self._module_cache:
             cache = self._module_cache[old_key]
@@ -197,6 +197,11 @@ class MainWindow(QMainWindow):
             if obj and hasattr(obj, "wakeup"):
                 try:
                     obj.wakeup()
+                except Exception:
+                    pass
+            if data and obj and hasattr(obj, "handle_nav_data"):
+                try:
+                    obj.handle_nav_data(data)
                 except Exception:
                     pass
 

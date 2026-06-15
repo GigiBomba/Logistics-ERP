@@ -921,6 +921,20 @@ class QtGeneratorsView(QWidget):
             self._listener_registered = True
         self._refresh_trip_lists()
 
+    def handle_nav_data(self, data: Dict[str, Any]) -> None:
+        """Auto-select a trip from navigation data (e.g. alert click)."""
+        trip_id = data.get("trip_id")
+        if not trip_id:
+            return
+        # Ensure trip list is loaded
+        if not self._trips_list:
+            self._refresh_trip_lists()
+        # Find the label for this trip_id
+        for label, tid in self._trip_map.items():
+            if tid == int(trip_id):
+                QTimer.singleShot(100, lambda l=label: self._trip_combo.setCurrentText(l))
+                return
+
     def shutdown(self) -> None:
         """Clean up resources when the view is destroyed / hidden."""
         try:

@@ -7,7 +7,7 @@ right, topped by a ``TopBar``.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -29,7 +29,7 @@ class AppShell:
         self,
         root: QMainWindow,
         db,
-        on_nav_select: Optional[Callable[[str], None]] = None,
+        on_nav_select: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None,
         prefs=None,
         ops=None,
     ):
@@ -82,10 +82,10 @@ class AppShell:
     def set_alert_count(self, count: int) -> None:
         self.top_bar.set_alert_count(count)
 
-    def _on_alert_navigate(self, destination: str) -> None:
+    def _on_alert_navigate(self, destination: str, data: Optional[Dict[str, Any]] = None) -> None:
         """Navigate to a view — called from alert click if wired."""
         if self._on_nav_select:
-            self._on_nav_select(destination)
+            self._on_nav_select(destination, data)
 
     def destroy(self) -> None:
         try:

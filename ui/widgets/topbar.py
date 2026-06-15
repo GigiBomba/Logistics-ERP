@@ -6,7 +6,7 @@ Replaces ui/widgets/top_bar.py. Provides breadcrumb, clock, alert bell, and fuel
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -36,7 +36,7 @@ class TopBar(QFrame):
 
         self._alert_dialog = None
         self._alerts_data: list = []
-        self._on_navigate: Optional[Callable[[str], None]] = None
+        self._on_navigate: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None
 
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._update_clock)
@@ -140,7 +140,7 @@ class TopBar(QFrame):
         """Store alerts data for display when the bell is clicked."""
         self._alerts_data = alerts
 
-    def set_alert_navigate_callback(self, callback: Callable[[str], None]) -> None:
+    def set_alert_navigate_callback(self, callback: Callable[[str, Optional[Dict[str, Any]]], None]) -> None:
         self._on_navigate = callback
 
     def _update_clock(self) -> None:

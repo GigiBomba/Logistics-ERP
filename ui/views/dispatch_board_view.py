@@ -2211,6 +2211,11 @@ class QtDispatchBoardView(QWidget):
         if self._refresh_timer is not None and not self._refresh_timer.isActive():
             self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
 
+    def handle_nav_data(self, data: Dict[str, Any]) -> None:
+        """Store trip_id from alert navigation — used to highlight the trip after load."""
+        self._pending_nav_trip_id = data.get("trip_id")
+        self._start_load()
+
     def shutdown(self) -> None:
         """Called when the view is hidden or the application is shutting down."""
         self._destroyed = True
