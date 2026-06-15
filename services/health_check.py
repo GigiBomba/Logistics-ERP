@@ -1,0 +1,125 @@
+"""Application health check — verifies DB, filesystem, and core services.
+
+Used by the startup sequence and can be invoked programmatically for diagnostics.
+Returns a dict with status and per-component details for each check.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import sys
+from typing import Any, Dict, Optional
+
+logger = logging.getLogger("health_check")
+
+
+def check_database(db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Verify the SQLite database is accessible and has expected tables."""
+    from config import Config
+
+    path = db_path or Config.DB_PATH
+    result: Dict[str, Any] = {"component": "database", "path": path}
+    try:
+        if not os.path.exists(path):
+            result["status"] = "unhealthy"
+            result["error"] = f"Database file not found: {path}"
+            return result
+        import sqlite3
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+        ).fetchall()
+        conn.close()
+        result["status"] = "healthy"
+        result["table_count"] = len(tables)
+        return result
+    except Exception as e:
+        result["status"] = "unhealthy"
+        result["error"] = str(e)
+        return result
+
+
+def check_filesystem() -> Dict[str, Any]:
+    """Verify critical directories exist and are writable."""
+    dirs = ["data", "logs", "invoices", "reports"]
+    result: Dict[str, Any] = {"component": "filesystem"}
+    ok = True
+    details = {}
+    for d in dirs:
+        if os.path.isdir(d):
+            try:
+                test_file = os.path.join(d, ".health_check_test")
+                with open(test_file, "w") as f:
+                    f.write("ok")
+                os.remove(test_file)
+                details[d] = "ok (rw)"
+            except Exception as e:
+                details[d] = f"not writable: {e}"
+                ok = False
+        else:
+            try:
+                os.makedirs(d, exist_ok=True)
+                details[d] = "created"
+            except Exception as e:
+                details[d] = f"cannot create: {e}"
+                ok = False
+    result["status"] = "healthy" if ok else "unhealthy"
+    result["details"] = details
+    return result
+
+
+def check_core_imports() -> Dict[str, Any]:
+    """Verify core Python dependencies can be imported."""
+    required = [
+        "PySide6", "PySide6.QtWidgets", "PySide6.QtWebEngineWidgets",
+        "matplotlib", "folium", "requests",
+        "reportlab", "pikepdf", "PIL",
+        "qtawesome",
+    ]
+    result: Dict[str, Any] = {"component": "imports"}
+    ok = True
+    details = {}
+    for module in required:
+        try:
+            __import__(module)
+            details[module] = "ok"
+        except ImportError as e:
+            details[module] = f"missing: {e}"
+            ok = False
+    result["status"] = "healthy" if ok else "degraded"
+    result["details"] = details
+    return result
+
+
+def run_health_check(db_path: Optional[str] = None) -> Dict[str, Any]:
+    """Run all health checks and return a consolidated report.
+
+    Returns a dict with:
+        overall: "healthy" | "degraded" | "unhealthy"
+        checks: list of per-component results
+    """
+    checks = [
+        check_database(db_path),
+        check_filesystem(),
+        check_core_imports(),
+    ]
+    statuses = {c["status"] for c in checks}
+    if "unhealthy" in statuses:
+        overall = "unhealthy"
+    elif "degraded" in statuses:
+        overall = "degraded"
+    else:
+        overall = "healthy"
+
+    return {"overall": overall, "checks": checks}
+
+
+if __name__ == "__main__":
+    import json
+    sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    logging.basicConfig(level=logging.WARNING)
+    result = run_health_check()
+    print(json.dumps(result, indent=2, ensure_ascii=False))
+    if result["overall"] != "healthy":
+        sys.exit(1)

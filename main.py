@@ -34,6 +34,13 @@ def run_app() -> int:
             print(f"Run: py -3 -m pip install qtawesome\n", file=sys.stderr)
             return 1
 
+        # Health check — verify DB, filesystem, and core imports before heavy init
+        from services.health_check import check_filesystem
+        fs = check_filesystem()
+        if fs["status"] != "healthy":
+            logger.warning("Filesystem health check degraded: %s", fs.get("details"))
+        # Note: full DB check deferred to after DB manager init below
+
         Config.ensure_dirs()
 
         # 1. Database

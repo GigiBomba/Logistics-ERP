@@ -15,8 +15,10 @@ CACHE_TTL_SECONDS = 3600  # 1 hour
 REQUEST_TIMEOUT = 5
 BASE_CURRENCY = "EUR"
 
-PRIMARY_API = "https://open.er-api.com/v6/latest/EUR"
-FALLBACK_API = "https://api.frankfurter.dev/latest?from=EUR"
+from config import Config
+
+PRIMARY_API = Config.CURRENCY_API_PRIMARY
+FALLBACK_API = Config.CURRENCY_API_FALLBACK
 
 _DEFAULT_RATES: Dict[str, float] = {
     "EUR": 1.0,
