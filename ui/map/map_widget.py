@@ -200,14 +200,29 @@ class MapWidget(QWebEngineView):
             except Exception:
                 pass
 
+    @staticmethod
+    def _js_str(s: str) -> str:
+        """Escape a string for safe embedding in a JavaScript single-quoted string."""
+        return s.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n").replace("\r", "")
+
+    @staticmethod
+    def _js_color(s: str) -> str:
+        """Validate a color string for safe JS embedding — only allow hex/rgb/named."""
+        if re.match(r'^[#a-zA-Z0-9(),.%\s]+$', s):
+            return s.replace("'", "")
+        return "#6366f1"
+
     def add_marker(self, lat: float, lng: float, label: str = "", color: str = "blue") -> None:
-        label_escaped = label.replace("\\", "\\\\").replace("'", "\\'").replace('"', '\\"')
-        js = f"_opAddMarker({lat}, {lng}, '{label_escaped}', '{color}');"
+        safe_label = html_module.escape(label, quote=False)
+        js_label = self._js_str(safe_label)
+        js_color = self._js_color(color)
+        js = f"_opAddMarker({lat}, {lng}, '{js_label}', '{js_color}');"
         self._run_js(js)
 
     def add_polyline(self, coords: List[Tuple[float, float]], color: str = "#6366f1", weight: int = 3) -> None:
         coords_json = json.dumps([[lat, lng] for lat, lng in coords])
-        js = f"_opAddPolyline({coords_json}, '{color}', {weight});"
+        js_color = self._js_color(color)
+        js = f"_opAddPolyline({coords_json}, '{js_color}', {weight});"
         self._run_js(js)
 
     def fit_bounds(self, lat1: float, lng1: float, lat2: float, lng2: float) -> None:
@@ -222,7 +237,8 @@ class MapWidget(QWebEngineView):
         self, lat1: float, lng1: float, lat2: float, lng2: float,
         color: str = "#ef4444", fill_opacity: float = 0.15,
     ) -> None:
-        js = f"_opAddRectangle({lat1}, {lng1}, {lat2}, {lng2}, '{color}', {fill_opacity});"
+        js_color = self._js_color(color)
+        js = f"_opAddRectangle({lat1}, {lng1}, {lat2}, {lng2}, '{js_color}', {fill_opacity});"
         self._run_js(js)
 
     def add_polygon(
@@ -230,8 +246,10 @@ class MapWidget(QWebEngineView):
         color: str = "#ef4444", fill_opacity: float = 0.15, fill_color: str = "",
     ) -> None:
         fill = fill_color or color
+        js_color = self._js_color(color)
+        js_fill = self._js_color(fill)
         coords_json = json.dumps([[lat, lng] for lat, lng in coords])
-        js = f"_opAddPolygon({coords_json}, '{color}', {fill_opacity}, '{fill}');"
+        js = f"_opAddPolygon({coords_json}, '{js_color}', {fill_opacity}, '{js_fill}');"
         self._run_js(js)
 
     def clear_overlays(self) -> None:

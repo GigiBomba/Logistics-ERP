@@ -613,6 +613,10 @@ class DocumentService:
             for doc in docs:
                 fpath = doc.get("file_path", "")
                 if fpath and os.path.isfile(fpath):
+                    real_fpath = os.path.realpath(fpath)
+                    if not real_fpath.startswith(safe_base + os.sep):
+                        logger.warning("download_zip: skipping file outside safe dir: %s", fpath)
+                        continue
                     arcname = doc.get("file_name", os.path.basename(fpath))
                     zf.write(fpath, arcname)
         self._log_audit("document.downloaded_zip", f"Downloaded {len(docs)} documents as zip")
