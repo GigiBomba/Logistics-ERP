@@ -288,8 +288,10 @@ class MainWindow(QMainWindow):
         for key, cached in list(self._module_cache.items()):
             try:
                 obj = cached.get("obj") or cached.get("frame")
-                if obj is not None and hasattr(obj, "shutdown"):
-                    obj.shutdown()
+                if obj is not None:
+                    if hasattr(obj, "shutdown"):
+                        obj.shutdown()
+                    obj.deleteLater()
             except Exception:
                 logger.debug("Error shutting down module %s", key, exc_info=True)
         self._module_cache.clear()
