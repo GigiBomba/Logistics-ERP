@@ -1,8 +1,12 @@
 from dataclasses import dataclass, field, asdict
 from typing import List, Optional, Any, Dict
+import threading
+import logging
 import uuid
 import json
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 
 def _new_id() -> str:
@@ -243,6 +247,7 @@ def update_trip_driver(tc: TripContext, driver: dict) -> TripContext:
 
 # Observer registry for TripContext updates
 _listeners = set()
+_listeners_lock = threading.Lock()
 
 
 def register_trip_listener(cb):
@@ -250,27 +255,35 @@ def register_trip_listener(cb):
 
     Callback signature: cb(tc: TripContext, changed_fields: list)
     """
-    try:
+    with _listeners_lock:
         _listeners.add(cb)
-    except Exception:
-        pass
 
 
 def unregister_trip_listener(cb):
-    try:
+    with _listeners_lock:
         _listeners.discard(cb)
-    except Exception:
-        pass
 
 
 def _notify_listeners(tc: TripContext, changed_fields: list):
-    for cb in list(_listeners):
+    with _listeners_lock:
+        listeners = list(_listeners)
+    for cb in listeners:
         try:
-            # Callbacks should be resilient; schedule via direct call (UI must handle threading)
             cb(tc, changed_fields)
         except Exception:
-            # ignore listener errors
-            pass
+            name = getattr(cb, "__name__", str(cb)[:40])
+            logger.warning("TripContext listener %s failed", name)
+
+
+_fuel_price_svc = None
+
+
+def _get_fuel_price_service():
+    global _fuel_price_svc
+    if _fuel_price_svc is None:
+        from services.fuel_price_service import FuelPriceService
+        _fuel_price_svc = FuelPriceService()
+    return _fuel_price_svc
 
 
 def _compute_costs_for_tc(tc: TripContext) -> None:
@@ -294,8 +307,7 @@ def _compute_costs_for_tc(tc: TripContext) -> None:
             return
 
         fuel_liters = (float(dist) / 100.0) * float(fuel_consumption)
-        from services.fuel_price_service import FuelPriceService
-        fuel_price = FuelPriceService().get_price("DEFAULT")
+        fuel_price = _get_fuel_price_service().get_price("DEFAULT")
         fuel_cost = fuel_liters * fuel_price
         toll_cost = float(dist) * TOLL_PER_KM
 
@@ -489,6 +501,7 @@ class TripContextService:
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(TripContextService, cls).__new__(cls)
+            cls._instance._info_lock = threading.Lock()
             cls._instance._active_trip_info = {
                 "distance_km": 0.0,
                 "duration_min": 0.0,
@@ -516,15 +529,14 @@ class TripContextService:
         truck_id: Optional[str] = None,
         truck_fuel_consumption: Optional[float] = None,
     ):
-        # Merge provided values with existing ones to preserve manual overrides
-        info = dict(self._active_trip_info)
-        for key, val in [("distance_km", distance_km), ("duration_min", duration_min),
-                         ("fuel_liters", fuel_liters), ("fuel_cost", fuel_cost),
-                         ("cost_per_km", cost_per_km), ("net_profit", net_profit)]:
-            if val is not None:
-                info[key] = val
-
-        self._active_trip_info = info
+        with self._info_lock:
+            info = dict(self._active_trip_info)
+            for key, val in [("distance_km", distance_km), ("duration_min", duration_min),
+                             ("fuel_liters", fuel_liters), ("fuel_cost", fuel_cost),
+                             ("cost_per_km", cost_per_km), ("net_profit", net_profit)]:
+                if val is not None:
+                    info[key] = val
+            self._active_trip_info = info
 
         # Also update module TripContext and notify listeners for UI sync if available
         try:
