@@ -233,9 +233,13 @@ class QtAnalyticsView(QScrollArea):
             if w is not self._chart_container:
                 w.deleteLater()
 
-        rev_exp = data[3] if len(data) > 3 else ([], [], [])
-        trucks = data[4] if len(data) > 4 else []
-        drivers = data[5] if len(data) > 5 else []
+        # data is a 3-tuple from db.get_analytics_data():
+        #   data[0] = per_truck:  [{"truck_number": str, "p": float}, ...]
+        #   data[1] = per_driver: [{"driver_name": str, "p": float}, ...]
+        #   data[2] = rev_exp:    [{"month": str, "rev": float, "exp": float}, ...]
+        per_truck = data[0] if len(data) > 0 else []
+        per_driver = data[1] if len(data) > 1 else []
+        rev_exp_data = data[2] if len(data) > 2 else []
 
         fig, axes = plt.subplots(2, 2, figsize=(14, 9), dpi=90)
         fig.subplots_adjust(hspace=0.45, wspace=0.35)
@@ -249,23 +253,27 @@ class QtAnalyticsView(QScrollArea):
         # Chart 1: Top Trucks (bar)
         names = []
         profits = []
-        if trucks:
-            top = sorted(trucks, key=lambda x: x[1] if len(x) > 1 else 0, reverse=True)[:8]
-            names = [t[0] for t in top]
-            profits = [t[1] if len(t) > 1 else 0 for t in top]
+        if per_truck:
+            top = sorted(per_truck, key=lambda t: t.get("p", 0), reverse=True)[:8]
+            names = [t.get("truck_number", "?") for t in top]
+            profits = [t.get("p", 0) for t in top]
         make_bar_chart(
             fig, axes[0, 0], names, profits,
             title=t("analytics.top_trucks_title"),
             color=CHART_ACCENT, highlight_max=True,
             empty_message=t("common.no_data"),
         )
-        t1 = axes[0, 0].get_title()
         self._chart_texts.append((axes[0, 0], "analytics.top_trucks_title"))
 
         # Chart 2: Revenue vs Expenses (line)
-        months = rev_exp[0] if len(rev_exp) > 0 else []
-        revenue = rev_exp[1] if len(rev_exp) > 1 else []
-        expenses = rev_exp[2] if len(rev_exp) > 2 else []
+        months = [r["month"] for r in rev_exp_data] if rev_exp_data else []
+        revenue = [r["rev"] for r in rev_exp_data] if rev_exp_data else []
+        expenses = [r["exp"] for r in rev_exp_data] if rev_exp_data else []
+        # Reverse to chronological order (DB returns DESC, we reversed already, so this is ascending)
+        if months and len(months) > 1 and months[0] > months[-1]:
+            months.reverse()
+            revenue.reverse()
+            expenses.reverse()
         make_line_chart(
             fig, axes[0, 1], months,
             [(revenue, t("analytics.revenue_label"), CHART_ACCENT),
@@ -278,10 +286,10 @@ class QtAnalyticsView(QScrollArea):
         # Chart 3: Profit per Driver (bar)
         dnames = []
         dprofits = []
-        if drivers:
-            top_d = sorted(drivers, key=lambda x: x[1] if len(x) > 1 else 0, reverse=True)[:8]
-            dnames = [d[0] for d in top_d]
-            dprofits = [d[1] if len(d) > 1 else 0 for d in top_d]
+        if per_driver:
+            top_d = sorted(per_driver, key=lambda d: d.get("p", 0), reverse=True)[:8]
+            dnames = [d.get("driver_name", "?") for d in top_d]
+            dprofits = [d.get("p", 0) for d in top_d]
         make_bar_chart(
             fig, axes[1, 0], dnames, dprofits,
             title=t("analytics.driver_profit_title"),
@@ -291,7 +299,7 @@ class QtAnalyticsView(QScrollArea):
         self._chart_texts.append((axes[1, 0], "analytics.driver_profit_title"))
 
         # Chart 4: Profit/Expenses Ratio (pie)
-        total_profit = sum(abs(t[1] if len(t) > 1 else 0) for t in trucks) if trucks else 0
+        total_profit = sum(abs(t.get("p", 0)) for t in per_truck) if per_truck else 0
         total_exp = sum(expenses) if expenses else 0
         make_pie_chart(
             fig, axes[1, 1],
