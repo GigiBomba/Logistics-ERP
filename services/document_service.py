@@ -84,14 +84,14 @@ class DocumentService:
         self.db = db
         self._repo = DocumentRepository(db)
         self._event_bus = EventBus()
-        DocumentService._ocr_db = db
-        DocumentService._start_ocr_workers()
+        DocumentService._start_ocr_workers(db)
 
     @classmethod
-    def _start_ocr_workers(cls):
+    def _start_ocr_workers(cls, db):
         with cls._ocr_lock:
             if cls._ocr_workers:
                 return
+            cls._ocr_db = db
             cls._ocr_running = True
             for i in range(MAX_OCR_WORKERS):
                 t = threading.Thread(target=cls._ocr_worker, daemon=True,
@@ -1038,12 +1038,18 @@ class DocumentService:
 
     @staticmethod
     def _sanitize_filename(name: str) -> str:
-        safe = "".join(
-            c for c in name if c.isalnum() or c in "._- "
+        name_parts = name.rsplit(".", 1)
+        base = "".join(
+            c for c in name_parts[0] if c.isalnum() or c in "_- "
         ).strip()
-        if not safe:
+        ext = "".join(
+            c for c in (name_parts[1] if len(name_parts) > 1 else "")
+            if c.isalnum()
+        ).lower()
+        safe = f"{base}.{ext}" if ext else base
+        if not safe or safe == ".":
             safe = "unnamed_file"
-        return safe or "unnamed_file"
+        return safe
 
     @staticmethod
     def _ensure_category_dir(category: str) -> str:
