@@ -654,6 +654,224 @@ class DatabaseManager:
         """, date_params).fetchall()
         return per_truck, per_driver, self.rows_to_dicts(rev_exp[::-1])
 
+    # ── Comprehensive Analytics Queries ──────────────────────────────
+
+    def get_financial_analytics(self, from_date=None, to_date=None):
+        """Revenue, profit, margin over time by month."""
+        clause, params = self._date_clause(from_date, to_date)
+        monthly = self.rows_to_dicts(self.conn.execute(f"""
+            SELECT SUBSTR(created_at, 1, 7) AS month,
+                   SUM(total_price_eur) AS revenue,
+                   SUM(net_profit) AS profit,
+                   AVG(CASE WHEN total_price_eur > 0 THEN net_profit * 100.0 / total_price_eur END) AS margin_pct
+            FROM trips {clause}
+            GROUP BY month ORDER BY month ASC LIMIT 24
+        """, params).fetchall())
+        return monthly
+
+    def get_revenue_by_client(self, from_date=None, to_date=None):
+        clause, params = self._date_clause(from_date, to_date)
+        return self.rows_to_dicts(self.conn.execute(f"""
+            SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
+                   SUM(total_price_eur) AS revenue,
+                   SUM(net_profit) AS profit,
+                   COUNT(*) AS trip_count
+            FROM trips {clause}
+            GROUP BY COALESCE(NULLIF(client_name, ''), 'Unknown')
+            ORDER BY revenue DESC LIMIT 10
+        """, params).fetchall())
+
+    def get_revenue_by_country(self, from_date=None, to_date=None):
+        clause, params = self._date_clause(from_date, to_date)
+        return self.rows_to_dicts(self.conn.execute(f"""
+            SELECT COALESCE(NULLIF(delivery_country, ''), NULLIF(loading_country, ''), 'Unknown') AS country,
+                   SUM(total_price_eur) AS revenue,
+                   COUNT(*) AS trip_count
+            FROM trips {clause}
+            GROUP BY COALESCE(NULLIF(delivery_country, ''), NULLIF(loading_country, ''), 'Unknown')
+            ORDER BY revenue DESC LIMIT 10
+        """, params).fetchall())
+
+    def get_route_profitability(self, from_date=None, to_date=None):
+        clause, params = self._date_clause(from_date, to_date)
+        return self.rows_to_dicts(self.conn.execute(f"""
+            SELECT COALESCE(NULLIF(place_of_loading, ''), 'Origin') || ' → ' ||
+                   COALESCE(NULLIF(trip_id, ''), COALESCE(NULLIF(route_id, ''), 'Unknown'))
+                   AS route_label,
+                   AVG(distance_km) AS avg_km,
+                   AVG(net_profit) AS avg_profit,
+                   AVG(CASE WHEN distance_km > 0 THEN net_profit / distance_km END) AS profit_per_km,
+                   AVG(CASE WHEN distance_km > 0 THEN fuel_cost / distance_km END) AS fuel_per_km,
+                   COUNT(*) AS trip_count
+            FROM trips {clause}
+            GROUP BY 1 ORDER BY avg_profit DESC LIMIT 15
+        """, params).fetchall())
+
+    def get_client_analytics(self, from_date=None, to_date=None):
+        clause, params = self._date_clause(from_date, to_date)
+        return self.rows_to_dicts(self.conn.execute(f"""
+            SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
+                   COUNT(*) AS trip_count,
+                   SUM(total_price_eur) AS revenue,
+                   SUM(net_profit) AS profit,
+                   ROUND(AVG(JULIANDAY(COALESCE(payment_date, 'now')) - JULIANDAY(created_at)), 1) AS avg_payment_delay_days
+            FROM trips {clause}
+            GROUP BY COALESCE(NULLIF(client_name, ''), 'Unknown')
+            ORDER BY profit DESC LIMIT 12
+        """, params).fetchall())
+
+    def get_fleet_analytics(self, from_date=None, to_date=None):
+        clause, params = self._date_clause(from_date, to_date)
+        truck_stats = self.rows_to_dicts(self.conn.execute(f"""
+            SELECT COALESCE(t.plate_number, trips.truck_number, 'Unknown') AS truck,
+                   COUNT(*) AS trip_count,
+                   SUM(trips.distance_km) AS total_km,
+                   SUM(trips.net_profit) AS profit,
+                   AVG(trips.truck_consumption_l_per_100km) AS avg_consumption,
+                   SUM(trips.fuel_cost) AS total_fuel_cost
+            FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id {clause}
+            GROUP BY COALESCE(t.plate_number, trips.truck_number, 'Unknown')
+            ORDER BY profit DESC LIMIT 15
+        """, params).fetchall())
+        return truck_stats
+
+    def get_driver_analytics(self, from_date=None, to_date=None):
+        clause, params = self._date_clause(from_date, to_date)
+        return self.rows_to_dicts(self.conn.execute(f"""
+            SELECT COALESCE(NULLIF(driver_name, ''), 'Unassigned') AS driver,
+                   COUNT(*) AS trip_count,
+                   SUM(distance_km) AS total_km,
+                   SUM(net_profit) AS profit
+            FROM trips {clause}
+            GROUP BY COALESCE(NULLIF(driver_name, ''), 'Unassigned')
+            ORDER BY profit DESC LIMIT 12
+        """, params).fetchall())
+
+    def get_document_analytics(self):
+        inv_count = self.conn.execute(
+            "SELECT COUNT(*) FROM invoices").fetchone()[0]
+        cmr_count = self.conn.execute(
+            "SELECT COUNT(*) FROM documents WHERE tags LIKE '%cmr%'").fetchone()[0]
+        expiring = self.rows_to_dicts(self.conn.execute(
+            "SELECT title, expiry_date FROM documents WHERE expiry_date IS NOT NULL "
+            "AND expiry_date <= date('now', '+30 days') ORDER BY expiry_date ASC LIMIT 10"
+        ).fetchall())
+        total_docs = self.conn.execute(
+            "SELECT COUNT(*) FROM documents").fetchone()[0]
+        return {
+            "invoice_count": inv_count,
+            "cmr_count": cmr_count,
+            "total_docs": total_docs,
+            "expiring": expiring,
+        }
+
+    def get_maintenance_alerts(self):
+        return self.rows_to_dicts(self.conn.execute("""
+            SELECT t.plate_number AS truck, s.description,
+                   s.fixed_expiry_date AS next_due_date, 0 AS next_due_mileage
+            FROM maintenance_schedules s
+            JOIN trucks t ON t.id = s.truck_id
+            WHERE s.active = 1
+            ORDER BY s.fixed_expiry_date ASC LIMIT 10
+        """).fetchall())
+
+    # ── Analytics 2.0: Additional query methods ──────────────────────
+
+    def get_client_growth(self, months: int = 12):
+        return self.rows_to_dicts(self.conn.execute(
+            "SELECT SUBSTR(created_at, 1, 7) AS month, COUNT(*) AS new_clients "
+            "FROM clients WHERE is_active = 1 "
+            "GROUP BY month ORDER BY month ASC LIMIT ?",
+            (months,),
+        ).fetchall())
+
+    def get_truck_utilization(self) -> list:
+        return self.rows_to_dicts(self.conn.execute("""
+            SELECT t.plate_number AS truck,
+                   COUNT(tr.id) AS trip_count,
+                   COALESCE(SUM(tr.distance_km), 0) AS total_km,
+                   MAX(tr.created_at) AS last_trip,
+                   MIN(tr.created_at) AS first_trip
+            FROM trucks t LEFT JOIN trips tr ON t.id = tr.truck_id
+            WHERE t.active_status = 1
+            GROUP BY t.id ORDER BY trip_count DESC LIMIT 15
+        """).fetchall())
+
+    def get_document_upload_trend(self, months: int = 12):
+        return self.rows_to_dicts(self.conn.execute(
+            "SELECT SUBSTR(uploaded_at, 1, 7) AS month, COUNT(*) AS count, "
+            "SUM(CASE WHEN category IN ('invoices','trips','cmr') THEN 1 ELSE 0 END) AS doc_count "
+            "FROM documents WHERE is_archived = 0 "
+            "GROUP BY month ORDER BY month ASC LIMIT ?",
+            (months,),
+        ).fetchall())
+
+    def get_driver_tacho_violations(self):
+        return self.rows_to_dicts(self.conn.execute("""
+            SELECT d.name AS driver, COUNT(da.id) AS activity_days,
+                   COALESCE(SUM(da.violations), 0) AS total_violations,
+                   COALESCE(SUM(da.driving_minutes) / 60.0, 0) AS driving_hours,
+                   COALESCE(SUM(da.rest_minutes) / 60.0, 0) AS rest_hours
+            FROM tacho_driver_activity da
+            JOIN drivers d ON da.driver_id = d.id
+            WHERE da.activity_date >= DATE('now', '-90 days')
+            GROUP BY da.driver_id ORDER BY total_violations DESC LIMIT 15
+        """).fetchall())
+
+    def get_profit_per_km_by_country(self):
+        return self.rows_to_dicts(self.conn.execute("""
+            SELECT delivery_country AS country, COUNT(*) AS trip_count,
+                   COALESCE(SUM(net_profit), 0) AS profit,
+                   COALESCE(SUM(distance_km), 0) AS total_km,
+                   CASE WHEN SUM(distance_km) > 0
+                        THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
+                        ELSE 0 END AS profit_per_km
+            FROM trips WHERE delivery_country IS NOT NULL AND delivery_country != ''
+            GROUP BY delivery_country ORDER BY profit DESC LIMIT 15
+        """).fetchall())
+
+    def get_revenue_concentration(self):
+        return self.rows_to_dicts(self.conn.execute("""
+            SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
+                   COALESCE(SUM(total_price_eur), 0) AS revenue,
+                   COALESCE(SUM(net_profit), 0) AS profit
+            FROM trips GROUP BY client_name ORDER BY revenue DESC
+        """).fetchall())
+
+    def get_driver_profit_per_km(self):
+        return self.rows_to_dicts(self.conn.execute("""
+            SELECT driver_name, COUNT(*) AS trip_count,
+                   COALESCE(SUM(distance_km), 0) AS total_km,
+                   COALESCE(SUM(net_profit), 0) AS total_profit,
+                   CASE WHEN SUM(distance_km) > 0
+                        THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
+                        ELSE 0 END AS profit_per_km
+            FROM trips WHERE driver_name IS NOT NULL AND driver_name != ''
+            GROUP BY driver_name ORDER BY profit_per_km DESC LIMIT 15
+        """).fetchall())
+
+    def get_monthly_financial_summary(self, months: int = 24):
+        return self.rows_to_dicts(self.conn.execute(
+            "SELECT SUBSTR(created_at, 1, 7) AS month, "
+            "COALESCE(SUM(total_price_eur), 0) AS revenue, "
+            "COALESCE(SUM(net_profit), 0) AS profit, "
+            "COUNT(*) AS trip_count, "
+            "CASE WHEN SUM(total_price_eur) > 0 "
+            "     THEN ROUND(SUM(net_profit) * 100.0 / SUM(total_price_eur), 1) "
+            "     ELSE 0 END AS margin_pct, "
+            "SUM(CASE WHEN status IN ('Invoiced', 'Paid') THEN 1 ELSE 0 END) AS invoiced_count, "
+            "SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count "
+            "FROM trips GROUP BY month ORDER BY month ASC LIMIT ?",
+            (months,),
+        ).fetchall())
+
+    @staticmethod
+    def _date_clause(from_date, to_date):
+        if from_date and to_date:
+            return ("WHERE created_at >= ? AND created_at <= ?",
+                    [from_date, to_date])
+        return ("WHERE 1=1", [])
+
     def get_settings(self, keys: List[str]) -> Dict[str, str]:
         rows = self.conn.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(keys))})",
