@@ -11,7 +11,7 @@ Usage::
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Any, Callable, Dict, Optional
 
 from PySide6.QtCore import Qt, QPoint, QTimer
 from PySide6.QtWidgets import (
@@ -43,6 +43,10 @@ _NAV_DESTINATIONS: dict[str, str] = {
     "compliance_warning": "maintenance",
 }
 
+_ALERT_TYPES_WITH_TRIP = {
+    "overdue_invoice", "trip_delay", "compliance_warning",
+}
+
 
 class QtAlertPanel(QFrame):
     """Popup alert panel anchored below the bell icon.
@@ -59,7 +63,7 @@ class QtAlertPanel(QFrame):
         self,
         parent: QWidget,
         alerts: list,
-        on_navigate: Optional[Callable[[str], None]] = None,
+        on_navigate: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowFlags(Qt.Popup)
@@ -221,8 +225,13 @@ class QtAlertPanel(QFrame):
         self._close()
         alert_type = str(getattr(alert.type, "value", alert.type))
         destination = _NAV_DESTINATIONS.get(alert_type, "overview")
+        nav_data: Dict[str, Any] = {}
+        if alert_type in _ALERT_TYPES_WITH_TRIP:
+            trip_id = getattr(alert, "trip_id", None)
+            if trip_id:
+                nav_data["trip_id"] = int(trip_id) if str(trip_id).isdigit() else trip_id
         if self._on_navigate:
-            self._on_navigate(destination)
+            self._on_navigate(destination, nav_data if nav_data else None)
 
     # ── Focus-out close ─────────────────────────────────────────────────────
 

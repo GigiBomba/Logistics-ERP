@@ -6,7 +6,7 @@ Replaces ui/widgets/nav_panel.py. Uses qtawesome icons, no emoji.
 from __future__ import annotations
 
 import logging
-from typing import Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from PySide6.QtCore import Qt, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
 from PySide6.QtGui import QCursor
@@ -66,7 +66,7 @@ class Sidebar(QFrame):
     def __init__(
         self,
         parent: Optional[QWidget] = None,
-        on_select: Optional[Callable[[str], None]] = None,
+        on_select: Optional[Callable] = None,
         prefs=None,
     ):
         super().__init__(parent)
@@ -263,7 +263,7 @@ class Sidebar(QFrame):
         self._active_key = key
         self._activate(key)
         if self._on_select:
-            self._on_select(key)
+            self._on_select(key, None)
 
     def highlight(self, key: str):
         if key == self._active_key:
