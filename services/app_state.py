@@ -8,7 +8,11 @@ Replaces scattered global variables and provides a single source of truth for:
 - active filters
 - user preferences
 """
+import threading
+import logging
 from typing import Any, Callable, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 class AppState:
@@ -24,31 +28,36 @@ class AppState:
         if self._initialized:
             return
         self._initialized = True
+        self._lock = threading.Lock()
         self._state: Dict[str, Any] = {}
         self._listeners: Dict[str, List[Callable]] = {}
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self._state.get(key, default)
+        with self._lock:
+            return self._state.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
-        self._state[key] = value
+        with self._lock:
+            self._state[key] = value
         self._notify(key, value)
 
     def subscribe(self, key: str, callback: Callable) -> None:
-        if key not in self._listeners:
-            self._listeners[key] = []
-        self._listeners[key].append(callback)
+        with self._lock:
+            if key not in self._listeners:
+                self._listeners[key] = []
+            self._listeners[key].append(callback)
 
     def unsubscribe(self, key: str, callback: Callable) -> None:
-        listeners = self._listeners.get(key, [])
-        if callback in listeners:
-            listeners.remove(callback)
+        with self._lock:
+            listeners = self._listeners.get(key, [])
+            if callback in listeners:
+                listeners.remove(callback)
 
     def _notify(self, key: str, value: Any) -> None:
-        import logging
-        logger = logging.getLogger(__name__)
-        for cb in self._listeners.get(key, []):
+        with self._lock:
+            callbacks = list(self._listeners.get(key, []))
+        for cb in callbacks:
             try:
                 cb(value)
-            except Exception as e:
-                logger.error("Error in AppState listener for %s: %s", key, e)
+            except Exception:
+                logger.warning("AppState listener failed for '%s'", key, exc_info=True)
