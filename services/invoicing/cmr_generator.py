@@ -53,6 +53,7 @@ def _get_srgb_icc_profile() -> Optional[bytes]:
         if "icc_profile" in info and len(info["icc_profile"]) > 500:
             return info["icc_profile"]
     except Exception:
+        logger.warning("sRGB ICC profile not found; PDF/A-3 color fidelity degraded")
         pass
     return None
 
@@ -156,28 +157,41 @@ class CMRGenerator:
             return colors.HexColor("#6366f1")
 
     def _next_cmr_number(self) -> Tuple[str, int]:
+        import time
         year = datetime.now().year
         if self.db:
-            try:
-                row = self.db.conn.execute(
-                    "SELECT sequence_number FROM cmr_counter WHERE year = ?", (year,)
-                ).fetchone()
-                if row:
-                    seq = int(row["sequence_number"]) + 1
-                    self.db.conn.execute(
-                        "UPDATE cmr_counter SET sequence_number = ? WHERE year = ?",
-                        (seq, year),
-                    )
-                else:
-                    seq = 1
-                    self.db.conn.execute(
-                        "INSERT INTO cmr_counter (year, sequence_number) VALUES (?, ?)",
-                        (year, seq),
-                    )
-                self.db.conn.commit()
-            except Exception as e:
-                logger.debug("cmr_counter fallback: %s", e)
-                seq = int(datetime.now().timestamp()) % 100000
+            for attempt in range(3):
+                try:
+                    cur = self.db.conn.cursor()
+                    cur.execute("BEGIN IMMEDIATE")
+                    row = cur.execute(
+                        "SELECT sequence_number FROM cmr_counter WHERE year = ?",
+                        (year,),
+                    ).fetchone()
+                    if row:
+                        seq = int(row["sequence_number"]) + 1
+                        cur.execute(
+                            "UPDATE cmr_counter SET sequence_number = ? WHERE year = ?",
+                            (seq, year),
+                        )
+                    else:
+                        seq = 1
+                        cur.execute(
+                            "INSERT INTO cmr_counter (year, sequence_number) VALUES (?, ?)",
+                            (year, seq),
+                        )
+                    cur.execute("COMMIT")
+                    break
+                except Exception as e:
+                    try:
+                        cur.execute("ROLLBACK")
+                    except Exception:
+                        pass
+                    if attempt < 2:
+                        time.sleep(0.1)
+                        continue
+                    logger.warning("cmr_counter DB error after 3 retries: %s", e)
+                    seq = int(datetime.now().timestamp()) % 100000
         else:
             seq = int(datetime.now().timestamp()) % 100000
         cmr_number = f"CMR-{year}-{seq:06d}"
@@ -317,57 +331,82 @@ class CMRGenerator:
     def _build_single_copy(self, ctx: Dict[str, Any], suffix: str,
                            output_dir: str, color_hex: str = "#D32F2F",
                            bar_text: str = "", desig_text: str = "") -> str:
+        import tempfile
+
         cmr_number = ctx["cmr_number"]
         safe_num = cmr_number.replace("/", "_").replace("\\", "_").replace(" ", "_")
         filename = f"CMR_{safe_num}_{suffix}_Copy.pdf"
         filepath = os.path.join(output_dir, filename)
 
-        doc = SimpleDocTemplate(
-            filepath, pagesize=A4,
-            leftMargin=10 * mm, rightMargin=10 * mm,
-            topMargin=10 * mm, bottomMargin=10 * mm,
-            title=f"{cmr_number} - {suffix} Copy",
-            author="Operion ERP",
-            subject=f"eCMR {cmr_number}",
-        )
+        # Validate output_dir is within safe boundaries
+        from pathlib import Path
+        safe_base = Path("data").resolve() / "documents" / "trips"
+        target = Path(output_dir).resolve()
+        if not str(target).startswith(str(safe_base)):
+            # Also accept the project root's invoices and reports dirs
+            alt_bases = [Path("invoices").resolve(), Path("reports").resolve()]
+            if not any(str(target).startswith(str(b)) for b in alt_bases):
+                raise ValueError(f"Output directory must be within {safe_base}")
 
-        story = self._build_story(ctx, color_hex, bar_text, desig_text)
-
-        def _draw_page_bg(canvas, doc):
-            """Left-margin color stripe + top bar for copy identification."""
-            canvas.saveState()
-            canvas.setFillColor(colors.HexColor(color_hex))
-            # Full-height left margin stripe (8mm wide)
-            canvas.rect(0, 0, 8 * mm, A4[1], fill=1, stroke=0)
-            # Top bar (3mm)
-            canvas.rect(0, A4[1] - 3 * mm, A4[0], 3 * mm, fill=1, stroke=0)
-            canvas.restoreState()
-
-        doc.build(story, onFirstPage=_draw_page_bg, onLaterPages=_draw_page_bg)
-
+        # Write to temp file first, then atomically rename to prevent
+        # half-written PDF on crash — both ReportLab and pikepdf can fail mid-write.
+        tmp_fd, tmp_path = tempfile.mkstemp(suffix=".pdf", dir=output_dir)
+        os.close(tmp_fd)
         try:
-            xml_data = generate_efti_xml(cmr_number, ctx, {
-                "company_name": ctx.get("consignor_name", ""),
-                "address": ctx.get("consignor_address", ""),
-                "cui": ctx.get("consignor_vat", ""),
-                "eori_number": ctx.get("consignor_eori", ""),
-            }, client_data={
-                "name": ctx.get("client_name", ""),
-                "address": ctx.get("client_address", ""),
-                "vat_number": ctx.get("consignee_vat", ""),
-                "eori_number": ctx.get("consignee_eori", ""),
-                "contact": ctx.get("consignee_contact", ""),
-            }, truck_data={
-                "plate_number": ctx.get("truck_plate", ""),
-                "trailer_plate": ctx.get("trailer_plate", ""),
-            }, driver_data={
-                "name": ctx.get("driver_name", ""),
-                "license_number": ctx.get("driver_license", ""),
-            }, successive_carriers=ctx.get("successive_carriers", []),
-            role=ctx.get("generating_role", "consignor"))
-            self._embed_xml_payload(filepath, xml_data, cmr_number)
-        except Exception as e:
-            logger.debug("eFTI XML embedding skipped: %s", e)
+            doc = SimpleDocTemplate(
+                tmp_path, pagesize=A4,
+                leftMargin=10 * mm, rightMargin=10 * mm,
+                topMargin=10 * mm, bottomMargin=10 * mm,
+                title=f"{cmr_number} - {suffix} Copy",
+                author="Operion ERP",
+                subject=f"eCMR {cmr_number}",
+            )
+
+            story = self._build_story(ctx, color_hex, bar_text, desig_text)
+
+            def _draw_page_bg(canvas, doc):
+                """Left-margin color stripe + top bar for copy identification."""
+                canvas.saveState()
+                canvas.setFillColor(colors.HexColor(color_hex))
+                canvas.rect(0, 0, 8 * mm, A4[1], fill=1, stroke=0)
+                canvas.rect(0, A4[1] - 3 * mm, A4[0], 3 * mm, fill=1, stroke=0)
+                canvas.restoreState()
+
+            doc.build(story, onFirstPage=_draw_page_bg, onLaterPages=_draw_page_bg)
+
+            # Embed eFTI XML + pikepdf metadata on temp file
+            try:
+                xml_data = generate_efti_xml(cmr_number, ctx, {
+                    "company_name": ctx.get("consignor_name", ""),
+                    "address": ctx.get("consignor_address", ""),
+                    "cui": ctx.get("consignor_vat", ""),
+                    "eori_number": ctx.get("consignor_eori", ""),
+                }, client_data={
+                    "name": ctx.get("client_name", ""),
+                    "address": ctx.get("client_address", ""),
+                    "vat_number": ctx.get("consignee_vat", ""),
+                    "eori_number": ctx.get("consignee_eori", ""),
+                    "contact": ctx.get("consignee_contact", ""),
+                }, truck_data={
+                    "plate_number": ctx.get("truck_plate", ""),
+                    "trailer_plate": ctx.get("trailer_plate", ""),
+                }, driver_data={
+                    "name": ctx.get("driver_name", ""),
+                    "license_number": ctx.get("driver_license", ""),
+                }, successive_carriers=ctx.get("successive_carriers", []),
+                role=ctx.get("generating_role", "consignor"))
+                self._embed_xml_payload(tmp_path, xml_data, cmr_number)
+            except Exception as e:
+                logger.debug("eFTI XML embedding skipped: %s", e)
+
+            # Atomic rename — on same filesystem this is instant and safe
+            if os.path.exists(filepath):
+                os.unlink(filepath)
+            os.replace(tmp_path, filepath)
+        except Exception:
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+            raise
 
         return filepath
 
@@ -480,8 +519,10 @@ class CMRGenerator:
         # ── Footer ──
         story.append(Spacer(1, 4 * mm))
         story.append(self._hline(lc, 0.3))
+        issue_ts = ctx.get("place_of_loading_date", "") or ctx.get("created_at", "")
+        ts = issue_ts[:10] if issue_ts else datetime.now().strftime('%d/%m/%Y')
         story.append(Paragraph(
-            f"Generated by Operion ERP · {datetime.now().strftime('%d/%m/%Y %H:%M')} "
+            f"Generated by Operion ERP · {ts} "
             f"· CMR {ctx['cmr_number']} · {desig_text}", self.footer_style))
         return story
 
@@ -589,9 +630,13 @@ class CMRGenerator:
 
     def _header_block(self, ctx, color_hex, w):
         """Full-width header — uses cached styles from _init_styles."""
-        self._hdr_style.textColor = colors.HexColor(color_hex)
+        from reportlab.lib.styles import ParagraphStyle
+        hdr_style = ParagraphStyle(
+            "hdr_temp", parent=self._hdr_style,
+            textColor=colors.HexColor(color_hex),
+        )
         data = [[
-            Paragraph("<b>CMR</b><br/>INTERNATIONAL<br/>CONSIGNMENT NOTE", self._hdr_style),
+            Paragraph("<b>CMR</b><br/>INTERNATIONAL<br/>CONSIGNMENT NOTE", hdr_style),
             Paragraph(
                 f"<font size=11 color='{color_hex}'><b>No: {ctx['cmr_number']}</b></font><br/>"
                 f"Trip #{ctx['trip_id']}<br/>"
@@ -657,8 +702,8 @@ class CMRGenerator:
         kind_val = ctx.get("package_type", "") or "—"
         nature_val = ctx.get("cargo_description", "") or "—"
         hs_val = ctx.get("hs_code", "") or "—"
-        wt_val = (f"{ctx['gross_weight_kg']} kg" if ctx.get("gross_weight_kg") else "—")
-        vol_val = (f"{ctx['volume_m3']} m³" if ctx.get("volume_m3") else "—")
+        wt_val = (f"{ctx['gross_weight_kg']} kg" if ctx.get("gross_weight_kg") is not None else "—")
+        vol_val = (f"{ctx['volume_m3']} m³" if ctx.get("volume_m3") is not None else "—")
 
         def H(s):
             return Paragraph(s, self._cargo_hdr_style)
@@ -812,8 +857,8 @@ class CMRGenerator:
             elements.append(Spacer(1, 1 * mm))
             try:
                 elements.append(Image(sig_path, width=2.2 * cm, height=0.9 * cm))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to embed signature image '%s': %s", sig_path, e)
         return elements
 
     def _embed_xml_payload(self, pdf_path, xml_string, cmr_number):
