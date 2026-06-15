@@ -30,19 +30,33 @@ class UndoStack:
         logger.debug("UndoStack push: trip %d, %s -> %s (stack size %d)",
                      command.trip_id, command.old_status, command.new_status, len(self._undo))
 
-    def undo(self) -> Optional[UndoCommand]:
+    def undo(self, current_status: Optional[str] = None) -> Optional[UndoCommand]:
         if not self._undo:
             return None
-        cmd = self._undo.pop()
+        cmd = self._undo[-1]
+        if current_status is not None and cmd.new_status != current_status:
+            logger.warning(
+                "UndoStack: cannot undo trip %d — expected status '%s', actual '%s'",
+                cmd.trip_id, cmd.new_status, current_status,
+            )
+            return None
+        self._undo.pop()
         self._redo.append(cmd)
         logger.debug("UndoStack undo: trip %d, reverting %s -> %s",
                      cmd.trip_id, cmd.new_status, cmd.old_status)
         return cmd
 
-    def redo(self) -> Optional[UndoCommand]:
+    def redo(self, current_status: Optional[str] = None) -> Optional[UndoCommand]:
         if not self._redo:
             return None
-        cmd = self._redo.pop()
+        cmd = self._redo[-1]
+        if current_status is not None and cmd.old_status != current_status:
+            logger.warning(
+                "UndoStack: cannot redo trip %d — expected status '%s', actual '%s'",
+                cmd.trip_id, cmd.old_status, current_status,
+            )
+            return None
+        self._redo.pop()
         self._undo.append(cmd)
         logger.debug("UndoStack redo: trip %d, restoring %s -> %s",
                      cmd.trip_id, cmd.old_status, cmd.new_status)
