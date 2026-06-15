@@ -4,7 +4,9 @@ import requests
 from typing import Optional
 from services.geocode_nominatim import geocode_place
 
-NOMINATIM_REVERSE_URL = 'https://nominatim.openstreetmap.org/reverse'
+from config import Config
+
+NOMINATIM_REVERSE_URL = f"{Config.NOMINATIM_URL}/reverse"
 
 
 def _new_id() -> str:
