@@ -580,6 +580,14 @@ class QtOverviewView(QScrollArea):
             self._chart_render_ts = now
         except Exception as exc:
             logger.exception("Profit chart render failed: %s", exc)
+            self._clear_layout(self._chart_container.layout())
+            msg = t("home.profit_no_data", default="Chart unavailable.\nComplete trips to see analytics.")
+            lbl = QLabel(msg)
+            lbl.setProperty("role", "muted")
+            lbl.style().unpolish(lbl)
+            lbl.style().polish(lbl)
+            lbl.setAlignment(Qt.AlignCenter)
+            self._chart_container.layout().addWidget(lbl)
 
     def _do_render_chart(self):
         # Lazy imports so matplotlib is optional at import time.
@@ -696,6 +704,7 @@ class QtOverviewView(QScrollArea):
         canvas = FigureCanvas(fig)
         self._chart_container.layout().addWidget(canvas)
 
+        fig.tight_layout(pad=1.0)
         self._profit_fig = fig
 
     @staticmethod
