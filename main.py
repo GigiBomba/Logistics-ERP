@@ -5,6 +5,7 @@ Running ``python main.py`` launches the Qt version of the app.
 
 import sys
 import os
+import time
 import logging
 import traceback
 
@@ -18,12 +19,14 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 
 from config import Config  # noqa: E402
 from ui.stylesheet import build_stylesheet  # noqa: E402
+from utils.observability import log, metrics, perf_timer  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
 logger = logging.getLogger("app")
 
 
 def run_app() -> int:
+    startup_start = time.perf_counter()
     try:
         # Quick pre-flight check — ensure critical dependency is available early
         try:
@@ -90,6 +93,8 @@ def run_app() -> int:
         window.show()
 
         logger.info("PySide6 application started")
+        metrics.gauge("startup_time_s", time.perf_counter() - startup_start)
+        log.info("app_started", startup_ms=round((time.perf_counter() - startup_start) * 1000))
         result = app.exec()
 
         # 8. Cleanup — close DB after Qt event loop ends

@@ -105,12 +105,11 @@ def countries_from_points(points: List[Tuple[float, float]]) -> List[str]:
         return []
     step = max(1, len(points) // 30)
     sampled = points[::step]
-    found: List[str] = []
+    found: set = set()
     for lat, lon in sampled:
         for code in countries_at_point(lat, lon):
-            if code not in found:
-                found.append(code)
-    return found
+            found.add(code)
+    return list(found)
 
 
 def get_bounds(code: str) -> Optional[Tuple[float, float, float, float]]:
