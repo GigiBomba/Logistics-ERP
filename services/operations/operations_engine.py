@@ -304,7 +304,9 @@ class OperationsEngine:
             logger.error("migrate_existing_data truck eval failed: %s", e)
 
         try:
-            trips = self._trip_service.get_all() if self._trip_service else []
+            trips = self._trip_service.get_by_statuses(
+                ["Delivered", "Livrat", "Facturat", "Invoiced", "Paid"],
+            ) if self._trip_service else []
             results["trips"] = len(trips)
             today = datetime.now()
             overdue_days = self._rules.get("unpaid_invoice_days", 30)
