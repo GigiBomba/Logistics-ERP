@@ -97,7 +97,9 @@ class AlertManager:
         self._initialized = True
         self._db = db
         self._alerts: Dict[str, Alert] = {}
+        self._alerts_lock = threading.Lock()
         self._max_alerts = 5000
+        self._notification_playing = False
         self._event_bus = EventBus()
         if self._db is not None:
             self._load_from_db()
@@ -132,46 +134,53 @@ class AlertManager:
         trip_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Alert:
-        # Deduplicate: resolve any existing active alert with same type + entity + message
-        dup = self._find_duplicate(alert_type, truck_id, trip_id, message)
-        if dup is not None:
-            logger.debug("Duplicate alert found, resolving old one: %s", dup.id)
-            self.resolve_alert(dup.id)
+        with self._alerts_lock:
+            dup = self._find_duplicate(alert_type, truck_id, trip_id, message)
+            if dup is not None:
+                logger.debug("Duplicate alert found, resolving old one: %s", dup.id)
+                dup.resolved = True
+                dup.resolved_at = datetime.now().isoformat()
+                self._persist_resolution(dup)
 
-        alert = Alert(
-            type=alert_type,
-            severity=severity,
-            title=title,
-            message=message,
-            truck_id=truck_id,
-            trip_id=trip_id,
-            metadata=metadata or {},
-        )
-        self._alerts[alert.id] = alert
-        self._persist_alert(alert)
-        if len(self._alerts) > self._max_alerts:
-            resolved = [a for a in self._alerts.values() if a.resolved]
-            if resolved:
-                oldest = min(resolved, key=lambda a: a.created_at)
-                del self._alerts[oldest.id]
-                logger.debug("Evicted oldest resolved alert: %s", oldest.id)
-            else:
-                oldest = min(self._alerts.values(), key=lambda a: a.created_at)
-                del self._alerts[oldest.id]
-                logger.debug("Evicted oldest alert (all active): %s", oldest.id)
-        self._event_bus.publish(ALERT_CREATED, {"alert": alert.to_dict()})
+            alert = Alert(
+                type=alert_type,
+                severity=severity,
+                title=title,
+                message=message,
+                truck_id=truck_id,
+                trip_id=trip_id,
+                metadata=metadata or {},
+            )
+            self._alerts[alert.id] = alert
+            self._persist_alert(alert)
+            if len(self._alerts) > self._max_alerts:
+                resolved = [a for a in self._alerts.values() if a.resolved]
+                if resolved:
+                    oldest = min(resolved, key=lambda a: a.created_at)
+                    del self._alerts[oldest.id]
+                    logger.debug("Evicted oldest resolved alert: %s", oldest.id)
+                else:
+                    oldest = min(self._alerts.values(), key=lambda a: a.created_at)
+                    del self._alerts[oldest.id]
+                    logger.debug("Evicted oldest alert (all active): %s", oldest.id)
+            alert_copy = alert.to_dict()
+        self._event_bus.publish(ALERT_CREATED, {"alert": alert_copy})
         logger.info("Alert created: [%s] %s — %s", severity.value, alert_type.value, title)
-        # Play notification sound in a background thread
         self._play_notification()
         return alert
 
     def resolve_alert(self, alert_id: str) -> Optional[Alert]:
-        alert = self._alerts.get(alert_id)
-        if alert and not alert.resolved:
-            alert.resolved = True
-            alert.resolved_at = datetime.now().isoformat()
-            self._persist_resolution(alert)
-            self._event_bus.publish(ALERT_RESOLVED, {"alert": alert.to_dict()})
+        with self._alerts_lock:
+            alert = self._alerts.get(alert_id)
+            if alert and not alert.resolved:
+                alert.resolved = True
+                alert.resolved_at = datetime.now().isoformat()
+                self._persist_resolution(alert)
+                alert_copy = alert.to_dict()
+            else:
+                alert_copy = None
+        if alert_copy:
+            self._event_bus.publish(ALERT_RESOLVED, {"alert": alert_copy})
             logger.info("Alert resolved: %s", alert_id)
         return alert
 
@@ -237,21 +246,28 @@ class AlertManager:
 
     def _play_notification(self) -> None:
         """Play a notification sound in a background thread."""
+        if self._notification_playing:
+            return
+        self._notification_playing = True
         def _play():
             try:
                 import winsound
                 winsound.PlaySound("SystemExclamation", winsound.SND_ALIAS)
             except ImportError:
-                pass  # Not on Windows
+                pass
             except Exception:
-                pass  # Sound system not available
+                pass
+            finally:
+                self._notification_playing = False
         threading.Thread(target=_play, daemon=True).start()
 
     def cleanup_old(self, days: int = 90) -> int:
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
-        to_remove = [aid for aid, a in self._alerts.items() if a.created_at < cutoff]
-        for aid in to_remove:
-            del self._alerts[aid]
+        with self._alerts_lock:
+            to_remove = [aid for aid, a in self._alerts.items()
+                         if a.created_at < cutoff and a.resolved]
+            for aid in to_remove:
+                del self._alerts[aid]
         if self._db is not None:
             try:
                 self._db.conn.execute(
@@ -280,6 +296,11 @@ class AlertManager:
             for r in rows:
                 alert_id = r[0]
                 if alert_id in self._alerts:
+                    # Refresh resolved status from DB for already-loaded alerts
+                    existing = self._alerts[alert_id]
+                    if r[8] and not existing.resolved:
+                        existing.resolved = True
+                        existing.resolved_at = r[9]
                     continue
                 try:
                     metadata = json.loads(r[10]) if r[10] else {}

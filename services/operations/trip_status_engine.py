@@ -43,32 +43,42 @@ class TripStatusEngine:
         if trip_id:
             self.evaluate_trip(trip_id)
 
-    def evaluate_trip(self, trip_id: str) -> int:
+    def evaluate_trip(self, trip_id: Any) -> int:
         count = 0
         try:
-            row = self._trip_service.get_by_id(int(trip_id))
+            trip_id_int = int(trip_id)
+        except (TypeError, ValueError):
+            return 0
+        try:
+            row = self._trip_service.get_by_id(trip_id_int)
             if row:
                 delay_hours = self._rules.get("trip_delay_hours", 2)
                 plate = row.get("truck_number") or "?"
                 status = row.get("status") or ""
                 created_raw = row.get("created_at")
                 if created_raw and status in ("pending", "loading"):
-                    try:
-                        created = datetime.strptime(created_raw[:10], "%Y-%m-%d")
-                        hours_idle = (datetime.now() - created).total_seconds() / 3600
-                        if hours_idle > delay_hours * 24:
-                            self._alert_mgr.create_alert(
-                                AlertType.TRIP_DELAY, Severity.WARNING,
-                                f"Trip {trip_id} delayed",
-                                f"Trip has been in '{status}' for {int(hours_idle)} hours (truck {plate})",
-                                truck_id=plate,
-                                trip_id=trip_id,
-                            )
-                            count += 1
-                    except Exception:
-                        pass
+                    created = None
+                    raw_str = str(created_raw)
+                    for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y"):
+                        try:
+                            created = datetime.strptime(raw_str[:19] if len(raw_str) > 10 else raw_str[:10], fmt)
+                            break
+                        except ValueError:
+                            continue
+                    if created is None:
+                        return 0
+                    hours_idle = (datetime.now() - created).total_seconds() / 3600
+                    if hours_idle > delay_hours * 24:
+                        self._alert_mgr.create_alert(
+                            AlertType.TRIP_DELAY, Severity.WARNING,
+                            f"Trip {trip_id} delayed",
+                            f"Trip has been in '{status}' for {int(hours_idle)} hours (truck {plate})",
+                            truck_id=plate,
+                            trip_id=trip_id,
+                        )
+                        count += 1
         except Exception as e:
-            logger.error("evaluate_trip %s failed: %s", trip_id, e)
+            logger.warning("evaluate_trip #%s failed: %s", trip_id, e, exc_info=True)
         return count
 
     def evaluate_all(self) -> int:
