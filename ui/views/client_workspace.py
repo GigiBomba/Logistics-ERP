@@ -197,19 +197,19 @@ class QtClientWorkspace(QWidget):
         except Exception:
             pass
 
+    def shutdown(self) -> None:
+        """Release resources when the view is hidden."""
+        try:
+            unregister_listener(self._language_callback)
+        except Exception:
+            pass
+        self._listener_registered = False
+
     def wakeup(self) -> None:
         """Refresh data when the view becomes active (QStackedWidget hook)."""
-        self._load_data()
-
-    def shutdown(self) -> None:
-        """Release resources when the view is hidden.
-
-        Currently a no-op; subclasses may override.
-        """
-        pass
-
-    def refresh(self) -> None:
-        """External refresh trigger called after data mutations."""
+        if not getattr(self, "_listener_registered", True):
+            register_listener(self._language_callback)
+            self._listener_registered = True
         self._load_data()
 
     # ── i18n ───────────────────────────────────────────────────────────────

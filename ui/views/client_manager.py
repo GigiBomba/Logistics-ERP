@@ -146,6 +146,16 @@ class QtClientManager(QWidget):
         except Exception:
             pass
 
+    def wakeup(self) -> None:
+        if not getattr(self, "_listener_registered", True):
+            register_listener(self._language_callback)
+            self._listener_registered = True
+        self._load_data()
+
+    def shutdown(self) -> None:
+        self._cleanup()
+        self._listener_registered = False
+
     # ── i18n ───────────────────────────────────────────────────────────────
 
     def _on_language_changed(self, _lang: str) -> None:
