@@ -130,6 +130,14 @@ class DatabaseManager:
     def _init_db(self):
         """Creează tabelele și indecșii necesari."""
         self.conn.execute("BEGIN")
+        self._create_tables_and_indices()
+        self.conn.commit()
+        self._run_column_migrations()
+        self._migrate_legacy_data()
+
+    def _create_tables_and_indices(self):
+        """Execute all CREATE TABLE and CREATE INDEX statements."""
+        # Core tables
         self.conn.execute(TABLE_TRIPS)
         self.conn.execute(TABLE_INVOICES)
         self.conn.execute(TABLE_TRUCKS)
@@ -150,7 +158,8 @@ class DatabaseManager:
         self.conn.execute(INDEX_TRIPS_TRUCK)
         self.conn.execute(TABLE_SETTINGS)
         self.conn.execute(TABLE_EMAIL_LOGS)
-        # Operations Engine tables
+
+        # Operations Engine
         self.conn.execute(TABLE_ALERTS)
         self.conn.execute(TABLE_OPERATION_EVENTS)
         self.conn.execute(TABLE_TRIP_STATUS_HISTORY)
@@ -160,7 +169,7 @@ class DatabaseManager:
         self.conn.execute(INDEX_OPERATION_EVENTS_TYPE)
         self.conn.execute(INDEX_TRIP_STATUS_HISTORY_TRIP)
 
-        # Fleet Maintenance tables
+        # Fleet Maintenance
         self.conn.execute(TABLE_MAINTENANCE_RECORDS)
         self.conn.execute(TABLE_MAINTENANCE_SCHEDULES)
         self.conn.execute(TABLE_TRUCK_HEALTH_SCORES)
@@ -170,16 +179,14 @@ class DatabaseManager:
         self.conn.execute(INDEX_MAINTENANCE_SCHEDULES_TRUCK)
         self.conn.execute(INDEX_MAINTENANCE_SCHEDULES_ACTIVE)
 
-        # Drivers table
+        # Drivers
         self.conn.execute(TABLE_DRIVERS)
         self.conn.execute(INDEX_DRIVERS_ACTIVE)
-
-        # Driver-Truck assignments table
         self.conn.execute(TABLE_DRIVER_TRUCK_ASSIGNMENTS)
         self.conn.execute(INDEX_DTA_DRIVER)
         self.conn.execute(INDEX_DTA_TRUCK)
 
-        # Tachograph tables
+        # Tachograph
         self.conn.execute(TABLE_TACHO_IMPORTS)
         self.conn.execute(TABLE_TACHO_DRIVER_ACTIVITY)
         self.conn.execute(TABLE_TACHO_VEHICLE_DATA)
@@ -187,20 +194,16 @@ class DatabaseManager:
         self.conn.execute(INDEX_TACHO_VEHICLE_TRUCK)
         self.conn.execute(INDEX_TACHO_IMPORTS_HASH)
 
-        # Clients table
+        # Clients
         self.conn.execute(TABLE_CLIENTS)
         self.conn.execute(INDEX_CLIENTS_NAME)
         self.conn.execute(INDEX_CLIENTS_ACTIVE)
-
-        # Client contacts (Phase 2)
         self.conn.execute(TABLE_CLIENT_CONTACTS)
         self.conn.execute(INDEX_CONTACTS_CLIENT)
-
-        # Client tags (Phase 3)
         self.conn.execute(TABLE_CLIENT_TAGS)
         self.conn.execute(INDEX_TAGS_CLIENT)
 
-        # Document Center tables
+        # Document Center
         self.conn.execute(TABLE_DOCUMENTS)
         self.conn.execute(TABLE_DOCUMENT_LINKS)
         self.conn.execute(INDEX_DOCUMENTS_CATEGORY)
@@ -210,7 +213,7 @@ class DatabaseManager:
         self.conn.execute(INDEX_DOC_LINKS_DOCUMENT)
         self.conn.execute(INDEX_DOC_LINKS_ENTITY)
 
-        # Document Center P2: FTS5, versions, contracts, templates
+        # Document Center P2 (FTS5 is best-effort)
         try:
             self.conn.execute(TABLE_DOCUMENTS_FTS)
         except Exception:
@@ -228,7 +231,7 @@ class DatabaseManager:
         self.conn.execute(INDEX_CONTRACTS_STATUS)
         self.conn.execute(TABLE_DOCUMENT_TEMPLATES)
 
-        # CMR tables
+        # CMR
         self.conn.execute(TABLE_CMR_COUNTER)
         self.conn.execute(TABLE_SUCCESSIVE_CARRIERS)
         self.conn.execute(INDEX_SUCCESSIVE_CARRIERS_TRIP)
@@ -236,51 +239,122 @@ class DatabaseManager:
         self.conn.execute(INDEX_CMR_AUDIT_TRIP)
         self.conn.execute(INDEX_CMR_AUDIT_NUMBER)
 
-        # P2 column migrations on documents
+    def _ensure_column(self, table: str, column: str, alter_sql: str) -> None:
+        """Add a column if it doesn't already exist in the table."""
         try:
-            doc_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(documents)").fetchall()]
-            if 'text_content' not in doc_cols:
-                try:
-                    self.conn.execute(ALTER_DOCUMENTS_ADD_TEXT_CONTENT)
-                except Exception:
-                    pass
-            if 'expiry_date' not in doc_cols:
-                try:
-                    self.conn.execute(ALTER_DOCUMENTS_ADD_EXPIRY_DATE)
-                except Exception:
-                    pass
-            if 'signed_by' not in doc_cols:
-                try:
-                    self.conn.execute(ALTER_DOCUMENTS_ADD_SIGNED_BY)
-                except Exception:
-                    pass
-            if 'signed_at' not in doc_cols:
-                try:
-                    self.conn.execute(ALTER_DOCUMENTS_ADD_SIGNED_AT)
-                except Exception:
-                    pass
-            # CMR document columns
-            for col_name, alter_sql in [
-                ("copy_type", "ALTER TABLE documents ADD COLUMN copy_type TEXT DEFAULT ''"),
-                ("cmr_number", "ALTER TABLE documents ADD COLUMN cmr_number TEXT DEFAULT ''"),
-                ("cmr_metadata_json", "ALTER TABLE documents ADD COLUMN cmr_metadata_json TEXT DEFAULT '{}'"),
-                ("is_signed", "ALTER TABLE documents ADD COLUMN is_signed INTEGER DEFAULT 0"),
-            ]:
-                if col_name not in doc_cols:
+            cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            if column not in cols:
+                self.conn.execute(alter_sql)
+        except Exception:
+            pass
+
+    def _ensure_columns(self, table: str, migrations: list) -> None:
+        """Add multiple columns to a table if they don't exist."""
+        try:
+            cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
+            for column, alter_sql in migrations:
+                if column not in cols:
                     try:
                         self.conn.execute(alter_sql)
                     except Exception:
                         pass
-            try:
-                self.conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_copy_type ON documents(copy_type)")
-                self.conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_cmr_number ON documents(cmr_number)")
-            except Exception:
-                pass
         except Exception:
             pass
 
-        self.conn.commit()
-        # Migrate legacy maintenance table to maintenance_records (if both exist)
+    def _run_column_migrations(self):
+        """Apply all schema migrations — add columns, indices that may be missing."""
+        self._ensure_columns("documents", [
+            ("text_content", ALTER_DOCUMENTS_ADD_TEXT_CONTENT),
+            ("expiry_date", ALTER_DOCUMENTS_ADD_EXPIRY_DATE),
+            ("signed_by", ALTER_DOCUMENTS_ADD_SIGNED_BY),
+            ("signed_at", ALTER_DOCUMENTS_ADD_SIGNED_AT),
+            ("copy_type", "ALTER TABLE documents ADD COLUMN copy_type TEXT DEFAULT ''"),
+            ("cmr_number", "ALTER TABLE documents ADD COLUMN cmr_number TEXT DEFAULT ''"),
+            ("cmr_metadata_json", "ALTER TABLE documents ADD COLUMN cmr_metadata_json TEXT DEFAULT '{}'"),
+            ("is_signed", "ALTER TABLE documents ADD COLUMN is_signed INTEGER DEFAULT 0"),
+        ])
+        try:
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_copy_type ON documents(copy_type)")
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_cmr_number ON documents(cmr_number)")
+        except Exception:
+            pass
+
+        self._ensure_columns("trips", [
+            ("context_json", "ALTER TABLE trips ADD COLUMN context_json TEXT"),
+            ("route_history_v2_id", "ALTER TABLE trips ADD COLUMN route_history_v2_id INTEGER REFERENCES route_history_v2(id)"),
+            ("truck_consumption_l_per_100km", "ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL"),
+            ("client_id", "ALTER TABLE trips ADD COLUMN client_id INTEGER REFERENCES clients(id)"),
+            ("driver_id", "ALTER TABLE trips ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"),
+            ("truck_id", ALTER_TRIPS_ADD_TRUCK_ID),
+            ("price_pre_vat", "ALTER TABLE trips ADD COLUMN price_pre_vat REAL DEFAULT 0"),
+            ("vat_percent", "ALTER TABLE trips ADD COLUMN vat_percent REAL DEFAULT 0"),
+            ("cmr_number", "ALTER TABLE trips ADD COLUMN cmr_number TEXT"),
+            ("cmr_sequence", "ALTER TABLE trips ADD COLUMN cmr_sequence INTEGER"),
+            ("cargo_description", "ALTER TABLE trips ADD COLUMN cargo_description TEXT"),
+            ("cargo_marks", "ALTER TABLE trips ADD COLUMN cargo_marks TEXT"),
+            ("package_count", "ALTER TABLE trips ADD COLUMN package_count INTEGER"),
+            ("package_type", "ALTER TABLE trips ADD COLUMN package_type TEXT"),
+            ("gross_weight_kg", "ALTER TABLE trips ADD COLUMN gross_weight_kg REAL"),
+            ("volume_m3", "ALTER TABLE trips ADD COLUMN volume_m3 REAL"),
+            ("hs_code", "ALTER TABLE trips ADD COLUMN hs_code TEXT"),
+            ("carrier_instructions", "ALTER TABLE trips ADD COLUMN carrier_instructions TEXT"),
+            ("carrier_reservations", "ALTER TABLE trips ADD COLUMN carrier_reservations TEXT"),
+            ("special_agreements", "ALTER TABLE trips ADD COLUMN special_agreements TEXT"),
+            ("carriage_payer", "ALTER TABLE trips ADD COLUMN carriage_payer TEXT"),
+            ("documents_attached", "ALTER TABLE trips ADD COLUMN documents_attached TEXT"),
+            ("place_of_loading", "ALTER TABLE trips ADD COLUMN place_of_loading TEXT"),
+            ("place_of_loading_date", "ALTER TABLE trips ADD COLUMN place_of_loading_date TEXT"),
+            ("loading_country", "ALTER TABLE trips ADD COLUMN loading_country TEXT"),
+            ("delivery_country", "ALTER TABLE trips ADD COLUMN delivery_country TEXT"),
+            ("adr_info_json", "ALTER TABLE trips ADD COLUMN adr_info_json TEXT"),
+            ("cmr_status", "ALTER TABLE trips ADD COLUMN cmr_status TEXT DEFAULT 'draft'"),
+            ("cmr_remarks", "ALTER TABLE trips ADD COLUMN cmr_remarks TEXT"),
+        ])
+        try:
+            self.conn.execute(INDEX_TRIPS_TRUCK_ID)
+        except Exception:
+            pass
+        try:
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status)")
+        except Exception:
+            pass
+
+        self._ensure_column("trucks", "tachograph_expiry", "ALTER TABLE trucks ADD COLUMN tachograph_expiry TEXT")
+        self._ensure_column("trucks", "tracking_device_id", ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID)
+        self._ensure_columns("trucks", [
+            ("trailer_plate", "ALTER TABLE trucks ADD COLUMN trailer_plate TEXT DEFAULT ''"),
+            ("max_payload_kg", "ALTER TABLE trucks ADD COLUMN max_payload_kg REAL DEFAULT 0"),
+            ("cmr_insurance_number", "ALTER TABLE trucks ADD COLUMN cmr_insurance_number TEXT DEFAULT ''"),
+            ("cmr_insurance_expiry", "ALTER TABLE trucks ADD COLUMN cmr_insurance_expiry TEXT DEFAULT ''"),
+        ])
+
+        self._ensure_columns("drivers", [
+            ("passport_number", "ALTER TABLE drivers ADD COLUMN passport_number TEXT DEFAULT ''"),
+            ("passport_expiry", "ALTER TABLE drivers ADD COLUMN passport_expiry TEXT DEFAULT ''"),
+            ("adr_certificate", "ALTER TABLE drivers ADD COLUMN adr_certificate TEXT DEFAULT ''"),
+            ("adr_certificate_expiry", "ALTER TABLE drivers ADD COLUMN adr_certificate_expiry TEXT DEFAULT ''"),
+            ("driver_card_number", "ALTER TABLE drivers ADD COLUMN driver_card_number TEXT DEFAULT ''"),
+        ])
+
+        self._ensure_columns("clients", [
+            ("client_type", ALTER_CLIENTS_ADD_TYPE),
+            ("payment_terms_days", ALTER_CLIENTS_ADD_PAYMENT_TERMS),
+            ("credit_limit_eur", ALTER_CLIENTS_ADD_CREDIT_LIMIT),
+            ("default_rate_per_km", ALTER_CLIENTS_ADD_DEFAULT_RATE),
+            ("rating", ALTER_CLIENTS_ADD_RATING),
+            ("eori_number", "ALTER TABLE clients ADD COLUMN eori_number TEXT DEFAULT ''"),
+            ("country", "ALTER TABLE clients ADD COLUMN country TEXT DEFAULT ''"),
+            ("consignee_contact_name", "ALTER TABLE clients ADD COLUMN consignee_contact_name TEXT DEFAULT ''"),
+            ("consignee_contact_phone", "ALTER TABLE clients ADD COLUMN consignee_contact_phone TEXT DEFAULT ''"),
+        ])
+
+        try:
+            self.conn.commit()
+        except Exception:
+            pass
+
+    def _migrate_legacy_data(self):
+        """One-off data migrations (legacy maintenance table, etc.)."""
         try:
             has_legacy = self.conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='table' AND name='maintenance'"
@@ -298,182 +372,8 @@ class DatabaseManager:
                 """).rowcount
                 if migrated > 0:
                     self.conn.execute("DROP TABLE maintenance")
+                    self.conn.commit()
                     logger.info("Migrated %d legacy maintenance records and dropped old table", migrated)
-        except Exception:
-            pass
-        # Migrations for trips table
-        try:
-            cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trips)").fetchall()]
-            if 'context_json' not in cols:
-                try:
-                    self.conn.execute("ALTER TABLE trips ADD COLUMN context_json TEXT")
-                except Exception:
-                    pass
-            if 'route_history_v2_id' not in cols:
-                try:
-                    self.conn.execute("ALTER TABLE trips ADD COLUMN route_history_v2_id INTEGER REFERENCES route_history_v2(id)")
-                except Exception:
-                    pass
-            if 'truck_consumption_l_per_100km' not in cols:
-                try:
-                    self.conn.execute("ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL")
-                except Exception:
-                    pass
-            if 'client_id' not in cols:
-                try:
-                    self.conn.execute("ALTER TABLE trips ADD COLUMN client_id INTEGER REFERENCES clients(id)")
-                except Exception:
-                    pass
-            if 'price_pre_vat' not in cols:
-                try:
-                    self.conn.execute("ALTER TABLE trips ADD COLUMN price_pre_vat REAL DEFAULT 0")
-                except Exception:
-                    pass
-            if 'vat_percent' not in cols:
-                try:
-                    self.conn.execute("ALTER TABLE trips ADD COLUMN vat_percent REAL DEFAULT 0")
-                except Exception:
-                    pass
-            # CMR columns
-            for col_name, alter_sql in [
-                ("cmr_number", "ALTER TABLE trips ADD COLUMN cmr_number TEXT"),
-                ("cmr_sequence", "ALTER TABLE trips ADD COLUMN cmr_sequence INTEGER"),
-                ("cargo_description", "ALTER TABLE trips ADD COLUMN cargo_description TEXT"),
-                ("cargo_marks", "ALTER TABLE trips ADD COLUMN cargo_marks TEXT"),
-                ("package_count", "ALTER TABLE trips ADD COLUMN package_count INTEGER"),
-                ("package_type", "ALTER TABLE trips ADD COLUMN package_type TEXT"),
-                ("gross_weight_kg", "ALTER TABLE trips ADD COLUMN gross_weight_kg REAL"),
-                ("volume_m3", "ALTER TABLE trips ADD COLUMN volume_m3 REAL"),
-                ("hs_code", "ALTER TABLE trips ADD COLUMN hs_code TEXT"),
-                ("carrier_instructions", "ALTER TABLE trips ADD COLUMN carrier_instructions TEXT"),
-                ("carrier_reservations", "ALTER TABLE trips ADD COLUMN carrier_reservations TEXT"),
-                ("special_agreements", "ALTER TABLE trips ADD COLUMN special_agreements TEXT"),
-                ("carriage_payer", "ALTER TABLE trips ADD COLUMN carriage_payer TEXT"),
-                ("documents_attached", "ALTER TABLE trips ADD COLUMN documents_attached TEXT"),
-                ("place_of_loading", "ALTER TABLE trips ADD COLUMN place_of_loading TEXT"),
-                ("place_of_loading_date", "ALTER TABLE trips ADD COLUMN place_of_loading_date TEXT"),
-                ("loading_country", "ALTER TABLE trips ADD COLUMN loading_country TEXT"),
-                ("delivery_country", "ALTER TABLE trips ADD COLUMN delivery_country TEXT"),
-                ("adr_info_json", "ALTER TABLE trips ADD COLUMN adr_info_json TEXT"),
-                ("cmr_status", "ALTER TABLE trips ADD COLUMN cmr_status TEXT DEFAULT 'draft'"),
-                ("cmr_remarks", "ALTER TABLE trips ADD COLUMN cmr_remarks TEXT"),
-            ]:
-                if col_name not in cols:
-                    try:
-                        self.conn.execute(alter_sql)
-                    except Exception:
-                        pass
-            try:
-                self.conn.execute("CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status)")
-            except Exception:
-                pass
-        except Exception:
-            pass
-        # Migration: tachograph_expiry on trucks
-        try:
-            truck_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trucks)").fetchall()]
-            if 'tachograph_expiry' not in truck_cols:
-                try:
-                    self.conn.execute("ALTER TABLE trucks ADD COLUMN tachograph_expiry TEXT")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Migration: tracking_device_id on trucks
-        try:
-            truck_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trucks)").fetchall()]
-            if 'tracking_device_id' not in truck_cols:
-                try:
-                    self.conn.execute(ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID)
-                except Exception:
-                    pass
-            # CMR truck columns
-            for col_name, alter_sql in [
-                ("trailer_plate", "ALTER TABLE trucks ADD COLUMN trailer_plate TEXT DEFAULT ''"),
-                ("max_payload_kg", "ALTER TABLE trucks ADD COLUMN max_payload_kg REAL DEFAULT 0"),
-                ("cmr_insurance_number", "ALTER TABLE trucks ADD COLUMN cmr_insurance_number TEXT DEFAULT ''"),
-                ("cmr_insurance_expiry", "ALTER TABLE trucks ADD COLUMN cmr_insurance_expiry TEXT DEFAULT ''"),
-            ]:
-                if col_name not in truck_cols:
-                    try:
-                        self.conn.execute(alter_sql)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        # Migration: driver_id on trips (FK → drivers)
-        try:
-            trip_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trips)").fetchall()]
-            if 'driver_id' not in trip_cols:
-                try:
-                    self.conn.execute("ALTER TABLE trips ADD COLUMN driver_id INTEGER REFERENCES drivers(id)")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Migration: CMR columns on drivers
-        try:
-            driver_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(drivers)").fetchall()]
-            for col_name, alter_sql in [
-                ("passport_number", "ALTER TABLE drivers ADD COLUMN passport_number TEXT DEFAULT ''"),
-                ("passport_expiry", "ALTER TABLE drivers ADD COLUMN passport_expiry TEXT DEFAULT ''"),
-                ("adr_certificate", "ALTER TABLE drivers ADD COLUMN adr_certificate TEXT DEFAULT ''"),
-                ("adr_certificate_expiry", "ALTER TABLE drivers ADD COLUMN adr_certificate_expiry TEXT DEFAULT ''"),
-                ("driver_card_number", "ALTER TABLE drivers ADD COLUMN driver_card_number TEXT DEFAULT ''"),
-            ]:
-                if col_name not in driver_cols:
-                    try:
-                        self.conn.execute(alter_sql)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        # Migration: truck_id on trips (FK → trucks)
-        try:
-            trip_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(trips)").fetchall()]
-            if 'truck_id' not in trip_cols:
-                try:
-                    self.conn.execute(ALTER_TRIPS_ADD_TRUCK_ID)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-        # Index on trips.truck_id
-        try:
-            self.conn.execute(INDEX_TRIPS_TRUCK_ID)
-        except Exception:
-            pass
-        # Migration: new client columns (Phase 2 + 3)
-        try:
-            client_cols = [r[1] for r in self.conn.execute("PRAGMA table_info(clients)").fetchall()]
-            for col_name, alter_sql in [
-                ("client_type", ALTER_CLIENTS_ADD_TYPE),
-                ("payment_terms_days", ALTER_CLIENTS_ADD_PAYMENT_TERMS),
-                ("credit_limit_eur", ALTER_CLIENTS_ADD_CREDIT_LIMIT),
-                ("default_rate_per_km", ALTER_CLIENTS_ADD_DEFAULT_RATE),
-                ("rating", ALTER_CLIENTS_ADD_RATING),
-            ]:
-                if col_name not in client_cols:
-                    try:
-                        self.conn.execute(alter_sql)
-                    except Exception:
-                        pass
-            # CMR client columns
-            for col_name, alter_sql in [
-                ("eori_number", "ALTER TABLE clients ADD COLUMN eori_number TEXT DEFAULT ''"),
-                ("country", "ALTER TABLE clients ADD COLUMN country TEXT DEFAULT ''"),
-                ("consignee_contact_name", "ALTER TABLE clients ADD COLUMN consignee_contact_name TEXT DEFAULT ''"),
-                ("consignee_contact_phone", "ALTER TABLE clients ADD COLUMN consignee_contact_phone TEXT DEFAULT ''"),
-            ]:
-                if col_name not in client_cols:
-                    try:
-                        self.conn.execute(alter_sql)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-        try:
-            self.conn.commit()
         except Exception:
             pass
 
