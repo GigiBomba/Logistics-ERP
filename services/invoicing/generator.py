@@ -25,7 +25,13 @@ class InvoiceGenerator:
     def generate(self, trip_data, mode="client"):
         conf = load_company_config()
         trip_id = trip_data.get("id", 0)
-        invoice_id = f"INV-{datetime.now().year}-{trip_id:04d}"
+        try:
+            trip_id_int = int(trip_id)
+        except (TypeError, ValueError):
+            trip_id_int = 1
+        trip_year = str(trip_data.get("created_at", ""))[:4]
+        inv_year = trip_year if trip_year and trip_year.isdigit() else datetime.now().year
+        invoice_id = f"INV-{inv_year}-{trip_id_int:04d}"
         filename = f"{invoice_id}_{mode}.pdf"
         full_path = os.path.join(self.reports_dir, filename)
 
@@ -157,7 +163,10 @@ class InvoiceGenerator:
             company_color = colors.HexColor("#1a73e8")
 
         invoice_id = invoice_data.get("invoice_number", f"INV-{datetime.now().year}-0001")
-        filename = f"{invoice_id}.pdf"
+        if invoice_id.startswith("INV-"):
+            invoice_id = f"{invoice_id}_{datetime.now().strftime('%H%M%S')}"
+        mode = invoice_data.get("mode", "client")
+        filename = f"{invoice_id}_{mode}.pdf"
         full_path = os.path.join(self.reports_dir, filename)
 
         doc = SimpleDocTemplate(full_path, pagesize=A4,
@@ -294,15 +303,21 @@ class InvoiceGenerator:
         ]
 
         if price_pre_vat is not None and vat_percent is not None:
+            price_pre_val = float(price_pre_vat)
+            trip_price_val = float(trip_price)
+            if price_pre_val > trip_price_val:
+                raise ValueError(
+                    f"price_pre_vat ({price_pre_val:.2f}) exceeds trip_price ({trip_price_val:.2f})"
+                )
             price_data.append([
                 Paragraph(f"Transport fee (excl. VAT {vat_percent}%)", self.styles["Normal"]),
-                Paragraph(f"{float(price_pre_vat):,.2f} {currency}", self.styles["Normal"])])
+                Paragraph(f"{price_pre_val:,.2f} {currency}", self.styles["Normal"])])
             price_data.append([
                 Paragraph(f"VAT {vat_percent}%", self.styles["Normal"]),
-                Paragraph(f"{float(trip_price) - float(price_pre_vat):,.2f} {currency}", self.styles["Normal"])])
+                Paragraph(f"{trip_price_val - price_pre_val:,.2f} {currency}", self.styles["Normal"])])
             price_data.append([
                 Paragraph("<b>Transport fee (incl. VAT)</b>", self.styles["Normal"]),
-                Paragraph(f"<b>{float(trip_price):,.2f} {currency}</b>", self.styles["Normal"])])
+                Paragraph(f"<b>{trip_price_val:,.2f} {currency}</b>", self.styles["Normal"])])
         else:
             price_data.append([
                 Paragraph("Transport fee", self.styles["Normal"]),
@@ -386,11 +401,13 @@ class InvoiceGenerator:
             [Paragraph("<b>Tax:</b>", self.styles["Normal"]),
              Paragraph(f"{total_tax:,.2f} {currency}", self.styles["Normal"])],
         ]
-        if discount > 0:
-            disc_label = f"Discount ({invoice_data.get('discount_type', '')}):"
+        if discount != 0:
+            label = "Discount" if discount > 0 else "Adjustment"
+            disc_label = f"{label} ({invoice_data.get('discount_type', '')}):"
+            sign = "-" if discount > 0 else "+"
             totals_data.append([
                 Paragraph(f"<b>{disc_label}</b>", self.styles["Normal"]),
-                Paragraph(f"-{discount:,.2f} {currency}", self.styles["Normal"]),
+                Paragraph(f"{sign}{abs(discount):,.2f} {currency}", self.styles["Normal"]),
             ])
 
         totals_table = Table(totals_data, colWidths=[12*cm, 6*cm])
