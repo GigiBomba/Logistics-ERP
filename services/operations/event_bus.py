@@ -141,7 +141,8 @@ class EventBus:
         try:
             from services.trip_service import TripService
             from database.db_manager import DatabaseManager
-            db = DatabaseManager("data/cashflow.db")
+            from config import Config
+            db = DatabaseManager(Config.DB_PATH)
             svc = TripService(db)
             trip = svc.get_by_id(trip_id)
             return trip.get("archived") == 1 if trip else False

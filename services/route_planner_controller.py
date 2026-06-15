@@ -250,7 +250,8 @@ def _get_preferred_currency() -> str:
         pass
     try:
         import sqlite3, os
-        db_path = os.path.join("data", "cashflow.db")
+        from config import Config
+        db_path = Config.DB_PATH
         if os.path.isfile(db_path):
             conn = sqlite3.connect(db_path)
             row = conn.execute("SELECT value FROM settings WHERE key = ?", ("pref_currency",)).fetchone()

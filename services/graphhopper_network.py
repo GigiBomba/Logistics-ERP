@@ -6,8 +6,8 @@ import time
 from typing import Any, List, Optional, Sequence, Tuple
 from urllib.parse import urlparse, urlunparse
 
-# Default GraphHopper instance (LAN)
-DEFAULT_GRAPHHOPPER_BASE_URL = "http://192.168.0.93:8989"
+# Default GraphHopper instance
+DEFAULT_GRAPHHOPPER_BASE_URL = "http://localhost:8989"
 
 MAX_ROUTE_RETRIES = 3
 RETRY_BACKOFF_SECONDS = (0.0, 2.0, 4.0)
