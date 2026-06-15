@@ -254,9 +254,9 @@ class QtAnalyticsView(QScrollArea):
         names = []
         profits = []
         if per_truck:
-            top = sorted(per_truck, key=lambda t: t.get("p", 0), reverse=True)[:8]
-            names = [t.get("truck_number", "?") for t in top]
-            profits = [t.get("p", 0) for t in top]
+            top = sorted(per_truck, key=lambda t: t.get("p") or 0, reverse=True)[:8]
+            names = [t.get("truck_number") or "?" for t in top]
+            profits = [t.get("p") or 0 for t in top]
         make_bar_chart(
             fig, axes[0, 0], names, profits,
             title=t("analytics.top_trucks_title"),
@@ -287,9 +287,9 @@ class QtAnalyticsView(QScrollArea):
         dnames = []
         dprofits = []
         if per_driver:
-            top_d = sorted(per_driver, key=lambda d: d.get("p", 0), reverse=True)[:8]
-            dnames = [d.get("driver_name", "?") for d in top_d]
-            dprofits = [d.get("p", 0) for d in top_d]
+            top_d = sorted(per_driver, key=lambda d: d.get("p") or 0, reverse=True)[:8]
+            dnames = [d.get("driver_name") or "?" for d in top_d]
+            dprofits = [d.get("p") or 0 for d in top_d]
         make_bar_chart(
             fig, axes[1, 0], dnames, dprofits,
             title=t("analytics.driver_profit_title"),
@@ -299,7 +299,7 @@ class QtAnalyticsView(QScrollArea):
         self._chart_texts.append((axes[1, 0], "analytics.driver_profit_title"))
 
         # Chart 4: Profit/Expenses Ratio (pie)
-        total_profit = sum(abs(t.get("p", 0)) for t in per_truck) if per_truck else 0
+        total_profit = sum(abs(t.get("p") or 0) for t in per_truck) if per_truck else 0
         total_exp = sum(expenses) if expenses else 0
         make_pie_chart(
             fig, axes[1, 1],

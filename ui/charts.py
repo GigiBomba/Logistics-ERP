@@ -95,12 +95,18 @@ def make_bar_chart(
 ) -> None:
     """Draw a bar chart with dark theme styling."""
     apply_dark_style(fig, ax)
+    # Sanitize — replace None with sentinel values (matplotlib rejects None)
+    labels = [str(l) if l is not None else "" for l in labels]
+    values = [float(v) if v is not None else 0.0 for v in values]
     if not labels or not values:
         apply_empty_state(ax, empty_message)
         return
     colors = [color] * len(labels)
     if highlight_max and values:
-        colors[values.index(max(values))] = CHART_SECONDARY
+        try:
+            colors[values.index(max(values))] = CHART_SECONDARY
+        except ValueError:
+            pass
     if horizontal:
         ax.barh(labels, values, color=colors)
     else:
@@ -122,6 +128,7 @@ def make_line_chart(
 ) -> None:
     """Draw a line chart with fill, one or more series."""
     apply_dark_style(fig, ax)
+    x_labels = [str(l) if l is not None else "" for l in x_labels]
     if not x_labels or not y_series:
         apply_empty_state(ax, empty_message)
         return
@@ -156,6 +163,8 @@ def make_pie_chart(
 ) -> None:
     """Draw a pie/donut chart with dark theme styling."""
     apply_dark_style(fig, ax)
+    sizes = [float(s) if s is not None else 0.0 for s in sizes]
+    labels = [str(l) if l is not None else "" for l in labels]
     if not sizes or sum(sizes) == 0:
         apply_empty_state(ax, empty_message)
         return
@@ -182,6 +191,8 @@ def make_trend_chart(
 ) -> None:
     """Draw a single-series line chart with area fill."""
     apply_dark_style(fig, ax)
+    x_labels = [str(l) if l is not None else "" for l in x_labels]
+    values = [float(v) if v is not None else 0.0 for v in values]
     if not x_labels or not values:
         apply_empty_state(ax, empty_message)
         return
@@ -206,6 +217,8 @@ def make_cost_per_truck_chart(
 ) -> None:
     """Draw a horizontal cost breakdown chart (specialised for maintenance)."""
     apply_dark_style(fig, ax)
+    labels = [str(l) if l is not None else "" for l in labels]
+    costs = [float(c) if c is not None else 0.0 for c in costs]
     if not labels or not costs:
         apply_empty_state(ax, empty_message)
         return
@@ -229,6 +242,8 @@ def make_fleet_status_chart(
 ) -> None:
     """Draw a horizontal fleet status bar chart."""
     apply_dark_style(fig, ax)
+    labels = [str(l) if l is not None else "" for l in labels]
+    counts = [int(c) if c is not None else 0 for c in counts]
     if not labels or not counts:
         apply_empty_state(ax, empty_message)
         return
