@@ -56,7 +56,10 @@ class TachoService:
         return None
 
     def _run_parser(self, file_bytes: bytes):
-        """Run tachograph.exe parse on *file_bytes* via temp file (semantic JSON)."""
+        """Run tachograph.exe parse on *file_bytes* via temp file.
+        
+        Tries semantic parse first (lenient), falls back to raw output if that fails.
+        """
         parser = self._resolve_parser_path()
         if not parser:
             return None
@@ -65,11 +68,19 @@ class TachoService:
                 tmp.write(file_bytes)
                 tmp_path = tmp.name
             try:
+                # Try lenient semantic parse first
                 result = subprocess.run(
-                    [parser, "parse", tmp_path],
+                    [parser, "parse", "--strict=false", tmp_path],
                     capture_output=True,
                     timeout=30,
                 )
+                # If semantic parse fails, fall back to raw output
+                if result.returncode != 0:
+                    result = subprocess.run(
+                        [parser, "parse", "--raw", tmp_path],
+                        capture_output=True,
+                        timeout=30,
+                    )
             finally:
                 with contextlib.suppress(OSError):
                     os.unlink(tmp_path)
@@ -134,26 +145,22 @@ class TachoService:
             return {"success": False,
                     "error": f"Invalid JSON from parser: {e}"}
 
-        # Detect file type — support both tachograph-go and legacy dddsimple formats
+        # Detect file type — support all formats:
+        #   tachograph-go semantic: type=DRIVER_CARD / VEHICLE_UNIT
+        #   tachograph-go raw:      type=CARD with records[], or VEHICLE_UNIT with records[]
+        #   legacy dddsimple:       driverCard/vehicleUnit keys at root
         ftype = data.get("type", "")
         file_name = os.path.basename(file_path)
         if ftype == "DRIVER_CARD":
-            return self._process_driver_card(
-                data, file_name, file_hash, raw_json
-            )
-        elif ftype == "VEHICLE_UNIT":
-            return self._process_vehicle_unit(
-                data, file_name, file_hash, raw_json
-            )
-        # Legacy format fallback (dddsimple-style keys at top level)
+            return self._process_driver_card(data, file_name, file_hash, raw_json)
+        if ftype == "VEHICLE_UNIT":
+            return self._process_vehicle_unit(data, file_name, file_hash, raw_json)
+        if ftype == "CARD":
+            return self._process_driver_card(data, file_name, file_hash, raw_json)
         if "driverCard" in data or "cardActivities" in data:
-            return self._process_driver_card(
-                data, file_name, file_hash, raw_json
-            )
+            return self._process_driver_card(data, file_name, file_hash, raw_json)
         if "vehicleUnit" in data or "calibrationRecord" in data:
-            return self._process_vehicle_unit(
-                data, file_name, file_hash, raw_json
-            )
+            return self._process_vehicle_unit(data, file_name, file_hash, raw_json)
         return {
             "success": False,
             "error": "Could not determine file type. "
