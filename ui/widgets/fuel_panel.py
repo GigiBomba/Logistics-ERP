@@ -6,10 +6,8 @@ Renders horizontal bars for each country's diesel price using QPainter in
 
 from __future__ import annotations
 
-from typing import List, Optional, Tuple
-
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QColor, QPainter, QFont
+from PySide6.QtGui import QColor, QFont, QPainter
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -23,7 +21,6 @@ from PySide6.QtWidgets import (
 from services.fuel_price_service import FuelPriceService
 from services.i18n import t
 from ui.theme import COLORS, S
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants (mirror the original FuelPricePanel layout values)
@@ -42,15 +39,15 @@ class _BarChartWidget(QFrame):
     from the parent ``QtFuelPricePanel``.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
-        self._prices: List[Tuple[str, float]] = []
+        self._prices: list[tuple[str, float]] = []
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setMinimumHeight(0)
 
     # ── Public data setters ───────────────────────────────────────────────────
 
-    def set_prices(self, prices: List[Tuple[str, float]]) -> None:
+    def set_prices(self, prices: list[tuple[str, float]]) -> None:
         """Set the sorted list of ``(country_code, price)`` tuples and redraw."""
         self._prices = prices
         self._recalc_height()
@@ -58,7 +55,7 @@ class _BarChartWidget(QFrame):
 
     # ── Painting ──────────────────────────────────────────────────────────────
 
-    def paintEvent(self, event) -> None:  # noqa: N802
+    def paintEvent(self, event) -> None:
         """Paint horizontal bars for each country's diesel price."""
         if not self._prices:
             return
@@ -123,11 +120,12 @@ class QtFuelPricePanel(QFrame):
     but uses QPainter in a ``paintEvent()`` instead of a tk.Canvas.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setProperty("role", "fuel-panel")
 
         self._expanded = False
+        self._fuel_service = FuelPriceService()
 
         self._build()
         self._update_status()
@@ -184,6 +182,11 @@ class QtFuelPricePanel(QFrame):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
+    def destroy(self) -> None:
+        """Release the fuel service reference."""
+        self._fuel_service = None
+        super().deleteLater()
+
     def refresh(self) -> None:
         """Update the status label and redraw the chart if expanded."""
         self._update_status()
@@ -206,7 +209,7 @@ class QtFuelPricePanel(QFrame):
     # ── Status ────────────────────────────────────────────────────────────────
 
     def _update_status(self) -> None:
-        svc = FuelPriceService()
+        svc = self._fuel_service
         ts = svc.last_updated_str()
         age = svc.age_seconds()
         if age is not None:
@@ -223,7 +226,7 @@ class QtFuelPricePanel(QFrame):
     # ── Chart data / rendering ────────────────────────────────────────────────
 
     def _draw_chart(self) -> None:
-        svc = FuelPriceService()
+        svc = self._fuel_service
         prices = svc.get_prices_all()
         if not prices:
             # No data — clear the chart; the empty label is handled inside

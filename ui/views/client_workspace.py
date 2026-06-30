@@ -10,9 +10,9 @@ Usage as embedded widget::
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import contextlib
+from typing import Any
 
-from PySide6.QtCore import Qt
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
@@ -27,18 +27,15 @@ from PySide6.QtWidgets import (
 )
 
 from services.client_service import ClientService
-from services.i18n import t, register_listener, unregister_listener
-from ui.design_tokens import (
-    ACCENT, ACCENT_TEXT, ACCENT_DIM, BG_SURFACE, BG_ELEVATED,
-    BORDER_DEFAULT, DANGER, DANGER_DIM, DANGER_TEXT,
-    SUCCESS, SUCCESS_DIM, SUCCESS_TEXT,
-    WARNING, WARNING_DIM, WARNING_TEXT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
-    STATUS, SP,
-)
+from services.i18n import register_listener, t, unregister_listener
 from ui.components import (
-    Card, CardHeader, Btn, KPICard, StatusChip,
-    FieldLabel, SectionTitle, PageTitle, Label, Divider, MonoLabel,
+    Btn,
+    KPICard,
+    PageTitle,
+    SectionTitle,
+)
+from ui.design_tokens import (
+    SP,
 )
 from ui.theme import COLORS
 from ui.widgets import (
@@ -55,7 +52,7 @@ from ui.widgets.client_revenue_chart import QtClientRevenueChart
 # Column definitions  (id, label/i18n_key, width, translate)
 # ──────────────────────────────────────────────────────────────────────────────
 
-_CLIENT_COLUMNS: List[tuple] = [
+_CLIENT_COLUMNS: list[tuple] = [
     ("id",      "ID",                   40,  False),
     ("name",    "client.table_name",    180, True),
     ("contact", "client.table_contact", 130, True),
@@ -64,7 +61,7 @@ _CLIENT_COLUMNS: List[tuple] = [
     ("trips",   "client.table_trips",    60, True),
 ]
 
-_TRIPS_COLUMNS: List[tuple] = [
+_TRIPS_COLUMNS: list[tuple] = [
     ("start_date",     "history.table_date",   90),
     ("truck_number",   "history.table_truck",  100),
     ("distance_km",    "history.table_km",      65),
@@ -73,7 +70,7 @@ _TRIPS_COLUMNS: List[tuple] = [
     ("status",         "edit_trip.field_status",90),
 ]
 
-_INVOICE_COLUMNS: List[tuple] = [
+_INVOICE_COLUMNS: list[tuple] = [
     ("invoice_number", "client.table_inv_number", 130),
     ("total_amount",   "client.table_amount",      90),
     ("due_date",       "client.table_due_date",   100),
@@ -81,23 +78,23 @@ _INVOICE_COLUMNS: List[tuple] = [
 ]
 
 
-def _resolve_client_labels() -> List[str]:
+def _resolve_client_labels() -> list[str]:
     return [t(key) if translate else key
             for _, key, _, translate in _CLIENT_COLUMNS]
 
 
-def _client_columns_for_table() -> List[tuple]:
+def _client_columns_for_table() -> list[tuple]:
     labels = _resolve_client_labels()
     return [(cid, labels[i], width)
             for i, (cid, _, width, _) in enumerate(_CLIENT_COLUMNS)]
 
 
-def _trips_columns_for_table() -> List[tuple]:
+def _trips_columns_for_table() -> list[tuple]:
     return [(cid, t(label), width)
             for cid, label, width in _TRIPS_COLUMNS]
 
 
-def _invoice_columns_for_table() -> List[tuple]:
+def _invoice_columns_for_table() -> list[tuple]:
     return [(cid, t(label), width)
             for cid, label, width in _INVOICE_COLUMNS]
 
@@ -114,7 +111,7 @@ class _SearchLineEdit(StyledLineEdit):
     placeholder is shown as actual text and cleared on focus.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._placeholder: str = ""
         self._user_typed: bool = False
@@ -171,15 +168,15 @@ class QtClientWorkspace(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
-        prefs: Optional[dict] = None,
+        prefs: dict | None = None,
     ):
         super().__init__(parent)
         self.db = db
         self.service = ClientService(db) if db is not None else None
-        self._selected_id: Optional[int] = None
-        self._all_clients: List[Dict[str, Any]] = []
+        self._selected_id: int | None = None
+        self._all_clients: list[dict[str, Any]] = []
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
@@ -192,22 +189,18 @@ class QtClientWorkspace(QWidget):
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
     def _cleanup(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
 
     def shutdown(self) -> None:
         """Release resources when the view is hidden."""
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
         self._listener_registered = False
 
     def wakeup(self) -> None:
         """Refresh data when the view becomes active (QStackedWidget hook)."""
-        if not getattr(self, "_listener_registered", True):
+        if not getattr(self, "_listener_registered", False):
             register_listener(self._language_callback)
             self._listener_registered = True
         self._load_data()
@@ -338,7 +331,7 @@ class QtClientWorkspace(QWidget):
         self._revenue_tab = QWidget()
         revenue_layout = QVBoxLayout(self._revenue_tab)
         revenue_layout.setContentsMargins(0, 0, 0, 0)
-        self._revenue_chart: Optional[QtClientRevenueChart] = None
+        self._revenue_chart: QtClientRevenueChart | None = None
         self._tabs.addTab(self._revenue_tab, t("client.tab_revenue", "Revenue"))
 
         # Disable tabs until a client is selected
@@ -368,7 +361,7 @@ class QtClientWorkspace(QWidget):
                 include_inactive=True,
             )
 
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for c in self._all_clients:
             rows.append({
                 "id":         c["id"],
@@ -416,7 +409,7 @@ class QtClientWorkspace(QWidget):
         elif index == 3:
             self._load_revenue_chart()
 
-    def _show_detail(self, client_id: Optional[int]) -> None:
+    def _show_detail(self, client_id: int | None) -> None:
         """Populate all tabs with the selected client's data."""
         if client_id is None or self.service is None:
             self._tabs.setEnabled(False)
@@ -555,7 +548,7 @@ class _QtClientDetailsTab(QWidget):
     summary, and activity timeline for a selected client.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
 
         layout = QVBoxLayout(self)
@@ -566,7 +559,7 @@ class _QtClientDetailsTab(QWidget):
         self._content = scroll.content
         layout.addWidget(scroll, 1)
 
-        self._current_client_id: Optional[int] = None
+        self._current_client_id: int | None = None
 
     # ── Public API ─────────────────────────────────────────────────────────
 
@@ -598,15 +591,11 @@ class _QtClientDetailsTab(QWidget):
         self._build_contacts_section(contacts, service, client_id)
         self._build_tags_section(tags, service, client_id)
 
-        try:
+        with contextlib.suppress(Exception):
             self._build_payment_summary(service, client_id)
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             self._build_timeline(service, client_id)
-        except Exception:
-            pass
 
         self._content.layout().addStretch()
 
@@ -662,7 +651,7 @@ class _QtClientDetailsTab(QWidget):
         if client.get("email"):
             details.append(f"\u2709 {client['email']}")
         if client.get("vat_number"):
-            details.append(f"VAT: {client['vat_number']}")
+            details.append(f"{t('client.vat', default='VAT:')} {client['vat_number']}")
 
         if details:
             details_row = QFrame()
@@ -682,7 +671,7 @@ class _QtClientDetailsTab(QWidget):
         if client.get("notes"):
             extra.append(client["notes"])
         if client.get("payment_terms_days"):
-            extra.append("Terms: {} days".format(client["payment_terms_days"]))
+            extra.append(t("client.terms_days", default="Terms: {} days").format(client["payment_terms_days"]))
         if client.get("credit_limit_eur"):
             extra.append("Limit: \u20ac{:,}".format(int(client["credit_limit_eur"])))
 
@@ -791,7 +780,7 @@ class _QtClientDetailsTab(QWidget):
             row_layout.addStretch()
 
             row_layout.addWidget(Btn(
-                row, text="Edit",
+                row, text=t("common.edit", default="Edit"),
                 command=lambda cid=c["id"]: self._edit_contact(cid, service, client_id),
                 variant="secondary",
             ))
@@ -912,16 +901,16 @@ class _QtClientDetailsTab(QWidget):
         row_layout.setSpacing(SP["2"])
 
         row_layout.addWidget(KPICard(
-            self._content, "Billed", f"\u20ac {pay['total_billed']:,.0f}",
+            self._content, t("client.billed", default="Billed"), f"\u20ac {pay['total_billed']:,.0f}",
         ))
         row_layout.addWidget(KPICard(
-            self._content, "Paid", f"\u20ac {pay['total_paid']:,.0f}",
+            self._content, t("client.paid", default="Paid"), f"\u20ac {pay['total_paid']:,.0f}",
         ))
         row_layout.addWidget(KPICard(
-            self._content, "Unpaid", f"\u20ac {pay['unpaid']:,.0f}",
+            self._content, t("client.unpaid", default="Unpaid"), f"\u20ac {pay['unpaid']:,.0f}",
         ))
         overdue_card = KPICard(
-            self._content, "Overdue", f"\u20ac {pay['overdue']:,.0f}",
+            self._content, t("client.overdue", default="Overdue"), f"\u20ac {pay['overdue']:,.0f}",
         )
         row_layout.addWidget(overdue_card)
         cl.addWidget(row)
@@ -950,7 +939,7 @@ class _QtClientFormDialog(QDialog):
     Mirrors ``_ClientFormDialog`` from the original ``ui/client_workspace.py``.
     """
 
-    FIELDS: List[tuple] = [
+    FIELDS: list[tuple] = [
         ("name",               "client.field_name",            True),
         ("contact_person",     "client.field_contact",         False),
         ("phone",              "client.field_phone",           False),
@@ -969,9 +958,9 @@ class _QtClientFormDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         service: ClientService,
-        client_data: Optional[Dict[str, Any]] = None,
+        client_data: dict[str, Any] | None = None,
         on_save=None,
     ):
         super().__init__(parent)
@@ -986,7 +975,7 @@ class _QtClientFormDialog(QDialog):
         self.setMinimumSize(500, 600)
         self.setModal(True)
 
-        self._entries: Dict[str, Any] = {}
+        self._entries: dict[str, Any] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1043,12 +1032,9 @@ class _QtClientFormDialog(QDialog):
             )
             return
 
-        data: Dict[str, Any] = {}
+        data: dict[str, Any] = {}
         for k, v in self._entries.items():
-            if isinstance(v, StyledComboBox):
-                val = v.currentText().strip()
-            else:
-                val = v.text().strip()
+            val = v.currentText().strip() if isinstance(v, StyledComboBox) else v.text().strip()
 
             if k in ("payment_terms_days",):
                 try:
@@ -1099,7 +1085,7 @@ class _QtClientFormDialog(QDialog):
 class _QtContactDialog(QDialog):
     """Add / edit contact dialog."""
 
-    FIELDS: List[tuple] = [
+    FIELDS: list[tuple] = [
         ("full_name",    "client.field_full_name"),
         ("title",        "client.field_title"),
         ("phone",        "client.field_phone"),
@@ -1111,10 +1097,10 @@ class _QtContactDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         service: ClientService,
         client_id: int,
-        contact_data: Optional[Dict[str, Any]] = None,
+        contact_data: dict[str, Any] | None = None,
         on_save=None,
     ):
         super().__init__(parent)
@@ -1130,7 +1116,7 @@ class _QtContactDialog(QDialog):
         self.setMinimumSize(400, 380)
         self.setModal(True)
 
-        self._entries: Dict[str, Any] = {}
+        self._entries: dict[str, Any] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:
@@ -1182,7 +1168,7 @@ class _QtContactDialog(QDialog):
             )
             return
 
-        data: Dict[str, str] = {}
+        data: dict[str, str] = {}
         for k, v in self._entries.items():
             val = v.currentText().strip() if isinstance(v, StyledComboBox) else v.text().strip()
             data[k] = val
@@ -1207,7 +1193,7 @@ class _QtMergeDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         service: ClientService,
         source_id: int,
         on_done=None,
@@ -1221,7 +1207,7 @@ class _QtMergeDialog(QDialog):
         self.setMinimumSize(450, 280)
         self.setModal(True)
 
-        self._name_to_id: Dict[str, int] = {}
+        self._name_to_id: dict[str, int] = {}
         self._build_ui()
 
     def _build_ui(self) -> None:

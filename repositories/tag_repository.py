@@ -1,7 +1,11 @@
 """Tag repository — CRUD for client_tags table."""
+import logging
+import sqlite3
 from typing import Any, Dict, List
 
 from repositories import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class TagRepository(BaseRepository):
@@ -14,14 +18,13 @@ class TagRepository(BaseRepository):
         )
 
     def add(self, client_id: int, tag: str) -> None:
-        from sqlite3 import IntegrityError
         try:
             self._execute(
                 f"INSERT INTO {self.TABLE} (client_id, tag) VALUES (?, ?)",
                 (client_id, tag.strip()),
             )
-        except IntegrityError:
-            pass
+        except sqlite3.IntegrityError:
+            logger.debug("Tag already exists for client %d: %s", client_id, tag)
 
     def remove(self, client_id: int, tag: str) -> None:
         self._execute(

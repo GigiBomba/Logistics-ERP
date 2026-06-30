@@ -4,14 +4,17 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import Any, Dict, Optional
+import threading
+from typing import Any
+
+from utils.resource_path import data_path
 
 logger = logging.getLogger("operations.rules")
 
-_RULES_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "data", "operations_rules.json")
+_RULES_FILE = data_path("data/operations_rules.json")
 
 # Default rules — overridden by JSON file if present
-_DEFAULT_RULES: Dict[str, Any] = {
+_DEFAULT_RULES: dict[str, Any] = {
     # Alert thresholds (days)
     "inspection_warning_days": 10,
     "insurance_warning_days": 10,
@@ -30,42 +33,55 @@ _DEFAULT_RULES: Dict[str, Any] = {
     # General
     "max_alerts_per_truck": 50,
     "alert_retention_days": 90,
+
+    # Health score weights
+    "health_overdue_weight": 15,
+    "health_recurring_weight": 10,
+    "health_downtime_weight": 30,
+    "health_max_penalty": 100,
 }
 
 # ── Singleton ───────────────────────────────────────────────────────
 
+_RULES_LOCK = threading.Lock()
 
 class Rules:
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._rules = dict(_DEFAULT_RULES)
-            cls._instance._load()
+            with _RULES_LOCK:
+                if cls._instance is None:
+                    cls._instance = super().__new__(cls)
+                    cls._instance._rules = dict(_DEFAULT_RULES)
+                    cls._instance._load()
         return cls._instance
 
     def __init__(self):
-        pass  # init happens in __new__
+        if not hasattr(self, '_rules'):
+            self._rules = dict(_DEFAULT_RULES)
 
     # ── Access ─────────────────────────────────────────────────────
 
     def get(self, key: str, default: Any = None) -> Any:
-        return self._rules.get(key, default)
+        with _RULES_LOCK:
+            return self._rules.get(key, default)
 
     def set(self, key: str, value: Any) -> None:
-        self._rules[key] = value
+        with _RULES_LOCK:
+            self._rules[key] = value
         self._save()
 
-    def all(self) -> Dict[str, Any]:
-        return dict(self._rules)
+    def all(self) -> dict[str, Any]:
+        with _RULES_LOCK:
+            return dict(self._rules)
 
     # ── Persistence ────────────────────────────────────────────────
 
     def _load(self) -> None:
         try:
             if os.path.isfile(_RULES_FILE):
-                with open(_RULES_FILE, "r", encoding="utf-8") as f:
+                with open(_RULES_FILE, encoding="utf-8") as f:
                     data = json.load(f)
                 self._rules.update(data)
                 logger.info("Loaded %d rules from %s", len(data), _RULES_FILE)

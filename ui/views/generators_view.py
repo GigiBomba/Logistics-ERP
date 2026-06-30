@@ -7,38 +7,44 @@ generation with language control, action buttons and copy-status tracking.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget,
     QFrame,
-    QLabel,
-    QVBoxLayout,
     QHBoxLayout,
+    QLabel,
+    QMessageBox,
     QSplitter,
     QTabWidget,
-    QSizePolicy,
-    QMessageBox,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ui.theme import COLORS, S
-from ui.design_tokens import SP
-from ui.components import Card, CardHeader, Btn, Label, PageTitle, SectionTitle, FieldLabel, Divider, StatusChip
-from services.i18n import t, register_listener, unregister_listener
+from services.i18n import register_listener, t, unregister_listener
 from services.trip_service import TripService
+from ui.components import (
+    Btn,
+    Card,
+    Divider,
+    FieldLabel,
+    Label,
+    PageTitle,
+    SectionTitle,
+)
+from ui.design_tokens import SP
+from ui.theme import COLORS
+from ui.views.cmr_form_view import QtCmrFormView
+from ui.views.invoice_editor import QtInvoiceEditor
 from ui.widgets import (
     ActionButton,
     StyledComboBox,
-    StyledCheckBox,
-    SectionHeader,
 )
-from ui.views.cmr_form_view import QtCmrFormView
-from ui.views.invoice_editor import QtInvoiceEditor
 
 logger = logging.getLogger(__name__)
 
@@ -82,38 +88,39 @@ class QtGeneratorsView(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
-        prefs: Optional[Any] = None,
+        prefs: Any | None = None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
-        self._trip_svc_instance: Optional[TripService] = None
+        self._trip_svc_instance: TripService | None = None
         self._cmr_doc_service = None
 
         # ── State ───────────────────────────────────────────────────────
-        self._trips_list: List[Dict[str, Any]] = []
-        self._trip_map: Dict[str, Any] = {}
-        self._cmr_last_paths: Dict[str, str] = {}
-        self._cmr_filled_trip_id: Optional[int] = None
+        self._trips_list: list[dict[str, Any]] = []
+        self._trip_map: dict[str, Any] = {}
+        self._cmr_last_paths: dict[str, str] = {}
+        self._cmr_filled_trip_id: int | None = None
 
-        self._copy_labels: Dict[str, Tuple[QLabel, QLabel, ActionButton]] = {}
-        self._cmr_status_lbl: Optional[QLabel] = None
-        self._cmr_lang1_combo: Optional[StyledComboBox] = None
-        self._cmr_lang2_combo: Optional[StyledComboBox] = None
+        self._copy_labels: dict[str, tuple[QLabel, QLabel, ActionButton]] = {}
+        self._cmr_status_lbl: QLabel | None = None
+        self._cmr_lang1_combo: StyledComboBox | None = None
+        self._cmr_lang2_combo: StyledComboBox | None = None
         self._invoice_built = False
         self._cmr_built = False
 
         # ── i18n tracking ───────────────────────────────────────────────
-        self._i18n_labels: List[Tuple[QLabel, str]] = []
-        self._i18n_buttons: List[Tuple[ActionButton, str]] = []
-        self._i18n_sections: Dict[str, QLabel] = {}
+        self._i18n_labels: list[tuple[QLabel, str]] = []
+        self._i18n_buttons: list[tuple[ActionButton, str]] = []
+        self._i18n_sections: dict[str, QLabel] = {}
         self._language_callback = self._on_language_changed
 
         # ── Build ───────────────────────────────────────────────────────
         self._build_ui()
         register_listener(self._language_callback)
+        self._listener_registered = True
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Properties / lazy services
@@ -426,9 +433,9 @@ class QtGeneratorsView(QWidget):
         self,
         parent: QWidget,
         label_text: str,
-        values: List[str],
+        values: list[str],
         default_index: int,
-    ) -> Tuple[QWidget, StyledComboBox]:
+    ) -> tuple[QWidget, StyledComboBox]:
         """Build a labelled language combo-box.
 
         Returns ``(container, combo)`` so callers can reference both for
@@ -450,7 +457,7 @@ class QtGeneratorsView(QWidget):
         return container, combo
 
     @staticmethod
-    def _copy_meta(suffix: str) -> Dict[str, Any]:
+    def _copy_meta(suffix: str) -> dict[str, Any]:
         return _COPY_META.get(suffix, {
             "color": COLORS["text_secondary"],
             "bg": COLORS["bg_surface"],
@@ -480,7 +487,7 @@ class QtGeneratorsView(QWidget):
             trips = self._trip_svc.get_all()
             self._trips_list = trips
             self._trip_map = {}
-            labels: List[str] = []
+            labels: list[str] = []
             for trip in trips:
                 label = t("invoice.trip_list_format").format(
                     id=trip["id"],
@@ -519,7 +526,7 @@ class QtGeneratorsView(QWidget):
                 self._cmr_filled_trip_id = None
             self._auto_fill_cmr(trip)
 
-    def _auto_fill_cmr(self, trip: Dict[str, Any]) -> None:
+    def _auto_fill_cmr(self, trip: dict[str, Any]) -> None:
         """Auto-fill the CMR form fields from the selected trip."""
         if not self.db:
             return
@@ -531,9 +538,9 @@ class QtGeneratorsView(QWidget):
         from services.invoicing.config_manager import load_company_config
         conf = load_company_config()
 
-        client_data: Dict[str, Any] = {}
-        truck_data: Dict[str, Any] = {}
-        driver_data: Dict[str, Any] = {}
+        client_data: dict[str, Any] = {}
+        truck_data: dict[str, Any] = {}
+        driver_data: dict[str, Any] = {}
 
         if trip.get("client_id"):
             try:
@@ -609,7 +616,7 @@ class QtGeneratorsView(QWidget):
     #  CMR generation
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _collect_cmr_data(self) -> Optional[Dict[str, Any]]:
+    def _collect_cmr_data(self) -> dict[str, Any] | None:
         """Collect CMR form data from the embedded CMRFormView + language selections."""
         sel = self._trip_combo.currentText()
         if not sel or sel not in self._trip_map:
@@ -627,7 +634,7 @@ class QtGeneratorsView(QWidget):
             form_data = self._cmr_form_view.get_data()
             trip_data.update(form_data)
 
-        def _extract_lang(combo: Optional[StyledComboBox]) -> Optional[str]:
+        def _extract_lang(combo: StyledComboBox | None) -> str | None:
             if combo is None:
                 return None
             val = combo.currentText()
@@ -678,7 +685,7 @@ class QtGeneratorsView(QWidget):
             ds = self._lazy_cmr_doc_service()
             ds.register_existing(
                 filepath,
-                title=f"CMR Trip #{trip_id}",
+                title=t("generators.cmr_trip_title", default="CMR Trip #{}").format(trip_id),
                 category="trips",
                 entity_type="trip",
                 entity_id=trip_id,
@@ -725,23 +732,24 @@ class QtGeneratorsView(QWidget):
         trip_data["cmr_sequence"] = cmr_seq
 
         def _run() -> None:
-            registered_paths: Dict[str, str] = {}
+            registered_paths: dict[str, str] = {}
             try:
                 output_dir = os.path.join("data", "documents", "trips", str(trip_id))
                 os.makedirs(output_dir, exist_ok=True)
                 copies = gen.generate_all_copies(trip_data, output_dir, skip_db_update=True)
                 registered_paths = dict(copies)
             except Exception as e:
+                err_msg = str(e)
                 def _err() -> None:
                     if self._cmr_status_lbl is not None:
                         self._cmr_status_lbl.setText(
-                            t("generators.cmr_error").format(error=str(e))
+                            t("generators.cmr_error").format(error=err_msg)
                         )
                         self._cmr_status_lbl.setProperty("role", "danger")
                         self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
                         self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
                 QTimer.singleShot(0, _err)
-                logger.error("CMR generation failed: %s", e)
+                logger.error("CMR generation failed: %s", err_msg)
                 return
 
             def _register() -> None:
@@ -763,22 +771,20 @@ class QtGeneratorsView(QWidget):
                 try:
                     ds = self._lazy_cmr_doc_service()
                     for suffix, path in registered_paths.items():
-                        try:
+                        with contextlib.suppress(Exception):
                             ds.register_existing(
                                 path,
-                                title=f"CMR Trip #{trip_id} - {suffix.upper()} COPY",
+                                title=t("generators.cmr_copy_title", default="CMR Trip #{} - {} COPY").format(trip_id, suffix.upper()),
                                 category="trips",
                                 entity_type="trip",
                                 entity_id=trip_id,
                                 tags=["cmr", suffix.lower(), "generated"],
                             )
-                        except Exception:
-                            pass
                 except Exception:
                     pass
 
                 self._cmr_last_paths.update(registered_paths)
-                base = os.path.basename(list(registered_paths.values())[0]) if registered_paths else ""
+                base = os.path.basename(next(iter(registered_paths.values()))) if registered_paths else ""
                 self._cmr_status_lbl.setText(
                     t("generators.cmr_all_generated").format(path=base)
                 )
@@ -834,24 +840,18 @@ class QtGeneratorsView(QWidget):
         """Update all visible text to the current language."""
         # Static labels
         for widget, key in self._i18n_labels:
-            try:
+            with contextlib.suppress(Exception):
                 widget.setText(t(key))
-            except Exception:
-                pass
 
         # Buttons
         for widget, key in self._i18n_buttons:
-            try:
+            with contextlib.suppress(Exception):
                 widget.setText(t(key))
-            except Exception:
-                pass
 
         # Section header labels
         for text_key, lbl in self._i18n_sections.items():
-            try:
+            with contextlib.suppress(Exception):
                 lbl.setText(t(text_key))
-            except Exception:
-                pass
 
         # Tab titles
         self._refresh_tab_titles()
@@ -887,7 +887,7 @@ class QtGeneratorsView(QWidget):
             current_id = self._trip_map[current_text]
 
         self._trip_map.clear()
-        labels: List[str] = []
+        labels: list[str] = []
         for trip in self._trips_list:
             label = t("invoice.trip_list_format").format(
                 id=trip["id"],
@@ -916,12 +916,12 @@ class QtGeneratorsView(QWidget):
 
     def wakeup(self) -> None:
         """Called when the view becomes visible (e.g. stacked widget switch)."""
-        if not getattr(self, "_listener_registered", True):
+        if not getattr(self, "_listener_registered", False):
             register_listener(self._language_callback)
             self._listener_registered = True
         self._refresh_trip_lists()
 
-    def handle_nav_data(self, data: Dict[str, Any]) -> None:
+    def handle_nav_data(self, data: dict[str, Any]) -> None:
         """Auto-select a trip from navigation data (e.g. alert click)."""
         trip_id = data.get("trip_id")
         if not trip_id:
@@ -932,13 +932,11 @@ class QtGeneratorsView(QWidget):
         # Find the label for this trip_id
         for label, tid in self._trip_map.items():
             if tid == int(trip_id):
-                QTimer.singleShot(100, lambda l=label: self._trip_combo.setCurrentText(l))
+                QTimer.singleShot(100, lambda lab=label: self._trip_combo.setCurrentText(lab))
                 return
 
     def shutdown(self) -> None:
         """Clean up resources when the view is destroyed / hidden."""
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
         self._listener_registered = False

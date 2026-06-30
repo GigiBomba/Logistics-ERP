@@ -1,12 +1,8 @@
 """GraphHopper profile name mapping for Route Planner UI."""
 
-GRAPHHOPPER_PROFILES = {
-    "Recommended": "truck",
-    "Fastest": "truck_fast",
-    "Cheapest": "truck_cheap",
-    "Safest": "truck_safe",
-    "Shortest": "truck_short",
-}
+from config import Config
+
+GRAPHHOPPER_PROFILES = Config.GRAPHHOPPER_PROFILES
 
 
 def ui_label_for_profile(gh_profile: str) -> str:

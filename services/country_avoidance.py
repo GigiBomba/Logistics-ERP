@@ -4,9 +4,10 @@ Provides list of countries and session-level selection persistence.
 """
 import json
 import os
-from typing import Dict, List, Optional
-from utils.logger import get_logger
+import threading
+from typing import Optional
 
+from utils.logger import get_logger
 
 class CountryAvoidanceManager:
     """Manage countries to avoid during routing.
@@ -16,7 +17,7 @@ class CountryAvoidanceManager:
     """
 
     # Centralized European country catalog (ISO2 -> name) used by route UI and routing policy.
-    EUROPEAN_COUNTRIES: Dict[str, str] = {
+    EUROPEAN_COUNTRIES: dict[str, str] = {
         'AL': 'Albania', 'AD': 'Andorra', 'AT': 'Austria', 'BY': 'Belarus',
         'BE': 'Belgium', 'BA': 'Bosnia and Herzegovina', 'BG': 'Bulgaria',
         'HR': 'Croatia', 'CY': 'Cyprus', 'CZ': 'Czechia', 'DK': 'Denmark',
@@ -31,9 +32,10 @@ class CountryAvoidanceManager:
         'TR': 'Turkey', 'UA': 'Ukraine', 'GB': 'United Kingdom', 'VA': 'Vatican City'
     }
 
-    def __init__(self, default_selected: Optional[List[str]] = None) -> None:
+    def __init__(self, default_selected: Optional[list[str]] = None) -> None:
         self.logger = get_logger('CountryAvoidance')
-        self._selected: List[str] = []
+        self._lock = threading.Lock()
+        self._selected: list[str] = []
         self._store_path = os.path.join('data', 'avoid_countries.json')
 
         # load persisted if present, otherwise use defaults
@@ -44,42 +46,48 @@ class CountryAvoidanceManager:
             # normalize to upper ISO2
             self._selected = [c.upper() for c in default_selected if isinstance(c, str) and c]
 
-    def get_all_countries(self) -> Dict[str, str]:
+    def get_all_countries(self) -> dict[str, str]:
         return dict(self.EUROPEAN_COUNTRIES)
 
-    def get_selected(self) -> List[str]:
-        return list(self._selected)
+    def get_selected(self) -> list[str]:
+        with self._lock:
+            return list(self._selected)
 
-    def set_selected(self, codes: List[str]) -> None:
-        self._selected = [c.upper() for c in codes if isinstance(c, str) and c]
+    def set_selected(self, codes: list[str]) -> None:
+        with self._lock:
+            self._selected = [c.upper() for c in codes if isinstance(c, str) and c]
         self.logger.info(f"Excluded countries set: {self._selected}")
         self._persist()
 
     def toggle(self, code: str) -> None:
-        code = code.upper()
-        if code in self._selected:
-            self._selected.remove(code)
-        else:
-            self._selected.append(code)
+        with self._lock:
+            code = code.upper()
+            if code in self._selected:
+                self._selected.remove(code)
+            else:
+                self._selected.append(code)
         self.logger.info(f"Excluded countries updated: {self._selected}")
 
     def clear(self) -> None:
-        self._selected = []
+        with self._lock:
+            self._selected = []
         self.logger.info("Excluded countries cleared")
         self._persist()
 
     def _persist(self) -> None:
+        with self._lock:
+            selected_copy = list(self._selected)
         try:
             os.makedirs(os.path.dirname(self._store_path), exist_ok=True)
             with open(self._store_path, 'w', encoding='utf-8') as f:
-                json.dump(self._selected, f)
+                json.dump(selected_copy, f)
         except Exception:
             self.logger.exception("Failed to persist excluded countries")
 
-    def _load_persisted(self) -> Optional[List[str]]:
+    def _load_persisted(self) -> Optional[list[str]]:
         try:
             if os.path.exists(self._store_path):
-                with open(self._store_path, 'r', encoding='utf-8') as f:
+                with open(self._store_path, encoding='utf-8') as f:
                     data = json.load(f)
                     if isinstance(data, list):
                         return [c.upper() for c in data if isinstance(c, str)]

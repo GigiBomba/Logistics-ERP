@@ -10,22 +10,23 @@ Usage::
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable
 
-from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QVBoxLayout,
-    QHBoxLayout,
     QWidget,
 )
 
-from ui.theme import COLORS, S
 from services.i18n import t
-
+from ui.design_tokens import TEXT_WHITE
+from ui.theme import COLORS, S
 
 _SEVERITY_COLORS: dict[str, str] = {
     "CRITICAL": COLORS["danger"],
@@ -53,7 +54,7 @@ class QtAlertPanel(QFrame):
 
     Positioned via :meth:`show_anchored`. Displays up to 20 alerts sorted
     by ``created_at``, each with a severity chip, title, relative timestamp,
-    and navigation chevron.
+    navigation chevron, and a trash/clear-all button in the header.
     """
 
     MAX_WIDTH = 340
@@ -63,7 +64,8 @@ class QtAlertPanel(QFrame):
         self,
         parent: QWidget,
         alerts: list,
-        on_navigate: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None,
+        on_navigate: Callable[[str, dict[str, Any] | None], None] | None = None,
+        on_clear_all: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowFlags(Qt.Popup)
@@ -71,6 +73,8 @@ class QtAlertPanel(QFrame):
         self.setFixedWidth(self.MAX_WIDTH)
 
         self._on_navigate = on_navigate
+        self._on_clear_all = on_clear_all
+        self._has_alerts = bool(alerts)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
@@ -119,6 +123,16 @@ class QtAlertPanel(QFrame):
         title.setProperty("fontRole", "alert-panel-title")
         hdr_layout.addWidget(title)
         hdr_layout.addStretch(1)
+
+        # Clear-all (trash) button — only show when alerts exist
+        if self._has_alerts and self._on_clear_all is not None:
+            clear_btn = QLabel("\U0001F5D1")
+            clear_btn.setToolTip(t("alerts.clear_all", default="Clear all alerts"))
+            clear_btn.setProperty("role", "alert-panel-clear")
+            clear_btn.setCursor(Qt.PointingHandCursor)
+            clear_btn.setStyleSheet("font-size: 14px; padding: 0 4px;")
+            clear_btn.mousePressEvent = lambda _: self._on_clear_all()  # type: ignore[assignment]
+            hdr_layout.addWidget(clear_btn)
 
         close_btn = QLabel("\u2715")
         close_btn.setProperty("role", "alert-panel-close")
@@ -183,7 +197,7 @@ class QtAlertPanel(QFrame):
         chip.setFixedSize(60, 22)
         chip.setAlignment(Qt.AlignCenter)
         chip.setStyleSheet(
-            f"background-color: {sev_color}; color: #ffffff;"
+            f"background-color: {sev_color}; color: {TEXT_WHITE};"
             f"border-radius: 4px; font-size: 11px; font-weight: bold;"
         )
         row_layout.addWidget(chip)
@@ -225,7 +239,7 @@ class QtAlertPanel(QFrame):
         self._close()
         alert_type = str(getattr(alert.type, "value", alert.type))
         destination = _NAV_DESTINATIONS.get(alert_type, "overview")
-        nav_data: Dict[str, Any] = {}
+        nav_data: dict[str, Any] = {}
         if alert_type in _ALERT_TYPES_WITH_TRIP:
             trip_id = getattr(alert, "trip_id", None)
             if trip_id:
@@ -244,10 +258,8 @@ class QtAlertPanel(QFrame):
     # ── Close ───────────────────────────────────────────────────────────────
 
     def _close(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.close()
-        except Exception:
-            pass
 
     # ── Sizing helper ──────────────────────────────────────────────────────
 
@@ -260,7 +272,7 @@ class QtAlertPanel(QFrame):
     # ── Time helper ─────────────────────────────────────────────────────────
 
     @staticmethod
-    def _time_ago(dt_str: Optional[str]) -> str:
+    def _time_ago(dt_str: str | None) -> str:
         if not dt_str:
             return ""
         try:

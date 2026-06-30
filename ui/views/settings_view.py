@@ -7,48 +7,45 @@ scrollable container.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Callable
 
-from PySide6.QtCore import Qt, QDate
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
-    QWidget,
+    QColorDialog,
+    QDialog,
+    QFileDialog,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QLineEdit,
-    QVBoxLayout,
-    QHBoxLayout,
-    QSizePolicy,
-    QDateEdit,
-    QFileDialog,
-    QColorDialog,
     QMessageBox,
-    QDialog,
+    QPlainTextEdit,
     QTableWidget,
     QTableWidgetItem,
-    QHeaderView,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ui.theme import COLORS, S
-from ui.design_tokens import SP
-from ui.styles import Theme
-from ui.widgets import (
-    StyledLineEdit,
-    StyledComboBox,
-    ActionButton,
-    SectionHeader,
-    ScrollableFormContainer,
-    field,
-)
-from ui.components import Card, Btn, Label, PageTitle, SectionTitle, FieldLabel, Divider
-from services.i18n import t, register_listener, unregister_listener
-from services.preferences import PreferencesManager
+from services.i18n import register_listener, t, unregister_listener
 from services.invoicing.config_manager import load_company_config, save_company_config
+from services.operations.event_bus import SETTINGS_UPDATED, EventBus
 from services.operations.notification_center import NotificationCenter
-from services.operations.event_bus import EventBus, SETTINGS_UPDATED
+from services.preferences import PreferencesManager
+from ui.components import Btn, Card, Divider, FieldLabel, Label, PageTitle, SectionTitle
+from ui.design_tokens import SP
+from ui.theme import S
+from ui.widgets import (
+    ActionButton,
+    ScrollableFormContainer,
+    StyledComboBox,
+    StyledLineEdit,
+)
 
 logger = logging.getLogger(__name__)
+
+DEFAULT_BRAND_COLOR = "#6366f1"
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -66,9 +63,9 @@ class QtSettingsView(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
-        prefs: Optional[PreferencesManager] = None,
+        prefs: PreferencesManager | None = None,
         ops=None,
     ):
         super().__init__(parent)
@@ -78,32 +75,32 @@ class QtSettingsView(QWidget):
         self._event_bus = EventBus()
 
         # ── i18n tracking ────────────────────────────────────────────────
-        self._i18n_labels: List[Tuple[QLabel, str]] = []
-        self._i18n_buttons: List[Tuple[ActionButton, str]] = []
-        self._section_headings: Dict[str, QLabel] = {}
+        self._i18n_labels: list[tuple[QLabel, str]] = []
+        self._i18n_buttons: list[tuple[ActionButton, str]] = []
+        self._section_headings: dict[str, QLabel] = {}
         self._language_callback = self._on_language_changed
 
         # ── Brand colour swatch reference ────────────────────────────────
-        self._brand_color_swatch: Optional[QFrame] = None
+        self._brand_color_swatch: QFrame | None = None
 
         # ── Input maps ───────────────────────────────────────────────────
-        self.company_inputs: Dict[str, StyledLineEdit] = {}
-        self.branding_inputs: Dict[str, StyledLineEdit] = {}
-        self.smtp_inputs: Dict[str, StyledLineEdit] = {}
-        self._tracking_rows: Dict[str, Tuple[QWidget, StyledLineEdit]] = {}
+        self.company_inputs: dict[str, StyledLineEdit] = {}
+        self.branding_inputs: dict[str, StyledLineEdit] = {}
+        self.smtp_inputs: dict[str, StyledLineEdit] = {}
+        self._tracking_rows: dict[str, tuple[QWidget, StyledLineEdit]] = {}
 
         # ── Preference controls ──────────────────────────────────────────
-        self._lang_codes: List[str] = []
-        self._lang_combo: Optional[StyledComboBox] = None
-        self._currency_combo: Optional[StyledComboBox] = None
-        self._theme_combo: Optional[StyledComboBox] = None
-        self._tracking_platform_combo: Optional[StyledComboBox] = None
-        self._tracking_test_label: Optional[QLabel] = None
+        self._lang_codes: list[str] = []
+        self._lang_combo: StyledComboBox | None = None
+        self._currency_combo: StyledComboBox | None = None
+        self._theme_combo: StyledComboBox | None = None
+        self._tracking_platform_combo: StyledComboBox | None = None
+        self._tracking_test_label: QLabel | None = None
 
         # ── Maintenance entries ──────────────────────────────────────────
-        self._alert_days_ahead_entry: Optional[StyledLineEdit] = None
-        self._tacho_warning_entry: Optional[StyledLineEdit] = None
-        self._tacho_critical_entry: Optional[StyledLineEdit] = None
+        self._alert_days_ahead_entry: StyledLineEdit | None = None
+        self._tacho_warning_entry: StyledLineEdit | None = None
+        self._tacho_critical_entry: StyledLineEdit | None = None
 
         # ── Build UI ─────────────────────────────────────────────────────
         self._build_ui()
@@ -131,20 +128,14 @@ class QtSettingsView(QWidget):
     def refresh_translations(self) -> None:
         """Update all visible text to the current language."""
         for label, key in self._i18n_labels:
-            try:
+            with contextlib.suppress(Exception):
                 label.setText(t(key))
-            except Exception:
-                pass
         for button, key in self._i18n_buttons:
-            try:
+            with contextlib.suppress(Exception):
                 button.setText(t(key))
-            except Exception:
-                pass
         for text_key, lbl in self._section_headings.items():
-            try:
+            with contextlib.suppress(Exception):
                 lbl.setText(t(text_key))
-            except Exception:
-                pass
         # Rebuild preference menus whose items are language-dependent
         self._rebuild_preference_menus()
         # Rebuild tracking platform menu which contains translated items
@@ -172,6 +163,7 @@ class QtSettingsView(QWidget):
         self._build_section_email()
         self._build_section_tracking()
         self._build_section_maintenance()
+        self._build_section_automation()
 
         # Bottom save bar
         self._build_save_bar(layout)
@@ -254,7 +246,7 @@ class QtSettingsView(QWidget):
 
         conf = load_company_config()
 
-        fields_cfg: List[Tuple[str, str]] = [
+        fields_cfg: list[tuple[str, str]] = [
             ("company_name", "settings.field_company_name"),
             ("cui", "settings.field_cui"),
             ("reg_number", "settings.field_reg_number"),
@@ -330,7 +322,7 @@ class QtSettingsView(QWidget):
         colour_hlyt.setContentsMargins(0, 0, 0, 0)
         colour_hlyt.setSpacing(SP["2"])
 
-        e_colour = StyledLineEdit(text=conf.get("company_color", "#6366f1"))
+        e_colour = StyledLineEdit(text=conf.get("company_color", DEFAULT_BRAND_COLOR))
         colour_hlyt.addWidget(e_colour, 1)
 
         swatch = QFrame()
@@ -338,7 +330,7 @@ class QtSettingsView(QWidget):
         swatch.setProperty("role", "colour-swatch")
         swatch.setStyleSheet(
             f"QFrame[role=\"colour-swatch\"] {{"
-            f"  background-color: {conf.get('company_color', '#6366f1')};"
+            f"  background-color: {conf.get('company_color', DEFAULT_BRAND_COLOR)};"
             f"  border-radius: 4px;"
             f"}}"
         )
@@ -416,7 +408,7 @@ class QtSettingsView(QWidget):
         self._add_labeled_field(card, "settings.theme_label", self._theme_combo)
         self._i18n_buttons.append((self._theme_combo, "settings.theme_label"))
 
-    def _build_lang_display_list(self) -> List[str]:
+    def _build_lang_display_list(self) -> list[str]:
         return [
             f"{self.prefs.get_language_display_name(c)} ({c})"
             for c in self._lang_codes
@@ -425,6 +417,7 @@ class QtSettingsView(QWidget):
     def _rebuild_preference_menus(self) -> None:
         """Re-populate language and currency dropdowns after language change."""
         if self._lang_combo is not None:
+            blocked = self._lang_combo.blockSignals(True)
             self._lang_codes = self.prefs.get_available_languages()
             lang_display = self._build_lang_display_list()
             self._lang_combo.clear()
@@ -434,6 +427,7 @@ class QtSettingsView(QWidget):
                 (i for i, c in enumerate(self._lang_codes) if c == current_lang), 0
             )
             self._lang_combo.setCurrentIndex(current_idx)
+            self._lang_combo.blockSignals(blocked)
 
         if self._theme_combo is not None:
             blocked = self._theme_combo.blockSignals(True)
@@ -545,13 +539,13 @@ class QtSettingsView(QWidget):
         self._add_labeled_field(card, "tracking.platform", self._tracking_platform_combo)
 
         # Dynamic fields
-        tracking_defs: List[Tuple[str, str, bool]] = [
+        tracking_defs: list[tuple[str, str, bool]] = [
             ("token", "tracking.token", False),
             ("host", "tracking.host", False),
             ("username", "tracking.username", False),
             ("password", "tracking.password", True),
         ]
-        for key, label_key, is_password in tracking_defs:
+        for key, _label_key, is_password in tracking_defs:
             row_widget = QWidget()
             row_layout = QVBoxLayout(row_widget)
             row_layout.setContentsMargins(0, 0, 0, 0)
@@ -606,7 +600,7 @@ class QtSettingsView(QWidget):
         # Initial visibility
         self._on_tracking_platform_changed(self._tracking_platform_combo.currentText())
 
-    def _build_tracking_platform_values(self) -> List[str]:
+    def _build_tracking_platform_values(self) -> list[str]:
         return [
             t("tracking.platform_not_configured"),
             "Wialon / GPS-Trace (Gurtam)",
@@ -631,7 +625,7 @@ class QtSettingsView(QWidget):
         not_cfg = t("tracking.platform_not_configured").lower()
 
         if not_cfg in p or "not configured" in p:
-            visible = {k: False for k in self._tracking_rows}
+            visible = dict.fromkeys(self._tracking_rows, False)
         elif "wialon" in p or "gps-trace" in p or "gurtam" in p:
             visible = {"token": True, "host": True, "username": False, "password": False}
         elif "frotcom" in p:
@@ -643,7 +637,7 @@ class QtSettingsView(QWidget):
         elif "generic" in p or "rest" in p:
             visible = {"token": True, "host": True, "username": False, "password": False}
         else:
-            visible = {k: False for k in self._tracking_rows}
+            visible = dict.fromkeys(self._tracking_rows, False)
 
         for key, (row_widget, _entry) in self._tracking_rows.items():
             row_widget.setVisible(visible.get(key, False))
@@ -663,11 +657,10 @@ class QtSettingsView(QWidget):
             return
 
         all_filled = True
-        for key, (row_widget, entry) in self._tracking_rows.items():
-            if row_widget.isVisible():
-                if not entry.text().strip():
-                    all_filled = False
-                    break
+        for _key, (row_widget, entry) in self._tracking_rows.items():
+            if row_widget.isVisible() and not entry.text().strip():
+                all_filled = False
+                break
 
         if not all_filled:
             self._tracking_test_label.setText(
@@ -679,7 +672,7 @@ class QtSettingsView(QWidget):
             return
 
         settings_map = {"tracking.platform": platform}
-        for key, (row_widget, entry) in self._tracking_rows.items():
+        for key, (_row_widget, entry) in self._tracking_rows.items():
             settings_map[f"tracking.{key}"] = entry.text().strip()
         if self.prefs:
             for k, v in settings_map.items():
@@ -709,7 +702,7 @@ class QtSettingsView(QWidget):
         card = self._section_card("settings.section_maintenance")
         self._scroll.add_widget(card)
 
-        entries: List[Tuple[str, str, str]] = [
+        entries: list[tuple[str, str, str]] = [
             ("alert_days_ahead", "settings.field_alert_days_ahead", "_alert_days_ahead_entry"),
             ("tacho_warning", "settings.field_tacho_warning", "_tacho_warning_entry"),
             ("tacho_critical", "settings.field_tacho_critical", "_tacho_critical_entry"),
@@ -723,6 +716,243 @@ class QtSettingsView(QWidget):
     # ──────────────────────────────────────────────────────────────────────────
     #  Save bar
     # ──────────────────────────────────────────────────────────────────────────
+
+    def _build_section_automation(self) -> None:
+        card = self._section_card("settings.section_automation")
+        self._scroll.add_widget(card)
+
+        # Company name used as the email signature.
+        company_entry = StyledLineEdit(
+            text=(self.prefs.get_setting("automation_company_name", "Operion ERP")
+                  if self.prefs else "Operion ERP")
+        )
+        self._add_labeled_field(card, "settings.field_automation_company", company_entry)
+        self._automation_company_entry = company_entry
+
+        # Subject template.
+        from services.document_automation.email_template import DEFAULT_SUBJECT
+        subject_entry = StyledLineEdit(
+            text=(self.prefs.get_setting("automation_email_subject_template", DEFAULT_SUBJECT)
+                  if self.prefs else DEFAULT_SUBJECT)
+        )
+        self._add_labeled_field(card, "settings.field_automation_subject", subject_entry)
+        self._automation_subject_entry = subject_entry
+
+        # Body template.
+        from services.document_automation.email_template import DEFAULT_BODY
+        body_widget = QPlainTextEdit()
+        body_widget.setPlainText(
+            self.prefs.get_setting("automation_email_body_template", DEFAULT_BODY)
+             if self.prefs else DEFAULT_BODY
+        )
+        body_widget.setMinimumHeight(180)
+        body_label = QLabel(t("settings.field_automation_body", default="Body template:"))
+        body_label.setProperty("fontRole", "muted")
+        card.layout().addWidget(body_label)
+        card.layout().addWidget(body_widget)
+        self._automation_body_edit = body_widget
+
+        # ── Cloud OCR credentials ────────────────────────────────────
+        ocr_label = QLabel(t("settings.field_ocr_credentials", default="Cloud OCR credentials:"))
+        ocr_label.setProperty("fontRole", "muted")
+        card.layout().addWidget(ocr_label)
+        card.layout().addSpacing(4)
+
+        self._ocr_google_key = self._add_ocr_field(
+            card, "Google Vision API key",
+            self.prefs.get_setting("ocr_google_key", "") if self.prefs else "",
+        )
+        self._ocr_google_project = self._add_ocr_field(
+            card, "Google Project ID",
+            self.prefs.get_setting("ocr_google_project_id", "") if self.prefs else "",
+        )
+        self._ocr_azure_endpoint = self._add_ocr_field(
+            card, "Azure endpoint",
+            self.prefs.get_setting("ocr_azure_endpoint", "") if self.prefs else "",
+        )
+        self._ocr_azure_key = self._add_ocr_field(
+            card, "Azure key",
+            self.prefs.get_setting("ocr_azure_key", "") if self.prefs else "",
+        )
+        self._ocr_language_hints = self._add_ocr_field(
+            card, "Language hints (comma-separated)",
+            self.prefs.get_setting("ocr_language_hints", "") if self.prefs else "",
+        )
+
+        hint = QLabel(t("settings.field_ocr_help", default="Set at least one provider's credentials to enable handwriting recognition."))
+        hint.setProperty("fontRole", "muted")
+        hint.setWordWrap(True)
+        card.layout().addWidget(hint)
+
+        # ── PaddleOCR GPU toggle ──────────────────────────────────────
+        from ui.widgets import StyledCheckBox
+        gpu_enabled = self.prefs.get_setting("ocr_use_gpu", "0") if self.prefs else "0"
+        self._ocr_gpu_check = StyledCheckBox(
+            card,
+            text=t("settings.field_ocr_gpu", default="Use GPU for OCR (requires CUDA + PaddlePaddle GPU)"),
+        )
+        self._ocr_gpu_check.setChecked(gpu_enabled in ("1", "true", "yes"))
+        card.layout().addWidget(self._ocr_gpu_check)
+
+        # ── PaddleOCR advanced config ─────────────────────────────────
+        ocr_config_label = QLabel(t("settings.field_ocr_config", default="PaddleOCR advanced settings:"))
+        ocr_config_label.setProperty("fontRole", "muted")
+        card.layout().addWidget(ocr_config_label)
+
+        det_len = self.prefs.get_setting("ocr_det_limit_side_len", "960") if self.prefs else "960"
+        self._ocr_det_len = StyledLineEdit(text=det_len)
+        self._add_labeled_field(card, "Detection limit side length (px)", self._ocr_det_len)
+
+        rec_batch = self.prefs.get_setting("ocr_rec_batch_num", "6") if self.prefs else "6"
+        self._ocr_rec_batch = StyledLineEdit(text=rec_batch)
+        self._add_labeled_field(card, "Recognition batch count", self._ocr_rec_batch)
+
+        # ── AI Vision fallback (Gemma 3) ──────────────────────────────
+        ai_label = QLabel(t("settings.field_ai_vision", default="AI Vision fallback (Gemma 3, local):"))
+        ai_label.setProperty("fontRole", "muted")
+        card.layout().addWidget(ai_label)
+        card.layout().addSpacing(4)
+
+        from ui.widgets import StyledComboBox
+        self._ai_api_mode = StyledComboBox(
+            values=["ollama", "openai"],
+            state="readonly",
+        )
+        api_mode = self.prefs.get_setting("qwen_api_mode", "ollama") if self.prefs else "ollama"
+        self._ai_api_mode.setCurrentText(api_mode)
+        self._add_labeled_field(card, "API mode (ollama / openai-compat)", self._ai_api_mode)
+
+        self._ai_endpoint = StyledLineEdit(
+            text=self.prefs.get_setting("qwen_endpoint", "https://ocr.operionerp.xyz") if self.prefs else "https://ocr.operionerp.xyz",
+        )
+        self._add_labeled_field(card, "Endpoint URL", self._ai_endpoint)
+
+        self._ai_model = StyledLineEdit(
+            text=self.prefs.get_setting("qwen_model", "gemma3:4b") if self.prefs else "gemma3:4b",
+        )
+        self._add_labeled_field(card, "Model name", self._ai_model)
+
+        self._ai_max_pages = StyledLineEdit(
+            text=self.prefs.get_setting("qwen_max_pages", "3") if self.prefs else "3",
+        )
+        self._add_labeled_field(card, "Max pages per document", self._ai_max_pages)
+
+        self._ai_rpm = StyledLineEdit(
+            text=self.prefs.get_setting("qwen_rpm_limit", "10") if self.prefs else "10",
+        )
+        self._add_labeled_field(card, "Rate limit (requests/min)", self._ai_rpm)
+
+        # AI request timeout (seconds)
+        from PySide6.QtWidgets import QSpinBox
+        self._ai_timeout = QSpinBox()
+        self._ai_timeout.setRange(30, 600)
+        self._ai_timeout.setSuffix(" seconds")
+        self._ai_timeout.setSingleStep(10)
+        current_timeout = int(self.prefs.get_setting("qwen_timeout_s", "300")) if self.prefs else 300
+        self._ai_timeout.setValue(current_timeout)
+        self._add_labeled_field(card, "AI request timeout", self._ai_timeout)
+
+        # Confidence threshold for PaddleOCR → AI fallback
+        self._ai_threshold = StyledLineEdit(
+            text=self.prefs.get_setting("ai_confidence_threshold", "75") if self.prefs else "75",
+        )
+        self._add_labeled_field(card, "PaddleOCR confidence threshold (%)", self._ai_threshold)
+
+        # ── Email Importer ─────────────────────────────────────────────
+        email_label = QLabel(t("settings.field_email_importer", default="Email importer (IMAP):"))
+        email_label.setProperty("fontRole", "muted")
+        card.layout().addWidget(email_label)
+        card.layout().addSpacing(4)
+
+        from ui.widgets import StyledCheckBox
+        self._email_importer_enabled = StyledCheckBox(card, text="Enable email import")
+        if self.prefs:
+            self._email_importer_enabled.setChecked(self.prefs.get_setting("email_importer_enabled", "0") in ("1", "true"))
+        card.layout().addWidget(self._email_importer_enabled)
+
+        self._email_importer_host = StyledLineEdit(
+            text=self.prefs.get_setting("email_importer_host", "") if self.prefs else "",
+        )
+        self._add_labeled_field(card, "IMAP server", self._email_importer_host)
+
+        self._email_importer_port = StyledLineEdit(
+            text=self.prefs.get_setting("email_importer_port", "993") if self.prefs else "993",
+        )
+        self._add_labeled_field(card, "IMAP port", self._email_importer_port)
+
+        self._email_importer_user = StyledLineEdit(
+            text=self.prefs.get_setting("email_importer_user", "") if self.prefs else "",
+        )
+        self._add_labeled_field(card, "IMAP username", self._email_importer_user)
+
+        self._email_importer_password = StyledLineEdit(
+            text=self.prefs.get_setting("email_importer_password", "") if self.prefs else "",
+        )
+        self._email_importer_password.setEchoMode(QLineEdit.EchoMode.Password)
+        self._add_labeled_field(card, "IMAP password", self._email_importer_password)
+
+        self._email_importer_interval = StyledLineEdit(
+            text=self.prefs.get_setting("email_importer_interval", "60") if self.prefs else "60",
+        )
+        self._add_labeled_field(card, "Poll interval (seconds)", self._email_importer_interval)
+
+        self._email_importer_whitelist = StyledLineEdit(
+            text=self.prefs.get_setting("email_importer_whitelist", "") if self.prefs else "",
+        )
+        self._add_labeled_field(card, "Sender whitelist (comma-separated)", self._email_importer_whitelist)
+
+        self._email_importer_delete = StyledCheckBox(card, text="Delete processed emails after import")
+        if self.prefs:
+            self._email_importer_delete.setChecked(
+                self.prefs.get_setting("email_importer_delete", "0") in ("1", "true")
+            )
+        card.layout().addWidget(self._email_importer_delete)
+
+        # ── Folder Watcher ─────────────────────────────────────────────
+        fw_label = QLabel(t("settings.field_folder_watcher", default="Folder watcher (hot folder):"))
+        fw_label.setProperty("fontRole", "muted")
+        card.layout().addWidget(fw_label)
+        card.layout().addSpacing(4)
+
+        self._fw_enabled = StyledCheckBox(card, text="Enable folder watcher")
+        if self.prefs:
+            self._fw_enabled.setChecked(self.prefs.get_setting("folder_watcher_enabled", "0") in ("1", "true"))
+        card.layout().addWidget(self._fw_enabled)
+
+        self._fw_path = StyledLineEdit(
+            text=self.prefs.get_setting("folder_watcher_path", "") if self.prefs else "",
+        )
+        self._add_labeled_field(card, "Watch folder path", self._fw_path)
+
+        self._fw_interval = StyledLineEdit(
+            text=self.prefs.get_setting("folder_watcher_interval", "10") if self.prefs else "10",
+        )
+        self._add_labeled_field(card, "Poll interval (seconds)", self._fw_interval)
+
+        self._fw_recursive = StyledCheckBox(card, text="Watch subdirectories recursively")
+        if self.prefs:
+            self._fw_recursive.setChecked(self.prefs.get_setting("folder_watcher_recursive", "0") in ("1", "true"))
+        card.layout().addWidget(self._fw_recursive)
+
+        self._fw_delete = StyledCheckBox(card, text="Delete files after import")
+        if self.prefs:
+            self._fw_delete.setChecked(self.prefs.get_setting("folder_watcher_delete", "0") in ("1", "true"))
+        card.layout().addWidget(self._fw_delete)
+
+    def _add_ocr_field(self, card, label: str, value: str):
+        row = QWidget()
+        row_layout = QHBoxLayout(row)
+        row_layout.setContentsMargins(0, 0, 0, 0)
+        row_layout.setSpacing(SP["2"])
+        lbl = QLabel(label)
+        lbl.setProperty("fontRole", "small")
+        lbl.setFixedWidth(200)
+        entry = StyledLineEdit(text=value)
+        entry.setEchoMode(QLineEdit.EchoMode.Password)
+        row_layout.addWidget(lbl)
+        row_layout.addWidget(entry, 1)
+        card.layout().addWidget(row)
+        return entry
 
     def _build_save_bar(self, parent_layout: QVBoxLayout) -> None:
         bar = QFrame()
@@ -759,7 +989,7 @@ class QtSettingsView(QWidget):
     def _save_all(self) -> None:
         """Collect all field values and persist to config / settings DB."""
         # ── Company + Branding ──────────────────────────────────────────
-        company_data: Dict[str, str] = {
+        company_data: dict[str, str] = {
             k: v.text() for k, v in self.company_inputs.items()
         }
         for k, e in self.branding_inputs.items():
@@ -799,12 +1029,122 @@ class QtSettingsView(QWidget):
             if entry is not None:
                 self.prefs.save_setting(key, entry.text().strip())
 
+        # ── Cloud OCR ────────────────────────────────────────────────────
+        for key, attr in [
+            ("ocr_google_key", "_ocr_google_key"),
+            ("ocr_google_project_id", "_ocr_google_project"),
+            ("ocr_azure_endpoint", "_ocr_azure_endpoint"),
+            ("ocr_azure_key", "_ocr_azure_key"),
+            ("ocr_language_hints", "_ocr_language_hints"),
+        ]:
+            entry = getattr(self, attr, None)
+            if entry is not None:
+                self.prefs.save_setting(key, entry.text().strip())
+        # Save PaddleOCR settings.
+        if getattr(self, "_ocr_gpu_check", None) is not None:
+            self.prefs.save_setting(
+                "ocr_use_gpu", "1" if self._ocr_gpu_check.isChecked() else "0",
+            )
+        for key, attr in [
+            ("ocr_det_limit_side_len", "_ocr_det_len"),
+            ("ocr_rec_batch_num", "_ocr_rec_batch"),
+        ]:
+            entry = getattr(self, attr, None)
+            if entry is not None:
+                self.prefs.save_setting(key, entry.text().strip())
+        # ── AI Vision (Gemma 3) ────────────────────────────────────────
+        for key, attr in [
+            ("qwen_api_mode", "_ai_api_mode"),
+            ("qwen_endpoint", "_ai_endpoint"),
+            ("qwen_model", "_ai_model"),
+            ("qwen_max_pages", "_ai_max_pages"),
+            ("qwen_rpm_limit", "_ai_rpm"),
+            ("ai_confidence_threshold", "_ai_threshold"),
+            ("qwen_timeout_s", "_ai_timeout"),
+        ]:
+            obj = getattr(self, attr, None)
+            if obj is not None:
+                if hasattr(obj, "currentText"):
+                    val = obj.currentText()
+                elif hasattr(obj, "value"):
+                    val = str(obj.value())
+                else:
+                    val = obj.text().strip()
+                self.prefs.save_setting(key, val)
+        # Also update the runtime threshold in ocr_extractor.
+        try:
+            thresh_text = getattr(self, "_ai_threshold", None)
+            if thresh_text is not None:
+                val = float(thresh_text.text().strip())
+                from services.document_automation.ocr_extractor import OcrExtractor
+                OcrExtractor.LOCAL_CONFIDENCE_THRESHOLD = val
+        except Exception:
+            pass
+        try:
+            from services.document_automation.ai_fallback import init_from_db as ai_init
+            ai_init(self.db)
+        except Exception:
+            pass
+
+        # ── Email Importer ─────────────────────────────────────────────
+        for key, attr in [
+            ("email_importer_enabled", "_email_importer_enabled"),
+            ("email_importer_host", "_email_importer_host"),
+            ("email_importer_port", "_email_importer_port"),
+            ("email_importer_user", "_email_importer_user"),
+            ("email_importer_password", "_email_importer_password"),
+            ("email_importer_interval", "_email_importer_interval"),
+            ("email_importer_whitelist", "_email_importer_whitelist"),
+            ("email_importer_delete", "_email_importer_delete"),
+        ]:
+            obj = getattr(self, attr, None)
+            if obj is not None:
+                val = obj.isChecked() if hasattr(obj, "isChecked") else obj.text().strip()
+                val = "1" if val is True else ("0" if val is False else val)
+                self.prefs.save_setting(key, str(val))
+
+        # ── Folder Watcher ─────────────────────────────────────────────
+        for key, attr in [
+            ("folder_watcher_enabled", "_fw_enabled"),
+            ("folder_watcher_path", "_fw_path"),
+            ("folder_watcher_interval", "_fw_interval"),
+            ("folder_watcher_recursive", "_fw_recursive"),
+            ("folder_watcher_delete", "_fw_delete"),
+        ]:
+            obj = getattr(self, attr, None)
+            if obj is not None:
+                val = obj.isChecked() if hasattr(obj, "isChecked") else obj.text().strip()
+                val = "1" if val is True else ("0" if val is False else val)
+                self.prefs.save_setting(key, str(val))
+
+        # Reload cloud OCR credentials from DB so they take effect immediately.
+        try:
+            from services.document_automation.cloud_ocr import init_from_db
+            init_from_db(self.db)
+        except Exception:
+            pass
+
+        # ── Document automation ──────────────────────────────────────
+        if getattr(self, "_automation_company_entry", None) is not None:
+            self.prefs.save_setting(
+                "automation_company_name",
+                self._automation_company_entry.text().strip(),
+            )
+        if getattr(self, "_automation_subject_entry", None) is not None:
+            self.prefs.save_setting(
+                "automation_email_subject_template",
+                self._automation_subject_entry.text().strip(),
+            )
+        if getattr(self, "_automation_body_edit", None) is not None:
+            self.prefs.save_setting(
+                "automation_email_body_template",
+                self._automation_body_edit.toPlainText().strip(),
+            )
+
         # ── Ops refresh ─────────────────────────────────────────────────
         if self.ops is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.ops._configure_smtp_from_db()
-            except Exception:
-                pass
 
         # ── Publish event ───────────────────────────────────────────────
         self._event_bus.publish(SETTINGS_UPDATED, {})
@@ -857,13 +1197,13 @@ class QtSettingsView(QWidget):
             self,
             t("invoice_editor.select_logo"),
             "",
-            "Image files (*.png *.jpg *.jpeg *.bmp *.gif);;All files (*.*)",
+            t("signature.filter_images", default="Image files (*.png *.jpg *.jpeg *.bmp *.gif);;All files (*.*)"),
         )
         if path:
             entry.setText(path)
 
     def _pick_brand_color(self, entry: StyledLineEdit, swatch: QFrame) -> None:
-        initial = QColor(entry.text()) if entry.text() else QColor("#6366f1")
+        initial = QColor(entry.text()) if entry.text() else QColor(DEFAULT_BRAND_COLOR)
         color = QColorDialog.getColor(initial, self, t("invoice_editor.pick_color_title"))
         if color.isValid():
             hex_color = color.name()
@@ -879,7 +1219,7 @@ class QtSettingsView(QWidget):
 
     def _test_smtp(self) -> None:
         nc = NotificationCenter()
-        smtp_data: Dict[str, str] = {
+        smtp_data: dict[str, str] = {
             k: v.text().strip() for k, v in self.smtp_inputs.items()
         }
         try:

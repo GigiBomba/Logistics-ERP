@@ -113,7 +113,9 @@ class FleetRepository(BaseRepository):
 
     def get_expiring_insurance(self, days_ahead: int = 30) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE insurance_expiry IS NOT NULL AND insurance_expiry != ''",
+            f"SELECT * FROM {self.TABLE} WHERE insurance_expiry IS NOT NULL AND insurance_expiry != ''"
+            " AND insurance_expiry <= date('now', '+' || ? || ' days')",
+            (days_ahead,),
         )
 
     # ── Maintenance Records CRUD ─────────────────────────────────────
@@ -287,6 +289,16 @@ class FleetRepository(BaseRepository):
             f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1"
         )
         return row["cnt"] if row else 0
+
+    def get_all_schedules_flat(self) -> List[Dict[str, Any]]:
+        """Return all active schedules with truck plate and current mileage joined."""
+        return self._fetchall(
+            f"""SELECT s.*, t.plate_number, t.mileage AS current_km
+                FROM {self.TABLE_MAINT_SCHEDULES} s
+                LEFT JOIN trucks t ON t.id = s.truck_id
+                WHERE s.active = 1
+                ORDER BY s.truck_id, s.maintenance_type"""
+        )
 
     # ── Analytics Queries ────────────────────────────────────────────
 

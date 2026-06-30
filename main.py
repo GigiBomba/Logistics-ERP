@@ -20,22 +20,40 @@ from PySide6.QtWidgets import QApplication  # noqa: E402
 from config import Config  # noqa: E402
 from ui.stylesheet import build_stylesheet  # noqa: E402
 from utils.observability import log, metrics, perf_timer  # noqa: E402
+from utils.resource_path import data_path, _is_packaged
 
-logging.basicConfig(level=logging.INFO, format="%(levelname)s %(name)s: %(message)s")
+# ── Startup logging ─────────────────────────────────────────────────
+# Ensure the log directory exists before setting up the file handler.
+_log_dir = os.path.dirname(Config.LOG_FILE)
+os.makedirs(_log_dir, exist_ok=True)
+_handler = logging.FileHandler(Config.LOG_FILE, encoding="utf-8", delay=True)
+_handler.setFormatter(logging.Formatter(
+    "%(asctime)s %(levelname)s %(name)s: %(message)s"
+))
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout), _handler],
+)
 logger = logging.getLogger("app")
 
 
 def run_app() -> int:
     startup_start = time.perf_counter()
+    logger.info(
+        "Starting %s — packaged=%s cwd=%s meipass=%s",
+        Config.APP_NAME,
+        _is_packaged(),
+        os.getcwd(),
+        getattr(sys, "_MEIPASS", "N/A"),
+    )
+    logger.info("DB_PATH=%s LOG_FILE=%s", Config.DB_PATH, Config.LOG_FILE)
     try:
         # Quick pre-flight check — ensure critical dependency is available early
         try:
             import qtawesome  # noqa: F401
         except ImportError:
-            print(f"\nERROR: qtawesome is not installed in this Python environment.", file=sys.stderr)
-            print(f"Python path: {sys.executable}", file=sys.stderr)
-            print(f"Run: py -3 -m pip install qtawesome\n", file=sys.stderr)
-            return 1
+            logger.warning("qtawesome not installed — some icons will use fallback rendering")
 
         # Health check — verify DB, filesystem, and core imports before heavy init
         from services.health_check import check_filesystem
@@ -68,11 +86,32 @@ def run_app() -> int:
         ops = OperationsEngine(db, prefs=prefs)
         ops.start()
 
-        # 6. Document Center migration
+        # 6. Cloud OCR and AI Vision credentials from settings DB
         try:
-            from services.document_service import DocumentService
-            ds = DocumentService(db)
-            migrated = ds.migrate_all()
+            from services.document_automation.cloud_ocr import init_from_db
+            init_from_db(db)
+        except Exception:
+            logger.warning("Cloud OCR init_from_db failed — env vars only")
+        try:
+            from services.document_automation.ai_fallback import init_from_db as ai_init
+            ai_init(db)
+        except Exception:
+            logger.warning("AI Vision init_from_db failed")
+
+        # Preload AI model in bg so first OCR call is fast
+        try:
+            from services.document_automation.ai_fallback import preload_model
+            import threading as _t
+            _t.Thread(target=preload_model, daemon=True).start()
+        except Exception:
+            logger.warning("AI model preload failed")
+
+        # 7. Document Center migration
+        try:
+            from repositories.document_repository import DocumentRepository
+            from services.document.upload_service import UploadService
+            svc = UploadService(db, DocumentRepository(db))
+            migrated = svc.migrate_all()
             if migrated > 0:
                 logger.info("Document Center migration: %d existing files registered", migrated)
         except Exception as e:
@@ -80,7 +119,7 @@ def run_app() -> int:
 
         # 7. Qt application + main window
         QApplication.setHighDpiScaleFactorRoundingPolicy(
-            Qt.HighDpiScaleFactorRoundingPolicy.PassThrough
+            Qt.HighDpiScaleFactorRoundingPolicy.Round
         )
         app = QApplication(sys.argv)
         app.setApplicationName(Config.APP_NAME)
@@ -101,6 +140,11 @@ def run_app() -> int:
         ops.stop()
         try:
             db.close()
+        except Exception:
+            pass
+        try:
+            from services.document_automation.ai_fallback import close_session
+            close_session()
         except Exception:
             pass
         return result

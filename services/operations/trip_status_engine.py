@@ -1,9 +1,15 @@
 import logging
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from services.operations.alert_manager import AlertManager, AlertType, Severity
-from services.operations.event_bus import EventBus, TRIP_CREATED, TRIP_UPDATED, TRIP_STATUS_CHANGED, VALID_TRANSITIONS
+from services.operations.event_bus import (
+    TRIP_CREATED,
+    TRIP_STATUS_CHANGED,
+    TRIP_UPDATED,
+    VALID_TRANSITIONS,
+    EventBus,
+)
 from services.operations.rules import Rules
 
 logger = logging.getLogger("operations.trip_status_engine")
@@ -33,12 +39,12 @@ class TripStatusEngine:
         except Exception:
             pass
 
-    def _on_trip_event(self, ev: Dict[str, Any]) -> None:
+    def _on_trip_event(self, ev: dict[str, Any]) -> None:
         trip_id = ev["data"].get("trip_id")
         if trip_id:
             self.evaluate_trip(trip_id)
 
-    def _on_trip_status_change(self, ev: Dict[str, Any]) -> None:
+    def _on_trip_status_change(self, ev: dict[str, Any]) -> None:
         trip_id = ev["data"].get("trip_id")
         if trip_id:
             self.evaluate_trip(trip_id)
@@ -69,11 +75,12 @@ class TripStatusEngine:
                         return 0
                     hours_idle = (datetime.now() - created).total_seconds() / 3600
                     if hours_idle > delay_hours * 24:
+                        alert_truck_id = str(row.get("truck_id")) if row.get("truck_id") else plate
                         self._alert_mgr.create_alert(
                             AlertType.TRIP_DELAY, Severity.WARNING,
                             f"Trip {trip_id} delayed",
                             f"Trip has been in '{status}' for {int(hours_idle)} hours (truck {plate})",
-                            truck_id=plate,
+                            truck_id=alert_truck_id,
                             trip_id=trip_id,
                         )
                         count += 1

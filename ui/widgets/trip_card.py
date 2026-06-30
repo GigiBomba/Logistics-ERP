@@ -14,9 +14,9 @@ stylesheets are used only for dynamic state (hover, selection, delayed).
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtGui import QMouseEvent
 from PySide6.QtWidgets import (
     QFrame,
@@ -26,8 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.theme import COLORS, S
 from services.i18n import t
+from ui.theme import COLORS, S
 
 logger = logging.getLogger(__name__)
 
@@ -78,14 +78,14 @@ class QtTripCard(QFrame):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
-        trip_data: Optional[dict[str, Any]] = None,
-        on_click: Optional[Callable[[dict[str, Any]], None]] = None,
-        on_drag_start: Optional[Callable[[QWidget, QMouseEvent], None]] = None,
-        on_assign_truck: Optional[Callable[[QWidget], None]] = None,
-        on_assign_driver: Optional[Callable[[QWidget], None]] = None,
-        on_select_changed: Optional[Callable[[QWidget, bool], None]] = None,
-        on_assign_both: Optional[Callable[[QWidget], None]] = None,
+        parent: QWidget | None = None,
+        trip_data: dict[str, Any] | None = None,
+        on_click: Callable[[dict[str, Any]], None] | None = None,
+        on_drag_start: Callable[[QWidget, QMouseEvent], None] | None = None,
+        on_assign_truck: Callable[[QWidget], None] | None = None,
+        on_assign_driver: Callable[[QWidget], None] | None = None,
+        on_select_changed: Callable[[QWidget, bool], None] | None = None,
+        on_assign_both: Callable[[QWidget], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setProperty("role", "card")
@@ -103,27 +103,27 @@ class QtTripCard(QFrame):
         self._hovered = False
         self._selected = False
         self._delayed = False
-        self._drag_start_pos: Optional[QMouseEvent] = None
+        self._drag_start_pos: QPoint | None = None
         self._dragging = False
 
         # ── Widget references (populated by _build_card) ──────────────────
-        self._accent_bar: Optional[QFrame] = None
-        self._content_widget: Optional[QWidget] = None
-        self._chip_frame: Optional[QFrame] = None
-        self._chip_lbl: Optional[QLabel] = None
-        self._delayed_chip: Optional[QFrame] = None
-        self._truck_lbl: Optional[QLabel] = None
-        self._truck_clear_btn: Optional[QLabel] = None
-        self._driver_lbl: Optional[QLabel] = None
-        self._driver_clear_btn: Optional[QLabel] = None
-        self._both_lbl: Optional[QLabel] = None
-        self._route_lbl: Optional[QLabel] = None
-        self._date_lbl: Optional[QLabel] = None
-        self._alert_frame: Optional[QFrame] = None
-        self._live_row: Optional[QWidget] = None
-        self._live_speed: Optional[QLabel] = None
-        self._error_lbl: Optional[QLabel] = None
-        self._error_timer: Optional[QTimer] = None
+        self._accent_bar: QFrame | None = None
+        self._content_widget: QWidget | None = None
+        self._chip_frame: QFrame | None = None
+        self._chip_lbl: QLabel | None = None
+        self._delayed_chip: QFrame | None = None
+        self._truck_lbl: QLabel | None = None
+        self._truck_clear_btn: QLabel | None = None
+        self._driver_lbl: QLabel | None = None
+        self._driver_clear_btn: QLabel | None = None
+        self._both_lbl: QLabel | None = None
+        self._route_lbl: QLabel | None = None
+        self._date_lbl: QLabel | None = None
+        self._alert_frame: QFrame | None = None
+        self._live_row: QWidget | None = None
+        self._live_speed: QLabel | None = None
+        self._error_lbl: QLabel | None = None
+        self._error_timer: QTimer | None = None
 
         self._build_card()
 
@@ -641,7 +641,7 @@ class QtTripCard(QFrame):
 
     def mousePressEvent(self, event: QMouseEvent) -> None:
         """Record the press position for drag detection."""
-        self._drag_start_pos = event
+        self._drag_start_pos = event.position().toPoint()
         self._dragging = False
         super().mousePressEvent(event)
 
@@ -651,14 +651,16 @@ class QtTripCard(QFrame):
             return
 
         if not self._dragging:
-            dx = abs(event.pos().x() - self._drag_start_pos.pos().x())
-            dy = abs(event.pos().y() - self._drag_start_pos.pos().y())
+            pos = event.position().toPoint()
+            dx = abs(pos.x() - self._drag_start_pos.x())
+            dy = abs(pos.y() - self._drag_start_pos.y())
             if dx > 5 or dy > 5:
                 self._dragging = True
                 if self._on_drag_start is not None:
                     self._on_drag_start(self, event)
         elif self._on_drag_start is not None:
             self._on_drag_start(self, event)
+            return
 
         super().mouseMoveEvent(event)
 

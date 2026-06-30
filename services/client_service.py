@@ -1,10 +1,11 @@
 """Client service — business logic for client management."""
+import contextlib
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from repositories.client_repository import ClientRepository
-from repositories.invoice_repository import InvoiceRepository
 from repositories.contact_repository import ContactRepository
+from repositories.invoice_repository import InvoiceRepository
 from repositories.tag_repository import TagRepository
 from services.operations.event_bus import EventBus
 
@@ -25,19 +26,19 @@ class ClientService:
 
     # ── Existing methods ─────────────────────────────────────────────────
 
-    def get_by_id(self, client_id: int) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, client_id: int) -> Optional[dict[str, Any]]:
         return self._repo.get_by_id(client_id)
 
-    def get_all(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+    def get_all(self, include_inactive: bool = False) -> list[dict[str, Any]]:
         return self._repo.get_all(include_inactive=include_inactive)
 
-    def get_all_with_revenue(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+    def get_all_with_revenue(self, include_inactive: bool = False) -> list[dict[str, Any]]:
         return self._repo.get_all_with_revenue(include_inactive=include_inactive)
 
-    def search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
+    def search(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         return self._repo.search(query, limit=limit)
 
-    def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200) -> List[Dict[str, Any]]:
+    def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200) -> list[dict[str, Any]]:
         return self._repo.search_advanced(query, include_inactive=include_inactive, limit=limit)
 
     def create(self, name: str, **kwargs) -> int:
@@ -54,7 +55,7 @@ class ClientService:
     def get_trip_count(self, client_id: int) -> int:
         return self._repo.get_trip_count(client_id)
 
-    def get_top_clients(self, limit: int = 5) -> List[Dict[str, Any]]:
+    def get_top_clients(self, limit: int = 5) -> list[dict[str, Any]]:
         return self._repo.get_top_by_revenue(limit=limit)
 
     def get_or_create(self, name: str) -> int:
@@ -75,7 +76,7 @@ class ClientService:
 
     # ── Dashboard & queries ─────────────────────────────────────────────
 
-    def get_client_dashboard(self, client_id: int) -> Dict[str, Any]:
+    def get_client_dashboard(self, client_id: int) -> dict[str, Any]:
         client = self._repo.get_by_id(client_id)
         if not client:
             return {}
@@ -104,16 +105,16 @@ class ClientService:
             "tags": tags,
         }
 
-    def get_client_trips(self, client_id: int, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    def get_client_trips(self, client_id: int, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         return self._repo.get_trips(client_id, limit=limit, offset=offset)
 
-    def get_client_invoices(self, client_id: int, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_client_invoices(self, client_id: int, limit: int = 100) -> list[dict[str, Any]]:
         return self._repo.get_invoices(client_id, limit=limit)
 
-    def get_client_revenue_history(self, client_id: int, months: int = 12) -> List[Dict[str, Any]]:
+    def get_client_revenue_history(self, client_id: int, months: int = 12) -> list[dict[str, Any]]:
         return self._repo.get_revenue_history(client_id, months=months)
 
-    def get_outstanding_invoices(self, client_id: int) -> List[Dict[str, Any]]:
+    def get_outstanding_invoices(self, client_id: int) -> list[dict[str, Any]]:
         return self._inv_repo.get_outstanding_by_client(client_id)
 
     def get_outstanding_balance(self, client_id: int) -> float:
@@ -121,7 +122,7 @@ class ClientService:
 
     # ── Contact management ──────────────────────────────────────────────
 
-    def get_contacts(self, client_id: int) -> List[Dict[str, Any]]:
+    def get_contacts(self, client_id: int) -> list[dict[str, Any]]:
         return self._contact_repo.get_by_client(client_id)
 
     def add_contact(self, client_id: int, **kwargs) -> int:
@@ -140,7 +141,7 @@ class ClientService:
 
     # ── Tag management ─────────────────────────────────────────────────
 
-    def get_tags(self, client_id: int) -> List[str]:
+    def get_tags(self, client_id: int) -> list[str]:
         rows = self._tag_repo.get_by_client(client_id)
         return [r["tag"] for r in rows]
 
@@ -150,68 +151,79 @@ class ClientService:
     def remove_tag(self, client_id: int, tag: str) -> None:
         self._tag_repo.remove(client_id, tag)
 
-    def get_all_tags(self) -> List[str]:
+    def get_all_tags(self) -> list[str]:
         return self._tag_repo.get_all_tags()
 
     # ── Payment tracking ────────────────────────────────────────────────
 
-    def get_payment_summary(self, client_id: int) -> Dict[str, Any]:
-        invs = self._inv_repo.get_by_client_id(client_id, limit=500)
-        total_billed = sum(i.get("total_amount", 0) or 0 for i in invs)
-        total_paid = sum(i.get("total_amount", 0) or 0 for i in invs if i.get("status") == "Paid")
-        unpaid = sum(i.get("total_amount", 0) or 0 for i in invs if i.get("status") == "Unpaid")
-        from datetime import datetime
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        overdue = sum(
-            i.get("total_amount", 0) or 0
-            for i in invs
-            if i.get("status") == "Unpaid" and i.get("due_date", "") < today
-        )
+    def get_payment_summary(self, client_id: int) -> dict[str, Any]:
+        row = self._inv_repo.get_payment_summary(client_id)
+        if not row:
+            return {
+                "total_billed": 0, "total_paid": 0,
+                "unpaid": 0, "overdue": 0, "invoice_count": 0,
+            }
+        inv_count = self._inv_repo.get_invoice_count(client_id)
         return {
-            "total_billed": total_billed,
-            "total_paid": total_paid,
-            "unpaid": unpaid,
-            "overdue": overdue,
-            "invoice_count": len(invs),
+            "total_billed": row.get("total_billed", 0) or 0,
+            "total_paid": row.get("total_paid", 0) or 0,
+            "unpaid": row.get("unpaid", 0) or 0,
+            "overdue": row.get("overdue", 0) or 0,
+            "invoice_count": inv_count,
         }
 
     # ── Merge ───────────────────────────────────────────────────────────
 
-    def merge_clients(self, from_id: int, to_id: int) -> Dict[str, int]:
+    def merge_clients(self, from_id: int, to_id: int) -> dict[str, int]:
         if not self.db:
             logger.error("ClientService: no database, cannot merge")
             return {"trips": 0, "invoices": 0, "contacts": 0}
-        moved_trips = 0
-        moved_invoices = 0
-        moved_contacts = 0
 
-        trips = self._repo.get_trips(from_id, limit=10000)
-        for t in trips:
-            self.db.conn.execute("UPDATE trips SET client_id = ? WHERE id = ?", (to_id, t["id"]))
-            moved_trips += 1
+        try:
+            self.db.conn.execute("BEGIN IMMEDIATE")
 
-        invs = self._repo.get_invoices(from_id, limit=10000)
-        for inv in invs:
-            tid = inv.get("trip_id")
-            if tid:
-                existing = self._inv_repo.get_by_trip_id(tid)
-                if not existing:
-                    self.db.conn.execute("UPDATE invoices SET trip_id = ? WHERE id = ?", (tid, inv.get("id")))
-                moved_invoices += 1
+            cursor = self.db.conn.execute(
+                "UPDATE trips SET client_id = ? WHERE client_id = ?",
+                (to_id, from_id),
+            )
+            moved_trips = cursor.rowcount
 
-        contacts = self._contact_repo.get_by_client(from_id)
-        for c in contacts:
-            self._contact_repo.update(c["id"], {"client_id": to_id})
-            moved_contacts += 1
+            cursor = self.db.conn.execute(
+                "UPDATE invoices SET trip_id = ? "
+                "WHERE trip_id IN (SELECT id FROM trips WHERE client_id = ?)",
+                (to_id, to_id),
+            )
+            moved_invoices = cursor.rowcount
 
-        self.db.conn.execute("UPDATE client_tags SET client_id = ? WHERE client_id = ?", (to_id, from_id))
-        self.deactivate(from_id)
-        self.db.conn.commit()
+            contacts = self._contact_repo.get_by_client(from_id)
+            moved_contacts = 0
+            for c in contacts:
+                self._contact_repo.update(c["id"], {"client_id": to_id})
+                moved_contacts += 1
 
-        self._event_bus.publish(CLIENT_MERGED, {"from_id": from_id, "to_id": to_id, "trips": moved_trips})
-        return {"trips": moved_trips, "invoices": moved_invoices, "contacts": moved_contacts}
+            self.db.conn.execute(
+                "UPDATE client_tags SET client_id = ? WHERE client_id = ?",
+                (to_id, from_id),
+            )
+            self.deactivate(from_id)
+            self.db.conn.commit()
+
+            self._event_bus.publish(CLIENT_MERGED, {
+                "from_id": from_id, "to_id": to_id,
+                "trips": moved_trips,
+            })
+            return {
+                "trips": moved_trips,
+                "invoices": moved_invoices,
+                "contacts": moved_contacts,
+            }
+        except Exception:
+            with contextlib.suppress(Exception):
+                self.db.conn.rollback()
+            logger.exception("merge_clients failed")
+            return {"trips": 0, "invoices": 0, "contacts": 0}
 
     # ── Export ──────────────────────────────────────────────────────────
 
-    def export_clients_csv(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+    def export_clients_csv(self, include_inactive: bool = False) -> list[dict[str, Any]]:
         return self._repo.get_all_with_revenue(include_inactive=include_inactive)

@@ -1,17 +1,18 @@
 """Route Planner controller — business logic without Tk widgets."""
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable
 
 from services.constraint_engine import TruckConstraintEngine
 from services.cost_engine import CostEngineService
 from services.country_avoidance import CountryAvoidanceManager
+from services.i18n import t
 from services.route_compliance import RouteComplianceAnalyzer
 from services.route_history_service import RouteHistoryRecord
 from services.route_persistence import RoutePersistenceService
 from services.route_profiles import gh_profile_for_ui_label
-from services.i18n import t
 from services.route_result_presenter import (
     extract_route_from_result,
     format_success_info,
@@ -22,22 +23,24 @@ from services.route_service import RouteService
 from services.trip_context import TripContextService
 from utils.perf_log import perf_timer
 
+logger = logging.getLogger(__name__)
+
 
 @dataclass
 class RouteCalculationContext:
     truck: Any
     profile: str
-    stops_state: List[Dict[str, Any]]
-    excluded_countries: List[str]
+    stops_state: list[dict[str, Any]]
+    excluded_countries: list[str]
 
 
 @dataclass
 class ProcessedRouteResult:
-    route: Dict[str, Any]
-    cost_info: Dict[str, Any]
+    route: dict[str, Any]
+    cost_info: dict[str, Any]
     info_text: str
     compliance: Any
-    truck_obj: Dict[str, Any]
+    truck_obj: dict[str, Any]
 
 
 class RoutePlannerController:
@@ -50,7 +53,7 @@ class RoutePlannerController:
         self.trip_context = TripContextService()
         self.compliance = RouteComplianceAnalyzer()
         self._runner = RouteRunner()
-        self._persistence: Optional[RoutePersistenceService] = None
+        self._persistence: RoutePersistenceService | None = None
         self._db = db
 
     @property
@@ -60,23 +63,21 @@ class RoutePlannerController:
     def bind_persistence(self, persistence: RoutePersistenceService) -> None:
         self._persistence = persistence
 
-    def get_excluded_countries(self) -> List[str]:
-        codes = self.country_avoidance.get_selected()
-        self.country_avoidance.set_selected(codes)
-        return codes
+    def get_excluded_countries(self) -> list[str]:
+        return self.country_avoidance.get_selected()
 
-    def set_excluded_countries(self, codes: List[str]) -> None:
+    def set_excluded_countries(self, codes: list[str]) -> None:
         self.country_avoidance.set_selected(codes)
 
     def validate_calculation_input(
         self,
         *,
         truck_id: str,
-        trucks_map: Dict[str, Any],
+        trucks_map: dict[str, Any],
         profile_label: str,
-        stops_state: List[Dict[str, Any]],
-        row_addresses: List[Tuple[int, str]],
-    ) -> Tuple[Optional[RouteCalculationContext], Optional[str]]:
+        stops_state: list[dict[str, Any]],
+        row_addresses: list[tuple[int, str]],
+    ) -> tuple[RouteCalculationContext | None, str | None]:
         if not truck_id:
             return None, f"⚠️ {t('result.controller_select_truck')}"
         truck = trucks_map.get(truck_id)
@@ -116,7 +117,7 @@ class RoutePlannerController:
     def cancel_calculation(self) -> None:
         self._runner.cancel()
 
-    def commit_route(self, route_id: int, truck_id: Optional[str] = None) -> None:
+    def commit_route(self, route_id: int, truck_id: str | None = None) -> None:
         if self._persistence:
             self._persistence.commit_route(route_id, truck_id=truck_id)
 
@@ -128,8 +129,8 @@ class RoutePlannerController:
         self,
         result: Any,
         ctx: RouteCalculationContext,
-        stop_addresses: Dict[str, str],
-    ) -> Tuple[Optional[ProcessedRouteResult], Optional[str]]:
+        stop_addresses: dict[str, str],
+    ) -> tuple[ProcessedRouteResult | None, str | None]:
         err = parse_error_message(result) if isinstance(result, dict) else None
         if err:
             return None, err[0]
@@ -165,8 +166,7 @@ class RoutePlannerController:
                         cost_info=cost_info,
                     )
                 except Exception:
-                    import traceback
-                    traceback.print_exc()
+                    logger.exception("Failed to save calculated route")
 
             return ProcessedRouteResult(
                 route=route,
@@ -176,15 +176,16 @@ class RoutePlannerController:
                 truck_obj=truck_obj,
             ), None
 
-    def estimate_cost(self, truck: Any, distance_km: float) -> Dict[str, Any]:
+    def estimate_cost(self, truck: Any, distance_km: float) -> dict[str, Any]:
         try:
             payload = self._truck_cost_payload(truck)
             return self.cost_engine.estimate(distance_km, payload)
         except Exception:
+            logger.warning("Cost estimation failed for truck %s at %.0f km", truck, distance_km, exc_info=True)
             return {}
 
     @staticmethod
-    def _truck_cost_payload(truck: Any) -> Dict[str, Any]:
+    def _truck_cost_payload(truck: Any) -> dict[str, Any]:
         return {
             "id": TruckConstraintEngine._get_truck_value(truck, "id"),
             "name": TruckConstraintEngine._get_truck_value(truck, "plate_number"),
@@ -196,9 +197,9 @@ class RoutePlannerController:
 
     def _sync_trip_context(
         self,
-        route: Dict[str, Any],
-        truck_obj: Dict[str, Any],
-        cost_info: Dict[str, Any],
+        route: dict[str, Any],
+        truck_obj: dict[str, Any],
+        cost_info: dict[str, Any],
         profile: str,
     ) -> None:
         route_id = route.get("history_id")
@@ -212,7 +213,7 @@ class RoutePlannerController:
             truck_fuel_consumption=truck_obj.get("fuel_consumption_l_per_100km"),
         )
 
-    def load_history_record(self, record: RouteHistoryRecord) -> Dict[str, Any]:
+    def load_history_record(self, record: RouteHistoryRecord) -> dict[str, Any]:
         """Return planner state patch: stops, profile label key, truck_id, route dict."""
         from services.route_profiles import ui_label_for_profile
 
@@ -224,7 +225,7 @@ class RoutePlannerController:
             "route": RoutePersistenceService.record_to_planner_route(record),
         }
 
-    def export_route_metadata(self, route: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
+    def export_route_metadata(self, route: dict[str, Any] | None) -> tuple[str | None, str | None]:
         if not route:
             return None, f"⚠️ {t('result.controller_no_metadata')}"
         try:
@@ -240,24 +241,36 @@ class RoutePlannerController:
             return None, f"❌ {t('result.generic_error').format('Export', str(exc))}"
 
 
+_PREFERRED_CURRENCY: str | None = None
+
 def _get_preferred_currency() -> str:
+    global _PREFERRED_CURRENCY
+    if _PREFERRED_CURRENCY is not None:
+        return _PREFERRED_CURRENCY
     try:
         from services.app_state import AppState
         currency = AppState().get("currency")
         if currency:
+            _PREFERRED_CURRENCY = currency
             return currency
     except Exception:
         pass
     try:
-        import sqlite3, os
+        import os
+        import sqlite3
+
         from config import Config
         db_path = Config.DB_PATH
         if os.path.isfile(db_path):
             conn = sqlite3.connect(db_path)
-            row = conn.execute("SELECT value FROM settings WHERE key = ?", ("pref_currency",)).fetchone()
-            conn.close()
+            try:
+                row = conn.execute("SELECT value FROM settings WHERE key = ?", ("pref_currency",)).fetchone()
+            finally:
+                conn.close()
             if row and row[0]:
+                _PREFERRED_CURRENCY = row[0]
                 return row[0]
     except Exception:
         pass
+    _PREFERRED_CURRENCY = "EUR"
     return "EUR"

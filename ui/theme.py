@@ -47,8 +47,9 @@ COLORS = {
     "chip_loading":   "#341a00",
     "chip_transit":   "#0f1f4a",
     "chip_delivered": "#052e16",
-    "chip_cancelled": "#3b0000",
-    "chip_idle":      "#27272a",
+    "chip_cancelled":       "#1A1A20",
+    "chip_cancelled_text":  "#9CA3AF",
+    "chip_idle":            "#27272a",
 }
 
 # ─────────────────────────────────────────────────────────────────
@@ -95,37 +96,9 @@ RADIUS_CHIP   = 4
 MAX_FORM_WIDTH = 720  # Forms never wider than this — ever
 
 # ─────────────────────────────────────────────────────────────────
-# BACKWARD COMPATIBILITY — chart constants & helpers
-# Preserved so existing views continue to work.  These will be
-# migrated to a dedicated chart module in a future refactor.
+# BACKWARD COMPATIBILITY — chart colour aliases
+# Preserved because ``ui.views.dashboard`` still references them.
 # ─────────────────────────────────────────────────────────────────
 
 CHART_PRIMARY   = "#3730a3"
 CHART_SECONDARY = "#4338ca"
-CHART_INDIGO    = "#6366f1"
-CHART_DIM       = "#1e1b4b"
-CHART_MID       = "#312e81"
-CHART_COLORS = [
-    "#3730a3", "#4338ca", "#6366f1",
-    "#4f46e5", "#1e1b4b", "#312e81",
-]
-CHART_PALETTE = CHART_COLORS
-
-CHART_GREEN       = "#4ADE80"
-CHART_GREEN_HOVER = "#22C55E"
-CHART_GREEN_GLOW  = "#16A34A"
-CHART_GREEN_DIM   = "#14532d"
-
-
-def apply_chart_style(fig, ax=None) -> None:
-    """Apply consistent indigo-on-black styling to a matplotlib figure/axes."""
-    fig.patch.set_facecolor(COLORS["bg_base"])
-    if ax is None:
-        return
-    ax.set_facecolor(COLORS["bg_base"])
-    ax.tick_params(colors=COLORS["text_secondary"], labelsize=9)
-    ax.xaxis.label.set_color(COLORS["text_secondary"])
-    ax.yaxis.label.set_color(COLORS["text_secondary"])
-    ax.title.set_color(COLORS["text_primary"])
-    for spine in ax.spines.values():
-        spine.set_edgecolor(COLORS["border"])

@@ -3,8 +3,8 @@ import json
 import logging
 import threading
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from datetime import datetime
+from typing import Optional
 
 import requests
 
@@ -30,7 +30,7 @@ class VehiclePosition:
 # ── Base adapter ────────────────────────────────────────────────────
 
 class BaseTrackingAdapter:
-    def get_positions(self) -> List[VehiclePosition]:
+    def get_positions(self) -> list[VehiclePosition]:
         raise NotImplementedError
 
     def test_connection(self) -> tuple:
@@ -68,10 +68,9 @@ class WialonAdapter(BaseTrackingAdapter):
             logger.warning("Wialon login failed: %s", e)
             return False
 
-    def get_positions(self) -> List[VehiclePosition]:
-        if not self._session_id:
-            if not self._login():
-                return []
+    def get_positions(self) -> list[VehiclePosition]:
+        if not self._session_id and not self._login():
+            return []
         try:
             resp = requests.get(
                 f"{self.host}/wialon/ajax.html",
@@ -153,7 +152,7 @@ class FrotcomAdapter(BaseTrackingAdapter):
         self.auth = (username, password)
         self.account = account
 
-    def get_positions(self) -> List[VehiclePosition]:
+    def get_positions(self) -> list[VehiclePosition]:
         try:
             resp = requests.get(
                 f"{self.base}vehicles/positions",
@@ -214,7 +213,7 @@ class TraccarAdapter(BaseTrackingAdapter):
         self.base = url.rstrip("/") + "/api/"
         self.auth = (email, password)
 
-    def get_positions(self) -> List[VehiclePosition]:
+    def get_positions(self) -> list[VehiclePosition]:
         try:
             resp = requests.get(
                 f"{self.base}positions",
@@ -273,7 +272,7 @@ class NavixyAdapter(BaseTrackingAdapter):
         self.api_key = api_key
         self.base = host.rstrip("/")
 
-    def get_positions(self) -> List[VehiclePosition]:
+    def get_positions(self) -> list[VehiclePosition]:
         try:
             resp = requests.get(
                 f"{self.base}/tracker/list",
@@ -348,7 +347,7 @@ class GenericRestAdapter(BaseTrackingAdapter):
                 return None
         return v
 
-    def get_positions(self) -> List[VehiclePosition]:
+    def get_positions(self) -> list[VehiclePosition]:
         if not self.url:
             logger.warning("Generic REST adapter: no URL configured")
             return []
@@ -424,12 +423,13 @@ class FleetTrackingService:
             return
         self._initialized = True
         self._adapter: Optional[BaseTrackingAdapter] = None
-        self._last_positions: List[VehiclePosition] = []
+        self._last_positions: list[VehiclePosition] = []
         self._last_poll: Optional[datetime] = None
         self._poll_interval = 30  # seconds
         self._polling = False
         self._poll_timer = None
         self._db = None
+        self._fleet_repo = None
 
     def initialize(self, db=None):
         """Call on app startup — loads adapter from settings."""
@@ -484,7 +484,7 @@ class FleetTrackingService:
             )
         return None
 
-    def get_positions(self, force_refresh: bool = False) -> List[VehiclePosition]:
+    def get_positions(self, force_refresh: bool = False) -> list[VehiclePosition]:
         if not self._adapter:
             return []
         now = datetime.utcnow()
@@ -514,42 +514,18 @@ class FleetTrackingService:
         if not self._db:
             return None
         try:
-            from repositories.fleet_repository import FleetRepository
-            fleet_repo = FleetRepository(self._db)
-            truck = fleet_repo.get_by_plate(position.name)
+            if self._fleet_repo is None:
+                from repositories.fleet_repository import FleetRepository
+                self._fleet_repo = FleetRepository(self._db)
+            truck = self._fleet_repo.get_by_plate(position.name)
             if truck:
                 return truck.get("id")
-            truck = fleet_repo.get_by_tracking_device_id(position.device_id)
+            truck = self._fleet_repo.get_by_tracking_device_id(position.device_id)
             if truck:
                 return truck.get("id")
         except Exception as e:
             logger.debug("match_to_truck failed: %s", e)
         return None
-
-    def start_polling(self, callback=None):
-        """Start background polling every poll_interval seconds."""
-        self._polling = True
-        self._poll(callback)
-
-    def stop_polling(self):
-        self._polling = False
-        if self._poll_timer:
-            self._poll_timer.cancel()
-            self._poll_timer = None
-
-    def _poll(self, callback):
-        if not self._polling:
-            return
-        try:
-            positions = self.get_positions(force_refresh=True)
-            if callback:
-                callback(positions)
-        except Exception as e:
-            logger.warning("Tracking poll callback error: %s", e)
-        self._poll_timer = threading.Timer(self._poll_interval, self._poll, args=(callback,))
-        self._poll_timer.daemon = True
-        self._poll_timer.start()
-
 
 # Global singleton
 fleet_tracking_service = FleetTrackingService()

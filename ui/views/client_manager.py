@@ -6,14 +6,18 @@ with CRUD operations via a form dialog.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
+
+import contextlib
 
 from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
-    QLabel,
     QMessageBox,
     QSizePolicy,
     QVBoxLayout,
@@ -21,12 +25,18 @@ from PySide6.QtWidgets import (
 )
 
 from services.client_service import ClientService
-from services.i18n import t, register_listener, unregister_listener
-from ui.design_tokens import (
-    TEXT_MUTED, TEXT_PRIMARY, SP,
+from services.i18n import register_listener, t, unregister_listener
+from services.operations.event_bus import (
+    CLIENT_CREATED,
+    CLIENT_UPDATED,
+    EventBus,
 )
 from ui.components import (
-    Card, Btn, PageTitle, Label, SectionTitle,
+    Btn,
+    PageTitle,
+)
+from ui.design_tokens import (
+    SP,
 )
 from ui.theme import COLORS
 from ui.widgets import (
@@ -38,7 +48,7 @@ from ui.widgets import (
 
 # ── Column definition ──────────────────────────────────────────────────────────
 # (column_id,  label_or_i18n_key,  width_px,  translate)
-_COLUMNS: List[tuple] = [
+_COLUMNS: list[tuple] = [
     ("id",      "ID",                   40,  False),
     ("name",    "client.table_name",    180, True),
     ("contact", "client.table_contact", 130, True),
@@ -48,12 +58,12 @@ _COLUMNS: List[tuple] = [
 ]
 
 
-def _resolve_column_labels() -> List[str]:
+def _resolve_column_labels() -> list[str]:
     """Return translated header labels for the current language."""
     return [t(key) if translate else key for _, key, _, translate in _COLUMNS]
 
 
-def _columns_for_table() -> List[tuple]:
+def _columns_for_table() -> list[tuple]:
     """Return ``(cid, label, width)`` tuples suitable for ``StyledTableWidget``."""
     labels = _resolve_column_labels()
     return [(cid, labels[i], width) for i, (cid, _, width, _) in enumerate(_COLUMNS)]
@@ -68,7 +78,7 @@ class _SearchLineEdit(StyledLineEdit):
     is shown as actual text and cleared/restored on focus events.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._placeholder: str = ""
         self._user_typed: bool = False
@@ -121,14 +131,14 @@ class QtClientManager(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
-        prefs: Optional[dict] = None,
+        prefs: dict | None = None,
     ):
         super().__init__(parent)
         self.db = db
         self.service = ClientService(db) if db is not None else None
-        self._selected_id: Optional[int] = None
+        self._selected_id: int | None = None
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
@@ -141,19 +151,18 @@ class QtClientManager(QWidget):
     # ── Lifecycle ──────────────────────────────────────────────────────────
 
     def _cleanup(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
 
     def wakeup(self) -> None:
-        if not getattr(self, "_listener_registered", True):
+        if not getattr(self, "_listener_registered", False):
             register_listener(self._language_callback)
             self._listener_registered = True
         self._load_data()
 
     def shutdown(self) -> None:
-        self._cleanup()
+        with contextlib.suppress(Exception):
+            unregister_listener(self._language_callback)
         self._listener_registered = False
 
     # ── i18n ───────────────────────────────────────────────────────────────
@@ -255,12 +264,9 @@ class QtClientManager(QWidget):
             return
 
         query = self._search_entry.search_value()
-        if query:
-            clients = self.service.search(query, limit=200)
-        else:
-            clients = self.service.get_all()
+        clients = self.service.search(query, limit=200) if query else self.service.get_all()
 
-        rows: List[Dict[str, Any]] = []
+        rows: list[dict[str, Any]] = []
         for c in clients:
             trip_count = self.service.get_trip_count(c["id"])
             rows.append({
@@ -334,6 +340,20 @@ class QtClientManager(QWidget):
         )
         if reply == QMessageBox.StandardButton.Yes:
             self.service.deactivate(self._selected_id)
+            # Soft-delete: a deactivation changes the client's state
+            # and any other view that holds a client combo needs to
+            # refresh.  We use ``CLIENT_UPDATED`` (not a separate
+            # event) so subscribers only need one handler.
+            try:
+                EventBus().publish(CLIENT_UPDATED, {
+                    "client_id": int(self._selected_id),
+                    "name": client.get("name", ""),
+                    "is_active": 0,
+                })
+            except Exception:
+                logger.exception(
+                    "Failed to publish CLIENT_UPDATED for deactivation"
+                )
             self._load_data()
 
 
@@ -342,7 +362,7 @@ class QtClientManager(QWidget):
 class QtClientFormDialog(QDialog):
     """Add / edit client dialog."""
 
-    FIELDS: List[tuple] = [
+    FIELDS: list[tuple] = [
         ("name",           "client.field_name",    True),
         ("contact_person", "client.field_contact",  False),
         ("phone",          "client.field_phone",    False),
@@ -354,9 +374,9 @@ class QtClientFormDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         service: ClientService,
-        client_data: Optional[Dict[str, Any]] = None,
+        client_data: dict[str, Any] | None = None,
         on_save=None,
     ):
         super().__init__(parent)
@@ -371,7 +391,7 @@ class QtClientFormDialog(QDialog):
         self.setMinimumSize(450, 480)
         self.setModal(True)
 
-        self._entries: Dict[str, StyledLineEdit] = {}
+        self._entries: dict[str, StyledLineEdit] = {}
 
         self._build_ui()
 
@@ -422,12 +442,14 @@ class QtClientFormDialog(QDialog):
             )
             return
 
-        data: Dict[str, str] = {
+        data: dict[str, str] = {
             k: v.text().strip() for k, v in self._entries.items()
         }
 
         if self._editing and self.client_data is not None:
             self.service.update(self.client_data["id"], **data)
+            event_type = CLIENT_UPDATED
+            entity_id = int(self.client_data["id"])
         else:
             existing = self.service._repo.get_by_name(name)
             if existing:
@@ -437,7 +459,21 @@ class QtClientFormDialog(QDialog):
                     t("client.already_exists").format(name=name),
                 )
                 return
-            self.service.create(**data)
+            new_id = self.service.create(**data)
+            event_type = CLIENT_CREATED
+            entity_id = int(new_id) if new_id is not None else 0
+
+        # Notify other views (route planner, calculator, dispatch
+        # assignment) so the change shows up without a restart.
+        try:
+            EventBus().publish(event_type, {
+                "client_id": entity_id,
+                "name": name,
+            })
+        except Exception:
+            logger.exception(
+                "Failed to publish client %s event", event_type
+            )
 
         if self.on_save is not None:
             self.on_save()

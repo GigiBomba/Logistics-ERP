@@ -6,17 +6,16 @@ Built as a QWidget for embedding in a QStackedWidget.
 
 from __future__ import annotations
 
-import csv
+import contextlib
 import json
 import logging
 import threading
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from PySide6.QtCore import Qt, QMimeData, QPoint, QTimer
+from PySide6.QtCore import QMimeData, QPoint, Qt, QTimer, Signal
 from PySide6.QtGui import QDrag, QMouseEvent
 from PySide6.QtWidgets import (
-    QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
@@ -27,47 +26,53 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from services.i18n import t, register_listener, unregister_listener
-from services.trip_service import TripService
-from services.fleet_service import FleetService
+from repositories.driver_repository import DriverRepository
+from repositories.fleet_repository import FleetRepository
+from repositories.route_repository import RouteRepository
+from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
+from repositories.trip_repository import TripRepository
 from services.client_service import ClientService
+from services.conflict_service import TripConflictService
+from services.driver_truck_service import DriverTruckService
+from services.fleet_service import FleetService
+from services.i18n import register_listener, t, unregister_listener
+from services.operations.alert_manager import AlertManager, AlertType, Severity
 from services.operations.event_bus import (
-    EventBus,
+    ALERT_CREATED,
+    ALERT_RESOLVED,
+    DRIVER_DELETED,
+    DRIVER_UPDATED,
+    TRIP_ASSIGNED,
     TRIP_CREATED,
     TRIP_STATUS_CHANGED,
     TRIP_UPDATED,
-    TRIP_ASSIGNED,
-    ALERT_CREATED,
-    ALERT_RESOLVED,
+    TRUCK_CREATED,
+    TRUCK_DELETED,
     TRUCK_UPDATED,
-    DRIVER_UPDATED,
-    DRIVER_DELETED,
-    VALID_TRANSITIONS,
+    EventBus,
 )
-from services.operations.alert_manager import AlertManager, AlertType, Severity
 from services.operations.trip_status_engine import TripStatusEngine
-from services.driver_truck_service import DriverTruckService
-from services.conflict_service import TripConflictService
-from repositories.trip_repository import TripRepository
-from repositories.fleet_repository import FleetRepository
-from repositories.driver_repository import DriverRepository
-from repositories.route_repository import RouteRepository
-from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
-from utils.dates import parse_date
-from ui.components import Btn, PageTitle, Label
+from services.trip_service import TripService
+from ui.components import Btn, Label, PageTitle
 from ui.design_tokens import (
-    BORDER_DEFAULT, WARNING, INFO, SUCCESS, DANGER, SP,
+    BORDER_DEFAULT,
+    COLOR_NEUTRAL_DEFAULT,
+    INFO,
+    SP,
+    SUCCESS,
+    WARNING,
 )
-from ui.widgets.dispatch_search_bar import QtDispatchSearchBar, STATUS_OPTIONS
-from ui.widgets.dispatch_tabs import QtDispatchTabs
-from ui.widgets.kanban_column import QtKanbanColumn
-from ui.widgets.trip_card import QtTripCard
-from ui.widgets.dispatch_timeline import QtDispatchTimeline
-from ui.widgets.dispatch_alerts_panel import QtDispatchAlertsPanel
-from ui.widgets.assignment_dropdown import QtAssignmentDropdown
-from ui.widgets.toast import Toast
 from ui.dialogs.dispatch_detail_panel import QtDispatchDetailPanel
 from ui.dialogs.paired_assignment_dialog import QtPairedAssignmentDialog
+from ui.widgets.assignment_dropdown import QtAssignmentDropdown
+from ui.widgets.dispatch_alerts_panel import QtDispatchAlertsPanel
+from ui.widgets.dispatch_search_bar import STATUS_OPTIONS, QtDispatchSearchBar
+from ui.widgets.dispatch_tabs import QtDispatchTabs
+from ui.widgets.dispatch_timeline import QtDispatchTimeline
+from ui.widgets.kanban_column import QtKanbanColumn
+from ui.widgets.toast import Toast
+from ui.widgets.trip_card import QtTripCard
+from utils.dates import parse_date
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +102,7 @@ COLUMN_DEFS = [
     ("Loading", "dispatch_board.col_loading", WARNING),
     ("In Transit", "dispatch_board.col_in_transit", INFO),
     ("Delivered", "dispatch_board.col_delivered", SUCCESS),
-    ("Cancelled", "dispatch_board.col_cancelled", DANGER),
+    ("Cancelled", "dispatch_board.col_cancelled", COLOR_NEUTRAL_DEFAULT),
 ]
 
 DELIVERED_DEFAULT_DAYS = 30
@@ -114,9 +119,18 @@ class QtDispatchBoardView(QWidget):
 
     REFRESH_INTERVAL_MS = 30_000
 
+    # Cross-thread signal used to marshal work from background loaders
+    # and event-bus subscribers into the GUI thread.  The legacy
+    # ``QTimer.singleShot(0, fn)`` trick did not marshal when called
+    # from a worker thread (Qt creates the timer in the calling thread
+    # and its event loop never runs), so the board would never refresh
+    # after a background load or external event.  This signal IS
+    # thread-safe and routes the slot to the GUI thread.
+    _dispatchSignal = Signal(object)   # zero-arg callable
+
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         prefs=None,
         ops=None,
@@ -128,10 +142,11 @@ class QtDispatchBoardView(QWidget):
         self.ops = ops
 
         # ── State ────────────────────────────────────────────────────────────
-        self._columns: Dict[str, QtKanbanColumn] = {}
+        self._columns: dict[str, QtKanbanColumn] = {}
         self._loading = False
         self._delivered_days = DELIVERED_DEFAULT_DAYS
         self._destroyed = False
+        self._load_thread: threading.Thread | None = None
 
         # Repositories / services
         self._trip_repo = TripRepository(db)
@@ -148,35 +163,45 @@ class QtDispatchBoardView(QWidget):
         self._conflict_service = TripConflictService(db)
 
         # Caches
-        self._driver_cache: Dict[int, Optional[Dict]] = {}
-        self._route_cache: Dict[str, Optional[Dict]] = {}
-        self._alert_counts: Dict[int, int] = {}
-        self._event_handlers: Dict[str, Any] = {}
-        self._all_card_data: List[Dict[str, Any]] = []
+        self._driver_cache: dict[int, dict | None] = {}
+        self._route_cache: dict[str, dict | None] = {}
+        self._alert_counts: dict[int, int] = {}
+        self._event_handlers: dict[str, Any] = {}
+        self._all_card_data: list[dict[str, Any]] = []
         self._search_query = ""
         self._search_statuses = list(STATUS_OPTIONS)
-        self._conflict_alerts: Dict[int, list] = {}
+        self._conflict_alerts: dict[int, list] = {}
 
         # Selection / bulk
-        self._detail_panel: Optional[QtDispatchDetailPanel] = None
+        self._detail_panel: QtDispatchDetailPanel | None = None
         self._selected_cards: list[QtTripCard] = []
 
         # Drag-drop state
-        self._drag_card: Optional[QtTripCard] = None
-        self._drag_source_col: Optional[QtKanbanColumn] = None
-        self._drag_target_col: Optional[QtKanbanColumn] = None
+        self._drag_card: QtTripCard | None = None
+        self._drag_source_col: QtKanbanColumn | None = None
+        self._drag_target_col: QtKanbanColumn | None = None
 
         # Timers
-        self._refresh_timer: Optional[QTimer] = None
-        self._delay_timer: Optional[QTimer] = None
-        self._live_timer: Optional[QTimer] = None
+        self._refresh_timer: QTimer | None = None
+        self._delay_timer: QTimer | None = None
+        self._live_timer: QTimer | None = None
 
         # i18n
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
+        # Cross-thread marshal: any callable passed to ``_dispatch`` from
+        # a worker thread (e.g. ``_load_data_background``) will be invoked
+        # on the GUI thread here.
+        self._dispatchSignal.connect(self._run_dispatched)
+
         # ── Build ────────────────────────────────────────────────────────────
         self._build_ui()
+        # Accept drops on the board itself as a safety net for the
+        # case where a drop lands on a non-column child (e.g. a
+        # scrollbar gap or a card that has been removed mid-drag).
+        # The columns themselves are the primary drop targets.
+        self.setAcceptDrops(True)
         self._subscribe_events()
         self._start_load()
 
@@ -301,7 +326,7 @@ class QtDispatchBoardView(QWidget):
         columns_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
         columns_layout.setSpacing(SP["3"])
 
-        for i, (status_key, title_key, accent_color) in enumerate(COLUMN_DEFS):
+        for _i, (status_key, title_key, accent_color) in enumerate(COLUMN_DEFS):
             is_delivered = status_key == "Delivered"
             col = QtKanbanColumn(
                 columns_container,
@@ -320,6 +345,13 @@ class QtDispatchBoardView(QWidget):
             )
             columns_layout.addWidget(col)
             self._columns[status_key] = col
+            # The column emits ``tripDropped(trip_id)`` whenever a
+            # trip card is dropped onto it.  We route that into the
+            # board's existing transition handler.  This replaces the
+            # old ``childAt``-based heuristic which broke when the
+            # board was scrolled or the cursor landed outside any
+            # column body.
+            col.tripDropped.connect(self._on_card_dropped_on_column)
 
         scroll_area.setWidget(columns_container)
         board_layout.addWidget(scroll_area, 1)
@@ -367,11 +399,11 @@ class QtDispatchBoardView(QWidget):
             try:
                 self.ops.undo_stack.clear()
             except Exception:
-                pass
+                logger.warning("Failed to clear undo stack", exc_info=True)
         for col in self._columns.values():
             col.show_loading()
-        thread = threading.Thread(target=self._load_data_background, daemon=True)
-        thread.start()
+        self._load_thread = threading.Thread(target=self._load_data_background, daemon=True)
+        self._load_thread.start()
 
     def _load_data_background(self) -> None:
         try:
@@ -380,7 +412,7 @@ class QtDispatchBoardView(QWidget):
             all_statuses = list(STATUS_TO_COLUMN.keys())
             all_trips = self._trip_repo.get_by_statuses(all_statuses)
 
-            column_trips: Dict[str, List[Dict[str, Any]]] = {
+            column_trips: dict[str, list[dict[str, Any]]] = {
                 col: [] for col, _, _ in COLUMN_DEFS
             }
 
@@ -423,7 +455,7 @@ class QtDispatchBoardView(QWidget):
         except Exception:
             logger.debug("Could not preload alerts", exc_info=True)
 
-    def _build_card_data(self, trip: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_card_data(self, trip: dict[str, Any]) -> dict[str, Any]:
         trip_id = trip.get("id", 0)
         status = trip.get("status", "Planned")
         truck_plate = trip.get("truck_number", "") or ""
@@ -468,7 +500,7 @@ class QtDispatchBoardView(QWidget):
             self._driver_cache[driver_id] = None
             return ""
 
-    def _resolve_route(self, trip: Dict[str, Any]):
+    def _resolve_route(self, trip: dict[str, Any]):
         route_id = trip.get("route_history_v2_id")
         if not route_id:
             return "", ""
@@ -494,7 +526,7 @@ class QtDispatchBoardView(QWidget):
             self._route_cache[route_key] = None
             return "", ""
 
-    def _extract_stops(self, route: Dict[str, Any]):
+    def _extract_stops(self, route: dict[str, Any]):
         summary = route.get("route_summary_json")
         if summary:
             try:
@@ -529,7 +561,7 @@ class QtDispatchBoardView(QWidget):
         destination = _label(stops[-1]) if stops else ""
         return origin, destination
 
-    def _populate_columns(self, column_trips: Dict[str, List[Dict[str, Any]]]) -> None:
+    def _populate_columns(self, column_trips: dict[str, list[dict[str, Any]]]) -> None:
         self._loading = False
         all_cards = []
         for status_key, col in self._columns.items():
@@ -575,8 +607,10 @@ class QtDispatchBoardView(QWidget):
         return None
 
     def _refresh_live_indicators(self) -> None:
+        if getattr(self, '_destroyed', False):
+            return
         try:
-            self.isWidgetType()
+            self.isVisible()
         except RuntimeError:
             return
         try:
@@ -658,10 +692,8 @@ class QtDispatchBoardView(QWidget):
 
     def _on_card_click(self, trip_data: dict) -> None:
         if self._detail_panel is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._detail_panel.close()
-            except Exception:
-                pass
             self._detail_panel = None
         self._detail_panel = QtDispatchDetailPanel(
             self, trip_data, self.db,
@@ -899,7 +931,7 @@ class QtDispatchBoardView(QWidget):
                 )
             ]
             conflict_found = False
-            trip_conflict_map: Dict[int, list] = {}
+            trip_conflict_map: dict[int, list] = {}
 
             for trip in active_trips:
                 conflicts = self._conflict_service.check_conflicts(trip)
@@ -920,137 +952,23 @@ class QtDispatchBoardView(QWidget):
         try:
             self._alerts_panel.refresh(self._all_card_data)
         except Exception:
-            pass
+            logger.warning("Failed to refresh alerts panel", exc_info=True)
         try:
             self._timeline.refresh(self._all_card_data)
         except Exception:
-            pass
+            logger.warning("Failed to refresh timeline", exc_info=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Export
     # ══════════════════════════════════════════════════════════════════════════
 
     def _export_csv(self) -> None:
-        if not self._all_card_data:
-            self._show_toast(t("dispatch_board.export_error").format(error="No data"), "error")
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            t("dispatch_board.export_csv"),
-            f"dispatch_board_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            "CSV files (*.csv)",
-        )
-        if not path:
-            return
-        try:
-            with open(path, "w", newline="", encoding="utf-8") as f:
-                writer = csv.writer(f)
-                writer.writerow([
-                    "Trip ID", "Status", "Truck", "Driver", "Origin", "Destination",
-                    "Departure", "ETA", "Alerts",
-                ])
-                for cd in self._all_card_data:
-                    writer.writerow([
-                        cd.get("trip_id", ""),
-                        cd.get("status", ""),
-                        cd.get("truck_plate", ""),
-                        cd.get("driver_name", ""),
-                        cd.get("origin", ""),
-                        cd.get("destination", ""),
-                        cd.get("departure_date", ""),
-                        cd.get("eta", ""),
-                        cd.get("alerts_count", 0),
-                    ])
-            self._show_toast(t("dispatch_board.export_success").format(path=path), "success")
-        except Exception as e:
-            self._show_toast(t("dispatch_board.export_error").format(error=str(e)), "error")
+        from ui.dispatch.board_export import export_csv
+        export_csv(self, self._all_card_data, self._show_toast)
 
     def _export_pdf(self) -> None:
-        if not self._all_card_data:
-            self._show_toast(t("dispatch_board.export_error").format(error="No data"), "error")
-            return
-        path, _ = QFileDialog.getSaveFileName(
-            self,
-            t("dispatch_board.export_pdf"),
-            f"dispatch_board_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
-            "PDF files (*.pdf)",
-        )
-        if not path:
-            return
-        try:
-            from reportlab.lib.pagesizes import A4, landscape
-            from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
-            from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-            from reportlab.lib import colors as rl_colors
-            from reportlab.lib.units import mm
-
-            doc = SimpleDocTemplate(path, pagesize=landscape(A4), topMargin=10 * mm, bottomMargin=10 * mm)
-            styles = getSampleStyleSheet()
-            elements: list = []
-
-            title_style = ParagraphStyle(
-                "Title", parent=styles["Title"], fontSize=14,
-                textColor=rl_colors.HexColor("#fafafa"),
-            )
-            elements.append(
-                Paragraph(f"Dispatch Board \u2014 {datetime.now().strftime('%d/%m/%Y %H:%M')}", title_style)
-            )
-            elements.append(Spacer(1, 6 * mm))
-
-            status_colors = {
-                "Planned": rl_colors.HexColor("#1c1917"),
-                "Loading": rl_colors.HexColor("#341a00"),
-                "In Transit": rl_colors.HexColor("#0f1f4a"),
-                "Delivered": rl_colors.HexColor("#052e16"),
-                "Cancelled": rl_colors.HexColor("#3b0000"),
-            }
-            header_style = ParagraphStyle(
-                "Header", textColor=rl_colors.HexColor("#fafafa"),
-                fontSize=9, fontName="Helvetica-Bold",
-            )
-            cell_style = ParagraphStyle(
-                "Cell", textColor=rl_colors.HexColor("#a1a1aa"), fontSize=8,
-            )
-
-            for col_key in ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]:
-                col_trips = [
-                    cd for cd in self._all_card_data
-                    if STATUS_TO_COLUMN.get(cd.get("status", "")) == col_key
-                ]
-                bg = status_colors.get(col_key, rl_colors.grey)
-
-                elements.append(Paragraph(f"{col_key} ({len(col_trips)})", header_style))
-                elements.append(Spacer(1, 2 * mm))
-
-                if col_trips:
-                    table_data = [["Trip ID", "Truck", "Driver", "Route", "Departure", "ETA"]]
-                    for cd in col_trips[:50]:
-                        table_data.append([
-                            cd.get("trip_id", ""),
-                            cd.get("truck_plate", ""),
-                            cd.get("driver_name", ""),
-                            f"{cd.get('origin','?')} \u2192 {cd.get('destination','?')}",
-                            cd.get("departure_date", ""),
-                            cd.get("eta", ""),
-                        ])
-                    tbl = Table(table_data, colWidths=[45 * mm, 40 * mm, 45 * mm, 60 * mm, 40 * mm, 40 * mm])
-                    tbl.setStyle(TableStyle([
-                        ("BACKGROUND", (0, 0), (-1, 0), bg),
-                        ("TEXTCOLOR", (0, 0), (-1, 0), rl_colors.HexColor("#fafafa")),
-                        ("FONTSIZE", (0, 0), (-1, -1), 8),
-                        ("GRID", (0, 0), (-1, -1), 0.5, rl_colors.HexColor("#27272a")),
-                        ("ROWBACKGROUNDS", (0, 1), (-1, -1),
-                         [rl_colors.HexColor("#111113"), rl_colors.HexColor("#18181b")]),
-                    ]))
-                    elements.append(tbl)
-                else:
-                    elements.append(Paragraph("No trips", cell_style))
-                elements.append(Spacer(1, 4 * mm))
-
-            doc.build(elements)
-            self._show_toast(t("dispatch_board.export_success").format(path=path), "success")
-        except Exception as e:
-            self._show_toast(t("dispatch_board.export_error").format(error=str(e)), "error")
+        from ui.dispatch.board_export import export_pdf
+        export_pdf(self, self._all_card_data, self._show_toast)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Drag-Drop
@@ -1074,7 +992,7 @@ class QtDispatchBoardView(QWidget):
             self._drag_source_col.highlight_drop_zone()
 
         # Execute drag (blocks until drop/finish)
-        result = drag.exec(Qt.MoveAction)
+        drag.exec(Qt.MoveAction)
 
         # Cleanup highlight
         if self._drag_source_col is not None:
@@ -1087,13 +1005,13 @@ class QtDispatchBoardView(QWidget):
         self._drag_source_col = None
         self._drag_target_col = None
 
-    def _find_column_for_card(self, card: QtTripCard) -> Optional[QtKanbanColumn]:
+    def _find_column_for_card(self, card: QtTripCard) -> QtKanbanColumn | None:
         for col in self._columns.values():
             if card in col._cards:
                 return col
         return None
 
-    def _find_column_for_widget(self, widget: Optional[QWidget]) -> Optional[QtKanbanColumn]:
+    def _find_column_for_widget(self, widget: QWidget | None) -> QtKanbanColumn | None:
         if widget is None:
             return None
         for col in self._columns.values():
@@ -1120,6 +1038,11 @@ class QtDispatchBoardView(QWidget):
         event.acceptProposedAction()
 
     def dropEvent(self, event) -> None:
+        # Fallback path: the drop landed on the board itself rather
+        # than on a column.  Use ``childAt`` as a last-resort guess.
+        # The primary path is ``_on_card_dropped_on_column`` below,
+        # which fires from the column that the user actually dropped
+        # onto.
         if not event.mimeData().hasText():
             return
         trip_id_str = event.mimeData().text()
@@ -1134,21 +1057,50 @@ class QtDispatchBoardView(QWidget):
         target_col = self._find_column_for_widget(self.childAt(event.position().toPoint()))
         if target_col is None:
             return
+        self._complete_card_drop(trip_id, target_col, event)
 
-        # Find card by trip_id
+    def _on_card_dropped_on_column(self, trip_id: int) -> None:
+        """Slot for ``QtKanbanColumn.tripDropped``.
+
+        Each column knows the *target* status by identity (it's its
+        own ``status_key``), so we don't need ``childAt`` to find it.
+        This avoids the original bug where ``childAt`` returned ``None``
+        when the cursor landed on a scrollbar gap or between cards.
+        """
+        target_col = self.sender()
+        if target_col is None:
+            return
+        self._complete_card_drop(trip_id, target_col, drop_event=None)
+
+    def _complete_card_drop(
+        self,
+        trip_id: int,
+        target_col: QtKanbanColumn,
+        drop_event: Any = None,
+    ) -> None:
+        """Shared drop-completion logic.  Looks up the source column,
+        short-circuits same-column drops, and forwards to
+        ``_handle_transition`` which runs the legal/confirmation
+        logic.  ``drop_event`` is accepted only for the legacy
+        board-level drop path so we can ``accept()`` the event there.
+        """
         card = self._find_card_by_trip_id(trip_id)
         if card is None:
             return
-
         source_col = self._find_column_for_card(card)
-        if source_col is None or target_col is None or source_col == target_col:
+        if source_col is None or source_col == target_col:
             return
-
-        old_status = source_col.status_key
-        new_status = target_col.status_key
-
-        event.accept()
-        self._handle_transition(trip_id, old_status, new_status, card, source_col, target_col)
+        if drop_event is not None:
+            with contextlib.suppress(Exception):
+                drop_event.accept()
+        self._handle_transition(
+            trip_id,
+            source_col.status_key,
+            target_col.status_key,
+            card,
+            source_col,
+            target_col,
+        )
 
     # ══════════════════════════════════════════════════════════════════════════
     # Status transition
@@ -1215,7 +1167,7 @@ class QtDispatchBoardView(QWidget):
                 t("dispatch_board.transition_success").format(new_status=new_status),
                 "success",
             )
-        except Exception as e:
+        except Exception:
             # Rollback visual
             try:
                 target_col.remove_card(new_card)
@@ -1267,8 +1219,8 @@ class QtDispatchBoardView(QWidget):
             card_data = card.trip_data
             from datetime import datetime
 
-            truck_conflicts: Dict[str, list] = {}
-            truck_blocks: Dict[str, list] = {}
+            truck_conflicts: dict[str, list] = {}
+            truck_blocks: dict[str, list] = {}
             now = datetime.now()
             for truck_entry in active_trucks:
                 plate = truck_entry.get("plate_number", "")
@@ -1369,11 +1321,11 @@ class QtDispatchBoardView(QWidget):
         def fetch_drivers():
             active_drivers = self._driver_repo.get_active_drivers()
             card_data = card.trip_data
-            from datetime import datetime, date, timedelta
+            from datetime import date, datetime, timedelta
 
-            driver_conflicts: Dict[int, list] = {}
-            driver_blocks: Dict[int, list] = {}
-            driver_hours: Dict[int, tuple] = {}
+            driver_conflicts: dict[int, list] = {}
+            driver_blocks: dict[int, list] = {}
+            driver_hours: dict[int, tuple] = {}
             now = datetime.now()
             cutoff_7 = date.today() - timedelta(days=7)
             tacho_repo = TachoDriverActivityRepository(self._db)
@@ -1498,25 +1450,27 @@ class QtDispatchBoardView(QWidget):
                         hours_until = max(0, (nf_dt - now).total_seconds() / 3600)
                         score += max(0, 40 - hours_until * 2)
                     except Exception:
+                        logger.debug("Could not parse next_free date: %s", next_free, exc_info=True)
                         score += 40
                 else:
                     score += 40
             except Exception:
+                logger.debug("Could not compute next_free slot for truck", exc_info=True)
                 score += 40
-            try:
-                truck = self._fleet_repo.get_by_id(int(truck_id)) if truck_id else None
-                if truck:
-                    fuel = float(truck.get("fuel_consumption") or 34)
-                    score += max(0, 20 - (fuel - 20) * 1.5)
-            except Exception:
-                pass
-            try:
-                health = self._fleet_repo.get_truck_health(int(truck_id)) if truck_id else None
-                if health:
-                    score += (float(health.get("score", 0)) / 100) * 10
-            except Exception:
-                pass
-            item["score"] = round(score, 1)
+                try:
+                    truck = self._fleet_repo.get_by_id(int(truck_id)) if truck_id else None
+                    if truck:
+                        fuel = float(truck.get("fuel_consumption") or 34)
+                        score += max(0, 20 - (fuel - 20) * 1.5)
+                except Exception:
+                    logger.debug("Failed to fetch truck fuel consumption", exc_info=True)
+                try:
+                    health = self._fleet_repo.get_truck_health(int(truck_id)) if truck_id else None
+                    if health:
+                        score += (float(health.get("score", 0)) / 100) * 10
+                except Exception:
+                    logger.debug("Failed to fetch truck health score", exc_info=True)
+                item["score"] = round(score, 1)
 
         for item in driver_items:
             if not item["available"]:
@@ -1554,7 +1508,7 @@ class QtDispatchBoardView(QWidget):
 
     def _on_assign_both(self, card: QtTripCard) -> None:
         card_data = card.trip_data
-        from datetime import datetime, date, timedelta
+        from datetime import date, datetime, timedelta
         active_trucks = self._fleet_repo.get_active_trucks()
         active_drivers = self._driver_repo.get_active_drivers()
         now = datetime.now()
@@ -1583,7 +1537,7 @@ class QtDispatchBoardView(QWidget):
                     if now.date() > exp.date():
                         blocks.append(t("dispatch_board.resource_insurance_expired"))
             except Exception:
-                pass
+                logger.warning("Failed to validate insurance expiry for truck %s", plate, exc_info=True)
             try:
                 insp_ = trk.get("inspection_expiry", "")
                 if insp_:
@@ -1591,14 +1545,14 @@ class QtDispatchBoardView(QWidget):
                     if now.date() > exp.date():
                         blocks.append(t("dispatch_board.resource_inspection_expired"))
             except Exception:
-                pass
+                logger.warning("Failed to validate inspection expiry for truck %s", plate, exc_info=True)
             try:
                 md = trk.get("maintenance_due")
                 mi = trk.get("mileage")
                 if md is not None and mi is not None and float(mi) >= float(md):
                     blocks.append(t("dispatch_board.resource_maintenance_due"))
             except Exception:
-                pass
+                logger.warning("Failed to validate maintenance due for truck %s", plate, exc_info=True)
             avail = not conf and not blocks
             st = ""
             if blocks:
@@ -1704,16 +1658,12 @@ class QtDispatchBoardView(QWidget):
             if driver_id is not None:
                 self._assign_driver_to_trip(card, driver_id)
             if truck_id is not None and driver_id is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._dta_service.assign_driver_to_truck(driver_id, truck_id)
-                except Exception:
-                    pass
         except Exception as e:
             if rolled_back_truck and truck_id is not None:
-                try:
+                with contextlib.suppress(Exception):
                     self._clear_truck_assignment(card)
-                except Exception:
-                    pass
             card.show_error("both", str(e))
 
     def _assign_truck_to_trip(self, card: QtTripCard, truck_id: int) -> None:
@@ -1889,7 +1839,9 @@ class QtDispatchBoardView(QWidget):
             TRIP_ASSIGNED: self._on_trip_assigned_ev,
             ALERT_CREATED: self._on_alert_created_ev,
             ALERT_RESOLVED: self._on_alert_resolved_ev,
+            TRUCK_CREATED: self._on_truck_updated_ev,
             TRUCK_UPDATED: self._on_truck_updated_ev,
+            TRUCK_DELETED: self._on_truck_updated_ev,
             DRIVER_UPDATED: self._on_driver_updated_ev,
             DRIVER_DELETED: self._on_driver_deleted_ev,
         }
@@ -1900,20 +1852,30 @@ class QtDispatchBoardView(QWidget):
 
     def _unsubscribe_events(self) -> None:
         for event_type, handler in list(self._event_handlers.items()):
-            try:
+            with contextlib.suppress(Exception):
                 self._event_bus.unsubscribe(event_type, handler)
-            except Exception:
-                pass
         self._event_handlers.clear()
         logger.debug("QtDispatchBoardView unsubscribed all events")
 
     # ── Dispatch helpers ─────────────────────────────────────────────────────
 
     def _dispatch(self, fn) -> None:
-        """Schedule *fn* to run on the Qt main event loop."""
+        """Schedule *fn* to run on the Qt main event loop.
+
+        Emits a signal whose slot runs on the GUI thread.  This works
+        even when called from a worker thread, unlike the old
+        ``QTimer.singleShot(0, fn)`` approach.
+        """
         if self._destroyed:
             return
-        QTimer.singleShot(0, fn)
+        self._dispatchSignal.emit(fn)
+
+    def _run_dispatched(self, fn) -> None:
+        """Slot for :attr:`_dispatchSignal` — runs *fn* on the GUI thread."""
+        try:
+            fn()
+        except Exception:
+            logger.exception("Dispatched callback raised")
 
     # ── Event handlers ───────────────────────────────────────────────────────
 
@@ -2124,7 +2086,7 @@ class QtDispatchBoardView(QWidget):
         except Exception:
             pass
 
-    def _find_card_by_trip_id(self, trip_id: int) -> Optional[QtTripCard]:
+    def _find_card_by_trip_id(self, trip_id: int) -> QtTripCard | None:
         for col in self._columns.values():
             for card in col._cards:
                 if card.trip_data.get("trip_id_num") == trip_id:
@@ -2206,12 +2168,13 @@ class QtDispatchBoardView(QWidget):
         """Called when the view becomes visible (e.g. tab switch)."""
         if self._destroyed:
             return
+        self._unsubscribe_events()
         self._subscribe_events()
         self._start_load()
         if self._refresh_timer is not None and not self._refresh_timer.isActive():
             self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
 
-    def handle_nav_data(self, data: Dict[str, Any]) -> None:
+    def handle_nav_data(self, data: dict[str, Any]) -> None:
         """Store trip_id from alert navigation — used to highlight the trip after load."""
         self._pending_nav_trip_id = data.get("trip_id")
         self._start_load()
@@ -2219,6 +2182,10 @@ class QtDispatchBoardView(QWidget):
     def shutdown(self) -> None:
         """Called when the view is hidden or the application is shutting down."""
         self._destroyed = True
+
+        if self._load_thread is not None and self._load_thread.is_alive():
+            self._load_thread.join(timeout=2)
+            self._load_thread = None
 
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
@@ -2233,19 +2200,13 @@ class QtDispatchBoardView(QWidget):
             self._live_timer = None
 
         if self._detail_panel is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._detail_panel.close()
-            except Exception:
-                pass
             self._detail_panel = None
 
         self._unsubscribe_events()
-        try:
+        with contextlib.suppress(Exception):
             self._status_engine.shutdown()
-        except Exception:
-            pass
 
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass

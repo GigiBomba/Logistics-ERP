@@ -5,38 +5,43 @@ Replaces ui/widgets/top_bar.py. Provides breadcrumb, clock, alert bell, and fuel
 
 from __future__ import annotations
 
+import contextlib
 from datetime import datetime
-from typing import Any, Callable, Dict, Optional
-
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
-    QHBoxLayout,
-    QVBoxLayout,
-)
+from typing import Any, Callable
 
 import qtawesome as qta
-
-from ui.design_tokens import (
-    BG_BASE, BORDER_DEFAULT, ACCENT, DANGER, SUCCESS,
-    TEXT_PRIMARY, TEXT_MUTED, TEXT_SECONDARY,
-    FONT_MONO, TOPBAR_HEIGHT, SP,
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QVBoxLayout,
+    QWidget,
 )
 
+from services.i18n import t
+from ui.design_tokens import (
+    BORDER_DEFAULT,
+    DANGER,
+    FONT_MONO,
+    SUCCESS,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TOPBAR_HEIGHT,
+)
 
 class TopBar(QFrame):
     """44px top bar with breadcrumb, clock, alert bell, and fuel status."""
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None, ops=None):
         super().__init__(parent)
         self.setObjectName("topbar")
         self.setFixedHeight(TOPBAR_HEIGHT)
+        self._ops = ops
 
         self._alert_dialog = None
         self._alerts_data: list = []
-        self._on_navigate: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None
+        self._on_navigate: Callable[[str, dict[str, Any] | None], None] | None = None
 
         self._clock_timer = QTimer(self)
         self._clock_timer.timeout.connect(self._update_clock)
@@ -72,7 +77,7 @@ class TopBar(QFrame):
         self._fuel_dot.setStyleSheet(
             f"background: {DANGER}; border-radius: 3px;"
         )
-        self._fuel_dot.setToolTip("Fuel prices updated ? ago")
+        self._fuel_dot.setToolTip(t("fuel.updated_tooltip", default="Fuel prices updated ? ago"))
         row_layout.addWidget(self._fuel_dot)
 
         # Alert bell + badge
@@ -84,7 +89,7 @@ class TopBar(QFrame):
         self._bell = QLabel()
         self._bell.setPixmap(qta.icon("fa5s.bell", color=TEXT_MUTED).pixmap(16, 16))
         self._bell.setCursor(Qt.PointingHandCursor)
-        self._bell.setToolTip("Show alerts")
+        self._bell.setToolTip(t("common.show_alerts", default="Show alerts"))
         self._bell.mousePressEvent = self._on_bell_clicked
         alert_layout.addWidget(self._bell)
 
@@ -140,7 +145,7 @@ class TopBar(QFrame):
         """Store alerts data for display when the bell is clicked."""
         self._alerts_data = alerts
 
-    def set_alert_navigate_callback(self, callback: Callable[[str, Optional[Dict[str, Any]]], None]) -> None:
+    def set_alert_navigate_callback(self, callback: Callable[[str, dict[str, Any] | None], None]) -> None:
         self._on_navigate = callback
 
     def _update_clock(self) -> None:
@@ -150,14 +155,22 @@ class TopBar(QFrame):
         from ui.widgets.alert_panel import QtAlertPanel
 
         if self._alert_dialog is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._alert_dialog.close()
-            except Exception:
-                pass
             self._alert_dialog = None
 
         alerts = getattr(self, "_alerts_data", [])
-        panel = QtAlertPanel(self, alerts, on_navigate=self._on_navigate)
+
+        def _clear_all():
+            ops = self._ops
+            if ops is not None:
+                active = ops.get_active_alerts(limit=500)
+                for a in active:
+                    with contextlib.suppress(Exception):
+                        ops.resolve_alert(a.id)
+            self._alert_dialog = None
+
+        panel = QtAlertPanel(self, alerts, on_navigate=self._on_navigate, on_clear_all=_clear_all)
         self._alert_dialog = panel
         panel.show_anchored(self._bell)
 

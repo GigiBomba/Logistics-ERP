@@ -6,14 +6,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from ui.views.analytics_view import QtAnalyticsView
+from ui.views.analytics import QtAnalyticsView
 
 
 @pytest.fixture
 def analytics_view(qt_widget, qtbot, monkeypatch):
     monkeypatch.setattr(
-        "ui.views.analytics_view.QtAnalyticsView._load_data",
-        lambda self: None,
+        "ui.views.analytics.QtAnalyticsView._on_tab_changed",
+        lambda self, idx: None,
     )
     db = MagicMock()
     view = QtAnalyticsView(qt_widget, db=db, prefs=None)
@@ -27,32 +27,37 @@ def analytics_view(qt_widget, qtbot, monkeypatch):
 
 class TestQtAnalyticsView:
     def test_creation(self, analytics_view):
-        assert analytics_view._period_lbl is not None
-        assert analytics_view._chart_container is not None
+        assert analytics_view._tab_widget is not None
+        assert analytics_view._tab_widget.count() == 6
 
-    def test_period_navigation(self, analytics_view):
-        initial_month = analytics_view._month
-        analytics_view._prev_month()
-        if initial_month == 1:
-            assert analytics_view._month == 12
-        else:
-            assert analytics_view._month == initial_month - 1
+    def test_tab_labels(self, analytics_view):
+        texts = [analytics_view._tab_widget.tabText(i) for i in range(6)]
+        assert len(texts) == 6
+        assert all(len(t) > 0 for t in texts)
 
-    def test_next_month(self, analytics_view):
-        initial_month = analytics_view._month
-        analytics_view._next_month()
-        if initial_month == 12:
-            assert analytics_view._month == 1
-        else:
-            assert analytics_view._month == initial_month + 1
+    def test_wakeup_does_not_invalidate_cache(self, analytics_view):
+        """``wakeup`` must NOT invalidate the service cache.
 
-    def test_filter_widgets_exist(self, analytics_view):
-        assert analytics_view._from_date is not None
-        assert analytics_view._to_date is not None
-        assert analytics_view._period_lbl.text() != ""
+        The chart-render lifecycle was rewritten so the analytics
+        view keeps its rendered ``QPixmap`` objects across
+        view-switches.  The service cache is preserved so the
+        lightweight data queries (KPIs, status distributions) reuse
+        the previous result.  ``invalidate`` is now only called from
+        the explicit ↻ refresh button — see
+        ``_on_explicit_refresh``.
+        """
+        analytics_view._svc = MagicMock()
+        analytics_view.wakeup()
+        analytics_view._svc.invalidate.assert_not_called()
 
-    def test_period_label_updates(self, analytics_view):
-        analytics_view._year = 2024
-        analytics_view._month = 3
-        analytics_view._update_period_label()
-        assert "2024" in analytics_view._period_lbl.text()
+    def test_explicit_refresh_invalidates_cache(self, analytics_view):
+        """The ↻ refresh button must invalidate the service cache
+        and force a re-render of the current tab."""
+        analytics_view._svc = MagicMock()
+        analytics_view._on_explicit_refresh()
+        analytics_view._svc.invalidate.assert_called_once()
+
+    def test_shutdown_cleanup(self, analytics_view):
+        analytics_view._tabs = {}
+        analytics_view.shutdown()
+        assert analytics_view._tabs == {}

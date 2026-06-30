@@ -1,0 +1,58 @@
+{
+  "invoice_number": "INV-2026-0621-001",
+  "issue_date": "2026-06-19",
+  "due_date": "2026-07-22",
+  "payment_terms": "Net 30",
+  "currency": "EUR",
+  "company": {
+    "company_name": "Cargo Dyvagri SRL",
+    "cui": "RO28401983",
+    "reg_number": "J16/430/2022",
+    "address": "Str. Principala 2 A Cod 207366, Sat Ghindeni, Comuna Ghindeni, Jud. Dolj, Romania.",
+    "phone": "0768 539 830",
+    "email": "cargodyvagrisrl@gmail.com"
+  },
+  "client": {
+    "name": "Wildenhofer",
+    "vat_number": "151rf13rf1",
+    "address": "qf2r1r1",
+    "phone": "1241245214",
+    "email": "fffaf24"
+  },
+  "addon_items": [
+    {
+      "description": "",
+      "amount": 0.0
+    }
+  ],
+  "trip_price": 5500.0,
+  "addon_total": 0.0,
+  "description": "Transport rutier marf\u0103 (1575.430245 km)",
+  "loading_stops": [
+    "Bilbao"
+  ],
+  "unloading_stops": [
+    "Caorso"
+  ],
+  "truck_plate": "DJ 55 YVN",
+  "driver_name": "Claudiu",
+  "distance": "1,575.4 km",
+  "tax_rate": 19.0,
+  "discount_type": "Percentage",
+  "discount_value": 0.0,
+  "subtotal": 5500.0,
+  "total_tax": 1045.0,
+  "discount": 0.0,
+  "grand_total": 6545.0,
+  "notes": "",
+  "logo_path": "C:/Users/Bonjo/OneDrive/Pictures/Screenshots/Screenshot 2026-01-17 001419.png",
+  "signature_path": "",
+  "stamp_path": "",
+  "company_color": "#5500ff",
+  "trip_id": 16,
+  "mode": "internal",
+  "client_id": 6,
+  "price_pre_vat": "0.0",
+  "vat_percent": "0.0",
+  "saved_at": "2026-06-21T23:57:17.577861"
+}

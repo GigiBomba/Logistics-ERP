@@ -7,19 +7,24 @@ compressed JSON blobs, while searchable route metadata remains indexed.
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
+import logging
 import threading
 import zlib
+from collections.abc import Iterable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Optional
+from typing import Any
 
-from repositories.route_repository import RouteRepository
 from repositories.route_event_repository import RouteEventRepository
+from repositories.route_repository import RouteRepository
 from repositories.truck_route_assignment_repository import TruckRouteAssignmentRepository
 from services.route_result_presenter import format_duration_minutes
 from utils.logger import get_logger
+
+_logger = logging.getLogger(__name__)
 
 
 ROUTE_HISTORY_METADATA_VERSION = 1
@@ -37,24 +42,24 @@ class RouteHistoryRecord:
     Financial data (costs, profit, invoices) belongs in the trips table.
     """
 
-    stops: List[Dict[str, Any]]
-    geometry: List[Any] = field(default_factory=list)
-    total_distance_km: Optional[float] = None
-    duration_min: Optional[float] = None
-    truck_id: Optional[str] = None
-    truck_label: Optional[str] = None
-    truck: Dict[str, Any] = field(default_factory=dict)
-    profile: Optional[str] = None
-    excluded_countries: List[str] = field(default_factory=list)
-    countries_traversed: List[str] = field(default_factory=list)
+    stops: list[dict[str, Any]]
+    geometry: list[Any] = field(default_factory=list)
+    total_distance_km: float | None = None
+    duration_min: float | None = None
+    truck_id: str | None = None
+    truck_label: str | None = None
+    truck: dict[str, Any] = field(default_factory=dict)
+    profile: str | None = None
+    excluded_countries: list[str] = field(default_factory=list)
+    countries_traversed: list[str] = field(default_factory=list)
     metadata_version: int = ROUTE_HISTORY_METADATA_VERSION
     # DEPRECATED — these were previously populated from route_persistence
     # but are no longer written. They are kept in the DTO only for backward
     # compat when loading entries that still have them in the DB.
-    toll_estimates: Dict[str, Any] = field(default_factory=dict)
-    fuel_estimates: Dict[str, Any] = field(default_factory=dict)
-    profit_estimates: Dict[str, Any] = field(default_factory=dict)
-    route_summary: Dict[str, Any] = field(default_factory=dict)
+    toll_estimates: dict[str, Any] = field(default_factory=dict)
+    fuel_estimates: dict[str, Any] = field(default_factory=dict)
+    profit_estimates: dict[str, Any] = field(default_factory=dict)
+    route_summary: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -69,27 +74,27 @@ class RouteHistoryListItem:
     created_at: str
     last_calculated_at: str
     calculation_count: int
-    total_distance_km: Optional[float]
-    duration_min: Optional[float]
-    truck_id: Optional[str]
-    truck_label: Optional[str]
-    profile: Optional[str]
+    total_distance_km: float | None
+    duration_min: float | None
+    truck_id: str | None
+    truck_label: str | None
+    profile: str | None
     origin: str
     destination: str
-    excluded_countries: List[str]
-    countries_traversed: List[str]
+    excluded_countries: list[str]
+    countries_traversed: list[str]
     # DEPRECATED — kept for backward compat with list items from old DB.
-    saved_cost: Optional[float] = None
-    saved_profit: Optional[float] = None
-    fuel_liters: Optional[float] = None
+    saved_cost: float | None = None
+    saved_profit: float | None = None
+    fuel_liters: float | None = None
     metadata_version: int = ROUTE_HISTORY_METADATA_VERSION
-    archived_at: Optional[str] = None
+    archived_at: str | None = None
 
 
 class RouteHistoryService:
     """Save, load, delete, and prune persistent route history records."""
 
-    def __init__(self, db_or_conn: Any, retention_days: Optional[int] = None) -> None:
+    def __init__(self, db_or_conn: Any, retention_days: int | None = None) -> None:
         self.logger = get_logger("RouteHistoryService")
         db = db_or_conn
         self.db = db
@@ -139,7 +144,7 @@ class RouteHistoryService:
         self.prune_old_routes()
         return route_id
 
-    def load_route(self, route_id: int) -> Optional[RouteHistoryRecord]:
+    def load_route(self, route_id: int) -> RouteHistoryRecord | None:
         """Load one route history record including decompressed geometry."""
         cached = _RECENT_ROUTE_CACHE.get(route_id)
         if cached is not None:
@@ -150,7 +155,7 @@ class RouteHistoryService:
             _RECENT_ROUTE_CACHE.put(route_id, record)
         return record
 
-    def list_routes(self, limit: int = 100, offset: int = 0) -> List[RouteHistoryListItem]:
+    def list_routes(self, limit: int = 100, offset: int = 0) -> list[RouteHistoryListItem]:
         """Return recent route history metadata without loading geometry blobs."""
         return self.search_routes(limit=limit, offset=offset)
 
@@ -164,7 +169,7 @@ class RouteHistoryService:
         sort_dir: str = "DESC",
         limit: int = 100,
         offset: int = 0,
-    ) -> List[RouteHistoryListItem]:
+    ) -> list[RouteHistoryListItem]:
         """Return paginated route history metadata with simple filters."""
         rows = self._route_repo.search(
             search=search,
@@ -234,7 +239,7 @@ class RouteHistoryService:
             self.db.conn.commit()
         self.record_event(route_id, "route_updated", {"active": True})
 
-    def get_active_route_id(self) -> Optional[int]:
+    def get_active_route_id(self) -> int | None:
         """Return the active route id if configured."""
         try:
             row = self.db.conn.execute("SELECT value FROM settings WHERE key = ?", (ACTIVE_ROUTE_SETTING_KEY,)).fetchone()
@@ -242,7 +247,7 @@ class RouteHistoryService:
         except Exception:
             return None
 
-    def get_active_route(self) -> Optional[RouteHistoryRecord]:
+    def get_active_route(self) -> RouteHistoryRecord | None:
         """Load the current active route record."""
         route_id = self.get_active_route_id()
         return self.load_route(route_id) if route_id else None
@@ -264,11 +269,11 @@ class RouteHistoryService:
             self.set_active_route(route_id)
         return assignment_id
 
-    def get_truck_routes(self, truck_id: str, status: Optional[str] = None) -> List[Dict[str, Any]]:
+    def get_truck_routes(self, truck_id: str, status: str | None = None) -> list[dict[str, Any]]:
         """Return assigned, active, or completed route assignments for a truck."""
         return self._assignment_repo.get_by_truck(truck_id, status=status)
 
-    def record_event(self, route_id: Optional[int], event_type: str, payload: Optional[Dict[str, Any]] = None) -> int:
+    def record_event(self, route_id: int | None, event_type: str, payload: dict[str, Any] | None = None) -> int:
         """Persist and publish a route event."""
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         event_id = self._event_repo.create(
@@ -280,7 +285,7 @@ class RouteHistoryService:
         RouteEventBus.publish(event_type, {"id": event_id, "route_id": route_id, **(payload or {})})
         return event_id
 
-    def duplicate_route(self, route_id: int) -> Optional[int]:
+    def duplicate_route(self, route_id: int) -> int | None:
         """Create a copy of a history route as a new row."""
         record = self.load_route(route_id)
         if not record:
@@ -288,7 +293,7 @@ class RouteHistoryService:
         record.route_summary = dict(record.route_summary or {})
         record.route_summary["duplicated_from"] = route_id
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
-        fingerprint = hashlib.sha256(f"{route_id}:{now}".encode("utf-8")).hexdigest()
+        fingerprint = hashlib.sha256(f"{route_id}:{now}".encode()).hexdigest()
         payload = self._to_db_payload(record)
         data = {
             "route_fingerprint": fingerprint,
@@ -314,11 +319,11 @@ class RouteHistoryService:
         }
         return self._route_repo.create(data)
 
-    def get_statistics(self, include_archived: bool = False) -> Dict[str, Any]:
+    def get_statistics(self, include_archived: bool = False) -> dict[str, Any]:
         """Compute route history statistics (route-only)."""
         rows = self._route_repo.get_all(limit=100000, include_archived=include_archived)
 
-        destinations: Dict[str, int] = {}
+        destinations: dict[str, int] = {}
         total_distance = 0.0
 
         for row in rows:
@@ -335,10 +340,10 @@ class RouteHistoryService:
             "most_common_destinations": common_destinations,
         }
 
-    def get_route_analytics(self, include_archived: bool = False) -> Dict[str, Any]:
+    def get_route_analytics(self, include_archived: bool = False) -> dict[str, Any]:
         """Return route analytics (route-only)."""
         rows = self._route_repo.get_all(limit=100000, include_archived=include_archived)
-        country_frequency: Dict[str, int] = {}
+        country_frequency: dict[str, int] = {}
         durations = []
         for row in rows:
             countries = self._loads(row.get("countries_traversed_json"), [])
@@ -422,7 +427,7 @@ class RouteHistoryService:
         cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat(timespec="seconds") + "Z"
         return self._route_repo.prune_before(cutoff)
 
-    def run_cleanup(self) -> Dict[str, int]:
+    def run_cleanup(self) -> dict[str, int]:
         """Background cleanup hook for app startup or future scheduler."""
         pruned = self.prune_old_routes()
         orphan_events = self._event_repo.delete_orphans()
@@ -447,8 +452,8 @@ class RouteHistoryService:
         data["stops"] = self._normalize_stops(record.stops)
         return RouteHistoryRecord(**data)
 
-    def _normalize_stops(self, stops: Iterable[Any]) -> List[Dict[str, Any]]:
-        normalized: List[Dict[str, Any]] = []
+    def _normalize_stops(self, stops: Iterable[Any]) -> list[dict[str, Any]]:
+        normalized: list[dict[str, Any]] = []
         for idx, stop in enumerate(stops or []):
             if isinstance(stop, dict):
                 item = dict(stop)
@@ -460,7 +465,7 @@ class RouteHistoryService:
             normalized.append(item)
         return normalized
 
-    def _fingerprint_stops(self, stops: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    def _fingerprint_stops(self, stops: Iterable[dict[str, Any]]) -> list[dict[str, Any]]:
         fp_stops = []
         for stop in stops:
             lat = stop.get("lat")
@@ -473,7 +478,7 @@ class RouteHistoryService:
             })
         return fp_stops
 
-    def _to_db_payload(self, record: RouteHistoryRecord) -> Dict[str, Any]:
+    def _to_db_payload(self, record: RouteHistoryRecord) -> dict[str, Any]:
         return {
             "stops_json": self._json(record.stops),
             "geometry_compressed": self._compress_json(record.geometry),
@@ -482,7 +487,7 @@ class RouteHistoryService:
             "countries_traversed_json": self._json(record.countries_traversed),
         }
 
-    def _row_to_record(self, row: Dict[str, Any]) -> RouteHistoryRecord:
+    def _row_to_record(self, row: dict[str, Any]) -> RouteHistoryRecord:
         return RouteHistoryRecord(
             stops=self._loads(row["stops_json"], []),
             geometry=self._decompress_json(row["geometry_compressed"]),
@@ -497,7 +502,7 @@ class RouteHistoryService:
             metadata_version=row["metadata_version"],
         )
 
-    def _row_to_list_item(self, row: Dict[str, Any]) -> RouteHistoryListItem:
+    def _row_to_list_item(self, row: dict[str, Any]) -> RouteHistoryListItem:
         stops = self._loads(row["stops_json"], [])
         return RouteHistoryListItem(
             id=row["id"],
@@ -520,10 +525,10 @@ class RouteHistoryService:
 
     @staticmethod
     def _row_total_cost(
-        profit: Dict[str, Any],
-        fuel: Dict[str, Any],
-        toll: Dict[str, Any],
-    ) -> Optional[float]:
+        profit: dict[str, Any],
+        fuel: dict[str, Any],
+        toll: dict[str, Any],
+    ) -> float | None:
         """Trip total cost (fuel + toll), not a 'savings' figure."""
         if profit.get("total_cost") is not None:
             try:
@@ -536,7 +541,7 @@ class RouteHistoryService:
             return round(fuel_part + toll_part, 2)
         return None
 
-    def _stop_label(self, stop: Dict[str, Any]) -> str:
+    def _stop_label(self, stop: dict[str, Any]) -> str:
         label = stop.get("address") or stop.get("label") or stop.get("value")
         if label:
             return str(label)
@@ -550,7 +555,7 @@ class RouteHistoryService:
         raw = self._json(value).encode("utf-8")
         return zlib.compress(raw, level=6)
 
-    def _decompress_json(self, value: Optional[bytes]) -> List[Any]:
+    def _decompress_json(self, value: bytes | None) -> list[Any]:
         if not value:
             return []
         try:
@@ -566,7 +571,7 @@ class RouteHistoryService:
                 pass
             return []
 
-    def _pdf_ready_payload(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+    def _pdf_ready_payload(self, payload: dict[str, Any]) -> dict[str, Any]:
         route = payload["route"]
         return {
             "title": "Route Report",
@@ -581,7 +586,7 @@ class RouteHistoryService:
             ],
         }
 
-    def _csv_payload(self, payload: Dict[str, Any]) -> str:
+    def _csv_payload(self, payload: dict[str, Any]) -> str:
         rows = [
             ["route_id", payload["metadata"]["route_id"]],
             ["origin", payload["route"]["origin"]],
@@ -595,23 +600,24 @@ class RouteHistoryService:
     def _json(self, value: Any) -> str:
         return json.dumps(value if value is not None else {}, ensure_ascii=False, sort_keys=True, default=str)
 
-    def _loads(self, value: Optional[str], default: Any) -> Any:
+    def _loads(self, value: str | None, default: Any) -> Any:
         if not value:
             return default
         try:
             return json.loads(value)
         except Exception:
+            _logger.warning("Failed to parse JSON value: %.200s", value, exc_info=True)
             return default
 
 
 class _RecentRouteCache:
     def __init__(self, max_size: int = 32) -> None:
         self.max_size = max_size
-        self._items: Dict[int, RouteHistoryRecord] = {}
-        self._order: List[int] = []
+        self._items: dict[int, RouteHistoryRecord] = {}
+        self._order: list[int] = []
         self._lock = threading.RLock()
 
-    def get(self, key: int) -> Optional[RouteHistoryRecord]:
+    def get(self, key: int) -> RouteHistoryRecord | None:
         with self._lock:
             item = self._items.get(key)
             if item is not None and key in self._order:
@@ -631,7 +637,7 @@ class _RecentRouteCache:
 
 
 class RouteEventBus:
-    _listeners: Dict[str, List[Any]] = {}
+    _listeners: dict[str, list[Any]] = {}
     _lock = threading.RLock()
 
     @classmethod
@@ -647,14 +653,12 @@ class RouteEventBus:
                 callbacks.remove(callback)
 
     @classmethod
-    def publish(cls, event_type: str, payload: Dict[str, Any]) -> None:
+    def publish(cls, event_type: str, payload: dict[str, Any]) -> None:
         with cls._lock:
             callbacks = list(cls._listeners.get(event_type, [])) + list(cls._listeners.get("*", []))
         for callback in callbacks:
-            try:
+            with contextlib.suppress(Exception):
                 callback(event_type, payload)
-            except Exception:
-                pass
 
 
 _RECENT_ROUTE_CACHE = _RecentRouteCache()

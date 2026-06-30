@@ -14,12 +14,11 @@ widgets do not need inline stylesheets.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from ui.theme import COLORS, S, RADIUS_CARD, RADIUS_INPUT, RADIUS_BUTTON, RADIUS_CHIP
+from ui.design_tokens import TEXT_WHITE
+from ui.theme import COLORS, RADIUS_BUTTON, RADIUS_CARD, RADIUS_CHIP, RADIUS_INPUT, S
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TYPOGRAPHY
@@ -53,12 +52,11 @@ FONT_SIZES = {
 class QtTheme:
     """Global QSS theme manager."""
 
-    _style_sheet: Optional[str] = None
+    _style_sheet: str | None = None
 
     @classmethod
     def apply(cls, app: QApplication) -> None:
         """Apply the global dark theme to a QApplication instance."""
-        cls._load_fallback_fonts()
         app.setStyleSheet(cls.qss())
         app.setFont(QFont("IBM Plex Sans", FONT_SIZES["body"]))
 
@@ -74,17 +72,6 @@ class QtTheme:
         """Rebuild and re-apply the stylesheet (useful after COLORS change)."""
         cls._style_sheet = None
         cls.apply(app)
-
-    @classmethod
-    def _load_fallback_fonts(cls) -> None:
-        """Best-effort font registration; Windows already ships Impact.
-
-        IBM Plex fonts are loaded from the system if installed. If not, the CSS
-        fallback chain degrades to Segoe UI / Consolas automatically.
-        """
-        # Qt's font database already resolves family names at runtime, so no
-        # manual loading is required unless we bundle font files later.
-        pass
 
     @classmethod
     def _build_qss(cls) -> str:
@@ -122,11 +109,11 @@ class QtTheme:
 
     @classmethod
     def _ff(cls, role: str) -> str:
-        return FONT_FAMILIES[role]
+        return FONT_FAMILIES.get(role, FONT_FAMILIES.get("sans", "Segoe UI"))
 
     @classmethod
     def _fs(cls, role: str) -> int:
-        return FONT_SIZES[role]
+        return FONT_SIZES.get(role, FONT_SIZES.get("body", 13))
 
     @classmethod
     def _px(cls, key: str) -> int:
@@ -303,7 +290,7 @@ class QtTheme:
         return f"""
         QPushButton {{
             background-color: {COLORS["accent"]};
-            color: #ffffff;
+            color: {TEXT_WHITE};
             border: none;
             border-radius: {RADIUS_BUTTON}px;
             padding: {cls._px("2")}px {cls._px("4")}px;
@@ -383,7 +370,7 @@ class QtTheme:
             font-family: {cls._ff("sans")};
             font-size: {cls._fs("body")}px;
             selection-background-color: {COLORS["accent"]};
-            selection-color: #ffffff;
+            selection-color: {TEXT_WHITE};
         }}
 
         QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
@@ -746,7 +733,7 @@ class QtTheme:
 
         QTabBar::tab:selected {{
             background-color: {COLORS["accent"]};
-            color: #ffffff;
+            color: {TEXT_WHITE};
         }}
 
         QTabBar::tab:hover:!selected {{
@@ -924,7 +911,7 @@ class QtTheme:
 
         QMenu::item:selected {{
             background-color: {COLORS["accent"]};
-            color: #ffffff;
+            color: {TEXT_WHITE};
         }}
 
         QMenu::separator {{
@@ -1067,7 +1054,7 @@ class QtTheme:
 
         QLabel[role="nav-monogram-text"] {{
             background-color: transparent;
-            color: #ffffff;
+            color: {TEXT_WHITE};
             font-weight: bold;
             font-size: 14px;
         }}
@@ -1153,7 +1140,7 @@ class QtTheme:
 
         QLabel[role="badge"] {{
             background-color: {COLORS["danger"]};
-            color: #ffffff;
+            color: {TEXT_WHITE};
             border-radius: 9px;
             font-size: {cls._fs("label")}px;
             font-weight: bold;
@@ -1219,7 +1206,7 @@ class QtTheme:
             background-color: {COLORS["bg_surface"]};
             color: {COLORS["text_primary"]};
             selection-background-color: {COLORS["accent"]};
-            selection-color: #ffffff;
+            selection-color: {TEXT_WHITE};
         }}
 
         QCalendarWidget QAbstractItemView:disabled {{
@@ -1242,7 +1229,7 @@ class QtTheme:
 
         QCalendarWidget QAbstractItemView::item:selected {{
             background-color: {COLORS["accent"]};
-            color: #ffffff;
+            color: {TEXT_WHITE};
         }}
         """
 

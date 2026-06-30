@@ -6,9 +6,10 @@ Mirrors the API of ``ui/route_map_renderer.py`` but dispatches to
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import time
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from ui.map.map_helpers import create_path_on_map
 from utils.perf_log import perf_timer
@@ -28,7 +29,7 @@ class QtRouteMapRenderer:
 
     def __init__(self, map_widget) -> None:
         self.map_widget = map_widget
-        self._last_geom_key: Optional[tuple] = None
+        self._last_geom_key: tuple | None = None
         self._last_draw_time = 0.0
         self._min_redraw_interval_s = 0.3
 
@@ -46,13 +47,11 @@ class QtRouteMapRenderer:
         except Exception:
             logger.exception("clear_overlays failed")
 
-    def draw_avoided_country_overlays(self, country_codes: List[str]) -> None:
+    def draw_avoided_country_overlays(self, country_codes: list[str]) -> None:
         if self.map_widget is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self.clear_route_overlays()
-        except Exception:
-            pass
         if not country_codes:
             return
 
@@ -74,7 +73,7 @@ class QtRouteMapRenderer:
                 except Exception as exc:
                     logger.warning("Failed to draw overlay for %s: %s", code, exc)
 
-    def update_stop_markers(self, stops_state: List[Dict[str, Any]]) -> None:
+    def update_stop_markers(self, stops_state: list[dict[str, Any]]) -> None:
         self.clear_stop_markers()
         if self.map_widget is None:
             return
@@ -99,33 +98,36 @@ class QtRouteMapRenderer:
                 except Exception:
                     logger.exception("Failed to add stop marker")
 
-    def should_redraw(self, geometry: List[Tuple[float, float]]) -> bool:
+    def should_redraw(self, geometry: list[tuple[float, float]]) -> bool:
         if not geometry:
             return False
         n = len(geometry)
         first = geometry[0]
         last = geometry[-1]
         now = time.time()
-        if (
-            (n, first, last) == self._last_geom_key
-            and (now - self._last_draw_time) < self._min_redraw_interval_s
-        ):
-            return False
+        return not ((n, first, last) == self._last_geom_key and now - self._last_draw_time < self._min_redraw_interval_s)
+
+    def mark_redrawn(self, geometry: list[tuple[float, float]]) -> None:
+        """Record the geometry and timestamp after a successful draw."""
+        if not geometry:
+            return
+        n = len(geometry)
+        first = geometry[0]
+        last = geometry[-1]
         self._last_geom_key = (n, first, last)
-        self._last_draw_time = now
-        return True
+        self._last_draw_time = time.time()
 
     def draw_route(
         self,
-        geometry: List[Tuple[float, float]],
-        route: Optional[Dict[str, Any]] = None,
+        geometry: list[tuple[float, float]],
+        route: dict[str, Any] | None = None,
         *,
         show_comparison: bool = True,
         highlight_avoided: bool = False,
     ) -> None:
         if self.map_widget is None or not geometry:
             return
-        geometry = [(float(p[0]), float(p[1])) for p in geometry]
+        geometry = [(float(p[0]), float(p[1])) for p in geometry if len(p) >= 2]
         if len(geometry) < 2:
             return
         if not self.should_redraw(geometry):
@@ -142,7 +144,7 @@ class QtRouteMapRenderer:
             if geometry[-1] != geometry_raw[-1]:
                 geometry.append(geometry_raw[-1])
 
-        with perf_timer("map_draw_route"):
+        try:
             self.clear_stop_markers()
             self.clear_route_overlays()
 
@@ -151,7 +153,7 @@ class QtRouteMapRenderer:
             if show_comparison and isinstance(orig, dict) and orig.get("geometry"):
                 try:
                     alt_geo = orig.get("geometry")
-                    alt_coords = [(float(p[0]), float(p[1])) for p in alt_geo]
+                    alt_coords = [(float(p[0]), float(p[1])) for p in alt_geo if len(p) >= 2]
                     self.map_widget.add_polyline(alt_coords, color=self.ALT_ROUTE_COLOR, weight=2)
                 except Exception as exc:
                     logger.warning("alt_route_line draw failed: %s", exc)
@@ -168,7 +170,11 @@ class QtRouteMapRenderer:
                 if excluded:
                     self.draw_avoided_country_overlays(excluded)
 
-    def center_on_geometry(self, geometry: List[Tuple[float, float]], zoom: int = 6) -> None:
+            self.mark_redrawn(geometry)
+        except Exception:
+            logger.exception("draw_route failed")
+
+    def center_on_geometry(self, geometry: list[tuple[float, float]], zoom: int = 6) -> None:
         if self.map_widget is None or not geometry:
             return
         try:

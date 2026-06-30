@@ -1,17 +1,21 @@
 import os
 from datetime import datetime
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
 from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
-from .config_manager import load_company_config
-from services.i18n import t, _get_translations
+from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+from services.i18n import _get_translations, t
 from utils.helpers import remove_accents
+from utils.resource_path import data_path
+
+from .config_manager import load_company_config
 
 class InvoiceGenerator:
     def __init__(self):
-        self.reports_dir = os.path.abspath("invoices")
+        self.reports_dir = data_path("invoices")
         if not os.path.exists(self.reports_dir):
             os.makedirs(self.reports_dir)
         self.styles = getSampleStyleSheet()
@@ -35,25 +39,25 @@ class InvoiceGenerator:
         filename = f"{invoice_id}_{mode}.pdf"
         full_path = os.path.join(self.reports_dir, filename)
 
-        doc = SimpleDocTemplate(full_path, pagesize=A4, 
-                                leftMargin=1.5*cm, rightMargin=1.5*cm, 
+        doc = SimpleDocTemplate(full_path, pagesize=A4,
+                                leftMargin=1.5*cm, rightMargin=1.5*cm,
                                 topMargin=1.5*cm, bottomMargin=1.5*cm)
         story = []
 
         title_text = self._tr("invoice_pdf.title_client", mode) if mode == "client" else self._tr("invoice_pdf.title_internal", mode)
         title_style = ParagraphStyle("InvTitle", parent=self.styles["Title"], fontSize=18, textColor=colors.HexColor("#1a73e8"), alignment=0)
-        
+
         story.append(Paragraph(f"<b>{title_text}</b>", title_style))
         story.append(Paragraph(self._tr("invoice_pdf.serial", mode).format(invoice_id, datetime.now().strftime('%d/%m/%Y')), self.styles["Normal"]))
         story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a73e8"), spaceAfter=15))
 
         company_info = (f"<b>{self._tr('invoice_pdf.sender_header', mode)}</b><br/>"
-                        f"{remove_accents(conf['company_name'])}<br/>"
-                        f"CUI: {conf['cui']}<br/>"
-                        f"Reg. Com: {conf['reg_number']}<br/>"
-                        f"Adresa: {remove_accents(conf['address'])}<br/>"
-                        f"Tel: {conf['phone']}")
-        
+                        f"{remove_accents(conf.get('company_name', ''))}<br/>"
+                        f"CUI: {conf.get('cui', '')}<br/>"
+                        f"Reg. Com: {conf.get('reg_number', '')}<br/>"
+                        f"Adresa: {remove_accents(conf.get('address', ''))}<br/>"
+                        f"Tel: {conf.get('phone', '')}")
+
         client_info = (f"<b>{self._tr('invoice_pdf.bill_to_header', mode)}</b><br/>"
                        f"{remove_accents(trip_data.get('client_name', ''))}")
         client_vat = trip_data.get("client_vat")
@@ -69,7 +73,7 @@ class InvoiceGenerator:
         if client_email:
             client_info += f"<br/>Email: {client_email}"
 
-        info_table = Table([[Paragraph(company_info, self.styles["Normal"]), 
+        info_table = Table([[Paragraph(company_info, self.styles["Normal"]),
                              Paragraph(client_info, self.styles["Normal"])]], colWidths=[9.5*cm, 8.5*cm])
         story.append(info_table)
         story.append(Spacer(1, 1*cm))
@@ -91,7 +95,7 @@ class InvoiceGenerator:
         story.append(Spacer(1, 1*cm))
 
         story.append(Paragraph(f"<b>{self._tr('invoice_pdf.financials', mode)}</b>", self.styles["Normal"]))
-        
+
         if mode == "internal":
             fin_data = [
                 [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.amount_header", mode)],
@@ -100,14 +104,14 @@ class InvoiceGenerator:
                 [self._tr("invoice_pdf.line_tolls", mode), f"- {trip_data.get('toll_cost', 0):.2f}"],
                 [self._tr("invoice_pdf.line_salary", mode), f"- {trip_data.get('salary_cost', 0):.2f}"],
                 [self._tr("invoice_pdf.line_other", mode), f"- {trip_data.get('extra_costs', 0):.2f}"],
-                [Paragraph(f"<b>{self._tr('invoice_pdf.net_profit', mode)}</b>", self.styles["Normal"]), 
+                [Paragraph(f"<b>{self._tr('invoice_pdf.net_profit', mode)}</b>", self.styles["Normal"]),
                  Paragraph(f"<b>{trip_data.get('net_profit', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
             ]
         else:
             fin_data = [
                 [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.qty_header", mode), self._tr("invoice_pdf.total_header", mode)],
                 [self._tr("invoice_pdf.service_desc", mode).format(trip_data.get('distance_km', 0)),
-                 "1", 
+                 "1",
                  Paragraph(f"<b>{trip_data.get('total_price_eur', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
             ]
 
@@ -308,6 +312,14 @@ class InvoiceGenerator:
             if price_pre_val > trip_price_val:
                 raise ValueError(
                     f"price_pre_vat ({price_pre_val:.2f}) exceeds trip_price ({trip_price_val:.2f})"
+                )
+            vat_rate = float(vat_percent) / 100.0
+            expected_vat = round(price_pre_val * vat_rate, 2)
+            actual_vat = round(trip_price_val - price_pre_val, 2)
+            if abs(expected_vat - actual_vat) > 0.02:
+                raise ValueError(
+                    f"VAT mismatch: expected {expected_vat:.2f} at {vat_percent}% "
+                    f"but got {actual_vat:.2f} (trip={trip_price_val:.2f}, base={price_pre_val:.2f})"
                 )
             price_data.append([
                 Paragraph(f"Transport fee (excl. VAT {vat_percent}%)", self.styles["Normal"]),

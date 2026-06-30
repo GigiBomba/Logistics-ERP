@@ -6,7 +6,7 @@ Replaces ``ui/widgets/dispatch_alerts_panel.py`` (CTkFrame).
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -21,8 +21,10 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from services.operations.alert_manager import Severity
+from ui.design_tokens import TEXT_WHITE
 from ui.theme import COLORS, S
 from ui.widgets import ActionButton, KpiCard
+from ui.widgets.layout_utils import clear_layout
 
 # Terminal statuses that are excluded from KPI and unassigned counts.
 _DONE_STATUSES = frozenset({
@@ -52,12 +54,12 @@ class QtDispatchAlertsPanel(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         ops=None,
-        on_assign_truck: Optional[Callable] = None,
-        on_assign_driver: Optional[Callable] = None,
-        on_resolve_alert: Optional[Callable] = None,
+        on_assign_truck: Callable | None = None,
+        on_assign_driver: Callable | None = None,
+        on_resolve_alert: Callable | None = None,
     ):
         super().__init__(parent)
         self._db = db
@@ -163,7 +165,7 @@ class QtDispatchAlertsPanel(QWidget):
 
     # ── Public API ───────────────────────────────────────────────────────────
 
-    def refresh(self, cards_data: Optional[list[dict[str, Any]]] = None) -> None:
+    def refresh(self, cards_data: list[dict[str, Any]] | None = None) -> None:
         """Rebuild all four sections from *cards_data*.
 
         Each dict should contain (at minimum) ``status``, ``departure_date``,
@@ -179,7 +181,7 @@ class QtDispatchAlertsPanel(QWidget):
     # ── Brief KPIs ───────────────────────────────────────────────────────────
 
     def _refresh_brief(self, cards_data: list[dict[str, Any]]) -> None:
-        self._clear_layout(self._brief_content)
+        clear_layout(self._brief_content)
 
         today_str = datetime.now().strftime("%d/%m/%Y")
         departing = 0
@@ -241,10 +243,10 @@ class QtDispatchAlertsPanel(QWidget):
     # ── Alerts ───────────────────────────────────────────────────────────────
 
     def _refresh_alerts(self) -> None:
-        self._clear_layout(self._alerts_content)
+        clear_layout(self._alerts_content)
 
         if not self._ops:
-            label = QLabel("Ops not available")
+            label = QLabel(t("common.ops_unavailable", default="Ops not available"))
             label.setProperty("fontRole", "muted")
             label.setAlignment(Qt.AlignCenter)
             self._alerts_content.addWidget(label)
@@ -280,7 +282,7 @@ class QtDispatchAlertsPanel(QWidget):
         chip.setFixedWidth(36)
         chip.setAlignment(Qt.AlignCenter)
         chip.setStyleSheet(
-            f"background-color: {chip_color}; color: #ffffff; "
+            f"background-color: {chip_color}; color: {TEXT_WHITE}; "
             f"border-radius: 3px; padding: 2px 0; font-size: 11px; font-weight: bold;"
         )
         row_layout.addWidget(chip)
@@ -322,7 +324,7 @@ class QtDispatchAlertsPanel(QWidget):
     # ── Unassigned trips ─────────────────────────────────────────────────────
 
     def _refresh_unassigned(self, cards_data: list[dict[str, Any]]) -> None:
-        self._clear_layout(self._unassigned_content)
+        clear_layout(self._unassigned_content)
 
         no_truck: list[dict[str, Any]] = []
         no_driver: list[dict[str, Any]] = []
@@ -415,7 +417,7 @@ class QtDispatchAlertsPanel(QWidget):
     # ── Summary KPIs ─────────────────────────────────────────────────────────
 
     def _refresh_summary(self, cards_data: list[dict[str, Any]]) -> None:
-        self._clear_layout(self._summary_content)
+        clear_layout(self._summary_content)
 
         total_active = 0
         fully_assigned = 0
@@ -459,15 +461,15 @@ class QtDispatchAlertsPanel(QWidget):
 
         self._summary_content.addWidget(kpi_row)
 
-    # ── Layout helpers ───────────────────────────────────────────────────────
+    # ── Cleanup ──────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _clear_layout(layout: QVBoxLayout) -> None:
-        """Remove and delete all items from *layout*."""
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-            elif item.layout():
-                QtDispatchAlertsPanel._clear_layout(item.layout())
+    def destroy(self) -> None:
+        """Clear references and schedule deletion."""
+        self._db = None
+        self._ops = None
+        self._on_assign_truck = None
+        self._on_assign_driver = None
+        self._on_resolve_alert = None
+        super().deleteLater()
+
+    # ── Layout helpers ───────────────────────────────────────────────────────

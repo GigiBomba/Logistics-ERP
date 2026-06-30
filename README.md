@@ -172,7 +172,7 @@ ruff check --fix . && ruff format .
 
 - **UI**: PySide6 (Qt 6) with QSS theming
 - **Maps**: folium + QWebEngineView
-- **Charts**: matplotlib (QtAgg backend)
+- **Charts**: Plotly (Kaleido SVG → QPixmap)
 - **Database**: SQLite via raw connections
 - **PDF**: reportlab + pypdf
 - **Routing**: GraphHopper

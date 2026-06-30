@@ -17,29 +17,27 @@ import io
 import logging
 import os
 import uuid
-from pathlib import Path
-from typing import List, Optional, Tuple
 
 from PIL import Image, ImageDraw
-
-from PySide6.QtCore import Qt, QPoint, QRectF
+from PySide6.QtCore import Qt
 from PySide6.QtGui import (
-    QPainter,
-    QPen,
     QColor,
-    QPaintEvent,
     QMouseEvent,
+    QPainter,
+    QPaintEvent,
+    QPen,
 )
 from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
     QFileDialog,
-    QVBoxLayout,
+    QFrame,
     QHBoxLayout,
+    QLabel,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
+from services.i18n import t
 from ui.theme import COLORS, S
 from ui.widgets import ActionButton, StyledLineEdit
 
@@ -62,15 +60,15 @@ class _CanvasWidget(QWidget):
     of (x, y) tuples).  The widget repaints on every stroke change.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self.setFixedSize(PAD_WIDTH, PAD_HEIGHT)
         self.setMouseTracking(False)
         self.setCursor(Qt.CrossCursor)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
 
-        self._strokes: List[List[Tuple[int, int]]] = []
-        self._current_stroke: List[Tuple[int, int]] = []
+        self._strokes: list[list[tuple[int, int]]] = []
+        self._current_stroke: list[tuple[int, int]] = []
         self._active = False  # True while pen is down
 
     # ── Stroke management ──────────────────────────────────────────────────────
@@ -82,7 +80,7 @@ class _CanvasWidget(QWidget):
         self._active = False
         self.update()
 
-    def get_strokes(self) -> List[List[Tuple[int, int]]]:
+    def get_strokes(self) -> list[list[tuple[int, int]]]:
         """Return a copy of the finished strokes list."""
         return [list(s) for s in self._strokes]
 
@@ -114,7 +112,7 @@ class _CanvasWidget(QWidget):
 
     # ── Paint ─────────────────────────────────────────────────────────────────
 
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802 (Qt override)
+    def paintEvent(self, event: QPaintEvent) -> None:
         painter = QPainter(self)
         painter.setRenderHint(QPainter.Antialiasing)
 
@@ -137,7 +135,7 @@ class _CanvasWidget(QWidget):
         painter.end()
 
     @staticmethod
-    def _draw_stroke(painter: QPainter, stroke: List[Tuple[int, int]]) -> None:
+    def _draw_stroke(painter: QPainter, stroke: list[tuple[int, int]]) -> None:
         """Draw a single stroke as a series of connected line segments."""
         for i in range(len(stroke) - 1):
             x1, y1 = stroke[i]
@@ -166,12 +164,12 @@ class QtSignaturePad(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         label: str = "",
     ):
         super().__init__(parent)
         self._label_text = label
-        self._saved_path: Optional[str] = None
+        self._saved_path: str | None = None
         self._mode: str = "none"
 
         self._build()
@@ -222,7 +220,7 @@ class QtSignaturePad(QWidget):
 
         toggle_layout.addStretch(1)
 
-        self._status_lbl = QLabel("No signature")
+        self._status_lbl = QLabel(t("signature.no_signature", default="No signature"))
         self._status_lbl.setProperty("fontRole", "small")
         self._status_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
         toggle_layout.addWidget(self._status_lbl)
@@ -303,7 +301,7 @@ class QtSignaturePad(QWidget):
         self._saved_path = None
         self._upload_path_edit.clear()
         self._mode = "none"
-        self._status_lbl.setText("No signature")
+        self._status_lbl.setText(t("signature.no_signature", default="No signature"))
         self._status_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
 
     # ── Render to PNG ─────────────────────────────────────────────────────────
@@ -348,13 +346,13 @@ class QtSignaturePad(QWidget):
             if strokes:
                 png_data = self._render_to_png()
                 self._saved_path = self._save_temp_png(png_data)
-                self._status_lbl.setText("Signature accepted")
+                self._status_lbl.setText(t("signature.accepted", default="Signature accepted"))
                 self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
         elif self._mode == "upload":
             path = self._upload_path_edit.text()
             if path and os.path.isfile(path):
                 self._saved_path = path
-                self._status_lbl.setText(f"Selected: {os.path.basename(path)}")
+                self._status_lbl.setText(t("signature.label_selected", default="Selected: {}").format(os.path.basename(path)))
                 self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
         self._mode = "none"
 
@@ -363,24 +361,24 @@ class QtSignaturePad(QWidget):
     def _browse_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
             self,
-            "Select Signature Image",
+            t("signature.select_title", default="Select Signature Image"),
             "",
-            "Image files (*.png *.jpg *.jpeg *.bmp);;All files (*.*)",
+            t("signature.filter_images", default="Image files (*.png *.jpg *.jpeg *.bmp);;All files (*.*)"),
         )
         if path:
             self._upload_path_edit.setText(os.path.basename(path))
             self._saved_path = path
             self._mode = "upload"
-            self._status_lbl.setText(f"Selected: {os.path.basename(path)}")
+            self._status_lbl.setText(t("signature.label_selected", default="Selected: {}").format(os.path.basename(path)))
             self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def get_path(self) -> Optional[str]:
+    def get_path(self) -> str | None:
         """Return the saved signature image path, or ``None`` if not set."""
         return self._saved_path
 
-    def set_path(self, path: Optional[str]) -> None:
+    def set_path(self, path: str | None) -> None:
         """Pre-load a signature path.
 
         If the path exists on disk the status label is updated accordingly.
@@ -388,18 +386,18 @@ class QtSignaturePad(QWidget):
         if path and os.path.isfile(path):
             self._saved_path = path
             self._upload_path_edit.setText(os.path.basename(path))
-            self._status_lbl.setText(f"Loaded: {os.path.basename(path)}")
+            self._status_lbl.setText(t("signature.label_loaded", default="Loaded: {}").format(os.path.basename(path)))
             self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
 
     def cleanup(self) -> None:
-        """Release any matplotlib/Pillow resources held by this widget.
+        """Release any Pillow resources held by this widget.
 
-        Currently no long-lived matplotlib or Pillow objects are stored, so
+        Currently no long-lived Pillow objects are stored, so
         this is a no-op placeholder for API compatibility.  Call it when the
         widget is being discarded.
         """
         self._canvas.clear_strokes()
         self._saved_path = None
-        self._status_lbl.setText("Cleaned up")
+        self._status_lbl.setText(t("signature.cleaned_up", default="Cleaned up"))
         self._status_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
         logger.debug("QtSignaturePad resources released")

@@ -51,7 +51,7 @@ class InvoiceRepository(BaseRepository):
                WHERE t.client_id = ? AND i.status = 'Unpaid'""",
             (client_id,),
         )
-        return float(row["balance"]) if row else 0.0
+        return round(float(row["balance"]), 2) if row else 0.0
 
     def get_overdue_by_client(self, client_id: int) -> List[Dict[str, Any]]:
         from datetime import datetime
@@ -76,3 +76,25 @@ class InvoiceRepository(BaseRepository):
             f"SELECT i.*, t.client_name FROM {self.TABLE} i JOIN trips t ON t.id = i.trip_id WHERE i.status = ? ORDER BY i.due_date ASC LIMIT ?",
             (status, limit),
         )
+
+    def get_payment_summary(self, client_id: int) -> Optional[Dict[str, Any]]:
+        from datetime import datetime
+        today = datetime.utcnow().strftime("%Y-%m-%d")
+        return self._fetchone(
+            """SELECT
+                 COALESCE(SUM(i.total_amount), 0) AS total_billed,
+                 COALESCE(SUM(CASE WHEN i.status = 'Paid' THEN i.total_amount ELSE 0 END), 0) AS total_paid,
+                 COALESCE(SUM(CASE WHEN i.status = 'Unpaid' THEN i.total_amount ELSE 0 END), 0) AS unpaid,
+                 COALESCE(SUM(CASE WHEN i.status = 'Unpaid' AND i.due_date < ? THEN i.total_amount ELSE 0 END), 0) AS overdue
+               FROM invoices i
+               JOIN trips t ON t.id = i.trip_id
+               WHERE t.client_id = ?""",
+            (today, client_id),
+        )
+
+    def get_invoice_count(self, client_id: int) -> int:
+        row = self._fetchone(
+            "SELECT COUNT(*) AS cnt FROM invoices i JOIN trips t ON t.id = i.trip_id WHERE t.client_id = ?",
+            (client_id,),
+        )
+        return int(row["cnt"]) if row else 0

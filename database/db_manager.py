@@ -1,121 +1,38 @@
 import sqlite3
 import logging
+import warnings
 from datetime import datetime
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
-from database.schema import (
-    INDEX_ROUTE_HISTORY_V2_CREATED,
-    INDEX_ROUTE_HISTORY_V2_FINGERPRINT,
-    INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED,
-    INDEX_ROUTE_HISTORY_V2_PROFILE,
-    INDEX_ROUTE_HISTORY_V2_TRUCK,
-    INDEX_ROUTE_EVENTS_ROUTE,
-    INDEX_ROUTE_EVENTS_TYPE,
-    INDEX_TRUCK_ROUTE_ASSIGNMENTS_ROUTE,
-    INDEX_TRUCK_ROUTE_ASSIGNMENTS_STATUS,
-    INDEX_TRUCK_ROUTE_ASSIGNMENTS_TRUCK,
-    INDEX_TRIPS_DATE,
-    INDEX_TRIPS_TRUCK,
-    TABLE_ALERTS,
-    TABLE_CLIENTS,
-    TABLE_CLIENT_CONTACTS,
-    TABLE_CLIENT_TAGS,
-    INDEX_CONTACTS_CLIENT,
-    INDEX_TAGS_CLIENT,
-    TABLE_EMAIL_LOGS,
-    TABLE_INVOICES,
-    TABLE_MAINTENANCE_RECORDS,
-    TABLE_MAINTENANCE_SCHEDULES,
-    TABLE_TRUCK_HEALTH_SCORES,
-    TABLE_OPERATION_EVENTS,
-    TABLE_ROUTE_HISTORY_V2,
-    TABLE_ROUTE_EVENTS,
-    TABLE_SETTINGS,
-    TABLE_TRIPS,
-    TABLE_TRIP_STATUS_HISTORY,
-    TABLE_TRUCKS,
-    TABLE_TRUCK_ROUTE_ASSIGNMENTS,
-    TABLE_DRIVERS,
-    TABLE_DRIVER_TRUCK_ASSIGNMENTS,
-    INDEX_ALERTS_TYPE,
-    INDEX_ALERTS_TRUCK,
-    INDEX_ALERTS_RESOLVED,
-    INDEX_DRIVERS_ACTIVE,
-    INDEX_MAINTENANCE_RECORDS_TRUCK,
-    INDEX_MAINTENANCE_RECORDS_TYPE,
-    INDEX_MAINTENANCE_RECORDS_DATE,
-    INDEX_MAINTENANCE_SCHEDULES_TRUCK,
-    INDEX_MAINTENANCE_SCHEDULES_ACTIVE,
-    INDEX_OPERATION_EVENTS_TYPE,
-    INDEX_TRIP_STATUS_HISTORY_TRIP,
-    INDEX_DTA_DRIVER,
-    INDEX_DTA_TRUCK,
-    TABLE_TACHO_IMPORTS,
-    TABLE_TACHO_DRIVER_ACTIVITY,
-    TABLE_TACHO_VEHICLE_DATA,
-    INDEX_TACHO_DRIVER_DATE,
-    INDEX_TACHO_VEHICLE_TRUCK,
-    INDEX_TACHO_IMPORTS_HASH,
-    INDEX_CLIENTS_NAME,
-    INDEX_CLIENTS_ACTIVE,
-    ALTER_TRIPS_ADD_TRUCK_ID,
-    INDEX_TRIPS_TRUCK_ID,
-    ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID,
-    ALTER_CLIENTS_ADD_TYPE,
-    ALTER_CLIENTS_ADD_PAYMENT_TERMS,
-    ALTER_CLIENTS_ADD_CREDIT_LIMIT,
-    ALTER_CLIENTS_ADD_DEFAULT_RATE,
-    ALTER_CLIENTS_ADD_RATING,
-    TABLE_DOCUMENTS,
-    TABLE_DOCUMENT_LINKS,
-    INDEX_DOCUMENTS_CATEGORY,
-    INDEX_DOCUMENTS_ENTITY,
-    INDEX_DOCUMENTS_HASH,
-    INDEX_DOCUMENTS_NUMBER,
-    INDEX_DOC_LINKS_DOCUMENT,
-    INDEX_DOC_LINKS_ENTITY,
-    TABLE_DOCUMENTS_FTS,
-    TRIGGER_DOCUMENTS_FTS_INSERT,
-    TRIGGER_DOCUMENTS_FTS_DELETE,
-    TRIGGER_DOCUMENTS_FTS_UPDATE,
-        ALTER_DOCUMENTS_ADD_TEXT_CONTENT,
-    ALTER_DOCUMENTS_ADD_EXPIRY_DATE,
-    ALTER_DOCUMENTS_ADD_SIGNED_BY,
-    ALTER_DOCUMENTS_ADD_SIGNED_AT,
-    TABLE_DOCUMENT_VERSIONS,
-    INDEX_VERSIONS_DOCUMENT,
-    TABLE_CONTRACTS,
-    INDEX_CONTRACTS_CLIENT,
-    INDEX_CONTRACTS_STATUS,
-    TABLE_DOCUMENT_TEMPLATES,
-    TABLE_CMR_COUNTER,
-    TABLE_SUCCESSIVE_CARRIERS,
-    INDEX_SUCCESSIVE_CARRIERS_TRIP,
-    TABLE_CMR_AUDIT_LOG,
-    INDEX_CMR_AUDIT_TRIP,
-    INDEX_CMR_AUDIT_NUMBER,
-    INDEX_TRIPS_CMR_STATUS,
-    INDEX_DOCUMENTS_COPY_TYPE,
-    INDEX_DOCUMENTS_CMR_NUMBER,
-)
+
+_emitted_warnings: set = set()
+
+def _deprecated(msg: str) -> None:
+    """Emit a DeprecationWarning once per unique message."""
+    if msg not in _emitted_warnings:
+        _emitted_warnings.add(msg)
+        warnings.warn(msg, DeprecationWarning, stacklevel=3)
+
+from database.connection_pool import ConnectionPool
+from database import schema as _schema
 
 
 class DatabaseManager:
     def __init__(self, db_path):
-        # Conectare la baza de date
-        self.conn = sqlite3.connect(db_path, check_same_thread=False)
-        # Row_factory permite accesarea coloanelor prin nume: trip['truck_number']
-        self.conn.row_factory = sqlite3.Row
+        # Thread-safe connection pool — each thread gets its own connection
+        self._pool = ConnectionPool(db_path, timeout=30)
+        # Touch the main-thread connection once so _init_db has something to work with
         self._init_db()
 
+    @property
+    def conn(self) -> sqlite3.Connection:
+        """Return the current thread's SQLite connection."""
+        return self._pool.conn
+
     def close(self):
-        """Close the database connection. Safe to call multiple times."""
-        if hasattr(self, "conn") and self.conn:
-            try:
-                self.conn.close()
-            except Exception:
-                pass
+        """Close all database connections. Safe to call multiple times."""
+        self._pool.close_all()
 
     @staticmethod
     def row_to_dict(row):
@@ -137,107 +54,109 @@ class DatabaseManager:
 
     def _create_tables_and_indices(self):
         """Execute all CREATE TABLE and CREATE INDEX statements."""
-        # Core tables
-        self.conn.execute(TABLE_TRIPS)
-        self.conn.execute(TABLE_INVOICES)
-        self.conn.execute(TABLE_TRUCKS)
-        self.conn.execute(TABLE_ROUTE_HISTORY_V2)
-        self.conn.execute(INDEX_ROUTE_HISTORY_V2_CREATED)
-        self.conn.execute(INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED)
-        self.conn.execute(INDEX_ROUTE_HISTORY_V2_TRUCK)
-        self.conn.execute(INDEX_ROUTE_HISTORY_V2_PROFILE)
-        self.conn.execute(INDEX_ROUTE_HISTORY_V2_FINGERPRINT)
-        self.conn.execute(TABLE_ROUTE_EVENTS)
-        self.conn.execute(TABLE_TRUCK_ROUTE_ASSIGNMENTS)
-        self.conn.execute(INDEX_ROUTE_EVENTS_ROUTE)
-        self.conn.execute(INDEX_ROUTE_EVENTS_TYPE)
-        self.conn.execute(INDEX_TRUCK_ROUTE_ASSIGNMENTS_TRUCK)
-        self.conn.execute(INDEX_TRUCK_ROUTE_ASSIGNMENTS_ROUTE)
-        self.conn.execute(INDEX_TRUCK_ROUTE_ASSIGNMENTS_STATUS)
-        self.conn.execute(INDEX_TRIPS_DATE)
-        self.conn.execute(INDEX_TRIPS_TRUCK)
-        self.conn.execute(TABLE_SETTINGS)
-        self.conn.execute(TABLE_EMAIL_LOGS)
-
-        # Operations Engine
-        self.conn.execute(TABLE_ALERTS)
-        self.conn.execute(TABLE_OPERATION_EVENTS)
-        self.conn.execute(TABLE_TRIP_STATUS_HISTORY)
-        self.conn.execute(INDEX_ALERTS_TYPE)
-        self.conn.execute(INDEX_ALERTS_TRUCK)
-        self.conn.execute(INDEX_ALERTS_RESOLVED)
-        self.conn.execute(INDEX_OPERATION_EVENTS_TYPE)
-        self.conn.execute(INDEX_TRIP_STATUS_HISTORY_TRIP)
-
-        # Fleet Maintenance
-        self.conn.execute(TABLE_MAINTENANCE_RECORDS)
-        self.conn.execute(TABLE_MAINTENANCE_SCHEDULES)
-        self.conn.execute(TABLE_TRUCK_HEALTH_SCORES)
-        self.conn.execute(INDEX_MAINTENANCE_RECORDS_TRUCK)
-        self.conn.execute(INDEX_MAINTENANCE_RECORDS_TYPE)
-        self.conn.execute(INDEX_MAINTENANCE_RECORDS_DATE)
-        self.conn.execute(INDEX_MAINTENANCE_SCHEDULES_TRUCK)
-        self.conn.execute(INDEX_MAINTENANCE_SCHEDULES_ACTIVE)
-
-        # Drivers
-        self.conn.execute(TABLE_DRIVERS)
-        self.conn.execute(INDEX_DRIVERS_ACTIVE)
-        self.conn.execute(TABLE_DRIVER_TRUCK_ASSIGNMENTS)
-        self.conn.execute(INDEX_DTA_DRIVER)
-        self.conn.execute(INDEX_DTA_TRUCK)
-
-        # Tachograph
-        self.conn.execute(TABLE_TACHO_IMPORTS)
-        self.conn.execute(TABLE_TACHO_DRIVER_ACTIVITY)
-        self.conn.execute(TABLE_TACHO_VEHICLE_DATA)
-        self.conn.execute(INDEX_TACHO_DRIVER_DATE)
-        self.conn.execute(INDEX_TACHO_VEHICLE_TRUCK)
-        self.conn.execute(INDEX_TACHO_IMPORTS_HASH)
-
-        # Clients
-        self.conn.execute(TABLE_CLIENTS)
-        self.conn.execute(INDEX_CLIENTS_NAME)
-        self.conn.execute(INDEX_CLIENTS_ACTIVE)
-        self.conn.execute(TABLE_CLIENT_CONTACTS)
-        self.conn.execute(INDEX_CONTACTS_CLIENT)
-        self.conn.execute(TABLE_CLIENT_TAGS)
-        self.conn.execute(INDEX_TAGS_CLIENT)
-
-        # Document Center
-        self.conn.execute(TABLE_DOCUMENTS)
-        self.conn.execute(TABLE_DOCUMENT_LINKS)
-        self.conn.execute(INDEX_DOCUMENTS_CATEGORY)
-        self.conn.execute(INDEX_DOCUMENTS_ENTITY)
-        self.conn.execute(INDEX_DOCUMENTS_HASH)
-        self.conn.execute(INDEX_DOCUMENTS_NUMBER)
-        self.conn.execute(INDEX_DOC_LINKS_DOCUMENT)
-        self.conn.execute(INDEX_DOC_LINKS_ENTITY)
-
+        S = _schema
+        exec_stmts = [
+            # Core tables
+            S.TABLE_TRIPS, S.TABLE_INVOICES, S.TABLE_TRUCKS,
+            S.TABLE_ROUTE_HISTORY_V2,
+            S.INDEX_ROUTE_HISTORY_V2_CREATED, S.INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED,
+            S.INDEX_ROUTE_HISTORY_V2_TRUCK, S.INDEX_ROUTE_HISTORY_V2_PROFILE,
+            S.INDEX_ROUTE_HISTORY_V2_FINGERPRINT,
+            S.TABLE_ROUTE_EVENTS, S.TABLE_TRUCK_ROUTE_ASSIGNMENTS,
+            S.INDEX_ROUTE_EVENTS_ROUTE, S.INDEX_ROUTE_EVENTS_TYPE,
+            S.INDEX_TRUCK_ROUTE_ASSIGNMENTS_TRUCK, S.INDEX_TRUCK_ROUTE_ASSIGNMENTS_ROUTE,
+            S.INDEX_TRUCK_ROUTE_ASSIGNMENTS_STATUS,
+            S.INDEX_TRIPS_DATE, S.INDEX_TRIPS_TRUCK, S.INDEX_TRIPS_CLIENT_NAME,
+            S.INDEX_TRIPS_DRIVER_NAME, S.INDEX_TRIPS_STATUS, S.INDEX_TRIPS_CLIENT_STATUS,
+            S.INDEX_TRIPS_START_DATE, S.INDEX_TRIPS_DELIVERY_COUNTRY,
+            S.INDEX_TRIPS_LOADING_COUNTRY, S.INDEX_TRIPS_DRIVER_ID,
+            S.TABLE_SETTINGS, S.TABLE_EMAIL_LOGS,
+            # Operations Engine
+            S.TABLE_ALERTS, S.TABLE_OPERATION_EVENTS, S.TABLE_TRIP_STATUS_HISTORY,
+            S.INDEX_ALERTS_TYPE, S.INDEX_ALERTS_TRUCK, S.INDEX_ALERTS_RESOLVED,
+            S.INDEX_OPERATION_EVENTS_TYPE, S.INDEX_TRIP_STATUS_HISTORY_TRIP,
+            # Fleet Maintenance
+            S.TABLE_MAINTENANCE_RECORDS, S.TABLE_MAINTENANCE_SCHEDULES,
+            S.TABLE_TRUCK_HEALTH_SCORES,
+            S.INDEX_MAINTENANCE_RECORDS_TRUCK, S.INDEX_MAINTENANCE_RECORDS_TYPE,
+            S.INDEX_MAINTENANCE_RECORDS_DATE, S.INDEX_MAINTENANCE_SCHEDULES_TRUCK,
+            S.INDEX_MAINTENANCE_SCHEDULES_ACTIVE,
+            # Drivers
+            S.TABLE_DRIVERS, S.INDEX_DRIVERS_ACTIVE, S.TABLE_DRIVER_TRUCK_ASSIGNMENTS,
+            S.INDEX_DTA_DRIVER, S.INDEX_DTA_TRUCK,
+            # Tachograph
+            S.TABLE_TACHO_IMPORTS, S.TABLE_TACHO_DRIVER_ACTIVITY,
+            S.TABLE_TACHO_VEHICLE_DATA,
+            S.INDEX_TACHO_DRIVER_DATE, S.INDEX_TACHO_VEHICLE_TRUCK, S.INDEX_TACHO_IMPORTS_HASH,
+            # Clients
+            S.TABLE_CLIENTS, S.INDEX_CLIENTS_NAME, S.INDEX_CLIENTS_ACTIVE,
+            S.TABLE_CLIENT_CONTACTS, S.INDEX_CONTACTS_CLIENT,
+            S.TABLE_CLIENT_TAGS, S.INDEX_TAGS_CLIENT,
+            # Document Center
+            S.TABLE_DOCUMENTS, S.TABLE_DOCUMENT_LINKS,
+            S.INDEX_DOCUMENTS_CATEGORY, S.INDEX_DOCUMENTS_ENTITY,
+            S.INDEX_DOCUMENTS_HASH, S.INDEX_DOCUMENTS_NUMBER,
+            S.INDEX_DOCUMENTS_EXPIRY_DATE,
+            S.INDEX_DOC_LINKS_DOCUMENT, S.INDEX_DOC_LINKS_ENTITY,
+            S.TABLE_DOCUMENT_VERSIONS, S.INDEX_VERSIONS_DOCUMENT,
+            S.TABLE_CONTRACTS, S.INDEX_CONTRACTS_CLIENT, S.INDEX_CONTRACTS_STATUS,
+            S.INDEX_CONTRACTS_END_DATE,
+            S.TABLE_DOCUMENT_TEMPLATES,
+            # CMR
+            S.TABLE_CMR_COUNTER, S.TABLE_SUCCESSIVE_CARRIERS,
+            S.INDEX_SUCCESSIVE_CARRIERS_TRIP, S.TABLE_CMR_AUDIT_LOG,
+            S.INDEX_CMR_AUDIT_TRIP, S.INDEX_CMR_AUDIT_NUMBER,
+            # Document Automation Pipeline
+            S.TABLE_DOCUMENT_PIPELINE_RUNS,
+            S.INDEX_PIPELINE_RUNS_UUID, S.INDEX_PIPELINE_RUNS_STATUS,
+            S.INDEX_PIPELINE_RUNS_TRIP, S.INDEX_PIPELINE_RUNS_HASH,
+            S.TABLE_DOCUMENT_PACKAGE, S.INDEX_PACKAGE_TRIP,
+            S.INDEX_PACKAGE_UUID, S.INDEX_PACKAGE_STATUS,
+            S.TABLE_DOCUMENT_PACKAGE_ITEMS, S.INDEX_PACKAGE_ITEMS_PACKAGE,
+            S.INDEX_PACKAGE_ITEMS_DOCUMENT,
+            S.TRIGGER_PIPELINE_RUNS_STAGE_CHECK, S.TRIGGER_PIPELINE_RUNS_STAGE_UPDATE,
+            S.TRIGGER_PIPELINE_RUNS_STATUS_CHECK, S.TRIGGER_PIPELINE_RUNS_STATUS_UPDATE,
+        ]
+        for stmt in exec_stmts:
+            try:
+                self.conn.execute(stmt)
+            except Exception as e:
+                logger.warning("Schema statement failed (may be harmless): %s", e)
+        try:
+            self.conn.execute(S.INDEX_TRIPS_MONTH)
+        except Exception:
+            pass
+        try:
+            self.conn.execute(S.INDEX_TRIPS_START_DATE)
+        except Exception:
+            pass
+        try:
+            self.conn.execute(S.INDEX_TRIPS_DELIVERY_COUNTRY)
+        except Exception:
+            pass
+        try:
+            self.conn.execute(S.INDEX_TRIPS_LOADING_COUNTRY)
+        except Exception:
+            pass
+        try:
+            self.conn.execute(S.INDEX_TRIPS_DRIVER_ID)
+        except Exception:
+            pass
+        try:
+            self.conn.execute(S.INDEX_DOCUMENTS_EXPIRY_DATE)
+        except Exception:
+            pass
+        try:
+            self.conn.execute(S.INDEX_CONTRACTS_END_DATE)
+        except Exception:
+            pass
         # Document Center P2 (FTS5 is best-effort)
-        try:
-            self.conn.execute(TABLE_DOCUMENTS_FTS)
-        except Exception:
-            pass
-        try:
-            self.conn.execute(TRIGGER_DOCUMENTS_FTS_INSERT)
-            self.conn.execute(TRIGGER_DOCUMENTS_FTS_DELETE)
-            self.conn.execute(TRIGGER_DOCUMENTS_FTS_UPDATE)
-        except Exception:
-            pass
-        self.conn.execute(TABLE_DOCUMENT_VERSIONS)
-        self.conn.execute(INDEX_VERSIONS_DOCUMENT)
-        self.conn.execute(TABLE_CONTRACTS)
-        self.conn.execute(INDEX_CONTRACTS_CLIENT)
-        self.conn.execute(INDEX_CONTRACTS_STATUS)
-        self.conn.execute(TABLE_DOCUMENT_TEMPLATES)
-
-        # CMR
-        self.conn.execute(TABLE_CMR_COUNTER)
-        self.conn.execute(TABLE_SUCCESSIVE_CARRIERS)
-        self.conn.execute(INDEX_SUCCESSIVE_CARRIERS_TRIP)
-        self.conn.execute(TABLE_CMR_AUDIT_LOG)
-        self.conn.execute(INDEX_CMR_AUDIT_TRIP)
-        self.conn.execute(INDEX_CMR_AUDIT_NUMBER)
+        for stmt in (S.TABLE_DOCUMENTS_FTS, S.TRIGGER_DOCUMENTS_FTS_INSERT,
+                     S.TRIGGER_DOCUMENTS_FTS_DELETE, S.TRIGGER_DOCUMENTS_FTS_UPDATE):
+            try:
+                self.conn.execute(stmt)
+            except Exception as e:
+                logger.warning("Migration step failed: %s", e)
 
     def _ensure_column(self, table: str, column: str, alter_sql: str) -> None:
         """Add a column if it doesn't already exist in the table."""
@@ -245,8 +164,8 @@ class DatabaseManager:
             cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
             if column not in cols:
                 self.conn.execute(alter_sql)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
 
     def _ensure_columns(self, table: str, migrations: list) -> None:
         """Add multiple columns to a table if they don't exist."""
@@ -256,28 +175,34 @@ class DatabaseManager:
                 if column not in cols:
                     try:
                         self.conn.execute(alter_sql)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
+                    except Exception as e:
+                        logger.warning("Migration step failed for %s.%s: %s", table, column, e)
+        except Exception as e:
+            logger.warning("Migration step failed for table %s: %s", table, e)
 
     def _run_column_migrations(self):
         """Apply all schema migrations — add columns, indices that may be missing."""
+        S = _schema
         self._ensure_columns("documents", [
-            ("text_content", ALTER_DOCUMENTS_ADD_TEXT_CONTENT),
-            ("expiry_date", ALTER_DOCUMENTS_ADD_EXPIRY_DATE),
-            ("signed_by", ALTER_DOCUMENTS_ADD_SIGNED_BY),
-            ("signed_at", ALTER_DOCUMENTS_ADD_SIGNED_AT),
+            ("text_content", S.ALTER_DOCUMENTS_ADD_TEXT_CONTENT),
+            ("expiry_date", S.ALTER_DOCUMENTS_ADD_EXPIRY_DATE),
+            ("signed_by", S.ALTER_DOCUMENTS_ADD_SIGNED_BY),
+            ("signed_at", S.ALTER_DOCUMENTS_ADD_SIGNED_AT),
             ("copy_type", "ALTER TABLE documents ADD COLUMN copy_type TEXT DEFAULT ''"),
             ("cmr_number", "ALTER TABLE documents ADD COLUMN cmr_number TEXT DEFAULT ''"),
             ("cmr_metadata_json", "ALTER TABLE documents ADD COLUMN cmr_metadata_json TEXT DEFAULT '{}'"),
             ("is_signed", "ALTER TABLE documents ADD COLUMN is_signed INTEGER DEFAULT 0"),
+            ("extracted_data_json", S.ALTER_DOCUMENTS_ADD_EXTRACTED_DATA),
+            ("automation_tags", S.ALTER_DOCUMENTS_ADD_AUTOMATION_TAGS),
+            ("ocr_text", S.ALTER_DOCUMENTS_ADD_OCR_TEXT),
+            ("ocr_run_at", S.ALTER_DOCUMENTS_ADD_OCR_RUN_AT),
+            ("ocr_engine", S.ALTER_DOCUMENTS_ADD_OCR_ENGINE),
         ])
         try:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_copy_type ON documents(copy_type)")
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_documents_cmr_number ON documents(cmr_number)")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
 
         self._ensure_columns("trips", [
             ("context_json", "ALTER TABLE trips ADD COLUMN context_json TEXT"),
@@ -285,7 +210,7 @@ class DatabaseManager:
             ("truck_consumption_l_per_100km", "ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL"),
             ("client_id", "ALTER TABLE trips ADD COLUMN client_id INTEGER REFERENCES clients(id)"),
             ("driver_id", "ALTER TABLE trips ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"),
-            ("truck_id", ALTER_TRIPS_ADD_TRUCK_ID),
+            ("truck_id", S.ALTER_TRIPS_ADD_TRUCK_ID),
             ("price_pre_vat", "ALTER TABLE trips ADD COLUMN price_pre_vat REAL DEFAULT 0"),
             ("vat_percent", "ALTER TABLE trips ADD COLUMN vat_percent REAL DEFAULT 0"),
             ("cmr_number", "ALTER TABLE trips ADD COLUMN cmr_number TEXT"),
@@ -311,16 +236,22 @@ class DatabaseManager:
             ("cmr_remarks", "ALTER TABLE trips ADD COLUMN cmr_remarks TEXT"),
         ])
         try:
-            self.conn.execute(INDEX_TRIPS_TRUCK_ID)
-        except Exception:
-            pass
+            self.conn.execute(S.INDEX_TRIPS_TRUCK_ID)
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
         try:
             self.conn.execute("CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status)")
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
+        try:
+            self._ensure_column("trips", "month", S.ALTER_TRIPS_ADD_MONTH)
+        except Exception as e:
+            logger.warning(
+                "Could not add month generated column (SQLite < 3.31 or unsupported): %s", e
+            )
 
         self._ensure_column("trucks", "tachograph_expiry", "ALTER TABLE trucks ADD COLUMN tachograph_expiry TEXT")
-        self._ensure_column("trucks", "tracking_device_id", ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID)
+        self._ensure_column("trucks", "tracking_device_id", S.ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID)
         self._ensure_columns("trucks", [
             ("trailer_plate", "ALTER TABLE trucks ADD COLUMN trailer_plate TEXT DEFAULT ''"),
             ("max_payload_kg", "ALTER TABLE trucks ADD COLUMN max_payload_kg REAL DEFAULT 0"),
@@ -337,21 +268,106 @@ class DatabaseManager:
         ])
 
         self._ensure_columns("clients", [
-            ("client_type", ALTER_CLIENTS_ADD_TYPE),
-            ("payment_terms_days", ALTER_CLIENTS_ADD_PAYMENT_TERMS),
-            ("credit_limit_eur", ALTER_CLIENTS_ADD_CREDIT_LIMIT),
-            ("default_rate_per_km", ALTER_CLIENTS_ADD_DEFAULT_RATE),
-            ("rating", ALTER_CLIENTS_ADD_RATING),
+            ("client_type", S.ALTER_CLIENTS_ADD_TYPE),
+            ("payment_terms_days", S.ALTER_CLIENTS_ADD_PAYMENT_TERMS),
+            ("credit_limit_eur", S.ALTER_CLIENTS_ADD_CREDIT_LIMIT),
+            ("default_rate_per_km", S.ALTER_CLIENTS_ADD_DEFAULT_RATE),
+            ("rating", S.ALTER_CLIENTS_ADD_RATING),
             ("eori_number", "ALTER TABLE clients ADD COLUMN eori_number TEXT DEFAULT ''"),
             ("country", "ALTER TABLE clients ADD COLUMN country TEXT DEFAULT ''"),
             ("consignee_contact_name", "ALTER TABLE clients ADD COLUMN consignee_contact_name TEXT DEFAULT ''"),
             ("consignee_contact_phone", "ALTER TABLE clients ADD COLUMN consignee_contact_phone TEXT DEFAULT ''"),
         ])
 
+        # ── Migration: make document_package.trip_id nullable ────────────
+        try:
+            cols = [r[1] for r in self.conn.execute(
+                "PRAGMA table_info(document_package)"
+            ).fetchall()]
+            if "trip_id" in cols:
+                # Check if trip_id is still NOT NULL
+                info = self.conn.execute(
+                    "PRAGMA table_info(document_package)"
+                ).fetchall()
+                for col in info:
+                    if col[1] == "trip_id" and col[3] == 1:  # 1 = NOT NULL
+                        fk_was_on = self.conn.execute(
+                            "PRAGMA foreign_keys"
+                        ).fetchone()[0]
+                        if fk_was_on:
+                            self.conn.execute("PRAGMA foreign_keys=OFF")
+                        self.conn.execute("BEGIN IMMEDIATE")
+                        self.conn.execute("""
+                            CREATE TABLE document_package_new (
+                                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                trip_id INTEGER,
+                                package_uuid TEXT UNIQUE NOT NULL,
+                                status TEXT NOT NULL DEFAULT 'draft',
+                                recipient_email TEXT DEFAULT '',
+                                subject TEXT DEFAULT '',
+                                body TEXT DEFAULT '',
+                                email_message_id TEXT DEFAULT '',
+                                sent_at TEXT,
+                                error_message TEXT DEFAULT '',
+                                created_at TEXT NOT NULL,
+                                updated_at TEXT NOT NULL
+                            )
+                        """)
+                        self.conn.execute("""
+                            INSERT INTO document_package_new
+                            SELECT * FROM document_package
+                        """)
+                        self.conn.execute("DROP TABLE document_package")
+                        self.conn.execute(
+                            "ALTER TABLE document_package_new "
+                            "RENAME TO document_package"
+                        )
+                        self.conn.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_package_trip "
+                            "ON document_package(trip_id)"
+                        )
+                        self.conn.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_package_uuid "
+                            "ON document_package(package_uuid)"
+                        )
+                        self.conn.execute(
+                            "CREATE INDEX IF NOT EXISTS idx_package_status "
+                            "ON document_package(status)"
+                        )
+                        self.conn.commit()
+                        if fk_was_on:
+                            self.conn.execute("PRAGMA foreign_keys=ON")
+                        logger.info(
+                            "Migrated document_package.trip_id to nullable"
+                        )
+                        break
+        except Exception as e:
+            logger.warning(
+                "Migration of document_package.trip_id failed: %s", e
+            )
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
+
+        # ── Migration: update status triggers to include "processed" ──
+        try:
+            self.conn.execute(
+                "DROP TRIGGER IF EXISTS trg_pipeline_runs_status_check"
+            )
+            self.conn.execute(
+                "DROP TRIGGER IF EXISTS trg_pipeline_runs_status_check_upd"
+            )
+            self.conn.execute(S.TRIGGER_PIPELINE_RUNS_STATUS_CHECK)
+            self.conn.execute(S.TRIGGER_PIPELINE_RUNS_STATUS_UPDATE)
+            logger.info("Recreated status triggers with 'processed' value")
+        except Exception as e:
+            logger.warning("Migration of status triggers failed: %s", e)
+
         try:
             self.conn.commit()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
 
     def _migrate_legacy_data(self):
         """One-off data migrations (legacy maintenance table, etc.)."""
@@ -374,503 +390,10 @@ class DatabaseManager:
                     self.conn.execute("DROP TABLE maintenance")
                     self.conn.commit()
                     logger.info("Migrated %d legacy maintenance records and dropped old table", migrated)
-        except Exception:
-            pass
-
-    # --- OPERAȚIUNI CURSE (TRIPS) ---
-
-    def _valid_columns(self, table: str) -> set:
-        """Return the set of valid column names for a table (cached)."""
-        cache_key = f"_cols_{table}"
-        if not hasattr(self, cache_key):
-            rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
-            setattr(self, cache_key, {r[1] for r in rows})
-        return getattr(self, cache_key)
-
-    def _validate_column_keys(self, data: dict, table: str) -> None:
-        """Raise ValueError if any dict key is not a valid column in the table."""
-        valid = self._valid_columns(table)
-        invalid = set(data.keys()) - valid
-        if invalid:
-            raise ValueError(
-                f"Invalid column(s) for {table}: {', '.join(sorted(invalid))}"
-            )
-
-    # @deprecated — use TripService.add() → TripRepository.create() instead
-    def add_trip(self, data: dict):
-        """Salvează o cursă nouă și returnează ID-ul generat."""
-        self._validate_column_keys(data, "trips")
-        keys = ", ".join(data.keys())
-        placeholders = ", ".join(["?"] * len(data))
-        query = f"INSERT INTO trips ({keys}) VALUES ({placeholders})"
-        cur = self.conn.cursor()
-        try:
-            cur.execute("BEGIN")
-            cur.execute(query, tuple(data.values()))
-            trip_id = cur.lastrowid
-            cur.execute("COMMIT")
-            return trip_id
-        except Exception:
-            try:
-                cur.execute("ROLLBACK")
-            except Exception:
-                pass
-            raise
-
-    # @deprecated — use TripService.update() → TripRepository.update() instead
-    def update_trip(self, trip_id, data: dict):
-        """Actualizează datele unei curse existente."""
-        self._validate_column_keys(data, "trips")
-        placeholders = ", ".join([f"{key} = ?" for key in data.keys()])
-        query = f"UPDATE trips SET {placeholders} WHERE id = ?"
-        cur = self.conn.cursor()
-        try:
-            cur.execute("BEGIN")
-            cur.execute(query, list(data.values()) + [trip_id])
-            cur.execute("COMMIT")
-        except Exception:
-            try:
-                cur.execute("ROLLBACK")
-            except Exception:
-                pass
-            raise
-
-    # @deprecated — unused; use TripService + TripStatusEngine
-    def update_status(self, trip_id, status):
-        """Actualizează doar statusul unei curse."""
-        self.conn.execute("UPDATE trips SET status = ? WHERE id = ?", (status, trip_id))
-        self.conn.commit()
-
-    # @deprecated — use TripService.delete() → TripRepository.delete() instead
-    def delete_trip(self, trip_id):
-        """Șterge o cursă permanent."""
-        self.conn.execute("DELETE FROM trips WHERE id = ?", (trip_id,))
-        self.conn.commit()
-
-    def get_all_trips(self, limit: int = 500):
-        """Returnează curse, limitat implicit la 500."""
-        return self.rows_to_dicts(self.conn.execute(
-            f"SELECT * FROM trips ORDER BY id DESC LIMIT ?", (limit,)
-        ).fetchall())
-
-    def get_trip_by_id(self, trip_id):
-        """Caută o singură cursă după ID."""
-        return self.row_to_dict(self.conn.execute("SELECT * FROM trips WHERE id = ?", (trip_id,)).fetchone())
-
-    # --- FILTRE ȘI CĂUTARE ---
-
-    def get_filtered_trips(self, search="", truck="", status="", limit: int = 200):
-        """Filtrare dinamică pentru istoricul curselor — cu paginare."""
-        query = "SELECT * FROM trips WHERE 1=1"
-        params = []
-        
-        if search:
-            query += " AND (client_name LIKE ? OR driver_name LIKE ?)"
-            params.extend([f"%{search}%", f"%{search}%"])
-        if truck:
-            query += " AND truck_number = ?"
-            params.append(truck)
-        if status:
-            query += " AND status = ?"
-            params.append(status)
-        
-        query += " ORDER BY id DESC LIMIT ?"
-        params.append(limit)
-        return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
-
-    def get_unique_lists(self):
-        """Listele de camioane și șoferi pentru dropdown-uri."""
-        trucks = [r[0] for r in self.conn.execute(
-            "SELECT DISTINCT COALESCE(t.plate_number, trips.truck_number) "
-            "FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id "
-            "WHERE trips.truck_number IS NOT NULL OR trips.truck_id IS NOT NULL"
-        ).fetchall()]
-        drivers = [r[0] for r in self.conn.execute("SELECT DISTINCT driver_name FROM trips WHERE driver_name IS NOT NULL").fetchall()]
-        return trucks, drivers
-
-    # --- INVOICE LINKING ---
-
-    def create_invoice_record(self, trip_id, inv_number, amount, due_date):
-        """Leagă o factură de o cursă."""
-        try:
-            self.conn.execute("""
-                INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, total_amount, status)
-                VALUES (?, ?, ?, ?, ?, 'Unpaid')
-            """, (trip_id, inv_number, datetime.now().strftime("%Y-%m-%d"), due_date, amount))
-            self.conn.commit()
-        except sqlite3.IntegrityError:
-            pass
-
-    def mark_invoice_as_paid(self, trip_id):
-        """Confirmă plata."""
-        self.conn.execute("UPDATE invoices SET status = 'Paid' WHERE trip_id = ?", (trip_id,))
-        self.conn.commit()
-
-    # --- DASHBOARD & ANALYTICS ---
-
-    def get_stats_by_period(self, start=None, end=None):
-        """Statistici calculate pe o perioadă (format date: YYYY-MM-DD)."""
-        query = f"""
-            SELECT 
-                COUNT(*) as total,
-                SUM(CASE WHEN net_profit > 0 THEN 1 ELSE 0 END) as profitable,
-                SUM(CASE WHEN net_profit <= 0 THEN 1 ELSE 0 END) as losing,
-                SUM(net_profit) as total_p,
-                SUM(distance_km) as total_km,
-                SUM(total_price_eur) as total_rev
-            FROM trips
-            WHERE 1=1
-        """
-        params = []
-        if start and end:
-            query += " AND created_at BETWEEN ? AND ?"
-            params.extend([start, end])
-        
-        return self.row_to_dict(self.conn.execute(query, params).fetchone())
-
-    def get_extended_stats(self):
-        """Statistici globale + cea mai bună lună."""
-        stats = self.get_stats_by_period()
-        best_month = self.row_to_dict(self.conn.execute("""
-            SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as m_profit 
-            FROM trips 
-            GROUP BY month 
-            ORDER BY m_profit DESC LIMIT 1
-        """).fetchone())
-        return stats, best_month
-
-    def get_advanced_analytics(self):
-        """Top performeri: Camion, Șofer, Lună."""
-        bt = self.row_to_dict(self.conn.execute(
-            "SELECT COALESCE(t.plate_number, trips.truck_number) as truck_number, SUM(trips.net_profit) as p "
-            "FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id "
-            "GROUP BY COALESCE(trips.truck_id, trips.truck_number) "
-            "ORDER BY p DESC LIMIT 1"
-        ).fetchone())
-        bd = self.row_to_dict(self.conn.execute("SELECT driver_name, SUM(net_profit) as p FROM trips GROUP BY driver_name ORDER BY p DESC LIMIT 1").fetchone())
-        bm = self.row_to_dict(self.conn.execute("SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as m_profit FROM trips GROUP BY month ORDER BY m_profit DESC LIMIT 1").fetchone())
-        return bt, bd, bm
-
-    def get_dashboard_charts(self):
-        """Date pentru graficul evolutiv (ultimele 6 luni)."""
-        top_clients = self.rows_to_dicts(self.conn.execute(
-            "SELECT client_name, SUM(net_profit) as p FROM trips GROUP BY client_name ORDER BY p DESC LIMIT 5"
-        ).fetchall())
-        monthly = self.conn.execute(
-            "SELECT SUBSTR(created_at, 1, 7) as month, SUM(net_profit) as p FROM trips GROUP BY month ORDER BY id DESC LIMIT 6"
-        ).fetchall()
-        return top_clients, self.rows_to_dicts(monthly[::-1])
-
-    def get_available_years(self):
-        """Anii disponibili pentru filtre."""
-        return [r[0] for r in self.conn.execute("SELECT DISTINCT SUBSTR(created_at, 1, 4) as year FROM trips ORDER BY year DESC").fetchall() if r[0]]
-
-    def get_kpi_stats(self):
-        """Calculează cifrele cheie pentru luna curentă."""
-        current_month = datetime.now().strftime("%Y-%m")
-        
-        # 1. Venit și Profit Luna Curentă
-        m_stats = self.conn.execute("""
-            SELECT SUM(total_price_eur), SUM(net_profit), SUM(distance_km) 
-            FROM trips WHERE created_at LIKE ?
-        """, (f"%{current_month}%",)).fetchone()
-
-        # 2. Facturi neplătite
-        unpaid = self.conn.execute("SELECT COUNT(*) FROM invoices WHERE status = 'Unpaid'").fetchone()[0]
-
-        # 3. Curse Active (orice nu e 'Paid')
-        active = self.conn.execute("SELECT COUNT(*) FROM trips WHERE status NOT IN ('Paid', 'Cancelled')").fetchone()[0]
-
-        return {
-            "rev": m_stats[0] or 0,
-            "profit": m_stats[1] or 0,
-            "km": m_stats[2] or 0,
-            "unpaid": unpaid,
-            "active": active
-        }
-
-    def get_overdue_data(self):
-        today = datetime.now()
-        alerts = []
-        total_overdue_amount = 0
-
-        query = """
-            SELECT t.id, t.client_name, i.invoice_number, i.due_date, i.total_amount
-            FROM trips t
-            JOIN invoices i ON t.id = i.trip_id
-            WHERE i.status = 'Unpaid'
-        """
-        try:
-            rows = self.conn.execute(query).fetchall()
-            for r in rows:
-                due_dt = datetime.strptime(r['due_date'], "%Y-%m-%d")
-                if today > due_dt:
-                    days_late = (today - due_dt).days
-                    total_overdue_amount += r['total_amount']
-                    alerts.append({
-                        "type": "RED",
-                        "msg": f"Factura {r['invoice_number']} ({r['client_name']}) intarziata cu {days_late} zile!"
-                    })
-                elif (due_dt - today).days <= 3:
-                    alerts.append({
-                        "type": "YELLOW",
-                        "msg": f"Factura {r['invoice_number']} expira in {(due_dt - today).days} zile."
-                    })
         except Exception as e:
-            logger.error("SQL Overdue error: %s", e)
+            logger.warning("Migration step failed: %s", e)
 
-        neg_margin = self.conn.execute("SELECT id, truck_number FROM trips WHERE net_profit < 0 AND status != 'Paid'").fetchall()
-        for nm in neg_margin:
-            alerts.append({"type": "RED", "msg": f"ATENTIE: Cursa #{nm['id']} ({nm['truck_number']}) are profit NEGATIV!"})
-
-        return alerts, total_overdue_amount
-
-    def get_analytics_data(self, from_date=None, to_date=None):
-        """Date grupate pentru grafice — optional date range filtering."""
-        date_clause = ""
-        date_params = []
-        if from_date and to_date:
-            date_clause = """
-                WHERE LENGTH(created_at) >= 10
-                  AND created_at >= ?
-                  AND created_at <= ?
-            """
-            date_params = [from_date, to_date]
-
-        per_truck = self.rows_to_dicts(self.conn.execute(
-            f"SELECT COALESCE(t.plate_number, trips.truck_number) as truck_number, SUM(trips.net_profit) as p "
-            f"FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id {date_clause} "
-            f"GROUP BY COALESCE(trips.truck_id, trips.truck_number) "
-            f"ORDER BY SUM(trips.net_profit) DESC LIMIT 10",
-            date_params).fetchall())
-        per_driver = self.rows_to_dicts(self.conn.execute(
-            f"SELECT driver_name, SUM(net_profit) as p FROM trips {date_clause} GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10",
-            date_params).fetchall())
-        rev_exp = self.conn.execute(f"""
-            SELECT SUBSTR(created_at, 1, 7) as month, 
-            SUM(total_price_eur) as rev, 
-            SUM(total_price_eur - net_profit) as exp 
-            FROM trips {date_clause} GROUP BY month ORDER BY month DESC LIMIT 6
-        """, date_params).fetchall()
-        return per_truck, per_driver, self.rows_to_dicts(rev_exp[::-1])
-
-    # ── Comprehensive Analytics Queries ──────────────────────────────
-
-    def get_financial_analytics(self, from_date=None, to_date=None):
-        """Revenue, profit, margin over time by month."""
-        clause, params = self._date_clause(from_date, to_date)
-        monthly = self.rows_to_dicts(self.conn.execute(f"""
-            SELECT SUBSTR(created_at, 1, 7) AS month,
-                   SUM(total_price_eur) AS revenue,
-                   SUM(net_profit) AS profit,
-                   AVG(CASE WHEN total_price_eur > 0 THEN net_profit * 100.0 / total_price_eur END) AS margin_pct
-            FROM trips {clause}
-            GROUP BY month ORDER BY month ASC LIMIT 24
-        """, params).fetchall())
-        return monthly
-
-    def get_revenue_by_client(self, from_date=None, to_date=None):
-        clause, params = self._date_clause(from_date, to_date)
-        return self.rows_to_dicts(self.conn.execute(f"""
-            SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
-                   SUM(total_price_eur) AS revenue,
-                   SUM(net_profit) AS profit,
-                   COUNT(*) AS trip_count
-            FROM trips {clause}
-            GROUP BY COALESCE(NULLIF(client_name, ''), 'Unknown')
-            ORDER BY revenue DESC LIMIT 10
-        """, params).fetchall())
-
-    def get_revenue_by_country(self, from_date=None, to_date=None):
-        clause, params = self._date_clause(from_date, to_date)
-        return self.rows_to_dicts(self.conn.execute(f"""
-            SELECT COALESCE(NULLIF(delivery_country, ''), NULLIF(loading_country, ''), 'Unknown') AS country,
-                   SUM(total_price_eur) AS revenue,
-                   COUNT(*) AS trip_count
-            FROM trips {clause}
-            GROUP BY COALESCE(NULLIF(delivery_country, ''), NULLIF(loading_country, ''), 'Unknown')
-            ORDER BY revenue DESC LIMIT 10
-        """, params).fetchall())
-
-    def get_route_profitability(self, from_date=None, to_date=None):
-        clause, params = self._date_clause(from_date, to_date)
-        return self.rows_to_dicts(self.conn.execute(f"""
-            SELECT COALESCE(NULLIF(place_of_loading, ''), 'Route') || ' → ' ||
-                   COALESCE(NULLIF(delivery_country, ''), COALESCE(NULLIF(loading_country, ''), 'Dest'))
-                   AS route_label,
-                   AVG(distance_km) AS avg_km,
-                   AVG(net_profit) AS avg_profit,
-                   AVG(CASE WHEN distance_km > 0 THEN net_profit / distance_km END) AS profit_per_km,
-                   AVG(CASE WHEN distance_km > 0 THEN fuel_cost / distance_km END) AS fuel_per_km,
-                   COUNT(*) AS trip_count
-            FROM trips {clause}
-            GROUP BY 1 ORDER BY avg_profit DESC LIMIT 15
-        """, params).fetchall())
-
-    def get_client_analytics(self, from_date=None, to_date=None):
-        clause, params = self._date_clause(from_date, to_date)
-        return self.rows_to_dicts(self.conn.execute(f"""
-            SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
-                   COUNT(*) AS trip_count,
-                   SUM(total_price_eur) AS revenue,
-                   SUM(net_profit) AS profit,
-                   ROUND(AVG(JULIANDAY(COALESCE(payment_date, 'now')) - JULIANDAY(created_at)), 1) AS avg_payment_delay_days
-            FROM trips {clause}
-            GROUP BY COALESCE(NULLIF(client_name, ''), 'Unknown')
-            ORDER BY profit DESC LIMIT 12
-        """, params).fetchall())
-
-    def get_fleet_analytics(self, from_date=None, to_date=None):
-        clause, params = self._date_clause(from_date, to_date)
-        truck_stats = self.rows_to_dicts(self.conn.execute(f"""
-            SELECT COALESCE(t.plate_number, trips.truck_number, 'Unknown') AS truck,
-                   COUNT(*) AS trip_count,
-                   SUM(trips.distance_km) AS total_km,
-                   SUM(trips.net_profit) AS profit,
-                   AVG(trips.truck_consumption_l_per_100km) AS avg_consumption,
-                   SUM(trips.fuel_cost) AS total_fuel_cost
-            FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id {clause}
-            GROUP BY COALESCE(t.plate_number, trips.truck_number, 'Unknown')
-            ORDER BY profit DESC LIMIT 15
-        """, params).fetchall())
-        return truck_stats
-
-    def get_driver_analytics(self, from_date=None, to_date=None):
-        clause, params = self._date_clause(from_date, to_date)
-        return self.rows_to_dicts(self.conn.execute(f"""
-            SELECT COALESCE(NULLIF(driver_name, ''), 'Unassigned') AS driver,
-                   COUNT(*) AS trip_count,
-                   SUM(distance_km) AS total_km,
-                   SUM(net_profit) AS profit
-            FROM trips {clause}
-            GROUP BY COALESCE(NULLIF(driver_name, ''), 'Unassigned')
-            ORDER BY profit DESC LIMIT 12
-        """, params).fetchall())
-
-    def get_document_analytics(self):
-        inv_count = self.conn.execute(
-            "SELECT COUNT(*) FROM invoices").fetchone()[0]
-        cmr_count = self.conn.execute(
-            "SELECT COUNT(*) FROM documents WHERE tags LIKE '%cmr%'").fetchone()[0]
-        expiring = self.rows_to_dicts(self.conn.execute(
-            "SELECT title, expiry_date FROM documents WHERE expiry_date IS NOT NULL "
-            "AND expiry_date <= date('now', '+30 days') ORDER BY expiry_date ASC LIMIT 10"
-        ).fetchall())
-        total_docs = self.conn.execute(
-            "SELECT COUNT(*) FROM documents").fetchone()[0]
-        return {
-            "invoice_count": inv_count,
-            "cmr_count": cmr_count,
-            "total_docs": total_docs,
-            "expiring": expiring,
-        }
-
-    def get_maintenance_alerts(self):
-        return self.rows_to_dicts(self.conn.execute("""
-            SELECT t.plate_number AS truck, s.maintenance_type AS description,
-                   s.fixed_expiry_date AS next_due_date, s.interval_km AS next_due_mileage
-            FROM maintenance_schedules s
-            JOIN trucks t ON t.id = s.truck_id
-            WHERE s.active = 1
-            ORDER BY s.fixed_expiry_date ASC LIMIT 10
-        """).fetchall())
-
-    # ── Analytics 2.0: Additional query methods ──────────────────────
-
-    def get_client_growth(self, months: int = 12):
-        return self.rows_to_dicts(self.conn.execute(
-            "SELECT SUBSTR(created_at, 1, 7) AS month, COUNT(*) AS new_clients "
-            "FROM clients WHERE is_active = 1 "
-            "GROUP BY month ORDER BY month ASC LIMIT ?",
-            (months,),
-        ).fetchall())
-
-    def get_truck_utilization(self) -> list:
-        return self.rows_to_dicts(self.conn.execute("""
-            SELECT t.plate_number AS truck,
-                   COUNT(tr.id) AS trip_count,
-                   COALESCE(SUM(tr.distance_km), 0) AS total_km,
-                   MAX(tr.created_at) AS last_trip,
-                   MIN(tr.created_at) AS first_trip
-            FROM trucks t LEFT JOIN trips tr ON t.id = tr.truck_id
-            WHERE t.active_status = 1
-            GROUP BY t.id ORDER BY trip_count DESC LIMIT 15
-        """).fetchall())
-
-    def get_document_upload_trend(self, months: int = 12):
-        return self.rows_to_dicts(self.conn.execute(
-            "SELECT SUBSTR(uploaded_at, 1, 7) AS month, COUNT(*) AS count, "
-            "SUM(CASE WHEN category IN ('invoices','trips','cmr') THEN 1 ELSE 0 END) AS doc_count "
-            "FROM documents WHERE is_archived = 0 "
-            "GROUP BY month ORDER BY month ASC LIMIT ?",
-            (months,),
-        ).fetchall())
-
-    def get_driver_tacho_violations(self):
-        return self.rows_to_dicts(self.conn.execute("""
-            SELECT d.name AS driver, COUNT(da.id) AS activity_days,
-                   COALESCE(SUM(da.violations), 0) AS total_violations,
-                   COALESCE(SUM(da.driving_minutes) / 60.0, 0) AS driving_hours,
-                   COALESCE(SUM(da.rest_minutes) / 60.0, 0) AS rest_hours
-            FROM tacho_driver_activity da
-            JOIN drivers d ON da.driver_id = d.id
-            WHERE da.activity_date >= DATE('now', '-90 days')
-            GROUP BY da.driver_id ORDER BY total_violations DESC LIMIT 15
-        """).fetchall())
-
-    def get_profit_per_km_by_country(self):
-        return self.rows_to_dicts(self.conn.execute("""
-            SELECT delivery_country AS country, COUNT(*) AS trip_count,
-                   COALESCE(SUM(net_profit), 0) AS profit,
-                   COALESCE(SUM(distance_km), 0) AS total_km,
-                   CASE WHEN SUM(distance_km) > 0
-                        THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
-                        ELSE 0 END AS profit_per_km
-            FROM trips WHERE delivery_country IS NOT NULL AND delivery_country != ''
-            GROUP BY delivery_country ORDER BY profit DESC LIMIT 15
-        """).fetchall())
-
-    def get_revenue_concentration(self):
-        return self.rows_to_dicts(self.conn.execute("""
-            SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
-                   COALESCE(SUM(total_price_eur), 0) AS revenue,
-                   COALESCE(SUM(net_profit), 0) AS profit
-            FROM trips GROUP BY client_name ORDER BY revenue DESC
-        """).fetchall())
-
-    def get_driver_profit_per_km(self):
-        return self.rows_to_dicts(self.conn.execute("""
-            SELECT driver_name, COUNT(*) AS trip_count,
-                   COALESCE(SUM(distance_km), 0) AS total_km,
-                   COALESCE(SUM(net_profit), 0) AS total_profit,
-                   CASE WHEN SUM(distance_km) > 0
-                        THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
-                        ELSE 0 END AS profit_per_km
-            FROM trips WHERE driver_name IS NOT NULL AND driver_name != ''
-            GROUP BY driver_name ORDER BY profit_per_km DESC LIMIT 15
-        """).fetchall())
-
-    def get_monthly_financial_summary(self, months: int = 24):
-        return self.rows_to_dicts(self.conn.execute(
-            "SELECT SUBSTR(created_at, 1, 7) AS month, "
-            "COALESCE(SUM(total_price_eur), 0) AS revenue, "
-            "COALESCE(SUM(net_profit), 0) AS profit, "
-            "COUNT(*) AS trip_count, "
-            "CASE WHEN SUM(total_price_eur) > 0 "
-            "     THEN ROUND(SUM(net_profit) * 100.0 / SUM(total_price_eur), 1) "
-            "     ELSE 0 END AS margin_pct, "
-            "SUM(CASE WHEN status IN ('Invoiced', 'Paid') THEN 1 ELSE 0 END) AS invoiced_count, "
-            "SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count "
-            "FROM trips GROUP BY month ORDER BY month ASC LIMIT ?",
-            (months,),
-        ).fetchall())
-
-    @staticmethod
-    def _date_clause(from_date, to_date):
-        if from_date and to_date:
-            return ("WHERE created_at >= ? AND created_at <= ?",
-                    [from_date, to_date])
-        return ("WHERE 1=1", [])
+    # ── SETTINGS (canonical API, not deprecated) ─────────────────────
 
     def get_settings(self, keys: List[str]) -> Dict[str, str]:
         rows = self.conn.execute(
@@ -889,58 +412,134 @@ class DatabaseManager:
         res = self.get_settings([key])
         return res.get(key) if res else None
 
-    # ── Truck CRUD ────────────────────────────────────────────────────
+    # ── DEPRECATED DELEGATION METHODS ─────────────────────────────────
+    # These exist only for backward compatibility.
+    # New code should use the proper Service / Repository classes.
+    # Each method logs a DeprecationWarning on first call.
+
+    _schema_cache: dict = {}
+
+    def _valid_columns(self, table: str) -> set:
+        if table not in self._schema_cache:
+            rows = self.conn.execute(f"PRAGMA table_info({table})").fetchall()
+            DatabaseManager._schema_cache[table] = {r[1] for r in rows}
+        return DatabaseManager._schema_cache[table]
+
+    def _validate_column_keys(self, data: dict, table: str) -> None:
+        valid = self._valid_columns(table)
+        invalid = set(data.keys()) - valid
+        if invalid:
+            raise ValueError(
+                f"Invalid column(s) for {table}: {', '.join(sorted(invalid))}"
+            )
+
+    # ── Trip CRUD (deprecated — use TripRepository) ──────────────────
+
+    def _trip_repo(self):
+        from repositories.trip_repository import TripRepository
+        return TripRepository(self)
+
+    def add_trip(self, data: dict):
+        _deprecated("DatabaseManager.add_trip — use TripRepository.create()")
+        return self._trip_repo().create(data)
+
+    def update_trip(self, trip_id, data: dict):
+        _deprecated("DatabaseManager.update_trip — use TripRepository.update()")
+        self._trip_repo().update(trip_id, data)
+
+    def update_status(self, trip_id, status):
+        _deprecated("DatabaseManager.update_status — use TripRepository.update()")
+        self._trip_repo().update(trip_id, {"status": status})
+
+    def delete_trip(self, trip_id):
+        _deprecated("DatabaseManager.delete_trip — use TripRepository.delete()")
+        self._trip_repo().delete(trip_id)
+
+    def get_all_trips(self, limit: int = 500):
+        _deprecated("DatabaseManager.get_all_trips — use TripRepository.get_all()")
+        return self._trip_repo().get_all(limit=limit)
+
+    def get_trip_by_id(self, trip_id):
+        _deprecated("DatabaseManager.get_trip_by_id — use TripRepository.get_by_id()")
+        return self._trip_repo().get_by_id(trip_id)
+
+    def get_filtered_trips(self, search="", truck="", status="", limit: int = 200):
+        _deprecated("DatabaseManager.get_filtered_trips — use TripRepository methods")
+        return self._trip_repo().get_filtered(search=search, truck=truck, status=status, limit=limit)
+
+    def get_unique_lists(self):
+        _deprecated("DatabaseManager.get_unique_lists — query directly")
+        trucks = [r[0] for r in self.conn.execute(
+            "SELECT DISTINCT COALESCE(t.plate_number, trips.truck_number) "
+            "FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id "
+            "WHERE trips.truck_number IS NOT NULL OR trips.truck_id IS NOT NULL"
+        ).fetchall()]
+        drivers = [r[0] for r in self.conn.execute("SELECT DISTINCT driver_name FROM trips WHERE driver_name IS NOT NULL").fetchall()]
+        return trucks, drivers
+
+    # ── Invoice linking (deprecated — use InvoiceRepository) ─────────
+
+    def _invoice_repo(self):
+        from repositories.invoice_repository import InvoiceRepository
+        return InvoiceRepository(self)
+
+    def create_invoice_record(self, trip_id, inv_number, amount, due_date):
+        _deprecated("DatabaseManager.create_invoice_record — use InvoiceRepository.create()")
+        from datetime import datetime as dt
+        try:
+            self.conn.execute("""
+                INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, total_amount, status)
+                VALUES (?, ?, ?, ?, ?, 'Unpaid')
+            """, (trip_id, inv_number, dt.now().strftime("%Y-%m-%d"), due_date, amount))
+            self.conn.commit()
+        except sqlite3.IntegrityError:
+            pass
+
+    def mark_invoice_as_paid(self, trip_id):
+        _deprecated("DatabaseManager.mark_invoice_as_paid — use InvoiceRepository.mark_paid()")
+        self.conn.execute("UPDATE invoices SET status = 'Paid' WHERE trip_id = ?", (trip_id,))
+        self.conn.commit()
+
+    # ── Truck CRUD (deprecated — use FleetRepository) ────────────────
+
+    def _fleet_repo(self):
+        from repositories.fleet_repository import FleetRepository
+        return FleetRepository(self)
 
     def get_all_trucks(self, active_only=False):
-        query = "SELECT id, plate_number, model, manufacturer, year, vin, mileage, fuel_consumption, monthly_rate, status, insurance_expiry, inspection_expiry, maintenance_due, active_status FROM trucks"
-        params = ()
+        _deprecated("DatabaseManager.get_all_trucks — use FleetRepository.get_all()")
         if active_only:
-            query += " WHERE active_status = 1"
-        return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
+            return self._fleet_repo().get_active_trucks()
+        return self._fleet_repo().get_all()
 
     def get_truck_by_id(self, truck_id):
-        return self.row_to_dict(self.conn.execute(
-            "SELECT id, plate_number, model, manufacturer, year, vin, mileage, fuel_consumption, monthly_rate, status, insurance_expiry, inspection_expiry, maintenance_due, active_status FROM trucks WHERE id = ?",
-            (truck_id,),
-        ).fetchone())
+        _deprecated("DatabaseManager.get_truck_by_id — use FleetRepository.get_by_id()")
+        return self._fleet_repo().get_by_id(truck_id)
 
     def add_truck(self, data: dict):
-        self._validate_column_keys(data, "trucks")
-        keys = ", ".join(data.keys())
-        placeholders = ", ".join(["?"] * len(data))
-        cursor = self.conn.execute(f"INSERT INTO trucks ({keys}) VALUES ({placeholders})", tuple(data.values()))
-        self.conn.commit()
-        return cursor.lastrowid
+        _deprecated("DatabaseManager.add_truck — use FleetRepository.create()")
+        return self._fleet_repo().create(data)
 
     def update_truck(self, truck_id, data: dict):
-        self._validate_column_keys(data, "trucks")
-        placeholders = ", ".join([f"{key} = ?" for key in data.keys()])
-        self.conn.execute(f"UPDATE trucks SET {placeholders} WHERE id = ?", list(data.values()) + [truck_id])
-        self.conn.commit()
+        _deprecated("DatabaseManager.update_truck — use FleetRepository.update()")
+        self._fleet_repo().update(truck_id, data)
 
     def delete_truck(self, truck_id):
-        self.conn.execute("DELETE FROM trucks WHERE id = ?", (truck_id,))
-        self.conn.commit()
+        _deprecated("DatabaseManager.delete_truck — use FleetRepository.delete()")
+        self._fleet_repo().delete(truck_id)
 
-    # @deprecated — use TruckRouteAssignmentRepository.get_by_truck() via FleetService
+    # ── Truck routes (deprecated — use TruckRouteAssignmentRepository) ─
+
     def get_truck_routes(self, truck_id, status=None):
-        query = """
-            SELECT a.*, h.last_calculated_at, h.total_distance_km, h.duration_min,
-                   h.profile, h.stops_json
-            FROM truck_route_assignments a
-            JOIN route_history_v2 h ON h.id = a.route_id
-            WHERE a.truck_id = ?
-        """
-        params = [str(truck_id)]
-        if status:
-            query += " AND a.status = ?"
-            params.append(status)
-        query += " ORDER BY COALESCE(a.started_at, a.assigned_at) DESC"
-        return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
+        _deprecated("DatabaseManager.get_truck_routes — use TruckRouteAssignmentRepository")
+        from repositories.truck_route_assignment_repository import TruckRouteAssignmentRepository
+        repo = TruckRouteAssignmentRepository(self)
+        return repo.get_by_truck(truck_id, status=status)
 
-    # ── Expenses CRUD ─────────────────────────────────────────────────
+    # ── Expenses CRUD (deprecated — no dedicated repo yet) ────────────
 
     def ensure_expenses_table(self):
+        _deprecated("DatabaseManager.ensure_expenses_table — create table directly")
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -954,12 +553,14 @@ class DatabaseManager:
         self.conn.commit()
 
     def get_expenses(self, truck_id):
+        _deprecated("DatabaseManager.get_expenses — query expenses table directly")
         return self.rows_to_dicts(self.conn.execute(
             "SELECT id, date, category, amount, description FROM expenses WHERE truck_id = ? ORDER BY date DESC",
             (truck_id,),
         ).fetchall())
 
     def add_expense(self, truck_id, date, category, description, amount):
+        _deprecated("DatabaseManager.add_expense — insert into expenses table directly")
         cursor = self.conn.execute(
             "INSERT INTO expenses (truck_id, date, category, description, amount) VALUES (?,?,?,?,?)",
             (truck_id, date, category, description, amount),

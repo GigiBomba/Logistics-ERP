@@ -1,1 +1,1 @@
-from .generator import InvoiceGenerator
+from .generator import InvoiceGenerator  # noqa: F401

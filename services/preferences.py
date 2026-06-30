@@ -2,8 +2,7 @@
 from __future__ import annotations
 
 import logging
-import locale
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 logger = logging.getLogger("preferences")
 
@@ -54,17 +53,20 @@ def safe_number(value: Any, decimals: int = 2, default: float = 0.0, label: str 
 
 # ── Constants ──────────────────────────────────────────────────────────
 
-from services.i18n import t, get_language, set_language as i18n_set_language, LANGUAGE_NAMES
-from services.i18n import register_listener as i18n_register_listener
+import contextlib
+
 from services.app_state import AppState
 from services.currency_service import CURRENCY_SYMBOLS
+from services.i18n import LANGUAGE_NAMES, get_language, t
+from services.i18n import register_listener as i18n_register_listener
+from services.i18n import set_language as i18n_set_language
 
 _PREF_LANG_KEY = "pref_language"
 _PREF_CURRENCY_KEY = "pref_currency"
 _DEFAULT_CURRENCY = "EUR"
 _SUPPORTED_CURRENCIES = ["EUR", "RON", "USD", "GBP"]
 
-_CURRENCY_FORMAT_LOCALES: Dict[str, str] = {
+_CURRENCY_FORMAT_LOCALES: dict[str, str] = {
     "EUR": "de_DE",
     "RON": "ro_RO",
     "USD": "en_US",
@@ -80,7 +82,9 @@ class PreferencesManager:
     def __init__(self, db) -> None:
         self._db = db
         self._currency: str = _DEFAULT_CURRENCY
-        self._currency_listeners: List[Callable[[str], None]] = []
+        self._currency_listeners: list[Callable[[str], None]] = []
+        self._settings_cache: dict[str, str | None] = {}
+        self._cache_dirty = True
 
     # --- Load / persist -------------------------------------------------
 
@@ -93,43 +97,53 @@ class PreferencesManager:
         if currency and currency in _SUPPORTED_CURRENCIES:
             self._currency = currency
 
-    def _get_setting(self, key: str) -> Optional[str]:
-        """Read a single setting from the DB."""
+    def clear_cache(self):
+        self._cache_dirty = True
+        self._settings_cache.clear()
+
+    def _read_settings_batch(self) -> dict[str, str | None]:
+        """Batch-read all known settings into cache."""
+        if not self._db:
+            return {}
+        known_keys = [_PREF_LANG_KEY, _PREF_CURRENCY_KEY, *self._SMTP_KEYS, "alert_email_recipients"]
         try:
-            row = self._db.conn.execute(
-                "SELECT value FROM settings WHERE key = ?", (key,)
-            ).fetchone()
-            return row[0] if row else None
-        except Exception as e:
-            logger.warning("Failed to read setting '%s': %s", key, e)
+            result = self._db.get_settings(known_keys)
+            return {k: result.get(k) for k in known_keys}
+        except Exception:
+            return {}
+
+    def _get_setting(self, key: str) -> str | None:
+        """Read a single setting from the DB (batched into cache)."""
+        if self._db is None:
             return None
+        if self._cache_dirty:
+            self._settings_cache = self._read_settings_batch()
+            self._cache_dirty = False
+        if key not in self._settings_cache:
+            self._settings_cache[key] = self._db.get_setting(key)
+        return self._settings_cache.get(key)
 
     def _set_setting(self, key: str, value: str) -> None:
-        """Write a single setting to the DB. Use save_setting() for public access."""
-        try:
-            if self._db is None:
-                logger.warning("Cannot save setting %s: no database", key)
-                return
-            self._db.conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                (key, value),
-            )
-            self._db.conn.commit()
-        except Exception as e:
-            logger.error("Failed to save setting %s: %s", key, e)
+        """Write a single setting to the DB and invalidate cache."""
+        if self._db is None:
+            logger.warning("Cannot save setting %s: no database", key)
+            return
+        self._db.save_setting(key, value)
+        self._settings_cache[key] = value
 
     # --- Public settings API (canonical access layer) --------------------
 
-    def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
-        return self._get_setting(key) or default
+    def get_setting(self, key: str, default: str | None = None) -> str | None:
+        value = self._get_setting(key)
+        return value if value is not None else default
 
-    def get_settings(self, keys: List[str]) -> Dict[str, str]:
+    def get_settings(self, keys: list[str]) -> dict[str, str]:
         return {k: (self._get_setting(k) or "") for k in keys}
 
     def save_setting(self, key: str, value: str) -> None:
         self._set_setting(key, value)
 
-    def save_settings(self, data: Dict[str, str]) -> None:
+    def save_settings(self, data: dict[str, str]) -> None:
         for k, v in data.items():
             self._set_setting(k, v)
 
@@ -137,12 +151,12 @@ class PreferencesManager:
 
     _SMTP_KEYS = ["smtp_server", "smtp_port", "smtp_user", "smtp_password"]
 
-    def get_smtp_config(self) -> Dict[str, str]:
+    def get_smtp_config(self) -> dict[str, str]:
         cfg = self.get_settings(self._SMTP_KEYS)
         cfg["alert_email_recipients"] = self.get_setting("alert_email_recipients") or ""
         return cfg
 
-    def save_smtp_config(self, config: Dict[str, str]) -> None:
+    def save_smtp_config(self, config: dict[str, str]) -> None:
         for k in self._SMTP_KEYS:
             if k in config:
                 self._set_setting(k, config[k])
@@ -157,7 +171,7 @@ class PreferencesManager:
     def get_language_display(self) -> str:
         return LANGUAGE_NAMES.get(self.get_language(), self.get_language())
 
-    def get_available_languages(self) -> List[str]:
+    def get_available_languages(self) -> list[str]:
         from services.i18n import get_available_languages
         return get_available_languages()
 
@@ -177,10 +191,10 @@ class PreferencesManager:
     def get_currency(self) -> str:
         return self._currency
 
-    def get_currency_symbol(self, code: Optional[str] = None) -> str:
+    def get_currency_symbol(self, code: str | None = None) -> str:
         return CURRENCY_SYMBOLS.get(code or self._currency, code or self._currency)
 
-    def get_supported_currencies(self) -> List[str]:
+    def get_supported_currencies(self) -> list[str]:
         return list(_SUPPORTED_CURRENCIES)
 
     def set_currency(self, code: str) -> None:
@@ -190,10 +204,8 @@ class PreferencesManager:
         self._set_setting(_PREF_CURRENCY_KEY, code)
         AppState().set("currency", code)
         for cb in self._currency_listeners:
-            try:
+            with contextlib.suppress(Exception):
                 cb(code)
-            except Exception:
-                pass
 
     def register_currency_listener(self, cb: Callable[[str], None]) -> None:
         self._currency_listeners.append(cb)
@@ -204,7 +216,7 @@ class PreferencesManager:
 
     # --- Formatting helpers ---------------------------------------------
 
-    def format_currency(self, value: float, decimals: int = 2) -> str:
+    def format_currency(self, value: float, decimals: int = 2, currency: str | None = None) -> str:
         """Return a locale-aware formatted currency string.
 
         Example outputs based on currency:
@@ -213,24 +225,21 @@ class PreferencesManager:
           USD -> "$1,234.56"
           GBP -> "£1,234.56"
         """
-        symbol = self.get_currency_symbol()
-        if self._currency in ("USD", "GBP"):
+        cur = currency if currency is not None else self._currency
+        symbol = CURRENCY_SYMBOLS.get(cur, cur)
+        if cur in ("USD", "GBP"):
             formatted = f"{value:,.{decimals}f}"
-            return f"{symbol}{formatted}" if self._currency == "USD" else f"{symbol}{formatted}"
+            return f"{symbol}{formatted}"
         formatted = f"{value:,.{decimals}f}".replace(",", "X").replace(".", ",").replace("X", ".")
         return f"{formatted} {symbol}"
 
     def format_currency_for(self, value: float, code: str, decimals: int = 2) -> str:
         """Format a value in a specific currency (independent of current pref)."""
-        saved = self._currency
-        self._currency = code
-        result = self.format_currency(value, decimals)
-        self._currency = saved
-        return result
+        return self.format_currency(value, decimals, currency=code)
 
     # --- Translation helper ---------------------------------------------
 
     @staticmethod
-    def tr(key: str, default: Optional[str] = None, **kwargs: Any) -> str:
+    def tr(key: str, default: str | None = None, **kwargs: Any) -> str:
         """Translate a key — delegates to i18n.t()."""
         return t(key, default, **kwargs)

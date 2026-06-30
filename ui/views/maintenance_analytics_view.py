@@ -1,69 +1,46 @@
 """PySide6 maintenance analytics view — charts and table.
 
-Replaces ``ui/views/maintenance_analytics_view.py``. Uses
-``FleetMaintenanceService`` and ``FleetRepository`` for data,
-Matplotlib via ``FigureCanvasQTAgg`` for charts.
-
-Usage as embedded widget::
-
-    view = QtMaintenanceAnalyticsView(parent_widget, db)
-
-Usage as standalone dialog (windowed mode)::
-
-    from ui.views.maintenance_analytics_view import MaintenanceAnalyticsDialog
-
-    dlg = MaintenanceAnalyticsDialog(db, parent=parent_widget)
-    dlg.exec_()
+Refactored to:
+- Check dirty flag before reloading (skips redundant queries)
+- Use setData() on existing StyledTableWidget instead of rebuild
+- Share MaintenanceViewModel for data access
 """
-
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
-
-import matplotlib.pyplot as plt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-
-from ui.charts import apply_dark_style, apply_empty_state, make_trend_chart
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget,
     QDialog,
     QFrame,
-    QLabel,
-    QVBoxLayout,
     QHBoxLayout,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from repositories.fleet_repository import FleetRepository
-from services.fleet_maintenance_service import (
-    FleetMaintenanceService,
-    MAINT_DISPLAY,
-    MaintType,
-)
+from services.fleet_maintenance_service import MAINT_DISPLAY, MaintType
 from services.i18n import register_listener, t, unregister_listener
+from ui.components import Btn, Card, Label, PageTitle
+from ui.design_tokens import SP
 from ui.icons import iconed
-from ui.components import Card, Btn, PageTitle, Label
-from ui.design_tokens import (
-    BG_SURFACE, BORDER_DEFAULT, TEXT_MUTED, TEXT_SECONDARY, TEXT_PRIMARY,
-    ACCENT, SP,
-)
-from ui.theme import CHART_PALETTE, CHART_PRIMARY, CHART_SECONDARY
+from ui.models.maintenance_view_model import MaintenanceViewModel
+from ui.plotly_charts import CHART_ACCENT, make_grouped_bar_chart, make_trend_chart
+from ui.plotly_renderer import PlotlyChartWidget, empty_figure
 from ui.widgets import StyledTableWidget
+from ui.widgets.layout_utils import clear_layout
+
+_TRUCK_PALETTE = (
+    "#6366f1", "#22c55e", "#f59e0b", "#ef4444",
+    "#3b82f6", "#a855f7", "#06b6d4", "#ec4899",
+)
 
 logger = logging.getLogger(__name__)
 
-_MONTH_KEYS = [
-    "maint_analytics.month_jan", "maint_analytics.month_feb",
-    "maint_analytics.month_mar", "maint_analytics.month_apr",
-    "maint_analytics.month_may", "maint_analytics.month_jun",
-    "maint_analytics.month_jul", "maint_analytics.month_aug",
-    "maint_analytics.month_sep", "maint_analytics.month_oct",
-    "maint_analytics.month_nov", "maint_analytics.month_dec",
-]
 _MONTH_NAMES = [
     "Jan", "Feb", "Mar", "Apr", "May", "Jun",
     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
@@ -71,56 +48,56 @@ _MONTH_NAMES = [
 
 
 def _label_month(ym: str) -> str:
-    """Format a ``YYYY-MM`` string as a localized month label (e.g. ``Jan 24``)."""
     try:
         parts = ym.split("-")
         m = int(parts[1])
-        return f"{t(_MONTH_KEYS[m - 1], default=_MONTH_NAMES[m - 1])} {parts[0][2:]}"
+        return f"{_MONTH_NAMES[m - 1]} {parts[0][2:]}"
     except Exception:
         return ym
 
 
 class QtMaintenanceAnalyticsView(QWidget):
-    """Maintenance analytics view with two charts and a summary table.
+    """Maintenance analytics with charts and summary table.
 
-    Charts show cost-per-truck-month (grouped bar) and fleet cost trend
-    (line with fill). The table shows YTD cost, average cost, service
-    count, and top category per truck.
+    Re-renders only when the ViewModel signals data_changed.
+    Chart/table widgets persist across refreshes (no rebuild).
     """
 
-    def __init__(
-        self,
-        parent: Optional[QWidget] = None,
-        db=None,
-    ):
+    def __init__(self, parent=None, db=None):
         super().__init__(parent)
         self.db = db
         self.repo = FleetRepository(db) if db else None
-        self.service = FleetMaintenanceService(db) if db else None
 
-        self._fig = None
-        self._canvas = None
-        self._table_ref = None
-        self._i18n_widgets: List[tuple] = []
-        self._chart_texts: List[tuple] = []
+        # Chart widgets (created once, re-used)
+        self._chart_widget_a: PlotlyChartWidget | None = None
+        self._chart_widget_b: PlotlyChartWidget | None = None
+        self._table_ref: StyledTableWidget | None = None
+        self._table_container: QFrame | None = None
+        self._i18n_widgets: list[tuple] = []
         self._shutting_down = False
 
-        # Data stores populated by _load_data()
-        self._truck_map: Dict[int, str] = {}
-        self._cost_by_truck_month: List[Dict[str, Any]] = []
-        self._cost_by_month: List[Dict[str, Any]] = []
-        self._truck_summary: List[Dict[str, Any]] = []
-        self._top_categories: List[Dict[str, Any]] = []
+        # Data stores
+        self._truck_map: dict[int, str] = {}
+        self._cost_by_truck_month: list[dict[str, Any]] = []
+        self._cost_by_month: list[dict[str, Any]] = []
+        self._truck_summary: list[dict[str, Any]] = []
+        self._top_categories: list[dict[str, Any]] = []
+        self._data_loaded = False
+
+        # ViewModel
+        self._vm = MaintenanceViewModel(self, db=db)
+
+        self._build_ui()
+        self._vm.data_changed.connect(self._on_data_changed)
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
-        self._build_ui()
         QTimer.singleShot(0, self._load_data)
 
-    # ── UI build ───────────────────────────────────────────────────────────────
+    # ── UI Build ─────────────────────────────────────────────────
 
-    def _build_ui(self) -> None:
+    def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SP["6"])
@@ -129,251 +106,160 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._build_chart_area(layout)
         self._build_table_area(layout)
 
-    def _build_view_header(self, layout: QVBoxLayout) -> None:
+    def _build_view_header(self, layout):
         header = QWidget()
         header.setFixedHeight(72)
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        hl = QHBoxLayout(header)
+        hl.setContentsMargins(SP["10"], 0, SP["10"], 0)
 
         self._title_lbl = PageTitle(header, iconed("maint_analytics.title"))
-        header_layout.addWidget(self._title_lbl)
+        hl.addWidget(self._title_lbl)
         self._i18n_widgets.append((self._title_lbl, "maint_analytics.title", ""))
 
         subtitle = Label(header, t("maint_analytics.subtitle", default=""), role="secondary")
-        header_layout.addWidget(subtitle)
+        hl.addWidget(subtitle)
+        hl.addStretch(1)
 
-        header_layout.addStretch(1)
-
-        self._refresh_btn = Btn(
-            header,
-            iconed("maint.refresh"),
-            variant="primary",
-            command=self._load_data,
-        )
-        header_layout.addWidget(self._refresh_btn)
+        self._refresh_btn = Btn(header, iconed("maint.refresh"), variant="primary", command=self._load_data)
+        hl.addWidget(self._refresh_btn)
         self._i18n_widgets.append((self._refresh_btn, "maint.refresh", ""))
 
         layout.addWidget(header)
 
-    def _build_chart_area(self, layout: QVBoxLayout) -> None:
+    def _build_chart_area(self, layout):
         chart_card = Card()
         chart_card.setMinimumHeight(350)
-        self._chart_frame = QFrame()
-        self._chart_frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self._chart_layout = QVBoxLayout(self._chart_frame)
-        self._chart_layout.setContentsMargins(0, 0, 0, 0)
-        chart_card.layout().addWidget(self._chart_frame)
+        frame = QFrame()
+        frame.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        cl = QHBoxLayout(frame)
+        cl.setContentsMargins(0, 0, 0, 0)
+        cl.setSpacing(SP["3"])
+
+        self._chart_widget_a = PlotlyChartWidget(min_height=300)
+        self._chart_widget_b = PlotlyChartWidget(min_height=300)
+        cl.addWidget(self._chart_widget_a, 1)
+        cl.addWidget(self._chart_widget_b, 1)
+        self._i18n_widgets.append((self._chart_widget_a, "maint_analytics.chart_cost_per_truck", "cost_per_truck"))
+        self._i18n_widgets.append((self._chart_widget_b, "maint_analytics.chart_fleet_trend", "fleet_trend"))
+
+        chart_card.layout().addWidget(frame)
         layout.addWidget(chart_card, 3)
 
-    def _build_table_area(self, layout: QVBoxLayout) -> None:
+    def _build_table_area(self, layout):
         table_card = Card()
-        self._table_frame = QFrame()
-        self._table_frame.setMinimumHeight(200)
-        table_layout = QVBoxLayout(self._table_frame)
-        table_layout.setContentsMargins(0, 0, 0, 0)
-        table_card.layout().addWidget(self._table_frame)
+        self._table_container = QFrame()
+        self._table_container.setMinimumHeight(200)
+        tl = QVBoxLayout(self._table_container)
+        tl.setContentsMargins(0, 0, 0, 0)
+        table_card.layout().addWidget(self._table_container)
         layout.addWidget(table_card, 2)
 
-    # ── Data loading ───────────────────────────────────────────────────────────
+    # ── Data loading (dirty-flag aware) ──────────────────────────
 
-    def refresh(self) -> None:
-        """Reload data and re-render all charts and the table."""
+    def refresh(self):
         self._load_data()
 
-    def _load_data(self) -> None:
-        if getattr(self, "_shutting_down", False):
+    def _load_data(self):
+        if self._shutting_down:
             return
-        try:
-            self.isVisible()
-        except RuntimeError:
+        if self.repo is None:
             return
-        if self.repo is None or self.service is None:
-            return
+
+        if self._data_loaded:
+            return  # Already loaded — ViewModel drives updates
 
         now = datetime.now()
         twelve_ago = now - timedelta(days=365)
         ytd_start = datetime(now.year, 1, 1)
-
         since_charts = twelve_ago.strftime("%Y-%m-%d")
         since_ytd = ytd_start.strftime("%Y-%m-%d")
 
-        self._truck_map: Dict[int, str] = {}
-        for rec in self.repo.get_all():
-            self._truck_map[rec["id"]] = rec.get(
-                "plate_number",
-                iconed("maint_analytics.truck_fallback", rec["id"]),
-            )
+        try:
+            self._truck_map = {
+                rec["id"]: rec.get("plate_number", iconed("maint_analytics.truck_fallback", rec["id"]))
+                for rec in self.repo.get_all()
+            }
 
-        self._cost_by_truck_month = self.repo.get_maintenance_cost_truck_monthly(
-            since_charts
-        )
-        self._cost_by_month = self.repo.get_maintenance_cost_monthly(since_charts)
-        self._truck_summary = self.repo.get_maintenance_truck_summary(since_ytd)
-        self._top_categories = self.repo.get_maintenance_most_expensive_category(
-            since_ytd
-        )
+            self._cost_by_truck_month = self.repo.get_maintenance_cost_truck_monthly(since_charts)
+            self._cost_by_month = self.repo.get_maintenance_cost_monthly(since_charts)
+            self._truck_summary = self.repo.get_maintenance_truck_summary(since_ytd)
+            self._top_categories = self.repo.get_maintenance_most_expensive_category(since_ytd)
+            self._data_loaded = True
+        except Exception:
+            logger.exception("Failed to load analytics data")
 
         self._render_charts()
         self._render_table()
 
-    # ── Chart rendering ────────────────────────────────────────────────────────
+    def _on_data_changed(self):
+        """ViewModel signals data change — re-render charts and table."""
+        if self._shutting_down:
+            return
+        self._render_charts()
+        self._render_table()
 
-    def _render_charts(self) -> None:
-        """Clear existing chart widgets and re-render both charts."""
-        # Close previous figure to free memory
-        if self._fig is not None:
-            plt.close(self._fig)
-            self._fig = None
-            self._canvas = None
-        self._clear_layout(self._chart_layout)
+    # ── Chart rendering (reuses existing widgets) ────────────────
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
-        fig.patch.set_facecolor(BG_SURFACE)
-        for ax in (ax1, ax2):
-            ax.set_facecolor(BG_SURFACE)
-            ax.tick_params(colors=TEXT_MUTED, labelsize=9)
-            ax.xaxis.label.set_color(TEXT_SECONDARY)
-            ax.yaxis.label.set_color(TEXT_SECONDARY)
-            ax.title.set_color(TEXT_SECONDARY)
-            for spine in ax.spines.values():
-                spine.set_edgecolor(BORDER_DEFAULT)
+    def _render_charts(self):
+        if self._chart_widget_a is None or self._chart_widget_b is None:
+            return
+        try:
+            self._chart_widget_a.set_figure(self._build_cost_by_truck_month_fig())
+        except Exception:
+            logger.exception("Cost-by-truck-month chart render failed")
+            self._chart_widget_a.set_figure(empty_figure(t("maint_analytics.no_records")))
 
-        self._chart_texts = []
-        self._draw_cost_by_truck_month(ax1)
-        self._draw_fleet_trend(ax2)
+        try:
+            self._chart_widget_b.set_figure(self._build_fleet_trend_fig())
+        except Exception:
+            logger.exception("Fleet trend chart render failed")
+            self._chart_widget_b.set_figure(empty_figure(t("maint_analytics.no_data_12mo")))
 
-        fig.tight_layout(pad=3)
-        canvas = FigureCanvas(fig)
-        self._chart_layout.addWidget(canvas)
-        self._fig = fig
-        self._canvas = canvas
-
-    def _draw_cost_by_truck_month(self, ax) -> None:
-        """Grouped bar chart: cost per truck, per month (12-month view)."""
-        title = ax.set_title(
-            iconed("maint_analytics.chart_cost_per_truck"),
-            color=TEXT_SECONDARY,
-            fontsize=10,
-        )
-        self._chart_texts.append((title, "maint_analytics.chart_cost_per_truck"))
-
+    def _build_cost_by_truck_month_fig(self):
         if not self._cost_by_truck_month:
-            ax.text(
-                0.5, 0.5, iconed("maint_analytics.no_records"),
-                color=TEXT_MUTED,
-                ha="center", va="center", transform=ax.transAxes,
-            )
-            return
+            return empty_figure(t("maint_analytics.no_records"))
 
-        months = sorted(set(r["ym"] for r in self._cost_by_truck_month))
-        truck_ids = sorted(set(r["truck_id"] for r in self._cost_by_truck_month))
+        months = sorted({r["ym"] for r in self._cost_by_truck_month})
+        truck_ids = sorted({r["truck_id"] for r in self._cost_by_truck_month})
+        lookup = {(r["truck_id"], r["ym"]): r["total"] for r in self._cost_by_truck_month}
+        x_labels = [_label_month(m) for m in months]
 
-        lookup: Dict[tuple, float] = {}
-        for r in self._cost_by_truck_month:
-            lookup[(r["truck_id"], r["ym"])] = r["total"]
-
-        x = list(range(len(months)))
-        n = len(truck_ids)
-        w = 0.8 / n
-
+        groups = []
         for i, tid in enumerate(truck_ids):
-            vals = [lookup.get((tid, m), 0) for m in months]
-            color = CHART_PALETTE[i % len(CHART_PALETTE)]
-            label = self._truck_map.get(
-                tid, iconed("maint_analytics.truck_fallback", tid)
-            )
-            ax.bar(
-                [xi + i * w - 0.4 + w / 2 for xi in x],
-                vals,
-                w,
-                label=label,
-                color=color,
-                edgecolor=BG_SURFACE,
-                linewidth=0.5,
-            )
+            color = _TRUCK_PALETTE[i % len(_TRUCK_PALETTE)]
+            label = self._truck_map.get(tid, str(tid))
+            groups.append((label, [lookup.get((tid, m), 0) for m in months], color))
 
-        ax.set_xticks(x)
-        ax.set_xticklabels(
-            [_label_month(m) for m in months],
-            rotation=45, ha="right", fontsize=7,
-        )
-        ax.set_ylabel(
-            iconed("maint_analytics.cost_label"),
-            color=TEXT_MUTED,
-            fontsize=8,
-        )
-        ax.legend(
-            fontsize=6,
-            facecolor=BG_SURFACE,
-            labelcolor=TEXT_PRIMARY,
-            edgecolor=BORDER_DEFAULT,
-        )
+        fig = make_grouped_bar_chart(x_labels, groups,
+                                     title=t("maint_analytics.chart_cost_per_truck"),
+                                     horizontal=False, is_currency=True, show_title=True)
+        fig.update_xaxes(tickangle=-45, tickfont={"size": 9})
+        return fig
 
-    def _draw_fleet_trend(self, ax) -> None:
-        """Line chart: total fleet maintenance cost per month (12-month trend)."""
-        title = ax.set_title(
-            iconed("maint_analytics.chart_fleet_trend"),
-            color=TEXT_SECONDARY,
-            fontsize=10,
-        )
-        self._chart_texts.append((title, "maint_analytics.chart_fleet_trend"))
-
+    def _build_fleet_trend_fig(self):
         if not self._cost_by_month:
-            ax.text(
-                0.5, 0.5, iconed("maint_analytics.no_data_12mo"),
-                color=TEXT_MUTED,
-                ha="center", va="center", transform=ax.transAxes,
-            )
-            return
+            return empty_figure(t("maint_analytics.no_data_12mo"))
 
         months = [r["ym"] for r in self._cost_by_month]
         totals = [r["total"] for r in self._cost_by_month]
 
-        ax.plot(
-            range(len(months)),
-            totals,
-            marker="o",
-            color=CHART_PRIMARY,
-            linewidth=2,
-            markersize=5,
-            markerfacecolor=CHART_SECONDARY,
-            markeredgecolor="none",
-        )
-        ax.fill_between(
-            range(len(months)),
-            totals,
-            alpha=0.12,
-            color=CHART_PRIMARY,
-        )
+        fig = make_trend_chart([_label_month(m) for m in months], totals,
+                               title=t("maint_analytics.chart_fleet_trend"),
+                               color=CHART_ACCENT, is_currency=True, show_title=True)
+        fig.update_xaxes(tickangle=-45, tickfont={"size": 9})
+        return fig
 
-        ax.set_xticks(range(len(months)))
-        ax.set_xticklabels(
-            [_label_month(m) for m in months],
-            rotation=45, ha="right", fontsize=7,
-        )
-        ax.set_ylabel(
-            iconed("maint_analytics.total_cost_label"),
-            color=TEXT_MUTED,
-            fontsize=8,
-        )
-        ax.yaxis.set_major_formatter(
-            plt.FuncFormatter(lambda v, _: f"\u20AC{v:,.0f}")
-        )
+    # ── Table rendering (setData on existing widget) ─────────────
 
-    # ── Table rendering ────────────────────────────────────────────────────────
+    def _render_table(self):
+        if self._table_container is None or self.repo is None:
+            return
 
-    def _render_table(self) -> None:
-        """Build or rebuild the StyledTableWidget with truck summary data."""
-        self._clear_layout(self._table_frame.layout())
-        self._table_ref = None
-
-        top_cat_map: Dict[int, str] = {}
+        top_cat_map: dict[int, str] = {}
         for r in self._top_categories:
             raw = r.get("maintenance_type", "")
             try:
-                disp = MAINT_DISPLAY.get(
-                    MaintType(raw), raw.replace("_", " ").title()
-                )
+                disp = MAINT_DISPLAY.get(MaintType(raw), raw.replace("_", " ").title())
             except ValueError:
                 disp = raw.replace("_", " ").title()
             top_cat_map[r["truck_id"]] = disp
@@ -383,117 +269,54 @@ class QtMaintenanceAnalyticsView(QWidget):
             ("ytd_cost", t("maint_analytics.col_ytd_cost", default="YTD Cost"), 140),
             ("avg_cost", t("maint_analytics.col_avg_cost", default="Avg. Cost"), 140),
             ("count", t("maint_analytics.col_count", default="Services"), 100),
-            (
-                "top_category",
-                t("maint_analytics.col_top_category", default="Top Category"),
-                180,
-            ),
+            ("top_category", t("maint_analytics.col_top_category", default="Top Category"), 180),
         ]
 
-        table = StyledTableWidget(self._table_frame, columns)
-        table.setMinimumHeight(200)
-        table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        if self._table_ref is None:
+            # Create once
+            clear_layout(self._table_container.layout())
+            self._table_ref = StyledTableWidget(self._table_container, columns)
+            self._table_ref.setMinimumHeight(200)
+            self._table_ref.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            self._table_container.layout().addWidget(self._table_ref)
 
         if not self._truck_summary:
-            table.set_data(
-                [
-                    {
-                        "truck": iconed("maint_analytics.no_data"),
-                        "ytd_cost": "",
-                        "avg_cost": "",
-                        "count": "",
-                        "top_category": "",
-                    }
-                ]
-            )
+            self._table_ref.set_data([{
+                "truck": iconed("maint_analytics.no_data"),
+                "ytd_cost": "", "avg_cost": "", "count": "", "top_category": "",
+            }])
         else:
             rows = []
             for r in self._truck_summary:
                 tid = r["truck_id"]
-                plate = self._truck_map.get(
-                    tid, iconed("maint_analytics.truck_fallback", tid)
-                )
-                rows.append(
-                    {
-                        "truck": plate,
-                        "ytd_cost": f"\u20AC{r['total_ytd']:,.2f}",
-                        "avg_cost": f"\u20AC{r['avg_cost']:,.2f}",
-                        "count": str(r["service_count"]),
-                        "top_category": top_cat_map.get(tid, "\u2014"),
-                    }
-                )
-            table.set_data(rows)
+                plate = self._truck_map.get(tid, str(tid))
+                rows.append({
+                    "truck": plate,
+                    "ytd_cost": f"\u20ac{r['total_ytd']:,.2f}",
+                    "avg_cost": f"\u20ac{r['avg_cost']:,.2f}",
+                    "count": str(r["service_count"]),
+                    "top_category": top_cat_map.get(tid, "\u2014"),
+                })
+            self._table_ref.set_data(rows)
 
-        self._table_frame.layout().addWidget(table)
-        self._table_ref = table
+    # ── i18n ─────────────────────────────────────────────────────
 
-    # ── i18n ───────────────────────────────────────────────────────────────────
+    def _on_language_changed(self, lang: str):
+        QTimer.singleShot(0, self._load_data)
 
-    def _on_language_changed(self, lang: str) -> None:
-        """Schedule a translation refresh on the next event-loop tick."""
-        QTimer.singleShot(0, self._refresh_translations)
+    # ── Helpers ──────────────────────────────────────────────────
 
-    def _refresh_translations(self) -> None:
-        """Update widget text and reload data after a language change."""
-        self._title_lbl.setText(iconed("maint_analytics.title"))
-        self._refresh_btn.setText(iconed("maint.refresh"))
-
-        for text_obj, key in self._chart_texts:
-            try:
-                text_obj.set_text(
-                    iconed(key)
-                    if key.startswith("maint")
-                    else t(key)
-                )
-            except Exception:
-                pass
-
+    def wakeup(self):
         self._load_data()
 
-    # ── Helpers ─────────────────────────────────────────────────────────────────
-
-    @staticmethod
-    def _clear_layout(layout) -> None:
-        """Remove and schedule deletion of every widget in *layout*."""
-        if layout is None:
-            return
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
-
-    # ── Lifecycle ──────────────────────────────────────────────────────────────
-
-    def wakeup(self) -> None:
-        """Re-fetch data when the view becomes visible again."""
-        self._load_data()
-
-    def shutdown(self) -> None:
-        """Clean up i18n listener and matplotlib figure."""
+    def shutdown(self):
         self._shutting_down = True
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
-
-        if self._fig is not None:
-            try:
-                plt.close(self._fig)
-            except Exception:
-                pass
-            self._fig = None
-            self._canvas = None
 
 
 class MaintenanceAnalyticsDialog(QDialog):
-    """Standalone windowed mode for maintenance analytics."""
-
-    def __init__(
-        self,
-        db=None,
-        parent: Optional[QWidget] = None,
-    ):
+    def __init__(self, db=None, parent=None):
         super().__init__(parent)
         self.setWindowTitle(iconed("maint_analytics.title"))
         self.setMinimumSize(1400, 850)
@@ -501,12 +324,11 @@ class MaintenanceAnalyticsDialog(QDialog):
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-
         self._view = QtMaintenanceAnalyticsView(self, db)
         layout.addWidget(self._view)
 
-    def wakeup(self) -> None:
+    def wakeup(self):
         self._view.wakeup()
 
-    def shutdown(self) -> None:
+    def shutdown(self):
         self._view.shutdown()

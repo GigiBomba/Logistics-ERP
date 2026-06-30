@@ -1,5 +1,5 @@
 import logging
-from typing import Dict, Optional
+from typing import Optional
 
 from config import Config
 from services.fuel_price_service import FuelPriceService
@@ -25,14 +25,28 @@ class CostEngineService:
         'default': 0.3
     }
 
-    def __init__(self, fuel_price_eur_per_liter: float = None, country_code: str = 'DEFAULT'):
+    def __init__(self, fuel_price_eur_per_liter: Optional[float] = None, country_code: str = 'DEFAULT'):
         if fuel_price_eur_per_liter is not None:
-            self.fuel_price = fuel_price_eur_per_liter
+            self._fixed_fuel_price = fuel_price_eur_per_liter
         else:
-            fuel_service = FuelPriceService()
-            self.fuel_price = fuel_service.get_price(country_code)
+            self._fixed_fuel_price = None
+        self._default_country = country_code
 
-    def estimate(self, distance_km: float, truck: Dict, route_details: Dict = None, country_code: str = 'DEFAULT') -> Dict:
+    @property
+    def fuel_price(self) -> float:
+        if self._fixed_fuel_price is not None:
+            return self._fixed_fuel_price
+        fuel_service = FuelPriceService()
+        return fuel_service.get_price(self._default_country)
+
+    def estimate(self, distance_km: float, truck: dict, route_details: Optional[dict] = None, country_code: str = 'DEFAULT') -> dict:
+        if distance_km is None:
+            return {
+                'fuel_liters': 0.0,
+                'fuel_cost': 0.0,
+                'toll_cost': 0.0,
+                'total_cost': 0.0
+            }
         consumption = truck.get('fuel_consumption_l_per_100km') or truck.get('fuel_consumption') or 34.0
         fuel_liters = (distance_km / 100.0) * float(consumption)
         fuel_cost = fuel_liters * self.fuel_price

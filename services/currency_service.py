@@ -1,11 +1,11 @@
 import logging
-from typing import Dict, Optional
+from typing import Optional
 
 from services.exchange_rate_service import ExchangeRateService
 
 logger = logging.getLogger("currency")
 
-CURRENCY_SYMBOLS: Dict[str, str] = {
+CURRENCY_SYMBOLS: dict[str, str] = {
     "EUR": "€",
     "RON": "lei",
     "USD": "$",
@@ -41,7 +41,7 @@ class CurrencyService:
     def format(self, amount: float, currency_code: str, decimals: int = 2) -> str:
         symbol = self.get_symbol(currency_code)
         formatted = f"{amount:,.{decimals}f}"
-        if currency_code in ("USD", "GBP", "GBP", "BGN"):
+        if currency_code in ("USD", "GBP", "BGN"):
             return f"{symbol}{formatted}"
         return f"{formatted} {symbol}"
 

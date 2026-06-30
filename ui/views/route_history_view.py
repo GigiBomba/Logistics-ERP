@@ -6,39 +6,41 @@ table with a map preview, async loading, and export/archive/delete actions.
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import threading
-from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QWidget,
+    QComboBox,
+    QFileDialog,
+    QHBoxLayout,
+    QHeaderView,
     QLabel,
     QLineEdit,
-    QComboBox,
-    QVBoxLayout,
-    QHBoxLayout,
-    QSplitter,
-    QFrame,
-    QFileDialog,
     QMessageBox,
-    QHeaderView,
-    QSizePolicy,
+    QSplitter,
+    QVBoxLayout,
+    QWidget,
 )
 
-from services.i18n import t, register_listener, unregister_listener
+from services.i18n import register_listener, t, unregister_listener
 from services.route_history_service import RouteHistoryRecord, RouteHistoryService
 from services.route_result_presenter import format_duration_minutes
+from ui.components import (
+    Btn,
+    Card,
+    Divider,
+    Label,
+    PageTitle,
+)
+from ui.design_tokens import SP
+from ui.theme import COLORS
 from ui.widgets import (
     StyledCheckBox,
     StyledTableWidget,
 )
-from ui.design_tokens import SP
-from ui.components import (
-    Card, CardHeader, Btn, PageTitle, Label, Divider,
-)
-from ui.theme import COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -63,9 +65,16 @@ SORT_COLUMN_MAP = {
 class QtRouteHistoryView(QWidget):
     """Route history browser with table, map preview, and route actions."""
 
+    # Cross-thread signal: the preview-loader thread emits this from a
+    # worker; Qt marshals the slot to the GUI thread.  (Using
+    # ``QTimer.singleShot(0, ...)`` from a worker thread does NOT marshal —
+    # Qt creates the timer in the calling thread and its event loop
+    # never runs, so the preview never gets rendered.)
+    preview_loaded = Signal(object, int)   # record, token
+
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         controller=None,
     ):
@@ -77,8 +86,9 @@ class QtRouteHistoryView(QWidget):
         self.sort_by = "last_calculated_at"
         self.sort_dir = "DESC"
         self._preview_token = 0
-        self._selected_route_id: Optional[int] = None
+        self._selected_route_id: int | None = None
 
+        self.preview_loaded.connect(self._apply_preview)
         self._build_ui()
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
@@ -275,9 +285,9 @@ class QtRouteHistoryView(QWidget):
         try:
             stats = self.service.get_statistics()
             text = (
-                f"Total: {stats.get('total', 0)} | "
-                f"Active: {stats.get('active', 0)} | "
-                f"Archived: {stats.get('archived', 0)}"
+                f"{t('route_history.label_total', default='Total:')} {stats.get('total', 0)} | "
+                f"{t('route_history.label_active', default='Active:')} {stats.get('active', 0)} | "
+                f"{t('route_history.label_archived', default='Archived:')} {stats.get('archived', 0)}"
             )
             self._stats_text.setText(text)
         except Exception:
@@ -308,12 +318,14 @@ class QtRouteHistoryView(QWidget):
 
         def worker():
             record = self.service.load_route(self._selected_route_id)
-            QTimer.singleShot(0, lambda: self._apply_preview(record, token))
+            # ``Signal.emit`` is thread-safe — the slot connected above
+            # runs in the GUI thread, where widget updates are valid.
+            self.preview_loaded.emit(record, token)
 
         t = threading.Thread(target=worker, daemon=True)
         t.start()
 
-    def _apply_preview(self, record: Optional[RouteHistoryRecord], token: int) -> None:
+    def _apply_preview(self, record: RouteHistoryRecord | None, token: int) -> None:
         if token != self._preview_token:
             return
         if not record:
@@ -330,10 +342,10 @@ class QtRouteHistoryView(QWidget):
     def _show_route_info(self, record: RouteHistoryRecord) -> None:
         dur = format_duration_minutes(getattr(record, "duration_min", 0) or 0)
         info = (
-            f"Date: {getattr(record, 'last_calculated_at', '')}\n"
-            f"Truck: {getattr(record, 'truck', '')}\n"
-            f"Distance: {getattr(record, 'distance_km', 0):,.0f} km\n"
-            f"Duration: {dur}"
+            f"{t('route_history.label_date', default='Date:')} {getattr(record, 'last_calculated_at', '')}\n"
+            f"{t('route_history.label_truck', default='Truck:')} {getattr(record, 'truck', '')}\n"
+            f"{t('route_history.label_distance', default='Distance:')} {getattr(record, 'distance_km', 0):,.0f} km\n"
+            f"{t('route_history.label_duration', default='Duration:')} {dur}"
         )
         self._route_info.setText(info)
 
@@ -474,7 +486,7 @@ class QtRouteHistoryView(QWidget):
     def _refresh_translations(self) -> None:
         for col_id, label_key, width in TABLE_COLUMNS:
             try:
-                idx = [c for c in TABLE_COLUMNS].index((col_id, label_key, width))
+                idx = list(TABLE_COLUMNS).index((col_id, label_key, width))
                 item = self.table.horizontalHeaderItem(idx)
                 if item:
                     item.setText(t(label_key))
@@ -487,13 +499,9 @@ class QtRouteHistoryView(QWidget):
         self._load_page()
 
     def shutdown(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
         if self._map_widget:
-            try:
+            with contextlib.suppress(Exception):
                 self._map_widget.destroy()
-            except Exception:
-                pass
             self._map_widget = None

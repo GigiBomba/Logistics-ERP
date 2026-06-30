@@ -1,13 +1,16 @@
+import functools
 import json
 import logging
 import os
 import tempfile
-import functools
+
 from services.i18n import t
 
 logger = logging.getLogger(__name__)
 
-CONFIG_FILE = "data/company_config.json"
+from utils.resource_path import data_path
+
+CONFIG_FILE = data_path("data/company_config.json")
 
 DEFAULT_CONFIG = {
     "company_name": t("invoice_pdf.default_company"),
@@ -29,17 +32,28 @@ def load_company_config():
         save_company_config(DEFAULT_CONFIG)
         return DEFAULT_CONFIG
     try:
-        with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        with open(CONFIG_FILE, encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            logger.warning("Company config is not a dict, using defaults")
+            return dict(DEFAULT_CONFIG)
+        missing = [k for k in DEFAULT_CONFIG if k not in data]
+        if missing:
+            logger.warning("Company config missing fields: %s, using defaults for those", missing)
+            result = dict(DEFAULT_CONFIG)
+            result.update(data)
+            return result
+        return data
     except Exception:
         logger.warning("Could not load company config, using defaults")
-        return DEFAULT_CONFIG
+        return dict(DEFAULT_CONFIG)
 
 
 def save_company_config(data):
     """Write company config atomically to prevent corruption on concurrent writes."""
-    os.makedirs("data", exist_ok=True)
-    tmp_fd, tmp_path = tempfile.mkstemp(dir="data", suffix=".json")
+    data_dir = os.path.dirname(CONFIG_FILE)
+    os.makedirs(data_dir, exist_ok=True)
+    tmp_fd, tmp_path = tempfile.mkstemp(dir=data_dir, suffix=".json")
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=4)

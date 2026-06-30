@@ -36,9 +36,9 @@ CMR boxes mapped to UN/CEFACT elements:
 """
 import json
 import logging
-from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
-from xml.etree.ElementTree import Element, SubElement, tostring, indent, register_namespace
+from datetime import datetime
+from typing import Any, Optional
+from xml.etree.ElementTree import Element, SubElement, indent, register_namespace, tostring
 
 logger = logging.getLogger(__name__)
 
@@ -61,7 +61,7 @@ register_namespace("xsi", NS_XSI)
 # ── Helpers ──────────────────────────────────────────────────────────
 
 def _sub(parent: Element, tag: str, text: Optional[str] = None,
-         attrib: Optional[Dict[str, str]] = None) -> Element:
+         attrib: Optional[dict[str, str]] = None) -> Element:
     """Create a SubElement with optional text and attributes."""
     el = SubElement(parent, tag, attrib or {})
     if text is not None and text != "":
@@ -153,12 +153,12 @@ def _build_location(parent: Element, tag: str, country: str = "",
 
 def generate_efti_xml(
     cmr_number: str,
-    trip_data: Dict[str, Any],
-    company_config: Dict[str, Any],
-    client_data: Optional[Dict[str, Any]] = None,
-    truck_data: Optional[Dict[str, Any]] = None,
-    driver_data: Optional[Dict[str, Any]] = None,
-    successive_carriers: Optional[List[Dict[str, Any]]] = None,
+    trip_data: dict[str, Any],
+    company_config: dict[str, Any],
+    client_data: Optional[dict[str, Any]] = None,
+    truck_data: Optional[dict[str, Any]] = None,
+    driver_data: Optional[dict[str, Any]] = None,
+    successive_carriers: Optional[list[dict[str, Any]]] = None,
     role: str = "consignor",
 ) -> str:
     """Generate UN/CEFACT eCMR compliant XML.
@@ -513,10 +513,7 @@ def generate_efti_xml(
     adr_raw = trip_data.get("adr_info_json")
     if adr_raw:
         try:
-            if isinstance(adr_raw, str):
-                adr_items = json.loads(adr_raw)
-            else:
-                adr_items = adr_raw
+            adr_items = json.loads(adr_raw) if isinstance(adr_raw, str) else adr_raw
             if isinstance(adr_items, list):
                 for adr in adr_items:
                     dg = _sub(cons, f"{{{NS_RAM}}}IncludedDangerousGoods")

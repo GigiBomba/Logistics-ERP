@@ -5,15 +5,17 @@ with ch.disable=true so pathfinding respects blocked country polygons.
 """
 from __future__ import annotations
 
+import contextlib
 import json
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple
+from typing import Any
 
 from services.country_borders import get_polygons
 from utils.logger import get_logger
 
 # ISO2 -> ISO3166-1 alpha3
-ISO2_TO_ISO3: Dict[str, str] = {
+ISO2_TO_ISO3: dict[str, str] = {
     "AL": "ALB", "AD": "AND", "AT": "AUT", "BY": "BLR", "BE": "BEL",
     "BA": "BIH", "BG": "BGR", "HR": "HRV", "CY": "CYP", "CZ": "CZE",
     "DK": "DNK", "EE": "EST", "FI": "FIN", "FR": "FRA", "DE": "DEU",
@@ -28,7 +30,7 @@ ISO2_TO_ISO3: Dict[str, str] = {
 
 # Bounding boxes for fast country detection: (lon_min, lat_min, lon_max, lat_max)
 # Tightened to minimize overlap with neighboring countries
-COUNTRY_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
+COUNTRY_BOUNDS: dict[str, tuple[float, float, float, float]] = {
     "AL": (19.1, 39.6, 21.1, 42.7),
     "AD": (1.4, 42.4, 1.8, 42.7),
     "AT": (9.5, 46.4, 17.2, 49.0),
@@ -83,10 +85,10 @@ COUNTRY_BOUNDS: Dict[str, Tuple[float, float, float, float]] = {
 class ExclusionPlan:
     """Routing exclusion plan passed to GraphHopperClient."""
 
-    requested: List[str] = field(default_factory=list)
-    applied: List[str] = field(default_factory=list)
-    skipped_at_stops: List[str] = field(default_factory=list)
-    custom_model: Optional[Dict[str, Any]] = None
+    requested: list[str] = field(default_factory=list)
+    applied: list[str] = field(default_factory=list)
+    skipped_at_stops: list[str] = field(default_factory=list)
+    custom_model: dict[str, Any] | None = None
     strategy: str = "none"
 
     @property
@@ -102,10 +104,10 @@ class CountryExclusionEngine:
         self.debug_logger = get_logger("route_debug")
 
     @staticmethod
-    def normalize_codes(codes: Optional[Sequence[str]]) -> List[str]:
+    def normalize_codes(codes: Sequence[str] | None) -> list[str]:
         if not codes:
             return []
-        out: List[str] = []
+        out: list[str] = []
         for c in codes:
             if not c or not isinstance(c, str):
                 continue
@@ -115,14 +117,14 @@ class CountryExclusionEngine:
         return out
 
     @staticmethod
-    def _point_in_bounds(lon: float, lat: float, bounds: Tuple[float, float, float, float]) -> bool:
+    def _point_in_bounds(lon: float, lat: float, bounds: tuple[float, float, float, float]) -> bool:
         lon_min, lat_min, lon_max, lat_max = bounds
         return lon_min <= lon <= lon_max and lat_min <= lat <= lat_max
 
     @staticmethod
-    def countries_at_stops(stops: Sequence[Tuple[float, float]]) -> List[str]:
+    def countries_at_stops(stops: Sequence[tuple[float, float]]) -> list[str]:
         """Return ISO2 codes whose bounds contain any stop (lat, lon)."""
-        found: List[str] = []
+        found: list[str] = []
         for lat, lon in stops:
             for code, bounds in COUNTRY_BOUNDS.items():
                 if CountryExclusionEngine._point_in_bounds(lon, lat, bounds) and code not in found:
@@ -131,8 +133,8 @@ class CountryExclusionEngine:
 
     def prepare(
         self,
-        excluded: Optional[Sequence[str]],
-        stops: Sequence[Tuple[float, float]],
+        excluded: Sequence[str] | None,
+        stops: Sequence[tuple[float, float]],
     ) -> ExclusionPlan:
         requested = self.normalize_codes(excluded)
         if not requested:
@@ -173,17 +175,15 @@ class CountryExclusionEngine:
             f"[RouteService] Generated exclusion strategy={plan.strategy} applied={applied} "
             f"skipped={skipped}"
         )
-        try:
+        with contextlib.suppress(Exception):
             self.debug_logger.info(
                 f"[GraphHopper] Applied custom model exclusions: {json.dumps(custom_model, separators=(',', ':'))}"
             )
-        except Exception:
-            pass
         return plan
 
-    def _build_custom_model(self, countries: List[str]) -> Dict[str, Any]:
-        areas: Dict[str, Any] = {}
-        conditions: List[str] = []
+    def _build_custom_model(self, countries: list[str]) -> dict[str, Any]:
+        areas: dict[str, Any] = {}
+        conditions: list[str] = []
         for code in countries:
             rings = get_polygons(code)
             if not rings or len(rings[0]) < 3:
@@ -230,9 +230,9 @@ class CountryExclusionEngine:
 
     def merge_into_params(
         self,
-        gh_params: Dict[str, Any],
+        gh_params: dict[str, Any],
         plan: ExclusionPlan,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Attach custom_model + ch.disable to GraphHopper params when exclusions are active."""
         if not plan.active or not plan.custom_model:
             return gh_params

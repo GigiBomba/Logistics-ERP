@@ -18,6 +18,15 @@ class ContactRepository(BaseRepository):
             (client_id,),
         )
 
+    def get_primary_for_client(self, client_id: int) -> Optional[Dict[str, Any]]:
+        """Return the contact marked is_primary=1 for the given client."""
+        return self._fetchone(
+            f"SELECT * FROM {self.TABLE} "
+            "WHERE client_id = ? AND is_primary = 1 "
+            "ORDER BY id ASC LIMIT 1",
+            (client_id,),
+        )
+
     def create(self, data: Dict[str, Any]) -> int:
         from datetime import datetime
         data = dict(data)
@@ -39,9 +48,10 @@ class ContactRepository(BaseRepository):
         self._execute(f"DELETE FROM {self.TABLE} WHERE id = ?", (contact_id,))
 
     def set_primary(self, client_id: int, contact_id: int) -> None:
-        self._execute(
-            f"UPDATE {self.TABLE} SET is_primary = 0 WHERE client_id = ?", (client_id,)
-        )
-        self._execute(
-            f"UPDATE {self.TABLE} SET is_primary = 1 WHERE id = ?", (contact_id,)
-        )
+        with self.db.conn:
+            self.db.conn.execute(
+                f"UPDATE {self.TABLE} SET is_primary = 0 WHERE client_id = ?", (client_id,)
+            )
+            self.db.conn.execute(
+                f"UPDATE {self.TABLE} SET is_primary = 1 WHERE id = ?", (contact_id,)
+            )

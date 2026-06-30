@@ -2,23 +2,23 @@
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any
 
 from services.route_history_service import RouteEventBus, RouteHistoryRecord, RouteHistoryService
 from services.trip_context import TripContextService
 
-
 @dataclass
 class ActiveRouteState:
-    route_id: Optional[int] = None
-    route: Optional[RouteHistoryRecord] = None
+    route_id: int | None = None
+    route: RouteHistoryRecord | None = None
 
 
 class RouteStateManager:
     """Coordinates active route state, events, calculator sync, and fleet hooks."""
 
-    _instances: Dict[int, "RouteStateManager"] = {}
+    _instances: dict[int, RouteStateManager] = {}
 
     def __new__(cls, db):
         key = id(getattr(db, "conn", db))
@@ -36,7 +36,7 @@ class RouteStateManager:
         self._state = ActiveRouteState()
         self._initialized = True
 
-    def set_active_route(self, route_id: int, source: str = "system") -> Optional[RouteHistoryRecord]:
+    def set_active_route(self, route_id: int, source: str = "system") -> RouteHistoryRecord | None:
         """Set and broadcast the current active route."""
         route = self.history.load_route(route_id)
         if not route:
@@ -62,10 +62,8 @@ class RouteStateManager:
         self._state = ActiveRouteState(route_id=route_id, route=route)
         self.history.set_active_route(route_id)
         if route.truck_id:
-            try:
+            with contextlib.suppress(Exception):
                 self.history.assign_route_to_truck(route_id, route.truck_id, status="active", notes=f"source={source}")
-            except Exception:
-                pass
         self.sync_to_trip_context(route)
         self.history.record_event(route_id, "route_calculated", {"source": source})
 
@@ -99,7 +97,7 @@ class RouteStateManager:
     def unsubscribe(self, event_type: str, callback) -> None:
         RouteEventBus.unsubscribe(event_type, callback)
 
-    def tracking_snapshot(self) -> Dict[str, Any]:
+    def tracking_snapshot(self) -> dict[str, Any]:
         """Future fleet tracking integration point."""
         state = self.get_active_route()
         route = state.route

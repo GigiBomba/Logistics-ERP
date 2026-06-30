@@ -19,30 +19,28 @@ from __future__ import annotations
 
 import json
 import logging
-from datetime import date, datetime
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any
 
-from PySide6.QtCore import Qt, QDate
+from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QDateEdit,
     QFrame,
     QHBoxLayout,
     QLabel,
-    QPlainTextEdit,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
+from services.i18n import t
+from ui.components import Btn, Card, CardHeader, Divider, Label, PageTitle
 from ui.theme import COLORS, S
-from ui.components import Card, CardHeader, Btn, PageTitle, Label, Divider
-from services.i18n import t, register_listener, unregister_listener
 from ui.widgets import (
+    ScrollableFormContainer,
     StyledComboBox,
     StyledLineEdit,
     StyledTextEdit,
-    ScrollableFormContainer,
     field,
 )
 from ui.widgets.signature_pad import QtSignaturePad
@@ -61,7 +59,7 @@ class QtCmrFormView(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         prefs=None,
     ):
@@ -70,16 +68,13 @@ class QtCmrFormView(QWidget):
         self.prefs = prefs
 
         # ── State ──────────────────────────────────────────────────────────────
-        self._adr_rows: List[QWidget] = []
-        self._successive_carrier_rows: List[QWidget] = []
-        self._financial_rows: List[Tuple[str, str]] = []
-        self._cmr_entries: Dict[str, Any] = {}
+        self._adr_rows: list[QWidget] = []
+        self._successive_carrier_rows: list[QWidget] = []
+        self._financial_rows: list[tuple[str, str]] = []
+        self._cmr_entries: dict[str, Any] = {}
 
         self._consignor_role_active: bool = True
-        self._last_trip_data: Optional[dict] = None
-
-        # i18n
-        self._language_callback: Callable[[str], None] = self._on_language_changed
+        self._last_trip_data: dict | None = None
 
         # ── Build ──────────────────────────────────────────────────────────────
         self._build_ui()
@@ -213,7 +208,7 @@ class QtCmrFormView(QWidget):
         self._scroll_container.add_widget(card)
         return content
 
-    def _two_col_pane(self, parent: QWidget) -> Tuple[QWidget, QWidget]:
+    def _two_col_pane(self, parent: QWidget) -> tuple[QWidget, QWidget]:
         """Return (left, right) widgets with a vertical divider between them."""
         wrapper = QWidget()
         wrapper_layout = QHBoxLayout(wrapper)
@@ -251,7 +246,7 @@ class QtCmrFormView(QWidget):
     def _box_field(
         self,
         parent: QWidget,
-        box_num: Optional[int],
+        box_num: int | None,
         label_en: str,
         label_ro: str,
         kind: str = "entry",
@@ -949,7 +944,7 @@ class QtCmrFormView(QWidget):
             (24, t("cmr.sig_consignee", "Signature of Consignee"), "consignee"),
         ]
 
-        for col_i, (num, label_text, key) in enumerate(sig_specs):
+        for _col_i, (num, label_text, key) in enumerate(sig_specs):
             col = QWidget()
             col_layout = QVBoxLayout(col)
             col_layout.setContentsMargins(0, 0, 0, 0)
@@ -1052,139 +1047,12 @@ class QtCmrFormView(QWidget):
     # Data collection
     # ══════════════════════════════════════════════════════════════════════
 
-    def collect_data(self, trip_base: Optional[dict] = None) -> dict:
-        """Collect all form field values into a flat dictionary.
-
-        Mirrors the original ``CMRFormView.collect_data()`` but returns
-        Qt widget values instead of tkinter string vars.
-        """
-        data = dict(trip_base) if trip_base else {}
-        data["generating_role"] = "consignor" if self._consignor_role_active else "consignee"
-
-        def _get(key: str, widget_key: str, default: str = "") -> None:
-            w = self._cmr_entries.get(widget_key)
-            if w is None:
-                data.setdefault(key, default)
-                return
-
-            if isinstance(w, QPlainTextEdit):
-                val = w.toPlainText().strip()
-            elif isinstance(w, StyledTextEdit):
-                val = w.toPlainText().strip()
-            elif isinstance(w, StyledComboBox):
-                val = w.currentText().strip()
-            elif isinstance(w, QDateEdit):
-                qdate = w.date()
-                if qdate.isValid():
-                    val = qdate.toString("yyyy-MM-dd")
-                else:
-                    val = default
-            elif isinstance(w, StyledLineEdit):
-                val = w.text().strip()
-            else:
-                # Fallback: try text() or currentText()
-                try:
-                    val = w.text().strip()
-                except Exception:
-                    val = default
-
-            data[key] = val if val else default
-
-        # Party data
-        _get("consignor_name", "consignor_name")
-        _get("client_name", "consignee_name")
-        _get("carrier_name", "carrier_name")
-
-        # Location data
-        _get("destination", "destination")
-        _get("delivery_country", "delivery_country")
-        _get("place_of_loading", "place_of_loading")
-        _get("place_of_loading_date", "place_of_loading_date")
-        _get("loading_country", "loading_country")
-        _get("documents_attached", "documents_attached")
-
-        # Cargo data
-        _get("cargo_marks", "cargo_marks")
-        _get("cargo_description", "cargo_description")
-        _get("package_count", "package_count")
-        _get("package_type", "package_type")
-        _get("gross_weight_kg", "gross_weight_kg")
-        _get("volume_m3", "volume_m3")
-        _get("hs_code", "hs_code")
-
-        # Carrier & Vehicle
-        _get("carrier_reservations", "carrier_reservations")
-        _get("truck_plate", "truck_plate")
-        _get("trailer_plate", "trailer_plate")
-        _get("driver_name", "driver_name")
-        _get("driver_license", "driver_license")
-
-        # Bottom section
-        _get("carrier_instructions", "carrier_instructions")
-        _get("carriage_payer", "carriage_payer")
-        _get("cod_amount", "cod_amount")
-        _get("distance_km", "distance_km")
-        _get("special_agreements", "special_agreements")
-
-        # Issue info
-        _get("issue_place", "issue_place")
-        _get("issue_date", "issue_date")
-
-        # Signature paths
-        for k in ["sender", "carrier", "consignee"]:
-            pad = getattr(self, f"sig_{k}_pad", None)
-            if pad is not None:
-                path = pad.get_path()
-                if path:
-                    data[f"sig_{k}_path"] = path
-
-        # Financial grid
-        data["financial_grid"] = self._get_financial_data()
-
-        # ADR
-        adr = self._get_adr_data()
-        if adr:
-            data["adr_info_json"] = json.dumps(adr)
-
-        # Successive carriers
-        succ = self._get_successive_carriers()
-        if succ:
-            data["successive_carriers"] = succ
-
-        # Merge compound textarea fields properly
-        if data.get("consignor_name"):
-            name_val = data.get("consignor_name", "")
-            if not data.get("consignor_address"):
-                lines = name_val.split("\n")
-                data["consignor_name"] = lines[0] if lines else ""
-                data["consignor_address"] = "\n".join(lines[1:]) if len(lines) > 1 else ""
-
-        if data.get("consignee_name") or data.get("client_name"):
-            cname = data.get("consignee_name") or data.get("client_name", "")
-            if not data.get("client_address"):
-                lines = cname.split("\n")
-                data["client_name"] = lines[0] if lines else ""
-                data["client_address"] = "\n".join(lines[1:]) if len(lines) > 1 else ""
-            else:
-                data["client_name"] = cname
-
-        if data.get("carrier_name"):
-            cname_c = data.get("carrier_name", "")
-            if not data.get("carrier_address"):
-                lines = cname_c.split("\n")
-                data["carrier_name"] = lines[0] if lines else ""
-                data["carrier_address"] = "\n".join(lines[1:]) if len(lines) > 1 else ""
-
-        return data
-
-    def _get_adr_data(self) -> Optional[List[dict]]:
+    def _get_adr_data(self) -> list[dict] | None:
         if not self._adr_toggle.isChecked():
             return None
         items = []
         for row in self._adr_rows:
-            entries = [
-                c for c in row.findChildren(StyledLineEdit)
-            ]
+            entries = list(row.findChildren(StyledLineEdit))
             if len(entries) >= 6:
                 items.append({
                     "un_no": entries[0].text().strip(),
@@ -1196,7 +1064,7 @@ class QtCmrFormView(QWidget):
                 })
         return items if items else None
 
-    def _get_successive_carriers(self) -> List[dict]:
+    def _get_successive_carriers(self) -> list[dict]:
         result = []
         for frame in self._successive_carrier_rows:
             entries = frame.findChildren(StyledLineEdit)
@@ -1230,18 +1098,18 @@ class QtCmrFormView(QWidget):
 
     def fill_from_trip(
         self,
-        trip: Optional[dict] = None,
-        company_conf: Optional[dict] = None,
-        client_data: Optional[dict] = None,
-        truck_data: Optional[dict] = None,
-        driver_data: Optional[dict] = None,
+        trip: dict | None = None,
+        company_conf: dict | None = None,
+        client_data: dict | None = None,
+        truck_data: dict | None = None,
+        driver_data: dict | None = None,
     ):
         """Populate form fields from trip, company, and client data."""
-        self._last_trip_data = dict(
-            trip=trip, company_conf=company_conf,
-            client_data=client_data, truck_data=truck_data,
-            driver_data=driver_data,
-        )
+        self._last_trip_data = {
+            "trip": trip, "company_conf": company_conf,
+            "client_data": client_data, "truck_data": truck_data,
+            "driver_data": driver_data,
+        }
         if not trip:
             return
 
@@ -1259,11 +1127,11 @@ class QtCmrFormView(QWidget):
             eori = conf.get("eori_number", "")
             phone = conf.get("phone", "")
             if cui:
-                sender_lines.append(f"VAT/CUI: {cui}")
+                sender_lines.append(f"{t('cmr.vat_cui', default='VAT/CUI:')} {cui}")
             if eori:
-                sender_lines.append(f"EORI: {eori}")
+                sender_lines.append(f"{t('cmr.eori', default='EORI:')} {eori}")
             if phone:
-                sender_lines.append(f"Tel: {phone}")
+                sender_lines.append(f"{t('cmr.tel', default='Tel:')} {phone}")
             self._set_entry(
                 self._cmr_entries.get("consignor_name"),
                 "\n".join(line for line in sender_lines if line),
@@ -1278,11 +1146,11 @@ class QtCmrFormView(QWidget):
             c_contact = client.get("consignee_contact_name", "")
             c_phone = client.get("consignee_contact_phone", client.get("phone", ""))
             if c_vat:
-                c_lines.append(f"VAT: {c_vat}")
+                c_lines.append(f"{t('cmr.vat', default='VAT:')} {c_vat}")
             if c_eori:
-                c_lines.append(f"EORI: {c_eori}")
+                c_lines.append(f"{t('cmr.eori', default='EORI:')} {c_eori}")
             if c_contact or c_phone:
-                c_lines.append(f"Contact: {c_contact}, {c_phone}".strip(", "))
+                c_lines.append(f"{t('cmr.contact', default='Contact:')} {c_contact}, {c_phone}".strip(", "))
             self._set_entry(
                 self._cmr_entries.get("consignee_name"),
                 "\n".join(line for line in c_lines if line),
@@ -1297,11 +1165,11 @@ class QtCmrFormView(QWidget):
             c_contact = client.get("consignee_contact_name", "")
             c_phone = client.get("consignee_contact_phone", client.get("phone", ""))
             if c_vat:
-                sender_lines.append(f"VAT: {c_vat}")
+                sender_lines.append(f"{t('cmr.vat', default='VAT:')} {c_vat}")
             if c_eori:
-                sender_lines.append(f"EORI: {c_eori}")
+                sender_lines.append(f"{t('cmr.eori', default='EORI:')} {c_eori}")
             if c_contact or c_phone:
-                sender_lines.append(f"Contact: {c_contact}, {c_phone}".strip(", "))
+                sender_lines.append(f"{t('cmr.contact', default='Contact:')} {c_contact}, {c_phone}".strip(", "))
             self._set_entry(
                 self._cmr_entries.get("consignor_name"),
                 "\n".join(line for line in sender_lines if line),
@@ -1315,11 +1183,11 @@ class QtCmrFormView(QWidget):
             eori = conf.get("eori_number", "")
             phone = conf.get("phone", "")
             if cui:
-                c_lines.append(f"VAT/CUI: {cui}")
+                c_lines.append(f"{t('cmr.vat_cui', default='VAT/CUI:')} {cui}")
             if eori:
-                c_lines.append(f"EORI: {eori}")
+                c_lines.append(f"{t('cmr.eori', default='EORI:')} {eori}")
             if phone:
-                c_lines.append(f"Tel: {phone}")
+                c_lines.append(f"{t('cmr.tel', default='Tel:')} {phone}")
             self._set_entry(
                 self._cmr_entries.get("consignee_name"),
                 "\n".join(line for line in c_lines if line),
@@ -1333,11 +1201,11 @@ class QtCmrFormView(QWidget):
         c_email = conf.get("email", "")
         c_reg = conf.get("reg_number", "")
         if c_phone:
-            carr_lines.append(f"Tel: {c_phone}")
+            carr_lines.append(f"{t('cmr.tel', default='Tel:')} {c_phone}")
         if c_email:
-            carr_lines.append(f"Email: {c_email}")
+            carr_lines.append(f"{t('cmr.email', default='Email:')} {c_email}")
         if c_reg:
-            carr_lines.append(f"Reg No: {c_reg}")
+            carr_lines.append(f"{t('cmr.reg_no', default='Reg No:')} {c_reg}")
         self._set_entry(
             self._cmr_entries.get("carrier_name"),
             "\n".join(line for line in carr_lines if line),
@@ -1463,7 +1331,7 @@ class QtCmrFormView(QWidget):
     # Helpers
     # ══════════════════════════════════════════════════════════════════════
 
-    def get_bottom_frame(self) -> Optional[QWidget]:
+    def get_bottom_frame(self) -> QWidget | None:
         """Return the bottom action bar for adding additional controls.
 
         Parent views can pack their controls here so they scroll with the form.
@@ -1505,7 +1373,7 @@ class QtCmrFormView(QWidget):
         self._update_role_buttons()
         self._last_trip_data = None
 
-    def _set_entry(self, widget: Optional[QWidget], value: Any):
+    def _set_entry(self, widget: QWidget | None, value: Any):
         """Set the value of a form widget, handling different widget types."""
         if widget is None:
             return
@@ -1536,13 +1404,13 @@ class QtCmrFormView(QWidget):
     # Data export
     # ══════════════════════════════════════════════════════════════════════
 
-    def get_data(self) -> Dict[str, Any]:
+    def get_data(self) -> dict[str, Any]:
         """Collect all form fields into a flat dict for the CMR generator.
 
         Returns a dict compatible with ``CMRGenerator.generate()`` /
         ``generate_all_copies()``.
         """
-        data: Dict[str, Any] = {}
+        data: dict[str, Any] = {}
         for key, widget in self._cmr_entries.items():
             if isinstance(widget, StyledLineEdit):
                 data[key] = widget.text()
@@ -1592,41 +1460,55 @@ class QtCmrFormView(QWidget):
 
         # ADR rows
         adr_entries = []
-        try:
-            for row_data in self._adr_rows:
-                row_dict: Dict[str, Any] = {}
-                for k, w in row_data.items():
-                    if isinstance(w, StyledLineEdit):
-                        row_dict[k] = w.text()
-                adr_entries.append(row_dict)
-        except AttributeError:
-            pass
+        for row in self._adr_rows:
+            entries = row.findChildren(StyledLineEdit)
+            if len(entries) >= 6:
+                adr_entries.append({
+                    'un_no': entries[0].text().strip(),
+                    'adr_class': entries[1].text().strip(),
+                    'classification_code': entries[2].text().strip(),
+                    'packaging_group': entries[3].text().strip(),
+                    'hazard_label': entries[4].text().strip(),
+                    'package_count': entries[5].text().strip(),
+                })
         if adr_entries:
-            data["adr_info_json"] = json.dumps(adr_entries)
+            data['adr_info_json'] = json.dumps(adr_entries)
 
         # Successive carriers
         successive = []
-        try:
-            for row_data in self._successive_rows:
-                row_dict = {}
-                for k, w in row_data.items():
-                    if isinstance(w, StyledLineEdit):
-                        row_dict[k] = w.text()
-                successive.append(row_dict)
-        except AttributeError:
-            pass
+        for frame in self._successive_carrier_rows:
+            entries = frame.findChildren(StyledLineEdit)
+            if len(entries) >= 6:
+                successive.append({
+                    'carrier_name': entries[0].text().strip(),
+                    'carrier_address': entries[1].text().strip(),
+                    'carrier_country': entries[2].text().strip(),
+                    'vehicle_plate': entries[3].text().strip(),
+                    'trailer_plate': entries[4].text().strip(),
+                    'driver_name': entries[5].text().strip(),
+                    'from_location': entries[6].text().strip()
+                    if len(entries) > 6 else '',
+                    'to_location': entries[7].text().strip()
+                    if len(entries) > 7 else '',
+                })
         if successive:
-            data["successive_carriers_json"] = json.dumps(successive)
+            data['successive_carriers_json'] = json.dumps(successive)
 
         # Financial grid (Box 20)
         financial = {}
-        for key in ["sender_carriage", "consignee_carriage",
-                     "sender_supplementary", "consignee_supplementary",
-                     "sender_customs", "consignee_customs",
-                     "sender_other", "consignee_other"]:
+        for key in ['carriage_sender', 'carriage_consignee',
+                     'supplementary_sender', 'supplementary_consignee',
+                     'customs_sender', 'customs_consignee',
+                     'other_sender', 'other_consignee']:
             w = self._cmr_entries.get(key)
-            if w is not None:
-                financial[key] = w.text() if hasattr(w, "text") else str(w)
+            if w is None:
+                financial[key] = ''
+            elif isinstance(w, StyledLineEdit):
+                financial[key] = w.text().strip()
+            elif isinstance(w, StyledComboBox):
+                financial[key] = w.currentText().strip()
+            else:
+                financial[key] = str(w) if w else ''
         if financial:
             data["financial_grid"] = financial
 
@@ -1644,32 +1526,13 @@ class QtCmrFormView(QWidget):
         return data
 
     # ══════════════════════════════════════════════════════════════════════
-    # i18n
-    # ══════════════════════════════════════════════════════════════════════
-
-    def _on_language_changed(self, lang: str) -> None:
-        """React to language changes.
-
-        Currently a no-op placeholder — the form is built once with English
-        labels.  In a future iteration, translatable labels should be refreshed
-        here.
-        """
-        pass
-
-    # ══════════════════════════════════════════════════════════════════════
     # Lifecycle
     # ══════════════════════════════════════════════════════════════════════
 
     def wakeup(self) -> None:
-        """Register i18n listener; called when the view becomes active."""
-        if not getattr(self, "_listener_registered", False):
-            register_listener(self._language_callback)
-            self._listener_registered = True
+        """Called when the view becomes active."""
+        pass
 
     def shutdown(self) -> None:
-        """Unregister i18n listener; called when the view is discarded."""
-        try:
-            unregister_listener(self._language_callback)
-        except Exception:
-            pass
-        self._listener_registered = False
+        """Called when the view is discarded."""
+        pass

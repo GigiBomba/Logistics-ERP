@@ -2,7 +2,7 @@ import logging
 import threading
 import uuid
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger("operations.event_bus")
 
@@ -34,6 +34,12 @@ DRIVER_CREATED = "driver.created"
 DRIVER_UPDATED = "driver.updated"
 DRIVER_DELETED = "driver.deleted"
 
+CLIENT_CREATED = "client.created"
+CLIENT_UPDATED = "client.updated"
+CLIENT_DELETED = "client.deleted"
+
+DOCUMENT_OCR_RAN = "document.ocr_ran"
+
 TRIP_CONFLICT = "trip.conflict"
 SETTINGS_UPDATED = "settings.updated"
 
@@ -45,6 +51,14 @@ DOCUMENT_ARCHIVED = "document.archived"
 DOCUMENT_DELETED = "document.deleted"
 DOCUMENT_LINKED = "document.linked"
 DOCUMENT_UNLINKED = "document.unlinked"
+
+# ── Document Automation Pipeline events ─────────────────────────────
+DOCUMENT_IMPORTED = "document.automation.imported"
+DOCUMENT_PROCESSED = "document.automation.processed"
+DOCUMENT_OCR_COMPLETE = "document.automation.ocr_complete"
+DOCUMENT_MATCHED = "document.automation.matched"
+DOCUMENT_GROUPED = "document.automation.grouped"
+PACKAGE_SENT = "package.sent"
 
 VALID_TRANSITIONS = {
     "Planned": ["Loading", "Cancelled"],
@@ -66,11 +80,15 @@ ALL_EVENTS = [
     MAINTENANCE_ADDED, MAINTENANCE_DELETED,
     INVOICE_CREATED, INVOICE_PAID, INVOICE_EMAILED,
     DRIVER_CREATED, DRIVER_UPDATED, DRIVER_DELETED,
+    CLIENT_CREATED, CLIENT_UPDATED, CLIENT_DELETED,
     TRIP_CONFLICT, SETTINGS_UPDATED,
     ALERT_CREATED, ALERT_RESOLVED,
     DAILY_CHECK, SYSTEM_STARTUP,
     DOCUMENT_UPLOADED, DOCUMENT_ARCHIVED, DOCUMENT_DELETED,
     DOCUMENT_LINKED, DOCUMENT_UNLINKED,
+    DOCUMENT_IMPORTED, DOCUMENT_PROCESSED, DOCUMENT_OCR_COMPLETE,
+    DOCUMENT_MATCHED, DOCUMENT_GROUPED, PACKAGE_SENT,
+    DOCUMENT_OCR_RAN,
 ]
 
 
@@ -90,14 +108,15 @@ class EventBus:
         if self._initialized:
             return
         self._initialized = True
-        self._subscribers: Dict[str, List[Callable]] = {ev: [] for ev in ALL_EVENTS}
-        self._history: List[Dict[str, Any]] = []
-        self._history_max = 1000
+        self._subscribers: dict[str, list[Callable]] = {ev: [] for ev in ALL_EVENTS}
+        self._subscribers_lock = threading.Lock()
+        self._history: list[dict[str, Any]] = []
+        self._history_max = 100
         logger.info("EventBus initialized with %d event types", len(ALL_EVENTS))
 
     # ── Public API ─────────────────────────────────────────────────
 
-    def publish(self, event_type: str, data: Optional[Dict[str, Any]] = None) -> None:
+    def publish(self, event_type: str, data: Optional[dict[str, Any]] = None) -> None:
         ev = {
             "id": uuid.uuid4().hex[:12],
             "type": event_type,
@@ -108,42 +127,48 @@ class EventBus:
         if len(self._history) > self._history_max:
             self._history.pop(0)
 
-        callbacks = self._subscribers.get(event_type, [])
+        with self._subscribers_lock:
+            callbacks = list(self._subscribers.get(event_type, []))
         if not callbacks:
             logger.debug("Event %s published (no subscribers)", event_type)
             return
 
-        for cb in list(callbacks):
+        for cb in callbacks:
             try:
                 cb(ev)
             except Exception as e:
                 logger.error("Subscriber error for %s: %s", event_type, e)
 
     def subscribe(self, event_type: str, callback: Callable) -> None:
-        if event_type not in self._subscribers:
-            self._subscribers[event_type] = []
-        self._subscribers[event_type].append(callback)
-        logger.debug("Subscriber registered for %s (total %d)", event_type, len(self._subscribers[event_type]))
+        with self._subscribers_lock:
+            if event_type not in self._subscribers:
+                self._subscribers[event_type] = []
+            self._subscribers[event_type].append(callback)
+        logger.debug("Subscriber registered for %s", event_type)
 
     def unsubscribe(self, event_type: str, callback: Callable) -> None:
-        callbacks = self._subscribers.get(event_type, [])
-        if callback in callbacks:
-            callbacks.remove(callback)
-            logger.debug("Subscriber unregistered for %s", event_type)
+        with self._subscribers_lock:
+            callbacks = self._subscribers.get(event_type, [])
+            if callback in callbacks:
+                callbacks.remove(callback)
+        logger.debug("Subscriber unregistered for %s", event_type)
 
-    def get_history(self, event_type: Optional[str] = None, limit: int = 50) -> List[Dict]:
+    def get_history(self, event_type: Optional[str] = None, limit: int = 50) -> list[dict]:
         if event_type:
             return [e for e in self._history[-limit:] if e["type"] == event_type]
         return list(self._history[-limit:])
 
+    def inject_db(self, db) -> None:
+        """Inject a shared DatabaseManager reference so no new connection is created."""
+        self._db = db
+
     def abort_if_trip_is_archived(self, trip_id: int) -> bool:
         """Check if a trip is archived; return True if archived (caller should skip)."""
+        if not hasattr(self, "_db") or self._db is None:
+            return False
         try:
             from services.trip_service import TripService
-            from database.db_manager import DatabaseManager
-            from config import Config
-            db = DatabaseManager(Config.DB_PATH)
-            svc = TripService(db)
+            svc = TripService(self._db)
             trip = svc.get_by_id(trip_id)
             return trip.get("archived") == 1 if trip else False
         except Exception:

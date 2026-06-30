@@ -51,6 +51,17 @@ ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
     "N818",   # exception class names should end with Error
+    "N802",   # Qt method names (enterEvent, closeEvent etc.) must match C++ override
+    "N806",   # Qt/CV variable naming conventions
+    "N815",   # Qt signal names use mixedCase
+    "N813",   # camelcase import alias
+    "E701",   # compound statements (if cond: action) – intentional brevity
+    "E702",   # compound statements (a; b) – intentional brevity
+    "E402",   # module-level import not at top – deferred imports for perf
+    "RUF002", # ambiguous unicode in docstrings – intentional × signs etc.
+    "RUF003", # ambiguous unicode in comments – intentional en dashes
+    "RUF012", # mutable class defaults – Qt class constants pattern
+    "SIM102", # collapsible if – readability preference
 ]
 per-file-ignores = {}
 
@@ -73,7 +84,6 @@ testpaths = ["tests"]
 python_files = ["test_*.py"]
 addopts = ["--strict-markers", "--tb=short", "-q"]
 filterwarnings = [
-    "ignore::DeprecationWarning:matplotlib.*",
     "ignore::DeprecationWarning:pytestqt.*",
 ]
 markers = [

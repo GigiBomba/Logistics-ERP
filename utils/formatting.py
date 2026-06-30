@@ -1,9 +1,18 @@
 from datetime import datetime
 from typing import Any, Dict, Optional
 
+from utils.formatters import (
+    fmt_currency as _fmt_currency,
+    fmt_distance as _fmt_distance,
+    fmt_date as _fmt_date,
+    fmt_percentage as _fmt_percentage,
+    fmt_number,
+)
+
 
 def format_currency(value: float, decimals: int = 2, symbol: str = "€") -> str:
-    return f"{value:,.{decimals}f}{symbol}"
+    """Backward-compatible wrapper around fmt_currency."""
+    return _fmt_currency(value, currency=symbol, decimals=decimals)
 
 
 def format_duration(minutes: float) -> str:
@@ -26,8 +35,23 @@ def format_duration(minutes: float) -> str:
 
 
 def format_distance(km: float, decimals: int = 1) -> str:
+    """Backward-compatible wrapper. Uses integer km when decimals=0, otherwise legacy."""
+    if decimals == 0:
+        return _fmt_distance(km)
     return f"{km:,.{decimals}f} km"
 
 
 def format_percentage(value: float, decimals: int = 1) -> str:
-    return f"{value:.{decimals}f}%"
+    """Backward-compatible wrapper around fmt_percentage."""
+    return _fmt_percentage(value, decimals=decimals)
+
+
+def format_age(seconds: Optional[float]) -> str:
+    """Human-readable age from seconds: '30s', '5m', '2.5h', 'never' for None."""
+    if seconds is None:
+        return "never"
+    if seconds < 60:
+        return f"{seconds:.0f}s"
+    if seconds < 3600:
+        return f"{seconds/60:.0f}m"
+    return f"{seconds/3600:.1f}h"

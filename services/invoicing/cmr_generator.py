@@ -5,28 +5,34 @@ International Carriage of Goods by Road (Geneva, 1956), with bilingual labels,
 four-copy support, eFTI XML embedding, PDF/A-3 compliance, and signature pads.
 """
 import json
-import os
 import logging
+import os
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
-from reportlab.lib.pagesizes import A4
-from reportlab.platypus import (
-    SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle,
-    HRFlowable, Image,
-)
-from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib import colors
-from reportlab.lib.units import cm, mm
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
-from services.invoicing.config_manager import load_company_config
+from reportlab.lib.pagesizes import A4
+from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+from reportlab.lib.units import cm, mm
+from reportlab.platypus import (
+    HRFlowable,
+    Image,
+    Paragraph,
+    SimpleDocTemplate,
+    Spacer,
+    Table,
+    TableStyle,
+)
+
 from services.invoicing.cmr_efti import generate_efti_xml
+from services.invoicing.config_manager import load_company_config
 
 logger = logging.getLogger(__name__)
 
 
+import contextlib
 import functools
-
 
 @functools.lru_cache(maxsize=1)
 def _get_srgb_icc_profile() -> Optional[bytes]:
@@ -42,8 +48,9 @@ def _get_srgb_icc_profile() -> Optional[bytes]:
         if len(data) > 500 and data[36:40] == b"acsp":
             return data
     try:
-        from PIL import Image, ImageCms
         import io
+
+        from PIL import Image
         img = Image.new("RGB", (1, 1), (255, 255, 255))
         buf = io.BytesIO()
         img.save(buf, format="JPEG", quality=100)
@@ -156,7 +163,7 @@ class CMRGenerator:
         except Exception:
             return colors.HexColor("#6366f1")
 
-    def _next_cmr_number(self) -> Tuple[str, int]:
+    def _next_cmr_number(self) -> tuple[str, int]:
         import time
         year = datetime.now().year
         if self.db:
@@ -183,10 +190,8 @@ class CMRGenerator:
                     cur.execute("COMMIT")
                     break
                 except Exception as e:
-                    try:
+                    with contextlib.suppress(Exception):
                         cur.execute("ROLLBACK")
-                    except Exception:
-                        pass
                     if attempt < 2:
                         time.sleep(0.1)
                         continue
@@ -197,7 +202,7 @@ class CMRGenerator:
         cmr_number = f"CMR-{year}-{seq:06d}"
         return cmr_number, seq
 
-    def _gather_context(self, trip_data: Dict[str, Any]) -> Dict[str, Any]:
+    def _gather_context(self, trip_data: dict[str, Any]) -> dict[str, Any]:
         trip_id = trip_data.get("trip_id", trip_data.get("id", 0))
         conf = load_company_config()
         ctx = dict(trip_data)
@@ -286,15 +291,12 @@ class CMRGenerator:
         ctx["generating_role"] = trip_data.get("generating_role", "consignor")
         return ctx
 
-    def _parse_adr(self, trip_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _parse_adr(self, trip_data: dict[str, Any]) -> list[dict[str, Any]]:
         raw = trip_data.get("adr_info_json", "")
         if not raw:
             return []
         try:
-            if isinstance(raw, str):
-                items = json.loads(raw)
-            else:
-                items = raw
+            items = json.loads(raw) if isinstance(raw, str) else raw
             return items if isinstance(items, list) else []
         except (json.JSONDecodeError, TypeError):
             return []
@@ -307,11 +309,11 @@ class CMRGenerator:
         return filepath
 
     def generate_all_copies(self, trip_data: dict, output_dir: str,
-                            skip_db_update: bool = False) -> Dict[str, str]:
+                            skip_db_update: bool = False) -> dict[str, str]:
         ctx = self._gather_context(trip_data)
         cmr_number = ctx["cmr_number"]
         paths = {}
-        for suffix, color_name, color_hex, color_light, bar_text, desig_text in COPY_CONFIGS:
+        for suffix, _color_name, color_hex, _color_light, bar_text, desig_text in COPY_CONFIGS:
             path = self._build_single_copy(ctx, suffix, output_dir,
                                            color_hex, bar_text, desig_text)
             paths[suffix] = path
@@ -328,7 +330,7 @@ class CMRGenerator:
 
         return paths
 
-    def _build_single_copy(self, ctx: Dict[str, Any], suffix: str,
+    def _build_single_copy(self, ctx: dict[str, Any], suffix: str,
                            output_dir: str, color_hex: str = "#D32F2F",
                            bar_text: str = "", desig_text: str = "") -> str:
         import tempfile
@@ -467,9 +469,13 @@ class CMRGenerator:
             L, R, lc))
 
         # ── Carriage Payment, COD, Distance & Vehicle ──
-        payer = str(ctx.get("carriage_payer") or "")
-        pay_label = ("Sender pays / Expeditorul plateste" if payer.lower() == "sender" else
-                     "Consignee pays / Destinatarul plateste" if payer.lower() == "consignee" else "—")
+        payer = (ctx.get("carriage_payer") or "")
+        if isinstance(payer, str):
+            payer_lower = payer.lower()
+        else:
+            payer_lower = str(payer).lower() if payer is not None else ""
+        pay_label = ("Sender pays / Expeditorul plateste" if payer_lower == "sender" else
+                     "Consignee pays / Destinatarul plateste" if payer_lower == "consignee" else "—")
         left_parts = [f"<b>15. PAYMENT OF CARRIAGE / PLATA TRANSPORT:</b> {pay_label}"]
 
         cod_amount = ctx.get("cod_amount", "")
@@ -478,10 +484,8 @@ class CMRGenerator:
 
         dist = ctx.get("distance_km", "")
         if dist:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 dist = round(float(dist), 1)
-            except (ValueError, TypeError):
-                pass
             left_parts.append(f"<b>Distance / Distanta:</b> {dist} km")
 
         vd = (f"Vehicle: {ctx.get('truck_plate') or '—'}   "

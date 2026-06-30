@@ -7,40 +7,65 @@ from ``TripContextService``.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QWidget,
     QFrame,
-    QLabel,
-    QVBoxLayout,
     QHBoxLayout,
-    QScrollArea,
+    QLabel,
     QMessageBox,
+    QScrollArea,
+    QVBoxLayout,
+    QWidget,
 )
 
-from services.i18n import t
 from services.calculator import TripCalculator
+from services.conflict_service import TripConflictService
+from services.i18n import t
+from services.operations.event_bus import (
+    CLIENT_CREATED,
+    CLIENT_UPDATED,
+    TRUCK_CREATED,
+    TRUCK_DELETED,
+    TRUCK_UPDATED,
+    EventBus,
+)
 from services.trip_context import (
     TripContextService,
     register_trip_listener,
     unregister_trip_listener,
 )
-from services.conflict_service import TripConflictService
+from ui.components import (
+    Btn,
+    Card,
+    CardHeader,
+    Divider,
+    EmptyState,
+    Label,
+    PageTitle,
+)
+from ui.design_tokens import (
+    COLOR_ERROR_TEXT,
+    COLOR_SUCCESS_TEXT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY,
+    FONT_SIZE_SM,
+    FONT_WEIGHT_SEMIBOLD,
+    SP,
+)
 from ui.widgets import (
-    StyledLineEdit,
-    StyledComboBox,
     StyledCheckBox,
+    StyledComboBox,
+    StyledLineEdit,
     field,
 )
 from ui.widgets.toast import Toast
-from ui.design_tokens import SP, SUCCESS, DANGER
-from ui.components import (
-    Card, CardHeader, Btn, PageTitle, Label, MonoLabel, Divider,
-)
+from utils.formatters import fmt_currency, fmt_distance, fmt_percentage, fmt_rate
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +73,18 @@ logger = logging.getLogger(__name__)
 class QtCalculatorView(QWidget):
     """Profit calculator with full save/conflict-check flow."""
 
+    # Cross-thread signal: ``TripContext`` listeners can be invoked from
+    # a worker thread (e.g. the route planner's result thread calls
+    # ``set_active_trip_info``).  ``QTimer.singleShot(0, ...)`` from a
+    # worker thread does NOT marshal to the GUI thread — Qt creates the
+    # timer in the calling thread and its event loop never runs, so the
+    # calculator's badges would never refresh.  This signal IS thread-safe
+    # and routes the slot to the GUI thread.
+    trip_context_updated = Signal(object, object)   # tc, changed_fields
+
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         fleet_service=None,
         trip_service=None,
@@ -74,19 +108,33 @@ class QtCalculatorView(QWidget):
         self.conflict_service = TripConflictService(self.db) if self.db else None
 
         self._trucks: list = []
-        self._truck_map: Dict[str, Dict[str, Any]] = {}
-        self._selected_truck: Optional[Dict[str, Any]] = None
+        self._truck_map: dict[str, dict[str, Any]] = {}
+        self._selected_truck: dict[str, Any] | None = None
+        self._selected_truck_id = None
+        self._selected_client_id = None
         self._selected_truck_fuel: float = 34.0
         self._route_distance: float = 0.0
         self._route_toll: float = 0.0
         self._route_fuel_liters: float = 0.0
-        self._current_route_history_id: Optional[int] = None
+        self._current_route_history_id: int | None = None
 
         self._build_ui()
         self._load_trucks()
         self._load_clients()
         self._sync_from_trip_context()
 
+        # Subscribe to truck / client events so changes elsewhere
+        # refresh the dropdowns without an app restart.
+        self._event_bus = EventBus()
+        self._event_bus.subscribe(TRUCK_CREATED, self._on_truck_or_client_event)
+        self._event_bus.subscribe(TRUCK_UPDATED, self._on_truck_or_client_event)
+        self._event_bus.subscribe(TRUCK_DELETED, self._on_truck_or_client_event)
+        self._event_bus.subscribe(CLIENT_CREATED, self._on_truck_or_client_event)
+        self._event_bus.subscribe(CLIENT_UPDATED, self._on_truck_or_client_event)
+        self._events_subscribed = True
+        self._rebuild_timer: QTimer | None = None
+
+        self.trip_context_updated.connect(self._apply_trip_context)
         self._trip_listener = self._on_trip_context_changed
         register_trip_listener(self._trip_listener)
 
@@ -147,19 +195,49 @@ class QtCalculatorView(QWidget):
         cl = card.layout()
         CardHeader(cl, t("main.section_identify"))
 
-        # Truck dropdown
+        # Truck dropdown — combo + manual refresh (event bus also
+        # refreshes on TRUCK_* events, but the button is a useful
+        # safety net).
         self.truck_combo = StyledComboBox(card)
         self.truck_combo.currentIndexChanged.connect(self._on_truck_selected)
-        cl.addWidget(field(card, t("main.truck_label"), self.truck_combo))
+        self._truck_refresh_btn = Btn(
+            card, "\u21BB", variant="ghost", size="sm",
+            command=self._load_trucks,
+        )
+        self._truck_refresh_btn.setToolTip(
+            t("common.refresh", default="Refresh")
+        )
+        self._truck_refresh_btn.setFixedWidth(32)
+        truck_row = QWidget(card)
+        truck_row_layout = QHBoxLayout(truck_row)
+        truck_row_layout.setContentsMargins(0, 0, 0, 0)
+        truck_row_layout.setSpacing(SP["2"])
+        truck_row_layout.addWidget(self.truck_combo, 1)
+        truck_row_layout.addWidget(self._truck_refresh_btn)
+        cl.addWidget(field(card, t("main.truck_label"), truck_row))
 
         # Route badge (distance loaded from route planner)
         self.route_badge = QLabel("")
         self.route_badge.setProperty("fontRole", "muted")
         cl.addWidget(self.route_badge)
 
-        # Client
+        # Client — combo + manual refresh.
         self.e_client = StyledComboBox(card, values=[], state="readonly")
-        cl.addWidget(field(card, t("main.client_label"), self.e_client))
+        self._client_refresh_btn = Btn(
+            card, "\u21BB", variant="ghost", size="sm",
+            command=self._load_clients,
+        )
+        self._client_refresh_btn.setToolTip(
+            t("common.refresh", default="Refresh")
+        )
+        self._client_refresh_btn.setFixedWidth(32)
+        client_row = QWidget(card)
+        client_row_layout = QHBoxLayout(client_row)
+        client_row_layout.setContentsMargins(0, 0, 0, 0)
+        client_row_layout.setSpacing(SP["2"])
+        client_row_layout.addWidget(self.e_client, 1)
+        client_row_layout.addWidget(self._client_refresh_btn)
+        cl.addWidget(field(card, t("main.client_label"), client_row))
 
         self.left_layout.addWidget(card)
 
@@ -250,17 +328,89 @@ class QtCalculatorView(QWidget):
 
     def _build_result_section(self):
         cl = self.results_card.layout()
+        cl.setSpacing(SP["3"])
 
-        self._profit_label = MonoLabel(self.results_card, t("main.placeholder_info"), size="xl")
-        self._profit_label.setAlignment(Qt.AlignCenter)
-        self._profit_label.setWordWrap(True)
-        cl.addWidget(self._profit_label)
+        # Section header
+        header = QLabel(t("main.results_header", default="REZULTAT CALCUL"))
+        header.setStyleSheet(
+            f"font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; "
+            f"color: {COLOR_TEXT_TERTIARY}; text-transform: uppercase; letter-spacing: 0.08em;"
+        )
+        cl.addWidget(header)
 
-        self._breakdown_container = QWidget(self.results_card)
-        self._breakdown_layout = QVBoxLayout(self._breakdown_container)
-        self._breakdown_layout.setContentsMargins(0, 0, 0, 0)
-        self._breakdown_layout.setSpacing(SP["2"])
-        cl.addWidget(self._breakdown_container)
+        # Empty state (shown until first calculation)
+        self._empty_state = EmptyState(
+            self.results_card,
+            icon_name="mdi6.calculator-variant",
+            title=t("main.empty_calc_title", default="Completați formularul pentru a calcula profitul"),
+            subtitle=t("main.empty_calc_subtitle", default="Introduceți datele cursei și apăsați Calculare."),
+        )
+        cl.addWidget(self._empty_state)
+
+        # Results container (hidden initially)
+        self._results_container = QWidget(self.results_card)
+        res_layout = QVBoxLayout(self._results_container)
+        res_layout.setContentsMargins(0, 0, 0, 0)
+        res_layout.setSpacing(SP["2"])
+
+        def _make_row(label_text: str, value_label: QLabel):
+            row = QWidget(self._results_container)
+            rl = QHBoxLayout(row)
+            rl.setContentsMargins(0, 0, 0, 0)
+            rl.setSpacing(SP["2"])
+            lbl = QLabel(label_text)
+            lbl.setStyleSheet(f"font-size: 13px; color: {COLOR_TEXT_SECONDARY};")
+            rl.addWidget(lbl)
+            rl.addStretch()
+            value_label.setStyleSheet(
+                f"font-family: 'Consolas', monospace; font-size: 13px; color: {COLOR_TEXT_PRIMARY};"
+            )
+            value_label.setAlignment(Qt.AlignRight)
+            rl.addWidget(value_label)
+            return row
+
+        self._res_revenue = QLabel("—")
+        self._res_cost = QLabel("—")
+        self._res_profit = QLabel("—")
+        self._res_profit_pct = QLabel("—")
+        self._res_rate = QLabel("—")
+        self._res_margin = QLabel("—")
+
+        res_layout.addWidget(_make_row(t("main.result_revenue", default="Venit Brut"), self._res_revenue))
+        res_layout.addWidget(_make_row(t("main.result_cost", default="Cost Total"), self._res_cost))
+
+        sep = Divider(self._results_container)
+        res_layout.addWidget(sep)
+
+        # Profit net row — larger and colored
+        profit_row = QWidget(self._results_container)
+        prl = QHBoxLayout(profit_row)
+        prl.setContentsMargins(0, 0, 0, 0)
+        prl.setSpacing(SP["2"])
+        profit_lbl = QLabel(t("main.result_profit", default="Profit Net"))
+        profit_lbl.setStyleSheet(f"font-size: 14px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {COLOR_TEXT_PRIMARY};")
+        prl.addWidget(profit_lbl)
+        prl.addStretch()
+        self._res_profit.setStyleSheet(
+            f"font-family: 'Consolas', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {COLOR_TEXT_PRIMARY};"
+        )
+        self._res_profit.setAlignment(Qt.AlignRight)
+        prl.addWidget(self._res_profit)
+        self._res_profit_pct.setStyleSheet(
+            f"font-family: 'Consolas', monospace; font-size: 13px; color: {COLOR_TEXT_TERTIARY};"
+        )
+        prl.addWidget(self._res_profit_pct)
+        res_layout.addWidget(profit_row)
+
+        res_layout.addWidget(_make_row(t("main.result_rate", default="Rată / km"), self._res_rate))
+        res_layout.addWidget(_make_row(t("main.result_margin", default="Marjă"), self._res_margin))
+        self._cost_breakdown_label = QLabel("")
+        self._cost_breakdown_label.setStyleSheet(f"font-size: 12px; color: {COLOR_TEXT_TERTIARY};")
+        self._cost_breakdown_label.setWordWrap(True)
+        res_layout.addWidget(self._cost_breakdown_label)
+
+        cl.addWidget(self._results_container)
+        self._results_container.hide()
 
         cl.addWidget(Divider(self.results_card))
 
@@ -290,7 +440,7 @@ class QtCalculatorView(QWidget):
             label = f"{r.get('plate_number', '')} - {r.get('model', '')}"
             self.truck_combo.addItem(label, tid)
             try:
-                row_dict = {k: r[k] for k in r.keys()}
+                row_dict = {k: r[k] for k in r}
             except Exception:
                 row_dict = {
                     "id": r.get("id"),
@@ -336,6 +486,31 @@ class QtCalculatorView(QWidget):
             )
         except Exception:
             self._selected_truck_fuel = 34.0
+
+    def _on_truck_or_client_event(self, _event_data: Any) -> None:
+        if not getattr(self, "_events_subscribed", False):
+            return
+        if self._rebuild_timer is None:
+            self._rebuild_timer = QTimer(self)
+            self._rebuild_timer.setSingleShot(True)
+            self._rebuild_timer.timeout.connect(self._do_rebuild_dropdowns)
+        self._rebuild_timer.start(200)
+
+    def _do_rebuild_dropdowns(self):
+        previous_truck = self._selected_truck_id
+        previous_client = self._selected_client_id
+        self._load_trucks()
+        self._load_clients()
+        if previous_truck:
+            for i in range(self.truck_combo.count()):
+                if str(self.truck_combo.itemData(i)) == str(previous_truck):
+                    self.truck_combo.setCurrentIndex(i)
+                    break
+        if previous_client:
+            for i in range(self.e_client.count()):
+                if str(self.e_client.itemData(i)) == str(previous_client):
+                    self.e_client.setCurrentIndex(i)
+                    break
 
     # ── VAT handling ───────────────────────────────────────────────────────────
 
@@ -396,11 +571,12 @@ class QtCalculatorView(QWidget):
             if self._route_fuel_liters > 0:
                 fuel_cost_from_route = self._route_fuel_liters * fuel_price
 
+            extra_val = float(self.e_extra.text()) if self.e_extra.text().strip() else None
             res = self.calculator.calculate(
                 km, pret_eur, fuel_price,
                 int(self.e_days.text() or 1), cons,
-                float(self.e_extra.text() or 0), float(self.e_sal.text() or 0), float(self._route_toll or 0),
-                fuel_cost_from_route,
+                extra_in=extra_val, sal_in=float(self.e_sal.text() or 0), taxa_in=float(self._route_toll or 0),
+                fuel_cost_override=fuel_cost_from_route,
             )
 
             try:
@@ -478,55 +654,36 @@ class QtCalculatorView(QWidget):
             )
 
     def _display_result(self, res, dt_inc: datetime):
-        # Update profit number with SUCCESS/DANGER color
-        color = SUCCESS if res.net_profit >= 0 else DANGER
-        self._profit_label.setText(f"{res.net_profit:,.2f} €")
-        self._profit_label.setStyleSheet(f"color: {color};")
+        color = COLOR_SUCCESS_TEXT if res.net_profit >= 0 else COLOR_ERROR_TEXT
 
-        # Clear and rebuild breakdown rows
-        while self._breakdown_layout.count():
-            item = self._breakdown_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
+        # Hide empty state, show results
+        self._empty_state.hide()
+        self._results_container.show()
 
-        rows = [
-            (t("main.gross_rate"), f"{res.gross_per_km:.2f} / {res.rate_per_km:.2f} €/km"),
-            (t("main.margin"), f"{res.margin_percent:.1f}%  |  {dt_inc.strftime('%d/%m/%Y')}"),
-        ]
-        for label_text, value in rows:
-            row = QWidget(self._breakdown_container)
-            row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(SP["2"])
-            lb = Label(row, label_text, role="secondary")
-            vl = Label(row, value)
-            row_layout.addWidget(lb)
-            row_layout.addStretch()
-            row_layout.addWidget(vl)
-            self._breakdown_layout.addWidget(row)
-
-        # Cost breakdown
-        cost_label = QLabel(
-            f"⛽ {res.fuel_cost:.2f} € Fuel  |  {res.toll_cost:.2f} € Toll  |  {res.salary_cost:.2f} € Salary"
+        total_costs = res.fuel_cost + res.toll_cost + res.salary_cost + res.extra_costs
+        self._res_revenue.setText(fmt_currency(res.net_profit + total_costs))
+        self._res_cost.setText(fmt_currency(total_costs))
+        self._res_profit.setText(fmt_currency(res.net_profit))
+        self._res_profit.setStyleSheet(
+            f"font-family: 'Consolas', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {color};"
         )
-        cost_label.setProperty("role", "muted")
-        cost_label.setWordWrap(True)
-        self._breakdown_layout.addWidget(cost_label)
+        self._res_profit_pct.setText(f"({fmt_percentage(res.margin_percent)})")
+        self._res_rate.setText(fmt_rate(res.rate_per_km))
+        self._margin_label_text = t("main.margin")
+        self._res_margin.setText(
+            f"{fmt_percentage(res.margin_percent)}  |  {dt_inc.strftime('%d/%m/%Y')}"
+        )
+
+        self._cost_breakdown_label.setText(
+            f"⛽ {fmt_currency(res.fuel_cost)} Fuel  |  {fmt_currency(res.toll_cost)} Toll  |  {fmt_currency(res.salary_cost)} Salary"
+        )
 
     # ── TripContext sync ───────────────────────────────────────────────────────
 
-    def _sync_from_trip_context(self):
-        try:
-            tc = TripContextService()._tc
-            if tc and tc.route and tc.route.distance_km is not None:
-                self._apply_trip_context(tc, ["route"])
-        except Exception:
-            pass
-
     def _on_trip_context_changed(self, tc, changed_fields):
-        # Listener may be invoked from a background thread; schedule UI update on main thread.
-        QTimer.singleShot(0, lambda: self._apply_trip_context(tc, changed_fields))
+        # Emit on the cross-thread signal so the connected slot runs in
+        # the GUI thread (Qt marshals it for us).
+        self.trip_context_updated.emit(tc, changed_fields)
 
     def _apply_trip_context(self, tc, changed_fields):
         try:
@@ -534,7 +691,7 @@ class QtCalculatorView(QWidget):
                 self._route_distance = float(tc.route.distance_km)
                 self.route_badge.setText(
                     f"\U0001f5fa\ufe0f {t('route.loaded_route', default='Route loaded')}:"
-                    f" {self._route_distance:,.0f} km"
+                    f" {fmt_distance(self._route_distance)}"
                 )
             if tc.route and tc.route.route_history_v2_id is not None:
                 self._current_route_history_id = tc.route.route_history_v2_id
@@ -549,8 +706,16 @@ class QtCalculatorView(QWidget):
                     index = self.truck_combo.findData(truck_id)
                     if index >= 0:
                         self.truck_combo.setCurrentIndex(index)
-        except Exception:
-            pass
+        except (AttributeError, KeyError, ValueError, TypeError):
+            logger.debug("TripContext sync failed", exc_info=True)
+
+    def _sync_from_trip_context(self):
+        try:
+            tc = TripContextService()._tc
+            if tc and tc.route and tc.route.distance_km is not None:
+                self._apply_trip_context(tc, ["route"])
+        except (AttributeError, KeyError):
+            logger.debug("TripContext initial sync skipped", exc_info=True)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
@@ -559,7 +724,15 @@ class QtCalculatorView(QWidget):
         self._sync_from_trip_context()
 
     def shutdown(self):
-        try:
+        with contextlib.suppress(Exception):
             unregister_trip_listener(self._trip_listener)
-        except Exception:
-            pass
+        if getattr(self, "_events_subscribed", False):
+            try:
+                self._event_bus.unsubscribe(TRUCK_CREATED, self._on_truck_or_client_event)
+                self._event_bus.unsubscribe(TRUCK_UPDATED, self._on_truck_or_client_event)
+                self._event_bus.unsubscribe(TRUCK_DELETED, self._on_truck_or_client_event)
+                self._event_bus.unsubscribe(CLIENT_CREATED, self._on_truck_or_client_event)
+                self._event_bus.unsubscribe(CLIENT_UPDATED, self._on_truck_or_client_event)
+            except Exception:
+                pass
+            self._events_subscribed = False
