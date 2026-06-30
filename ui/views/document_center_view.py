@@ -12,44 +12,47 @@ Usage as embedded widget::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
-from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
+    QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QInputDialog,
     QLabel,
-    QLineEdit,
     QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
-    QDialog,
 )
 
-from ui.theme import COLORS, S
-from ui.design_tokens import SP
-from ui.components import Card, Btn, Label, PageTitle, SectionTitle, FieldLabel, Divider
-from services.i18n import t, register_listener, unregister_listener
-from services.document_service import DocumentService, IMAGE_MIME
-from ui.widgets import (
-    ActionButton,
-    StyledLineEdit,
-    StyledComboBox,
-    StyledTableWidget,
-    SectionHeader,
+from services.document_service import IMAGE_MIME, DocumentService
+from services.i18n import register_listener, t, unregister_listener
+from services.operations.event_bus import (
+    DOCUMENT_OCR_RAN,
+    DOCUMENT_UPLOADED,
+    INVOICE_CREATED,
+    EventBus,
 )
+from ui.components import Btn, FieldLabel
+from ui.theme import COLORS, S
+from ui.widgets import (
+    SectionHeader,
+    StyledComboBox,
+    StyledLineEdit,
+)
+from ui.widgets.layout_utils import clear_layout
 
 logger = logging.getLogger(__name__)
 
@@ -84,7 +87,7 @@ class _DocRow(QFrame):
         parent: QWidget,
         doc: dict,
         on_toggle_select: Callable[[int, bool], None],
-        on_show_detail: Callable[[Optional[dict]], None],
+        on_show_detail: Callable[[dict | None], None],
         on_open: Callable[[dict], None],
         on_email: Callable[[dict], None],
         on_delete: Callable[[dict], None],
@@ -136,7 +139,7 @@ class _DocRow(QFrame):
         title_lbl.setProperty("role", "doc-title")
         info_layout.addWidget(title_lbl)
 
-        meta_parts: List[str] = []
+        meta_parts: list[str] = []
         doc_num = doc.get("doc_number", "")
         if doc_num:
             meta_parts.append(doc_num)
@@ -150,6 +153,9 @@ class _DocRow(QFrame):
         upload = doc.get("uploaded_at", "")[:10]
         if upload:
             meta_parts.append(upload)
+        # Show the linked trip ID if the document is associated with one.
+        if doc.get("entity_type") == "trip" and doc.get("entity_id"):
+            meta_parts.append(f"Trip #{doc['entity_id']}")
         meta_lbl = QLabel("  ".join(meta_parts), info_col)
         meta_lbl.setProperty("fontRole", "small")
         meta_lbl.setProperty("role", "doc-meta")
@@ -209,7 +215,7 @@ class _DocRow(QFrame):
         title_lbl.mousePressEvent = lambda e: on_show_detail(doc)
         meta_lbl.mousePressEvent = lambda e: on_show_detail(doc)
 
-    def _get_thumbnail(self) -> Optional[str]:
+    def _get_thumbnail(self) -> str | None:
         """Resolve the thumbnail path from the current app context."""
         # We rely on a service call — the caller will set up a reference.
         return None
@@ -244,26 +250,41 @@ class QtDocumentCenterView(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
+        prefs: Any = None,
+        ops: Any = None,
     ):
         super().__init__(parent)
         self.db = db
+        self.prefs = prefs
+        self.ops = ops
         self._service = DocumentService(db) if db is not None else None
         self._page = 0
         self._total = 0
         self._total_pages = 0
-        self._docs: List[Dict[str, Any]] = []
+        self._docs: list[dict[str, Any]] = []
         self._active_category: str = ""
         self._sort_order: str = "uploaded_at DESC"
         self._filters_visible = False
         self._selected_ids: set = set()
-        self._current_detail_doc: Optional[Dict[str, Any]] = None
+        self._current_detail_doc: dict[str, Any] | None = None
         self._thumbnail_service = self._service  # for resolving thumbnails
+        self._automation_view: QWidget | None = None
+
+        # ── On-demand OCR worker (single-doc) ─────────────────────────────
+        self._ocr_worker: Any | None = None
+        self._ocr_busy: bool = False
 
         # ── i18n ──────────────────────────────────────────────────────────
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
+
+        # ── Event bus subscriptions — auto-refresh when docs are added ───
+        self._event_bus = EventBus()
+        self._event_bus.subscribe(DOCUMENT_UPLOADED, self._on_document_event)
+        self._event_bus.subscribe(INVOICE_CREATED, self._on_document_event)
+        self._event_subscribed = True
 
         # ── Build UI ──────────────────────────────────────────────────────
         self._build_ui()
@@ -286,6 +307,17 @@ class QtDocumentCenterView(QWidget):
         """Called when the view becomes active (e.g. tab switch)."""
         self.refresh()
 
+    def _on_document_event(self, _event_data=None) -> None:
+        """Auto-refresh when a document is uploaded or invoice is created."""
+        if not getattr(self, "_event_subscribed", False):
+            return
+        QTimer.singleShot(500, self._safe_refresh)
+
+    def _safe_refresh(self) -> None:
+        """Refresh without crashing on missing DB (e.g. during test setup)."""
+        with contextlib.suppress(Exception):
+            self.refresh()
+
     def shutdown(self) -> None:
         """Clean up listeners and resources."""
         self._cleanup()
@@ -295,10 +327,32 @@ class QtDocumentCenterView(QWidget):
     # ------------------------------------------------------------------
 
     def _cleanup(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
+        if getattr(self, "_event_subscribed", False):
+            try:
+                self._event_bus.unsubscribe(DOCUMENT_UPLOADED, self._on_document_event)
+                self._event_bus.unsubscribe(INVOICE_CREATED, self._on_document_event)
+            except Exception:
+                pass
+            self._event_subscribed = False
+        # Stop any in-flight OCR worker so the QThread doesn't outlive us
+        self._stop_ocr_worker()
+
+    def _stop_ocr_worker(self) -> None:
+        """Cancel / discard the on-demand OCR worker if running."""
+        worker = self._ocr_worker
+        if worker is None:
+            return
+        try:
+            worker.stop_event.set()
+            worker.requestInterruption()
+            if worker.isRunning():
+                worker.wait(2000)
         except Exception:
             pass
+        self._ocr_worker = None
+        self._ocr_busy = False
 
     # ------------------------------------------------------------------
     # i18n
@@ -307,6 +361,8 @@ class QtDocumentCenterView(QWidget):
     def _on_language_changed(self, _lang: str) -> None:
         """Rebuild translatable text when the language changes."""
         self._update_translations()
+        if hasattr(self, "_refresh_tab_titles"):
+            self._refresh_tab_titles()
         self.refresh()
 
     def _update_translations(self) -> None:
@@ -345,22 +401,93 @@ class QtDocumentCenterView(QWidget):
     # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
-        """Build the complete three-panel widget hierarchy."""
-        main_layout = QHBoxLayout(self)
+        """Build the tabbed Document Center.
+
+        Two sub-tabs:
+            * **Documents** — the original three-panel layout
+            * **Automation** — the Operion Document Automation
+              pipeline (drop-zone + run list + detail panel)
+        """
+        main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        self._tab_widget = QTabWidget()
+        self._tab_widget.setProperty("role", "document-center-tabs")
+        self._tab_widget.currentChanged.connect(self._on_tab_changed)
+        main_layout.addWidget(self._tab_widget, 1)
+
+        # ── Tab 1: Documents (three-panel layout) ───────────────────────
+        self._documents_page = QWidget()
+        self._documents_layout = QHBoxLayout(self._documents_page)
+        self._documents_layout.setContentsMargins(0, 0, 0, 0)
+        self._documents_layout.setSpacing(0)
         # Column weights matching the original 20:50:30 ratio
         self._build_sidebar()
-        main_layout.addWidget(self._sidebar, 20)
+        self._documents_layout.addWidget(self._sidebar, 20)
 
         self._build_center()
-        main_layout.addWidget(self._center_panel, 50)
+        self._documents_layout.addWidget(self._center_panel, 50)
 
         self._build_detail_sidebar()
-        main_layout.addWidget(self._detail_panel, 30)
+        self._documents_layout.addWidget(self._detail_panel, 30)
+        self._tab_widget.addTab(self._documents_page, "")
 
+        # ── Tab 2: Automation ───────────────────────────────────────────
+        self._automation_page = QWidget()
+        self._automation_layout = QVBoxLayout(self._automation_page)
+        self._automation_layout.setContentsMargins(0, 0, 0, 0)
+        self._automation_layout.setSpacing(0)
+        self._automation_view = self._build_automation_view()
+        if self._automation_view is not None:
+            self._automation_layout.addWidget(self._automation_view, 1)
+        self._tab_widget.addTab(self._automation_page, "")
+
+        self._refresh_tab_titles()
         self.refresh()
+
+    # ── Automation sub-tab ─────────────────────────────────────────────
+
+    def _build_automation_view(self) -> QWidget | None:
+        """Lazy import to avoid a hard dependency on the automation module.
+
+        Returning ``None`` is fine — the tab still exists, just empty.
+        """
+        try:
+            from ui.views.automation_view import QtAutomationView
+        except Exception:
+            logger.exception("Failed to import QtAutomationView")
+            return None
+        try:
+            return QtAutomationView(
+                self._automation_page,
+                db=self.db,
+                prefs=self.prefs,
+                ops=self.ops,
+            )
+        except Exception:
+            logger.exception("Failed to construct QtAutomationView")
+            return None
+
+    def _refresh_tab_titles(self) -> None:
+        """Update QTabWidget tab labels from translation keys."""
+        self._tab_widget.setTabText(
+            0, t("docs.tab_documents", default="Documents")
+        )
+        self._tab_widget.setTabText(
+            1, t("automation.tab_title", default="Automation")
+        )
+
+    def _on_tab_changed(self, index: int) -> None:
+        """Forward tab changes to the embedded views' ``wakeup`` hooks."""
+        if index == 1 and self._automation_view is not None:
+            try:
+                if hasattr(self._automation_view, "wakeup"):
+                    self._automation_view.wakeup()
+                if hasattr(self._automation_view, "_refresh_from_db"):
+                    self._automation_view._refresh_from_db()
+            except Exception:
+                logger.exception("Failed to wake automation view")
 
     # ── Left sidebar ───────────────────────────────────────────────────
 
@@ -416,7 +543,7 @@ class QtDocumentCenterView(QWidget):
 
     def _populate_filter_panel(self) -> None:
         # Clear existing filter widgets
-        self._clear_layout(self._filter_panel_layout)
+        clear_layout(self._filter_panel_layout)
 
         # Entity type
         entity_lbl = FieldLabel(self._filter_panel, t("docs.filter_entity"))
@@ -489,10 +616,10 @@ class QtDocumentCenterView(QWidget):
         if self._filters_visible:
             self._populate_filter_panel()
 
-    def _build_category_tree(self, categories: List[Dict[str, Any]]) -> None:
-        self._clear_layout(self._cat_layout)
+    def _build_category_tree(self, categories: list[dict[str, Any]]) -> None:
+        clear_layout(self._cat_layout)
 
-        total_count = self._service._repo.count() if self._service else 0
+        total_count = sum(r["cnt"] for r in categories) if categories else 0
         all_btn = _CategoryButton(
             self._cat_frame,
             text=f"  {t('docs.cat_all')}  ({total_count})",
@@ -501,7 +628,7 @@ class QtDocumentCenterView(QWidget):
         )
         self._cat_layout.addWidget(all_btn)
 
-        cat_labels: Dict[str, str] = {
+        cat_labels: dict[str, str] = {
             "maintenance": t("docs.cat_maintenance"),
             "invoices": t("docs.cat_invoices"),
             "trips": t("docs.cat_trips"),
@@ -674,7 +801,7 @@ class QtDocumentCenterView(QWidget):
     def _load_documents(self) -> None:
         if self._service is None:
             return
-        self._clear_layout(self._list_layout)
+        clear_layout(self._list_layout)
 
         query = self._search_entry.text().strip()
         date_from = self._date_from_entry.text().strip() if (
@@ -704,7 +831,7 @@ class QtDocumentCenterView(QWidget):
                     mime_type=mime_filter, order=self._sort_order,
                     page=self._page, page_size=PAGE_SIZE,
                 )
-        except Exception as exc:
+        except Exception:
             logger.exception("Document search failed")
             result = {"items": [], "total": 0, "total_pages": 0}
 
@@ -811,10 +938,10 @@ class QtDocumentCenterView(QWidget):
     # Detail panel
     # ------------------------------------------------------------------
 
-    def _show_detail(self, doc: Optional[Dict[str, Any]]) -> None:
+    def _show_detail(self, doc: dict[str, Any] | None) -> None:
         self._current_detail_doc = doc
-        self._clear_layout(self._detail_content_layout)
-        self._clear_layout(self._detail_actions_layout)
+        clear_layout(self._detail_content_layout)
+        clear_layout(self._detail_actions_layout)
 
         if doc is None:
             select_lbl = QLabel(t("docs.select_document"), self._detail_content)
@@ -960,7 +1087,7 @@ class QtDocumentCenterView(QWidget):
 
                 restore_btn = Btn(
                     vframe, text=t("docs.restore"), variant="ghost",
-                    command=lambda d=doc, vn=v["version_number"]: self._restore_version(d["id"], vn),
+                    command=lambda _, d=doc, vn=v["version_number"]: self._restore_version(d["id"], vn),
                 )
                 vlayout.addWidget(restore_btn)
 
@@ -969,9 +1096,71 @@ class QtDocumentCenterView(QWidget):
         # Upload version button
         upload_ver_btn = Btn(
             c, text=t("docs.upload_version"), variant="secondary",
-            command=lambda d=doc: self._upload_version_dialog(d["id"]),
+            command=lambda _, d=doc: self._upload_version_dialog(d["id"]),
         )
         cl.addWidget(upload_ver_btn)
+
+        # ── OCR status + on-demand re-run ─────────────────────────────────
+        ocr_header = QLabel(t("docs.ocr_section", default="OCR"), c)
+        ocr_header.setProperty("fontRole", "label")
+        cl.addWidget(ocr_header)
+
+        ocr_run_at = doc.get("ocr_run_at", "") or ""
+        ocr_engine = doc.get("ocr_engine", "") or ""
+        doc.get("ocr_text", "") or ""
+        extracted_raw = doc.get("extracted_data_json", "") or "{}"
+        try:
+            extracted = json.loads(extracted_raw) if extracted_raw else {}
+        except (json.JSONDecodeError, TypeError):
+            extracted = {}
+
+        if ocr_run_at:
+            status_line = QLabel(
+                f"  {t('docs.ocr_last_run', default='Last run')}: "
+                f"{ocr_run_at}   ({ocr_engine or '?'})",
+                c,
+            )
+            status_line.setProperty("fontRole", "small")
+            status_line.setWordWrap(True)
+            cl.addWidget(status_line)
+        else:
+            none_lbl = QLabel(
+                f"  {t('docs.ocr_not_run', default='OCR has not been run on this document yet.')}",
+                c,
+            )
+            none_lbl.setProperty("fontRole", "small")
+            none_lbl.setProperty("role", "detail-placeholder")
+            none_lbl.setWordWrap(True)
+            cl.addWidget(none_lbl)
+
+        if extracted:
+            extracted_keys = ", ".join(sorted(extracted.keys()))[:120]
+            extracted_lbl = QLabel(
+                f"  {t('docs.ocr_fields', default='Extracted')}: {extracted_keys}",
+                c,
+            )
+            extracted_lbl.setProperty("fontRole", "small")
+            extracted_lbl.setWordWrap(True)
+            cl.addWidget(extracted_lbl)
+
+        rerun_btn = Btn(
+            c,
+            text=t("docs.rerun_ocr", default="Re-run OCR"),
+            variant="secondary",
+            command=lambda _, d=doc: self._on_rerun_ocr_clicked(d),
+        )
+        if self._ocr_busy:
+            rerun_btn.setEnabled(False)
+        cl.addWidget(rerun_btn)
+
+        # ── Link to trip (explicit click; never auto-attached) ────────────
+        link_btn = Btn(
+            c,
+            text=t("docs.link_to_trip", default="Link to trip…"),
+            variant="ghost",
+            command=lambda _, d=doc: self._on_link_to_trip_clicked(d),
+        )
+        cl.addWidget(link_btn)
 
         # ── Bottom action buttons ─────────────────────────────────────────
         act = self._detail_actions
@@ -1017,7 +1206,7 @@ class QtDocumentCenterView(QWidget):
         date = self._expiry_entry.text().strip() if hasattr(self, "_expiry_entry") else ""
         if date and self._service:
             self._service.set_expiry_date(doc_id, date)
-            self._show_toast(t("docs.expiry_saved") if hasattr(t, "__call__") else "Expiry date saved")
+            self._show_toast(t("docs.expiry_saved") if callable(t) else "Expiry date saved")
             self._refresh_detail(doc_id)
 
     def _restore_version(self, doc_id: int, version_number: int) -> None:
@@ -1050,7 +1239,7 @@ class QtDocumentCenterView(QWidget):
         try:
             if self._service:
                 self._service.upload_new_version(doc_id, path, comment or "", "user")
-                self._show_toast(t("docs.version_uploaded") if hasattr(t, "__call__") else "New version uploaded")
+                self._show_toast(t("docs.version_uploaded") if callable(t) else "New version uploaded")
         except Exception as e:
             QMessageBox.critical(self, t("docs.version_error"), str(e))
         self._refresh_detail(doc_id)
@@ -1061,6 +1250,131 @@ class QtDocumentCenterView(QWidget):
         doc = self._service.get_by_id(doc_id)
         if doc:
             self._show_detail(doc)
+
+    # ------------------------------------------------------------------
+    # On-demand OCR + Trip linking
+    # ------------------------------------------------------------------
+
+    def _on_rerun_ocr_clicked(self, doc: dict[str, Any]) -> None:
+        """Re-run image enhancement + OCR + field extraction on this doc.
+
+        Strictly click-driven; we never auto-attach. The user can
+        then press "Link to trip…" separately to wire the freshly
+        extracted fields to a trip.
+        """
+        if not isinstance(doc, dict):
+            logger.warning("_on_rerun_ocr_clicked called with non-dict doc: %s", doc)
+            return
+        if self._ocr_busy:
+            return
+        if self._service is None or self.db is None:
+            return
+        file_path = doc.get("file_path") or ""
+        if not file_path or not os.path.isfile(file_path):
+            QMessageBox.warning(
+                self,
+                t("docs.rerun_ocr", default="Re-run OCR"),
+                t(
+                    "docs.rerun_ocr_missing_file",
+                    default="The file is no longer on disk; OCR cannot be re-run.",
+                ),
+            )
+            return
+
+        self._ocr_busy = True
+        try:
+            from ui.views.re_run_ocr_worker import ReRunOcrWorker
+        except Exception as exc:
+            logger.exception("Could not import ReRunOcrWorker")
+            self._ocr_busy = False
+            QMessageBox.critical(self, t("docs.rerun_ocr", default="Re-run OCR"), str(exc))
+            return
+
+        self._stop_ocr_worker()
+        worker = ReRunOcrWorker(self.db, int(doc["id"]), parent=self)
+        worker.finished.connect(self._on_ocr_finished)
+        self._ocr_worker = worker
+        worker.start()
+        self._show_toast(
+            t("docs.rerun_ocr_started", default="OCR started…")
+        )
+        # Re-render detail so the button is disabled while running.
+        self._show_detail(doc)
+
+    def _on_ocr_finished(self, doc_id: int, error: object) -> None:
+        """Worker callback: refresh the detail panel and publish event."""
+        self._ocr_busy = False
+        self._ocr_worker = None
+        if error is not None:
+            QMessageBox.critical(
+                self,
+                t("docs.rerun_ocr", default="Re-run OCR"),
+                str(error),
+            )
+        else:
+            self._show_toast(
+                t("docs.rerun_ocr_done", default="OCR complete")
+            )
+            try:
+                from services.operations.event_bus import EventBus
+                EventBus().publish(DOCUMENT_OCR_RAN, {"document_id": doc_id})
+            except Exception:
+                logger.exception("Failed to publish DOCUMENT_OCR_RAN")
+        # Refresh detail panel (re-enables the button).
+        if self._current_detail_doc and self._current_detail_doc.get("id") == doc_id:
+            self._refresh_detail(doc_id)
+        elif self._service is not None:
+            doc = self._service.get_by_id(doc_id)
+            if doc:
+                self._show_detail(doc)
+
+    def _on_link_to_trip_clicked(self, doc: Any) -> None:
+        """Open a dialog that lets the user pick a trip to link to.
+
+        Strictly click-driven: we never auto-attach a document to
+        a trip. The dialog shows recent trips + a free-text
+        filter and the user must press "Link" to confirm.
+        """
+        if self.db is None:
+            return
+        if not isinstance(doc, dict):
+            logger.warning("_on_link_to_trip_clicked called with non-dict doc: %r", doc)
+            QMessageBox.warning(
+                self, t("docs.link_to_trip", default="Link to trip…"),
+                t("docs.invalid_document_data", default="Invalid document data."),
+            )
+            return
+        try:
+            from ui.dialogs.trip_picker_dialog import QtTripPickerDialog
+        except Exception as exc:
+            logger.exception("Could not import QtTripPickerDialog")
+            QMessageBox.critical(self, t("docs.link_to_trip", default="Link to trip…"), str(exc))
+            return
+        dlg = QtTripPickerDialog(self.db, parent=self)
+        if dlg.exec() != QDialog.Accepted:
+            return
+        trip_id = dlg.selected_trip_id()
+        if trip_id is None:
+            return
+        if self._service is None:
+            return
+        try:
+            ok = self._service.link_document(
+                int(doc["id"]), "trip", int(trip_id), relation_type="ocr_linked"
+            )
+        except Exception as exc:
+            logger.exception("link_document failed")
+            QMessageBox.critical(self, t("docs.link_to_trip", default="Link to trip…"), str(exc))
+            return
+        if ok:
+            self._show_toast(
+                t("docs.link_to_trip_done", default="Document linked to trip.")
+            )
+        else:
+            self._show_toast(
+                t("docs.link_to_trip_exists", default="Already linked.")
+            )
+        self._refresh_detail(doc["id"])
 
     # ------------------------------------------------------------------
     # Selection
@@ -1085,7 +1399,7 @@ class QtDocumentCenterView(QWidget):
     # Document Actions
     # ------------------------------------------------------------------
 
-    def _open_document(self, doc: Dict[str, Any]) -> None:
+    def _open_document(self, doc: dict[str, Any]) -> None:
         if self._service:
             self._service.open_file(doc["id"])
 
@@ -1104,7 +1418,7 @@ class QtDocumentCenterView(QWidget):
             return
         self._process_batch_upload(paths)
 
-    def _process_batch_upload(self, paths: List[str]) -> None:
+    def _process_batch_upload(self, paths: list[str]) -> None:
         if self._service is None:
             return
         result = self._service.batch_upload(
@@ -1117,7 +1431,7 @@ class QtDocumentCenterView(QWidget):
         dups = len(result["duplicates"])
         failed = len(result["rejected"]) + len(result["failed"])
 
-        msg_parts: List[str] = []
+        msg_parts: list[str] = []
         if uploaded:
             msg_parts.append(f"Uploaded: {uploaded}")
         if dups:
@@ -1140,7 +1454,7 @@ class QtDocumentCenterView(QWidget):
                 f"Some files were rejected:\n{details}",
             )
 
-    def _email_document(self, doc: Dict[str, Any]) -> None:
+    def _email_document(self, doc: dict[str, Any]) -> None:
         recipient, ok = QInputDialog.getText(
             self,
             t("docs.email_title"),
@@ -1183,7 +1497,7 @@ class QtDocumentCenterView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, t("docs.download_zip"), str(e))
 
-    def _download_single_zip(self, doc: Dict[str, Any]) -> None:
+    def _download_single_zip(self, doc: dict[str, Any]) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self,
             t("docs.download_zip"),
@@ -1201,7 +1515,7 @@ class QtDocumentCenterView(QWidget):
         except Exception as e:
             QMessageBox.critical(self, t("docs.download_zip"), str(e))
 
-    def _delete_document(self, doc: Dict[str, Any]) -> None:
+    def _delete_document(self, doc: dict[str, Any]) -> None:
         name = doc.get("title", doc.get("file_name", ""))
         reply = QMessageBox.question(
             self,
@@ -1221,7 +1535,7 @@ class QtDocumentCenterView(QWidget):
             QMessageBox.critical(self, t("docs.confirm_delete_title"), str(e))
         self.refresh()
 
-    def _archive_document(self, doc: Dict[str, Any]) -> None:
+    def _archive_document(self, doc: dict[str, Any]) -> None:
         if self._service:
             self._service.archive(doc["id"])
             self._selected_ids.discard(doc["id"])
@@ -1265,20 +1579,6 @@ class QtDocumentCenterView(QWidget):
     # Helpers
     # ------------------------------------------------------------------
 
-    @staticmethod
-    def _clear_layout(layout) -> None:
-        """Remove all widgets from a layout."""
-        if layout is None:
-            return
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
-            else:
-                if item.layout():
-                    QtDocumentCenterView._clear_layout(item.layout())
-
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Standalone document dialog opener
@@ -1298,7 +1598,6 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
         entity_id:   Primary key of the entity.
         title:   Optional display title for the dialog header.
     """
-    from ui.widgets import ActionButton
 
     service = DocumentService(db)
 
@@ -1424,15 +1723,13 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
         if not paths:
             return
         for src in paths:
-            try:
+            with contextlib.suppress(Exception):
                 service.upload(
                     source_path=src,
                     entity_type=entity_type,
                     entity_id=entity_id,
                     uploaded_by="user",
                 )
-            except Exception:
-                pass
         _refresh()
 
     upload_btn.clicked.connect(_upload)

@@ -6,7 +6,8 @@ Replaces ``ui.widgets.dispatch_detail_panel.DispatchDetailPanel``
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+import contextlib
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
@@ -20,16 +21,17 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from services.operations.event_bus import VALID_TRANSITIONS, EventBus, TRIP_UPDATED
+from services.operations.event_bus import TRIP_UPDATED, VALID_TRANSITIONS, EventBus
 from services.trip_service import TripService
+from ui.design_tokens import TEXT_WHITE
 from ui.theme import COLORS, S
 from ui.widgets import (
     ActionButton,
+    ScrollableFormContainer,
     StyledComboBox,
     StyledLineEdit,
-    ScrollableFormContainer,
 )
-
+from ui.widgets.layout_utils import clear_layout
 
 STATUS_TO_COLUMN_UI = {
     "Planned": COLORS["chip_planned"],
@@ -45,12 +47,12 @@ class QtDispatchDetailPanel(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         trip_data: dict,
         db: Any,
-        on_save: Optional[Callable] = None,
-        on_close: Optional[Callable] = None,
-        ops: Optional[Any] = None,
+        on_save: Callable | None = None,
+        on_close: Callable | None = None,
+        ops: Any | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("dispatch_board.detail_title"))
@@ -59,11 +61,11 @@ class QtDispatchDetailPanel(QDialog):
 
         self._trip_data: dict = dict(trip_data)
         self._db = db
-        self._on_save: Optional[Callable] = on_save
-        self._on_close_cb: Optional[Callable] = on_close
+        self._on_save: Callable | None = on_save
+        self._on_close_cb: Callable | None = on_close
         self._ops = ops
         self._editing: bool = False
-        self._edit_widgets: Dict[str, Any] = {}
+        self._edit_widgets: dict[str, Any] = {}
         self._trip_service = TripService(db)
 
         self._build()
@@ -134,7 +136,7 @@ class QtDispatchDetailPanel(QDialog):
     # ── View fields ──────────────────────────────────────────────────────────
 
     def _build_fields_view(self) -> None:
-        self._clear_layout(self._fields_layout)
+        clear_layout(self._fields_layout)
 
         fields = [
             (
@@ -212,7 +214,7 @@ class QtDispatchDetailPanel(QDialog):
     # ── Edit fields ──────────────────────────────────────────────────────────
 
     def _build_fields_edit(self) -> None:
-        self._clear_layout(self._fields_layout)
+        clear_layout(self._fields_layout)
         self._edit_widgets = {}
 
         status = self._trip_data.get("status", "Planned")
@@ -269,7 +271,7 @@ class QtDispatchDetailPanel(QDialog):
     # ── Alerts ───────────────────────────────────────────────────────────────
 
     def _build_alerts(self) -> None:
-        self._clear_layout(self._alerts_layout)
+        clear_layout(self._alerts_layout)
 
         # Divider
         div = QFrame()
@@ -318,7 +320,7 @@ class QtDispatchDetailPanel(QDialog):
                         sev_lbl.setAlignment(Qt.AlignCenter)
                         sev_lbl.setStyleSheet(
                             f"background-color: {sev_color};"
-                            f" color: #ffffff;"
+                            f" color: {TEXT_WHITE};"
                             f" border-radius: 3px; padding: 1px 4px;"
                         )
                         arow_layout.addWidget(sev_lbl)
@@ -405,14 +407,6 @@ class QtDispatchDetailPanel(QDialog):
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _clear_layout(layout: QVBoxLayout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            w = item.widget()
-            if w:
-                w.deleteLater()
-
     # ── Edit mode transitions ────────────────────────────────────────────────
 
     def _enter_edit_mode(self) -> None:
@@ -437,7 +431,7 @@ class QtDispatchDetailPanel(QDialog):
             self._show_inline_error("Cannot identify trip.")
             return
 
-        changes: Dict[str, Any] = {}
+        changes: dict[str, Any] = {}
         status_w = self._edit_widgets.get("status")
         if status_w:
             new_status = status_w.currentText()
@@ -457,10 +451,8 @@ class QtDispatchDetailPanel(QDialog):
         if dist_w:
             val = dist_w.text().strip()
             if val:
-                try:
+                with contextlib.suppress(ValueError):
                     changes["distance_km"] = float(val)
-                except ValueError:
-                    pass
 
         if not changes:
             self._cancel_edit()
@@ -485,12 +477,12 @@ class QtDispatchDetailPanel(QDialog):
         self._rebuild_buttons()
 
     def _show_inline_error(self, msg: str) -> None:
-        self._clear_layout(self._fields_layout)
+        clear_layout(self._fields_layout)
 
         err = QLabel(msg)
         err.setStyleSheet(
             f"background-color: {COLORS['danger']};"
-            f" color: #ffffff;"
+            f" color: {TEXT_WHITE};"
             f" border-radius: 6px; padding: 8px 12px;"
         )
         err.setWordWrap(True)

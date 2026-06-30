@@ -123,7 +123,7 @@ class DriverRepository(BaseRepository):
 
     def get_by_card_number(self, card_number: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE license_number = ?", (card_number,)
+            f"SELECT * FROM {self.TABLE} WHERE driver_card_number = ?", (card_number,)
         )
 
     def get_by_name_fuzzy(self, name: str) -> Optional[Dict[str, Any]]:

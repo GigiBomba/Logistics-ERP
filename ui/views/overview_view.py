@@ -6,46 +6,65 @@ alerts, top trucks, and recent activity.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+import random
+import time
+from datetime import datetime
+from typing import Any
 
-import numpy as np
-
+import qtawesome as qta
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget,
     QFrame,
-    QLabel,
-    QVBoxLayout,
     QHBoxLayout,
+    QLabel,
     QScrollArea,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ui.design_tokens import (
-    ACCENT, ACCENT_TEXT, BG_SURFACE, BG_ELEVATED,
-    BORDER_DEFAULT, BORDER_FAINT,
-    DANGER, DANGER_TEXT, INFO, SUCCESS, SUCCESS_TEXT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, TEXT_DISABLED,
-    WARNING, WARNING_TEXT, STATUS, SP,
-)
-from ui.components import (
-    Card, KPICard, PageTitle, Label, Btn, MonoLabel,
-)
-from services.i18n import t, register_listener, unregister_listener
+from repositories.fleet_repository import FleetRepository
+from repositories.trip_repository import TripRepository
+from services.analytics_service import AnalyticsService
+from services.i18n import register_listener, t, unregister_listener
+from services.invoicing.config_manager import load_company_config
 from services.operations.event_bus import (
-    EventBus,
+    ALERT_CREATED,
+    ALERT_RESOLVED,
     TRIP_CREATED,
     TRIP_STATUS_CHANGED,
     TRIP_UPDATED,
-    ALERT_CREATED,
-    ALERT_RESOLVED,
     TRUCK_UPDATED,
+    EventBus,
 )
-from repositories.trip_repository import TripRepository
-from repositories.fleet_repository import FleetRepository
-from services.invoicing.config_manager import load_company_config
+from ui.components import (
+    Card,
+    CompactKPICard,
+    EmptyState,
+    Label,
+    PageTitle,
+    StatusBadge,
+)
+from ui.design_tokens import (
+    ACCENT,
+    COLOR_TEXT_TERTIARY,
+    DANGER_TEXT,
+    FONT_MONO,
+    FONT_SIZE_BASE,
+    FONT_SIZE_SM,
+    FONT_WEIGHT_MEDIUM,
+    FONT_WEIGHT_SEMIBOLD,
+    INFO_TEXT,
+    SP,
+    SUCCESS_TEXT,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+    WARNING_TEXT,
+)
+from ui.widgets.layout_utils import clear_layout
+from utils.formatters import fmt_currency, fmt_distance, fmt_percentage
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +73,59 @@ class QtOverviewView(QScrollArea):
     """Overview dashboard with KPIs, profit chart, and activity lists."""
 
     REFRESH_INTERVAL_MS = 30_000
+    # Staleness window for the profit chart on ``wakeup``.  When the
+    # chart was last rendered within this many seconds, the cached
+    # pixmap is reused (no kaleido activity).
+    CHART_STALENESS_SECONDS = 300
+
+    _KPI_SOURCES: list[dict[str, str]] = [
+        {"key": "fin_revenue",      "category": "analytics.tab_financial", "label": "analytics.kpi_total_revenue"},
+        {"key": "fin_profit",        "category": "analytics.tab_financial", "label": "analytics.kpi_total_profit"},
+        {"key": "fin_margin",        "category": "analytics.tab_financial", "label": "analytics.kpi_avg_margin"},
+        {"key": "fleet_trucks",      "category": "analytics.tab_fleet",     "label": "analytics.kpi_active_trucks"},
+        {"key": "fleet_km",          "category": "analytics.tab_fleet",     "label": "analytics.kpi_total_km"},
+        {"key": "fleet_consumption", "category": "analytics.tab_fleet",     "label": "analytics.kpi_avg_consumption"},
+        {"key": "fleet_maint",       "category": "analytics.tab_fleet",     "label": "analytics.kpi_maint_alerts"},
+        {"key": "driver_count",      "category": "analytics.tab_driver",    "label": "analytics.kpi_total_drivers"},
+        {"key": "driver_top",        "category": "analytics.tab_driver",    "label": "analytics.kpi_top_driver"},
+        {"key": "driver_avg_trips",  "category": "analytics.tab_driver",    "label": "analytics.kpi_avg_trips"},
+        {"key": "driver_violations", "category": "analytics.tab_driver",    "label": "analytics.kpi_total_violations"},
+        {"key": "client_count",      "category": "analytics.tab_client",    "label": "analytics.kpi_total_clients"},
+        {"key": "client_top",        "category": "analytics.tab_client",    "label": "analytics.kpi_top_client"},
+        {"key": "client_delay",      "category": "analytics.tab_client",    "label": "analytics.kpi_avg_payment_delay"},
+        {"key": "client_conc",       "category": "analytics.tab_client",    "label": "analytics.kpi_revenue_concentration"},
+        {"key": "route_top",         "category": "analytics.tab_route",     "label": "analytics.kpi_top_route"},
+        {"key": "route_profit_km",   "category": "analytics.tab_route",     "label": "analytics.kpi_avg_profit_km"},
+        {"key": "route_count",       "category": "analytics.tab_route",     "label": "analytics.kpi_total_routes"},
+        {"key": "route_country",     "category": "analytics.tab_route",     "label": "analytics.kpi_top_country"},
+    ]
+
+    _CHART_SOURCES: list[dict[str, str]] = [
+        {"key": "rev_by_client",     "category": "analytics.tab_financial", "title": "analytics.client_revenue"},
+        {"key": "cost_breakdown",    "category": "analytics.tab_financial", "title": "analytics.cost_breakdown"},
+        {"key": "trip_status",       "category": "analytics.tab_financial", "title": "analytics.trip_status_distribution"},
+        {"key": "quarterly_rev",     "category": "analytics.tab_financial", "title": "analytics.quarterly_revenue"},
+        {"key": "monthly_trip_vol",  "category": "analytics.tab_financial", "title": "analytics.monthly_trip_volume"},
+        {"key": "fleet_profitability","category": "analytics.tab_fleet",    "title": "analytics.fleet_profitability"},
+        {"key": "fleet_utilization", "category": "analytics.tab_fleet",     "title": "analytics.fleet_utilization"},
+        {"key": "idle_vs_active",    "category": "analytics.tab_fleet",     "title": "analytics.idle_vs_active"},
+        {"key": "mileage_ranking",   "category": "analytics.tab_fleet",     "title": "analytics.mileage_ranking"},
+        {"key": "fleet_fuel_eff",    "category": "analytics.tab_fleet",     "title": "analytics.fleet_fuel_efficiency"},
+        {"key": "driver_profit",     "category": "analytics.tab_driver",    "title": "analytics.driver_profit"},
+        {"key": "driver_efficiency", "category": "analytics.tab_driver",    "title": "analytics.driver_efficiency"},
+        {"key": "driver_trips",      "category": "analytics.tab_driver",    "title": "analytics.driver_trips"},
+        {"key": "driver_violations_chart", "category": "analytics.tab_driver", "title": "analytics.driver_tacho"},
+        {"key": "client_revenue",    "category": "analytics.tab_client",    "title": "analytics.client_revenue"},
+        {"key": "client_growth",     "category": "analytics.tab_client",    "title": "analytics.client_growth"},
+        {"key": "client_retention",  "category": "analytics.tab_client",    "title": "analytics.client_retention"},
+        {"key": "route_profitability","category": "analytics.tab_route",    "title": "analytics.route_profitability"},
+        {"key": "profit_vs_distance","category": "analytics.tab_route",     "title": "analytics.profit_vs_distance"},
+        {"key": "country_corridors", "category": "analytics.tab_route",     "title": "analytics.country_corridors"},
+    ]
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         ops=None,
     ):
@@ -65,19 +133,30 @@ class QtOverviewView(QScrollArea):
         self.db = db
         self.ops = ops
         self._event_bus = EventBus()
-        self._handlers: Dict[str, Any] = {}
+        self._handlers: dict[str, Any] = {}
         self._last_refresh_ts = 0
         self._shutting_down = False
         self._chart_render_ts = 0
         self._chart_last_size = None
-        self._profit_fig = None
-        self._resize_timer: Optional[QTimer] = None
+        self._chart_fig = None
+        # Key of the chart last rendered into the profit chart slot.
+        # ``wakeup`` compares against ``_selected_chart['key']`` to skip
+        # a kaleido re-render when the user has not changed the chart.
+        self._last_rendered_chart_key: str | None = None
+        # Wall-clock timestamp of the most recent successful chart
+        # render.  Used by ``wakeup`` for staleness detection.
+        self._chart_last_render_ts: float = 0.0
 
         self._trip_repo = TripRepository(db) if db else None
         self._fleet_repo = FleetRepository(db) if db else None
+        self._analytics_svc = AnalyticsService(db) if db else None
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
+
+        self._selected_kpis: list[dict[str, str]] = []
+        self._selected_chart: dict[str, str] | None = None
+        self._pick_random_content()
 
         self._build_ui()
         self._subscribe_events()
@@ -88,6 +167,16 @@ class QtOverviewView(QScrollArea):
         self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
 
     # ── UI build ───────────────────────────────────────────────────────────────
+
+    def _pick_random_content(self):
+        sources = self._KPI_SOURCES
+        self._selected_kpis = random.sample(sources, min(3, len(sources)))
+        self._selected_chart = random.choice(self._CHART_SOURCES) if self._CHART_SOURCES else None
+
+    def _kpi_label(self, kpi_def: dict[str, str]) -> str:
+        cat = t(kpi_def["category"])
+        lbl = t(kpi_def["label"])
+        return f"{cat.upper()} \u2014 {lbl}"
 
     def _build_ui(self):
         self.setWidgetResizable(True)
@@ -136,7 +225,7 @@ class QtOverviewView(QScrollArea):
         self._kpi_strip_layout.setContentsMargins(0, 0, 0, 0)
         self._kpi_strip_layout.setSpacing(SP["2"])
 
-        self._kpi_widgets: Dict[str, QFrame] = {}
+        self._kpi_widgets: dict[str, QFrame] = {}
         # Build initial KPI cards (values are filled on first refresh)
         self._rebuild_kpi_strip()
 
@@ -152,22 +241,17 @@ class QtOverviewView(QScrollArea):
                 w.deleteLater()
         self._kpi_widgets.clear()
 
-        kpi_defs = [
-            ("kpi_active_trucks", t("kpi_active_trucks", default="TRUCKS"), "0"),
-            ("kpi_trips_today", t("kpi_trips_today", default="TRIPS"), "0"),
-            ("kpi_drivers_road", t("kpi_drivers_road", default="DRIVERS"), "0"),
-            ("kpi_open_alerts", t("kpi_open_alerts", default="ALERTS"), "0"),
-            ("kpi_revenue", t("kpi_revenue", default="REVENUE"), "€ 0"),
-            ("kpi_unpaid", t("kpi_unpaid", default="UNPAID"), "0"),
-        ]
-        # Store the value MonoLabel for each so _refresh_kpis can update text
-        self._kpi_value_labels: Dict[str, MonoLabel] = {}
+        kpi_defs: list[tuple] = []
+        for src in self._selected_kpis:
+            key = src["key"]
+            label = self._kpi_label(src)
+            kpi_defs.append((key, label, "\u2014"))
+
+        # Store the value label for each so _refresh_kpis can update text
+        self._kpi_value_labels: dict[str, QLabel] = {}
         for key, label, default in kpi_defs:
-            card = KPICard(self._kpi_strip, label, default)
-            # Find the MonoLabel for value updates
-            val_lbl = card.findChild(QLabel, "kpi-value")
-            if val_lbl is not None:
-                self._kpi_value_labels[key] = val_lbl
+            card = CompactKPICard(self._kpi_strip, label=label, value=default)
+            self._kpi_value_labels[key] = card.value_label
             self._kpi_strip_layout.addWidget(card, 1)
             self._kpi_widgets[key] = card
 
@@ -206,7 +290,14 @@ class QtOverviewView(QScrollArea):
         header = QFrame()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        title = Label(None, t("home.profit_chart_title", default="Profit Trend"), role="section-title")
+
+        chart_title = t("home.profit_chart_title", default="Analytics Highlight")
+        if self._selected_chart:
+            cat = t(self._selected_chart["category"])
+            title = t(self._selected_chart.get("title", ""))
+            chart_title = f"{cat.upper()} \u2014 {title}"
+
+        title = Label(None, chart_title, role="section-title")
         header_layout.addWidget(title)
         header_layout.addStretch(1)
         month = Label(None, t("home.profit_30_days", default="Past 30 Days"), role="muted")
@@ -219,7 +310,7 @@ class QtOverviewView(QScrollArea):
         QVBoxLayout(self._chart_container)
         card_layout.addWidget(self._chart_container, 1)
 
-        footer = Label(None, t("home.profit_data_source", default="Based on trip data"), role="muted")
+        footer = Label(None, t("home.profit_data_source", default="Based on analytics data"), role="muted")
         card_layout.addWidget(footer)
 
         layout.addWidget(card_widget)
@@ -314,61 +405,127 @@ class QtOverviewView(QScrollArea):
         self._refresh_alerts()
 
     def _refresh_kpis(self):
-        try:
-            trucks = self._fleet_repo.get_all() if self._fleet_repo else []
-            trips = self._trip_repo.get_all(limit=2000) if self._trip_repo else []
-        except Exception:
-            trucks = []
-            trips = []
-
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        active_trucks = len([t for t in trucks if t.get("status") == "Active" or t.get("active_status") == 1])
-        trips_today = len([
-            t for t in trips
-            if t.get("start_date") == today_str
-            or (t.get("status") in ["In Transit", "Loading"] and str(t.get("created_at", "")).startswith(today_str))
-        ])
-
-        active_drivers = set()
-        for trip in trips:
-            s = trip.get("status", "")
-            if s not in ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced"):
-                d = trip.get("driver_name")
-                if d:
-                    active_drivers.add(d)
-
-        month_start = datetime.now().strftime("01/%m/%Y")
-        revenue = sum(
-            float(t.get("total_price_eur") or 0)
-            for t in trips
-            if str(t.get("start_date", "")) >= month_start
-        )
-
-        unpaid = len([
-            t for t in trips
-            if t.get("status") not in ("Paid", "Delivered", "Completed", "Done")
-        ])
-
-        alert_count = 0
-        if self.ops:
-            try:
-                alerts = self.ops.get_active_alerts(limit=50)
-                alert_count = len(alerts)
-            except Exception:
-                pass
-
-        updates = {
-            "kpi_active_trucks": str(active_trucks),
-            "kpi_trips_today": str(trips_today),
-            "kpi_drivers_road": str(len(active_drivers)),
-            "kpi_open_alerts": str(alert_count),
-            "kpi_revenue": f"€ {revenue:,.0f}",
-            "kpi_unpaid": str(unpaid),
-        }
-        for key, value in updates.items():
+        if not self._analytics_svc:
+            return
+        for src in self._selected_kpis:
+            key = src["key"]
             val_lbl = self._kpi_value_labels.get(key)
-            if val_lbl is not None:
-                val_lbl.setText(value)
+            if val_lbl is None:
+                continue
+            value, color = self._compute_kpi_value(key)
+            val_lbl.setText(value)
+            if color:
+                val_lbl.setStyleSheet(f"color: {color};")
+
+    def _compute_kpi_value(self, key: str) -> tuple:
+        """Compute (value_text, value_color) for the given KPI key."""
+        from ui.design_tokens import (
+            COLOR_ERROR_TEXT,
+            COLOR_SUCCESS_TEXT,
+            COLOR_TEXT_PRIMARY,
+            COLOR_WARNING_TEXT,
+        )
+        svc = self._analytics_svc
+        try:
+            if key == "fin_revenue":
+                monthly = svc.get_monthly_financial(1) or []
+                total = sum(float(r.get("revenue", 0) or 0) for r in monthly)
+                return (fmt_currency(total, decimals=0), COLOR_TEXT_PRIMARY)
+            elif key == "fin_profit":
+                monthly = svc.get_monthly_financial(1) or []
+                total = sum(float(r.get("profit", 0) or 0) for r in monthly)
+                color = COLOR_SUCCESS_TEXT if total >= 0 else COLOR_ERROR_TEXT
+                return (fmt_currency(total, decimals=0), color)
+            elif key == "fin_margin":
+                monthly = svc.get_monthly_financial(1) or []
+                margin = float(monthly[-1].get("margin_pct", 0) or 0) if monthly else 0.0
+                color = COLOR_SUCCESS_TEXT if margin >= 0 else COLOR_ERROR_TEXT
+                return (fmt_percentage(margin), color)
+            elif key == "fleet_trucks":
+                fleet = svc.get_fleet() or []
+                return (str(len(fleet)), COLOR_TEXT_PRIMARY)
+            elif key == "fleet_km":
+                fleet = svc.get_fleet() or []
+                total_km = sum(r.get("total_km", 0) or 0 for r in fleet)
+                return (fmt_distance(total_km), COLOR_TEXT_PRIMARY)
+            elif key == "fleet_consumption":
+                fleet = svc.get_fleet() or []
+                n = len(fleet) or 1
+                avg = sum(r.get("avg_consumption", 0) or 0 for r in fleet) / n
+                return (f"{avg:.1f} L/100km", COLOR_TEXT_PRIMARY)
+            elif key == "fleet_maint":
+                maint = svc.get_maintenance_alerts() or []
+                color = COLOR_WARNING_TEXT if maint else COLOR_SUCCESS_TEXT
+                return (str(len(maint)), color)
+            elif key == "driver_count":
+                drivers = svc.get_driver() or []
+                return (str(len(drivers)), COLOR_TEXT_PRIMARY)
+            elif key == "driver_top":
+                drivers = svc.get_driver() or []
+                top = drivers[0].get("driver", "\u2014") if drivers else "\u2014"
+                return (top, COLOR_TEXT_PRIMARY)
+            elif key == "driver_avg_trips":
+                drivers = svc.get_driver() or []
+                n = len(drivers) or 1
+                avg = sum(d.get("trip_count", 0) or 0 for d in drivers) / n
+                return (f"{avg:.1f}", COLOR_TEXT_PRIMARY)
+            elif key == "driver_violations":
+                tacho = svc.get_driver_tacho_violations() or []
+                total = sum(d.get("total_violations", 0) or 0 for d in tacho)
+                color = COLOR_WARNING_TEXT if total > 0 else COLOR_SUCCESS_TEXT
+                return (str(total), color)
+            elif key == "client_count":
+                clients = svc.get_client_analytics() or []
+                rev_clients = svc.get_revenue_by_client() or []
+                count = len(clients) or len(rev_clients)
+                return (str(count), "")
+            elif key == "client_top":
+                clients = svc.get_client_analytics() or []
+                rev_clients = svc.get_revenue_by_client() or []
+                all_c = clients or rev_clients
+                top = max(all_c, key=lambda r: r.get("revenue", 0) or 0) if all_c else {}
+                return (top.get("client", "\u2014"), "")
+            elif key == "client_delay":
+                clients = svc.get_client_analytics() or []
+                delays = [c.get("avg_payment_delay_days", 0) or 0 for c in clients]
+                avg = sum(delays) / max(len(delays), 1)
+                from ui.design_tokens import DANGER, SUCCESS, WARNING
+                color = DANGER if avg > 30 else (WARNING if avg > 15 else SUCCESS)
+                return (f"{avg:.1f} d", color)
+            elif key == "client_conc":
+                conc = svc.get_revenue_concentration() or []
+                if conc and len(conc) > 1:
+                    total_rev = sum(c.get("revenue", 0) or 0 for c in conc)
+                    top_rev = sum(c.get("revenue", 0) or 0 for c in conc[:3])
+                    pct = (top_rev / total_rev * 100) if total_rev > 0 else 0
+                else:
+                    pct = 0
+                from ui.design_tokens import DANGER, SUCCESS, WARNING
+                color = DANGER if pct > 70 else (WARNING if pct > 50 else SUCCESS)
+                return (f"{pct:.0f}%", color)
+            elif key == "route_top":
+                routes = svc.get_route_profitability() or []
+                top = max(routes, key=lambda r: r.get("avg_profit", 0) or 0) if routes else {}
+                return (top.get("route_label", "\u2014"), "")
+            elif key == "route_profit_km":
+                routes = svc.get_route_profitability() or []
+                profit = sum(r.get("profit", 0) or 0 for r in routes)
+                km = sum(r.get("total_km", 0) or 0 for r in routes)
+                avg = profit / max(km, 1)
+                from ui.design_tokens import DANGER, SUCCESS
+                color = SUCCESS if avg >= 0 else DANGER
+                return (f"\u20ac {avg:.2f}/km", color)
+            elif key == "route_count":
+                routes = svc.get_route_profitability() or []
+                total = sum(r.get("trip_count", 0) or 0 for r in routes)
+                return (str(total), "")
+            elif key == "route_country":
+                countries = svc.get_profit_per_km_by_country() or []
+                top = max(countries, key=lambda c: c.get("profit_per_km", 0) or 0) if countries else {}
+                return (top.get("country", "\u2014"), "")
+        except Exception:
+            logger.exception("KPI compute failed for key=%s", key)
+        return ("\u2014", "")
 
     def _refresh_active_trips(self):
         self._clear_layout(self._trips_list)
@@ -378,21 +535,24 @@ class QtOverviewView(QScrollArea):
         except Exception:
             trips = []
 
-        non_active = ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced")
+        non_active = ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced", "LOADING")
         active = [t for t in trips if t.get("status", "") not in non_active]
         self._trips_count.setText(str(len(active)))
 
         if not active:
-            lbl = QLabel(t("home.no_active_trips", default="No active trips"))
-            lbl.setProperty("fontRole", "muted")
-            self._trips_list.addWidget(lbl)
+            empty = EmptyState(
+                None,
+                icon_name="mdi6.truck-check-outline",
+                title=t("home.no_active_trips", default="No active trips"),
+            )
+            self._trips_list.addWidget(empty)
             return
 
         for trip in active[:8]:
             row = self._trip_row(trip)
             self._trips_list.addWidget(row)
 
-    def _trip_row(self, trip: Dict[str, Any]) -> QFrame:
+    def _trip_row(self, trip: dict[str, Any]) -> QFrame:
         row = QFrame()
         row.setProperty("role", "card-elevated")
         row.setFixedHeight(34)
@@ -416,14 +576,9 @@ class QtOverviewView(QScrollArea):
         route_lbl.setProperty("fontRole", "small")
         layout.addWidget(route_lbl, 1)
 
-        status = trip.get("status", "planned").lower().replace(" ", "_")
-        chip_bg, _ = STATUS.get(status, (BG_ELEVATED, TEXT_SECONDARY))
-        status_lbl = QLabel(trip.get("status", "").title())
-        status_lbl.setProperty("fontRole", "label")
-        status_lbl.setStyleSheet(
-            f"background-color: {chip_bg}; border-radius: 4px; padding: 2px 6px;"
-        )
-        layout.addWidget(status_lbl)
+        status_key = trip.get("status", "Planned")
+        status_badge = StatusBadge(row, status_key=status_key)
+        layout.addWidget(status_badge)
 
         return row
 
@@ -432,44 +587,61 @@ class QtOverviewView(QScrollArea):
 
         alerts = []
         if self.ops:
-            try:
+            with contextlib.suppress(Exception):
                 alerts = self.ops.get_active_alerts(limit=5)
-            except Exception:
-                pass
 
         if not alerts:
-            lbl = QLabel(t("home.no_alerts", default="No active alerts"))
-            lbl.setProperty("fontRole", "muted")
-            self._alerts_layout.addWidget(lbl)
+            empty = EmptyState(
+                None,
+                icon_name="mdi6.bell-outline",
+                title=t("home.no_alerts", default="No active alerts"),
+            )
+            self._alerts_layout.addWidget(empty)
             return
 
         for a in alerts[:3]:
             row = QFrame()
-            row.setProperty("role", "card-elevated")
-            row.setFixedHeight(30)
+            row.setFixedHeight(48)
             layout = QHBoxLayout(row)
             layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
 
+            sev = getattr(a, "severity", "INFO")
+            sev_icon = {
+                "CRITICAL": "mdi6.alert-circle",
+                "WARNING": "mdi6.alert",
+            }.get(sev, "mdi6.information-outline")
             sev_color = {
-                "CRITICAL": DANGER,
-                "WARNING": WARNING,
-            }.get(getattr(a, "severity", "INFO"), INFO)
-            dot = QLabel("●")
-            dot.setStyleSheet(f"color: {sev_color};")
-            layout.addWidget(dot)
+                "CRITICAL": DANGER_TEXT,
+                "WARNING": WARNING_TEXT,
+            }.get(sev, INFO_TEXT)
+
+            icon_lbl = QLabel()
+            icon_lbl.setPixmap(qta.icon(sev_icon, color=sev_color).pixmap(14, 14))
+            layout.addWidget(icon_lbl)
 
             title = getattr(a, "title", getattr(a, "message", "Alert"))
             if len(title) > 40:
                 title = title[:37] + "…"
             title_lbl = QLabel(title)
-            title_lbl.setProperty("fontRole", "small")
+            title_lbl.setStyleSheet(
+                f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};"
+            )
             layout.addWidget(title_lbl, 1)
+
+            ts = getattr(a, "created_at", "")
+            if ts:
+                ts_lbl = QLabel(str(ts)[:16])
+                ts_lbl.setStyleSheet(
+                    f"font-size: {FONT_SIZE_SM}px; color: {COLOR_TEXT_TERTIARY};"
+                )
+                layout.addWidget(ts_lbl)
 
             self._alerts_layout.addWidget(row)
 
         if len(alerts) > 3:
-            more = QLabel(f"+ {len(alerts) - 3} more")
-            more.setProperty("fontRole", "muted")
+            more = QLabel(f'+ {len(alerts) - 3} {t("home.more", default="more")}')
+            more.setStyleSheet(f"color: {ACCENT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+            more.setCursor(Qt.PointingHandCursor)
             self._alerts_layout.addWidget(more)
 
     def _refresh_top_trucks(self):
@@ -484,9 +656,12 @@ class QtOverviewView(QScrollArea):
             top = []
 
         if not top:
-            lbl = QLabel(t("common.no_data", default="No data"))
-            lbl.setProperty("fontRole", "muted")
-            self._top_trucks_layout.addWidget(lbl)
+            empty = EmptyState(
+                None,
+                icon_name="mdi6.trophy-outline",
+                title=t("common.no_data", default="No data"),
+            )
+            self._top_trucks_layout.addWidget(empty)
             return
 
         for i, row in enumerate(top, 1):
@@ -498,18 +673,29 @@ class QtOverviewView(QScrollArea):
             layout.setContentsMargins(0, 0, 0, 0)
 
             idx = QLabel(f"#{i}")
-            idx.setProperty("fontRole", "body_bold")
-            idx.setStyleSheet(f"color: {ACCENT_TEXT};")
             idx.setFixedWidth(24)
+            rank_colors = {
+                1: "#F59E0B",  # gold
+                2: "#9CA3AF",  # silver
+                3: "#B45309",  # bronze
+            }
+            idx.setStyleSheet(
+                f"color: {rank_colors.get(i, COLOR_TEXT_TERTIARY)}; "
+                f"font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
+            )
             layout.addWidget(idx)
 
             plate_lbl = QLabel(plate)
-            plate_lbl.setProperty("fontRole", "body_bold")
+            plate_lbl.setStyleSheet(
+                f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};"
+            )
             layout.addWidget(plate_lbl, 1)
 
-            rev_lbl = QLabel(f"€ {revenue:,.0f}")
-            rev_lbl.setProperty("fontRole", "mono")
-            rev_lbl.setStyleSheet(f"color: {SUCCESS_TEXT};")
+            rev_lbl = QLabel(fmt_currency(revenue, decimals=0))
+            rev_lbl.setStyleSheet(
+                f"font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_BASE}px; color: {SUCCESS_TEXT};"
+            )
+            rev_lbl.setAlignment(Qt.AlignRight)
             layout.addWidget(rev_lbl)
 
             self._top_trucks_layout.addWidget(r)
@@ -523,54 +709,58 @@ class QtOverviewView(QScrollArea):
             recent = []
 
         if not recent:
-            lbl = QLabel(t("common.no_data", default="No data"))
-            lbl.setProperty("fontRole", "muted")
-            self._activity_layout.addWidget(lbl)
+            empty = EmptyState(
+                None,
+                icon_name="mdi6.clipboard-text-outline",
+                title=t("common.no_data", default="No data"),
+            )
+            self._activity_layout.addWidget(empty)
             return
 
         for trip in recent:
             profit = float(trip.get("net_profit", 0) or 0)
             plate = trip.get("truck_number", "—")
             client = trip.get("client_name", "—")
-            date = trip.get("start_date", "") or str(trip.get("created_at", ""))[:10]
+            date_raw = trip.get("start_date", "") or str(trip.get("created_at", ""))[:10]
+            from utils.formatters import fmt_date
+            date = fmt_date(date_raw)
 
             r = QFrame()
             layout = QHBoxLayout(r)
             layout.setContentsMargins(0, 0, 0, 0)
 
             date_lbl = QLabel(date)
-            date_lbl.setProperty("fontRole", "muted")
-            date_lbl.setFixedWidth(70)
+            date_lbl.setStyleSheet(f"font-size: {FONT_SIZE_SM}px; color: {COLOR_TEXT_TERTIARY};")
+            date_lbl.setFixedWidth(80)
             layout.addWidget(date_lbl)
 
             plate_lbl = QLabel(plate)
-            plate_lbl.setProperty("fontRole", "muted")
-            plate_lbl.setFixedWidth(60)
+            plate_lbl.setStyleSheet(
+                f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_SECONDARY}; font-weight: {FONT_WEIGHT_MEDIUM};"
+            )
+            plate_lbl.setFixedWidth(70)
             layout.addWidget(plate_lbl)
 
-            client_lbl = QLabel(client[:18])
-            client_lbl.setProperty("fontRole", "small")
+            client_lbl = QLabel(client[:22])
+            client_lbl.setStyleSheet(f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};")
             layout.addWidget(client_lbl, 1)
 
             color = SUCCESS_TEXT if profit > 0 else DANGER_TEXT
-            profit_lbl = QLabel(f"{profit:,.0f} €")
-            profit_lbl.setProperty("fontRole", "muted")
-            profit_lbl.setStyleSheet(f"color: {color};")
+            profit_lbl = QLabel(fmt_currency(profit, decimals=0))
+            profit_lbl.setStyleSheet(
+                f"font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_BASE}px; color: {color};"
+            )
+            profit_lbl.setAlignment(Qt.AlignRight)
             layout.addWidget(profit_lbl)
 
             self._activity_layout.addWidget(r)
 
     def _clear_layout(self, layout):
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()
+        clear_layout(layout)
 
     # ── Chart rendering ────────────────────────────────────────────────────────
 
     def _render_profit_chart(self, _force: bool = False):
-        import time
         now = time.time()
         if not _force and self._chart_render_ts and now - self._chart_render_ts < 0.8:
             return
@@ -579,7 +769,7 @@ class QtOverviewView(QScrollArea):
             self._do_render_chart()
             self._chart_render_ts = now
         except Exception as exc:
-            logger.exception("Profit chart render failed: %s", exc)
+            logger.exception("Chart render failed: %s", exc)
             self._clear_layout(self._chart_container.layout())
             msg = t("home.profit_no_data", default="Chart unavailable.\nComplete trips to see analytics.")
             lbl = QLabel(msg)
@@ -590,130 +780,297 @@ class QtOverviewView(QScrollArea):
             self._chart_container.layout().addWidget(lbl)
 
     def _do_render_chart(self):
-        # Lazy imports so matplotlib is optional at import time.
-        import matplotlib
-        matplotlib.use("QtAgg")
-        import matplotlib.pyplot as plt
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+        from ui.plotly_renderer import PlotlyChartWidget
 
-        self._clear_layout(self._chart_container.layout())
-        if self._profit_fig is not None:
-            try:
-                plt.close(self._profit_fig)
-            except Exception:
-                pass
-            self._profit_fig = None
-
-        profit_map = {}
-        now_dt = datetime.now()
-        chart_start = now_dt - timedelta(days=30)
-        chart_end = now_dt
-        try:
-            raw_data = self._trip_repo.get_daily_profit(
-                chart_start.strftime("%Y-%m-%d"),
-                chart_end.strftime("%Y-%m-%d"),
-            ) if self._trip_repo else []
-            for d, p in raw_data:
-                try:
-                    if "-" in d:
-                        parts = d.split("-")
-                        date_key = f"{int(parts[2]):02d}/{int(parts[1]):02d}"
-                    else:
-                        date_key = d
-                    profit_map[date_key] = float(p or 0)
-                except (ValueError, IndexError):
-                    profit_map[d] = float(p or 0)
-        except Exception as exc:
-            logger.exception("Chart data fetch failed: %s", exc)
-
-        num_days = 31
-        day_labels = []
-        for i in range(num_days):
-            dt = chart_start + timedelta(days=i)
-            day_labels.append(dt.strftime("%d/%m"))
-
-        days = list(range(1, num_days + 1))
-        profits = [abs(profit_map.get(day_labels[i], 0.0)) for i in range(num_days)]
-
-        if not profit_map or all(p == 0 for p in profits):
-            msg = t("home.profit_no_data", default="No profit data available yet.\nComplete trips to see analytics.")
-            lbl = QLabel(msg)
-            lbl.setProperty("fontRole", "muted")
-            lbl.setAlignment(Qt.AlignCenter)
-            self._chart_container.layout().addWidget(lbl)
+        if not self._selected_chart or not self._analytics_svc:
+            self._show_chart_no_data()
+            self._last_rendered_chart_key = None
             return
 
-        cw = max(self._chart_container.width(), 300)
-        ch = max(self._chart_container.height(), 180)
-        self._chart_last_size = (cw, ch)
+        key = self._selected_chart["key"]
+        # If the same chart key was already rendered, keep the existing
+        # widget and pixmap.  ``wakeup`` calls this method with
+        # ``_force=True`` only when the key changed or the chart is
+        # stale.
+        if (
+            key == self._last_rendered_chart_key
+            and self._chart_container.layout() is not None
+            and self._chart_container.layout().count() > 0
+        ):
+            return
 
-        dpi = 100
-        fig_w = cw / dpi
-        fig_h = ch / dpi
+        # Tear down the previous widget only when we are about to
+        # replace it with a different chart.
+        self._clear_layout(self._chart_container.layout())
+        self._chart_fig = None
 
-        fig, ax = plt.subplots(figsize=(fig_w, fig_h), dpi=dpi)
-        fig.patch.set_facecolor(BG_SURFACE)
-        ax.set_facecolor(BG_SURFACE)
-        fig.subplots_adjust(left=0.05, right=0.98, top=0.94, bottom=0.10)
+        try:
+            fig = self._build_analytics_chart(key)
+        except Exception:
+            logger.exception("Analytics chart build failed")
+            self._show_chart_no_data()
+            return
 
-        for spine in ax.spines.values():
-            spine.set_edgecolor(BORDER_DEFAULT)
-            spine.set_linewidth(0.5)
-        ax.tick_params(colors=TEXT_MUTED, labelsize=8, pad=4, length=3, width=0.5)
-        ax.grid(axis="y", color=BORDER_DEFAULT, linewidth=0.4, linestyle="--", alpha=0.35)
-        ax.set_axisbelow(True)
+        if fig is None:
+            self._show_chart_no_data()
+            return
 
-        nonzero = [p for p in profits if p != 0]
-        if nonzero:
-            y_min = min(0, min(nonzero) * 1.15)
-            y_max = max(0, max(nonzero) * 1.20)
-        else:
-            y_min, y_max = 0, 100
-        y_pad = (y_max - y_min) * 0.05
-        ax.set_ylim(y_min - y_pad, y_max + y_pad)
-        ax.set_xlim(0.5, num_days + 0.5)
+        chart_widget = PlotlyChartWidget(min_height=180)
+        chart_widget.set_figure(fig)
+        self._chart_container.layout().addWidget(chart_widget)
+        self._last_rendered_chart_key = key
+        self._chart_last_render_ts = time.time()
 
-        ax.yaxis.set_major_formatter(plt.FuncFormatter(lambda x_val, _: f"{x_val:,.0f}"))
+    def _show_chart_no_data(self):
+        msg = t("home.profit_no_data", default="No analytics data available.\nComplete trips to see analytics.")
+        lbl = QLabel(msg)
+        lbl.setProperty("fontRole", "muted")
+        lbl.setAlignment(Qt.AlignCenter)
+        self._chart_container.layout().addWidget(lbl)
 
-        tick_step = max(1, num_days // 6)
-        tick_positions = [1] + list(range(tick_step, num_days + 1, tick_step))
-        if num_days not in tick_positions:
-            tick_positions.append(num_days)
-        ax.set_xticks(tick_positions)
-        tick_labels = [day_labels[p - 1] for p in tick_positions]
-        ax.set_xticklabels(tick_labels)
-        ax.set_xlabel(
-            t("home.profit_day_label", default="Day"),
-            fontsize=8,
-            color=TEXT_MUTED,
-            labelpad=6,
+    def _build_analytics_chart(self, key: str):
+        from ui.plotly_charts import (
+            CHART_ACCENT,
+            CHART_DANGER,
+            CHART_INFO,
+            CHART_SECONDARY,
+            CHART_SUCCESS,
+            CHART_WARNING,
+            _value_colors,
+            make_area_chart,
+            make_grouped_bar_chart,
+            make_lollipop_chart,
+            make_pie_chart,
+            make_scatter_chart,
+            make_stacked_area_chart,
+            make_trend_chart,
         )
 
-        days_arr = np.array(days, dtype=float)
-        profits_arr = np.array(profits, dtype=float)
-        x_smooth, y_smooth = self._smooth_data(days_arr, profits_arr, num=len(days) * 20)
+        svc = self._analytics_svc
 
-        line_color = ACCENT
+        if key == "rev_by_client":
+            data = svc.get_revenue_by_client() or []
+            if not data:
+                return None
+            top = sorted(data, key=lambda r: r.get("revenue", 0) or 0, reverse=True)[:8]
+            return make_lollipop_chart(
+                [r.get("client", "?") for r in top],
+                [r.get("revenue", 0) or 0 for r in top],
+                title=t("analytics.client_revenue"), color=CHART_ACCENT,
+                is_currency=True, show_title=False)
 
-        ax.fill_between(x_smooth, 0, y_smooth, alpha=0.25, color=line_color, zorder=1)
-        ax.plot(x_smooth, y_smooth, color=line_color, linewidth=2.0, alpha=0.85,
-                solid_capstyle="round", solid_joinstyle="round", zorder=3)
-        ax.plot(days_arr, profits_arr, linestyle="none", marker="o", markersize=3.5,
-                markerfacecolor=line_color, markeredgecolor="none", zorder=4)
+        elif key == "cost_breakdown":
+            data = svc.get_cost_breakdown(12) or []
+            if not data:
+                return None
+            months = [r.get("month", "") for r in data]
+            return make_stacked_area_chart(months, [
+                (t("analytics.fuel"), [r.get("fuel_cost", 0) or 0 for r in data], CHART_WARNING),
+                (t("analytics.toll"), [r.get("toll_cost", 0) or 0 for r in data], CHART_ACCENT),
+                (t("analytics.salary"), [r.get("salary_cost", 0) or 0 for r in data], CHART_INFO),
+                (t("analytics.extra_costs"), [r.get("extra_costs", 0) or 0 for r in data], CHART_SECONDARY),
+            ], is_currency=True, empty_message=t("common.no_data"), show_title=False)
 
-        canvas = FigureCanvas(fig)
-        self._chart_container.layout().addWidget(canvas)
+        elif key == "trip_status":
+            data = svc.get_trip_status_distribution() or []
+            if not data:
+                return None
+            return make_pie_chart(
+                [s.get("count", 0) or 0 for s in data],
+                [t(f"status.{s.get('status', 'unknown')}") for s in data],
+                title=t("analytics.trip_status_distribution"), show_title=False)
 
-        fig.tight_layout(pad=1.0)
-        self._profit_fig = fig
+        elif key == "quarterly_rev":
+            data = svc.get_revenue_quarterly(4) or []
+            if not data or len(data) < 2:
+                return None
+            quarters = [r.get("quarter", "") for r in data]
+            return make_grouped_bar_chart(quarters, [
+                (t("analytics.revenue_label"), [r.get("revenue", 0) or 0 for r in data], CHART_ACCENT),
+                (t("analytics.profit_label"), [r.get("profit", 0) or 0 for r in data], CHART_SUCCESS),
+            ], horizontal=False, is_currency=True, show_title=False)
 
-    @staticmethod
-    def _smooth_data(x, y, num=300):
-        if len(x) < 2:
-            return x, y
-        x_dense = np.linspace(x[0], x[-1], num)
-        y_dense = np.interp(x_dense, x, y)
-        return x_dense, y_dense
+        elif key == "monthly_trip_vol":
+            data = svc.get_monthly_trip_volume(12) or []
+            if not data or len(data) < 3:
+                return None
+            months = [r.get("month", "") for r in data]
+            return make_area_chart(months,
+                [r.get("trip_count", 0) or 0 for r in data],
+                title=t("analytics.monthly_trip_volume"), color=CHART_SUCCESS,
+                show_title=False)
+
+        elif key == "fleet_profitability":
+            data = svc.get_fleet() or []
+            if not data:
+                return None
+            top = sorted(data, key=lambda r: r.get("profit", 0) or 0, reverse=True)[:8]
+            profits = [r.get("profit", 0) or 0 for r in top]
+            return make_lollipop_chart(
+                [r.get("truck", "?") for r in top], profits,
+                title=t("analytics.fleet_profitability"),
+                color=_value_colors(profits), is_currency=True, show_title=False)
+
+        elif key == "fleet_utilization":
+            data = svc.get_truck_utilization() or []
+            if not data:
+                return None
+            top = sorted(data, key=lambda r: r.get("trip_count", 0) or 0, reverse=True)[:8]
+            return make_lollipop_chart(
+                [r.get("truck", "?") for r in top],
+                [r.get("trip_count", 0) or 0 for r in top],
+                title=t("analytics.fleet_utilization"), color=CHART_SUCCESS,
+                show_title=False)
+
+        elif key == "idle_vs_active":
+            fleet = svc.get_fleet() or []
+            if not fleet or len(fleet) < 3:
+                return None
+            active = sum(1 for r in fleet if (r.get("trip_count", 0) or 0) > 0)
+            idle = len(fleet) - active
+            if active + idle == 0:
+                return None
+            return make_pie_chart([active, idle],
+                [t("analytics.active"), t("analytics.idle")],
+                title=t("analytics.idle_vs_active"),
+                colors=[CHART_SUCCESS, CHART_WARNING], show_title=False)
+
+        elif key == "mileage_ranking":
+            data = svc.get_fleet() or []
+            if not data:
+                return None
+            top = sorted(data, key=lambda r: r.get("total_km", 0) or 0, reverse=True)[:8]
+            return make_lollipop_chart(
+                [r.get("truck", "?") for r in top],
+                [r.get("total_km", 0) or 0 for r in top],
+                title=t("analytics.mileage_ranking"), color=CHART_SECONDARY,
+                show_title=False)
+
+        elif key == "fleet_fuel_eff":
+            data = svc.get_fleet() or []
+            if not data:
+                return None
+            top = sorted(data, key=lambda r: r.get("avg_consumption", 0) or 0)[:8]
+            return make_lollipop_chart(
+                [r.get("truck", "?") for r in top],
+                [r.get("avg_consumption", 0) or 0 for r in top],
+                title=t("analytics.fleet_fuel_efficiency"), color=CHART_SECONDARY,
+                show_title=False)
+
+        elif key == "driver_profit":
+            data = svc.get_driver() or []
+            if not data or len(data) < 2:
+                return None
+            top = sorted(data, key=lambda r: r.get("profit", 0) or 0, reverse=True)[:8]
+            profits = [d.get("profit", 0) or 0 for d in top]
+            return make_lollipop_chart(
+                [d.get("driver", "?") for d in top], profits,
+                title=t("analytics.driver_profit"),
+                color=_value_colors(profits), is_currency=True, show_title=False)
+
+        elif key == "driver_efficiency":
+            data = svc.get_driver_profit_per_km() or []
+            if not data or len(data) < 2:
+                return None
+            top = sorted(data, key=lambda r: r.get("profit_per_km", 0) or 0, reverse=True)[:8]
+            vals = [d.get("profit_per_km", 0) or 0 for d in top]
+            return make_lollipop_chart(
+                [d.get("driver_name", "?") for d in top], vals,
+                title=t("analytics.driver_efficiency"),
+                color=_value_colors(vals), is_currency=True, show_title=False)
+
+        elif key == "driver_trips":
+            data = svc.get_driver() or []
+            if not data or len(data) < 2:
+                return None
+            top = sorted(data, key=lambda r: r.get("trip_count", 0) or 0, reverse=True)[:8]
+            return make_lollipop_chart(
+                [d.get("driver", "?") for d in top],
+                [d.get("trip_count", 0) or 0 for d in top],
+                title=t("analytics.driver_trips"), color=CHART_ACCENT,
+                show_title=False)
+
+        elif key == "driver_violations_chart":
+            data = svc.get_driver_tacho_violations() or []
+            if not data or len(data) < 2:
+                return None
+            top = sorted(data, key=lambda r: r.get("total_violations", 0) or 0, reverse=True)[:8]
+            return make_lollipop_chart(
+                [d.get("driver", "?") for d in top],
+                [d.get("total_violations", 0) or 0 for d in top],
+                title=t("analytics.driver_tacho"), color=CHART_DANGER,
+                show_title=False)
+
+        elif key == "client_revenue":
+            data = svc.get_revenue_by_client() or []
+            if not data or len(data) < 2:
+                return None
+            top = sorted(data, key=lambda r: r.get("revenue", 0) or 0, reverse=True)[:8]
+            return make_lollipop_chart(
+                [r.get("client", "?") for r in top],
+                [r.get("revenue", 0) or 0 for r in top],
+                title=t("analytics.client_revenue"), color=CHART_ACCENT,
+                is_currency=True, show_title=False)
+
+        elif key == "client_growth":
+            data = svc.get_client_growth(12) or []
+            if not data or len(data) < 3:
+                return None
+            return make_trend_chart(
+                [g.get("month", "") for g in data],
+                [g.get("new_clients", 0) or 0 for g in data],
+                title=t("analytics.client_growth"), color=CHART_ACCENT,
+                show_title=False)
+
+        elif key == "client_retention":
+            data = svc.get_client_retention() or []
+            if not data or not isinstance(data, list) or len(data) < 1:
+                return None
+            active_ct = float(data[0].get("active_count", 0) or 0)
+            inactive_ct = float(data[0].get("inactive_count", 0) or 0)
+            if active_ct + inactive_ct == 0:
+                return None
+            return make_pie_chart([active_ct, inactive_ct],
+                [t("analytics.active"), t("analytics.inactive")],
+                title=t("analytics.client_retention"),
+                colors=[CHART_SUCCESS, CHART_DANGER], show_title=False)
+
+        elif key == "route_profitability":
+            data = svc.get_route_profitability() or []
+            if not data or len(data) < 2:
+                return None
+            top = sorted(data, key=lambda r: r.get("avg_profit", 0) or 0, reverse=True)[:8]
+            profits = [r.get("avg_profit", 0) or 0 for r in top]
+            return make_lollipop_chart(
+                [r.get("route_label", "?") for r in top], profits,
+                title=t("analytics.route_profitability"),
+                color=_value_colors(profits), is_currency=True, show_title=False)
+
+        elif key == "profit_vs_distance":
+            data = svc.get_profit_vs_distance(200) or []
+            if not data:
+                return None
+            return make_scatter_chart(
+                [d.get("distance_km", 0) or 0 for d in data],
+                [d.get("net_profit", 0) or 0 for d in data],
+                [d.get("truck_number", "") or "" for d in data],
+                title=t("analytics.profit_vs_distance"),
+                x_label=t("analytics.distance_label"),
+                y_label=t("analytics.net_profit_label"),
+                color=CHART_ACCENT, is_currency=True, show_title=False)
+
+        elif key == "country_corridors":
+            data = svc.get_profit_per_km_by_country() or []
+            if not data or len(data) < 2:
+                return None
+            top = sorted(data, key=lambda c: c.get("profit_per_km", 0) or 0, reverse=True)[:8]
+            vals = [c.get("profit_per_km", 0) or 0 for c in top]
+            return make_lollipop_chart(
+                [c.get("country", "?") for c in top], vals,
+                title=t("analytics.country_corridors"),
+                color=_value_colors(vals), is_currency=True, show_title=False)
+
+        return None
 
     # ── Event handling ─────────────────────────────────────────────────────────
 
@@ -740,40 +1097,44 @@ class QtOverviewView(QScrollArea):
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     def wakeup(self):
+        """Re-display the overview.
+
+        The previously-rendered chart widget and its ``QPixmap`` are
+        kept alive (see ``shutdown``), so the common case — re-entering
+        the overview after visiting another module — does not trigger
+        a kaleido re-render.  Only the cheap KPI / active-trips /
+        alerts lists are refreshed.
+        """
         self._subscribe_events()
+        register_listener(self._language_callback)
         self._last_refresh_ts = 0
         self.refresh()
+        if self._should_rerender_chart():
+            self._render_profit_chart(_force=True)
+
+    def _should_rerender_chart(self) -> bool:
+        """Return True if the profit chart must be re-rendered on wakeup."""
+        if self._chart_fig is None:
+            return True
+        if not self._selected_chart:
+            return False
+        key = self._selected_chart.get("key")
+        if key != self._last_rendered_chart_key:
+            return True
+        if self._chart_last_render_ts == 0.0:
+            return True
+        return (time.time() - self._chart_last_render_ts) > self.CHART_STALENESS_SECONDS
 
     def shutdown(self):
         self._shutting_down = True
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
-        if self._resize_timer is not None:
-            self._resize_timer.stop()
-        if self._profit_fig is not None:
-            try:
-                import matplotlib.pyplot as plt
-                plt.close(self._profit_fig)
-            except Exception:
-                pass
-            self._profit_fig = None
-        # Remove chart canvas widgets from layout
-        if self._chart_container is not None:
-            layout = self._chart_container.layout()
-            if layout is not None:
-                while layout.count():
-                    item = layout.takeAt(0)
-                    if item is not None:
-                        w = item.widget()
-                        if w is not None:
-                            w.deleteLater()
-        try:
+        # Keep the chart widget and its ``QPixmap`` alive so re-entering
+        # the overview does not require a kaleido re-render.  We only
+        # unhook event subscriptions and stop timers.
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
         for ev_type, handler in list(self._handlers.items()):
-            try:
+            with contextlib.suppress(Exception):
                 self._event_bus.unsubscribe(ev_type, handler)
-            except Exception:
-                pass
         self._handlers.clear()

@@ -7,6 +7,11 @@ obj/
 __pycache__/
 *.pyc
 
+# PyInstaller build output
+build/
+dist/
+*.spec
+
 # Logs
 logs/
 
@@ -28,7 +33,21 @@ graph-cache/
 *.gh
 
 # Tachograph parser binary (downloaded separately)
-tools/tachograph/dddsimple.exe
+tools/tachograph/*.exe
+
+# OpenCode workspace
+.slim/
+
+# Build script
+build.bat
+
+# Temp databases (WAL/SHM files)
+*.db-shm
+*.db-wal
+
+# Generated report files
+route_planner_improvement_plan.md
+operion_analytics_audit_and_plan.md
 
 # Runtime data (caches, databases, generated files)
 data/cashflow.db

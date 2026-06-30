@@ -16,17 +16,22 @@ class RouteRepository(BaseRepository):
         "route_summary_json", "archived_at", "is_committed",
     ]
 
+    _migrate_done: bool = False
+
     def __init__(self, db):
         super().__init__(db)
-        self._migrate()
+        if not RouteRepository._migrate_done:
+            self._run_migration()
+            RouteRepository._migrate_done = True
 
-    def _migrate(self):
-        try:
-            self._execute(
-                f"ALTER TABLE {self.TABLE} ADD COLUMN is_committed INTEGER NOT NULL DEFAULT 0"
-            )
-        except Exception:
-            pass
+    def _run_migration(self):
+        # Check if column already exists to avoid running migration on every instantiation
+        cols = self._fetchall(f"PRAGMA table_info({self.TABLE})")
+        if any(r["name"] == "is_committed" for r in cols):
+            return
+        self._execute(
+            f"ALTER TABLE {self.TABLE} ADD COLUMN is_committed INTEGER NOT NULL DEFAULT 0"
+        )
 
     # ── Base CRUD ─────────────────────────────────────────────────────
 

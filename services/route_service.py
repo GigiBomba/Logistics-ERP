@@ -8,16 +8,18 @@ This module provides:
 The implementation focuses on clarity, type annotations and maintainability.
 """
 
+import contextlib
 import hashlib
 import math
 import threading
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Optional
 
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 
+from config import Config
 from services.calculator import TripCalculator
 from services.constraint_engine import TruckConstraintEngine
 from services.country_exclusion import CountryExclusionEngine
@@ -36,64 +38,79 @@ from services.graphhopper_network import (
 )
 from utils.logger import get_logger
 
-
-GRAPHHOPPER_PROFILES: Dict[str, str] = {
-    "Recommended": "truck",
-    "Fastest": "truck_fast",
-    "Cheapest": "truck_cheap",
-    "Safest": "truck_safe",
-    "Shortest": "truck_short",
-}
+GRAPHHOPPER_PROFILES: dict[str, str] = Config.GRAPHHOPPER_PROFILES
 
 
 class RouteCache:
     def __init__(self, max_size: int = 1000, ttl_seconds: int = 3600) -> None:
-        self._cache: Dict[str, Dict[str, Any]] = {}
-        self._timestamps: Dict[str, float] = {}
+        from collections import OrderedDict
+        self._cache: OrderedDict = OrderedDict()
+        self._timestamps: dict[str, float] = {}
+        self._lock = threading.Lock()
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
 
-    def _make_key(self, points: List[Tuple[float, float]], profile: str, exclusions: Optional[List[str]] = None) -> str:
+    def _make_key(self, points: list[tuple[float, float]], profile: str, exclusions: Optional[list[str]] = None) -> str:
         points_str = ",".join(f"{lat:.6f},{lon:.6f}" for lat, lon in points)
         excl_str = "" if not exclusions else ",".join(sorted([c.upper() for c in exclusions]))
         key = f"{profile}:{points_str}:excl={excl_str}"
         return hashlib.md5(key.encode()).hexdigest()
 
-    def get(self, points: List[Tuple[float, float]], profile: str, exclusions: Optional[List[str]] = None) -> Optional[Dict[str, Any]]:
+    def get(self, points: list[tuple[float, float]], profile: str, exclusions: Optional[list[str]] = None) -> Optional[dict[str, Any]]:
         key = self._make_key(points, profile, exclusions)
-        if key in self._cache:
-            if time.time() - self._timestamps[key] < self.ttl_seconds:
-                return self._cache[key]
-            del self._cache[key]
-            del self._timestamps[key]
+        with self._lock:
+            if key in self._cache:
+                if time.time() - self._timestamps[key] < self.ttl_seconds:
+                    self._cache.move_to_end(key)
+                    return self._cache[key]
+                del self._cache[key]
+                del self._timestamps[key]
         return None
 
-    def set(self, points: List[Tuple[float, float]], profile: str, result: Dict[str, Any], exclusions: Optional[List[str]] = None) -> None:
+    def set(self, points: list[tuple[float, float]], profile: str, result: dict[str, Any], exclusions: Optional[list[str]] = None) -> None:
         key = self._make_key(points, profile, exclusions)
-        if len(self._cache) >= self.max_size:
-            oldest_key = min(self._timestamps, key=self._timestamps.get)
-            del self._cache[oldest_key]
-            del self._timestamps[oldest_key]
-        self._cache[key] = result
-        self._timestamps[key] = time.time()
+        with self._lock:
+            if key in self._cache:
+                self._cache.move_to_end(key)
+            else:
+                if len(self._cache) >= self.max_size:
+                    oldest_key, _ = self._cache.popitem(last=False)
+                    del self._timestamps[oldest_key]
+            self._cache[key] = result
+            self._timestamps[key] = time.time()
 
 
 class GeocodeCache:
-    def __init__(self, max_size: int = 2000) -> None:
-        self._cache: Dict[str, Tuple[float, float]] = {}
+    def __init__(self, max_size: int = 2000, ttl_seconds: int = 604800) -> None:
+        self._cache: dict[str, tuple[float, float]] = {}
+        self._timestamps: dict[str, float] = {}
         self._lock = threading.Lock()
         self.max_size = max_size
+        self.ttl_seconds = ttl_seconds
 
-    def get(self, address: str) -> Optional[Tuple[float, float]]:
+    def _is_expired(self, address: str) -> bool:
+        ts = self._timestamps.get(address)
+        return ts is not None and (time.time() - ts) > self.ttl_seconds
+
+    def get(self, address: str) -> Optional[tuple[float, float]]:
         with self._lock:
+            if address in self._cache and self._is_expired(address):
+                del self._cache[address]
+                del self._timestamps[address]
+                return None
             return self._cache.get(address)
 
-    def set(self, address: str, coords: Tuple[float, float]) -> None:
+    def set(self, address: str, coords: tuple[float, float]) -> None:
         with self._lock:
+            if self._is_expired(address):
+                del self._cache[address]
+                del self._timestamps[address]
             if len(self._cache) >= self.max_size:
                 oldest_key = next(iter(self._cache))
                 del self._cache[oldest_key]
+                del self._timestamps[oldest_key]
             self._cache[address] = coords
+            self._timestamps[address] = time.time()
 
 
 class GraphHopperClient:
@@ -101,9 +118,11 @@ class GraphHopperClient:
 
     def __init__(
         self,
-        base_url: str = "http://192.168.0.93:8989",
+        base_url: str = "",
         timeout: int = 300,
     ) -> None:
+        if not base_url:
+            base_url = getattr(Config, 'GRAPHHOPPER_URL', 'https://maps.operionerp.xyz')
         self.base_url = normalize_graphhopper_base_url(base_url)
         self._route_endpoint = build_route_endpoint(self.base_url)
         self.timeout = timeout
@@ -149,12 +168,12 @@ class GraphHopperClient:
         "_segment_depth",
     })
 
-    def _split_routing_params(self, params: Optional[Dict[str, Any]]) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]], Dict[str, Any]]:
+    def _split_routing_params(self, params: Optional[dict[str, Any]]) -> tuple[dict[str, Any], Optional[dict[str, Any]], dict[str, Any]]:
         """Split truck/query params, custom_model JSON, and diagnostic metadata."""
         if not params:
             return {}, None, {}
-        gh_params: Dict[str, Any] = {}
-        meta: Dict[str, Any] = {}
+        gh_params: dict[str, Any] = {}
+        meta: dict[str, Any] = {}
         custom_model = params.get("_custom_model")
         for key, value in params.items():
             if key in self._INTERNAL_PARAM_KEYS:
@@ -166,15 +185,15 @@ class GraphHopperClient:
 
     def _route_post(
         self,
-        points: List[Tuple[float, float]],
+        points: list[tuple[float, float]],
         profile: str,
-        gh_params: Dict[str, Any],
-        custom_model: Optional[Dict[str, Any]],
+        gh_params: dict[str, Any],
+        custom_model: Optional[dict[str, Any]],
         actual_timeout: int,
-        meta: Optional[Dict[str, Any]] = None,
+        meta: Optional[dict[str, Any]] = None,
     ) -> requests.Response:
         """POST /route — custom_model exclusions or long / multi-point routes."""
-        body: Dict[str, Any] = {
+        body: dict[str, Any] = {
             "profile": profile,
             "points": [[float(lon), float(lat)] for lat, lon in points],
             "points_encoded": False,
@@ -208,9 +227,9 @@ class GraphHopperClient:
         *,
         use_post: bool,
         profile: str,
-        points: List[Tuple[float, float]],
-        query_params: Dict[str, Any],
-        meta: Dict[str, Any],
+        points: list[tuple[float, float]],
+        query_params: dict[str, Any],
+        meta: dict[str, Any],
         segment_depth: int = 0,
     ) -> None:
         coord_count = len(points) * 2
@@ -238,7 +257,64 @@ class GraphHopperClient:
                 f"Invalid GraphHopper request URL (base={self.base_url!r}): {exc}"
             ) from exc
 
-    def route(self, points: List[Tuple[float, float]], profile: str = "truck", params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    @staticmethod
+    def _parse_geometry(path: dict) -> list[tuple[float, float]]:
+        """Extract geometry from a GraphHopper response path."""
+        raw_points = path.get("points")
+        if not raw_points:
+            return []
+
+        geometry: list[tuple[float, float]] = []
+
+        if isinstance(raw_points, str):
+            try:
+                from services.route_decoder import decode_polyline
+                decoded = decode_polyline(raw_points)
+                geometry = [(lat, lon) for lat, lon in decoded]
+            except Exception:
+                try:
+                    snapped = decode_polyline(path.get("snapped_waypoints", ""))
+                    geometry = [(lat, lon) for lat, lon in snapped]
+                except Exception:
+                    geometry = []
+        elif isinstance(raw_points, dict) and "coordinates" in raw_points:
+            coords = raw_points["coordinates"]
+            geometry = [(coord[1], coord[0]) for coord in coords]
+        elif isinstance(raw_points, list) and raw_points:
+            first = raw_points[0]
+            if isinstance(first, (list, tuple)) and len(first) == 2:
+                geometry = [(p[1], p[0]) for p in raw_points]
+            else:
+                geometry = [(lat, lon) for lat, lon in raw_points]
+
+        return geometry
+
+    @staticmethod
+    def _build_route_result(path: dict, points: list, elapsed: float,
+                            avoid, use_post: bool, meta: dict,
+                            data: dict) -> dict:
+        """Build a normalized route result dict from GraphHopper response."""
+        geometry = GraphHopperClient._parse_geometry(path)
+        if not geometry:
+            geometry = [(lat, lon) for lat, lon in points]
+
+        distance_km = path.get("distance", 0) / 1000.0
+        duration_min = path.get("time", 0) / 60000.0
+
+        return {
+            "distance_km": distance_km,
+            "duration_min": duration_min,
+            "geometry": geometry,
+            "points_count": len(points),
+            "request_time_s": elapsed,
+            "graphhopper_response": data,
+            "avoid_countries": avoid or [],
+            "exclusions_applied": bool(use_post and avoid),
+            "routing_method": "POST" if use_post else "GET",
+            "exclusion_strategy": meta.get("_exclusion_strategy"),
+        }
+
+    def route(self, points: list[tuple[float, float]], profile: str = "truck", params: Optional[dict[str, Any]] = None) -> dict[str, Any]:
         gh_params, custom_model, meta = self._split_routing_params(params)
         avoid = meta.get("avoid_countries") or gh_params.get("avoid_countries")
         points = validate_route_points(points)
@@ -259,7 +335,7 @@ class GraphHopperClient:
             dynamic_timeout = max(dynamic_timeout, 180)
         actual_timeout = min(dynamic_timeout, self.timeout)
 
-        query_params: Dict[str, Any] = {
+        query_params: dict[str, Any] = {
             "profile": profile,
             "point": [format_point_param(lat, lon) for lat, lon in points],
             "points_encoded": "false",
@@ -361,58 +437,17 @@ class GraphHopperClient:
                     raise ValueError(gh_err or "No route found")
 
                 path = data["paths"][0]
-                geometry: List[Tuple[float, float]] = []
-                if "points" in path:
-                    raw_points = path["points"]
-                    # Handle encoded polyline string
-                    if isinstance(raw_points, str):
-                        try:
-                            from services.route_decoder import decode_polyline
-                            decoded = decode_polyline(raw_points)
-                            geometry = [(lat, lon) for lat, lon in decoded]
-                        except Exception:
-                            try:
-                                snapped = decode_polyline(path.get("snapped_waypoints", ""))
-                                geometry = [(lat, lon) for lat, lon in snapped]
-                            except Exception:
-                                geometry = []
-                    # Handle points_encoded=false: dict with "coordinates" array of [lon, lat]
-                    elif isinstance(raw_points, dict) and "coordinates" in raw_points:
-                        coords = raw_points["coordinates"]
-                        geometry = [(coord[1], coord[0]) for coord in coords]
-                    # Handle direct list of [lat, lon] or [lon, lat] pairs
-                    elif isinstance(raw_points, list) and raw_points:
-                        # Detect if first element is [lon, lat] (GraphHopper raw) or [lat, lon]
-                        first = raw_points[0]
-                        if isinstance(first, (list, tuple)) and len(first) == 2:
-                            # GraphHopper returns [lon, lat] in raw point arrays
-                            geometry = [(p[1], p[0]) for p in raw_points]
-                        else:
-                            geometry = [(lat, lon) for lat, lon in raw_points]
-
-                if not geometry:
-                    geometry = [(lat, lon) for lat, lon in points]
-
-                distance_km = path.get("distance", 0) / 1000.0
-                duration_min = path.get("time", 0) / 60000.0
-
-                result = {
-                    "distance_km": distance_km,
-                    "duration_min": duration_min,
-                    "geometry": geometry,
-                    "points_count": len(points),
-                    "request_time_s": elapsed,
-                    "graphhopper_response": data,
-                    "avoid_countries": avoid or [],
-                    "exclusions_applied": bool(use_post and avoid),
-                    "routing_method": "POST" if use_post else "GET",
-                    "exclusion_strategy": meta.get("_exclusion_strategy"),
-                }
+                result = self._build_route_result(
+                    path, points, elapsed, avoid, use_post, meta, data
+                )
                 if use_post:
                     self.debug_logger.info(
-                        f"[GraphHopper] Route success with exclusions applied={avoid} distance_km={distance_km:.1f}"
+                        f"[GraphHopper] Route success with exclusions applied={avoid} "
+                        f"distance_km={result['distance_km']:.1f}"
                     )
-                self.logger.info(f"Route success {distance_km:.1f}km time_s={elapsed:.2f}")
+                self.logger.info(
+                    f"Route success {result['distance_km']:.1f}km time_s={elapsed:.2f}"
+                )
                 return result
 
             except requests.exceptions.HTTPError as e:
@@ -452,11 +487,6 @@ class RouteService:
         self.client = GraphHopperClient(base_url=gh_url, timeout=timeout)
         self._geocode_cache = GeocodeCache(max_size=2000)
         self._route_cache = RouteCache(max_size=1000, ttl_seconds=3600)
-        # country analysis cache: geometry_hash -> list[country_codes]
-        self._country_analysis_cache: Dict[str, List[str]] = {}
-        # small cache for reverse lookups (rounded coords -> country)
-        self._country_point_cache: Dict[Tuple[float, float], Optional[str]] = {}
-        self._reverse_lock = threading.Lock()
 
         # segmentation defaults
         self.segment_distance_threshold_km = 800.0
@@ -464,7 +494,7 @@ class RouteService:
         self.max_segmentation_depth = 2
         self.max_segment_count = 4
 
-    def _geocode_address(self, address: str) -> Tuple[float, float]:
+    def _geocode_address(self, address: str) -> tuple[float, float]:
         if not address or not address.strip():
             raise ValueError("Empty address")
         address = address.strip()
@@ -483,76 +513,9 @@ class RouteService:
         self._geocode_cache.set(address, coords)
         return coords
 
-    def _reverse_geocode_country(self, lat: float, lon: float) -> Optional[str]:
-        """Reverse geocode a coordinate to a country code (ISO2).
-
-        Simple rate-limited reverse geocode using Nominatim. Caches results keyed
-        by rounded coordinates to avoid excessive requests.
-        """
-        # round to 4 decimals (~11m) for cache stability
-        key = (round(lat, 4), round(lon, 4))
-        if key in self._country_point_cache:
-            return self._country_point_cache[key]
-
-        with self._reverse_lock:
-            try:
-                url = "https://nominatim.openstreetmap.org/reverse"
-                resp = requests.get(url, params={
-                    'lat': lat,
-                    'lon': lon,
-                    'format': 'json',
-                    'zoom': 3,
-                    'addressdetails': 1
-                }, headers={'User-Agent': 'logistics-app/1.0', 'Accept-Language': 'en'}, timeout=10)
-                if resp.status_code != 200:
-                    self.debug_logger.warning(f"Reverse geocode HTTP {resp.status_code} for {key}")
-                    self._country_point_cache[key] = None
-                    return None
-                data = resp.json()
-                addr = data.get('address', {}) if isinstance(data, dict) else {}
-                cc = addr.get('country_code')
-                if cc:
-                    cc = cc.upper()
-                self._country_point_cache[key] = cc
-                return cc
-            except Exception as e:
-                self.debug_logger.warning(f"Reverse geocode failed for {key}: {e}")
-                self._country_point_cache[key] = None
-                return None
-
-    def _detect_countries_from_geometry(self, geometry: List[Tuple[float, float]]) -> List[str]:
-        """Detect country codes crossed by the geometry.
-
-        Samples geometry points (up to 20) and reverse-geocodes them. Results are cached by geometry hash.
-        """
-        if not geometry:
-            return []
-        # build hash of geometry for caching
-        geom_str = ";".join(f"{lat:.6f},{lon:.6f}" for lat, lon in geometry)
-        gh = hashlib.md5(geom_str.encode()).hexdigest()
-        if gh in self._country_analysis_cache:
-            return list(self._country_analysis_cache[gh])
-
-        # sample up to 20 points evenly
-        n = len(geometry)
-        max_samples = 20
-        step = max(1, n // max_samples)
-        sampled = [geometry[i] for i in range(0, n, step)]
-        countries = []
-        for lat, lon in sampled:
-            try:
-                cc = self._reverse_geocode_country(lat, lon)
-                if cc and cc not in countries:
-                    countries.append(cc)
-            except Exception:
-                pass
-
-        self._country_analysis_cache[gh] = list(countries)
-        return countries
-
-    def _resolve_stops(self, addresses: List[Any]) -> List[Tuple[float, float]]:
-        resolved: List[Tuple[float, float]] = []
-        failed: List[str] = []
+    def _resolve_stops(self, addresses: list[Any]) -> list[tuple[float, float]]:
+        resolved: list[tuple[float, float]] = []
+        failed: list[str] = []
         for i, addr in enumerate(addresses):
             try:
                 if isinstance(addr, (tuple, list)) and len(addr) >= 2:
@@ -576,7 +539,7 @@ class RouteService:
             raise ValueError("At least 2 valid stops required")
 
         # dedupe consecutive
-        cleaned: List[Tuple[float, float]] = [resolved[0]]
+        cleaned: list[tuple[float, float]] = [resolved[0]]
         for i in range(1, len(resolved)):
             if resolved[i] != resolved[i - 1]:
                 cleaned.append(resolved[i])
@@ -585,9 +548,9 @@ class RouteService:
         return cleaned
 
     @staticmethod
-    def _validate_segment(segment: List[Tuple[float, float]], context: str = "") -> None:
+    def _validate_segment(segment: list[tuple[float, float]], context: str = "") -> None:
         """Validate segment points before making a GraphHopper request.
-        
+
         Raises ValueError if the segment is invalid.
         """
         if not segment:
@@ -606,7 +569,7 @@ class RouteService:
                 lat_f, lon_f = float(lat), float(lon)
             except (TypeError, ValueError) as exc:
                 raise ValueError(f"Segment {context} has non-numeric coordinate at index {i}: ({lat}, {lon})") from exc
-            
+
             if math.isnan(lat_f) or math.isnan(lon_f):
                 raise ValueError(f"Segment {context} has NaN coordinate at index {i}")
             if math.isinf(lat_f) or math.isinf(lon_f):
@@ -619,8 +582,8 @@ class RouteService:
             if segment[i] == segment[i - 1]:
                 raise ValueError(f"Segment {context}: duplicate consecutive point at index {i}: {segment[i]}")
 
-    def _merge_segment_results(self, parts: List[Dict[str, Any]], resolved_stops: List[Tuple[float, float]]) -> Dict[str, Any]:
-        merged: Dict[str, Any] = {"distance_km": 0.0, "duration_min": 0.0, "geometry": [], "graphhopper_response_parts": []}
+    def _merge_segment_results(self, parts: list[dict[str, Any]], resolved_stops: list[tuple[float, float]]) -> dict[str, Any]:
+        merged: dict[str, Any] = {"distance_km": 0.0, "duration_min": 0.0, "geometry": [], "graphhopper_response_parts": []}
         for seg in parts:
             merged["distance_km"] += seg.get("distance_km", 0.0)
             merged["duration_min"] += seg.get("duration_min", 0.0)
@@ -638,7 +601,7 @@ class RouteService:
         return merged
 
     @staticmethod
-    def _segment_midpoint(a: Tuple[float, float], b: Tuple[float, float]) -> Tuple[float, float]:
+    def _segment_midpoint(a: tuple[float, float], b: tuple[float, float]) -> tuple[float, float]:
         """Return a geographic midpoint for two coordinates."""
         lat1 = math.radians(a[0])
         lon1 = math.radians(a[1])
@@ -693,14 +656,14 @@ class RouteService:
 
     def _route_pair_recursive(
         self,
-        a: Tuple[float, float],
-        b: Tuple[float, float],
+        a: tuple[float, float],
+        b: tuple[float, float],
         profile: str,
-        gh_params: Dict[str, Any],
+        gh_params: dict[str, Any],
         depth: int,
-        resolved_stops: List[Tuple[float, float]],
-        segment_state: Optional[Dict[str, int]] = None,
-    ) -> Dict[str, Any]:
+        resolved_stops: list[tuple[float, float]],
+        segment_state: Optional[dict[str, int]] = None,
+    ) -> dict[str, Any]:
         if depth > self.max_segmentation_depth:
             self.debug_logger.info("[Segmentation] Max depth reached, aborting safely")
             raise RuntimeError(f"Max segmentation depth exceeded for {a}->{b}")
@@ -743,28 +706,20 @@ class RouteService:
             left = self._route_pair_recursive(a, mid, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
             right = self._route_pair_recursive(mid, b, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
             merged = self._merge_segment_results([left, right], resolved_stops)
-            try:
-                self._route_cache.set(pair, profile, merged, exclusions=exclusions)
-            except Exception:
-                pass
+            self._route_cache.set(pair, profile, merged, exclusions=exclusions)
             return merged
 
         try:
             # Tag meta with segment depth for request logging
             seg_params = dict(gh_params)
             seg_meta = seg_params.get("_meta", {})
-            if isinstance(seg_meta, dict):
-                seg_meta = dict(seg_meta)
-            else:
-                seg_meta = {}
+            seg_meta = dict(seg_meta) if isinstance(seg_meta, dict) else {}
             seg_meta["_segment_depth"] = depth
             seg_params["_meta"] = seg_meta
 
             res = self.client.route(pair, profile=profile, params=seg_params)
-            try:
+            with contextlib.suppress(Exception):
                 self._route_cache.set(pair, profile, res, exclusions=exclusions)
-            except Exception:
-                pass
             return res
         except Exception as exc:
             self.debug_logger.warning(f"Direct segment error {a}->{b}: {exc}")
@@ -786,13 +741,11 @@ class RouteService:
         left = self._route_pair_recursive(a, mid, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
         right = self._route_pair_recursive(mid, b, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
         merged = self._merge_segment_results([left, right], resolved_stops)
-        try:
+        with contextlib.suppress(Exception):
             self._route_cache.set(pair, profile, merged, exclusions=exclusions)
-        except Exception:
-            pass
         return merged
 
-    def calculate_route(self, stops: List[Any], profile: str = "truck", truck: Optional[Dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[List[str]] = None, stops_are_coordinates: bool = False) -> List[Dict[str, Any]]:
+    def calculate_route(self, stops: list[Any], profile: str = "truck", truck: Optional[dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[list[str]] = None, stops_are_coordinates: bool = False) -> list[dict[str, Any]]:
         start = time.time()
         if stops_are_coordinates:
             resolved_stops = validate_route_points(stops)
@@ -804,12 +757,12 @@ class RouteService:
                 cached["cached"] = True
                 return [cached]
 
-        gh_params: Dict[str, Any] = {}
+        gh_params: dict[str, Any] = {}
         if truck:
             try:
                 gh_params = self.constraint_engine.build_params(truck, profile)
             except Exception:
-                self.logger.warning("Failed to build truck params")
+                self.logger.warning("Failed to build truck params", exc_info=True)
 
         exclusion_plan = self.country_exclusion.prepare(avoid_countries, resolved_stops)
         gh_params = self.country_exclusion.merge_into_params(gh_params, exclusion_plan)
@@ -842,7 +795,7 @@ class RouteService:
                 "[Segmentation] Proactive segmentation: %d excluded countries, %.0fkm — splitting into pairs",
                 len(avoid_countries or []), est_km,
             )
-            parts: List[Dict[str, Any]] = []
+            parts: list[dict[str, Any]] = []
             pair_count = len(resolved_stops) - 1
             for i in range(min(pair_count, self.max_segment_count)):
                 a = resolved_stops[i]
@@ -861,7 +814,7 @@ class RouteService:
                 if not self._should_segment_route(distance_km=est_km, exc=direct_exc):
                     raise
                 self.debug_logger.info("[Segmentation] Direct route failed, splitting into pairs...")
-                parts: List[Dict[str, Any]] = []
+                parts: list[dict[str, Any]] = []
                 pair_count = len(resolved_stops) - 1
                 for i in range(min(pair_count, self.max_segment_count)):
                     a = resolved_stops[i]
@@ -869,7 +822,7 @@ class RouteService:
                     seg = self._route_pair_recursive(a, b, profile, gh_params, depth=0, resolved_stops=resolved_stops)
                     parts.append(seg)
                 if not parts:
-                    raise RuntimeError("Segmentation produced no valid segments")
+                    raise RuntimeError("Segmentation produced no valid segments") from None
                 res = self._merge_segment_results(parts, resolved_stops)
 
         try:
@@ -891,6 +844,7 @@ class RouteService:
             countries = countries_from_points(all_pts)
             res['detected_countries'] = countries
         except Exception:
+            self.logger.warning("Country detection failed", exc_info=True)
             countries = []
 
         exclusions = exclusion_plan.requested
@@ -922,9 +876,11 @@ class RouteService:
         try:
             res["truck_id"] = TruckConstraintEngine._get_truck_value(truck, "id") if truck else None
         except Exception:
+            self.logger.warning("Failed to extract truck_id via constraint engine", exc_info=True)
             try:
                 res["truck_id"] = truck["id"] if truck and "id" in truck else None
             except Exception:
+                self.logger.warning("Failed to extract truck_id direct", exc_info=True)
                 res["truck_id"] = None
 
         res["stops"] = [(lat, lon) for lat, lon in resolved_stops]
@@ -933,30 +889,9 @@ class RouteService:
             try:
                 self._route_cache.set(resolved_stops, profile, res, exclusions=avoid_countries)
             except Exception:
-                pass
+                self.logger.warning("Failed to update route cache", exc_info=True)
 
         self.debug_logger.info(f"calculate_route_end total_s={time.time()-start:.2f} distance_km={res.get('distance_km')}")
         return [res]
 
-    def calculate_route_async(self, stops: List[Any], callback: Optional[Callable[[Any], None]] = None, profile: str = "truck", truck: Optional[Dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[List[str]] = None) -> threading.Thread:
-        def _safe_invoke(cb: Callable[[Any], None], data: Any) -> None:
-            """Invoke callback directly. Thread marshaling is handled by the UI layer."""
-            if not cb:
-                return
-            try:
-                cb(data)
-            except Exception:
-                self.logger.exception("Callback failed")
 
-        def worker() -> None:
-            try:
-                result = self.calculate_route(stops=stops, profile=profile, truck=truck, use_cache=use_cache, avoid_countries=avoid_countries)
-                _safe_invoke(callback, result)
-            except Exception as e:
-                self.logger.exception("Route calculation failed")
-                err = {"error": str(e), "error_type": type(e).__name__}
-                _safe_invoke(callback, err)
-
-        thread = threading.Thread(target=worker, daemon=True, name="RouteServiceWorker")
-        thread.start()
-        return thread

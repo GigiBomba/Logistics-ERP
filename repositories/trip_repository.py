@@ -7,20 +7,6 @@ from repositories import BaseRepository
 
 class TripRepository(BaseRepository):
     TABLE = "trips"
-    COLUMNS = [
-        "id", "created_at", "truck_number", "truck_id", "driver_name", "client_name",
-        "distance_km", "total_price_eur", "rate_per_km", "gross_per_km",
-        "net_profit", "start_date", "end_date", "payment_date", "extra_costs",
-        "fuel_cost", "toll_cost", "salary_cost", "currency", "status",
-        "context_json", "route_history_v2_id", "truck_consumption_l_per_100km",
-        "driver_id", "client_id", "price_pre_vat", "vat_percent",
-        "cmr_number", "cmr_sequence", "cargo_description", "cargo_marks",
-        "package_count", "package_type", "gross_weight_kg", "volume_m3",
-        "hs_code", "carrier_instructions", "carrier_reservations",
-        "special_agreements", "carriage_payer", "documents_attached",
-        "place_of_loading", "place_of_loading_date", "loading_country",
-        "delivery_country", "adr_info_json", "cmr_status", "cmr_remarks",
-    ]
 
     # ── Base CRUD ─────────────────────────────────────────────────────
 
@@ -60,6 +46,23 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} WHERE driver_id = ? ORDER BY created_at DESC",
             (driver_id,),
         )
+
+    def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+        """Dynamic filter for trip history with pagination."""
+        query = f"SELECT * FROM {self.TABLE} WHERE 1=1"
+        params: list = []
+        if search:
+            query += " AND (client_name LIKE ? OR driver_name LIKE ?)"
+            params.extend([f"%{search}%", f"%{search}%"])
+        if truck:
+            query += " AND truck_number = ?"
+            params.append(truck)
+        if status:
+            query += " AND status = ?"
+            params.append(status)
+        query += " ORDER BY id DESC LIMIT ?"
+        params.append(limit)
+        return self._fetchall(query, tuple(params))
 
     def get_by_status(self, status: str) -> List[Dict[str, Any]]:
         return self.get_by_statuses([status])
@@ -135,4 +138,191 @@ class TripRepository(BaseRepository):
                  ORDER BY revenue DESC
                  LIMIT ?""",
             (month_start, month_end, limit),
+        )
+
+    # ── Document Automation matchers ─────────────────────────────────────
+
+    def get_by_cmr_number(self, cmr_number: str) -> List[Dict[str, Any]]:
+        """Return trips whose ``cmr_number`` column matches the given value."""
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            "WHERE cmr_number IS NOT NULL AND TRIM(cmr_number) != '' "
+            "AND LOWER(TRIM(cmr_number)) = LOWER(TRIM(?)) "
+            "ORDER BY id DESC",
+            (cmr_number,),
+        )
+
+    def get_by_invoice_via_trip_invoice(self, invoice_number: str) -> List[Dict[str, Any]]:
+        """Return trips linked to an invoice whose number matches."""
+        return self._fetchall(
+            f"""SELECT t.* FROM {self.TABLE} t
+                 JOIN invoices i ON i.trip_id = t.id
+                 WHERE LOWER(TRIM(i.invoice_number)) = LOWER(TRIM(?))
+                 ORDER BY t.id DESC""",
+            (invoice_number,),
+        )
+
+    def get_by_truck_plate(self, plate: str) -> List[Dict[str, Any]]:
+        """Return trips where truck_number matches OR trucks.plate_number matches."""
+        return self._fetchall(
+            f"""SELECT tr.* FROM {self.TABLE} tr
+                 LEFT JOIN trucks t ON tr.truck_id = t.id
+                 WHERE LOWER(TRIM(COALESCE(tr.truck_number, ''))) = LOWER(TRIM(?))
+                    OR LOWER(TRIM(COALESCE(t.plate_number, ''))) = LOWER(TRIM(?))
+                 ORDER BY tr.id DESC
+                 LIMIT 20""",
+            (plate, plate),
+        )
+
+    def get_by_driver_name(self, driver_name: str) -> List[Dict[str, Any]]:
+        """Return trips where driver_name fuzzy-matches the given value."""
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            "WHERE driver_name IS NOT NULL AND TRIM(driver_name) != '' "
+            "AND LOWER(driver_name) LIKE LOWER(?) "
+            "ORDER BY id DESC LIMIT 20",
+            (f"%{driver_name.strip()}%",),
+        )
+
+    def get_active_excluding_statuses(
+        self, exclude_statuses: List[str], limit: int = 1000,
+    ) -> List[Dict[str, Any]]:
+        """Return trips NOT in the given statuses (i.e. active/ongoing trips only)."""
+        placeholders = ", ".join("?" for _ in exclude_statuses)
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            f"WHERE status NOT IN ({placeholders}) "
+            f"OR status IS NULL OR status = '' "
+            f"ORDER BY created_at DESC LIMIT ?",
+            tuple(exclude_statuses) + (limit,),
+        )
+
+    def get_active_for_truck(
+        self, truck_plate: str = "", truck_id: Optional[int] = None,
+        exclude_statuses: Optional[List[str]] = None, limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Return active trips for a given truck by plate or FK ID."""
+        if not truck_plate and not truck_id:
+            return []
+        statuses = exclude_statuses or ["Delivered", "Completed", "Done", "Cancelled", "Paid"]
+        placeholders = ", ".join("?" for _ in statuses)
+        conditions = []
+        params: list = []
+        if truck_id:
+            conditions.append("truck_id = ?")
+            params.append(truck_id)
+        if truck_plate:
+            conditions.append("truck_number = ?")
+            params.append(truck_plate)
+        where = f"({' OR '.join(conditions)})"
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            f"WHERE {where} AND (status NOT IN ({placeholders}) OR status IS NULL OR status = '') "
+            f"ORDER BY created_at DESC LIMIT ?",
+            tuple(params) + tuple(statuses) + (limit,),
+        )
+
+    def get_active_for_driver(
+        self, driver_id: int,
+        exclude_statuses: Optional[List[str]] = None, limit: int = 100,
+    ) -> List[Dict[str, Any]]:
+        """Return active trips for a given driver."""
+        statuses = exclude_statuses or ["Delivered", "Completed", "Done", "Cancelled", "Paid"]
+        placeholders = ", ".join("?" for _ in statuses)
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            f"WHERE driver_id = ? AND (status NOT IN ({placeholders}) OR status IS NULL OR status = '') "
+            f"ORDER BY created_at DESC LIMIT ?",
+            (driver_id,) + tuple(statuses) + (limit,),
+        )
+
+    def get_latest_eta_for_truck(
+        self, truck_plate: str = "", truck_id: Optional[int] = None,
+    ) -> Optional[str]:
+        """Return the latest end_date among active trips for a truck."""
+        if not truck_plate and not truck_id:
+            return None
+        conditions = []
+        params: list = []
+        if truck_id:
+            conditions.append("truck_id = ?")
+            params.append(truck_id)
+        if truck_plate:
+            conditions.append("truck_number = ?")
+            params.append(truck_plate)
+        where_truck = f"({' OR '.join(conditions)})"
+        row = self._fetchone(
+            f"SELECT MAX(end_date) AS latest_end FROM {self.TABLE} "
+            f"WHERE {where_truck} AND "
+            f"(status NOT IN ('Delivered','Completed','Done','Cancelled','Paid') "
+            f"OR status IS NULL OR status = '')",
+            tuple(params),
+        )
+        return row["latest_end"] if row and row["latest_end"] else None
+
+    def get_latest_eta_for_driver(self, driver_id: int) -> Optional[str]:
+        """Return the latest end_date among active trips for a driver."""
+        if not driver_id:
+            return None
+        row = self._fetchone(
+            f"SELECT MAX(end_date) AS latest_end FROM {self.TABLE} "
+            f"WHERE driver_id = ? AND "
+            f"(status NOT IN ('Delivered','Completed','Done','Cancelled','Paid') "
+            f"OR status IS NULL OR status = '')",
+            (driver_id,),
+        )
+        return row["latest_end"] if row and row["latest_end"] else None
+
+    def get_recent_trips_for_matching(
+        self,
+        days_back: int = 30,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        """Return recent trips in the last ``days_back`` days for fallback matching."""
+        from datetime import datetime, timedelta
+        end = datetime.now().strftime("%Y-%m-%d")
+        start = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
+            "ORDER BY id DESC LIMIT ?",
+            (start, end, limit),
+        )
+
+    def get_trips_by_date_proximity(
+        self,
+        target_date: str,
+        window_days: int = 14,
+        limit: int = 25,
+    ) -> List[Dict[str, Any]]:
+        """Return trips whose start_date is within ±window_days of target_date."""
+        from datetime import datetime, timedelta
+        try:
+            anchor = datetime.strptime(target_date[:10], "%Y-%m-%d")
+        except (ValueError, TypeError):
+            return self.get_recent_trips_for_matching()
+        start = (anchor - timedelta(days=window_days)).strftime("%Y-%m-%d")
+        end = (anchor + timedelta(days=window_days)).strftime("%Y-%m-%d")
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
+            "ORDER BY ABS(JULIANDAY(start_date) - JULIANDAY(?)) ASC LIMIT ?",
+            (start, end, target_date, limit),
+        )
+
+    def get_by_client_name_fuzzy(
+        self,
+        client_query: str,
+        limit: int = 20,
+    ) -> List[Dict[str, Any]]:
+        """Return trips whose client_name matches the query (case-insensitive LIKE)."""
+        q = client_query.strip()
+        if not q:
+            return []
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} "
+            "WHERE client_name IS NOT NULL AND TRIM(client_name) != '' "
+            "AND LOWER(client_name) LIKE LOWER(?) "
+            "ORDER BY id DESC LIMIT ?",
+            (f"%{q}%", limit),
         )

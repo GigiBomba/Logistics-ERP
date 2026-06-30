@@ -17,22 +17,20 @@ Usage::
 
 from __future__ import annotations
 
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
-from PySide6.QtCore import Qt, QPoint, QTimer
+from PySide6.QtCore import QPoint, Qt, QTimer
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QVBoxLayout,
-    QHBoxLayout,
     QWidget,
-    QSizePolicy,
 )
 
-from ui.theme import COLORS, S
 from services.i18n import t
-
+from ui.theme import COLORS, S
 
 _MAX_HEIGHT = 300
 _WIDTH = 280
@@ -172,7 +170,7 @@ class QtAssignmentDropdown(QFrame):
         title: str,
         fetch_func: Callable[[], list[dict[str, Any]]],
         on_select: Callable[[Any], None],
-        on_close: Optional[Callable[[], None]] = None,
+        on_close: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)

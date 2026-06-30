@@ -50,18 +50,46 @@ class InMemoryDB:
         self.conn.execute(TABLE_TACHO_VEHICLE_DATA)
         self.conn.execute(TABLE_CLIENT_CONTACTS)
         self.conn.execute(TABLE_CLIENT_TAGS)
-        # Apply migrations (columns added after initial schema)
-        self.conn.execute(ALTER_TRIPS_ADD_DRIVER_ID)
-        self.conn.execute(ALTER_TRIPS_ADD_TRUCK_ID)
-        self.conn.execute("ALTER TABLE trips ADD COLUMN client_id INTEGER REFERENCES clients(id)")
-        self.conn.execute("ALTER TABLE trips ADD COLUMN context_json TEXT")
-        self.conn.execute("ALTER TABLE trips ADD COLUMN route_history_v2_id INTEGER REFERENCES route_history_v2(id)")
-        self.conn.execute("ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL")
-        self.conn.execute(ALTER_CLIENTS_ADD_TYPE)
-        self.conn.execute(ALTER_CLIENTS_ADD_PAYMENT_TERMS)
-        self.conn.execute(ALTER_CLIENTS_ADD_CREDIT_LIMIT)
-        self.conn.execute(ALTER_CLIENTS_ADD_DEFAULT_RATE)
-        self.conn.execute(ALTER_CLIENTS_ADD_RATING)
+        # Apply migrations (columns added after initial schema).
+        # Some may already exist if the CREATE TABLE was updated — ignore duplicates.
+        for alter_sql in [
+            ALTER_TRIPS_ADD_DRIVER_ID,
+            ALTER_TRIPS_ADD_TRUCK_ID,
+            "ALTER TABLE trips ADD COLUMN client_id INTEGER REFERENCES clients(id)",
+            "ALTER TABLE trips ADD COLUMN context_json TEXT",
+            "ALTER TABLE trips ADD COLUMN route_history_v2_id INTEGER REFERENCES route_history_v2(id)",
+            "ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL",
+            ALTER_CLIENTS_ADD_TYPE,
+            ALTER_CLIENTS_ADD_PAYMENT_TERMS,
+            ALTER_CLIENTS_ADD_CREDIT_LIMIT,
+            ALTER_CLIENTS_ADD_DEFAULT_RATE,
+            ALTER_CLIENTS_ADD_RATING,
+            "ALTER TABLE trips ADD COLUMN loading_country TEXT",
+            "ALTER TABLE trips ADD COLUMN delivery_country TEXT",
+            "ALTER TABLE trips ADD COLUMN hs_code TEXT",
+            "ALTER TABLE trips ADD COLUMN carrier_instructions TEXT",
+            "ALTER TABLE trips ADD COLUMN carrier_reservations TEXT",
+            "ALTER TABLE trips ADD COLUMN special_agreements TEXT",
+            "ALTER TABLE trips ADD COLUMN carriage_payer TEXT",
+            "ALTER TABLE trips ADD COLUMN documents_attached TEXT",
+            "ALTER TABLE trips ADD COLUMN place_of_loading TEXT",
+            "ALTER TABLE trips ADD COLUMN place_of_loading_date TEXT",
+            "ALTER TABLE trips ADD COLUMN adr_info_json TEXT",
+            "ALTER TABLE trips ADD COLUMN cmr_status TEXT DEFAULT 'draft'",
+            "ALTER TABLE trips ADD COLUMN cmr_remarks TEXT",
+            "ALTER TABLE trips ADD COLUMN vat_percent REAL DEFAULT 0",
+            "ALTER TABLE trips ADD COLUMN price_pre_vat REAL DEFAULT 0",
+            "ALTER TABLE trips ADD COLUMN cargo_description TEXT",
+            "ALTER TABLE trips ADD COLUMN cargo_marks TEXT",
+            "ALTER TABLE trips ADD COLUMN package_count INTEGER",
+            "ALTER TABLE trips ADD COLUMN package_type TEXT",
+            "ALTER TABLE trips ADD COLUMN gross_weight_kg REAL",
+            "ALTER TABLE trips ADD COLUMN volume_m3 REAL",
+        ]:
+            try:
+                self.conn.execute(alter_sql)
+            except Exception:
+                pass
         self.conn.commit()
 
     @staticmethod

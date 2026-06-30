@@ -7,33 +7,34 @@ control. Map-click events flow back to Python via a QWebChannel slot.
 
 from __future__ import annotations
 
+import contextlib
 import html as html_module
 import json
 import logging
+import os
 import re
-from pathlib import Path
-from typing import Callable, List, Optional, Tuple
+from typing import Callable
 
 import folium
-
-from PySide6.QtWidgets import QSizePolicy
-
 from PySide6.QtCore import QObject, QUrl, Signal, Slot
 from PySide6.QtGui import QColor
 from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
+from PySide6.QtWidgets import QSizePolicy
 
 logger = logging.getLogger(__name__)
 
-_QWC_JS: Optional[str] = None
+_QWC_JS: str | None = None
 
 
 def _qwebchannel_js() -> str:
     global _QWC_JS
     if _QWC_JS is None:
-        p = Path(__file__).parent / "qwebchannel.js"
-        if p.is_file():
-            _QWC_JS = p.read_text(encoding="utf-8")
+        from utils.resource_path import resource_path
+        p = resource_path("ui/map/qwebchannel.js")
+        if os.path.isfile(p):
+            with open(p, encoding="utf-8") as fh:
+                _QWC_JS = fh.read()
         else:
             logger.warning("qwebchannel.js not found at %s — bridge unavailable", p)
             _QWC_JS = ""
@@ -59,7 +60,7 @@ class MapWidget(QWebEngineView):
     def __init__(
         self,
         parent=None,
-        center: Tuple[float, float] = DEFAULT_CENTER,
+        center: tuple[float, float] = DEFAULT_CENTER,
         zoom: int = DEFAULT_ZOOM,
     ):
         super().__init__(parent)
@@ -69,7 +70,8 @@ class MapWidget(QWebEngineView):
         self._center = center
         self._zoom = zoom
         self._bridge = MapBridge(self)
-        self._on_click_callbacks: List[Callable[[float, float], None]] = []
+        self._on_click_callbacks: list[Callable[[float, float], None]] = []
+        self._pending_js: list[str] = []
 
         channel = QWebChannel(self)
         self.page().setWebChannel(channel)
@@ -95,11 +97,7 @@ class MapWidget(QWebEngineView):
         # Folium wraps the map in a responsive container with padding-bottom:60%.
         # We strip that and use the inner HTML doc directly.
         match = re.search(r'srcdoc="([^"]+)"', raw)
-        if match:
-            inner_html = html_module.unescape(match.group(1))
-        else:
-            # Fallback: use the raw HTML as-is
-            inner_html = raw
+        inner_html = html_module.unescape(match.group(1)) if match else raw
 
         # Ensure full-viewport dark styling
         inner_html = inner_html.replace(
@@ -127,6 +125,12 @@ class MapWidget(QWebEngineView):
     def _on_load_finished(self, ok: bool) -> None:
         if ok:
             self._map_ready = True
+            for js in self._pending_js:
+                try:
+                    self.page().runJavaScript(js)
+                except Exception:
+                    logger.exception("runJavaScript failed for pending JS")
+            self._pending_js.clear()
 
     @staticmethod
     def _bridge_script(map_var: str, qwc_js: str) -> str:
@@ -188,17 +192,15 @@ class MapWidget(QWebEngineView):
 
     # ── Public methods ─────────────────────────────────────────────────────────
 
-    def set_click_callback(self, callback: Optional[Callable[[float, float], None]]) -> None:
+    def set_click_callback(self, callback: Callable[[float, float], None] | None) -> None:
         self._on_click_callbacks.clear()
         if callback is not None:
             self._on_click_callbacks.append(callback)
 
     def _emit_click(self, lat: float, lng: float) -> None:
         for cb in self._on_click_callbacks:
-            try:
+            with contextlib.suppress(Exception):
                 cb(lat, lng)
-            except Exception:
-                pass
 
     @staticmethod
     def _js_str(s: str) -> str:
@@ -208,18 +210,17 @@ class MapWidget(QWebEngineView):
     @staticmethod
     def _js_color(s: str) -> str:
         """Validate a color string for safe JS embedding — only allow hex/rgb/named."""
-        if re.match(r'^[#a-zA-Z0-9(),.%\s]+$', s):
+        if re.match(r'^[#a-zA-Z0-9(),.%]+$', s):
             return s.replace("'", "")
         return "#6366f1"
 
     def add_marker(self, lat: float, lng: float, label: str = "", color: str = "blue") -> None:
-        safe_label = html_module.escape(label, quote=False)
-        js_label = self._js_str(safe_label)
+        js_label = json.dumps(label)
         js_color = self._js_color(color)
-        js = f"_opAddMarker({lat}, {lng}, '{js_label}', '{js_color}');"
+        js = f"_opAddMarker({lat}, {lng}, {js_label}, '{js_color}');"
         self._run_js(js)
 
-    def add_polyline(self, coords: List[Tuple[float, float]], color: str = "#6366f1", weight: int = 3) -> None:
+    def add_polyline(self, coords: list[tuple[float, float]], color: str = "#6366f1", weight: int = 3) -> None:
         coords_json = json.dumps([[lat, lng] for lat, lng in coords])
         js_color = self._js_color(color)
         js = f"_opAddPolyline({coords_json}, '{js_color}', {weight});"
@@ -242,7 +243,7 @@ class MapWidget(QWebEngineView):
         self._run_js(js)
 
     def add_polygon(
-        self, coords: List[Tuple[float, float]],
+        self, coords: list[tuple[float, float]],
         color: str = "#ef4444", fill_opacity: float = 0.15, fill_color: str = "",
     ) -> None:
         fill = fill_color or color
@@ -257,6 +258,7 @@ class MapWidget(QWebEngineView):
 
     def _run_js(self, js: str) -> None:
         if not self._map_ready:
+            self._pending_js.append(js)
             return
         try:
             self.page().runJavaScript(js)
@@ -264,8 +266,6 @@ class MapWidget(QWebEngineView):
             logger.exception("runJavaScript failed")
 
     def destroy(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self._bridge.deleteLater()
-        except Exception:
-            pass
         super().deleteLater()

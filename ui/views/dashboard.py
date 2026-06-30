@@ -19,39 +19,43 @@ Usage as standalone window (QDialog)::
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget,
     QDialog,
     QFrame,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
     QHBoxLayout,
+    QLabel,
+    QMessageBox,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
-    QMessageBox,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ui.design_tokens import (
-    ACCENT, ACCENT_TEXT, BG_SURFACE, BG_BASE,
-    BORDER_DEFAULT, BORDER_FAINT,
-    DANGER, DANGER_TEXT, SUCCESS, SUCCESS_TEXT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY,
-    WARNING, WARNING_TEXT, SP,
-)
-from ui.components import (
-    Card, CardHeader, Btn, KPICard, PageTitle, Label, SectionTitle, MonoLabel,
-)
-from ui.theme import COLORS, CHART_PRIMARY, CHART_SECONDARY
-from services.i18n import t, register_listener, unregister_listener
-from services.preferences import safe_float
 from services.app_state import AppState
+from services.i18n import register_listener, t, unregister_listener
+from services.preferences import safe_float
+from ui.components import (
+    Btn,
+    EmptyState,
+    KPICard,
+    PageTitle,
+)
+from ui.design_tokens import (
+    ACCENT_TEXT,
+    DANGER_TEXT,
+    SP,
+    SUCCESS_TEXT,
+    WARNING_TEXT,
+)
+from ui.theme import CHART_PRIMARY, CHART_SECONDARY, COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +71,7 @@ class QtFleetDashboard(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         prefs=None,
         ops=None,
@@ -81,23 +85,22 @@ class QtFleetDashboard(QWidget):
 
         # ── Period state ────────────────────────────────────────────────────────
         self._period = "today"
-        self._start_date: Optional[str] = None
-        self._end_date: Optional[str] = None
-        self._last_refresh: Optional[datetime] = None
+        self._start_date: str | None = None
+        self._end_date: str | None = None
+        self._last_refresh: datetime | None = None
         self._shutting_down = False
 
         # ── Chart references (for cleanup) ──────────────────────────────────────
-        self._chart_refs: List[Tuple[Any, Any]] = []
-        self._chart_figures: List[Any] = []
+        self._chart_refs: list[Any] = []
 
         # ── i18n ────────────────────────────────────────────────────────────────
-        self._i18n_widgets: List[Tuple[Any, str, str]] = []
-        self._period_button_refs: List[Tuple[Btn, str, str]] = []
+        self._i18n_widgets: list[tuple[Any, str, str]] = []
+        self._period_button_refs: list[tuple[Btn, str, str]] = []
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
         app_state = AppState()
-        app_state.subscribe("language", self._language_callback)
+        self._app_state_token = app_state.subscribe("language", self._language_callback)
 
         # ── Build UI ────────────────────────────────────────────────────────────
         self._build_ui()
@@ -120,12 +123,14 @@ class QtFleetDashboard(QWidget):
         self._update_last_refresh_label()
 
         try:
+            from repositories.analytics_repository import AnalyticsRepository
+            analytics = AnalyticsRepository(self.db) if self.db else None
             trucks = self.db.get_all_trucks() if self.db else []
             trips = self.db.get_all_trips() if self.db else []
-            alerts, _ = self.db.get_overdue_data() if self.db else ([], None)
-            kpi = self.db.get_kpi_stats() if self.db else {}
-            best_truck, best_driver, _ = (
-                self.db.get_advanced_analytics() if self.db else (None, None, None)
+            alerts, _ = analytics.get_overdue_data() if analytics else ([], None)
+            kpi = analytics.get_kpi_stats() if analytics else {}
+            _best_truck, best_driver, _ = (
+                analytics.get_advanced_analytics() if analytics else (None, None, None)
             )
         except Exception as exc:
             logger.exception("FleetDashboard refresh_all failed")
@@ -145,25 +150,25 @@ class QtFleetDashboard(QWidget):
         revenue = 0.0
         total_fuel = 0.0
         fuel_count = 0
-        truck_revenue: Dict[str, float] = {}
-        truck_trips: Dict[str, int] = {}
-        truck_fuel: Dict[str, float] = {}
-        driver_trip_map: Dict[str, int] = {}
+        truck_revenue: dict[str, float] = {}
+        truck_trips: dict[str, int] = {}
+        truck_fuel: dict[str, float] = {}
+        driver_trip_map: dict[str, int] = {}
 
-        for t in trips:
-            if t.get("status") == "Active" or t.get("active_status") == 1:
+        for trip in trips:
+            if trip.get("status") == "Active" or trip.get("active_status") == 1:
                 active_trucks += 1
-            if t.get("start_date") == today_str or (
-                t.get("status") in ("In Transit", "Loading")
-                and str(t.get("created_at", ""))[:10] == today_str
+            if trip.get("start_date") == today_str or (
+                trip.get("status") in ("In Transit", "Loading")
+                and str(trip.get("created_at", ""))[:10] == today_str
             ):
                 trips_today += 1
 
-        for t in filtered_trips:
-            plate = t.get("truck_number", "")
-            driver = t.get("driver_name", "")
-            price = safe_float(t.get("total_price_eur"))
-            fuel_val = safe_float(t.get("fuel_cost"))
+        for trip in filtered_trips:
+            plate = trip.get("truck_number", "")
+            driver = trip.get("driver_name", "")
+            price = safe_float(trip.get("total_price_eur"))
+            fuel_val = safe_float(trip.get("fuel_cost"))
 
             revenue += price
             if fuel_val > 0:
@@ -224,52 +229,47 @@ class QtFleetDashboard(QWidget):
         self._build_activity_feed(trips)
 
     def wakeup(self) -> None:
-        """Re-activate the dashboard (e.g. after it was hidden / detached)."""
-        self._subscribe_events()
+        """Re-activate the dashboard (e.g. after it was hidden / detached).
+
+        The previously-rendered chart widgets and their ``QPixmap``
+        objects are kept alive across view-switches (see
+        ``shutdown``), so the common case — re-entering the dashboard
+        after visiting another module — does not trigger a kaleido
+        re-render.  ``refresh_all`` re-queries the cheap data and
+        updates the chart figures; if the chart signature is unchanged
+        the existing ``QPixmap`` is reused.
+        """
         self.refresh_all()
 
     def shutdown(self) -> None:
-        """Clean up timers, chart figures, and listeners."""
+        """Clean up timers and listeners; keep chart widgets alive.
+
+        The chart widgets and their rendered ``QPixmap`` objects are
+        preserved across view-switches, so re-entering the dashboard
+        does not require a kaleido re-render.  We only stop the timer
+        and unsubscribe listeners here.
+        """
         self._shutting_down = True
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
 
-        # Close matplotlib figures
-        for fig, _canvas in self._chart_refs:
-            try:
-                import matplotlib.pyplot as plt
-
-                plt.close(fig)
-            except Exception:
-                pass
-        self._chart_refs.clear()
-        self._chart_figures.clear()
-
         # Unsubscribe i18n
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             AppState().unsubscribe("language", self._language_callback)
-        except Exception:
-            pass
 
     def refresh_translations(self) -> None:
         """Update all visible text after a language change."""
         for widget, key, prefix in self._i18n_widgets:
             try:
-                if isinstance(widget, QLabel):
-                    widget.setText(f"{prefix}{t(key)}")
-                elif isinstance(widget, QPushButton):
+                if isinstance(widget, (QLabel, QPushButton)):
                     widget.setText(f"{prefix}{t(key)}")
             except Exception:
                 pass
         for btn, _pid, key in self._period_button_refs:
-            try:
+            with contextlib.suppress(Exception):
                 btn.setText(t(key))
-            except Exception:
-                pass
         self._update_last_refresh_label()
 
         # Rebuild chart titles by re-drawing
@@ -400,7 +400,7 @@ class QtFleetDashboard(QWidget):
             "fleet_dashboard.kpi_alerts": DANGER_TEXT,
             "fleet_dashboard.kpi_unpaid": DANGER_TEXT,
         }
-        kpi_defs: List[Tuple[str, str]] = [
+        kpi_defs: list[tuple[str, str]] = [
             ("fleet_dashboard.kpi_active_trucks", str(active_trucks)),
             ("fleet_dashboard.kpi_trips_today", str(trips_today)),
             ("fleet_dashboard.kpi_revenue", fmt_cur(revenue, 0)),
@@ -409,7 +409,7 @@ class QtFleetDashboard(QWidget):
             ("fleet_dashboard.kpi_unpaid", str(unpaid_count)),
         ]
 
-        self._kpi_cards: Dict[str, QFrame] = {}
+        self._kpi_cards: dict[str, QFrame] = {}
         for key, value in kpi_defs:
             card = KPICard(kpi_frame, t(key), value,
                            value_color=kpi_colors.get(key))
@@ -418,7 +418,7 @@ class QtFleetDashboard(QWidget):
 
         self._content_layout_inner.addWidget(kpi_frame)
 
-    def _build_charts_row(self, trucks: List[Dict], trips: List[Dict]) -> None:
+    def _build_charts_row(self, trucks: list[dict], trips: list[dict]) -> None:
         """Matplotlib charts side by side."""
         charts_frame = QFrame()
         charts_layout = QHBoxLayout(charts_frame)
@@ -448,17 +448,16 @@ class QtFleetDashboard(QWidget):
         self._render_trip_activity_chart(trips)
         self._render_fleet_status_chart(trucks)
 
-    def _render_trip_activity_chart(self, trips: List[Dict]) -> None:
+    def _render_trip_activity_chart(self, trips: list[dict]) -> None:
         """Bar chart: daily completed / in-progress / cancelled trips."""
-        # Lazy import so matplotlib is optional at import time.
-        import matplotlib.pyplot as plt
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+        from ui.plotly_charts import make_grouped_bar_chart
+        from ui.plotly_renderer import PlotlyChartWidget
 
         # Clear previous content
         self._clear_widgets_from_layout(self._left_chart_frame.layout())
 
         filtered = self._filter_trips_by_period(trips)
-        daily: Dict[str, Dict[str, int]] = defaultdict(
+        daily: dict[str, dict[str, int]] = defaultdict(
             lambda: {"completed": 0, "in_progress": 0, "cancelled": 0}
         )
 
@@ -475,10 +474,12 @@ class QtFleetDashboard(QWidget):
                 daily[date]["cancelled"] += 1
 
         if not daily:
-            lbl = QLabel(t("fleet_dashboard.no_data"))
-            lbl.setProperty("fontRole", "muted")
-            lbl.setAlignment(Qt.AlignCenter)
-            self._left_chart_frame.layout().addWidget(lbl)
+            empty = EmptyState(
+                self._left_chart_frame,
+                icon_name="mdi6.chart-bar",
+                title=t("fleet_dashboard.no_data"),
+            )
+            self._left_chart_frame.layout().addWidget(empty)
             return
 
         dates = sorted(daily.keys())[-14:]
@@ -486,91 +487,27 @@ class QtFleetDashboard(QWidget):
         in_progress = [daily[d]["in_progress"] for d in dates]
         cancelled = [daily[d]["cancelled"] for d in dates]
 
-        cw = max(self._left_chart_frame.width(), 300)
-        ch = max(self._left_chart_frame.height(), 200)
-        dpi = 90
-        fig, ax = plt.subplots(figsize=(cw / dpi, ch / dpi), dpi=dpi)
-
-        fig.patch.set_facecolor(BG_SURFACE)
-        ax.set_facecolor(BG_SURFACE)
-        fig.subplots_adjust(left=0.07, right=0.97, top=0.90, bottom=0.15)
-
-        x = range(len(dates))
-        width = 0.25
-        ax.bar(
-            [i - width for i in x],
-            completed,
-            width,
-            label=t("fleet_dashboard.status_completed"),
-            color=CHART_PRIMARY,
-            alpha=0.8,
-        )
-        ax.bar(
-            x,
-            in_progress,
-            width,
-            label=t("fleet_dashboard.status_in_progress"),
-            color="#6366f1",
-            alpha=0.8,
-        )
-        ax.bar(
-            [i + width for i in x],
-            cancelled,
-            width,
-            label=t("fleet_dashboard.status_cancelled"),
-            color=CHART_SECONDARY,
-            alpha=0.8,
+        fig = make_grouped_bar_chart(
+            dates,
+            [
+                (t("fleet_dashboard.status_completed"), completed, CHART_PRIMARY),
+                (t("fleet_dashboard.status_in_progress"), in_progress, "#6366f1"),
+                (t("fleet_dashboard.status_cancelled"), cancelled, CHART_SECONDARY),
+            ],
+            title=t("fleet_dashboard.chart_trip_activity"),
+            horizontal=False,
+            show_title=True,
         )
 
-        ax.set_title(
-            t("fleet_dashboard.chart_trip_activity"),
-            color=COLORS["text_primary"],
-            fontsize=11,
-            fontweight="bold",
-            pad=12,
-        )
-        ax.set_xlabel(
-            t("fleet_dashboard.date"),
-            color=COLORS["text_secondary"],
-            fontsize=8,
-        )
-        ax.set_ylabel(
-            t("fleet_dashboard.trips"),
-            color=COLORS["text_secondary"],
-            fontsize=8,
-        )
-        ax.tick_params(colors=COLORS["text_secondary"], labelsize=7)
-        ax.legend(
-            loc="upper left",
-            facecolor=COLORS["bg_surface"],
-            edgecolor=COLORS["border"],
-            labelcolor=COLORS["text_primary"],
-            fontsize=7,
-        )
-        tick_step = max(1, len(dates) // 6)
-        ax.set_xticks(range(0, len(dates), tick_step))
-        ax.set_xticklabels(
-            [dates[i] for i in range(0, len(dates), tick_step)],
-            rotation=30,
-            ha="right",
-            fontsize=7,
-        )
+        chart_widget = PlotlyChartWidget(min_height=200)
+        chart_widget.set_figure(fig)
+        self._left_chart_frame.layout().addWidget(chart_widget)
+        self._chart_refs.append(chart_widget)
 
-        for spine in ax.spines.values():
-            spine.set_edgecolor(COLORS["border"])
-            spine.set_linewidth(0.5)
-        ax.grid(axis="y", color=COLORS["border"], linewidth=0.4, linestyle="--", alpha=0.35)
-        ax.set_axisbelow(True)
-
-        canvas = FigureCanvas(fig)
-        self._left_chart_frame.layout().addWidget(canvas)
-        self._chart_refs.append((fig, canvas))
-        self._chart_figures.append(fig)
-
-    def _render_fleet_status_chart(self, trucks: List[Dict]) -> None:
+    def _render_fleet_status_chart(self, trucks: list[dict]) -> None:
         """Pie chart: fleet status distribution."""
-        import matplotlib.pyplot as plt
-        from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
+        from ui.plotly_charts import make_pie_chart
+        from ui.plotly_renderer import PlotlyChartWidget
 
         self._clear_widgets_from_layout(self._right_chart_frame.layout())
 
@@ -580,7 +517,7 @@ class QtFleetDashboard(QWidget):
             "maintenance": t("fleet_dashboard.status_maintenance"),
             "inactive": t("fleet_dashboard.status_inactive"),
         }
-        status_counts: Dict[str, int] = {k: 0 for k in status_labels_map}
+        status_counts: dict[str, int] = dict.fromkeys(status_labels_map, 0)
 
         for truck in trucks:
             status = truck.get("status", "Inactive")
@@ -599,54 +536,36 @@ class QtFleetDashboard(QWidget):
         colors_pie = [CHART_PRIMARY, "#6366f1", CHART_SECONDARY, COLORS["accent"]]
 
         if sum(sizes) == 0:
-            lbl = QLabel(t("fleet_dashboard.no_data"))
-            lbl.setProperty("fontRole", "muted")
-            lbl.setAlignment(Qt.AlignCenter)
-            self._right_chart_frame.layout().addWidget(lbl)
+            empty = EmptyState(
+                self._right_chart_frame,
+                icon_name="mdi6.chart-pie",
+                title=t("fleet_dashboard.no_data"),
+            )
+            self._right_chart_frame.layout().addWidget(empty)
             return
 
-        cw = max(self._right_chart_frame.width(), 240)
-        ch = max(self._right_chart_frame.height(), 200)
-        dpi = 90
-        fig, ax = plt.subplots(figsize=(cw / dpi, ch / dpi), dpi=dpi)
-        fig.patch.set_facecolor(COLORS["bg_surface"])
-        ax.set_facecolor(COLORS["bg_surface"])
-
-        wedges, texts, autotexts = ax.pie(
-            sizes,
-            labels=labels,
+        fig = make_pie_chart(
+            sizes, labels,
+            title=t("fleet_dashboard.chart_fleet_status"),
             colors=colors_pie,
-            autopct="%1.0f%%",
-            startangle=90,
-            textprops={"color": COLORS["text_primary"], "fontsize": 8},
-        )
-        for autotext in autotexts:
-            autotext.set_color(COLORS["text_primary"])
-            autotext.set_fontweight("bold")
-
-        ax.set_title(
-            t("fleet_dashboard.chart_fleet_status"),
-            color=COLORS["text_primary"],
-            fontsize=11,
-            fontweight="bold",
-            pad=12,
+            show_title=True,
         )
 
-        canvas = FigureCanvas(fig)
-        self._right_chart_frame.layout().addWidget(canvas)
-        self._chart_refs.append((fig, canvas))
-        self._chart_figures.append(fig)
+        chart_widget = PlotlyChartWidget(min_height=200)
+        chart_widget.set_figure(fig)
+        self._right_chart_frame.layout().addWidget(chart_widget)
+        self._chart_refs.append(chart_widget)
 
     def _build_info_cards(
         self,
-        top_truck: Optional[Tuple[str, float]],
-        best_driver: Optional[Dict],
-        truck_trips: Dict[str, int],
+        top_truck: tuple[str, float] | None,
+        best_driver: dict | None,
+        truck_trips: dict[str, int],
         avg_profit: float,
         driver_trip_count: int,
-        top_fuel_truck: Optional[Tuple[str, float]],
-        truck_fuel: Dict[str, float],
-        trucks: List[Dict],
+        top_fuel_truck: tuple[str, float] | None,
+        truck_fuel: dict[str, float],
+        trucks: list[dict],
     ) -> None:
         """Three information cards: best truck, best driver, highest fuel."""
         cards_frame = QFrame()
@@ -682,9 +601,12 @@ class QtFleetDashboard(QWidget):
             trips_lbl.setProperty("fontRole", "label")
             truck_card_layout.addWidget(trips_lbl)
         else:
-            no_data = QLabel(t("fleet_dashboard.no_data"))
-            no_data.setProperty("fontRole", "muted")
-            truck_card_layout.addWidget(no_data)
+            empty = EmptyState(
+                truck_card,
+                icon_name="mdi6.truck",
+                title=t("fleet_dashboard.no_data"),
+            )
+            truck_card_layout.addWidget(empty)
 
         # ── Best Driver ─────────────────────────────────────────────────────────
         driver_card = self._create_info_card(cards_frame, t("fleet_dashboard.card_best_driver"))
@@ -715,9 +637,12 @@ class QtFleetDashboard(QWidget):
             profit_lbl.setProperty("fontRole", "label")
             driver_card_layout.addWidget(profit_lbl)
         else:
-            no_data = QLabel(t("fleet_dashboard.no_driver_data"))
-            no_data.setProperty("fontRole", "muted")
-            driver_card_layout.addWidget(no_data)
+            empty = EmptyState(
+                driver_card,
+                icon_name="mdi6.account",
+                title=t("fleet_dashboard.no_driver_data"),
+            )
+            driver_card_layout.addWidget(empty)
 
         # ── Highest Fuel ────────────────────────────────────────────────────────
         fuel_card = self._create_info_card(cards_frame, t("fleet_dashboard.card_highest_fuel"))
@@ -761,9 +686,12 @@ class QtFleetDashboard(QWidget):
             cons_lbl.setProperty("fontRole", "label")
             fuel_card_layout.addWidget(cons_lbl)
         else:
-            no_data = QLabel(t("fleet_dashboard.no_data"))
-            no_data.setProperty("fontRole", "muted")
-            fuel_card_layout.addWidget(no_data)
+            empty = EmptyState(
+                fuel_card,
+                icon_name="mdi6.gas-station",
+                title=t("fleet_dashboard.no_data"),
+            )
+            fuel_card_layout.addWidget(empty)
 
         cards_layout.addWidget(truck_card)
         cards_layout.addWidget(driver_card)
@@ -771,7 +699,7 @@ class QtFleetDashboard(QWidget):
 
         self._content_layout_inner.addWidget(cards_frame)
 
-    def _build_activity_feed(self, trips: List[Dict]) -> None:
+    def _build_activity_feed(self, trips: list[dict]) -> None:
         """Recent trips activity feed with status indicators."""
         feed_frame = QFrame()
         feed_frame.setProperty("role", "card")
@@ -803,17 +731,19 @@ class QtFleetDashboard(QWidget):
         recent_trips = sorted(trips, key=lambda x: x.get("id", 0), reverse=True)[:10]
 
         if not recent_trips:
-            no_data = QLabel(t("fleet_dashboard.no_data"))
-            no_data.setProperty("fontRole", "muted")
-            no_data.setAlignment(Qt.AlignCenter)
-            feed_layout.addWidget(no_data)
+            empty = EmptyState(
+                feed_frame,
+                icon_name="mdi6.clipboard-text-outline",
+                title=t("fleet_dashboard.no_data"),
+            )
+            feed_layout.addWidget(empty)
         else:
             for trip in recent_trips:
                 self._create_activity_row(feed_layout, trip)
 
         self._content_layout_inner.addWidget(feed_frame)
 
-    def _create_activity_row(self, parent_layout: QVBoxLayout, trip: Dict) -> None:
+    def _create_activity_row(self, parent_layout: QVBoxLayout, trip: dict) -> None:
         """Single row in the activity feed."""
         row = QFrame()
         row_layout = QHBoxLayout(row)
@@ -891,11 +821,11 @@ class QtFleetDashboard(QWidget):
         elif status in ("In Transit", "Loading"):
             return COLORS["warning"]
         elif status == "Cancelled":
-            return COLORS["danger"]
+            return COLORS.get("chip_cancelled", "#6B7280")
         else:
             return COLORS["accent"]
 
-    def _filter_trips_by_period(self, trips: List[Dict]) -> List[Dict]:
+    def _filter_trips_by_period(self, trips: list[dict]) -> list[dict]:
         """Filter trips to the selected date range."""
         if not self._start_date or not self._end_date:
             return trips
@@ -964,14 +894,13 @@ class QtFleetDashboard(QWidget):
                 widget.deleteLater()
 
         # Clear chart references
-        for fig, _canvas in self._chart_refs:
+        for widget in self._chart_refs:
             try:
-                import matplotlib.pyplot as plt
-                plt.close(fig)
+                widget.setParent(None)
+                widget.deleteLater()
             except Exception:
                 pass
         self._chart_refs.clear()
-        self._chart_figures.clear()
 
     @staticmethod
     def _clear_widgets_from_layout(layout) -> None:
@@ -1003,17 +932,6 @@ class QtFleetDashboard(QWidget):
         QTimer.singleShot(0, self.refresh_translations)
 
     # ------------------------------------------------------------------
-    # Event bus (placeholder for future use)
-    # ------------------------------------------------------------------
-
-    def _subscribe_events(self) -> None:
-        """Subscribe to data-change events for live updates.
-
-        Override or extend this in subclasses to connect to an EventBus.
-        """
-        pass
-
-    # ------------------------------------------------------------------
     # Lifecycle (called externally by the window manager)
     # ------------------------------------------------------------------
 
@@ -1038,7 +956,7 @@ class FleetDashboardDialog(QDialog):
         db=None,
         prefs=None,
         ops=None,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle(t("fleet_dashboard.title"))

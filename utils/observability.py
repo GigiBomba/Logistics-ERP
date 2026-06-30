@@ -33,6 +33,14 @@ class _StructuredLogger:
     def __init__(self, name: str = "operion"):
         self._logger = logging.getLogger(name)
 
+    _LEVEL_MAP = {
+        "DEBUG": logging.DEBUG,
+        "INFO": logging.INFO,
+        "WARNING": logging.WARNING,
+        "ERROR": logging.ERROR,
+        "CRITICAL": logging.CRITICAL,
+    }
+
     def _emit(self, level: str, message: str, **fields) -> None:
         record = {
             "level": level,
@@ -41,7 +49,9 @@ class _StructuredLogger:
             "pid": os.getpid(),
             **fields,
         }
-        self._logger.info(json.dumps(record, ensure_ascii=False, default=str))
+        level_num = self._LEVEL_MAP.get(level, logging.INFO)
+        if self._logger.isEnabledFor(level_num):
+            self._logger.log(level_num, json.dumps(record, ensure_ascii=False, default=str))
 
     def info(self, message: str, **fields) -> None:
         self._emit("INFO", message, **fields)
@@ -97,6 +107,7 @@ class _Metrics:
         with self._lock:
             self._counters.clear()
             self._gauges.clear()
+            self._start_time = time.time()
 
 
 @contextmanager
@@ -106,16 +117,23 @@ def perf_timer(name: str, log_result: bool = True):
     Usage:
         with perf_timer("route_calculation"):
             result = calculate_route(...)
+
+    Only counts successful completions (no exception propagated out).
     """
     start = time.perf_counter()
+    success = True
     try:
         yield
+    except BaseException:
+        success = False
+        raise
     finally:
         elapsed_ms = (time.perf_counter() - start) * 1000
-        metrics.increment(f"perf.{name}.count")
-        metrics.gauge(f"perf.{name}.last_ms", elapsed_ms)
-        if log_result:
-            log.debug(f"perf_timer", operation=name, elapsed_ms=round(elapsed_ms, 2))
+        if success:
+            metrics.increment(f"perf.{name}.count")
+            metrics.gauge(f"perf.{name}.last_ms", elapsed_ms)
+            if log_result:
+                log.debug(f"perf_timer", operation=name, elapsed_ms=round(elapsed_ms, 2))
 
 
 def timed(func: Callable) -> Callable:

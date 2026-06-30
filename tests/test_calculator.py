@@ -53,7 +53,7 @@ def calc_view(qt_widget, qtbot, monkeypatch):
 class TestQtCalculatorView:
     def test_creation(self, calc_view):
         assert calc_view.calculate_btn is not None
-        assert calc_view.l_res is not None
+        assert calc_view._res_profit is not None
 
     def test_truck_dropdown_populated(self, calc_view):
         assert calc_view.truck_combo.count() == 1
@@ -88,8 +88,9 @@ class TestQtCalculatorView:
 
         calc_view._handle_calculate()
 
-        assert "Net" in calc_view.l_res.text() or calc_view.l_res.text() != ""
-        assert calc_view.l_res.styleSheet() != ""
+        result_text = calc_view._res_profit.text()
+        assert result_text and len(result_text) > 3, f"Expected financial result in label, got: '{result_text}'"
+        assert calc_view._res_profit.styleSheet() != ""
 
     def test_calculate_saves_trip(self, calc_view, qtbot, monkeypatch):
         monkeypatch.setattr("ui.views.calculator_view.QMessageBox", MagicMock())

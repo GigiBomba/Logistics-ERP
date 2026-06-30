@@ -6,18 +6,16 @@ of trip and invoice events for a client, with color-coded status dots.
 
 from __future__ import annotations
 
-from typing import Optional
-
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget,
-    QLabel,
     QHBoxLayout,
+    QLabel,
     QVBoxLayout,
+    QWidget,
 )
 
 from services.i18n import t
-
+from ui.widgets.layout_utils import clear_layout
 
 class QtClientActivityTimeline(QWidget):
     """Chronological event feed for a client.
@@ -28,7 +26,7 @@ class QtClientActivityTimeline(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         service=None,
         client_id=None,
     ):
@@ -65,11 +63,7 @@ class QtClientActivityTimeline(QWidget):
             self._add_event_row(ev)
 
     def _clear_layout(self):
-        while self._layout.count():
-            item = self._layout.takeAt(0)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+        clear_layout(self._layout)
 
     def _show_empty_state(self):
         label = QLabel(t("common.no_activity"))
@@ -111,21 +105,32 @@ class QtClientActivityTimeline(QWidget):
 
     # ── Data ──────────────────────────────────────────────────────────────────
 
+    def cleanup(self) -> None:
+        """Release the service reference."""
+        self.service = None
+
+    def destroy(self) -> None:
+        """Clean up and schedule deletion."""
+        self.cleanup()
+        super().deleteLater()
+
     def _collect_events(self) -> list:
         """Aggregate trip and invoice events into a flat, sortable list."""
         events: list = []
+        if self.service is None:
+            return events
 
         trips = self.service.get_client_trips(self.client_id, limit=50)
-        for t in trips:
-            status = t.get("status", "")
+        for trip in trips:
+            status = trip.get("status", "")
             color = self._status_color(status)
             events.append({
-                "ts": t.get("start_date") or t.get("created_at", ""),
+                "ts": trip.get("start_date") or trip.get("created_at", ""),
                 "label": "Trip: {} — {} / {} — {} km".format(
-                    t.get("truck_number", "?"),
+                    trip.get("truck_number", "?"),
                     status,
-                    t.get("client_name", "?"),
-                    int(t.get("distance_km", 0) or 0),
+                    trip.get("client_name", "?"),
+                    int(trip.get("distance_km", 0) or 0),
                 ),
                 "color": color,
             })
@@ -159,7 +164,7 @@ class QtClientActivityTimeline(QWidget):
             "in transit": "accent",
             "loading": "warning",
             "planned": "accent",
-            "cancelled": "danger",
+            "cancelled": "muted",
         }
         return mapping.get(status.lower() if status else "", "accent")
 

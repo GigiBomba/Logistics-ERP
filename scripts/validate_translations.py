@@ -23,8 +23,9 @@ TRANSLATIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "transl
 REQUIRED_SECTIONS = {"language_name", "app", "nav", "main", "fleet", "history", "settings"}
 
 
-def load_json(path: str) -> dict:
-    with open(path, "r", encoding="utf-8-sig") as f:
+def load_json(path: str, strip_bom: bool = True) -> dict:
+    encoding = "utf-8-sig" if strip_bom else "utf-8"
+    with open(path, "r", encoding=encoding) as f:
         return json.load(f)
 
 
@@ -53,13 +54,14 @@ def validate_file(filepath: str) -> Tuple[List[str], List[str]]:
     errors = []
     warnings = []
 
-    # Check BOM
-    if detect_bom(filepath):
+    # Check BOM (use raw open to detect, then load with BOM stripping)
+    has_bom = detect_bom(filepath)
+    if has_bom:
         errors.append("File has UTF-8 BOM (should use plain UTF-8)")
 
-    # Validate JSON
+    # Validate JSON (strip BOM automatically if present)
     try:
-        data = load_json(filepath)
+        data = load_json(filepath, strip_bom=has_bom)
     except json.JSONDecodeError as e:
         errors.append(f"Invalid JSON: {e.msg} (line {e.lineno})")
         return errors, warnings

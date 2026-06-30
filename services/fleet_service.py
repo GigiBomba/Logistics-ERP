@@ -1,9 +1,8 @@
 """Truck and expense service — delegates truck CRUD to FleetRepository, expenses to DatabaseManager."""
 
-from services.operations.event_bus import EventBus, TRUCK_CREATED, TRUCK_UPDATED, TRUCK_DELETED
 from repositories.fleet_repository import FleetRepository
 from repositories.truck_route_assignment_repository import TruckRouteAssignmentRepository
-
+from services.operations.event_bus import TRUCK_CREATED, TRUCK_DELETED, TRUCK_UPDATED, EventBus
 
 class FleetService:
     def __init__(self, db):

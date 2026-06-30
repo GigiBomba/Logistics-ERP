@@ -1,79 +1,70 @@
 """PySide6 fleet management view.
 
 Replaces ``ui/fleet_tab.py``. Displays truck cards, KPI metrics, a
-styled truck table, matplotlib charts, and CRUD dialogs.
+styled truck table, Plotly-based charts, and CRUD dialogs.
 
 Can be embedded directly in a ``QStackedWidget``.
 """
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import logging
+import time
 from datetime import datetime
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
     QDialog,
-    QVBoxLayout,
+    QFileDialog,
+    QFrame,
     QHBoxLayout,
-    QFormLayout,
+    QLabel,
     QMessageBox,
     QScrollArea,
     QSizePolicy,
-    QFileDialog,
-    QHeaderView,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ui.design_tokens import (
-    ACCENT, ACCENT_HOVER, ACCENT_DIM, ACCENT_TEXT,
-    BG_SURFACE, BG_ELEVATED, BG_OVERLAY,
-    BORDER_DEFAULT, BORDER_STRONG, BORDER_FAINT,
-    DANGER, DANGER_TEXT, WARNING, WARNING_TEXT,
-    SUCCESS, SUCCESS_TEXT, INFO, INFO_TEXT,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_DISABLED,
-    FONT_SIZES, SP, RADIUS, STATUS,
-)
-from ui.components import (
-    Card, CardHeader, Btn, KPICard, StatusChip,
-    FieldLabel, SectionTitle, PageTitle, Label, Divider, MonoLabel,
-)
-from ui.theme import COLORS, CHART_PRIMARY, CHART_SECONDARY, CHART_INDIGO, apply_chart_style
-from ui.styles import Theme
-from services.i18n import t, register_listener, unregister_listener
-from services.operations.event_bus import EventBus, TRUCK_UPDATED
-from services.fleet_service import FleetService
+from repositories.fleet_repository import FleetRepository
 from services.driver_truck_service import DriverTruckService
 from services.export_service import ExportService
-from repositories.fleet_repository import FleetRepository
-from ui.widgets import (
-    StyledLineEdit,
-    StyledComboBox,
-    StyledTableWidget,
-    StyledCheckBox,
-    field,
+from services.fleet_service import FleetService
+from services.i18n import register_listener, t, unregister_listener
+from services.operations.event_bus import (
+    ALERT_CREATED,
+    ALERT_RESOLVED,
+    TRUCK_CREATED,
+    TRUCK_DELETED,
+    TRUCK_UPDATED,
+    EventBus,
 )
+from ui.components import (
+    Btn,
+    KPICard,
+    MonoLabel,
+    PageTitle,
+    SectionTitle,
+)
+from ui.design_tokens import (
+    SP,
+)
+from ui.plotly_charts import CHART_ACCENT, CHART_INFO, CHART_SECONDARY, make_pie_chart
+from ui.plotly_renderer import PlotlyChartWidget
+from ui.styles import Theme
+from ui.theme import COLORS
+from ui.widgets import (
+    StyledCheckBox,
+    StyledComboBox,
+    StyledLineEdit,
+    StyledTableWidget,
+)
+from ui.widgets.layout_utils import clear_layout
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Matplotlib — lazy import so the module is optional at import time
-# ---------------------------------------------------------------------------
-HAS_MPL = False
-try:
-    import matplotlib
-
-    matplotlib.use("QtAgg")
-    from matplotlib.figure import Figure
-    from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg as FigureCanvas
-
-    HAS_MPL = True
-except Exception:
-    pass
 
 
 # ===========================================================================
@@ -86,10 +77,10 @@ class _TruckFormDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         service: FleetService,
-        dta_service: Optional[DriverTruckService] = None,
-        truck: Optional[Dict[str, Any]] = None,
+        dta_service: DriverTruckService | None = None,
+        truck: dict[str, Any] | None = None,
         on_save=None,
     ):
         super().__init__(parent)
@@ -97,9 +88,9 @@ class _TruckFormDialog(QDialog):
         self._dta_service = dta_service
         self._truck = truck
         self._on_save = on_save
-        self._driver_ids: List[str] = []
-        self._driver_names: List[str] = []
-        self._fields: Dict[str, StyledLineEdit] = {}
+        self._driver_ids: list[str] = []
+        self._driver_names: list[str] = []
+        self._fields: dict[str, StyledLineEdit] = {}
 
         is_edit = truck is not None
         self.setWindowTitle(
@@ -183,7 +174,7 @@ class _TruckFormDialog(QDialog):
             lbl.setProperty("fontRole", "label")
             self._form_layout.addWidget(lbl)
 
-            driver_options: List[Tuple[str, str]] = [
+            driver_options: list[tuple[str, str]] = [
                 ("", t("fleet.table_driver_unassigned"))
             ]
             try:
@@ -221,10 +212,10 @@ class _TruckFormDialog(QDialog):
         btn_row.setSpacing(SP["3"])
 
         save_btn = Btn(
-            None, t("fleet.save_button"), variant="primary", command=self._save
+            self, t("fleet.save_button"), variant="primary", command=self._save
         )
         cancel_btn = Btn(
-            None, t("fleet.cancel_button"), variant="secondary", command=self.reject
+            self, t("fleet.cancel_button"), variant="secondary", command=self.reject
         )
         btn_row.addWidget(save_btn)
         btn_row.addWidget(cancel_btn)
@@ -250,7 +241,7 @@ class _TruckFormDialog(QDialog):
             )
             return
 
-        year: Optional[int] = None
+        year: int | None = None
         if f["year"].text().strip():
             try:
                 year = int(f["year"].text().strip())
@@ -262,7 +253,7 @@ class _TruckFormDialog(QDialog):
                 )
                 return
 
-        fuel: Optional[float] = None
+        fuel: float | None = None
         if f["fuel"].text().strip():
             try:
                 fuel = float(f["fuel"].text().strip())
@@ -285,7 +276,7 @@ class _TruckFormDialog(QDialog):
             )
             return
 
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             "plate_number": plate,
             "model": f["model"].text(),
             "manufacturer": f["manufacturer"].text(),
@@ -323,6 +314,27 @@ class _TruckFormDialog(QDialog):
                     else:
                         self._dta_service.unassign_truck(truck_id)
 
+            # Publish the change so dropdowns in other views
+            # (route planner, calculator, dispatch assignment) refresh
+            # without a restart.
+            plate = data.get("plate_number", "")
+            try:
+                bus = EventBus()
+                if self._truck:
+                    bus.publish(TRUCK_UPDATED, {
+                        "truck_id": int(truck_id),
+                        "plate": plate,
+                    })
+                else:
+                    bus.publish(TRUCK_CREATED, {
+                        "truck_id": int(truck_id),
+                        "plate": plate,
+                    })
+            except Exception:
+                logger.exception(
+                    "Failed to publish truck %s event", truck_id
+                )
+
             if self._on_save:
                 self._on_save()
             self.accept()
@@ -346,8 +358,13 @@ class QtFleetTab(QWidget):
     when the view becomes visible and ``shutdown()`` when hidden.
     """
 
+    # Staleness window for the chart on ``wakeup``.  When the chart
+    # was last rendered within this many seconds, the cached pixmap is
+    # reused (no kaleido activity).
+    CHART_STALENESS_SECONDS = 300
+
     # Column definition for StyledTableWidget: (id, label, width)
-    TABLE_COLUMNS: List[Tuple[str, str, int]] = [
+    TABLE_COLUMNS: list[tuple[str, str, int]] = [
         ("id", "fleet.table_id", 60),
         ("plate", "fleet.table_plate", 110),
         ("model", "fleet.table_model", 120),
@@ -362,14 +379,14 @@ class QtFleetTab(QWidget):
         ("driver", "fleet.table_driver", 120),
     ]
 
-    STATUS_KEYS: Dict[str, str] = {
+    STATUS_KEYS: dict[str, str] = {
         "Active": "fleet.status_active",
         "Inactive": "fleet.status_inactive",
     }
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         ops=None,
     ):
@@ -387,13 +404,24 @@ class QtFleetTab(QWidget):
 
         # -- Event subscriptions --
         self._event_bus.subscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
+        self._event_bus.subscribe(ALERT_CREATED, self._on_alert_ev)
+        self._event_bus.subscribe(ALERT_RESOLVED, self._on_alert_ev)
 
         # -- Chart references --
-        self._fig: Optional[Figure] = None
-        self._canvas: Optional[FigureCanvas] = None
+        self._chart_widget: PlotlyChartWidget | None = None
+        # Wall-clock timestamp of the most recent successful chart
+        # render.  ``wakeup`` uses this to decide whether to re-render
+        # the chart (skipping it on re-entry if the data is fresh).
+        self._last_chart_ts: float = 0.0
+        # Cache of the chart's status-key signature so we can detect a
+        # data change without re-querying the DB.
+        self._last_chart_signature: tuple | None = None
+
+        # -- Row cache --
+        self._rows: list = []
 
         # -- KPI card references --
-        self._kpi_value_labels: Dict[str, MonoLabel] = {}
+        self._kpi_value_labels: dict[str, MonoLabel] = {}
 
         # -- UI --
         self._build_ui()
@@ -404,27 +432,37 @@ class QtFleetTab(QWidget):
     # ==================================================================
 
     def wakeup(self) -> None:
-        """Called when the view becomes visible (e.g. tab switch)."""
-        self.refresh()
+        """Called when the view becomes visible (e.g. tab switch).
+
+        The chart widget and its rendered ``QPixmap`` are kept alive
+        across view-switches.  We only re-render the chart if the data
+        is older than the staleness window (or has never been
+        rendered), so the common case — re-entering the fleet view
+        after visiting another module — is instant.
+        """
+        # If the chart was rendered recently, skip the chart re-render.
+        # The KPI / table data is cheap and still refreshes.
+        chart_is_fresh = (
+            self._chart_widget is not None
+            and self._last_chart_ts > 0
+            and (time.time() - self._last_chart_ts) < self.CHART_STALENESS_SECONDS
+        )
+        if chart_is_fresh:
+            # Refresh the cheap data (KPIs, table) but not the chart.
+            self._refresh_cheap()
+        else:
+            self.refresh()
 
     def shutdown(self) -> None:
         """Called when the view is hidden or destroyed."""
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self._event_bus.unsubscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
-        except Exception:
-            pass
-        if self._fig is not None:
-            try:
-                import matplotlib.pyplot as plt
-
-                plt.close(self._fig)
-            except Exception:
-                pass
-            self._fig = None
+        with contextlib.suppress(Exception):
+            self._event_bus.unsubscribe(ALERT_CREATED, self._on_alert_ev)
+            self._event_bus.unsubscribe(ALERT_RESOLVED, self._on_alert_ev)
+        # The chart widget lifecycle is managed by Qt's parent-child system.
 
     # ==================================================================
     # Event handlers
@@ -432,6 +470,9 @@ class QtFleetTab(QWidget):
 
     def _on_truck_updated_ev(self, ev: Any) -> None:
         QTimer.singleShot(0, self.refresh)
+
+    def _on_alert_ev(self, ev: Any) -> None:
+        QTimer.singleShot(0, self._refresh_alerts)
 
     def _on_language_changed(self, lang: str) -> None:
         QTimer.singleShot(0, self.refresh)
@@ -509,7 +550,7 @@ class QtFleetTab(QWidget):
         self._kpi_strip_layout.setContentsMargins(SP["3"], 0, SP["3"], SP["2"])
         self._kpi_strip_layout.setSpacing(SP["2"])
 
-        self._kpi_value_labels: Dict[str, MonoLabel] = {}
+        self._kpi_value_labels: dict[str, MonoLabel] = {}
         self._rebuild_kpi_strip()
 
         layout.addWidget(self._kpi_strip)
@@ -633,20 +674,19 @@ class QtFleetTab(QWidget):
     # -- Alerts panel ------------------------------------------------------
 
     def _build_alerts_panel(self, layout: QVBoxLayout) -> None:
-        SectionTitle(self, t("fleet.section_alerts"))
-
         self._alerts_container = QFrame()
         self._alerts_container_layout = QVBoxLayout(self._alerts_container)
         self._alerts_container_layout.setContentsMargins(0, 0, 0, 0)
         self._alerts_container_layout.setSpacing(2)
+
+        title = SectionTitle(self._alerts_container, t("fleet.section_alerts"))
+        self._alerts_container_layout.addWidget(title)
 
         layout.addWidget(self._alerts_container)
 
     # -- Chart area --------------------------------------------------------
 
     def _build_chart_area(self, layout: QVBoxLayout) -> None:
-        SectionTitle(self, t("fleet.section_charts"))
-
         self._chart_area = QFrame()
         self._chart_area.setMinimumHeight(200)
         self._chart_area.setSizePolicy(
@@ -655,24 +695,19 @@ class QtFleetTab(QWidget):
         self._chart_layout = QVBoxLayout(self._chart_area)
         self._chart_layout.setContentsMargins(0, 0, 0, 0)
 
-        if HAS_MPL:
-            self._fig = Figure(figsize=(3.8, 2.2), dpi=100)
-            self._ax = self._fig.add_subplot(111)
-            apply_chart_style(self._fig, self._ax)
-            self._canvas = FigureCanvas(self._fig)
-            self._chart_layout.addWidget(self._canvas)
-        else:
-            placeholder = QLabel(t("fleet.no_data_chart"))
-            placeholder.setProperty("fontRole", "muted")
-            placeholder.setAlignment(Qt.AlignCenter)
-            self._chart_layout.addWidget(placeholder)
+        title = SectionTitle(self._chart_area, t("fleet.section_charts"))
+        self._chart_layout.addWidget(title)
+
+        self._chart_widget = PlotlyChartWidget(min_height=200)
+        self._chart_layout.addWidget(self._chart_widget)
 
         layout.addWidget(self._chart_area, 1)
 
     # -- Quick add form ----------------------------------------------------
 
     def _build_quick_add(self, layout: QVBoxLayout) -> None:
-        SectionTitle(self, t("fleet.section_quick_add"))
+        title = SectionTitle(self, t("fleet.section_quick_add"))
+        layout.addWidget(title)
 
         quick_form = QFrame()
         qf_layout = QVBoxLayout(quick_form)
@@ -725,7 +760,7 @@ class QtFleetTab(QWidget):
             return
 
         # Populate table
-        table_rows: List[Dict[str, Any]] = []
+        table_rows: list[dict[str, Any]] = []
         for r in rows:
             driver_name = (
                 self._dta_service.get_driver_name_for_truck(r["id"])
@@ -771,10 +806,8 @@ class QtFleetTab(QWidget):
 
         alert_count = 0
         if self.ops:
-            try:
+            with contextlib.suppress(Exception):
                 alert_count = self.ops.get_active_alert_count()
-            except Exception:
-                pass
         if "kpi_alerts" in self._kpi_value_labels:
             self._kpi_value_labels["kpi_alerts"].setText(
                 str(alert_count) if self.ops else "N/A"
@@ -788,11 +821,11 @@ class QtFleetTab(QWidget):
     # Chart rendering
     # ==================================================================
 
-    def _draw_charts(self, rows: List[Dict[str, Any]]) -> None:
-        if not HAS_MPL or self._ax is None or self._canvas is None:
+    def _draw_charts(self, rows: list[dict[str, Any]]) -> None:
+        if self._chart_widget is None:
             return
 
-        statuses: Dict[str, int] = {}
+        statuses: dict[str, int] = {}
         for r in rows:
             st_raw = (r.get("status") or "").title()
             key = self.STATUS_KEYS.get(st_raw, "")
@@ -802,37 +835,34 @@ class QtFleetTab(QWidget):
         labels = list(statuses.keys())
         counts = list(statuses.values())
 
-        self._ax.clear()
         if counts:
-            self._ax.pie(
+            fig = make_pie_chart(
                 counts,
-                labels=labels,
-                autopct="%1.0f%%",
-                colors=[CHART_PRIMARY, CHART_INDIGO, CHART_SECONDARY],
-                textprops={"color": COLORS["text_primary"]},
+                labels,
+                title=t("fleet.section_charts"),
+                colors=[CHART_ACCENT, CHART_SECONDARY, CHART_INFO],
+                show_title=True,
             )
         else:
-            self._ax.text(
-                0.5,
-                0.5,
-                t("fleet.no_data_chart"),
-                ha="center",
-                va="center",
-                color=COLORS["text_muted"],
-                transform=self._ax.transAxes,
-            )
-        self._fig.tight_layout()
+            # No data: render an empty placeholder figure with a message
+            from ui.plotly_renderer import empty_figure
+            fig = empty_figure(t("fleet.no_data_chart"))
+
         try:
-            self._canvas.draw()
+            self._chart_widget.set_figure(fig)
+            # Record render time + signature so ``wakeup`` can skip
+            # subsequent re-renders when the data has not changed.
+            self._last_chart_ts = time.time()
+            self._last_chart_signature = tuple(sorted(statuses.items()))
         except Exception:
-            pass
+            logger.exception("Fleet chart render failed")
 
     # ==================================================================
     # Alerts panel
     # ==================================================================
 
     def _refresh_alerts(self) -> None:
-        self._clear_layout(self._alerts_container_layout)
+        clear_layout(self._alerts_container_layout)
 
         if not self.ops:
             lbl = QLabel(t("fleet.no_engine"))
@@ -841,7 +871,7 @@ class QtFleetTab(QWidget):
             return
 
         try:
-            alerts = self.ops.get_active_alerts(limit=20)
+            alerts = self.ops.get_active_alerts(limit=10)
         except Exception:
             alerts = []
 
@@ -890,6 +920,29 @@ class QtFleetTab(QWidget):
     # Table filtering
     # ==================================================================
 
+    def _refresh_cheap(self) -> None:
+        """Re-fetch the cheap data (KPIs, table, alerts) without re-rendering the chart.
+
+        Called from ``wakeup`` when the chart's cached pixmap is
+        still fresh, so re-entering the view does not pay the kaleido
+        cost.  The chart's underlying figure is also unchanged in
+        this path; only the textual / tabular data is refreshed.
+        """
+        try:
+            rows = self.service.get_trucks()
+        except Exception as ex:
+            logger.exception("refresh_fleet failed")
+            QMessageBox.critical(
+                self,
+                t("main.error_title"),
+                t("fleet.error_load", default=str(ex)),
+            )
+            return
+        self._rows = rows
+        self._update_kpis(rows)
+        self._populate_table(rows)
+        self._render_alerts(rows)
+
     def _filter_table(self) -> None:
         query = self._e_search.text().strip().lower()
         for row in range(self._table.rowCount()):
@@ -927,7 +980,7 @@ class QtFleetTab(QWidget):
             t("fleet.search_not_found", plate),
         )
 
-    def _on_table_double_click(self, row_data: Dict[str, Any]) -> None:
+    def _on_table_double_click(self, row_data: dict[str, Any]) -> None:
         truck_id = row_data.get("id")
         if truck_id is not None:
             self._open_truck_detail(int(truck_id))
@@ -936,7 +989,7 @@ class QtFleetTab(QWidget):
     # Selection helpers
     # ==================================================================
 
-    def _get_selected_truck_id(self) -> Optional[int]:
+    def _get_selected_truck_id(self) -> int | None:
         row = self._table.selected_row_data()
         if row is None:
             QMessageBox.information(
@@ -1000,7 +1053,7 @@ class QtFleetTab(QWidget):
             )
             return
         try:
-            self.service.add_truck(
+            new_id = self.service.add_truck(
                 {
                     "plate_number": plate,
                     "model": self._q_model.text().strip(),
@@ -1010,6 +1063,16 @@ class QtFleetTab(QWidget):
                     "active_status": 1,
                 }
             )
+            # Notify other views (route planner, calculator, dispatch
+            # assignment dropdowns) so the new truck appears
+            # without an app restart.
+            try:
+                EventBus().publish(TRUCK_CREATED, {
+                    "truck_id": int(new_id) if new_id is not None else 0,
+                    "plate": plate,
+                })
+            except Exception:
+                logger.exception("Failed to publish TRUCK_CREATED for %s", plate)
             self._q_plate.clear()
             self._q_model.clear()
             self._q_rate.setText("0")
@@ -1041,6 +1104,15 @@ class QtFleetTab(QWidget):
             return
         try:
             self.service.delete_truck(truck_id)
+            # Notify other views.
+            try:
+                EventBus().publish(TRUCK_DELETED, {
+                    "truck_id": int(truck_id),
+                })
+            except Exception:
+                logger.exception(
+                    "Failed to publish TRUCK_DELETED for %s", truck_id
+                )
             self.refresh()
         except Exception as ex:
             QMessageBox.critical(
@@ -1182,8 +1254,10 @@ class QtFleetTab(QWidget):
             dlg.exec_()
 
     def _build_maintenance_kpi_strip(
-        self, layout: QVBoxLayout, truck_id: int, truck_row: Dict[str, Any]
+        self, layout: QVBoxLayout, truck_id: int, truck_row: dict[str, Any]
     ) -> None:
+        if self.db is None:
+            return
         repo = FleetRepository(self.db)
 
         section_lbl = QLabel(t("fleet.maint_kpi_title"))
@@ -1301,17 +1375,15 @@ class QtFleetTab(QWidget):
     def _populate_expenses_tab(
         self, parent: QWidget, truck_id: int
     ) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.service.ensure_expenses_table()
-        except Exception:
-            pass
 
         layout = QVBoxLayout(parent)
         layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
         layout.setSpacing(SP["2"])
 
         # Expenses table
-        exp_cols: List[Tuple[str, str, int]] = [
+        exp_cols: list[tuple[str, str, int]] = [
             ("id", "fleet.expenses_table_id", 60),
             ("date", "fleet.expenses_table_date", 100),
             ("category", "fleet.expenses_table_category", 120),
@@ -1408,7 +1480,7 @@ class QtFleetTab(QWidget):
     # Export helpers
     # ==================================================================
 
-    def _gather_trucks_for_export(self) -> List[Dict[str, Any]]:
+    def _gather_trucks_for_export(self) -> list[dict[str, Any]]:
         rows = self.service.get_trucks()
         trucks = []
         for r in rows:
@@ -1571,7 +1643,7 @@ class QtFleetTab(QWidget):
                 str(ex),
             )
 
-    def _export_truck_csv(self, truck_row: Dict[str, Any]) -> None:
+    def _export_truck_csv(self, truck_row: dict[str, Any]) -> None:
         path, _ = QFileDialog.getSaveFileName(
             self,
             t("fleet.save_truck_csv_title"),
@@ -1658,7 +1730,7 @@ class QtFleetTab(QWidget):
             truck.get("plate_number", "Unknown") if truck else "Unknown"
         )
         open_entity_documents(
-            self, self.db, "truck", truck_id, f"Truck {plate}"
+            self, self.db, "truck", truck_id, t("fleet.truck_title", default="Truck {}").format(plate)
         )
 
     # ==================================================================
@@ -1683,11 +1755,3 @@ class QtFleetTab(QWidget):
     # ==================================================================
     # Utility
     # ==================================================================
-
-    @staticmethod
-    def _clear_layout(layout) -> None:
-        while layout.count():
-            item = layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
-                widget.deleteLater()

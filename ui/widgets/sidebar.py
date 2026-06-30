@@ -5,32 +5,35 @@ Replaces ui/widgets/nav_panel.py. Uses qtawesome icons, no emoji.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Any, Callable, Dict, List, Optional
-
-from PySide6.QtCore import Qt, QPropertyAnimation, QParallelAnimationGroup, QEasingCurve
-from PySide6.QtGui import QCursor
-from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QScrollArea,
-    QSizePolicy,
-)
+from typing import Callable
 
 import qtawesome as qta
-
-from ui.design_tokens import (
-    BG_SURFACE, BG_ELEVATED, BG_BASE,
-    BORDER_DEFAULT, ACCENT, ACCENT_TEXT, ACCENT_HOVER,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED,
-    SIDEBAR_EXPANDED, SIDEBAR_COLLAPSED,
-    SP, RADIUS,
+from PySide6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, Qt
+from PySide6.QtGui import QCursor
+from PySide6.QtWidgets import (
+    QFrame,
+    QHBoxLayout,
+    QLabel,
+    QScrollArea,
+    QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
-from services.i18n import t, register_listener, unregister_listener
+
+from services.i18n import register_listener, t, unregister_listener
+from ui.design_tokens import (
+    ACCENT,
+    ACCENT_TEXT,
+    BG_OVERLAY,
+    BORDER_DEFAULT,
+    SIDEBAR_COLLAPSED,
+    SIDEBAR_EXPANDED,
+    TEXT_MUTED,
+    TEXT_PRIMARY,
+    TEXT_SECONDARY,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,8 +68,8 @@ class Sidebar(QFrame):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
-        on_select: Optional[Callable] = None,
+        parent: QWidget | None = None,
+        on_select: Callable | None = None,
         prefs=None,
     ):
         super().__init__(parent)
@@ -76,16 +79,16 @@ class Sidebar(QFrame):
         self._prefs = prefs
 
         self._expanded = False
-        self._active_key: Optional[str] = None
-        self._anim_group: Optional[QParallelAnimationGroup] = None
+        self._active_key: str | None = None
+        self._anim_group: QParallelAnimationGroup | None = None
 
-        self._groups: List[str] = []
-        self._items: Dict[str, QFrame] = {}
-        self._labels: Dict[str, QLabel] = {}
-        self._group_labels: Dict[str, QLabel] = {}
-        self._item_i18n_keys: Dict[str, str] = {}
-        self._group_i18n_keys: Dict[str, str] = {}
-        self._settings_item: Optional[str] = None
+        self._groups: list[str] = []
+        self._items: dict[str, QFrame] = {}
+        self._labels: dict[str, QLabel] = {}
+        self._group_labels: dict[str, QLabel] = {}
+        self._item_i18n_keys: dict[str, str] = {}
+        self._group_i18n_keys: dict[str, str] = {}
+        self._settings_item: str | None = None
 
         self._build()
         self._load_state()
@@ -111,12 +114,10 @@ class Sidebar(QFrame):
     def _save_state(self):
         if self._prefs is None:
             return
-        try:
+        with contextlib.suppress(Exception):
             self._prefs._set_setting(
                 "sidebar_expanded", "true" if self._expanded else "false"
             )
-        except Exception:
-            pass
 
     # ── Build ───────────────────────────────────────────────────
 
@@ -215,7 +216,7 @@ class Sidebar(QFrame):
 
     # ── Public API ──────────────────────────────────────────────
 
-    def add_group(self, name: str, i18n_key: Optional[str] = None):
+    def add_group(self, name: str, i18n_key: str | None = None):
         if i18n_key:
             self._group_i18n_keys[name] = i18n_key
 
@@ -239,8 +240,8 @@ class Sidebar(QFrame):
 
         self._groups.append(name)
 
-    def add_item(self, key: str, label: str, group: Optional[str] = None,
-                 i18n_key: Optional[str] = None):
+    def add_item(self, key: str, label: str, group: str | None = None,
+                 i18n_key: str | None = None):
         if group and group not in self._groups:
             self.add_group(group)
         if i18n_key:
@@ -273,13 +274,15 @@ class Sidebar(QFrame):
         self._active_key = key
         self._activate(key)
 
-    def get_active_key(self) -> Optional[str]:
+    def get_active_key(self) -> str | None:
         return self._active_key
 
-    def refresh_labels(self, key_label_map: Dict[str, str]):
+    def refresh_labels(self, key_label_map: dict[str, str]):
         for key, text in key_label_map.items():
             if key in self._labels:
                 self._labels[key].setText(text)
+            if key in self._items:
+                self._items[key].setToolTip(text)
 
     # ── Item factory ────────────────────────────────────────────
 
@@ -316,6 +319,7 @@ class Sidebar(QFrame):
         if not self._expanded:
             text_lbl.hide()
 
+        frame.setToolTip(label)
         frame.mousePressEvent = lambda event, k=key: self.select(k)
 
         self._labels[key] = text_lbl
@@ -336,7 +340,7 @@ class Sidebar(QFrame):
                     f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600; background: transparent;"
                 )
         frame.setStyleSheet(
-            f"background: {BG_ELEVATED}; border: none; border-left: 3px solid {ACCENT};"
+            f"background: {BG_OVERLAY}; border: none; border-left: 3px solid {ACCENT};"
         )
 
     def _deactivate(self, key: str):
@@ -409,7 +413,7 @@ class Sidebar(QFrame):
         self.setFixedWidth(width)
         self._on_animation_finished()
 
-    def _text_label_for_item(self, item: QFrame) -> Optional[QLabel]:
+    def _text_label_for_item(self, item: QFrame) -> QLabel | None:
         for child in item.findChildren(QLabel):
             if child.width() != 32 and child.text():
                 return child
@@ -451,4 +455,9 @@ class Sidebar(QFrame):
     def destroy(self) -> None:
         unregister_listener(self._language_callback)
         self._stop_animation()
+        self._items.clear()
+        self._labels.clear()
+        self._group_labels.clear()
+        self._item_i18n_keys.clear()
+        self._group_i18n_keys.clear()
         super().deleteLater()

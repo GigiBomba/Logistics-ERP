@@ -7,7 +7,7 @@ Mirrors the public API of ``ui/map_helpers.py`` but dispatches to the
 from __future__ import annotations
 
 import logging
-from typing import Any, List, Optional, Tuple
+from typing import Any
 
 from ui.map.map_widget import MapWidget
 
@@ -26,10 +26,10 @@ def clear_map_overlays(map_widget: MapWidget) -> None:
 
 def create_path_on_map(
     map_widget: MapWidget,
-    geometry: List[Tuple[float, float]],
-    start_city: Optional[str] = None,
-    end_city: Optional[str] = None,
-    intermediate_stops: Optional[List[Tuple[float, float, str]]] = None,
+    geometry: list[tuple[float, float]],
+    start_city: str | None = None,
+    end_city: str | None = None,
+    intermediate_stops: list[tuple[float, float, str]] | None = None,
     create_markers: bool = True,
 ) -> Any:
     """Draw a route polyline and optional stop markers.
@@ -47,7 +47,7 @@ def create_path_on_map(
     except Exception as exc:
         logger.warning("clear_map_overlays failed: %s", exc)
 
-    coords = [(float(p[0]), float(p[1])) for p in geometry]
+    coords = [(float(p[0]), float(p[1])) for p in geometry if len(p) >= 2]
     try:
         map_widget.add_polyline(coords)
     except Exception as exc:
@@ -61,20 +61,20 @@ def create_path_on_map(
         if start_city:
             try:
                 map_widget.add_marker(coords[0][0], coords[0][1], start_city, "green")
-                start_marker = True
+                start_marker = (coords[0][0], coords[0][1], start_city, "green")
             except Exception as exc:
                 logger.warning("start marker failed: %s", exc)
         if end_city:
             try:
                 map_widget.add_marker(coords[-1][0], coords[-1][1], end_city, "red")
-                end_marker = True
+                end_marker = (coords[-1][0], coords[-1][1], end_city, "red")
             except Exception as exc:
                 logger.warning("end marker failed: %s", exc)
         if intermediate_stops:
             for lat, lon, label in intermediate_stops:
                 try:
                     map_widget.add_marker(lat, lon, label, "blue")
-                    stop_markers.append(True)
+                    stop_markers.append((lat, lon, label, "blue"))
                 except Exception as exc:
                     logger.warning("stop marker failed: %s", exc)
 

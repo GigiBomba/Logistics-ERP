@@ -1,19 +1,22 @@
 import json
 import logging
-from datetime import datetime, timedelta, date
-from typing import Any, Dict, List, Optional
+from datetime import date, datetime, timedelta
+from typing import Any
 
+from services.fleet_maintenance_service import (
+    FleetMaintenanceService,
+    MaintType,
+)
 from services.operations.alert_manager import AlertManager, AlertType, Severity
 from services.operations.event_bus import (
-    EventBus,
+    DAILY_CHECK,
+    MAINTENANCE_ADDED,
+    SYSTEM_STARTUP,
     TRUCK_CREATED,
     TRUCK_UPDATED,
-    MAINTENANCE_ADDED,
-    DAILY_CHECK,
-    SYSTEM_STARTUP,
+    EventBus,
 )
 from services.operations.rules import Rules
-from services.fleet_maintenance_service import FleetMaintenanceService, MaintType, MAINT_DEFAULT_INTERVALS
 
 logger = logging.getLogger("operations.maintenance_engine")
 
@@ -47,20 +50,20 @@ class MaintenanceEngine:
 
     # ── Event handlers ─────────────────────────────────────────────
 
-    def _on_truck_event(self, ev: Dict[str, Any]) -> None:
+    def _on_truck_event(self, ev: dict[str, Any]) -> None:
         truck_id = ev["data"].get("truck_id")
         if truck_id:
             self.evaluate_truck(truck_id)
 
-    def _on_maintenance_event(self, ev: Dict[str, Any]) -> None:
+    def _on_maintenance_event(self, ev: dict[str, Any]) -> None:
         truck_id = ev["data"].get("truck_id")
         if truck_id:
             self.evaluate_truck(truck_id)
 
-    def _on_daily_check(self, ev: Dict[str, Any]) -> None:
+    def _on_daily_check(self, ev: dict[str, Any]) -> None:
         self.evaluate_all()
 
-    def _on_system_startup(self, ev: Dict[str, Any]) -> None:
+    def _on_system_startup(self, ev: dict[str, Any]) -> None:
         self.evaluate_all()
 
     # ── Evaluation ─────────────────────────────────────────────────
@@ -89,14 +92,34 @@ class MaintenanceEngine:
             logger.error("evaluate_truck %s failed: %s", truck_id, e)
         return count
 
-    def _evaluate_single(self, truck: Dict[str, Any]) -> int:
+    _ALERT_TYPES_EVALUATED = {
+        AlertType.INSPECTION, AlertType.INSURANCE, AlertType.MAINTENANCE,
+        AlertType.INACTIVE_TRUCK, AlertType.TACHOGRAPH_EXPIRY,
+    }
+
+    @staticmethod
+    def _log_eval_failure(context: str, exc: BaseException, truck_id=None, plate=""):
+        """Log a structured warning for evaluation failures (never silent)."""
+        tid = f" truck={truck_id}" if truck_id else ""
+        logger.warning("Maint eval %s failed%s: %s", context, tid, exc)
+
+    def _evaluate_single(self, truck: dict[str, Any]) -> int:
         count = 0
         truck_id = str(truck["id"])
+        truck_id_int = int(truck["id"])
         plate = truck.get("plate_number", "?")
         today = datetime.now()
 
-        # Resolve old alerts for this truck before re-evaluating
-        self._alert_mgr.resolve_by_truck(truck_id)
+        # Resolve old alerts for this truck — but only for the types we are
+        # about to re-evaluate, so resolved alerts for OTHER categories
+        # (e.g. overdue invoice, trip delay) are not accidentally cleared.
+        for atype in self._ALERT_TYPES_EVALUATED:
+            try:
+                existing = self._alert_mgr.get_active_by_type_and_entity(atype, truck_id)
+                if existing:
+                    self._alert_mgr.resolve_alert(existing.id)
+            except Exception as exc:
+                self._log_eval_failure(f"resolve_old_{atype.value}", exc, truck_id, plate)
 
         # ── Inspection expiry ──────────────────────────────────────
         insp_val = truck.get("inspection_expiry")
@@ -121,8 +144,8 @@ class MaintenanceEngine:
                         truck_id=truck_id,
                     )
                     count += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log_eval_failure("inspection", exc, truck_id, plate)
 
         # ── Insurance expiry ───────────────────────────────────────
         ins_val = truck.get("insurance_expiry")
@@ -147,42 +170,56 @@ class MaintenanceEngine:
                         truck_id=truck_id,
                     )
                     count += 1
-            except Exception:
-                pass
+            except Exception as exc:
+                self._log_eval_failure("insurance", exc, truck_id, plate)
 
-        # ── Service KM ─────────────────────────────────────────────
-        maint_due = truck.get("maintenance_due")
-        mileage = truck.get("mileage")
-        if maint_due is not None and mileage is not None:
-            buffer = self._rules.get("service_km_buffer", 5000)
-            try:
-                maint_due_f = float(maint_due)
-                mileage_f = float(mileage)
-                if mileage_f >= maint_due_f:
+        # ── Maintenance schedules (replaces legacy maintenance_due field) ──
+        try:
+            maint_svc = FleetMaintenanceService(self._db)
+            schedules = maint_svc.get_schedules(truck_id=truck_id_int)
+            km_buffer = self._rules.get("service_km_buffer", 5000)
+
+            for s in schedules:
+                pred = maint_svc.predict_next_service(truck_id_int, s["maintenance_type"])
+                if not pred:
+                    continue
+                try:
+                    mt = MaintType(pred["type"])
+                except ValueError:
+                    mt = MaintType.CUSTOM
+                display_name = mt.value.replace("_", " ").title()
+
+                if pred.get("overdue"):
+                    reason = ""
+                    if pred.get("due_by_km") == 0:
+                        reason = "KM overdue"
+                    elif pred.get("remaining_days") is not None and pred["remaining_days"] <= 0:
+                        reason = "past due date"
+                    else:
+                        reason = "overdue"
                     self._alert_mgr.create_alert(
                         AlertType.MAINTENANCE, Severity.CRITICAL,
-                        f"Service overdue for {plate}",
-                        f"Mileage ({mileage_f:.0f} km) exceeds service threshold ({maint_due_f:.0f} km)",
+                        f"{display_name} overdue for {plate}",
+                        f"{display_name} — {reason}",
                         truck_id=truck_id,
                     )
                     count += 1
-                elif mileage_f >= (maint_due_f - buffer):
-                    remaining = maint_due_f - mileage_f
+                elif pred.get("remaining_km") is not None and pred["remaining_km"] < km_buffer:
                     self._alert_mgr.create_alert(
                         AlertType.MAINTENANCE, Severity.WARNING,
-                        f"Service due soon for {plate}",
-                        f"Only {remaining:.0f} km until service ({mileage_f:.0f}/{maint_due_f:.0f} km)",
+                        f"{display_name} due soon for {plate}",
+                        f"{pred['remaining_km']:,.0f} km remaining until next service",
                         truck_id=truck_id,
                     )
                     count += 1
-            except Exception:
-                pass
+        except Exception as exc:
+            self._log_eval_failure("schedules", exc, truck_id, plate)
 
-        # ── Inactive truck ─────────────────────────────────────────
+        # ── Inactive truck (query by truck_id FK, not plate string) ─────
         inactive_days = self._rules.get("inactive_truck_days", 30)
         try:
             last_activity = self._db.conn.execute(
-                "SELECT MAX(created_at) FROM trips WHERE truck_number = ?", (plate,)
+                "SELECT MAX(created_at) FROM trips WHERE truck_id = ?", (truck_id_int,)
             ).fetchone()[0]
             if last_activity:
                 last_date = datetime.strptime(last_activity[:10], "%Y-%m-%d")
@@ -195,42 +232,8 @@ class MaintenanceEngine:
                         truck_id=truck_id,
                     )
                     count += 1
-        except Exception:
-            pass
-
-        # ── Maintenance schedules from FleetMaintenanceService ─────
-        try:
-            maint_svc = FleetMaintenanceService(self._db)
-            schedules = maint_svc.get_schedules(truck_id=int(truck_id))
-            for s in schedules:
-                pred = maint_svc.predict_next_service(int(truck_id), s["maintenance_type"])
-                if pred and pred.get("overdue"):
-                    try:
-                        mt = MaintType(pred["type"])
-                    except ValueError:
-                        mt = MaintType.CUSTOM
-                    self._alert_mgr.create_alert(
-                        AlertType.MAINTENANCE, Severity.CRITICAL,
-                        f"Scheduled maintenance overdue for {plate}",
-                        f"{mt.value.replace('_', ' ').title()} overdue — "
-                        f"{'KM overdue' if pred.get('due_by_km') == 0 else 'past due date'}",
-                        truck_id=truck_id,
-                    )
-                    count += 1
-                elif pred and pred.get("remaining_km") is not None and pred["remaining_km"] < 5000:
-                    try:
-                        mt = MaintType(pred["type"])
-                    except ValueError:
-                        mt = MaintType.CUSTOM
-                    self._alert_mgr.create_alert(
-                        AlertType.MAINTENANCE, Severity.WARNING,
-                        f"Scheduled {mt.value.replace('_', ' ').title()} due soon for {plate}",
-                        f"{pred['remaining_km']:,.0f} km remaining until next service",
-                        truck_id=truck_id,
-                    )
-                    count += 1
-        except Exception:
-            pass
+        except Exception as exc:
+            self._log_eval_failure("inactive_truck", exc, truck_id, plate)
 
         # ── Tachograph calibration expiry ──────────────────────────
         count += self.evaluate_tachograph_calibration_for_truck(truck)
@@ -239,7 +242,7 @@ class MaintenanceEngine:
 
     # ── Tachograph evaluations ───────────────────────────────────
 
-    def evaluate_tachograph_calibration_for_truck(self, truck: Dict[str, Any]) -> int:
+    def evaluate_tachograph_calibration_for_truck(self, truck: dict[str, Any]) -> int:
         """Evaluate tachograph calibration expiry for a single truck."""
         count = 0
         truck_id = str(truck["id"])
@@ -369,9 +372,9 @@ class MaintenanceEngine:
 
     def _evaluate_document_expiries(self) -> int:
         try:
-            from services.document_service import DocumentService
-            svc = DocumentService(self._db)
-            svc._alert_mgr = self._alert_mgr
+            from repositories.document_repository import DocumentRepository
+            from services.document.expiry_service import ExpiryService
+            svc = ExpiryService(self._db, DocumentRepository(self._db))
             return svc.evaluate_document_expiries(alert_mgr=self._alert_mgr)
         except Exception as e:
             logger.debug("Document expiry check skipped: %s", e)
@@ -379,17 +382,19 @@ class MaintenanceEngine:
 
     def _evaluate_contract_expiries(self) -> int:
         try:
-            from services.document_service import DocumentService
             from datetime import datetime
-            svc = DocumentService(self._db)
+
+            from repositories.document_repository import DocumentRepository
+            from services.document.contract_service import ContractService
+            svc = ContractService(DocumentRepository(self._db))
             count = 0
             contracts = svc.get_expiring_contracts(30)
             today = datetime.now().strftime("%Y-%m-%d")
             for c in contracts:
                 severity = Severity.CRITICAL if today > (c.get("end_date") or "") else Severity.WARNING
                 self._alert_mgr.create_alert(
-                    alert_type=AlertType.CONTRACT_EXPIRY.value,
-                    severity=severity.value,
+                    alert_type=AlertType.CONTRACT_EXPIRY,
+                    severity=severity,
                     title=f"Contract expiring: {c.get('contract_type', '')}",
                     message=f"Contract #{c.get('id')} for client #{c.get('client_id')} expires {c.get('end_date')}",
                     truck_id=None, trip_id=None,

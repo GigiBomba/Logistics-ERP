@@ -7,32 +7,31 @@ QScrollArea.
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional, Callable
+from typing import Any, Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
-    QHBoxLayout,
     QWidget,
 )
 
-from services.i18n import t
-from ui.icons import iconed
 from services.fleet_maintenance_service import (
-    FleetMaintenanceService,
-    MaintType,
     MAINT_DISPLAY,
     MAINT_ICONS,
+    FleetMaintenanceService,
+    MaintType,
 )
-from ui.theme import COLORS, S
+from services.i18n import t
+from ui.icons import iconed
 from ui.styles import Theme
+from ui.theme import COLORS, S
 from ui.widgets import ActionButton
-
 
 NODE_COLORS = {
     MaintType.TIRE_REPLACEMENT: COLORS["text_muted"],
@@ -55,17 +54,18 @@ class QtServiceTimelineWidget(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         service: FleetMaintenanceService,
         truck_id: int,
         truck_plate: str,
-        on_edit_record: Optional[Callable[[Dict[str, Any]], None]] = None,
+        on_edit_record: Callable[[dict[str, Any]], None] | None = None,
     ):
         super().__init__(parent)
         self.service = service
         self.truck_id = truck_id
         self.truck_plate = truck_plate
         self.on_edit_record = on_edit_record
+        self._detail_dialog: QDialog | None = None
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(0, 0, 0, 0)
@@ -155,7 +155,7 @@ class QtServiceTimelineWidget(QWidget):
 
     # ── Node drawing ─────────────────────────────────────────────────────────
 
-    def _draw_node(self, rec: Dict[str, Any], is_last: bool = False):
+    def _draw_node(self, rec: dict[str, Any], is_last: bool = False):
         """Build a single timeline node row and append it to the scroll layout."""
         node_frame = QWidget()
         node_layout = QHBoxLayout(node_frame)
@@ -271,18 +271,28 @@ class QtServiceTimelineWidget(QWidget):
 
     # ── Click handling ───────────────────────────────────────────────────────
 
-    def _on_node_click(self, rec: Dict[str, Any]):
+    def _on_node_click(self, rec: dict[str, Any]):
         """Handle a click on a timeline node."""
         if self.on_edit_record:
             self.on_edit_record(rec)
         else:
             self._show_detail_popup(rec)
 
-    def _show_detail_popup(self, rec: Dict[str, Any]):
+    def destroy(self) -> None:
+        """Close any open dialog and schedule deletion."""
+        if self._detail_dialog is not None:
+            self._detail_dialog.close()
+            self._detail_dialog.deleteLater()
+            self._detail_dialog = None
+        self.on_edit_record = None
+        super().deleteLater()
+
+    def _show_detail_popup(self, rec: dict[str, Any]):
         """Display a detail dialog for a maintenance record."""
         dlg = QDialog(self)
         dlg.setWindowTitle(iconed("maint_timeline.detail_title"))
         dlg.setFixedSize(420, 300)
+        self._detail_dialog = dlg
 
         layout = QVBoxLayout(dlg)
         layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])

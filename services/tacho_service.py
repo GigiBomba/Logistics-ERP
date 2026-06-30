@@ -1,26 +1,32 @@
-"""Tachograph service — imports and parses .DDD files via dddsimple CLI."""
+"""Tachograph service — imports and parses .DDD files via dddsimple or tachograph CLI."""
+import contextlib
 import hashlib
 import json
 import logging
 import os
 import subprocess
+import sys
+import tempfile
+import threading
 from datetime import date, datetime, timedelta
 from typing import Optional
 
 from dateutil.relativedelta import relativedelta
 
-from repositories.tacho_import_repository import TachoImportRepository
-from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
-from repositories.tacho_vehicle_data_repository import TachoVehicleDataRepository
-from repositories.fleet_repository import FleetRepository
 from repositories.driver_repository import DriverRepository
+from repositories.fleet_repository import FleetRepository
+from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
+from repositories.tacho_import_repository import TachoImportRepository
+from repositories.tacho_vehicle_data_repository import TachoVehicleDataRepository
 from services.operations.event_bus import EventBus
+from utils.resource_path import data_path
 
 logger = logging.getLogger(__name__)
 
-DDDSIMPLE_PATH = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)),
-    "tools", "tachograph", "dddsimple.exe"
+_DEFAULT_TACHOGRAPH_PATH = data_path("tools/tachograph/tachograph.exe")
+TACHOGRAPH_PATH = os.environ.get(
+    "OPERION_TACHOGRAPH_PATH",
+    _DEFAULT_TACHOGRAPH_PATH
 )
 
 # ── Event types used by TachoService ────────────────────────────────
@@ -43,15 +49,46 @@ class TachoService:
 
     # ── Public API ────────────────────────────────────────────────────
 
+    def _resolve_parser_path(self):
+        """Return path to tachograph parser binary, or None."""
+        if os.path.exists(TACHOGRAPH_PATH):
+            return TACHOGRAPH_PATH
+        return None
+
+    def _run_parser(self, file_bytes: bytes):
+        """Run tachograph.exe parse --raw on *file_bytes* via temp file."""
+        parser = self._resolve_parser_path()
+        if not parser:
+            return None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".ddd", delete=False) as tmp:
+                tmp.write(file_bytes)
+                tmp_path = tmp.name
+            try:
+                result = subprocess.run(
+                    [parser, "parse", "--raw", tmp_path],
+                    capture_output=True,
+                    timeout=30,
+                )
+            finally:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
+            return result
+        except subprocess.TimeoutExpired:
+            return subprocess.CompletedProcess(args=[], returncode=-1, stdout=b"", stderr=b"Parser timed out")
+        except FileNotFoundError:
+            return None
+
     def import_ddd_file(self, file_path: str) -> dict:
         """Main entry point. Accepts any .DDD file path."""
-        if not os.path.exists(DDDSIMPLE_PATH):
+        parser = self._resolve_parser_path()
+        if not parser:
             return {
                 "success": False,
                 "error": (
-                    f"dddsimple.exe not found at {DDDSIMPLE_PATH}. "
-                    f"Please download it from "
-                    f"https://github.com/traconiq/tachoparser/releases"
+                    "No tachograph parser found. "
+                    "Please place dddsimple.exe or tachograph.exe in the tools/tachograph/ directory, "
+                    "or set the OPERION_DDDSIMPLE_PATH / OPERION_TACHOGRAPH_PATH environment variable."
                 )
             }
 
@@ -69,19 +106,13 @@ class TachoService:
                 )
             }
 
-        try:
-            result = subprocess.run(
-                [DDDSIMPLE_PATH],
-                input=file_bytes,
-                capture_output=True,
-                timeout=30
-            )
-        except subprocess.TimeoutExpired:
+        result = self._run_parser(file_bytes)
+        if result is None:
+            return {"success": False,
+                    "error": f"Cannot execute parser binary: {parser}."}
+        if result.returncode == -1:
             return {"success": False,
                     "error": "Parser timed out (30s). File may be corrupt."}
-        except FileNotFoundError:
-            return {"success": False,
-                    "error": f"Cannot execute {DDDSIMPLE_PATH}."}
 
         if result.returncode != 0:
             stderr = result.stderr.decode("utf-8", errors="replace")
@@ -148,6 +179,8 @@ class TachoService:
                 for k in keys:
                     v = v[k]
                 if v is not None:
+                    if len(paths) > 1 and path != paths[0]:
+                        logger.debug("Tacho: matched fallback path '%s' (primary was '%s')", path, paths[0])
                     return v
             except (KeyError, TypeError):
                 pass
@@ -260,16 +293,16 @@ class TachoService:
                          or day_record.get("activities", []))
                 for slot in slots:
                     minutes = int(slot.get("duration", 0) or 0)
-                    activity_type = (slot.get("activityType")
-                                     or slot.get("activity", ""))
-                    atype = str(activity_type).lower()
-                    if "drive" in atype or activity_type == 0:
+                    activity_type_raw = (slot.get("activityType")
+                                         or slot.get("activity", ""))
+                    atype = str(activity_type_raw).lower()
+                    if activity_type_raw == 0 or "drive" in atype:
                         driving += minutes
-                    elif "rest" in atype or activity_type == 3:
+                    elif activity_type_raw == 3 or "rest" in atype:
                         rest += minutes
-                    elif "work" in atype or activity_type == 1:
+                    elif activity_type_raw == 1 or "work" in atype:
                         work += minutes
-                    elif "avail" in atype or activity_type == 2:
+                    elif activity_type_raw == 2 or "avail" in atype:
                         avail += minutes
 
                 distance = float(
@@ -379,10 +412,8 @@ class TachoService:
         )
         odometer_km = None
         if odometer_raw is not None:
-            try:
+            with contextlib.suppress(ValueError, TypeError):
                 odometer_km = float(odometer_raw) / 1000.0
-            except (ValueError, TypeError):
-                pass
 
         speed_violations = 0
         speed_data = self._get_nested(
@@ -394,10 +425,14 @@ class TachoService:
             for block in speed_data:
                 speeds = block.get("speedsPerSecond", []) or []
                 if isinstance(speeds, list):
-                    speed_violations += sum(
-                        1 for s in speeds if isinstance(s, (int, float))
-                        and s > 90
-                    )
+                    in_violation = False
+                    for s in speeds:
+                        if isinstance(s, (int, float)) and s > 90:
+                            if not in_violation:
+                                speed_violations += 1
+                                in_violation = True
+                        else:
+                            in_violation = False
 
         import_id = self.tacho_import_repository.create({
             "file_name": file_name,

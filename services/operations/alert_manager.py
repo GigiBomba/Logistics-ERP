@@ -1,13 +1,14 @@
+import contextlib
 import json
 import logging
 import threading
 import uuid
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-from services.operations.event_bus import EventBus, ALERT_CREATED, ALERT_RESOLVED
+from services.operations.event_bus import ALERT_CREATED, ALERT_RESOLVED, EventBus
 
 logger = logging.getLogger("operations.alert_manager")
 
@@ -68,9 +69,9 @@ class Alert:
     created_at: str = field(default_factory=lambda: datetime.now().isoformat())
     resolved: bool = False
     resolved_at: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict)
+    metadata: dict[str, Any] = field(default_factory=dict)
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     def display_type(self) -> str:
@@ -96,7 +97,7 @@ class AlertManager:
             return
         self._initialized = True
         self._db = db
-        self._alerts: Dict[str, Alert] = {}
+        self._alerts: dict[str, Alert] = {}
         self._alerts_lock = threading.Lock()
         self._max_alerts = 5000
         self._notification_playing = False
@@ -124,6 +125,49 @@ class AlertManager:
             return a
         return None
 
+    def create_alerts_batch(self, alerts: list[Alert]) -> int:
+        """Bulk-persist multiple alerts in a single transaction. Returns count inserted."""
+        if self._db is None or not alerts:
+            return 0
+        count = 0
+        with self._alerts_lock:
+            try:
+                # Defensive: commit any lingering transaction first so we
+                # never hit "cannot start a transaction within a transaction"
+                # from a previous uncommitted operation.
+                with contextlib.suppress(Exception):
+                    self._db.conn.commit()
+                self._db.conn.execute("BEGIN")
+                for alert in alerts:
+                    self._alerts[alert.id] = alert
+                    self._db.conn.execute(
+                        "INSERT OR IGNORE INTO alerts "
+                        "(id, type, severity, title, message, truck_id, trip_id, "
+                        "created_at, resolved, resolved_at, metadata_json) "
+                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        (
+                            alert.id,
+                            alert.type.value,
+                            alert.severity.value,
+                            alert.title,
+                            alert.message,
+                            alert.truck_id,
+                            int(alert.trip_id) if alert.trip_id and str(alert.trip_id).isdigit() else None,
+                            alert.created_at,
+                            1 if alert.resolved else 0,
+                            alert.resolved_at,
+                            json.dumps(alert.metadata, ensure_ascii=False, default=str) if alert.metadata else None,
+                        ),
+                    )
+                    count += 1
+                self._db.conn.commit()
+            except Exception:
+                with contextlib.suppress(Exception):
+                    self._db.conn.execute("ROLLBACK")
+                logger.exception("Failed to persist alert batch")
+                return 0
+        return count
+
     def create_alert(
         self,
         alert_type: AlertType,
@@ -132,7 +176,7 @@ class AlertManager:
         message: str,
         truck_id: Optional[str] = None,
         trip_id: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
     ) -> Alert:
         with self._alerts_lock:
             dup = self._find_duplicate(alert_type, truck_id, trip_id, message)
@@ -164,7 +208,7 @@ class AlertManager:
                     del self._alerts[oldest.id]
                     logger.debug("Evicted oldest alert (all active): %s", oldest.id)
             alert_copy = alert.to_dict()
-        self._event_bus.publish(ALERT_CREATED, {"alert": alert_copy})
+            self._event_bus.publish(ALERT_CREATED, {"alert": alert_copy})
         logger.info("Alert created: [%s] %s — %s", severity.value, alert_type.value, title)
         self._play_notification()
         return alert
@@ -177,10 +221,10 @@ class AlertManager:
                 alert.resolved_at = datetime.now().isoformat()
                 self._persist_resolution(alert)
                 alert_copy = alert.to_dict()
+                self._event_bus.publish(ALERT_RESOLVED, {"alert": alert_copy})
             else:
                 alert_copy = None
         if alert_copy:
-            self._event_bus.publish(ALERT_RESOLVED, {"alert": alert_copy})
             logger.info("Alert resolved: %s", alert_id)
         return alert
 
@@ -194,7 +238,7 @@ class AlertManager:
         truck_id: Optional[str] = None,
         resolved: Optional[bool] = None,
         limit: int = 100,
-    ) -> List[Alert]:
+    ) -> list[Alert]:
         results = list(self._alerts.values())
         if alert_type:
             results = [a for a in results if a.type == alert_type]
@@ -207,7 +251,7 @@ class AlertManager:
         results.sort(key=lambda a: a.created_at, reverse=True)
         return results[:limit]
 
-    def get_active_alerts(self, limit: int = 100) -> List[Alert]:
+    def get_active_alerts(self, limit: int = 100) -> list[Alert]:
         return self.get_alerts(resolved=False, limit=limit)
 
     def get_active_count(self) -> int:

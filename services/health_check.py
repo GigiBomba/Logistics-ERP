@@ -9,17 +9,17 @@ from __future__ import annotations
 import logging
 import os
 import sys
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger("health_check")
 
 
-def check_database(db_path: Optional[str] = None) -> Dict[str, Any]:
+def check_database(db_path: str | None = None) -> dict[str, Any]:
     """Verify the SQLite database is accessible and has expected tables."""
     from config import Config
 
     path = db_path or Config.DB_PATH
-    result: Dict[str, Any] = {"component": "database", "path": path}
+    result: dict[str, Any] = {"component": "database", "path": path}
     try:
         if not os.path.exists(path):
             result["status"] = "unhealthy"
@@ -40,10 +40,10 @@ def check_database(db_path: Optional[str] = None) -> Dict[str, Any]:
         return result
 
 
-def check_filesystem() -> Dict[str, Any]:
+def check_filesystem() -> dict[str, Any]:
     """Verify critical directories exist and are writable."""
     dirs = ["data", "logs", "invoices", "reports"]
-    result: Dict[str, Any] = {"component": "filesystem"}
+    result: dict[str, Any] = {"component": "filesystem"}
     ok = True
     details = {}
     for d in dirs:
@@ -69,15 +69,15 @@ def check_filesystem() -> Dict[str, Any]:
     return result
 
 
-def check_core_imports() -> Dict[str, Any]:
+def check_core_imports() -> dict[str, Any]:
     """Verify core Python dependencies can be imported."""
     required = [
         "PySide6", "PySide6.QtWidgets", "PySide6.QtWebEngineWidgets",
-        "matplotlib", "folium", "requests",
+        "plotly", "kaleido", "folium", "requests",
         "reportlab", "pikepdf", "PIL",
         "qtawesome",
     ]
-    result: Dict[str, Any] = {"component": "imports"}
+    result: dict[str, Any] = {"component": "imports"}
     ok = True
     details = {}
     for module in required:
@@ -92,7 +92,7 @@ def check_core_imports() -> Dict[str, Any]:
     return result
 
 
-def run_health_check(db_path: Optional[str] = None) -> Dict[str, Any]:
+def run_health_check(db_path: str | None = None) -> dict[str, Any]:
     """Run all health checks and return a consolidated report.
 
     Returns a dict with:

@@ -7,8 +7,7 @@ Severity levels:
 """
 
 import re
-from typing import Any, Dict, List, Optional, Tuple
-
+from typing import Any, Optional
 
 MANDATORY_FIELDS = [
     ("consignor_name", "Consignor (Sender) name"),
@@ -98,7 +97,7 @@ class FieldValidator:
         return field_key in BLUR_FORMAT_FIELDS
 
 
-def validate_cmr(data: Dict[str, Any]) -> List[Tuple[str, str, str]]:
+def validate_cmr(data: dict[str, Any]) -> list[tuple[str, str, str]]:
     """Validate CMR trip data. Returns list of (severity, field, message)."""
     issues = []
 
@@ -156,11 +155,11 @@ def validate_cmr(data: Dict[str, Any]) -> List[Tuple[str, str, str]]:
     return issues
 
 
-def has_errors(issues: List[Tuple[str, str, str]]) -> bool:
+def has_errors(issues: list[tuple[str, str, str]]) -> bool:
     return any(sev == "error" for sev, _, _ in issues)
 
 
-def format_issues(issues: List[Tuple[str, str, str]]) -> str:
+def format_issues(issues: list[tuple[str, str, str]]) -> str:
     """Format validation issues for display in a messagebox."""
     if not issues:
         return ""

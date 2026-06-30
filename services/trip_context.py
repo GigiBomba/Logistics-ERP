@@ -1,10 +1,10 @@
-from dataclasses import dataclass, field, asdict
-from typing import List, Optional, Any, Dict
-import threading
-import logging
-import uuid
 import json
+import logging
+import threading
+import uuid
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -15,9 +15,9 @@ def _new_id() -> str:
 
 @dataclass
 class RouteModel:
-    start: Optional[Dict[str, Any]] = field(default_factory=lambda: {})
-    stops: List[Dict[str, Any]] = field(default_factory=list)
-    end: Optional[Dict[str, Any]] = field(default_factory=lambda: {})
+    start: Optional[dict[str, Any]] = field(default_factory=lambda: {})
+    stops: list[dict[str, Any]] = field(default_factory=list)
+    end: Optional[dict[str, Any]] = field(default_factory=lambda: {})
     distance_km: Optional[float] = None
     duration_min: Optional[float] = None
     profile: Optional[str] = None
@@ -74,12 +74,12 @@ class TripContext:
             return cls(trip_id=trip_id)
         return cls()
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Serialize TripContext to plain dict."""
         return asdict(self)
 
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'TripContext':
+    def from_dict(cls, data: dict[str, Any]) -> 'TripContext':
         """Create TripContext from plain dict. No computation performed; missing fields are tolerated."""
         tc = cls(trip_id=data.get('trip_id') or _new_id())
 
@@ -127,7 +127,7 @@ class TripContext:
         return tc
 
     # Lightweight setters (no logic / no calculations)
-    def set_route(self, route: Dict[str, Any]) -> None:
+    def set_route(self, route: dict[str, Any]) -> None:
         self.route = RouteModel(
             start=route.get('start') or {},
             stops=route.get('stops') or [],
@@ -139,7 +139,7 @@ class TripContext:
             route_history_v2_id=route.get('route_history_v2_id'),
         )
 
-    def set_truck(self, truck: Dict[str, Any]) -> None:
+    def set_truck(self, truck: dict[str, Any]) -> None:
         self.truck = TruckModel(
             id=truck.get('id'),
             name=truck.get('name'),
@@ -149,17 +149,17 @@ class TripContext:
             fuel_consumption_l_per_100km=truck.get('fuel_consumption_l_per_100km')
         )
 
-    def set_driver(self, driver: Dict[str, Any]) -> None:
+    def set_driver(self, driver: dict[str, Any]) -> None:
         self.driver = DriverModel(id=driver.get('id'), name=driver.get('name'))
 
-    def set_costs(self, costs: Dict[str, Any]) -> None:
+    def set_costs(self, costs: dict[str, Any]) -> None:
         self.costs = CostsModel(
             fuel_liters=costs.get('fuel_liters'),
             fuel_cost=costs.get('fuel_cost'),
             toll_cost=costs.get('toll_cost')
         )
 
-    def set_profit(self, profit: Dict[str, Any]) -> None:
+    def set_profit(self, profit: dict[str, Any]) -> None:
         self.profit = ProfitModel(
             revenue_estimate=profit.get('revenue_estimate'),
             total_cost=profit.get('total_cost'),
@@ -198,8 +198,8 @@ def update_trip_route(tc: TripContext, route: dict) -> TripContext:
     # Recompute costs when route changes
     try:
         _compute_costs_for_tc(tc)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to recompute costs for route change: %s", e)
     _notify_listeners(tc, ['route', 'costs', 'profit'])
     return tc
 
@@ -223,8 +223,8 @@ def update_trip_truck(tc: TripContext, truck: dict) -> TripContext:
     # Recompute costs when truck changes
     try:
         _compute_costs_for_tc(tc)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to recompute costs for truck change: %s", e)
     _notify_listeners(tc, ['truck', 'costs', 'profit'])
     return tc
 
@@ -272,18 +272,12 @@ def _notify_listeners(tc: TripContext, changed_fields: list):
             cb(tc, changed_fields)
         except Exception:
             name = getattr(cb, "__name__", str(cb)[:40])
-            logger.warning("TripContext listener %s failed", name)
-
-
-_fuel_price_svc = None
+            logger.warning("TripContext listener %s failed", name, exc_info=True)
 
 
 def _get_fuel_price_service():
-    global _fuel_price_svc
-    if _fuel_price_svc is None:
-        from services.fuel_price_service import FuelPriceService
-        _fuel_price_svc = FuelPriceService()
-    return _fuel_price_svc
+    from services.fuel_price_service import FuelPriceService
+    return FuelPriceService()
 
 
 def _compute_costs_for_tc(tc: TripContext) -> None:
@@ -316,12 +310,13 @@ def _compute_costs_for_tc(tc: TripContext) -> None:
             fuel_cost=round(fuel_cost, 2),
             toll_cost=round(toll_cost, 2)
         )
-    except Exception:
+    except Exception as e:
+        logger.warning("Cost computation failed: %s", e)
         return
     try:
         _compute_profit_for_tc(tc)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Profit computation after cost update failed: %s", e)
 
 
 def _compute_profit_for_tc(tc: TripContext) -> None:
@@ -362,8 +357,8 @@ def _compute_profit_for_tc(tc: TripContext) -> None:
         # both revenue and costs available -> compute net profit
         net = float(rev) - total_cost
         tc.profit = ProfitModel(revenue_estimate=float(rev), total_cost=round(total_cost, 2), net_profit=round(net, 2))
-    except Exception:
-        # on error, do not raise
+    except Exception as e:
+        logger.warning("Profit computation failed: %s", e)
         return
 
 
@@ -383,8 +378,8 @@ def update_trip_revenue(tc: TripContext, revenue: Optional[float]) -> TripContex
 
     try:
         _compute_profit_for_tc(tc)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to recompute profit for revenue change: %s", e)
     _notify_listeners(tc, ['profit'])
     return tc
 
@@ -428,8 +423,8 @@ def save_trip_to_db(db_manager, tc: TripContext, client_name: Optional[str] = No
     try:
         tc.status = 'saved'
         _notify_listeners(tc, ['saved'])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to notify listeners after save: %s", e)
     return trip_db_id
 
 
@@ -482,15 +477,15 @@ def load_trip_from_db(db_manager, trip_db_id) -> Optional[TripContext]:
 
     # mark loaded as saved
     try:
-        tc.status = row['status'] if 'status' in row.keys() and row['status'] else 'saved'
+        tc.status = row['status'] if row.get('status') else 'saved'
     except Exception:
         tc.status = 'saved'
 
     # Notify listeners so UI and calculator refresh from TripContext
     try:
         _notify_listeners(tc, ['load', 'route', 'truck', 'driver', 'costs', 'profit'])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to notify listeners after load: %s", e)
 
     return tc
 
@@ -500,7 +495,7 @@ class TripContextService:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(TripContextService, cls).__new__(cls)
+            cls._instance = super().__new__(cls)
             cls._instance._info_lock = threading.Lock()
             cls._instance._active_trip_info = {
                 "distance_km": 0.0,
@@ -556,8 +551,8 @@ class TripContextService:
             if truck_update:
                 self._tc.set_truck(truck_update)
             _notify_listeners(self._tc, ['route', 'costs', 'truck'])
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to notify listeners in set_active_trip_info: %s", e)
 
     def get_active_trip_info(self) -> dict:
         return self._active_trip_info

@@ -1,10 +1,10 @@
 import logging
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
+from repositories.driver_repository import DriverRepository
 from repositories.driver_truck_assignment_repository import DriverTruckAssignmentRepository
 from repositories.fleet_repository import FleetRepository
-from repositories.driver_repository import DriverRepository
-from services.operations.event_bus import EventBus, TRUCK_UPDATED
+from services.operations.event_bus import TRUCK_UPDATED, EventBus
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +18,7 @@ class DriverTruckService:
         self._driver_repo = DriverRepository(db)
         self._event_bus = EventBus()
 
-    def assign_driver_to_truck(self, driver_id: int, truck_id: int) -> Dict[str, Any]:
+    def assign_driver_to_truck(self, driver_id: int, truck_id: int) -> dict[str, Any]:
         existing_driver = self._repo.get_by_driver(driver_id)
         existing_truck = self._repo.get_by_truck(truck_id)
 
@@ -26,7 +26,7 @@ class DriverTruckService:
         swapped_driver = None
 
         if existing_driver and existing_driver["truck_id"] != truck_id:
-            old_truck_id = existing_driver["truck_id"]
+            existing_driver["truck_id"]
             self._repo.unassign_driver(driver_id)
             action = "reassigned"
 
@@ -77,13 +77,13 @@ class DriverTruckService:
         })
         return driver_id
 
-    def get_truck_for_driver(self, driver_id: int) -> Optional[Dict[str, Any]]:
+    def get_truck_for_driver(self, driver_id: int) -> Optional[dict[str, Any]]:
         assignment = self._repo.get_by_driver(driver_id)
         if not assignment:
             return None
         return self._fleet_repo.get_by_id(assignment["truck_id"])
 
-    def get_driver_for_truck(self, truck_id: int) -> Optional[Dict[str, Any]]:
+    def get_driver_for_truck(self, truck_id: int) -> Optional[dict[str, Any]]:
         assignment = self._repo.get_by_truck(truck_id)
         if not assignment:
             return None

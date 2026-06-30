@@ -2,12 +2,12 @@ import logging
 import os
 import smtplib
 import threading
-from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
-from typing import Any, Dict, List, Optional
+from email.mime.text import MIMEText
+from typing import Any, Optional
 
-from services.operations.alert_manager import AlertManager, AlertType, Severity
-from services.operations.event_bus import EventBus, ALERT_CREATED, ALERT_RESOLVED
+from services.operations.alert_manager import AlertManager, Severity
+from services.operations.event_bus import ALERT_CREATED, ALERT_RESOLVED, EventBus
 
 logger = logging.getLogger("operations.notification_center")
 
@@ -19,13 +19,14 @@ SEVERITY_EMAIL_PREFIX = {
 
 
 class NotificationCenter:
-    def __init__(self, db=None, alert_recipients: Optional[List[str]] = None):
+    def __init__(self, db=None, alert_recipients: Optional[list[str]] = None):
         self._db = db
         self._alert_mgr = AlertManager()
         self._event_bus = EventBus()
-        self._subscribers: List[callable] = []
-        self._smtp_config: Optional[Dict[str, Any]] = None
-        self._alert_recipients: Optional[List[str]] = alert_recipients
+        self._subscribers: list[callable] = []
+        self._subscribers_lock = threading.Lock()
+        self._smtp_config: Optional[dict[str, Any]] = None
+        self._alert_recipients: Optional[list[str]] = alert_recipients
         self._subscribe()
 
     def _subscribe(self):
@@ -41,16 +42,18 @@ class NotificationCenter:
         except Exception:
             pass
 
-    def _on_alert_created(self, ev: Dict[str, Any]) -> None:
+    def _on_alert_created(self, ev: dict[str, Any]) -> None:
         alert_data = ev["data"].get("alert", {})
         self._notify_all("alert_created", alert_data)
 
-    def _on_alert_resolved(self, ev: Dict[str, Any]) -> None:
+    def _on_alert_resolved(self, ev: dict[str, Any]) -> None:
         alert_data = ev["data"].get("alert", {})
         self._notify_all("alert_resolved", alert_data)
 
-    def _notify_all(self, event_type: str, alert_data: Dict[str, Any]) -> None:
-        for cb in self._subscribers:
+    def _notify_all(self, event_type: str, alert_data: dict[str, Any]) -> None:
+        with self._subscribers_lock:
+            subscribers = list(self._subscribers)
+        for cb in subscribers:
             try:
                 cb(event_type, alert_data)
             except Exception as e:
@@ -61,11 +64,13 @@ class NotificationCenter:
             threading.Thread(target=self._send_email_alert, args=(alert_data,), daemon=True).start()
 
     def subscribe(self, callback: callable) -> None:
-        self._subscribers.append(callback)
+        with self._subscribers_lock:
+            self._subscribers.append(callback)
 
     def unsubscribe(self, callback: callable) -> None:
-        if callback in self._subscribers:
-            self._subscribers.remove(callback)
+        with self._subscribers_lock:
+            if callback in self._subscribers:
+                self._subscribers.remove(callback)
 
     def configure_smtp(self, server: str, port: int, user: str, password: str, use_tls: bool = True) -> None:
         self._smtp_config = {
@@ -77,7 +82,7 @@ class NotificationCenter:
         }
         logger.info("SMTP configured: %s:%d", server, port)
 
-    def _send_email_alert(self, alert_data: Dict[str, Any]) -> bool:
+    def _send_email_alert(self, alert_data: dict[str, Any]) -> bool:
         if not self._smtp_config:
             logger.debug("SMTP not configured, skipping email alert")
             return False
@@ -126,7 +131,7 @@ class NotificationCenter:
             logger.error("Failed to send alert email: %s", e)
             return False
 
-    def _get_alert_recipients(self, alert_data: Dict[str, Any]) -> List[str]:
+    def _get_alert_recipients(self, alert_data: dict[str, Any]) -> list[str]:
         if self._alert_recipients:
             return self._alert_recipients
         if not self._db:
@@ -168,7 +173,7 @@ class NotificationCenter:
             return False
 
     def send_email(self, to_address: str, subject: str, body: str,
-                   attachments: Optional[List[str]] = None,
+                   attachments: Optional[list[str]] = None,
                    html: bool = False) -> bool:
         if not self._smtp_config:
             logger.warning("SMTP not configured, cannot send email")
@@ -186,8 +191,8 @@ class NotificationCenter:
             if attachments:
                 for filepath in attachments:
                     if os.path.exists(filepath):
-                        from email.mime.base import MIMEBase
                         from email import encoders
+                        from email.mime.base import MIMEBase
                         part = MIMEBase("application", "octet-stream")
                         with open(filepath, "rb") as f:
                             part.set_payload(f.read())

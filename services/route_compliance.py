@@ -2,7 +2,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any
+
 from services.i18n import t
 
 TOLL_COUNTRIES = frozenset({"IT", "FR", "ES", "PT", "PL", "SI", "HR", "DE"})
@@ -10,9 +11,9 @@ TOLL_COUNTRIES = frozenset({"IT", "FR", "ES", "PT", "PL", "SI", "HR", "DE"})
 
 @dataclass
 class RouteComplianceSummary:
-    traversed: List[str]
-    toll_countries: List[str]
-    excluded_avoided: List[str]
+    traversed: list[str]
+    toll_countries: list[str]
+    excluded_avoided: list[str]
     border_crossings: int
     extra_distance_km: float
     reroute_reason: str
@@ -22,7 +23,7 @@ class RouteComplianceSummary:
 
 
 class RouteComplianceAnalyzer:
-    def analyze(self, route: Dict[str, Any]) -> RouteComplianceSummary:
+    def analyze(self, route: dict[str, Any]) -> RouteComplianceSummary:
         countries = list(route.get("detected_countries") or [])
         exclusions = list(route.get("excluded_countries_requested") or [])
         avoided = [c for c in exclusions if c not in countries]

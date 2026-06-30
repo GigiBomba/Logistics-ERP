@@ -1,165 +1,115 @@
 """PySide6 maintenance control panel.
 
-Replaces ``ui/maintenance_control_panel.py``. Displays KPI cards, tachograph
-status, a filter bar, fuel prices, and a severity-grouped alert centre.
-
-Can be embedded directly in a ``QStackedWidget`` or opened as a standalone
-modal dialog via :meth:`open_dialog`.
+Refactored to use Model/View architecture:
+- AlertListModel + AlertFilterProxy + QListView + AlertCardDelegate
+- TachoStatusModel + QTableView
+- MaintenanceViewModel as centralized service facade
 """
-
 from __future__ import annotations
 
+import contextlib
 import logging
-from datetime import datetime
-from typing import Any, Dict, List, Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import (
-    QWidget,
-    QFrame,
-    QLabel,
-    QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
-    QScrollArea,
     QCheckBox,
-    QLineEdit,
     QComboBox,
-    QSizePolicy,
     QDialog,
+    QFrame,
+    QHBoxLayout,
+    QHeaderView,
+    QLabel,
+    QLineEdit,
+    QListView,
+    QTableView,
+    QVBoxLayout,
+    QWidget,
 )
 
-from services.i18n import t, register_listener, unregister_listener
-from ui.icons import iconed
-from services.operations.alert_manager import AlertType, Severity, Alert
+from services.i18n import register_listener, t, unregister_listener
+from services.operations.alert_manager import AlertType, Severity
 from services.operations.operations_engine import OperationsEngine
-from services.operations.event_bus import (
-    EventBus,
-    ALERT_CREATED,
-    ALERT_RESOLVED,
-    MAINTENANCE_ADDED,
-    MAINTENANCE_DELETED,
-)
-from services.fleet_maintenance_service import FleetMaintenanceService
 from ui.components import (
-    Card, CardHeader, Btn, KPICard, StatusChip, FieldLabel,
-    SectionTitle, PageTitle, Label, Divider, MonoLabel,
+    Btn,
+    Card,
+    CardHeader,
+    CompactKPICard,
+    FieldLabel,
+    Label,
+    PageTitle,
 )
+from ui.delegates.alert_card_delegate import AlertCardDelegate
 from ui.design_tokens import (
-    BG_SURFACE, BG_ELEVATED, BG_OVERLAY,
-    BORDER_DEFAULT, BORDER_STRONG, BORDER_FAINT,
-    ACCENT, ACCENT_HOVER, ACCENT_DIM, ACCENT_TEXT,
-    TEXT_PRIMARY, TEXT_SECONDARY, TEXT_MUTED, TEXT_DISABLED,
-    SUCCESS, SUCCESS_DIM, SUCCESS_TEXT,
-    WARNING, WARNING_DIM, WARNING_TEXT,
-    DANGER, DANGER_DIM, DANGER_TEXT,
-    INFO, INFO_DIM, INFO_TEXT,
-    SP, FONT_MONO,
+    COLOR_BG_OVERLAY,
+    COLOR_ERROR_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_WARNING_DEFAULT,
+    INFO,
+    SP,
 )
+from ui.icons import iconed
+from ui.models.alert_list_model import AlertFilterProxy
+from ui.models.maintenance_view_model import MaintenanceViewModel
 from ui.widgets.fuel_panel import QtFuelPricePanel
+from utils.formatters import fmt_currency
 
 logger = logging.getLogger(__name__)
 
-# ──────────────────────────────────────────────────────────────────────────────
-# Mapping constants (mirror the original ui/maintenance_control_panel.py)
-# ──────────────────────────────────────────────────────────────────────────────
-
-ALERT_ICONS: Dict[AlertType, str] = {
-    AlertType.MAINTENANCE: "\u2699",          # ⚙
-    AlertType.INSPECTION: "\u2611",           # ☑
-    AlertType.INSURANCE: "\u26E8",            # ⛨
-    AlertType.OVERDUE_INVOICE: "\u20AC",      # €
-    AlertType.TRIP_DELAY: "\u23F1",           # ⏱
-    AlertType.INACTIVE_TRUCK: "\u25CB",       # ○
-    AlertType.ROUTE_ISSUE: "\u26A0",          # ⚠
-    AlertType.COMPLIANCE_WARNING: "\u2696",   # ⚖
-    AlertType.TACHOGRAPH_EXPIRY: "\U0001f4be",  # 💾
-    AlertType.DRIVER_HOURS_WEEKLY: "\u23F1",  # ⏱
-    AlertType.DRIVER_HOURS_DAILY: "\u23F1",   # ⏱
-}
-
-SEVERITY_ICONS: Dict[Severity, str] = {
-    Severity.CRITICAL: "\u26A0",              # ⚠
-    Severity.WARNING: "\u26A0",               # ⚠
-    Severity.INFO: "\u2139",                  # ℹ
-}
-
-SEVERITY_COLORS: Dict[Severity, str] = {
-    Severity.CRITICAL: DANGER,
-    Severity.WARNING: WARNING,
-    Severity.INFO: INFO,
-}
-
-SEVERITY_LABELS: Dict[Severity, str] = {
-    Severity.CRITICAL: "maint.section_critical",
-    Severity.WARNING: "maint.section_warnings",
-    Severity.INFO: "maint.section_info",
-}
-
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Widget
-# ──────────────────────────────────────────────────────────────────────────────
-
 
 class QtMaintenanceControlPanel(QWidget):
-    """Maintenance control panel with KPIs, tachograph status, fuel prices,
-    and a severity-grouped alert centre.
+    """Maintenance control panel with KPIs, tachograph table, alert list.
 
-    Use as a plain widget (embedded in a ``QStackedWidget``) or open as a
-    standalone modal dialog via :meth:`open_dialog`.
+    Embedded widget (QStackedWidget) or standalone dialog via open_dialog().
     """
 
     REFRESH_INTERVAL_MS = 60_000
 
-    def __init__(
-        self,
-        parent: Optional[QWidget] = None,
-        db=None,
-        prefs=None,
-        ops=None,
-        dialog_mode: bool = False,
-    ):
+    def __init__(self, parent=None, db=None, prefs=None, ops=None, dialog_mode=False):
         super().__init__(parent)
         self._dialog_mode = dialog_mode
         self.db = db
         self.ops = ops or OperationsEngine()
-        self._event_bus = EventBus()
-        self._alerts: List[Alert] = []
-        self._filtered_alerts: List[Alert] = []
         self._closed = False
-        self._i18n_tags: list = []          # (widget, key, prefix)
-        self._handlers: Dict[str, Any] = {}  # event_type → callable
+        self._i18n_tags: list = []
 
-        # ── Severity checkbox state (populated after _build_filter_bar) ──
-        self._cb_critical: Optional[QCheckBox] = None
-        self._cb_warning: Optional[QCheckBox] = None
-        self._cb_info: Optional[QCheckBox] = None
+        # ViewModel (shared data source)
+        self._vm = MaintenanceViewModel(self, db=db, ops=self.ops)
+
+        # ── KPI widgets ────────────────────────────────────────────
+        self._kpi_widgets: dict[str, QFrame] = {}
+        self._kpi_value_labels: dict[str, QLabel] = {}
+
+        # ── Filter state ───────────────────────────────────────────
+        self._filter_severities: list[Severity] | None = None
+        self._cb_critical: QCheckBox | None = None
+        self._cb_warning: QCheckBox | None = None
+        self._cb_info: QCheckBox | None = None
+        self._c_type: QComboBox | None = None
+        self._e_truck: QLineEdit | None = None
+        self._e_trip: QLineEdit | None = None
+        self._cb_show_resolved: QCheckBox | None = None
+        self._summary_lbl: QLabel | None = None
+        self._alert_count_lbl: QLabel | None = None
+
+        # Alert filter proxy
+        self._alert_proxy = AlertFilterProxy(self)
 
         self._build_ui()
-        self._subscribe_events()
+        self._vm.data_changed.connect(self._on_data_changed)
+        self._vm.refresh_now()
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
-        self._refresh()
-
-        # ── Auto-refresh timer ──────────────────────────────────────────
+        # Auto-refresh
         self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self._refresh)
+        self._refresh_timer.timeout.connect(self._vm.refresh)
         self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
 
-    # ── Public API ───────────────────────────────────────────────────────────
+    # ── Public API ───────────────────────────────────────────────
 
     @classmethod
-    def open_dialog(
-        cls,
-        parent: Optional[QWidget] = None,
-        db=None,
-        prefs=None,
-        ops=None,
-    ) -> QtMaintenanceControlPanel:
-        """Open the maintenance control panel as a standalone modal dialog."""
+    def open_dialog(cls, parent=None, db=None, prefs=None, ops=None):
         dialog = QDialog(parent)
         dialog.setWindowTitle(iconed("maint.control_panel_title"))
         dialog.resize(1450, 950)
@@ -170,766 +120,276 @@ class QtMaintenanceControlPanel(QWidget):
         dialog.exec()
         return panel
 
-    def wakeup(self) -> None:
-        """Re-subscribe events and force a refresh when the view becomes visible."""
-        self._subscribe_events()
-        self._refresh()
+    def wakeup(self):
+        self._vm.refresh_now()
 
-    def shutdown(self) -> None:
-        """Unsubscribe events, stop timers, and clean up i18n listeners."""
+    def shutdown(self):
         self._closed = True
-        if self._refresh_timer is not None:
-            self._refresh_timer.stop()
-        try:
+        self._refresh_timer.stop()
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
-        self._unsubscribe_events()
 
-    # ── UI Build ─────────────────────────────────────────────────────────────
+    # ── UI Build ─────────────────────────────────────────────────
 
-    def _build_ui(self) -> None:
+    def _build_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         self._build_header(layout)
         self._build_kpi_row(layout)
-        self._build_tachograph_status(layout)
+        self._build_tacho_table(layout)
         self._build_filter_bar(layout)
+        self._build_alert_list(layout)
         self._build_fuel_panel(layout)
-        self._build_alert_centre(layout)
 
-    # ── Header ───────────────────────────────────────────────────────────────
-
-    def _build_header(self, layout: QVBoxLayout) -> None:
+    def _build_header(self, layout):
         header = QWidget()
         header.setFixedHeight(72)
-        hdr_layout = QHBoxLayout(header)
-        hdr_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        hdr = QHBoxLayout(header)
+        hdr.setContentsMargins(SP["10"], 0, SP["10"], 0)
 
-        self._title_lbl = PageTitle(header, t("maint.control_panel_title"))
-        hdr_layout.addWidget(self._title_lbl)
+        self._title_lbl = PageTitle(header, iconed("maint.control_panel_title"))
+        hdr.addWidget(self._title_lbl)
 
         subtitle = Label(header, t("maint.control_panel_subtitle", default=""), role="secondary")
-        hdr_layout.addWidget(subtitle)
-
-        hdr_layout.addStretch(1)
+        hdr.addWidget(subtitle)
+        hdr.addStretch(1)
 
         self._alert_count_lbl = Label(header, "", role="muted")
-        hdr_layout.addWidget(self._alert_count_lbl)
+        hdr.addWidget(self._alert_count_lbl)
 
-        self._refresh_btn = Btn(
-            header, t("maint.refresh"),
-            variant="secondary", command=self._refresh,
-        )
-        hdr_layout.addWidget(self._refresh_btn)
+        refresh_btn = Btn(header, t("maint.refresh"), variant="secondary", command=self._vm.refresh_now)
+        hdr.addWidget(refresh_btn)
 
         layout.addWidget(header)
 
-    # ── KPI cards ────────────────────────────────────────────────────────────
-
-    def _build_kpi_row(self, layout: QVBoxLayout) -> None:
+    def _build_kpi_row(self, layout):
         row = QFrame()
         row.setProperty("role", "card")
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
-        row_layout.setSpacing(SP["3"])
+        rl = QHBoxLayout(row)
+        rl.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
+        rl.setSpacing(SP["3"])
 
-        self._kpi_widgets: Dict[str, QFrame] = {}
-        self._kpi_value_labels: Dict[str, QLabel] = {}
         kpi_defs = [
-            ("avg_health",            "maint.avg_health"),
+            ("avg_health", "maint.avg_health"),
             ("trucks_needing_service", "maint.due_service"),
-            ("overdue_schedules",      "maint.overdue"),
-            ("cost_30d",               "maint.cost_30d"),
-            ("total_cost",             "maint.total_cost_kpi"),
+            ("overdue_schedules", "maint.overdue"),
+            ("cost_30d", "maint.cost_30d"),
+            ("total_cost", "maint.total_cost_kpi"),
         ]
         for key, title_key in kpi_defs:
-            card = KPICard(row, t(title_key), "\u2026")
-            # Store reference to the value label (second child: MonoLabel)
-            val_label = card.layout().itemAt(1).widget()
-            row_layout.addWidget(card, 1)
+            card = CompactKPICard(row, label=t(title_key), value="\u2026")
+            rl.addWidget(card, 1)
             self._kpi_widgets[key] = card
-            self._kpi_value_labels[key] = val_label
+            self._kpi_value_labels[key] = card.value_label
+            if key == "avg_health":
+                from PySide6.QtWidgets import QProgressBar
+                pb = QProgressBar(card)
+                pb.setMaximum(100)
+                pb.setTextVisible(False)
+                pb.setFixedHeight(4)
+                pb.setStyleSheet(f"""
+                    QProgressBar {{ background: {COLOR_BG_OVERLAY}; border: none; border-radius: 2px; }}
+                    QProgressBar::chunk {{ background: {COLOR_SUCCESS_DEFAULT}; border-radius: 2px; }}
+                """)
+                card.layout().addWidget(pb)
+                self._health_progress = pb
 
         layout.addWidget(row)
 
-    # ── Tachograph status ────────────────────────────────────────────────────
-
-    def _build_tachograph_status(self, layout: QVBoxLayout) -> None:
+    def _build_tacho_table(self, layout):
         card = Card()
-        card_layout = card.layout()
-        card_header = CardHeader(
-            card_layout,
+        CardHeader(
+            card.layout(),
             title=t("tacho.section_status_title"),
-            right_widget=Btn(
-                None, t("tacho.import_now"),
-                variant="secondary", size="sm",
-                command=self._navigate_to_tachograph,
-            ),
+            right_widget=Btn(None, t("tacho.import_now"), variant="secondary", size="sm"),
         )
 
-        # ── Scrollable table ─────────────────────────────────────────────
-        self._tacho_scroll = QScrollArea()
-        self._tacho_scroll.setWidgetResizable(True)
-        self._tacho_scroll.setFrameShape(QFrame.NoFrame)
-        self._tacho_scroll.setFixedHeight(160)
+        self._tacho_table = QTableView()
+        self._tacho_table.setModel(self._vm.tacho_model)
+        self._tacho_table.setSelectionBehavior(QTableView.SelectRows)
+        self._tacho_table.setSelectionMode(QTableView.SingleSelection)
+        self._tacho_table.verticalHeader().setVisible(False)
+        self._tacho_table.setShowGrid(False)
+        self._tacho_table.setAlternatingRowColors(True)
+        self._tacho_table.setFixedHeight(160)
 
-        self._tacho_content = QWidget()
-        self._tacho_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self._tacho_layout = QVBoxLayout(self._tacho_content)
-        self._tacho_layout.setContentsMargins(0, 0, 0, 0)
-        self._tacho_layout.setSpacing(1)
-        self._tacho_layout.setAlignment(Qt.AlignTop)
+        hdr = self._tacho_table.horizontalHeader()
+        hdr.setStretchLastSection(True)
+        for c in range(self._vm.tacho_model.columnCount()):
+            hdr.setSectionResizeMode(c, QHeaderView.Fixed)
+            w = self._vm.tacho_model.header_width(c)
+            self._tacho_table.setColumnWidth(c, w)
 
-        self._tacho_scroll.setWidget(self._tacho_content)
-        card_layout.addWidget(self._tacho_scroll)
-
+        card.layout().addWidget(self._tacho_table)
         layout.addWidget(card)
 
-    # ── Filter bar ───────────────────────────────────────────────────────────
-
-    def _build_filter_bar(self, layout: QVBoxLayout) -> None:
+    def _build_filter_bar(self, layout):
         fb = Card()
-        fb_layout = QHBoxLayout()
-        fb.layout().addLayout(fb_layout)
+        fbl = QHBoxLayout()
+        fb.layout().addLayout(fbl)
 
-        # -- Severity checkboxes ------------------------------------------
         sev_lbl = FieldLabel(None, t("maint.filter_severity"))
-        fb_layout.addWidget(sev_lbl)
+        fbl.addWidget(sev_lbl)
 
         self._cb_critical = QCheckBox(t("maint.severity_critical"))
         self._cb_critical.setChecked(True)
         self._cb_critical.stateChanged.connect(self._on_filter_changed)
-        fb_layout.addWidget(self._cb_critical)
+        fbl.addWidget(self._cb_critical)
 
         self._cb_warning = QCheckBox(t("maint.severity_warning"))
         self._cb_warning.setChecked(True)
         self._cb_warning.stateChanged.connect(self._on_filter_changed)
-        fb_layout.addWidget(self._cb_warning)
+        fbl.addWidget(self._cb_warning)
 
         self._cb_info = QCheckBox(t("maint.severity_info"))
         self._cb_info.setChecked(True)
         self._cb_info.stateChanged.connect(self._on_filter_changed)
-        fb_layout.addWidget(self._cb_info)
+        fbl.addWidget(self._cb_info)
 
-        # -- Type combobox ------------------------------------------------
         type_lbl = FieldLabel(None, t("maint.filter_type"))
-        fb_layout.addWidget(type_lbl)
+        fbl.addWidget(type_lbl)
 
         self._c_type = QComboBox()
         self._c_type.addItem(t("common.all"))
         for at in AlertType:
             self._c_type.addItem(at.value)
         self._c_type.currentTextChanged.connect(self._on_filter_changed)
-        fb_layout.addWidget(self._c_type)
+        fbl.addWidget(self._c_type)
 
-        # -- Truck filter -------------------------------------------------
         truck_lbl = FieldLabel(None, t("maint.filter_truck"))
-        fb_layout.addWidget(truck_lbl)
-
+        fbl.addWidget(truck_lbl)
         self._e_truck = QLineEdit()
+        self._e_truck.setPlaceholderText("Filter...")
         self._e_truck.textChanged.connect(self._on_filter_changed)
-        fb_layout.addWidget(self._e_truck)
+        fbl.addWidget(self._e_truck)
 
-        # -- Trip filter --------------------------------------------------
         trip_lbl = FieldLabel(None, t("maint.filter_trip"))
-        fb_layout.addWidget(trip_lbl)
-
+        fbl.addWidget(trip_lbl)
         self._e_trip = QLineEdit()
+        self._e_trip.setPlaceholderText("Filter...")
         self._e_trip.textChanged.connect(self._on_filter_changed)
-        fb_layout.addWidget(self._e_trip)
+        fbl.addWidget(self._e_trip)
 
-        # -- Show resolved ------------------------------------------------
         self._cb_show_resolved = QCheckBox(t("maint.show_resolved"))
         self._cb_show_resolved.stateChanged.connect(self._on_filter_changed)
-        fb_layout.addWidget(self._cb_show_resolved)
+        fbl.addWidget(self._cb_show_resolved)
 
-        fb_layout.addStretch(1)
-
+        fbl.addStretch(1)
         self._summary_lbl = Label(None, "", role="muted")
-        fb_layout.addWidget(self._summary_lbl)
+        fbl.addWidget(self._summary_lbl)
 
         layout.addWidget(fb)
 
-    # ── Fuel price panel ─────────────────────────────────────────────────────
+    def _build_alert_list(self, layout):
+        container = Card()
+        cl = container.layout()
+        cl.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
 
-    def _build_fuel_panel(self, layout: QVBoxLayout) -> None:
+        # Wire proxy: source = ViewModel alert model → proxy → QListView
+        self._alert_proxy.setSourceModel(self._vm.alert_model)
+
+        self._alert_list = QListView()
+        self._alert_list.setModel(self._alert_proxy)
+        self._alert_list.setItemDelegate(AlertCardDelegate(self._alert_list))
+        self._alert_list.setSelectionMode(QListView.NoSelection)
+        self._alert_list.setVerticalScrollMode(QListView.ScrollPerPixel)
+        self._alert_list.setSpacing(4)
+        self._alert_list.setFrameShape(QFrame.NoFrame)
+
+        cl.addWidget(self._alert_list)
+        layout.addWidget(container, 1)
+
+    def _build_fuel_panel(self, layout):
         self._fuel_panel = QtFuelPricePanel(self)
         layout.addWidget(self._fuel_panel)
 
-    # ── Alert centre (scrollable) ────────────────────────────────────────────
+    # ── Data callbacks ───────────────────────────────────────────
 
-    def _build_alert_centre(self, layout: QVBoxLayout) -> None:
-        container = Card()
-        container_layout = container.layout()
-        container_layout.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
+    def _on_data_changed(self):
+        """Reactively update KPIs and summary when ViewModel emits data_changed."""
+        self._update_kpis()
+        self._update_summary()
+        self._on_filter_changed()
 
-        self._alert_scroll = QScrollArea()
-        self._alert_scroll.setWidgetResizable(True)
-        self._alert_scroll.setFrameShape(QFrame.NoFrame)
+    def _update_kpis(self):
+        summary = self._vm.get_summary()
+        for key, val_lbl in self._kpi_value_labels.items():
+            val = summary.get(key, t("common.na"))
+            if key == "avg_health":
+                color = COLOR_SUCCESS_DEFAULT if val >= 80 else COLOR_WARNING_DEFAULT if val >= 50 else COLOR_ERROR_DEFAULT
+                val_lbl.setText(f"{val}/100")
+                val_lbl.setStyleSheet(f"color: {color};")
+                if hasattr(self, "_health_progress"):
+                    self._health_progress.setValue(int(val))
+                    self._health_progress.setStyleSheet(f"""
+                        QProgressBar {{ background: {COLOR_BG_OVERLAY}; border: none; border-radius: 2px; }}
+                        QProgressBar::chunk {{ background: {color}; border-radius: 2px; }}
+                    """)
+            elif key == "overdue_schedules":
+                color = COLOR_ERROR_DEFAULT if val > 0 else COLOR_SUCCESS_DEFAULT
+                val_lbl.setText(str(val))
+                val_lbl.setStyleSheet(f"color: {color};")
+            elif key in ("cost_30d", "total_cost"):
+                val_lbl.setText(fmt_currency(float(val), decimals=0))
+                val_lbl.setStyleSheet(f"color: {INFO};")
+            elif key == "trucks_needing_service":
+                color = COLOR_WARNING_DEFAULT if int(val) > 0 else COLOR_SUCCESS_DEFAULT
+                val_lbl.setText(str(val))
+                val_lbl.setStyleSheet(f"color: {color};")
+            else:
+                val_lbl.setText(str(val))
+                val_lbl.setStyleSheet("")
 
-        self._alert_content = QWidget()
-        self._alert_content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        self._alert_layout = QVBoxLayout(self._alert_content)
-        self._alert_layout.setContentsMargins(0, 0, 0, 0)
-        self._alert_layout.setSpacing(SP["4"])
-        self._alert_layout.setAlignment(Qt.AlignTop)
+    def _update_summary(self):
+        total = self._vm.alert_model.rowCount()
+        alert_word = iconed("maint.alert_s") if total == 1 else iconed("maint.alert_plural")
+        self._alert_count_lbl.setText(f"{total} {alert_word}")
 
-        self._alert_scroll.setWidget(self._alert_content)
-        container_layout.addWidget(self._alert_scroll)
+    # ── Filter ───────────────────────────────────────────────────
 
-        layout.addWidget(container, 1)  # stretch = 1 → fills remaining space
+    def _on_filter_changed(self, *args):
+        # Determine which severities are enabled (None = all enabled)
+        sevs = []
+        if self._cb_critical and self._cb_critical.isChecked():
+            sevs.append(Severity.CRITICAL)
+        if self._cb_warning and self._cb_warning.isChecked():
+            sevs.append(Severity.WARNING)
+        if self._cb_info and self._cb_info.isChecked():
+            sevs.append(Severity.INFO)
+        self._filter_severities = sevs if len(sevs) < 3 else None
 
-    # ── i18n helpers ─────────────────────────────────────────────────────────
+        # Apply filters to the proxy model
+        self._alert_proxy.set_severity_filter(self._filter_severities)
 
-    def _i18n_tag(self, widget, key: str, prefix: str = "") -> None:
-        """Register a widget for language updates and set its initial text."""
-        self._i18n_tags.append((widget, key, prefix))
-        text = prefix + (iconed(key) if key.startswith("maint.") else t(key))
-        if isinstance(widget, (QLabel, QPushButton)):
-            widget.setText(text)
-
-    def _on_language_changed(self, lang: str) -> None:
-        """Update all registered i18n widgets on language change."""
-        for widget, key, prefix in self._i18n_tags:
-            try:
-                text = prefix + (iconed(key) if key.startswith("maint.") else t(key))
-                if isinstance(widget, (QLabel, QPushButton)):
-                    widget.setText(text)
-            except Exception:
-                pass
-        # Rebuild dynamic content that depends on translations
-        self._refresh()
-
-    # ── Event subscriptions ──────────────────────────────────────────────────
-
-    def _subscribe_events(self) -> None:
-        events = {
-            ALERT_CREATED: self._schedule_refresh,
-            ALERT_RESOLVED: self._schedule_refresh,
-            MAINTENANCE_ADDED: self._schedule_maintenance_refresh,
-            MAINTENANCE_DELETED: self._schedule_maintenance_refresh,
-        }
-        for ev_type, handler in events.items():
-            if ev_type not in self._handlers:
-                self._event_bus.subscribe(ev_type, handler)
-                self._handlers[ev_type] = handler
-
-    def _unsubscribe_events(self) -> None:
-        for ev_type, handler in list(self._handlers.items()):
-            try:
-                self._event_bus.unsubscribe(ev_type, handler)
-            except Exception:
-                pass
-        self._handlers.clear()
-
-    def _schedule_refresh(self, event=None) -> None:
-        if self._closed:
-            return
-        QTimer.singleShot(300, self._do_refresh)
-
-    def _schedule_maintenance_refresh(self, event=None) -> None:
-        if self._closed:
-            return
-        QTimer.singleShot(200, self._refresh_kpis)
-
-    def _do_refresh(self) -> None:
-        if not self._closed:
-            self._refresh()
-
-    # ── KPI refresh ──────────────────────────────────────────────────────────
-
-    def _refresh_kpis(self) -> None:
-        try:
-            svc = FleetMaintenanceService(self.db)
-            summary = svc.get_summary()
-            for key, card in self._kpi_widgets.items():
-                val = summary.get(key, t("common.na"))
-                val_lbl = self._kpi_value_labels.get(key)
-                if val_lbl is None:
-                    continue
-                if key == "avg_health":
-                    color = (
-                        SUCCESS if val >= 80
-                        else WARNING if val >= 50
-                        else DANGER
-                    )
-                    val_lbl.setText(f"{val}/100")
-                    val_lbl.setStyleSheet(f"color: {color};")
-                elif key == "overdue_schedules":
-                    color = DANGER if val > 0 else SUCCESS
-                    val_lbl.setText(str(val))
-                    val_lbl.setStyleSheet(f"color: {color};")
-                elif key in ("cost_30d", "total_cost"):
-                    val_lbl.setText(f"{float(val):,.0f}\u20AC")
-                    val_lbl.setStyleSheet(f"color: {INFO};")
-                elif key == "trucks_needing_service":
-                    color = WARNING if int(val) > 0 else SUCCESS
-                    val_lbl.setText(str(val))
-                    val_lbl.setStyleSheet(f"color: {color};")
-                else:
-                    val_lbl.setText(str(val))
-                    val_lbl.setStyleSheet("")
-        except Exception as e:
-            logger.debug("Maintenance KPIs unavailable: %s", e)
-            for key in self._kpi_widgets:
-                val_lbl = self._kpi_value_labels.get(key)
-                if val_lbl:
-                    val_lbl.setText(t("common.na"))
-                    val_lbl.setStyleSheet("")
-
-    # ── Tachograph status ────────────────────────────────────────────────────
-
-    def _refresh_tachograph_status(self) -> None:
-        # Remove stale rows
-        while self._tacho_layout.count():
-            item = self._tacho_layout.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
-
-        try:
-            from repositories.tacho_vehicle_data_repository import (
-                TachoVehicleDataRepository,
-            )
-            from repositories.fleet_repository import FleetRepository
-            tvd_repo = TachoVehicleDataRepository(self.db)
-            fleet_repo = FleetRepository(self.db)
-            trucks = fleet_repo.get_active_trucks()
-        except Exception:
-            lbl = QLabel(t("tacho.no_data"))
-            lbl.setProperty("fontRole", "muted")
-            lbl.setAlignment(Qt.AlignCenter)
-            self._tacho_layout.addWidget(lbl)
-            return
-
-        if not trucks:
-            lbl = QLabel(t("tacho.no_trucks"))
-            lbl.setProperty("fontRole", "muted")
-            lbl.setAlignment(Qt.AlignCenter)
-            self._tacho_layout.addWidget(lbl)
-            return
-
-        # ── Header row ───────────────────────────────────────────────────
-        header_row = QFrame()
-        header_row.setProperty("role", "input")
-        header_row.setFixedHeight(24)
-        hdr_layout = QHBoxLayout(header_row)
-        hdr_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
-        hdr_layout.setSpacing(SP["3"])
-
-        for col_key, width in [
-            ("fleet.table_plate", 120),
-            ("tacho.last_import", 120),
-            ("tacho.calibration_date", 120),
-            ("tacho.expiry", 120),
-            ("common.status", 80),
-        ]:
-            lbl = QLabel(t(col_key))
-            lbl.setProperty("fontRole", "label")
-            lbl.setFixedWidth(width)
-            hdr_layout.addWidget(lbl)
-        hdr_layout.addStretch(1)
-        self._tacho_layout.addWidget(header_row)
-
-        # ── Truck data rows ──────────────────────────────────────────────
-        for truck in trucks:
-            latest = tvd_repo.get_latest_by_truck(truck["id"])
-            self._build_tacho_row(truck, latest)
-
-    def _build_tacho_row(self, truck: dict, latest: Optional[dict]) -> None:
-        row = QFrame()
-        row.setObjectName("card")
-        row.setFixedHeight(28)
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
-        row_layout.setSpacing(SP["3"])
-
-        plate = truck.get("plate_number", "\u2014")
-        plate_lbl = QLabel(plate)
-        plate_lbl.setFixedWidth(120)
-        row_layout.addWidget(plate_lbl)
-
-        if not latest or not latest.get("calibration_expiry"):
-            for _ in range(3):
-                dash = QLabel("\u2014")
-                dash.setStyleSheet(f"color: {TEXT_MUTED};")
-                dash.setFixedWidth(120)
-                row_layout.addWidget(dash)
-            chip = StatusChip(row, "no_data", t("tacho.status_no_data"))
-            chip.setFixedWidth(80)
-            row_layout.addWidget(chip)
-            row_layout.addStretch(1)
-            self._tacho_layout.addWidget(row)
-            return
-
-        # Last import date
-        import_at = "\u2014"
-        try:
-            from repositories.tacho_import_repository import TachoImportRepository
-            ti_repo = TachoImportRepository(self.db)
-            imp = ti_repo.get_by_id(latest.get("import_id"))
-            if imp and imp.get("imported_at"):
-                import_at = str(imp["imported_at"])[:10]
-        except Exception:
-            pass
-        import_lbl = QLabel(import_at)
-        import_lbl.setFixedWidth(120)
-        row_layout.addWidget(import_lbl)
-
-        # Calibration date
-        calib_date = latest.get("calibration_date") or "\u2014"
-        calib_text = (
-            str(calib_date)[:10]
-            if isinstance(calib_date, str)
-            else str(calib_date)[:10]
-        )
-        calib_lbl = QLabel(calib_text)
-        calib_lbl.setFixedWidth(120)
-        row_layout.addWidget(calib_lbl)
-
-        # Expiry
-        expiry_str = latest.get("calibration_expiry") or "\u2014"
-        expiry_text = (
-            str(expiry_str)[:10]
-            if isinstance(expiry_str, str)
-            else str(expiry_str)[:10]
-        )
-        expiry_lbl = QLabel(expiry_text)
-        expiry_lbl.setFixedWidth(120)
-        row_layout.addWidget(expiry_lbl)
-
-        # Status chip
-        days_left: Optional[int] = None
-        try:
-            expiry_dt = datetime.strptime(expiry_str, "%Y-%m-%d")
-            days_left = (expiry_dt - datetime.now()).days
-        except Exception:
-            pass
-
-        if days_left is None:
-            chip_text = t("tacho.status_no_data")
-            chip = StatusChip(row, "no_data", chip_text)
-        elif days_left < 0:
-            chip_text = t("tacho.status_expired")
-            chip = StatusChip(row, "cancelled", chip_text)
-        elif days_left <= 7:
-            chip_text = f"{days_left}d"
-            chip = StatusChip(row, "cancelled", chip_text)
-        elif days_left <= 30:
-            chip_text = f"{days_left}d"
-            chip = StatusChip(row, "loading", chip_text)
-        else:
-            chip_text = t("tacho.status_valid")
-            chip = StatusChip(row, "delivered", chip_text)
-
-        chip.setFixedWidth(80)
-        row_layout.addWidget(chip)
-        row_layout.addStretch(1)
-
-        self._tacho_layout.addWidget(row)
-
-    def _navigate_to_tachograph(self) -> None:
-        """Try to navigate to the tachograph view via parent hierarchy."""
-        parent = self.parent()
-        for _ in range(5):
-            if parent is None:
-                break
-            if hasattr(parent, "_switch_module"):
-                parent._switch_module("tachograph")
-                return
-            parent = parent.parent()
-        # Fallback: open as standalone view
-        try:
-            from ui.views.tacho_import_view import QtTachoImportView
-            view = QtTachoImportView(self, db=self.db)
-            view.show()
-        except Exception:
-            pass
-
-    # ── Alert filtering ──────────────────────────────────────────────────────
-
-    def _refresh(self) -> None:
-        if self._closed:
-            return
-        self._alerts = self.ops.get_active_alerts(limit=200)
-        if self._cb_show_resolved.isChecked():
-            resolved = self.ops.get_alerts(resolved=True, limit=200)
-            self._alerts.extend(resolved)
-        self._apply_filters()
-        self._refresh_kpis()
-        self._refresh_tachograph_status()
-
-    def _on_filter_changed(self, *args) -> None:
-        self._apply_filters()
-
-    def _apply_filters(self) -> None:
-        sev_critical = self._cb_critical.isChecked()
-        sev_warning = self._cb_warning.isChecked()
-        sev_info = self._cb_info.isChecked()
-        type_text = self._c_type.currentText()
-        truck_text = self._e_truck.text().strip().lower()
-        trip_text = self._e_trip.text().strip().lower()
-
-        raw = self._alerts
-
-        # ── Severity (checkbox-based) ────────────────────────────────────
-        def _passes_severity(a: Alert) -> bool:
-            if a.severity == Severity.CRITICAL and not sev_critical:
-                return False
-            if a.severity == Severity.WARNING and not sev_warning:
-                return False
-            if a.severity == Severity.INFO and not sev_info:
-                return False
-            return True
-
-        raw = [a for a in raw if _passes_severity(a)]
-
-        # ── Type ─────────────────────────────────────────────────────────
+        type_text = self._c_type.currentText() if self._c_type else ""
         all_label = t("common.all")
-        if type_text and type_text != all_label:
-            raw = [a for a in raw if a.type.value == type_text]
+        type_filter = None if type_text in ("", all_label) else type_text
+        self._alert_proxy.set_type_filter(type_filter)
 
-        # ── Truck / Trip free-text ───────────────────────────────────────
-        if truck_text:
-            raw = [
-                a for a in raw
-                if a.truck_id and truck_text in a.truck_id.lower()
-            ]
-        if trip_text:
-            raw = [
-                a for a in raw
-                if a.trip_id and trip_text in a.trip_id.lower()
-            ]
+        truck_text = self._e_truck.text().strip().lower() if self._e_truck else ""
+        self._alert_proxy.set_truck_filter(truck_text)
 
-        # ── Sort: severity (critical first), then age ────────────────────
-        raw.sort(
-            key=lambda a: (
-                0 if a.severity == Severity.CRITICAL else
-                1 if a.severity == Severity.WARNING else 2,
-                a.created_at or "",
-            ),
-        )
+        trip_text = self._e_trip.text().strip().lower() if self._e_trip else ""
+        self._alert_proxy.set_trip_filter(trip_text)
 
-        self._filtered_alerts = raw
-        self._render_alerts()
+        # Update summary counts from source model
+        source_alerts = getattr(self._vm.alert_model, "_alerts", [])
+        parts = []
+        c_count = sum(1 for a in source_alerts if a.severity == Severity.CRITICAL)
+        w_count = sum(1 for a in source_alerts if a.severity == Severity.WARNING)
+        i_count = sum(1 for a in source_alerts if a.severity == Severity.INFO)
+        if self._filter_severities is None or Severity.CRITICAL in self._filter_severities:
+            parts.append(f"C:{c_count}")
+        if self._filter_severities is None or Severity.WARNING in self._filter_severities:
+            parts.append(f"W:{w_count}")
+        if self._filter_severities is None or Severity.INFO in self._filter_severities:
+            parts.append(f"I:{i_count}")
+        if self._summary_lbl:
+            self._summary_lbl.setText(" | ".join(parts))
 
-    # ── Alert rendering ──────────────────────────────────────────────────────
+    # ── i18n ─────────────────────────────────────────────────────
 
-    def _render_alerts(self) -> None:
-        # Clear existing alert content
-        while self._alert_layout.count():
-            item = self._alert_layout.takeAt(0)
-            if item and item.widget():
-                item.widget().deleteLater()
-
-        critical = [a for a in self._filtered_alerts if a.severity == Severity.CRITICAL]
-        warnings = [a for a in self._filtered_alerts if a.severity == Severity.WARNING]
-        info = [a for a in self._filtered_alerts if a.severity == Severity.INFO]
-
-        total = len(self._filtered_alerts)
-        alert_word = iconed("maint.alert_s") if total == 1 else iconed("maint.alert_plural")
-        self._alert_count_lbl.setText(f"{total} {alert_word}")
-
-        counts = []
-        if critical:
-            counts.append(iconed("maint.critical_count").format(len(critical)))
-        if warnings:
-            counts.append(iconed("maint.warning_count").format(len(warnings)))
-        if info:
-            counts.append(iconed("maint.info_count").format(len(info)))
-        self._summary_lbl.setText(" | ".join(counts))
-
-        if not self._filtered_alerts:
-            empty = QLabel(iconed("maint.no_alerts_filter"))
-            empty.setProperty("fontRole", "muted")
-            empty.setAlignment(Qt.AlignCenter)
-            self._alert_layout.addWidget(empty)
-            return
-
-        for severity, group in [
-            (Severity.CRITICAL, critical),
-            (Severity.WARNING, warnings),
-            (Severity.INFO, info),
-        ]:
-            if not group:
-                continue
-            self._build_alert_section(severity, group)
-
-    def _build_alert_section(self, severity: Severity, alerts: List[Alert]) -> None:
-        colour = SEVERITY_COLORS[severity]
-        icon = SEVERITY_ICONS[severity]
-        label = t(SEVERITY_LABELS[severity])
-        count = len(alerts)
-
-        section = Card()
-        section_layout = section.layout()
-        section_layout.setSpacing(SP["2"])
-
-        # ── Section header ───────────────────────────────────────────────
-        header = QFrame()
-        header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(SP["2"])
-
-        strip = QFrame()
-        strip.setFixedWidth(3)
-        strip.setFixedHeight(20)
-        strip.setStyleSheet(f"background-color: {colour}; border-radius: 2px;")
-        header_layout.addWidget(strip)
-
-        title_lbl = Label(None, f"{icon}  {label} ({count})", role="section-title")
-        title_lbl.setStyleSheet(f"color: {colour};")
-        header_layout.addWidget(title_lbl)
-
-        sep = Divider(None)
-        header_layout.addWidget(sep)
-
-        section_layout.addWidget(header)
-
-        # ── Alert cards ──────────────────────────────────────────────────
-        for alert in alerts:
-            self._build_alert_card(section, alert)
-
-        self._alert_layout.addWidget(section)
-
-    def _build_alert_card(self, parent: QFrame, alert: Alert) -> None:
-        sev_colour = SEVERITY_COLORS.get(alert.severity, TEXT_MUTED)
-        icon = ALERT_ICONS.get(alert.type, "\u2753")
-
-        card = QFrame()
-        card.setObjectName("card")
-        card_layout = QHBoxLayout(card)
-        card_layout.setContentsMargins(0, 0, 0, 0)
-        card_layout.setSpacing(0)
-
-        # ── Left accent border (3px) ────────────────────────────────────
-        strip = QFrame()
-        strip.setFixedWidth(3)
-        strip.setStyleSheet(f"background-color: {sev_colour}; border: none;")
-        strip.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Expanding)
-        card_layout.addWidget(strip)
-
-        # ── Inner content ───────────────────────────────────────────────
-        inner = QFrame()
-        inner_layout = QVBoxLayout(inner)
-        inner_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
-        inner_layout.setSpacing(SP["1"])
-
-        # Row 1: icon + title + timestamp
-        row1 = QFrame()
-        row1_layout = QHBoxLayout(row1)
-        row1_layout.setContentsMargins(0, 0, 0, 0)
-        row1_layout.setSpacing(SP["2"])
-
-        icon_lbl = QLabel(icon)
-        row1_layout.addWidget(icon_lbl)
-
-        title_lbl = QLabel(alert.title)
-        title_lbl.setStyleSheet(f"color: {TEXT_PRIMARY}; font-size: 12px;")
-        title_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-        row1_layout.addWidget(title_lbl)
-
-        ts = alert.created_at
-        if ts and len(ts) > 16:
-            ts = ts[:16].replace("T", " ")
-        ts_lbl = QLabel(ts or "")
-        ts_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 11px;")
-        row1_layout.addWidget(ts_lbl)
-
-        inner_layout.addWidget(row1)
-
-        # Row 2: message
-        msg_lbl = QLabel(alert.message)
-        msg_lbl.setStyleSheet(f"color: {TEXT_MUTED}; font-size: 12px;")
-        msg_lbl.setWordWrap(True)
-        inner_layout.addWidget(msg_lbl)
-
-        # Row 3: references (truck / trip)
-        refs = []
-        if alert.truck_id:
-            refs.append(iconed("maint.label_truck", truck_id=alert.truck_id))
-        if alert.trip_id:
-            refs.append(iconed("maint.label_trip", trip_id=alert.trip_id))
-        if refs:
-            ref_lbl = QLabel("  \u2022  ".join(refs))
-            ref_lbl.setStyleSheet(f"color: {INFO_TEXT}; font-size: 11px;")
-            inner_layout.addWidget(ref_lbl)
-
-        # Row 4: action buttons
-        actions = QFrame()
-        actions_layout = QHBoxLayout(actions)
-        actions_layout.setContentsMargins(0, 0, 0, 0)
-        actions_layout.setSpacing(SP["2"])
-
-        # Resolve → variant="primary" size="sm"
-        actions_layout.addWidget(
-            Btn(actions, iconed("maint.action_resolve"),
-                variant="primary", size="sm",
-                command=lambda aid=alert.id: self._resolve_alert(aid))
-        )
-        if alert.trip_id:
-            # View Trip → variant="secondary" size="sm"
-            actions_layout.addWidget(
-                Btn(actions, iconed("maint.action_trip"),
-                    variant="secondary", size="sm",
-                    command=lambda tip=alert.trip_id: self._open_trip(tip))
-            )
-        if alert.truck_id:
-            actions_layout.addWidget(
-                Btn(actions, iconed("maint.action_truck"),
-                    variant="secondary", size="sm",
-                    command=lambda tid=alert.truck_id: self._open_truck(tid))
-            )
-        if alert.truck_id and alert.severity in (Severity.CRITICAL, Severity.WARNING):
-            actions_layout.addWidget(
-                Btn(actions, iconed("maint.action_maint"),
-                    variant="danger", size="sm",
-                    command=lambda tid=alert.truck_id: self._schedule_maint(tid))
-            )
-        # Remind → variant="ghost" size="sm"
-        actions_layout.addWidget(
-            Btn(actions, iconed("maint.action_remind"),
-                variant="ghost", size="sm",
-                command=lambda a=alert: self._generate_reminder(a))
-        )
-
-        actions_layout.addStretch(1)
-        inner_layout.addWidget(actions)
-
-        card_layout.addWidget(inner, 1)
-
-        # Add card to the parent (section) layout
-        parent.layout().addWidget(card)
-
-    # ── Alert actions ────────────────────────────────────────────────────────
-
-    def _resolve_alert(self, alert_id: str) -> None:
-        self.ops.resolve_alert(alert_id)
-        self._refresh()
-
-    def _open_truck(self, truck_id: str) -> None:
-        if hasattr(self.parent(), "_open_fleet"):
-            self.parent()._open_fleet()
-        self._flash_msg(iconed("maint.flash_truck_copied").format(truck_id))
-
-    def _open_trip(self, trip_id: str) -> None:
-        self._flash_msg(iconed("maint.flash_trip_copied").format(trip_id))
-
-    def _schedule_maint(self, truck_id: str) -> None:
-        self._flash_msg(iconed("maint.flash_maint_scheduled").format(truck_id))
-
-    def _generate_reminder(self, alert: Alert) -> None:
-        self._flash_msg(iconed("maint.flash_reminder").format(alert.title))
-
-    def _flash_msg(self, msg: str) -> None:
-        self._alert_count_lbl.setText(msg)
-        self._alert_count_lbl.setStyleSheet(f"color: {WARNING};")
-        total = len(self._filtered_alerts)
-        alert_word = iconed("maint.alert_s") if total == 1 else iconed("maint.alert_plural")
-        QTimer.singleShot(2500, lambda: self._restore_alert_count(total, alert_word))
-
-    def _restore_alert_count(self, total: int, alert_word: str) -> None:
-        self._alert_count_lbl.setText(f"{total} {alert_word}")
-        self._alert_count_lbl.setStyleSheet("")
+    def _on_language_changed(self, lang: str):
+        QTimer.singleShot(0, self._vm.refresh_now)

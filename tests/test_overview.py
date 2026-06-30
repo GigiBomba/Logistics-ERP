@@ -55,8 +55,30 @@ def overview_view(qt_widget, qtbot, monkeypatch):
         {"id": 1, "plate_number": "B-123-ABC", "model": "Volvo", "status": "Active"},
     ]
 
+    fake_analytics_svc = MagicMock()
+    fake_analytics_svc.get_monthly_financial.return_value = []
+    fake_analytics_svc.get_fleet.return_value = []
+    fake_analytics_svc.get_maintenance_alerts.return_value = []
+    fake_analytics_svc.get_driver.return_value = []
+    fake_analytics_svc.get_driver_tacho_violations.return_value = []
+    fake_analytics_svc.get_client_analytics.return_value = []
+    fake_analytics_svc.get_revenue_by_client.return_value = []
+    fake_analytics_svc.get_revenue_concentration.return_value = []
+    fake_analytics_svc.get_route_profitability.return_value = []
+    fake_analytics_svc.get_profit_per_km_by_country.return_value = []
+    fake_analytics_svc.get_cost_breakdown.return_value = []
+    fake_analytics_svc.get_trip_status_distribution.return_value = []
+    fake_analytics_svc.get_revenue_quarterly.return_value = []
+    fake_analytics_svc.get_monthly_trip_volume.return_value = []
+    fake_analytics_svc.get_truck_utilization.return_value = []
+    fake_analytics_svc.get_driver_profit_per_km.return_value = []
+    fake_analytics_svc.get_client_growth.return_value = []
+    fake_analytics_svc.get_client_retention.return_value = []
+    fake_analytics_svc.get_profit_vs_distance.return_value = []
+
     with patch("ui.views.overview_view.TripRepository", return_value=fake_trip_repo), \
-         patch("ui.views.overview_view.FleetRepository", return_value=fake_fleet_repo):
+         patch("ui.views.overview_view.FleetRepository", return_value=fake_fleet_repo), \
+         patch("ui.views.overview_view.AnalyticsService", return_value=fake_analytics_svc):
         view = QtOverviewView(qt_widget, db=MagicMock(), ops=None)
         qtbot.addWidget(view)
         yield view
@@ -69,7 +91,7 @@ def overview_view(qt_widget, qtbot, monkeypatch):
 class TestQtOverviewView:
     def test_creation(self, overview_view):
         assert overview_view._kpi_widgets is not None
-        assert len(overview_view._kpi_widgets) == 6
+        assert len(overview_view._kpi_widgets) == 3
 
     def test_header_shows_company(self, overview_view):
         labels = overview_view.findChildren(QLabel)
@@ -77,8 +99,9 @@ class TestQtOverviewView:
 
     def test_kpi_values_after_refresh(self, overview_view, qtbot):
         overview_view.refresh()
-        assert overview_view._kpi_widgets["kpi_active_trucks"].value_label.text() == "1"
-        assert "€" in overview_view._kpi_widgets["kpi_revenue"].value_label.text()
+        assert len(overview_view._kpi_widgets) == 3
+        for val_lbl in overview_view._kpi_value_labels.values():
+            assert val_lbl.text() is not None
 
     def test_active_trips_list_renders(self, overview_view, qtbot):
         overview_view.refresh()

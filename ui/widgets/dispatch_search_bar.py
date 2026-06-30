@@ -6,14 +6,12 @@ filter checkboxes with colored indicators, and a result count label.
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -21,7 +19,6 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.theme import COLORS, S
 from ui.widgets import ActionButton, StyledCheckBox, StyledLineEdit
-
 
 STATUS_OPTIONS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
 
@@ -48,14 +45,14 @@ class QtDispatchSearchBar(QFrame):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
-        on_search: Optional[Callable[[str, list[str]], None]] = None,
+        parent: QWidget | None = None,
+        on_search: Callable[[str, list[str]], None] | None = None,
         **kwargs,
     ):
         super().__init__(parent, **kwargs)
         self._on_search = on_search
         self._checkboxes: dict[str, StyledCheckBox] = {}
-        self._result_lbl: Optional[QLabel] = None
+        self._result_lbl: QLabel | None = None
 
         self._build()
 
@@ -135,10 +132,10 @@ class QtDispatchSearchBar(QFrame):
             return
         if visible < total:
             self._result_lbl.setText(
-                f"Showing {visible} of {total} trips"
+                t("dispatch_board.showing_trips", default="Showing {} of {} trips").format(visible, total)
             )
         else:
-            self._result_lbl.setText(f"{total} trips")
+            self._result_lbl.setText(t("dispatch_board.count_trips", default="{} trips").format(total))
 
     # ── Internals ───────────────────────────────────────────────────────────────
 
@@ -149,6 +146,13 @@ class QtDispatchSearchBar(QFrame):
         query = self._entry.text().strip().lower()
         statuses = [s for s, cb in self._checkboxes.items() if cb.isChecked()]
         self._on_search(query, statuses)
+
+    def destroy(self) -> None:
+        """Clear callback and checkbox references, then schedule deletion."""
+        self._on_search = None
+        self._checkboxes.clear()
+        self._result_lbl = None
+        super().deleteLater()
 
     def _clear(self) -> None:
         """Reset search text and check all statuses."""

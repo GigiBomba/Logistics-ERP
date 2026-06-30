@@ -1,10 +1,11 @@
-import uuid
 import threading
-import requests
+import uuid
 from typing import Optional
-from services.geocode_nominatim import geocode_place
+
+import requests
 
 from config import Config
+from services.geocode_nominatim import geocode_place
 
 NOMINATIM_REVERSE_URL = f"{Config.NOMINATIM_URL}/reverse"
 
@@ -76,7 +77,10 @@ def create_stop_from_map_click(lat: float, lon: float, reverse_callback: Optiona
     }
 
     if reverse_callback:
-        # Do reverse geocoding in background
+        # Do reverse geocoding in background.
+        # Daemon thread lifecycle: created per map click, runs ~2-6s, terminates
+        # naturally after the HTTP request completes. Daemon flag ensures the
+        # thread does not block app shutdown if it is still in-flight.
         def rev_task(sid, lt, ln):
             try:
                 params = {'lat': lt, 'lon': ln, 'format': 'json'}

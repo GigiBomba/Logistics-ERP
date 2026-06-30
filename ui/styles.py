@@ -12,17 +12,22 @@ remains untouched so the legacy ``main.py`` continues to work.
 from ui.theme import COLORS, S
 from ui.theme_engine import QtTheme
 
-
 class Theme:
-    """Drop-in replacement for ``ui.styles.Theme`` in the PySide6 branch."""
+    """Drop-in replacement for ``ui.styles.Theme`` in the PySide6 branch.
+
+    .. deprecated::
+       This class is a compatibility shim. New code should import colors,
+       spacing, and font values directly from ``ui.theme`` (COLORS, S, FONTS).
+       This shim will be removed in a future refactor.
+    """
 
     # ── Backgrounds ────────────────────────────────────────────────────────────
     BG = COLORS["bg_base"]
     SURFACE = COLORS["bg_surface"]
     SURFACE2 = COLORS["bg_elevated"]
-    SURFACE3 = COLORS["bg_elevated"]
+    SURFACE3 = COLORS["bg_elevated"]  # Intentionally same as SURFACE2 per current design
     INPUT_BG = COLORS["bg_input"]
-    INPUT_HOVER = COLORS["bg_elevated"]
+    INPUT_HOVER = COLORS.get("bg_hover", COLORS["bg_elevated"])
 
     # ── Text ───────────────────────────────────────────────────────────────────
     TEXT = COLORS["text_primary"]
@@ -58,6 +63,9 @@ class Theme:
     GLOW = COLORS["accent"]
 
     # ── Fonts (CSS string form for Qt) ─────────────────────────────────────────
+    # NOTE: These are hardcoded CSS strings because ui.theme.FONTS stores
+    # (family, size, weight) tuples. They should be migrated to derive from
+    # ui.theme.FONTS in a future refactor.
     FONT_MAIN = "13px 'IBM Plex Sans', 'Segoe UI', sans-serif"
     FONT_BOLD = "bold 13px 'IBM Plex Sans', 'Segoe UI', sans-serif"
     FONT_TITLE = "bold 20px 'IBM Plex Sans', 'Segoe UI', sans-serif"

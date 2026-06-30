@@ -1,7 +1,8 @@
 """Build and persist route history records (data layer orchestration)."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+import contextlib
+from typing import Any
 
 from services.constraint_engine import TruckConstraintEngine
 from services.cost_engine import CostEngineService
@@ -9,13 +10,12 @@ from services.route_history_service import RouteHistoryRecord, RouteHistoryServi
 from services.route_state import RouteStateManager
 from utils.perf_log import perf_timer
 
-
 class RoutePersistenceService:
     def __init__(
         self,
         history_service: RouteHistoryService,
         route_state: RouteStateManager,
-        cost_engine: Optional[CostEngineService] = None,
+        cost_engine: CostEngineService | None = None,
     ) -> None:
         self.history = history_service
         self.route_state = route_state
@@ -24,12 +24,12 @@ class RoutePersistenceService:
     def build_record(
         self,
         *,
-        route: Dict[str, Any],
+        route: dict[str, Any],
         truck: Any,
         profile: str,
-        stops_state: List[Dict[str, Any]],
-        stop_addresses: Dict[str, str],
-        excluded_countries: List[str],
+        stops_state: list[dict[str, Any]],
+        stop_addresses: dict[str, str],
+        excluded_countries: list[str],
         **kwargs: Any,
     ) -> RouteHistoryRecord:
         truck_id = TruckConstraintEngine._get_truck_value(truck, "id") if truck else None
@@ -80,13 +80,13 @@ class RoutePersistenceService:
     def save_calculated_route(
         self,
         *,
-        route: Dict[str, Any],
+        route: dict[str, Any],
         truck: Any,
         profile: str,
-        stops_state: List[Dict[str, Any]],
-        stop_addresses: Dict[str, str],
-        excluded_countries: List[str],
-        cost_info: Dict[str, Any],
+        stops_state: list[dict[str, Any]],
+        stop_addresses: dict[str, str],
+        excluded_countries: list[str],
+        cost_info: dict[str, Any],
     ) -> int:
         with perf_timer("history_save"):
             record = self.build_record(
@@ -105,18 +105,16 @@ class RoutePersistenceService:
     def commit_route(
         self,
         route_id: int,
-        truck_id: Optional[str] = None,
+        truck_id: str | None = None,
     ) -> None:
         """Mark a draft route as committed and sync truck assignment."""
         self.history.commit_route(route_id)
         if truck_id:
-            try:
+            with contextlib.suppress(Exception):
                 self.history.assign_route_to_truck(route_id, truck_id)
-            except Exception:
-                pass
 
     @staticmethod
-    def record_to_planner_route(record: RouteHistoryRecord) -> Dict[str, Any]:
+    def record_to_planner_route(record: RouteHistoryRecord) -> dict[str, Any]:
         return {
             "distance_km": record.total_distance_km or 0,
             "duration_min": record.duration_min or 0,
@@ -133,7 +131,7 @@ class RoutePersistenceService:
         }
 
     @staticmethod
-    def normalize_history_stops(record: RouteHistoryRecord) -> List[Dict[str, Any]]:
+    def normalize_history_stops(record: RouteHistoryRecord) -> list[dict[str, Any]]:
         from services.stop_factory import normalize_existing_stop
 
         stops = []

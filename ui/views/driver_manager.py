@@ -7,14 +7,15 @@ driver table, and CRUD operations via a form dialog. Embeds in a
 
 from __future__ import annotations
 
+import contextlib
 import csv
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QAction, QColor, QPainter
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -34,22 +35,24 @@ from PySide6.QtWidgets import (
 from repositories.driver_repository import DriverRepository
 from repositories.trip_repository import TripRepository
 from services.driver_truck_service import DriverTruckService
-from services.i18n import t, register_listener, unregister_listener
+from services.i18n import register_listener, t, unregister_listener
 from services.operations.event_bus import (
-    EventBus,
     DRIVER_CREATED,
-    DRIVER_UPDATED,
     DRIVER_DELETED,
+    DRIVER_UPDATED,
     TRUCK_UPDATED,
-)
-from ui.design_tokens import (
-    ACCENT, ACCENT_TEXT, BG_SURFACE, BG_ELEVATED,
-    BORDER_DEFAULT, DANGER, DANGER_TEXT, SUCCESS, SUCCESS_TEXT,
-    TEXT_MUTED, TEXT_PRIMARY, TEXT_SECONDARY, WARNING, STATUS, SP,
+    EventBus,
 )
 from ui.components import (
-    Card, CardHeader, Btn, KPICard, StatusChip,
-    FieldLabel, SectionTitle, PageTitle, Label, Divider, MonoLabel,
+    Btn,
+    Card,
+    KPICard,
+    MonoLabel,
+    PageTitle,
+    SectionTitle,
+)
+from ui.design_tokens import (
+    SP,
 )
 from ui.theme import COLORS
 from ui.widgets import (
@@ -65,7 +68,7 @@ logger = logging.getLogger(__name__)
 # ── Column definitions ─────────────────────────────────────────────────────────
 # (column_id,  i18n_key_or_raw_label,  width_px,  translate)
 
-_COLUMNS: List[tuple] = [
+_COLUMNS: list[tuple] = [
     ("id",             "driver_manager.col_id",              50,  True),
     ("name",           "driver_manager.col_name",           150,  True),
     ("phone",          "driver_manager.col_phone",          110,  True),
@@ -79,12 +82,12 @@ _COLUMNS: List[tuple] = [
 ]
 
 
-def _resolve_column_labels() -> List[str]:
+def _resolve_column_labels() -> list[str]:
     """Return translated header labels for the current language."""
     return [t(key) if translate else key for _, key, _, translate in _COLUMNS]
 
 
-def _columns_for_table() -> List[tuple]:
+def _columns_for_table() -> list[tuple]:
     """Return ``(cid, label, width)`` tuples for ``StyledTableWidget``."""
     labels = _resolve_column_labels()
     return [(cid, labels[i], width) for i, (cid, _, width, _) in enumerate(_COLUMNS)]
@@ -100,7 +103,7 @@ class _SearchLineEdit(StyledLineEdit):
     placeholder is shown as actual text and cleared on focus.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None):
+    def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
         self._placeholder: str = ""
         self._user_typed: bool = False
@@ -149,7 +152,7 @@ class QtDriverFormDialog(QDialog):
     Mirrors ``ui/dialogs/driver_form.py`` using PySide6 widgets.
     """
 
-    FIELDS: List[tuple] = [
+    FIELDS: list[tuple] = [
         ("name",             "driver_manager.field_name",             True),
         ("phone",            "driver_manager.field_phone",            False),
         ("email",            "driver_manager.field_email",            False),
@@ -164,11 +167,11 @@ class QtDriverFormDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         driver_repo: DriverRepository,
-        driver: Optional[Dict[str, Any]] = None,
+        driver: dict[str, Any] | None = None,
         on_save=None,
-        dta_service: Optional[DriverTruckService] = None,
+        dta_service: DriverTruckService | None = None,
     ):
         super().__init__(parent)
         self._repo = driver_repo
@@ -183,11 +186,11 @@ class QtDriverFormDialog(QDialog):
         self.setMinimumSize(480, 600)
         self.setModal(True)
 
-        self._entries: Dict[str, StyledLineEdit] = {}
-        self._truck_combo: Optional[StyledComboBox] = None
-        self._truck_ids: List[str] = []
-        self._truck_names: List[str] = []
-        self._active_values: List[str] = []
+        self._entries: dict[str, StyledLineEdit] = {}
+        self._truck_combo: StyledComboBox | None = None
+        self._truck_ids: list[str] = []
+        self._truck_names: list[str] = []
+        self._active_values: list[str] = []
 
         self._build_ui()
 
@@ -303,7 +306,7 @@ class QtDriverFormDialog(QDialog):
             )
             return
 
-        data: Dict[str, Any] = {
+        data: dict[str, Any] = {
             k: v.text().strip() for k, v in self._entries.items()
         }
         data["monthly_salary"] = salary
@@ -364,9 +367,9 @@ class QtDriverManager(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
-        prefs: Optional[dict] = None,
+        prefs: dict | None = None,
     ):
         super().__init__(parent)
         self.db = db
@@ -377,9 +380,9 @@ class QtDriverManager(QWidget):
         self._trip_repo = TripRepository(db) if db is not None else None
         self._dta_service = DriverTruckService(db) if db is not None else None
 
-        self._kpi_value_labels: Dict[str, MonoLabel] = {}
-        self._kpi_strip_layout: Optional[QHBoxLayout] = None
-        self._search_timer: Optional[QTimer] = None
+        self._kpi_value_labels: dict[str, MonoLabel] = {}
+        self._kpi_strip_layout: QHBoxLayout | None = None
+        self._search_timer: QTimer | None = None
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
@@ -400,10 +403,8 @@ class QtDriverManager(QWidget):
         """Called when this view is hidden / removed from the stack."""
         if hasattr(self, "_search_timer") and self._search_timer is not None:
             self._search_timer.stop()
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
         self._unsubscribe_events()
 
     def _cleanup(self) -> None:
@@ -417,17 +418,13 @@ class QtDriverManager(QWidget):
 
     def _unsubscribe_events(self) -> None:
         for evt in (DRIVER_CREATED, DRIVER_UPDATED, DRIVER_DELETED, TRUCK_UPDATED):
-            try:
+            with contextlib.suppress(Exception):
                 self._event_bus.unsubscribe(evt, self._on_bus_event)
-            except Exception:
-                pass
 
     def _on_bus_event(self, ev: dict) -> None:
         """Schedule a refresh on the UI thread after any relevant event."""
-        try:
+        with contextlib.suppress(Exception):
             QTimer.singleShot(0, self.refresh)
-        except Exception:
-            pass
 
     # ── i18n ───────────────────────────────────────────────────────────────
 
@@ -459,7 +456,7 @@ class QtDriverManager(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SP["4"])
 
-        self._kpi_title_refs: List[tuple] = []
+        self._kpi_title_refs: list[tuple] = []
 
         self._build_header(layout)
         self._build_kpi_row(layout)
@@ -611,7 +608,7 @@ class QtDriverManager(QWidget):
         self._selected_id = row_data.get("id")
         self._edit_selected()
 
-    def _get_selected_id(self) -> Optional[int]:
+    def _get_selected_id(self) -> int | None:
         row = self.table.selected_row_data()
         if row is None:
             QMessageBox.information(
@@ -639,7 +636,7 @@ class QtDriverManager(QWidget):
                 if did:
                     driver_trip_ids.add(did)
 
-            rows: List[Dict[str, Any]] = []
+            rows: list[dict[str, Any]] = []
             for d in drivers:
                 did = d["id"]
                 truck_text = (
@@ -826,14 +823,14 @@ class QtDriverManager(QWidget):
             return
 
         try:
-            with open(path, "r", encoding="utf-8-sig") as f:
+            with open(path, encoding="utf-8-sig") as f:
                 reader = csv.DictReader(f)
                 count = 0
                 for row in reader:
                     name = row.get("name", "").strip()
                     if not name:
                         continue
-                    data: Dict[str, Any] = {
+                    data: dict[str, Any] = {
                         "name": name,
                         "phone": row.get("phone", "").strip(),
                         "email": row.get("email", "").strip(),
@@ -944,7 +941,7 @@ class QtDriverManager(QWidget):
                 self.db,
                 "driver",
                 driver_id,
-                f"Driver {name}",
+                t("driver_manager.driver_title", default="Driver {}").format(name),
             )
         except Exception as ex:
             logger.exception("Open driver documents failed")
@@ -1063,7 +1060,7 @@ class QtDriverManager(QWidget):
         self._tacho_layout.addWidget(view)
 
         # ── Last 5 violations ────────────────────────────────────────────
-        violations: List[tuple] = []
+        violations: list[tuple] = []
         for r in records:
             vlist = json.loads(r.get("violations") or "[]")
             for v in vlist:
@@ -1100,7 +1097,7 @@ class QtDriverManager(QWidget):
         parent: QWidget,
         label_text: str,
         value_text: str,
-        color: Optional[str] = None,
+        color: str | None = None,
     ) -> QFrame:
         """Create a summary chip label-value pair."""
         chip = QFrame(parent)

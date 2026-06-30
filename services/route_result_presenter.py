@@ -1,10 +1,10 @@
 """Format route calculation results and errors for the UI (no Tk)."""
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional, Tuple
-from services.i18n import t
-from services.currency_service import CURRENCY_SYMBOLS
+from typing import Any
 
+from services.currency_service import CURRENCY_SYMBOLS
+from services.i18n import t
 
 def _fmt_unit(value: int, singular_key: str, plural_key: str) -> str:
     """Return '1 day' or '2 days' using the correct i18n key."""
@@ -40,8 +40,8 @@ def format_duration_minutes(duration_min: float) -> str:
 
 
 def format_success_info(
-    route: Dict[str, Any],
-    cost_info: Dict[str, Any],
+    route: dict[str, Any],
+    cost_info: dict[str, Any],
     stops_count: int,
     preferred_currency: str = "EUR",
 ) -> str:
@@ -73,7 +73,7 @@ def format_history_loaded_info(record) -> str:
     return f"📂 {info}\n✅ {dist}\n⏱️ {dur}"
 
 
-def parse_error_message(result: Dict[str, Any]) -> Optional[Tuple[str, str]]:
+def parse_error_message(result: dict[str, Any]) -> tuple[str, str] | None:
     """Return (user_message, severity) or None if not an error dict."""
     if not isinstance(result, dict) or not result.get("error"):
         return None
@@ -85,6 +85,8 @@ def parse_error_message(result: Dict[str, Any]) -> Optional[Tuple[str, str]]:
         user_msg = t("result.timeout_error")
     elif "geocode" in lower or "could not geocode" in lower:
         user_msg = f"📍 {t('result.geocode_error')}:\n{error_msg}"
+    elif "actively refused" in lower or "connection refused" in lower or "can't connect" in lower:
+        user_msg = t("result.routing_server_off")
     elif "connection" in lower:
         user_msg = t("result.connection_error").format("192.168.0.93:8989")
     elif "invalid" in lower or "coordinates" in lower:
@@ -100,7 +102,7 @@ def parse_error_message(result: Dict[str, Any]) -> Optional[Tuple[str, str]]:
     return user_msg, "danger"
 
 
-def extract_route_from_result(result: Any) -> Optional[Dict[str, Any]]:
+def extract_route_from_result(result: Any) -> dict[str, Any] | None:
     if isinstance(result, list) and result:
         first = result[0]
         return first if isinstance(first, dict) else None

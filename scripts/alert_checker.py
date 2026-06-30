@@ -113,8 +113,18 @@ $toast = [Windows.UI.Notifications.ToastNotification]::new($toastXml)
 
 
 def _escape_ps(text: str) -> str:
-    """Escape text for embedding in a PowerShell string."""
-    return text.replace("'", "''").replace('"', '""').replace("\n", " ").replace("\r", "")
+    """Escape text for embedding in a PowerShell string.
+    
+    Escapes: single quotes, double quotes, newlines, carriage returns,
+    dollar signs (to prevent variable injection), and backticks.
+    """
+    # Escape order matters: backtick first, then dollar, then quotes
+    s = text.replace("`", "``")
+    s = s.replace("$", "`$")
+    s = s.replace("'", "''")
+    s = s.replace('"', '""')
+    s = s.replace("\n", " ").replace("\r", "")
+    return s
 
 
 # ──────────────────────────────────────────────────────────────────────────────

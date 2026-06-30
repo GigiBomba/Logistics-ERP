@@ -1,3 +1,4 @@
+import math
 import re
 from typing import Any, Optional, Tuple
 
@@ -20,6 +21,8 @@ def validate_email(email: str) -> bool:
 def validate_positive_number(value: Any) -> Optional[float]:
     try:
         v = float(value)
+        if math.isinf(v) or math.isnan(v):
+            return None
         if v > 0:
             return v
     except (ValueError, TypeError):

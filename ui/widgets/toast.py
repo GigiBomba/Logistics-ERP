@@ -6,11 +6,8 @@ displays a message, and fades out automatically.
 
 from __future__ import annotations
 
-from typing import Optional
-
-from PySide6.QtCore import Qt, QPropertyAnimation, QTimer, QPoint
-from PySide6.QtWidgets import QWidget, QFrame, QLabel, QHBoxLayout, QGraphicsOpacityEffect
-
+from PySide6.QtCore import QPoint, QPropertyAnimation, Qt, QTimer
+from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QWidget
 
 class Toast(QFrame):
     """Non-blocking toast message that auto-dismisses after a delay."""
@@ -20,7 +17,7 @@ class Toast(QFrame):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         message: str = "",
         icon: str = "✅",
         duration_ms: int = DEFAULT_DURATION_MS,
@@ -66,6 +63,12 @@ class Toast(QFrame):
         self._fade_out.setEndValue(0.0)
         self._fade_out.finished.connect(self.close)
 
+    def closeEvent(self, event) -> None:
+        self._dismiss_timer.stop()
+        self._fade_in.stop()
+        self._fade_out.stop()
+        super().closeEvent(event)
+
     def show_at(self, anchor: QWidget, offset: QPoint = QPoint(0, 0)) -> None:
         """Position the toast relative to ``anchor`` and show it."""
         if anchor is None:
@@ -88,8 +91,8 @@ class Toast(QFrame):
         cls,
         parent: QWidget,
         message: str,
-        anchor: Optional[QWidget] = None,
-    ) -> "Toast":
+        anchor: QWidget | None = None,
+    ) -> Toast:
         toast = cls(parent, message, icon="✅")
         toast.show_at(anchor or parent, QPoint(parent.width() - toast.width() - 20, 20))
         return toast
@@ -99,8 +102,8 @@ class Toast(QFrame):
         cls,
         parent: QWidget,
         message: str,
-        anchor: Optional[QWidget] = None,
-    ) -> "Toast":
+        anchor: QWidget | None = None,
+    ) -> Toast:
         toast = cls(parent, message, icon="❌")
         toast.setProperty("state", "error")
         toast.show_at(anchor or parent, QPoint(parent.width() - toast.width() - 20, 20))

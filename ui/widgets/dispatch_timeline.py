@@ -7,16 +7,16 @@ view showing each truck's trips as colour-coded bars grouped by plate.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
-    QHBoxLayout,
     QWidget,
 )
 
@@ -46,7 +46,7 @@ class QtDispatchTimeline(QWidget):
         Parent widget.
     """
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("qtDispatchTimeline")
 
@@ -74,7 +74,7 @@ class QtDispatchTimeline(QWidget):
 
     # ── Public API ─────────────────────────────────────────────────────────
 
-    def refresh(self, cards_data: Optional[list[dict[str, Any]]] = None) -> None:
+    def refresh(self, cards_data: list[dict[str, Any]] | None = None) -> None:
         """Rebuild the timeline from *cards_data*.
 
         Each dict in the list should contain (at minimum): ``truck_plate``,
@@ -114,12 +114,12 @@ class QtDispatchTimeline(QWidget):
         header_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
         header_layout.setSpacing(0)
 
-        truck_header = QLabel("Truck")
+        truck_header = QLabel(t("common.truck_label", default="Truck"))
         truck_header.setProperty("fontRole", "label")
         truck_header.setFixedWidth(120)
         header_layout.addWidget(truck_header)
 
-        sched_header = QLabel("Schedule")
+        sched_header = QLabel(t("common.schedule_label", default="Schedule"))
         sched_header.setProperty("fontRole", "label")
         sched_header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         header_layout.addWidget(sched_header)
@@ -195,6 +195,11 @@ class QtDispatchTimeline(QWidget):
         row_layout.addWidget(bar_frame, 1)
 
         self._layout.addWidget(row)
+
+    def destroy(self) -> None:
+        """Clear all widgets and schedule deletion."""
+        self._clear()
+        super().deleteLater()
 
     def _add_trip_bar(self, parent_layout: QVBoxLayout, trip: dict) -> None:
         """Append a single coloured trip bar to *parent_layout*."""

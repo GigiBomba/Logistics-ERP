@@ -4,18 +4,22 @@ from __future__ import annotations
 import json
 import logging
 import os
-import time
 import threading
-from typing import Any, Callable, Dict, List, Optional
+import time
+from typing import Any, Callable
 
 logger = logging.getLogger(__name__)
 
 _LOCK = threading.Lock()
-_translations: Dict[str, Dict[str, str]] = {}
+_translations: dict[str, dict[str, str]] = {}
 _current_lang: str = "en"
-_listeners: List[Callable[[str], None]] = []
-_TRANSLATIONS_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "translations")
-_LANG_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "lang.txt")
+_listeners: list[Callable[[str], None]] = []
+import contextlib
+
+from utils.resource_path import data_path, resource_path
+
+_TRANSLATIONS_DIR = resource_path("data/translations")
+_LANG_FILE = data_path("data/lang.txt")
 
 
 LANGUAGE_NAMES = {
@@ -44,12 +48,12 @@ LANGUAGE_NAMES = {
 }
 
 
-def _load_file(lang: str) -> Dict[str, str]:
+def _load_file(lang: str) -> dict[str, str]:
     path = os.path.join(_TRANSLATIONS_DIR, f"{lang}.json")
     if not os.path.isfile(path):
         return {}
     try:
-        with open(path, "r", encoding="utf-8-sig") as f:
+        with open(path, encoding="utf-8-sig") as f:
             raw = json.load(f)
     except json.JSONDecodeError as e:
         logger.warning("Skipping %s: %s (line %s)", lang, e.msg, e.lineno)
@@ -57,12 +61,12 @@ def _load_file(lang: str) -> Dict[str, str]:
     except Exception as e:
         logger.warning("Skipping %s: %s", lang, e)
         return {}
-    flat: Dict[str, str] = {}
+    flat: dict[str, str] = {}
     _flatten(raw, "", flat)
     return flat
 
 
-def _flatten(d: Dict, prefix: str, out: Dict[str, str]) -> None:
+def _flatten(d: dict, prefix: str, out: dict[str, str]) -> None:
     for k, v in d.items():
         key = f"{prefix}.{k}" if prefix else k
         if isinstance(v, dict):
@@ -105,16 +109,18 @@ def load_translations() -> None:
         logger.info("Translations loaded: %s. Failed: %s", loaded, failed)
 
 
-def t(key: str, default: Optional[str] = None, *args: Any, **kwargs: Any) -> str:
+def t(key: str, default: str | None = None, *args: Any, **kwargs: Any) -> str:
     """Translate a key to the current language.
-    
+
     Falls back to English, then to the key itself, then to default.
     Supports format placeholders: t("hello", name="World")
     """
-    lang_dict = _translations.get(_current_lang, {})
-    msg = lang_dict.get(key)
+    with _LOCK:
+        lang_dict = _translations.get(_current_lang, {})
+        msg = lang_dict.get(key)
     if msg is None:
-        en_dict = _translations.get("en", {})
+        with _LOCK:
+            en_dict = _translations.get("en", {})
         msg = en_dict.get(key)
     if msg is None:
         msg = default if default is not None else key
@@ -151,7 +157,9 @@ def set_language(lang: str) -> None:
         pass
     notified = 0
     failed = 0
-    for cb in list(_listeners):
+    with _LOCK:
+        listeners = list(_listeners)
+    for cb in listeners:
         try:
             cb(lang)
             notified += 1
@@ -168,10 +176,7 @@ def get_language() -> str:
     return _current_lang
 
 
-import functools
-
-@functools.lru_cache(maxsize=1)
-def get_available_languages() -> List[str]:
+def get_available_languages() -> list[str]:
     """Return list of available language codes based on JSON files."""
     os.makedirs(_TRANSLATIONS_DIR, exist_ok=True)
     codes = []
@@ -185,13 +190,14 @@ def get_available_languages() -> List[str]:
     return codes
 
 
-def _get_translations(lang: str) -> Dict[str, str]:
+def _get_translations(lang: str) -> dict[str, str]:
     """Return the full flat translation dict for a given language code.
-    
+
     Falls back to English if the language is not loaded.
     This is used by invoice generation (client invoices always use English).
     """
-    return _translations.get(lang, _translations.get("en", {}))
+    with _LOCK:
+        return _translations.get(lang, _translations.get("en", {}))
 
 
 def get_language_display_name(lang: str) -> str:
@@ -199,14 +205,13 @@ def get_language_display_name(lang: str) -> str:
 
 
 def register_listener(cb: Callable[[str], None]) -> None:
-    _listeners.append(cb)
+    with _LOCK:
+        _listeners.append(cb)
 
 
 def unregister_listener(cb: Callable[[str], None]) -> None:
-    try:
+    with _LOCK, contextlib.suppress(ValueError):
         _listeners.remove(cb)
-    except ValueError:
-        pass
 
 
 def init_language() -> None:
@@ -215,7 +220,7 @@ def init_language() -> None:
     lang = "en"
     try:
         if os.path.isfile(_LANG_FILE):
-            with open(_LANG_FILE, "r", encoding="utf-8") as f:
+            with open(_LANG_FILE, encoding="utf-8") as f:
                 persisted = f.read().strip()
                 if persisted in _translations or persisted == "en":
                     lang = persisted

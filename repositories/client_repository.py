@@ -17,19 +17,50 @@ class ClientRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} WHERE name = ?", (name,)
         )
 
-    def get_all(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
-        if include_inactive:
-            return self._fetchall(
-                f"SELECT * FROM {self.TABLE} ORDER BY name ASC"
-            )
-        return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 ORDER BY name ASC"
+    def search_by_name(self, name: str, fuzzy: bool = True, limit: int = 5) -> List[Dict[str, Any]]:
+        """Exact match first, then fuzzy LIKE match.
+
+        Used by the document automation trip-matcher to find the
+        client whose name appeared in OCR text.
+        """
+        name = (name or "").strip()
+        if not name:
+            return []
+        # Exact match wins.
+        exact = self._fetchone(
+            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND LOWER(TRIM(name)) = LOWER(TRIM(?))",
+            (name,),
         )
+        results: List[Dict[str, Any]] = []
+        if exact:
+            results.append(exact)
+        if fuzzy:
+            like_results = self._fetchall(
+                f"SELECT * FROM {self.TABLE} "
+                "WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' "
+                "ORDER BY name ASC LIMIT ?",
+                (f"%{self._escape_like(name)}%", limit),
+            )
+            for r in like_results:
+                if r["id"] not in {x["id"] for x in results}:
+                    results.append(r)
+        return results[:limit]
+
+    def get_all(self, include_inactive: bool = False, limit: int = 500) -> List[Dict[str, Any]]:
+        where = "" if include_inactive else "WHERE is_active = 1"
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} {where} ORDER BY name ASC LIMIT ?",
+            (limit,),
+        )
+
+    @staticmethod
+    def _escape_like(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
     def search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND name LIKE ? ORDER BY name ASC LIMIT ?",
-            (f"%{query}%", limit),
+            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' ORDER BY name ASC LIMIT ?",
+            (f"%{self._escape_like(query)}%", limit),
         )
 
     def create(self, data: Dict[str, Any]) -> int:
@@ -119,15 +150,16 @@ class ClientRepository(BaseRepository):
             (client_id, months),
         )
 
-    def get_outstanding_invoices(self, client_id: int) -> List[Dict[str, Any]]:
+    def get_outstanding_invoices(self, client_id: int, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
             """SELECT i.*, t.client_name, t.truck_number, t.distance_km,
                       t.total_price_eur AS trip_revenue, t.start_date
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
                WHERE t.client_id = ?
-               ORDER BY i.due_date ASC""",
-            (client_id,),
+               ORDER BY i.due_date ASC
+               LIMIT ?""",
+            (client_id, limit),
         )
 
     def get_outstanding_balance(self, client_id: int) -> float:
@@ -162,20 +194,20 @@ class ClientRepository(BaseRepository):
         return row["cnt"] if row else 0
 
     def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200) -> List[Dict[str, Any]]:
-        q = f"%{query}%"
+        q = f"%{self._escape_like(query)}%"
         active_clause = "" if include_inactive else "AND c.is_active = 1"
         return self._fetchall(
             f"""SELECT c.*
                 FROM {self.TABLE} c
-                WHERE (c.name LIKE ? OR c.contact_person LIKE ? OR c.phone LIKE ?
-                       OR c.email LIKE ? OR c.address LIKE ? OR c.notes LIKE ?)
+                WHERE (c.name LIKE ? ESCAPE '\\' OR c.contact_person LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\'
+                       OR c.email LIKE ? ESCAPE '\\' OR c.address LIKE ? ESCAPE '\\' OR c.notes LIKE ? ESCAPE '\\')
                       {active_clause}
                 ORDER BY c.name ASC
                 LIMIT ?""",
             (q, q, q, q, q, q, limit),
         )
 
-    def get_all_with_revenue(self, include_inactive: bool = False) -> List[Dict[str, Any]]:
+    def get_all_with_revenue(self, include_inactive: bool = False, limit: int = 500) -> List[Dict[str, Any]]:
         active_clause = "" if include_inactive else "WHERE c.is_active = 1"
         return self._fetchall(
             f"""SELECT c.*,
@@ -187,5 +219,7 @@ class ClientRepository(BaseRepository):
                LEFT JOIN invoices i ON i.trip_id = t.id
                {active_clause}
                GROUP BY c.id
-               ORDER BY c.name ASC""",
+               ORDER BY c.name ASC
+               LIMIT ?""",
+            (limit,),
         )

@@ -1,11 +1,9 @@
-import json
 import logging
-import os
 import threading
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from database.db_manager import DatabaseManager
 from repositories.fleet_repository import FleetRepository
@@ -117,9 +115,9 @@ class FleetMaintenanceService:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self._fleet_repo = FleetRepository(db)
-        self._health_cache: Dict[int, TruckHealth] = {}
+        self._health_cache: dict[int, TruckHealth] = {}
         self._cache_lock = threading.Lock()
-        self._summary_cache: Optional[Dict[str, Any]] = None
+        self._summary_cache: Optional[dict[str, Any]] = None
         self._summary_ts: Optional[float] = None
         self._summary_ttl = 60.0
 
@@ -142,10 +140,10 @@ class FleetMaintenanceService:
         )
         self._invalidate_cache(truck_id)
         logger.info("Maint record %d added for truck %d: %s", rid, truck_id, maint_type)
-        
+
         # Auto-update corresponding schedule's last_done_km and last_done_date
         self._auto_update_schedule_on_service(truck_id, maint_type, date, km)
-        
+
         return rid
 
     def _auto_update_schedule_on_service(
@@ -157,18 +155,18 @@ class FleetMaintenanceService:
             schedule = self._fleet_repo.get_maintenance_schedule(truck_id, maint_type)
             if not schedule:
                 return
-            
+
             # Get truck's current odometer reading
             current_km = self._fleet_repo.get_truck_mileage(truck_id)
-            
+
             # Use the provided km if available, otherwise use truck's current odometer
             service_km = km if km is not None else current_km
-            
+
             # Update the schedule's last_done_km and last_done_date
             update_fields = {"last_done_date": date}
             if service_km is not None:
                 update_fields["last_done_km"] = service_km
-            
+
             self._fleet_repo.update_maintenance_schedule(schedule["id"], **update_fields)
             logger.info(
                 "Auto-updated schedule %d for truck %d: last_done_km=%s, last_done_date=%s",
@@ -180,7 +178,7 @@ class FleetMaintenanceService:
     def get_records(
         self, truck_id: Optional[int] = None, maint_type: Optional[str] = None,
         limit: int = 100, offset: int = 0
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         return self._fleet_repo.get_maintenance_records(truck_id, maint_type, limit, offset)
 
     def get_record_count(self, truck_id: Optional[int] = None, maint_type: Optional[str] = None) -> int:
@@ -222,7 +220,7 @@ class FleetMaintenanceService:
         self._invalidate_cache(truck_id)
         return sid
 
-    def get_schedules(self, truck_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_schedules(self, truck_id: Optional[int] = None) -> list[dict[str, Any]]:
         return self._fleet_repo.get_maintenance_schedules(truck_id)
 
     def update_schedule(
@@ -265,7 +263,21 @@ class FleetMaintenanceService:
 
     # ── Predictions ────────────────────────────────────────────────
 
-    def predict_next_service(self, truck_id: int, maint_type: str) -> Optional[Dict[str, Any]]:
+    @staticmethod
+    def _add_months(source: datetime, months: int) -> datetime:
+        """Add calendar months to a date (respects month boundaries).
+
+        E.g. Jan 31 + 1 month = Feb 28 (or 29 in leap year).
+        """
+        total_months = source.year * 12 + source.month + months - 1
+        year = total_months // 12
+        month = total_months % 12 + 1
+        import calendar
+        max_day = calendar.monthrange(year, month)[1]
+        day = min(source.day, max_day)
+        return source.replace(year=year, month=month, day=day)
+
+    def predict_next_service(self, truck_id: int, maint_type: str) -> Optional[dict[str, Any]]:
         s = self._fleet_repo.get_maintenance_schedule(truck_id, maint_type)
         if not s:
             return None
@@ -278,7 +290,7 @@ class FleetMaintenanceService:
         truck = self._fleet_repo.get_truck_mileage(truck_id)
         current_km = truck if truck is not None else 0
 
-        result = {"type": maint_type, "due_by_km": None, "due_by_date": None, "overdue": False, "due_km": None}
+        result = {"type": maint_type, "due_by_km": None, "due_by_date": None, "overdue": False, "due_km": None, "current_km": current_km}
 
         if fixed_expiry:
             result["due_by_date"] = fixed_expiry
@@ -286,8 +298,8 @@ class FleetMaintenanceService:
                 expiry = datetime.strptime(fixed_expiry, "%Y-%m-%d")
                 if expiry < datetime.now():
                     result["overdue"] = True
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to parse fixed_expiry %s: %s", fixed_expiry, exc)
 
         km_remaining = None
         if interval_km and last_km is not None:
@@ -303,22 +315,21 @@ class FleetMaintenanceService:
         if interval_months and last_date:
             try:
                 last_dt = datetime.strptime(last_date, "%Y-%m-%d")
-                due_dt = last_dt + timedelta(days=interval_months * 30)
-                result["due_by_date"] = due_dt.strftime("%d/%m/%Y")
+                due_dt = self._add_months(last_dt, interval_months)
+                result["due_by_date"] = due_dt.strftime("%Y-%m-%d")
                 remaining_days = (due_dt - datetime.now()).days
                 date_remaining = remaining_days
                 if remaining_days <= 0:
                     result["overdue"] = True
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.debug("Failed to predict date-based service for truck %d: %s", truck_id, exc)
 
-        result["current_km"] = current_km
         result["remaining_km"] = km_remaining
         result["remaining_days"] = date_remaining
 
         return result
 
-    def predict_all_upcoming(self, truck_id: int, days_ahead: int = 30) -> List[Dict[str, Any]]:
+    def predict_all_upcoming(self, truck_id: int, days_ahead: int = 30) -> list[dict[str, Any]]:
         results = []
         for mt in MaintType:
             pred = self.predict_next_service(truck_id, mt.value)
@@ -330,8 +341,11 @@ class FleetMaintenanceService:
 
     # ── Health Score ───────────────────────────────────────────────
 
-    def compute_health(self, truck_id: int) -> TruckHealth:
+    def compute_health(self, truck_id: int, rules=None) -> TruckHealth:
         now = datetime.now()
+        if rules is None:
+            from services.operations.rules import Rules
+            rules = Rules()
 
         overdue = 0
         schedules = self.get_schedules(truck_id)
@@ -351,12 +365,17 @@ class FleetMaintenanceService:
                 try:
                     last_dt = datetime.strptime(last_date[:10], "%Y-%m-%d")
                     downtime = (now - last_dt).days
-                except Exception:
-                    pass
-        except Exception:
-            pass
+                except Exception as exc:
+                    logger.debug("Failed to parse last_date %s: %s", last_date, exc)
+        except Exception as exc:
+            logger.debug("Failed to get maintenance last date for truck %d: %s", truck_id, exc)
 
-        penalty = overdue * 15 + recurring * 10 + min(downtime // 30, 30)
+        overdue_weight = rules.get("health_overdue_weight", 15)
+        recurring_weight = rules.get("health_recurring_weight", 10)
+        downtime_weight = rules.get("health_downtime_weight", 30)
+        max_penalty = rules.get("health_max_penalty", 100)
+
+        penalty = min(overdue * overdue_weight + recurring * recurring_weight + min(downtime // 30, downtime_weight), max_penalty)
         score = max(0, 100 - penalty)
         compliance = max(0, 100 - overdue * 10)
 
@@ -392,7 +411,7 @@ class FleetMaintenanceService:
             return health
         return self.compute_health(truck_id)
 
-    def get_all_health(self, force_refresh: bool = False) -> List[TruckHealth]:
+    def get_all_health(self, force_refresh: bool = False) -> list[TruckHealth]:
         if force_refresh:
             ids = self._fleet_repo.get_active_truck_ids()
             return [self.compute_health(tid) for tid in ids]
@@ -407,10 +426,11 @@ class FleetMaintenanceService:
 
     # ── Summary / Dashboard ────────────────────────────────────────
 
-    def get_summary(self, force: bool = False) -> Dict[str, Any]:
+    def get_summary(self, force: bool = False) -> dict[str, Any]:
         now_ts = datetime.now().timestamp()
-        if not force and self._summary_cache and (now_ts - (self._summary_ts or 0)) < self._summary_ttl:
-            return self._summary_cache
+        with self._cache_lock:
+            if not force and self._summary_cache and (now_ts - (self._summary_ts or 0)) < self._summary_ttl:
+                return self._summary_cache
 
         result = {}
 
@@ -423,11 +443,36 @@ class FleetMaintenanceService:
 
         result["trucks_needing_service"] = self._fleet_repo.count_active_maintenance_schedules()
 
+        # Single-pass overdue detection: fetch all schedules with current mileage
         overdue_schedules = 0
-        for s in self.get_schedules():
-            pred = self.predict_next_service(s["truck_id"], s["maintenance_type"])
-            if pred and pred.get("overdue"):
-                overdue_schedules += 1
+        now = datetime.now()
+        for s in self._fleet_repo.get_all_schedules_flat():
+            current_km = float(s.get("current_km") or 0)
+            last_km = s.get("last_done_km")
+            interval_km = s.get("interval_km")
+            if interval_km and last_km is not None:
+                next_km = float(last_km) + interval_km
+                if current_km >= next_km:
+                    overdue_schedules += 1
+                    continue
+            last_date = s.get("last_done_date")
+            interval_months = s.get("interval_months")
+            if interval_months and last_date:
+                try:
+                    last_dt = datetime.strptime(last_date, "%Y-%m-%d")
+                    due_dt = self._add_months(last_dt, interval_months)
+                    if due_dt <= now:
+                        overdue_schedules += 1
+                        continue
+                except Exception:
+                    pass
+            fixed_expiry = s.get("fixed_expiry_date")
+            if fixed_expiry:
+                try:
+                    if datetime.strptime(fixed_expiry, "%Y-%m-%d") <= now:
+                        overdue_schedules += 1
+                except Exception:
+                    pass
         result["overdue_schedules"] = overdue_schedules
 
         type_cost = self._fleet_repo.get_maintenance_cost_by_type()
@@ -442,12 +487,13 @@ class FleetMaintenanceService:
         health_scores = self.get_all_health()
         result["avg_health"] = round(sum(h.score for h in health_scores) / max(len(health_scores), 1), 1)
 
-        self._summary_cache = result
-        self._summary_ts = now_ts
+        with self._cache_lock:
+            self._summary_cache = result
+            self._summary_ts = now_ts
         return result
 
     def _invalidate_cache(self, truck_id: int):
         with self._cache_lock:
             self._health_cache.pop(truck_id, None)
-        self._summary_cache = None
-        self._summary_ts = None
+            self._summary_cache = None
+            self._summary_ts = None

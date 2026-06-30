@@ -6,32 +6,45 @@ sidebar navigation, view switching via ``QStackedWidget``, and service lifecycle
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Any, Dict, Optional
+from typing import Any
 
-from PySide6.QtCore import Qt, QTimer, QObject
+from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
-    QVBoxLayout,
+    QGraphicsOpacityEffect,
     QLabel,
+    QMainWindow,
+    QVBoxLayout,
+    QWidget,
 )
 
 from config import Config
-from ui.app_shell import AppShell
-from services.i18n import t
-from services.trip_service import TripService
 from services.client_service import ClientService
 from services.fleet_service import FleetService
 from services.fuel_price_service import FuelPriceService
-from services.operations.event_bus import EventBus, SETTINGS_UPDATED, ALERT_CREATED, ALERT_RESOLVED
+from services.i18n import t
+from services.operations.event_bus import ALERT_CREATED, ALERT_RESOLVED, SETTINGS_UPDATED, EventBus
+from services.trip_service import TripService
+from ui.app_shell import AppShell
 from ui.views import (
-    QtCalculatorView, QtOverviewView, QtRoutePlannerView,
-    QtAnalyticsView, QtRouteHistoryView, QtHistoryView,
-    QtDispatchBoardView, QtFleetTrackingView, QtFleetTab,
-    QtDriverManager, QtClientWorkspace, QtDocumentCenterView,
-    QtMaintenanceAnalyticsView, QtMaintenanceControlPanel,
-    QtTachoImportView, QtGeneratorsView, QtSettingsView,
+    QtAnalyticsView,
+    QtCalculatorView,
+    QtClientWorkspace,
+    QtDispatchBoardView,
+    QtDocumentCenterView,
+    QtDriverManager,
+    QtFleetTab,
+    QtFleetTrackingView,
+    QtGeneratorsView,
+    QtHistoryView,
+    QtMaintenanceAnalyticsView,
+    QtMaintenanceControlPanel,
+    QtOverviewView,
+    QtRouteHistoryView,
+    QtRoutePlannerView,
+    QtSettingsView,
+    QtTachoImportView,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,18 +66,21 @@ class MainWindow(QMainWindow):
         self.ops = ops
         self.prefs = prefs
 
-        self._event_bus = EventBus()
+        self._event_bus = ops.event_bus if ops is not None else EventBus()
         self._module_cache: dict = {}
-        self._active_module: Optional[str] = None
+        self._active_module: str | None = None
+        self._fuel_timer: QTimer | None = None
+
+        self._page_anim: QPropertyAnimation | None = None
 
         self._init_services()
         self._build_ui()
         self._setup_shortcuts()
         self._init_fuel_status()
 
-        self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
-        self._event_bus.subscribe(ALERT_CREATED, self._on_alert_event)
-        self._event_bus.subscribe(ALERT_RESOLVED, self._on_alert_event)
+        self._sub_settings = self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        self._sub_alert_created = self._event_bus.subscribe(ALERT_CREATED, self._on_alert_event)
+        self._sub_alert_resolved = self._event_bus.subscribe(ALERT_RESOLVED, self._on_alert_event)
 
         # Initial alert refresh
         QTimer.singleShot(500, self._refresh_alerts)
@@ -79,7 +95,7 @@ class MainWindow(QMainWindow):
         self.trip_service = TripService(self.db)
         self.client_service = ClientService(self.db)
 
-        self.api = self.api
+        # self.api is already assigned in __init__
 
         if self.ops is None:
             from services.operations.operations_engine import OperationsEngine
@@ -107,7 +123,7 @@ class MainWindow(QMainWindow):
         self.nav = self.app_shell.nav
 
         self._build_nav()
-        self._switch_module("overview")
+        self.app_shell.view_container.updateGeometry()
 
     def _build_nav(self):
         """Build the full navigation sidebar."""
@@ -155,10 +171,8 @@ class MainWindow(QMainWindow):
     def _update_fuel_status(self):
         text = self._fuel_status_text()
         logger.debug("Fuel status: %s", text)
-        try:
+        with contextlib.suppress(Exception):
             self.app_shell.set_fuel_status(text)
-        except Exception:
-            pass
 
     def _fuel_status_text(self) -> str:
         if self._fuel_service.is_available():
@@ -175,16 +189,40 @@ class MainWindow(QMainWindow):
             )
         return f"⛽ {t('main.fuel_offline')}"
 
-    def _switch_module(self, key: str, data: Optional[Dict[str, Any]] = None):
+    def _animate_page_switch(self, frame: QWidget) -> None:
+        """Cross-fade to *frame* using QPropertyAnimation on opacity.
+
+        Plan spec (Section 6, item 1): 120ms, ease-in-out, content area only.
+        """
+        if self._page_anim is not None:
+            self._page_anim.stop()
+            self._page_anim.deleteLater()
+            self._page_anim = None
+
+        prev_effect = frame.graphicsEffect()
+        if isinstance(prev_effect, QGraphicsOpacityEffect):
+            prev_effect.deleteLater()
+
+        effect = QGraphicsOpacityEffect(frame)
+        frame.setGraphicsEffect(effect)
+        effect.setOpacity(0.0)
+        self.app_shell.view_container.setCurrentWidget(frame)
+
+        self._page_anim = QPropertyAnimation(effect, b"opacity")
+        self._page_anim.setDuration(120)
+        self._page_anim.setStartValue(0.0)
+        self._page_anim.setEndValue(1.0)
+        self._page_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._page_anim.start()
+
+    def _switch_module(self, key: str, data: dict[str, Any] | None = None):
         old_key = self._active_module
         if old_key and old_key in self._module_cache:
             cache = self._module_cache[old_key]
             obj = cache.get("obj")
             if hasattr(obj, "shutdown"):
-                try:
+                with contextlib.suppress(Exception):
                     obj.shutdown()
-                except Exception:
-                    pass
 
         if key not in self._module_cache:
             self._module_cache[key] = self._create_module(key)
@@ -192,75 +230,62 @@ class MainWindow(QMainWindow):
         cache = self._module_cache.get(key)
         if cache and cache.get("frame") is not None:
             frame = cache["frame"]
-            self.app_shell.view_container.setCurrentWidget(frame)
+            self._animate_page_switch(frame)
             obj = cache.get("obj")
             if obj and hasattr(obj, "wakeup"):
-                try:
+                with contextlib.suppress(Exception):
                     obj.wakeup()
-                except Exception:
-                    pass
             if data and obj and hasattr(obj, "handle_nav_data"):
-                try:
+                with contextlib.suppress(Exception):
                     obj.handle_nav_data(data)
-                except Exception:
-                    pass
 
         self._active_module = key
-        self.app_shell.set_breadcrumb(t(f"nav.{key}") if key != "overview" else t("nav.overview"))
-        try:
+        if key == "overview":
+            crumb = t("nav.overview", default="Overview")
+        else:
+            # Humanise the key as a last-ditch fallback so the breadcrumb
+            # never shows a raw i18n key (e.g. "nav.documents").
+            crumb = t(f"nav.{key}", default=key.replace("_", " ").title())
+        self.app_shell.set_breadcrumb(crumb)
+        with contextlib.suppress(Exception):
             self.nav.highlight(key)
-        except Exception:
-            pass
+
+    _VIEW_FACTORIES = None
 
     def _create_module(self, key: str):
-        """Factory for view modules."""
+        """Factory for view modules — registry pattern."""
         parent = self.app_shell.view_container
-        if key == "calculator":
-            widget = QtCalculatorView(
-                parent,
-                db=self.db,
-                fleet_service=self.fleet_service,
-                trip_service=self.trip_service,
-                client_service=self.client_service,
-                prefs=self.prefs,
-                ops=self.ops,
-                fuel_service=self._fuel_service,
-                api=self.api,
-            )
-        elif key == "overview":
-            widget = QtOverviewView(parent, db=self.db, ops=self.ops)
-        elif key == "route_planner":
-            widget = QtRoutePlannerView(parent, db=self.db, controller=self)
-        elif key == "analytics":
-            widget = QtAnalyticsView(parent, db=self.db, prefs=self.prefs)
-        elif key == "history":
-            widget = QtHistoryView(parent, db=self.db, controller=self, prefs=self.prefs, ops=self.ops)
-        elif key == "route_history":
-            widget = QtRouteHistoryView(parent, db=self.db, controller=self)
-        elif key == "dispatch_board":
-            widget = QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops)
-        elif key == "tracking":
-            widget = QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module)
-        elif key == "fleet":
-            widget = QtFleetTab(parent, db=self.db, ops=self.ops)
-        elif key == "driver_manager":
-            widget = QtDriverManager(parent, db=self.db, prefs=self.prefs)
-        elif key == "clients":
-            widget = QtClientWorkspace(parent, db=self.db, prefs=self.prefs)
-        elif key == "documents":
-            widget = QtDocumentCenterView(parent, db=self.db)
-        elif key == "maintenance":
-            widget = QtMaintenanceAnalyticsView(parent, db=self.db)
-        elif key == "maintenance_control":
-            widget = QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops)
-        elif key == "tachograph":
-            widget = QtTachoImportView(parent, db=self.db)
-        elif key == "invoices":
-            widget = QtGeneratorsView(parent, db=self.db, prefs=self.prefs)
-        elif key == "settings":
-            widget = QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops)
-        else:
-            widget = PlaceholderView(parent, key)
+
+        if MainWindow._VIEW_FACTORIES is None:
+            MainWindow._VIEW_FACTORIES = {
+                "calculator": lambda: QtCalculatorView(
+                    parent, db=self.db, fleet_service=self.fleet_service,
+                    trip_service=self.trip_service, client_service=self.client_service,
+                    prefs=self.prefs, ops=self.ops, fuel_service=self._fuel_service,
+                    api=self.api,
+                ),
+                "overview": lambda: QtOverviewView(parent, db=self.db, ops=self.ops),
+                "route_planner": lambda: QtRoutePlannerView(parent, db=self.db, controller=self),
+                "analytics": lambda: QtAnalyticsView(parent, db=self.db, prefs=self.prefs),
+                "history": lambda: QtHistoryView(parent, db=self.db, controller=self, prefs=self.prefs, ops=self.ops),
+                "route_history": lambda: QtRouteHistoryView(parent, db=self.db, controller=self),
+                "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops),
+                "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module),
+                "fleet": lambda: QtFleetTab(parent, db=self.db, ops=self.ops),
+                "driver_manager": lambda: QtDriverManager(parent, db=self.db, prefs=self.prefs),
+                "clients": lambda: QtClientWorkspace(parent, db=self.db, prefs=self.prefs),
+                "documents": lambda: QtDocumentCenterView(
+                    parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                ),
+                "maintenance": lambda: QtMaintenanceAnalyticsView(parent, db=self.db),
+                "maintenance_control": lambda: QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops),
+                "tachograph": lambda: QtTachoImportView(parent, db=self.db),
+                "invoices": lambda: QtGeneratorsView(parent, db=self.db, prefs=self.prefs),
+                "settings": lambda: QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops),
+            }
+
+        factory = MainWindow._VIEW_FACTORIES.get(key)
+        widget = factory() if factory else PlaceholderView(parent, key)
         self.app_shell.view_container.addWidget(widget)
         return {"frame": widget, "obj": widget}
 
@@ -271,7 +296,9 @@ class MainWindow(QMainWindow):
         self._switch_module("history")
 
     def _on_settings_updated(self, ev):
-        pass
+        if self.ops is not None and hasattr(self.ops, '_configure_smtp_from_db'):
+            with contextlib.suppress(Exception):
+                self.ops._configure_smtp_from_db()
 
     def _on_alert_event(self, ev):
         """Refresh alert count and data when alerts are created or resolved."""
@@ -289,7 +316,10 @@ class MainWindow(QMainWindow):
             logger.debug("Could not refresh alerts", exc_info=True)
 
     def closeEvent(self, event):
-        # Shut down all cached view modules
+        if self._page_anim is not None:
+            self._page_anim.stop()
+            self._page_anim.deleteLater()
+            self._page_anim = None
         for key, cached in list(self._module_cache.items()):
             try:
                 obj = cached.get("obj") or cached.get("frame")
@@ -300,10 +330,8 @@ class MainWindow(QMainWindow):
             except Exception:
                 logger.debug("Error shutting down module %s", key, exc_info=True)
         self._module_cache.clear()
-        try:
+        with contextlib.suppress(Exception):
             self.app_shell.destroy()
-        except Exception:
-            pass
         try:
             if self.ops is not None:
                 self.ops.stop()
@@ -316,21 +344,22 @@ class MainWindow(QMainWindow):
             pass
         if self._fuel_timer is not None:
             self._fuel_timer.stop()
+        self._event_bus.unsubscribe(SETTINGS_UPDATED, self._sub_settings)
+        self._event_bus.unsubscribe(ALERT_CREATED, self._sub_alert_created)
+        self._event_bus.unsubscribe(ALERT_RESOLVED, self._sub_alert_resolved)
         event.accept()
 
 
 class PlaceholderView(QWidget):
     """Empty placeholder view used until a module is fully migrated."""
 
-    def __init__(self, parent: Optional[QWidget], key: str):
+    def __init__(self, parent: QWidget | None, key: str):
         super().__init__(parent)
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
 
         label = QLabel(f"{key}\n(Module not yet migrated)")
         label.setProperty("role", "muted")
-        label.style().unpolish(label)
-        label.style().polish(label)
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
 

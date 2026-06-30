@@ -7,29 +7,36 @@ history table.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
-from typing import Optional
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
-    QWidget,
+    QFileDialog,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QVBoxLayout,
-    QHBoxLayout,
-    QFileDialog,
+    QWidget,
 )
 
-from services.i18n import t, register_listener, unregister_listener
+from services.i18n import register_listener, t, unregister_listener
 from services.tacho_service import TachoService
-from ui.design_tokens import (
-    DANGER_TEXT, SUCCESS_TEXT, WARNING_DIM, WARNING_TEXT, BG_SURFACE, SP,
-)
 from ui.components import (
-    Card, CardHeader, Btn, PageTitle, Label, SectionTitle, Divider,
+    Btn,
+    Card,
+    CardHeader,
+    Label,
+    PageTitle,
 )
-from ui.theme import COLORS
+from ui.design_tokens import (
+    DANGER_TEXT,
+    SP,
+    SUCCESS_TEXT,
+    WARNING_DIM,
+    WARNING_TEXT,
+)
 from ui.widgets import StyledTableWidget
 
 logger = logging.getLogger(__name__)
@@ -38,15 +45,23 @@ logger = logging.getLogger(__name__)
 class QtTachoImportView(QWidget):
     """Tachograph import view with import panel (left) and history (right)."""
 
+    # Cross-thread signal: the import worker emits this from a non-GUI
+    # thread; Qt marshals the slot to the GUI thread.  (Previously we
+    # used ``QTimer.singleShot(0, ...)`` from the worker, but Qt creates
+    # the timer in the calling thread and its event loop never runs, so
+    # the result never reached the UI.)
+    import_completed = Signal(dict)
+
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
     ):
         super().__init__(parent)
         self.db = db
         self.tacho_service = TachoService(db) if db else None
 
+        self.import_completed.connect(self._on_import_complete)
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
@@ -86,7 +101,7 @@ class QtTachoImportView(QWidget):
         header = QFrame()
         header.setFixedHeight(72)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(SP["10"], 0, SP["10"], 0)
+        header_layout.setContentsMargins(SP["5"], 0, SP["5"], 0)
         header_layout.setSpacing(SP["3"])
         title = PageTitle(None, t("tacho.title"))
         header_layout.addWidget(title)
@@ -292,7 +307,9 @@ class QtTachoImportView(QWidget):
             except Exception as e:
                 logger.exception("Import thread error")
                 result = {"success": False, "error": str(e)}
-            QTimer.singleShot(0, lambda r=result: self._on_import_complete(r))
+            # ``Signal.emit`` is thread-safe — the connected slot runs on
+            # the GUI thread where widget updates are valid.
+            self.import_completed.emit(result)
 
         threading.Thread(target=do_import, daemon=True).start()
 
@@ -376,13 +393,14 @@ class QtTachoImportView(QWidget):
         QTimer.singleShot(0, self._rebuild_ui)
 
     def _rebuild_ui(self) -> None:
-        """Refresh translations on language change.
-
-        A full rebuild of static labels would require destroying and
-        recreating widgets. For simplicity we refresh the dynamic table
-        content; static labels in the left panel are rebuilt by the
-        parent view manager when appropriate.
-        """
+        """Refresh translations on language change by rebuilding the UI."""
+        # Clear all widgets
+        while self.layout().count():
+            item = self.layout().takeAt(0)
+            w = item.widget()
+            if w is not None:
+                w.deleteLater()
+        self._build_ui()
         self._refresh_history()
 
     # ── Lifecycle ────────────────────────────────────────────────────────────
@@ -393,7 +411,5 @@ class QtTachoImportView(QWidget):
 
     def shutdown(self) -> None:
         """Clean up i18n listener when the view is destroyed."""
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass

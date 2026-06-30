@@ -4,23 +4,27 @@ import os
 import threading
 import time
 from datetime import datetime
-from typing import Dict, Optional
+from typing import Optional
 
 import requests
 
+from utils.resource_path import data_path
+
 logger = logging.getLogger("exchange_rate")
 
-CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "exchange_rates_cache.json")
+CACHE_FILE = data_path("data/exchange_rates_cache.json")
 CACHE_TTL_SECONDS = 3600  # 1 hour
 REQUEST_TIMEOUT = 5
 BASE_CURRENCY = "EUR"
 
 from config import Config
+from services.base_worker import GracefulWorker
+from utils.formatting import format_age
 
 PRIMARY_API = Config.CURRENCY_API_PRIMARY
 FALLBACK_API = Config.CURRENCY_API_FALLBACK
 
-_DEFAULT_RATES: Dict[str, float] = {
+_DEFAULT_RATES: dict[str, float] = {
     "EUR": 1.0,
     "RON": 4.97,
     "USD": 1.08,
@@ -40,7 +44,7 @@ _DEFAULT_RATES: Dict[str, float] = {
 }
 
 
-class ExchangeRateService:
+class ExchangeRateService(GracefulWorker):
     _instance = None
     _lock = threading.Lock()
 
@@ -56,7 +60,9 @@ class ExchangeRateService:
         if self._initialized:
             return
         self._initialized = True
-        self._rates: Dict[str, float] = dict(_DEFAULT_RATES)
+        GracefulWorker.__init__(self)
+        self._rates: dict[str, float] = dict(_DEFAULT_RATES)
+        self._rates_lock = threading.Lock()
         self._last_updated: Optional[float] = None
         self._last_fetch_ok: bool = False
         self._refresh_in_progress = False
@@ -70,14 +76,16 @@ class ExchangeRateService:
     def get_rate(self, currency_code: str) -> float:
         if currency_code == BASE_CURRENCY:
             return 1.0
-        rate = self._rates.get(currency_code)
+        with self._rates_lock:
+            rate = self._rates.get(currency_code)
         if rate is None:
             logger.warning("Unknown currency %s, treating as 1:1 with EUR", currency_code)
             return 1.0
         return rate
 
-    def get_all_rates(self) -> Dict[str, float]:
-        return dict(self._rates)
+    def get_all_rates(self) -> dict[str, float]:
+        with self._rates_lock:
+            return dict(self._rates)
 
     def convert(self, amount: float, from_currency: str, to_currency: str) -> float:
         if from_currency == to_currency:
@@ -106,8 +114,7 @@ class ExchangeRateService:
             return True
         self._refresh_in_progress = True
         if background:
-            t = threading.Thread(target=self._do_refresh, daemon=True)
-            t.start()
+            self._spawn("exchange-rate-refresh", self._do_refresh)
             return True
         return self._do_refresh()
 
@@ -122,11 +129,13 @@ class ExchangeRateService:
                 if r.status_code == 200:
                     data = r.json()
                     raw = data.get("rates", {})
-                    for code, rate in raw.items():
-                        self._rates[code] = float(rate)
-                    self._rates[BASE_CURRENCY] = 1.0
+                    with self._rates_lock:
+                        for code, rate in raw.items():
+                            self._rates[code] = float(rate)
+                        self._rates[BASE_CURRENCY] = 1.0
                     self._last_updated = time.time()
                     self._last_fetch_ok = True
+                    self._refresh_in_progress = False
                     self._save_cache()
                     logger.info("Exchange rates refreshed OK (%s): %d currencies", url, len(raw))
                     return True
@@ -157,23 +166,17 @@ class ExchangeRateService:
         return time.time() - self._last_updated
 
     def _age_str(self) -> str:
-        age = self.age_seconds()
-        if age is None:
-            return "never"
-        if age < 60:
-            return f"{age:.0f}s"
-        if age < 3600:
-            return f"{age/60:.0f}m"
-        return f"{age/3600:.1f}h"
+        return format_age(self.age_seconds())
 
     # ── Cache persistence ──────────────────────────────────────────────
 
     def _load_cache(self):
         try:
             if os.path.isfile(CACHE_FILE):
-                with open(CACHE_FILE, "r", encoding="utf-8") as f:
+                with open(CACHE_FILE, encoding="utf-8") as f:
                     data = json.load(f)
-                self._rates.update(data.get("rates", {}))
+                with self._rates_lock:
+                    self._rates.update(data.get("rates", {}))
                 ts = data.get("timestamp")
                 if ts:
                     self._last_updated = ts

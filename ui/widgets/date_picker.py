@@ -7,23 +7,23 @@ containing a fully dark-styled ``QCalendarWidget``.
 
 from __future__ import annotations
 
-from typing import Optional, Union
 from datetime import date, datetime
 
-from PySide6.QtCore import Qt, QDate, QPoint, Signal
+from PySide6.QtCore import QDate, QPoint, Qt, Signal
 from PySide6.QtWidgets import (
-    QWidget,
-    QLineEdit,
-    QPushButton,
-    QHBoxLayout,
-    QVBoxLayout,
+    QApplication,
     QCalendarWidget,
     QDialog,
     QDialogButtonBox,
+    QHBoxLayout,
+    QLineEdit,
+    QPushButton,
     QSizePolicy,
-    QApplication,
+    QVBoxLayout,
+    QWidget,
 )
 
+from services.i18n import t
 
 class QtDatePicker(QWidget):
     """Composite date picker with a dark calendar popup.
@@ -36,11 +36,11 @@ class QtDatePicker(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         date_pattern: str = "yyyy-MM-dd",
         placeholder: str = "YYYY-MM-DD",
         height: int = 38,
-        initial_date: Optional[Union[QDate, date, str]] = None,
+        initial_date: QDate | date | str | None = None,
     ):
         super().__init__(parent)
         self._date_pattern = date_pattern
@@ -60,12 +60,13 @@ class QtDatePicker(QWidget):
         self.calendar_button = QPushButton("\u25BC", self)  # ▼
         self.calendar_button.setFixedSize(height, height)
         self.calendar_button.setProperty("variant", "ghost")
-        self.calendar_button.setToolTip("Open calendar")
+        self.calendar_button.setToolTip(t("date_picker.open_calendar", default="Open calendar"))
         layout.addWidget(self.calendar_button)
 
         self.calendar_button.clicked.connect(self._open_calendar)
 
-        self._current_date: Optional[QDate] = None
+        self._calendar_dialog: _CalendarDialog | None = None
+        self._current_date: QDate | None = None
         if initial_date is not None:
             self.set_date(initial_date)
         else:
@@ -73,11 +74,11 @@ class QtDatePicker(QWidget):
 
     # ── Public API ─────────────────────────────────────────────────────────────
 
-    def date(self) -> Optional[QDate]:
+    def date(self) -> QDate | None:
         """Return the currently selected ``QDate`` or ``None``."""
         return self._current_date
 
-    def date_py(self) -> Optional[date]:
+    def date_py(self) -> date | None:
         """Return the currently selected ``datetime.date`` or ``None``."""
         if self._current_date is None or not self._current_date.isValid():
             return None
@@ -87,7 +88,7 @@ class QtDatePicker(QWidget):
         """Return the formatted date string shown in the field."""
         return self.line_edit.text()
 
-    def set_date(self, value: Union[QDate, date, str, datetime, None]) -> None:
+    def set_date(self, value: QDate | date | str | datetime | None) -> None:
         """Set the picker date from a QDate, datetime.date, string, or datetime."""
         qdate = self._to_qdate(value)
         if qdate is None or not qdate.isValid():
@@ -102,7 +103,7 @@ class QtDatePicker(QWidget):
         """Compatibility alias for ``set_date`` with a string."""
         self.set_date(value)
 
-    def get_date(self) -> Optional[date]:
+    def get_date(self) -> date | None:
         """Compatibility alias returning ``datetime.date``."""
         return self.date_py()
 
@@ -114,7 +115,7 @@ class QtDatePicker(QWidget):
 
     # ── Internals ──────────────────────────────────────────────────────────────
 
-    def _to_qdate(self, value: Union[QDate, date, str, datetime, None]) -> Optional[QDate]:
+    def _to_qdate(self, value: QDate | date | str | datetime | None) -> QDate | None:
         if value is None:
             return None
         if isinstance(value, QDate):
@@ -141,10 +142,13 @@ class QtDatePicker(QWidget):
         return None
 
     def _open_calendar(self) -> None:
-        dialog = _CalendarDialog(self, self._current_date)
-        dialog.position_below(self)
-        if dialog.exec() == QDialog.Accepted:
-            selected = dialog.selected_date()
+        if self._calendar_dialog is not None:
+            self._calendar_dialog.close()
+            self._calendar_dialog.deleteLater()
+        self._calendar_dialog = _CalendarDialog(self, self._current_date)
+        self._calendar_dialog.position_below(self)
+        if self._calendar_dialog.exec() == QDialog.Accepted:
+            selected = self._calendar_dialog.selected_date()
             if selected is not None and selected.isValid():
                 self.set_date(selected)
 
@@ -152,9 +156,9 @@ class QtDatePicker(QWidget):
 class _CalendarDialog(QDialog):
     """Modal popup dialog containing a dark-styled QCalendarWidget."""
 
-    def __init__(self, parent: Optional[QWidget], initial_date: Optional[QDate] = None):
+    def __init__(self, parent: QWidget | None, initial_date: QDate | None = None):
         super().__init__(parent)
-        self.setWindowTitle("Select date")
+        self.setWindowTitle(t("date_picker.select_date", default="Select date"))
         self.setModal(True)
         self.setWindowFlags(Qt.Dialog | Qt.FramelessWindowHint)
         self.setFixedSize(280, 300)

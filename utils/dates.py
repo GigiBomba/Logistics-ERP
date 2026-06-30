@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 
@@ -36,11 +36,14 @@ def days_ago(date_str: str, fmt: str = "%Y-%m-%d") -> Optional[int]:
     dt = parse_date(date_str, fmt)
     if dt is None:
         return None
-    return (datetime.now() - dt).days
+    now = datetime.now()
+    if dt.tzinfo is None:
+        return (now.date() - dt.date()).days
+    return (now.astimezone() - dt).days
 
 
-def is_expired(date_str: str, fmt: str = "%Y-%m-%d") -> bool:
+def is_expired(date_str: str, fmt: str = "%Y-%m-%d") -> Optional[bool]:
     days = days_ago(date_str, fmt)
     if days is None:
-        return False
+        return None
     return days > 0

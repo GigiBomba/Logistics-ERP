@@ -18,49 +18,47 @@ Usage as standalone window (QDialog)::
 
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 import os
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QAbstractItemView,
+    QColorDialog,
     QDialog,
+    QFileDialog,
     QFrame,
     QGridLayout,
     QHBoxLayout,
-    QHeaderView,
+    QInputDialog,
     QLabel,
     QMessageBox,
-    QPushButton,
-    QSizePolicy,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
-    QColorDialog,
-    QFileDialog,
-    QInputDialog,
-    QAbstractItemView,
 )
 
-from services.i18n import t, register_listener, unregister_listener
+from repositories.client_repository import ClientRepository
 from services.app_state import AppState
+from services.i18n import register_listener, t, unregister_listener
 from services.invoicing.config_manager import load_company_config, save_company_config
 from services.invoicing.service import InvoiceService
-from services.trip_service import TripService
-from repositories.client_repository import ClientRepository
-from services.operations.event_bus import EventBus, SETTINGS_UPDATED
+from services.operations.event_bus import SETTINGS_UPDATED, EventBus
 from services.preferences import PreferencesManager
+from services.trip_service import TripService
+from ui.components import Btn, Card, Divider, Label, PageTitle, SectionTitle
 from ui.theme import COLORS, S
-from ui.components import Card, Btn, PageTitle, Label, Divider, SectionTitle
 from ui.widgets import (
-    StyledLineEdit,
-    StyledComboBox,
-    StyledTextEdit,
-    StyledCheckBox,
-    StyledTableWidget,
     ScrollableFormContainer,
+    StyledCheckBox,
+    StyledComboBox,
+    StyledLineEdit,
+    StyledTableWidget,
+    StyledTextEdit,
     field,
 )
 
@@ -84,24 +82,24 @@ class QtInvoiceEditor(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
-        prefs: Optional[PreferencesManager] = None,
+        prefs: PreferencesManager | None = None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs or (PreferencesManager(db) if db else None)
         self._trip_service = TripService(db) if db else None
         self._client_repo = ClientRepository(db) if db else None
-        self._invoice_service: Optional[InvoiceService] = None  # lazy
+        self._invoice_service: InvoiceService | None = None  # lazy
         self._app_state = AppState()
         self._event_bus = EventBus()
 
         # ── Data state ────────────────────────────────────────────────────────
-        self._clients: List[Dict[str, Any]] = []
-        self._client_map: Dict[str, Dict[str, Any]] = {}
-        self._trips: List[Dict[str, Any]] = []
-        self._trip_map: Dict[str, Dict[str, Any]] = {}
+        self._clients: list[dict[str, Any]] = []
+        self._client_map: dict[str, dict[str, Any]] = {}
+        self._trips: list[dict[str, Any]] = []
+        self._trip_map: dict[str, dict[str, Any]] = {}
 
         # Invoice data (replaces tk.StringVar with plain attributes)
         self._invoice_number: str = self._gen_invoice_number()
@@ -115,7 +113,7 @@ class QtInvoiceEditor(QWidget):
         self._currency: str = self.prefs.get_currency() if self.prefs else "EUR"
 
         # Additional line items
-        self._addon_items: List[Dict[str, Any]] = []
+        self._addon_items: list[dict[str, Any]] = []
 
         # Invoice mode
         self._is_client_invoice: bool = True
@@ -132,8 +130,8 @@ class QtInvoiceEditor(QWidget):
         self._distance: str = ""
 
         # Dynamic stops
-        self._loading_stops: List[Dict[str, str]] = [{"value": ""}]
-        self._unloading_stops: List[Dict[str, str]] = [{"value": ""}]
+        self._loading_stops: list[dict[str, str]] = [{"value": ""}]
+        self._unloading_stops: list[dict[str, str]] = [{"value": ""}]
 
         # Free-text description
         self._description: str = ""
@@ -150,7 +148,7 @@ class QtInvoiceEditor(QWidget):
         self._client_address: str = ""
         self._client_phone: str = ""
         self._client_email: str = ""
-        self._selected_client_id: Optional[int] = None
+        self._selected_client_id: int | None = None
 
         # Company info
         self._company_name: str = ""
@@ -161,12 +159,13 @@ class QtInvoiceEditor(QWidget):
         self._company_email: str = ""
 
         # Selected trip
-        self._selected_trip_id: Optional[int] = None
-        self._selected_trip_data: Optional[Dict[str, Any]] = None
+        self._selected_trip_id: int | None = None
+        self._selected_trip_data: dict[str, Any] | None = None
 
         # i18n
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
+        self._listener_registered = True
 
         # ── Build UI ─────────────────────────────────────────────────────────
         self._build_ui()
@@ -180,6 +179,9 @@ class QtInvoiceEditor(QWidget):
 
     def wakeup(self) -> None:
         """Load DB-dependent data. Called when the tab becomes visible."""
+        if not getattr(self, '_listener_registered', False):
+            register_listener(self._language_callback)
+            self._listener_registered = True
         if not self._data_loaded:
             self._load_clients()
             self._load_trips()
@@ -188,14 +190,10 @@ class QtInvoiceEditor(QWidget):
 
     def shutdown(self) -> None:
         """Clean up resources."""
-        try:
+        with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self._event_bus.unsubscribe(SETTINGS_UPDATED, self._on_settings_updated)
-        except Exception:
-            pass
 
     def _on_language_changed(self, _lang: str) -> None:
         """Refresh UI text when language changes."""
@@ -417,7 +415,7 @@ class QtInvoiceEditor(QWidget):
 
         # ── From (Company) ────────────────────────────────────────────────
         from_card = self._make_card()
-        from_layout = QVBoxLayout(from_card)
+        from_layout = from_card.layout()
         from_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         from_layout.setSpacing(S["2"])
 
@@ -448,7 +446,7 @@ class QtInvoiceEditor(QWidget):
 
         # ── Bill To (Client) ──────────────────────────────────────────────
         to_card = self._make_card()
-        to_layout = QVBoxLayout(to_card)
+        to_layout = to_card.layout()
         to_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         to_layout.setSpacing(S["2"])
 
@@ -507,11 +505,15 @@ class QtInvoiceEditor(QWidget):
         self._due_date_label.setText(self._due_date)
         self._payment_terms_label.setText(self._payment_terms)
 
-        # Description
+        # Description (block signals to prevent textChanged cascades)
+        self._desc_text_edit.blockSignals(True)
         self._desc_text_edit.setPlainText(self._description)
+        self._desc_text_edit.blockSignals(False)
 
         # Notes
+        self._notes_edit.blockSignals(True)
         self._notes_edit.setPlainText(self._notes)
+        self._notes_edit.blockSignals(False)
 
     # ── Invoice Details Section ──────────────────────────────────────────────
 
@@ -525,7 +527,7 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(header)
 
         card = self._make_card()
-        card_layout = QVBoxLayout(card)
+        card_layout = card.layout()
         card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         card_layout.setSpacing(S["3"])
 
@@ -536,27 +538,31 @@ class QtInvoiceEditor(QWidget):
         grid_layout.setSpacing(S["3"])
 
         # Row 0: Invoice Number, Issue Date
+        self._inv_num_edit = StyledLineEdit(text=self._invoice_number)
+        self._inv_num_edit.textChanged.connect(self._on_inv_num_changed)
         inv_num_widget = field(grid, t("invoice_editor.invoice_number"),
-                                StyledLineEdit(text=self._invoice_number))
-        inv_num_widget.findChild(StyledLineEdit).textChanged.connect(self._on_inv_num_changed)
+                                self._inv_num_edit)
         grid_layout.addWidget(inv_num_widget, 0, 0)
 
+        self._issue_date_edit = StyledLineEdit(text=self._issue_date,
+                                                 placeholder="YYYY-MM-DD")
+        self._issue_date_edit.textChanged.connect(self._on_issue_date_changed)
         issue_widget = field(grid, t("invoice_editor.issue_date"),
-                              StyledLineEdit(text=self._issue_date,
-                                             placeholder="YYYY-MM-DD"))
-        issue_widget.findChild(StyledLineEdit).textChanged.connect(self._on_issue_date_changed)
+                              self._issue_date_edit)
         grid_layout.addWidget(issue_widget, 0, 1)
 
         # Row 1: Due Date, Payment Terms
+        self._due_date_edit = StyledLineEdit(text=self._due_date,
+                                               placeholder="YYYY-MM-DD")
+        self._due_date_edit.textChanged.connect(self._on_due_date_changed)
         due_widget = field(grid, t("invoice_editor.due_date"),
-                            StyledLineEdit(text=self._due_date,
-                                           placeholder="YYYY-MM-DD"))
-        due_widget.findChild(StyledLineEdit).textChanged.connect(self._on_due_date_changed)
+                            self._due_date_edit)
         grid_layout.addWidget(due_widget, 1, 0)
 
+        self._payment_terms_edit = StyledLineEdit(text=self._payment_terms)
+        self._payment_terms_edit.textChanged.connect(self._on_payment_terms_changed)
         terms_widget = field(grid, t("invoice_editor.payment_terms"),
-                              StyledLineEdit(text=self._payment_terms))
-        terms_widget.findChild(StyledLineEdit).textChanged.connect(self._on_payment_terms_changed)
+                              self._payment_terms_edit)
         grid_layout.addWidget(terms_widget, 1, 1)
 
         card_layout.addWidget(grid)
@@ -602,6 +608,26 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(card)
         self._scroll.add_widget(container)
 
+    def _set_text(self, edit, text: str) -> None:
+        """Update a ``QLineEdit`` *and* its internal state attribute
+        without re-entering the ``textChanged`` handler that already
+        keeps the attribute in sync (which would re-emit and could
+        swallow keystrokes).  ``blockSignals`` is the safe Qt idiom.
+        """
+        if edit is None:
+            return
+        edit.blockSignals(True)
+        edit.setText(text)
+        edit.blockSignals(False)
+
+    def _set_plain_text(self, edit, text: str) -> None:
+        """Same as ``_set_text`` but for ``QPlainTextEdit``."""
+        if edit is None:
+            return
+        edit.blockSignals(True)
+        edit.setPlainText(text)
+        edit.blockSignals(False)
+
     def _on_inv_num_changed(self, text: str) -> None:
         self._invoice_number = text
         self._inv_num_label.setText(text)
@@ -636,7 +662,7 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(header)
 
         card = self._make_card()
-        card_layout = QVBoxLayout(card)
+        card_layout = card.layout()
         card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         card_layout.setSpacing(S["3"])
 
@@ -647,24 +673,33 @@ class QtInvoiceEditor(QWidget):
         trip_grid_layout.setSpacing(S["4"])
 
         # Truck plate
+        self._truck_plate_edit = StyledLineEdit(
+            text=self._truck_plate,
+            placeholder=t("invoice_editor.truck_plate"),
+        )
+        self._truck_plate_edit.textChanged.connect(self._on_truck_plate_changed)
         plate_w = field(trip_grid, t("invoice_editor.truck_plate"),
-                         StyledLineEdit(text=self._truck_plate,
-                                        placeholder=t("invoice_editor.truck_plate")))
-        plate_w.findChild(StyledLineEdit).textChanged.connect(self._on_truck_plate_changed)
+                         self._truck_plate_edit)
         trip_grid_layout.addWidget(plate_w)
 
         # Driver
+        self._driver_name_edit = StyledLineEdit(
+            text=self._driver_name,
+            placeholder=t("invoice_editor.driver"),
+        )
+        self._driver_name_edit.textChanged.connect(self._on_driver_name_changed)
         driver_w = field(trip_grid, t("invoice_editor.driver"),
-                          StyledLineEdit(text=self._driver_name,
-                                         placeholder=t("invoice_editor.driver")))
-        driver_w.findChild(StyledLineEdit).textChanged.connect(self._on_driver_name_changed)
+                          self._driver_name_edit)
         trip_grid_layout.addWidget(driver_w)
 
         # Distance
+        self._distance_edit = StyledLineEdit(
+            text=self._distance,
+            placeholder=t("invoice_editor.distance"),
+        )
+        self._distance_edit.textChanged.connect(self._on_distance_changed)
         dist_w = field(trip_grid, t("invoice_editor.distance"),
-                        StyledLineEdit(text=self._distance,
-                                       placeholder=t("invoice_editor.distance")))
-        dist_w.findChild(StyledLineEdit).textChanged.connect(self._on_distance_changed)
+                        self._distance_edit)
         trip_grid_layout.addWidget(dist_w)
 
         card_layout.addWidget(trip_grid)
@@ -693,6 +728,8 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(card)
         self._scroll.add_widget(container)
 
+
+
     def _on_truck_plate_changed(self, text: str) -> None:
         self._truck_plate = text
         self._truck_plate_label.setText(text)
@@ -717,7 +754,7 @@ class QtInvoiceEditor(QWidget):
         load_label.setProperty("fontRole", "label")
         self._stops_layout.addWidget(load_label)
 
-        for i, stop in enumerate(self._loading_stops):
+        for i, _stop in enumerate(self._loading_stops):
             self._build_stop_row(i, "loading")
 
         add_load_btn = Btn(
@@ -736,7 +773,7 @@ class QtInvoiceEditor(QWidget):
         unload_label.setProperty("fontRole", "label")
         self._stops_layout.addWidget(unload_label)
 
-        for i, stop in enumerate(self._unloading_stops):
+        for i, _stop in enumerate(self._unloading_stops):
             self._build_stop_row(i, "unloading")
 
         add_unload_btn = Btn(
@@ -808,7 +845,7 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(self._lit_header_label)
 
         card = self._make_card()
-        card_layout = QVBoxLayout(card)
+        card_layout = card.layout()
         card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         card_layout.setSpacing(S["2"])
 
@@ -822,8 +859,24 @@ class QtInvoiceEditor(QWidget):
             ],
         )
         self._items_table.setMinimumHeight(150)
-        self._items_table.setEditTriggers(QAbstractItemView.DoubleClicked)
+        # Single-click (or F2 / typing) into a cell drops the user
+        # straight into edit mode.  ``DoubleClicked`` would force the
+        # user to click twice on every row, which is hostile to
+        # spreadsheet-style workflows.
+        self._items_table.setEditTriggers(
+            QAbstractItemView.SelectedClicked
+            | QAbstractItemView.EditKeyPressed
+            | QAbstractItemView.AnyKeyPressed
+        )
         self._items_table.cellChanged.connect(self._on_table_cell_changed)
+        # ``currentCellChanged`` fires when the user clicks out of a
+        # cell.  We use it to re-format the *previous* amount cell on
+        # focus-leave rather than on every keystroke (which would
+        # reset the cursor to position 0 mid-typing).
+        self._items_table.currentCellChanged.connect(
+            self._on_table_current_cell_changed
+        )
+        self._last_amount_row: int | None = None
         card_layout.addWidget(self._items_table)
 
         # Button row
@@ -884,17 +937,44 @@ class QtInvoiceEditor(QWidget):
         if col == 1:
             item["description"] = text
         elif col == 2:
+            # Update the parsed amount so totals stay in sync, but do
+            # *not* reformat the cell here — that would reset the
+            # cursor to position 0 mid-typing.  Reformatting happens
+            # on focus-leave via ``_on_table_current_cell_changed``.
             try:
                 item["amount"] = round(float(text or "0"), 2)
             except ValueError:
                 item["amount"] = 0.0
-            # Reformat amount
-            self._items_table.blockSignals(True)
-            self._items_table.item(row, 2).setText(f"{item['amount']:.2f}")
-            self._items_table.blockSignals(False)
+            self._last_amount_row = row
         self._recalc_all()
 
-    def _add_addon_row(self, data: Optional[dict] = None) -> None:
+    def _on_table_current_cell_changed(
+        self, current_row: int, current_col: int, previous_row: int, previous_col: int
+    ) -> None:
+        """Reformat the *previous* amount cell on focus-leave so the
+        user sees ``1.50`` instead of ``1.5`` when they tab away,
+        without ever disrupting the cell they're currently typing in.
+        """
+        if previous_col != 2:
+            return
+        if previous_row < 0 or previous_row >= len(self._addon_items):
+            return
+        if previous_row == current_row and previous_col == current_col:
+            return
+        widget_item = self._items_table.item(previous_row, 2)
+        if widget_item is None:
+            return
+        amount = self._addon_items[previous_row].get("amount", 0.0)
+        formatted = f"{float(amount):.2f}"
+        if widget_item.text() != formatted:
+            # ``blockSignals`` so ``_on_table_cell_changed`` doesn't
+            # re-fire and clobber the user's just-committed value.
+            self._items_table.blockSignals(True)
+            widget_item.setText(formatted)
+            self._items_table.blockSignals(False)
+        self._last_amount_row = None
+
+    def _add_addon_row(self, data: dict | None = None) -> None:
         if data is None:
             data = {"description": "", "amount": 0.0}
         self._addon_items.append(data)
@@ -924,7 +1004,7 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(header)
 
         card = self._make_card()
-        card_layout = QVBoxLayout(card)
+        card_layout = card.layout()
         card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         card_layout.setSpacing(S["3"])
 
@@ -1122,7 +1202,7 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(self._branding_header)
 
         card = self._make_card()
-        card_layout = QVBoxLayout(card)
+        card_layout = card.layout()
         card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         card_layout.setSpacing(S["3"])
 
@@ -1255,7 +1335,7 @@ class QtInvoiceEditor(QWidget):
         layout.addWidget(header)
 
         card = self._make_card()
-        card_layout = QVBoxLayout(card)
+        card_layout = card.layout()
         card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
         card_layout.setSpacing(S["2"])
 
@@ -1429,11 +1509,22 @@ class QtInvoiceEditor(QWidget):
         if not trip:
             return
 
-        # Trip details
-        self._truck_plate = trip.get("truck_number", "")
-        self._driver_name = trip.get("driver_name", "")
+        # Trip details — update both the internal state and the
+        # visible text boxes so the user immediately sees the
+        # auto-filled values.  Internal state is updated *before*
+        # the widget so the test assertion ``state == widget_text``
+        # holds even though we block signals (the textChanged
+        # handler is what would normally keep the state in sync).
+        truck_plate = trip.get("truck_number", "") or ""
+        driver_name = trip.get("driver_name", "") or ""
         dist = trip.get("distance_km", 0) or 0
-        self._distance = f"{dist:,.1f} km" if dist else ""
+        distance_text = f"{float(dist):,.1f} km" if dist else ""
+        self._truck_plate = truck_plate
+        self._driver_name = driver_name
+        self._distance = distance_text
+        self._set_text(self._truck_plate_edit, truck_plate)
+        self._set_text(self._driver_name_edit, driver_name)
+        self._set_text(self._distance_edit, distance_text)
 
         # Fetch route stops
         route_id = trip.get("route_history_v2_id")
@@ -1445,19 +1536,24 @@ class QtInvoiceEditor(QWidget):
         end = trip.get("end_date", "")
         if start:
             self._issue_date = start[:10] if len(start) >= 10 else start
+            self._set_text(self._issue_date_edit, self._issue_date)
         if end:
             try:
                 dt = datetime.strptime(end[:10], "%Y-%m-%d")
                 self._due_date = (dt + timedelta(days=30)).strftime("%Y-%m-%d")
             except ValueError:
                 pass
+            self._set_text(self._due_date_edit, self._due_date)
 
-        # Auto-fill description from trip
-        if dist > 0:
-            current_desc = self._description.strip()
-            if not current_desc:
-                self._description = t("invoice_pdf.service_desc").format(dist)
-                self._desc_text_edit.setPlainText(self._description)
+        # Auto-fill description from trip.  Use the rendered template
+        # even when ``dist`` is 0 so the user gets a sensible default
+        # (the prior implementation skipped this branch when
+        # ``dist <= 0`` which left the description empty for trips
+        # without a recorded distance).
+        current_desc = self._description.strip()
+        if not current_desc:
+            self._description = t("invoice_pdf.service_desc").format(float(dist))
+            self._set_plain_text(self._desc_text_edit, self._description)
 
         # Set trip base price
         price = round(float(trip.get("total_price_eur", 0) or 0), 2)
@@ -1474,9 +1570,10 @@ class QtInvoiceEditor(QWidget):
         self._addon_items = [{"description": "", "amount": 0.0}]
         self._sync_table_to_items()
 
-        # Auto-select client
+        # Auto-select client — always update to match the current trip's client
         client_name = trip.get("client_name", "")
-        if client_name and not self._selected_client_id and client_name in self._client_map:
+        if client_name and client_name in self._client_map:
+            self._selected_client_id = None
             self._client_combo.setCurrentText(client_name)
             # on_client_selected is triggered by setCurrentText via signal
 
@@ -1567,10 +1664,7 @@ class QtInvoiceEditor(QWidget):
 
         # Discount
         is_percent = disc_type == t("invoice_editor.discount_percentage")
-        if is_percent:
-            discount = round(subtotal * (disc_val / 100), 2)
-        else:
-            discount = round(disc_val, 2)
+        discount = round(subtotal * (disc_val / 100), 2) if is_percent else round(disc_val, 2)
 
         grand_total = round(subtotal + total_tax - discount, 2)
 
@@ -1615,7 +1709,7 @@ class QtInvoiceEditor(QWidget):
         )
         dlg.exec_()
 
-    def _save_company_data(self, data: Dict[str, str]) -> None:
+    def _save_company_data(self, data: dict[str, str]) -> None:
         self._company_name = data["company_name"]
         self._company_cui = data["cui"]
         self._company_reg = data["reg_number"]
@@ -1631,7 +1725,7 @@ class QtInvoiceEditor(QWidget):
     # ACTIONS — PDF / Email / Draft
     # ══════════════════════════════════════════════════════════════════════════
 
-    def _collect_invoice_data(self) -> Dict[str, Any]:
+    def _collect_invoice_data(self) -> dict[str, Any]:
         """Collect all invoice data into a dict for PDF generation."""
         conf = {
             "company_name": self._company_name,
@@ -1742,8 +1836,8 @@ class QtInvoiceEditor(QWidget):
             _logger.error("Generation failed: %s", e, exc_info=True)
             QMessageBox.critical(self, t("invoice.error_generate").format(""), str(e))
 
-    def _generate_rich_pdf(self, data: Dict[str, Any], open_after: bool = False,
-                           record: bool = True) -> Optional[str]:
+    def _generate_rich_pdf(self, data: dict[str, Any], open_after: bool = False,
+                           record: bool = True) -> str | None:
         """Generate a rich PDF using the enhanced InvoiceGenerator."""
         from services.invoicing.generator import InvoiceGenerator
         gen = InvoiceGenerator()
@@ -1775,7 +1869,7 @@ class QtInvoiceEditor(QWidget):
                     file_path=path,
                     title=f"Invoice {os.path.basename(path)}",
                     category="invoices",
-                    entity_type="invoice",
+                    entity_type="trip",
                     entity_id=ent_id,
                     tags=["invoice", "generated"],
                 )
@@ -1903,7 +1997,7 @@ class QtInvoiceEditor(QWidget):
             return
 
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 data = json.load(f)
 
             self._invoice_number = data.get("invoice_number", self._gen_invoice_number())
@@ -2049,7 +2143,7 @@ class CompanyEditorQtDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         company_name: str = "",
         cui: str = "",
         reg: str = "",
@@ -2087,7 +2181,7 @@ class CompanyEditorQtDialog(QDialog):
             (t("invoice.field_email"), "email", email),
         ]
 
-        self._entries: Dict[str, StyledLineEdit] = {}
+        self._entries: dict[str, StyledLineEdit] = {}
         for label_text, key, default in fields:
             lbl = QLabel(label_text)
             lbl.setProperty("fontRole", "label")
@@ -2150,8 +2244,8 @@ class InvoiceEditorDialog(QDialog):
     def __init__(
         self,
         db=None,
-        prefs: Optional[PreferencesManager] = None,
-        parent: Optional[QWidget] = None,
+        prefs: PreferencesManager | None = None,
+        parent: QWidget | None = None,
     ):
         super().__init__(parent)
         self.setWindowTitle(t("invoice_editor.title"))

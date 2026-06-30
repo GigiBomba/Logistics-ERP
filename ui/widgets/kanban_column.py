@@ -9,21 +9,22 @@ inline (drag-drop visual feedback).
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, Signal
+from PySide6.QtGui import QDragEnterEvent, QDragMoveEvent, QDropEvent
 from PySide6.QtWidgets import (
     QFrame,
+    QHBoxLayout,
     QLabel,
     QScrollArea,
-    QVBoxLayout,
-    QHBoxLayout,
-    QWidget,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
-from ui.theme import COLORS, S
 from services.i18n import t
+from ui.theme import COLORS, S
 from ui.widgets import ActionButton
 from ui.widgets.trip_card import QtTripCard
 
@@ -62,25 +63,39 @@ class QtKanbanColumn(QFrame):
         "Cancelled": COLORS["chip_cancelled"],
     }
 
+    # Drag-and-drop: a trip card drag started on this column (or any
+    # other column) is received here, the trip_id is parsed from the
+    # MIME payload, and the parent board re-emits ``tripDropped`` so
+    # only the board decides whether the move is legal (status order,
+    # backward-move confirmation, etc.).
+    tripDropped = Signal(int)   # trip_id
+
     def __init__(
         self,
         parent: QWidget,
         status_key: str,
         title_key: str,
-        accent_color: Optional[str] = None,
-        on_card_click: Optional[Callable[[dict], None]] = None,
-        on_drag_start: Optional[Callable[[dict], None]] = None,
-        on_assign_truck: Optional[Callable[[dict], None]] = None,
-        on_assign_driver: Optional[Callable[[dict], None]] = None,
-        on_select_changed: Optional[Callable[[dict, bool], None]] = None,
-        on_assign_both: Optional[Callable[[dict], None]] = None,
+        accent_color: str | None = None,
+        on_card_click: Callable[[dict], None] | None = None,
+        on_drag_start: Callable[[dict], None] | None = None,
+        on_assign_truck: Callable[[dict], None] | None = None,
+        on_assign_driver: Callable[[dict], None] | None = None,
+        on_select_changed: Callable[[dict, bool], None] | None = None,
+        on_assign_both: Callable[[dict], None] | None = None,
         show_load_older: bool = False,
-        on_load_older: Optional[Callable[[], None]] = None,
-        on_retry: Optional[Callable[[], None]] = None,
+        on_load_older: Callable[[], None] | None = None,
+        on_retry: Callable[[], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.setProperty("role", "kanban-column")
         self.setFrameShape(QFrame.StyledPanel)
+        # Accept drops on the column itself.  Without this, Qt's
+        # drag-and-drop never reaches ``dragEnterEvent`` /
+        # ``dropEvent`` on the column — the previous bug was that
+        # the dispatch board set ``dropEvent`` on itself, but no
+        # widget on the column was accepting drops, so the event
+        # propagated past the column without firing the handler.
+        self.setAcceptDrops(True)
 
         # ── Stored config ────────────────────────────────────────────────
         self.status_key: str = status_key
@@ -364,6 +379,20 @@ class QtKanbanColumn(QFrame):
             card.deleteLater()
             self._update_count()
 
+    # ── Cleanup ──────────────────────────────────────────────────────────
+
+    def destroy(self) -> None:
+        """Clear callbacks and schedule the widget for deletion."""
+        self._on_card_click = None
+        self._on_drag_start = None
+        self._on_assign_truck = None
+        self._on_assign_driver = None
+        self._on_select_changed = None
+        self._on_assign_both = None
+        self._on_load_older = None
+        self._on_retry = None
+        super().deleteLater()
+
     # ── Translation refresh ──────────────────────────────────────────────
 
     def refresh_title(self) -> None:
@@ -401,3 +430,49 @@ class QtKanbanColumn(QFrame):
         self.setStyleSheet(
             f"QtKanbanColumn {{ border: 2px solid {COLORS['danger']}; }}"
         )
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Drag-and-drop event handling
+    # ══════════════════════════════════════════════════════════════════════
+
+    def dragEnterEvent(self, event: QDragEnterEvent) -> None:
+        """Accept a drag if it carries a trip id.  This is the gate:
+        without ``setAcceptDrops(True)`` (set in ``__init__``) and an
+        accepting ``dragEnterEvent``, Qt's drop machinery never reaches
+        the column."""
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+            self.highlight_valid()
+        else:
+            event.ignore()
+
+    def dragMoveEvent(self, event: QDragMoveEvent) -> None:
+        """Required by Qt — without it the cursor turns into the
+        "no-drop" icon and the drop is rejected."""
+        if event.mimeData().hasText():
+            event.acceptProposedAction()
+        else:
+            event.ignore()
+
+    def dragLeaveEvent(self, event) -> None:
+        """Clear the visual highlight when the drag leaves the column."""
+        self.unhighlight_drop_zone()
+        super().dragLeaveEvent(event)
+
+    def dropEvent(self, event: QDropEvent) -> None:
+        """Parse the trip id from the MIME payload and re-emit
+        ``tripDropped`` to the board.  The board decides whether the
+        move is legal (status order, backward-move confirmation).
+        """
+        if not event.mimeData().hasText():
+            event.ignore()
+            return
+        trip_id_str = event.mimeData().text()
+        try:
+            trip_id = int(trip_id_str)
+        except (TypeError, ValueError):
+            event.ignore()
+            return
+        event.acceptProposedAction()
+        self.unhighlight_drop_zone()
+        self.tripDropped.emit(trip_id)

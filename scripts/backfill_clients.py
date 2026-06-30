@@ -58,9 +58,13 @@ def _migrate(conn, dry_run=False):
 
     updated = 0
     for name in sorted(names):
-        client_id = conn.execute(
+        row = conn.execute(
             "SELECT id FROM clients WHERE name = ?", (name,)
-        ).fetchone()[0]
+        ).fetchone()
+        if row is None:
+            print(f"WARNING: Client '{name}' not found after creation — skipping")
+            continue
+        client_id = row[0]
         result = conn.execute(
             "UPDATE trips SET client_id = ? WHERE client_name = ? AND client_id IS NULL",
             (client_id, name),

@@ -21,7 +21,10 @@ CREATE TABLE IF NOT EXISTS trips (
     toll_cost REAL,
     salary_cost REAL,
     currency TEXT,
-    status TEXT
+    status TEXT,
+    loading_country TEXT,
+    delivery_country TEXT,
+    driver_id INTEGER
     -- route_history_v2_id INTEGER REFERENCES route_history_v2(id),  (added by migration)
     -- truck_consumption_l_per_100km REAL,                          (added by migration)
     -- context_json TEXT                                             (added by migration)
@@ -30,6 +33,17 @@ CREATE TABLE IF NOT EXISTS trips (
 
 INDEX_TRIPS_DATE = "CREATE INDEX IF NOT EXISTS idx_trips_date ON trips(created_at);"
 INDEX_TRIPS_TRUCK = "CREATE INDEX IF NOT EXISTS idx_trips_truck ON trips(truck_number);"
+INDEX_TRIPS_CLIENT_NAME = "CREATE INDEX IF NOT EXISTS idx_trips_client_name ON trips(client_name);"
+INDEX_TRIPS_DRIVER_NAME = "CREATE INDEX IF NOT EXISTS idx_trips_driver_name ON trips(driver_name);"
+INDEX_TRIPS_STATUS = "CREATE INDEX IF NOT EXISTS idx_trips_status ON trips(status);"
+INDEX_TRIPS_CLIENT_STATUS = "CREATE INDEX IF NOT EXISTS idx_trips_client_status ON trips(client_name, status);"
+ALTER_TRIPS_ADD_MONTH = "ALTER TABLE trips ADD COLUMN month TEXT GENERATED ALWAYS AS (SUBSTR(created_at, 1, 7)) STORED"
+INDEX_TRIPS_MONTH = "CREATE INDEX IF NOT EXISTS idx_trips_month ON trips(month);"
+
+INDEX_TRIPS_START_DATE = "CREATE INDEX IF NOT EXISTS idx_trips_start_date ON trips(start_date);"
+INDEX_TRIPS_DELIVERY_COUNTRY = "CREATE INDEX IF NOT EXISTS idx_trips_delivery_country ON trips(delivery_country);"
+INDEX_TRIPS_LOADING_COUNTRY = "CREATE INDEX IF NOT EXISTS idx_trips_loading_country ON trips(loading_country);"
+INDEX_TRIPS_DRIVER_ID = "CREATE INDEX IF NOT EXISTS idx_trips_driver_id ON trips(driver_id);"
 
 
 
@@ -162,7 +176,8 @@ CREATE TABLE IF NOT EXISTS route_history_v2 (
     profit_estimates_json TEXT,
     countries_traversed_json TEXT,
     route_summary_json TEXT,
-    archived_at TEXT
+    archived_at TEXT,
+    is_committed INTEGER NOT NULL DEFAULT 0
 );
 """
 
@@ -474,7 +489,10 @@ CREATE TABLE IF NOT EXISTS documents (
     is_archived INTEGER DEFAULT 0,
     uploaded_by TEXT DEFAULT '',
     uploaded_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
+    updated_at TEXT NOT NULL,
+    ocr_text TEXT DEFAULT '',
+    ocr_run_at TEXT DEFAULT '',
+    ocr_engine TEXT DEFAULT ''
 );
 """
 
@@ -494,6 +512,7 @@ INDEX_DOCUMENTS_CATEGORY = "CREATE INDEX IF NOT EXISTS idx_documents_category ON
 INDEX_DOCUMENTS_ENTITY = "CREATE INDEX IF NOT EXISTS idx_documents_entity ON documents(entity_type, entity_id);"
 INDEX_DOCUMENTS_HASH = "CREATE INDEX IF NOT EXISTS idx_documents_hash ON documents(file_hash);"
 INDEX_DOCUMENTS_NUMBER = "CREATE INDEX IF NOT EXISTS idx_documents_number ON documents(doc_number);"
+INDEX_DOCUMENTS_EXPIRY_DATE = "CREATE INDEX IF NOT EXISTS idx_documents_expiry_date ON documents(expiry_date);"
 INDEX_DOC_LINKS_DOCUMENT = "CREATE INDEX IF NOT EXISTS idx_doc_links_document ON document_links(document_id);"
 INDEX_DOC_LINKS_ENTITY = "CREATE INDEX IF NOT EXISTS idx_doc_links_entity ON document_links(linked_entity_type, linked_entity_id);"
 
@@ -572,6 +591,7 @@ CREATE TABLE IF NOT EXISTS contracts (
 
 INDEX_CONTRACTS_CLIENT = "CREATE INDEX IF NOT EXISTS idx_contracts_client ON contracts(client_id);"
 INDEX_CONTRACTS_STATUS = "CREATE INDEX IF NOT EXISTS idx_contracts_status ON contracts(status);"
+INDEX_CONTRACTS_END_DATE = "CREATE INDEX IF NOT EXISTS idx_contracts_end_date ON contracts(end_date);"
 
 TABLE_DOCUMENT_TEMPLATES = """
 CREATE TABLE IF NOT EXISTS document_templates (
@@ -679,3 +699,137 @@ ALTER_DOCUMENTS_ADD_IS_SIGNED = "ALTER TABLE documents ADD COLUMN is_signed INTE
 INDEX_TRIPS_CMR_STATUS = "CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status);"
 INDEX_DOCUMENTS_COPY_TYPE = "CREATE INDEX IF NOT EXISTS idx_documents_copy_type ON documents(copy_type);"
 INDEX_DOCUMENTS_CMR_NUMBER = "CREATE INDEX IF NOT EXISTS idx_documents_cmr_number ON documents(cmr_number);"
+
+# ── Document Automation Pipeline ────────────────────────────────────────────────
+
+TABLE_DOCUMENT_PIPELINE_RUNS = """
+CREATE TABLE IF NOT EXISTS document_pipeline_runs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_uuid TEXT UNIQUE NOT NULL,
+    source_file_path TEXT NOT NULL,
+    source_file_name TEXT NOT NULL,
+    source_mime_type TEXT NOT NULL,
+    source_file_size INTEGER DEFAULT 0,
+    source_file_hash TEXT DEFAULT '',
+    status TEXT NOT NULL DEFAULT 'imported',
+    stage TEXT NOT NULL DEFAULT 'import',
+    error_message TEXT DEFAULT '',
+    processed_file_path TEXT DEFAULT '',
+    processed_pdf_path TEXT DEFAULT '',
+    pages_count INTEGER DEFAULT 0,
+    ocr_text TEXT DEFAULT '',
+    extracted_data_json TEXT DEFAULT '{}',
+    matched_trip_id INTEGER,
+    match_confidence REAL DEFAULT 0.0,
+    match_signals_json TEXT DEFAULT '{}',
+    document_id INTEGER,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    completed_at TEXT
+);
+"""
+
+INDEX_PIPELINE_RUNS_UUID = "CREATE INDEX IF NOT EXISTS idx_pipeline_runs_uuid ON document_pipeline_runs(run_uuid);"
+INDEX_PIPELINE_RUNS_STATUS = "CREATE INDEX IF NOT EXISTS idx_pipeline_runs_status ON document_pipeline_runs(status);"
+INDEX_PIPELINE_RUNS_TRIP = "CREATE INDEX IF NOT EXISTS idx_pipeline_runs_trip ON document_pipeline_runs(matched_trip_id);"
+INDEX_PIPELINE_RUNS_HASH = "CREATE INDEX IF NOT EXISTS idx_pipeline_runs_hash ON document_pipeline_runs(source_file_hash);"
+
+TABLE_DOCUMENT_PACKAGE = """
+CREATE TABLE IF NOT EXISTS document_package (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    trip_id INTEGER,
+    package_uuid TEXT UNIQUE NOT NULL,
+    status TEXT NOT NULL DEFAULT 'draft',
+    recipient_email TEXT DEFAULT '',
+    subject TEXT DEFAULT '',
+    body TEXT DEFAULT '',
+    email_message_id TEXT DEFAULT '',
+    sent_at TEXT,
+    error_message TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+INDEX_PACKAGE_TRIP = "CREATE INDEX IF NOT EXISTS idx_package_trip ON document_package(trip_id);"
+INDEX_PACKAGE_UUID = "CREATE INDEX IF NOT EXISTS idx_package_uuid ON document_package(package_uuid);"
+INDEX_PACKAGE_STATUS = "CREATE INDEX IF NOT EXISTS idx_package_status ON document_package(status);"
+
+TABLE_DOCUMENT_PACKAGE_ITEMS = """
+CREATE TABLE IF NOT EXISTS document_package_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_id INTEGER NOT NULL,
+    document_id INTEGER NOT NULL,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    FOREIGN KEY (package_id) REFERENCES document_package(id) ON DELETE CASCADE,
+    UNIQUE(package_id, document_id)
+);
+"""
+
+INDEX_PACKAGE_ITEMS_PACKAGE = "CREATE INDEX IF NOT EXISTS idx_package_items_package ON document_package_items(package_id);"
+INDEX_PACKAGE_ITEMS_DOCUMENT = "CREATE INDEX IF NOT EXISTS idx_package_items_document ON document_package_items(document_id);"
+
+# ── Stage/status enum validation ────────────────────────────────────────────────
+# SQLite doesn't support ALTER TABLE ADD CONSTRAINT, so we enforce the
+# stage/status enums with triggers.  Triggers fire for both fresh and
+# upgraded databases; ``IF NOT EXISTS`` makes them idempotent.
+
+# Canonical values mirror :class:`PipelineStage` in
+# ``services/document_automation/types.py`` and the ``status`` field
+# semantics used by ``PipelineRepository``.
+PIPELINE_STAGE_VALUES = (
+    "import", "processing", "enhance", "ocr", "validate", "ai_fallback",
+    "matching", "auto_attach", "verify", "package", "email",
+    "complete", "failed",
+)
+PIPELINE_STATUS_VALUES = (
+    "imported", "processing", "enhanced", "processed",
+    "ocr_done", "validated", "ai_done",
+    "matched", "attached", "verified", "packaged", "emailed",
+    "complete", "failed",
+)
+
+_ESCAPED_STAGES = ", ".join(f"'{v}'" for v in PIPELINE_STAGE_VALUES)
+_ESCAPED_STATUSES = ", ".join(f"'{v}'" for v in PIPELINE_STATUS_VALUES)
+
+TRIGGER_PIPELINE_RUNS_STAGE_CHECK = f"""
+CREATE TRIGGER IF NOT EXISTS trg_pipeline_runs_stage_check
+BEFORE INSERT ON document_pipeline_runs
+WHEN NEW.stage NOT IN ({_ESCAPED_STAGES})
+BEGIN
+    SELECT RAISE(ABORT, 'invalid document_pipeline_runs.stage value');
+END;
+"""
+
+TRIGGER_PIPELINE_RUNS_STAGE_UPDATE = f"""
+CREATE TRIGGER IF NOT EXISTS trg_pipeline_runs_stage_check_upd
+BEFORE UPDATE OF stage ON document_pipeline_runs
+WHEN NEW.stage NOT IN ({_ESCAPED_STAGES})
+BEGIN
+    SELECT RAISE(ABORT, 'invalid document_pipeline_runs.stage value');
+END;
+"""
+
+TRIGGER_PIPELINE_RUNS_STATUS_CHECK = f"""
+CREATE TRIGGER IF NOT EXISTS trg_pipeline_runs_status_check
+BEFORE INSERT ON document_pipeline_runs
+WHEN NEW.status NOT IN ({_ESCAPED_STATUSES})
+BEGIN
+    SELECT RAISE(ABORT, 'invalid document_pipeline_runs.status value');
+END;
+"""
+
+TRIGGER_PIPELINE_RUNS_STATUS_UPDATE = f"""
+CREATE TRIGGER IF NOT EXISTS trg_pipeline_runs_status_check_upd
+BEFORE UPDATE OF status ON document_pipeline_runs
+WHEN NEW.status NOT IN ({_ESCAPED_STATUSES})
+BEGIN
+    SELECT RAISE(ABORT, 'invalid document_pipeline_runs.status value');
+END;
+"""
+
+ALTER_DOCUMENTS_ADD_EXTRACTED_DATA = "ALTER TABLE documents ADD COLUMN extracted_data_json TEXT DEFAULT '{}'"
+ALTER_DOCUMENTS_ADD_AUTOMATION_TAGS = "ALTER TABLE documents ADD COLUMN automation_tags TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_OCR_TEXT = "ALTER TABLE documents ADD COLUMN ocr_text TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_OCR_RUN_AT = "ALTER TABLE documents ADD COLUMN ocr_run_at TEXT DEFAULT ''"
+ALTER_DOCUMENTS_ADD_OCR_ENGINE = "ALTER TABLE documents ADD COLUMN ocr_engine TEXT DEFAULT ''"

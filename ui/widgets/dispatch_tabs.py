@@ -8,7 +8,7 @@ property selectors.  Appearance is driven by the global theme in
 
 from __future__ import annotations
 
-from typing import Callable, Optional
+from typing import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -22,8 +22,6 @@ from PySide6.QtWidgets import (
 )
 
 from ui.theme import COLORS
-from services.i18n import t
-
 
 class QtDispatchTabs(QWidget):
     """Horizontal tab bar that switches between stacked panels.
@@ -37,14 +35,14 @@ class QtDispatchTabs(QWidget):
     TAB_INACTIVE = COLORS["bg_elevated"]
     TAB_HOVER = COLORS["border_hover"]
 
-    def __init__(self, parent: Optional[QWidget] = None) -> None:
+    def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("qtDispatchTabs")
 
         self._tabs: dict[str, QWidget] = {}
         self._buttons: dict[str, QPushButton] = {}
-        self._active_tab: Optional[str] = None
-        self._on_switch_callback: Optional[Callable[[str], None]] = None
+        self._active_tab: str | None = None
+        self._on_switch_callback: Callable[[str], None] | None = None
 
         self._build_ui()
 
@@ -152,6 +150,14 @@ class QtDispatchTabs(QWidget):
             if btn is not None:
                 btn.setText(new_label)
 
-    def get_active_tab(self) -> Optional[str]:
+    def get_active_tab(self) -> str | None:
         """Return the ``tab_id`` of the currently active tab, or ``None``."""
         return self._active_tab
+
+    def destroy(self) -> None:
+        """Clear callbacks and internal dicts, then schedule deletion."""
+        self._on_switch_callback = None
+        self._tabs.clear()
+        self._buttons.clear()
+        self._active_tab = None
+        super().deleteLater()

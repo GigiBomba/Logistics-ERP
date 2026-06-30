@@ -6,7 +6,7 @@ Replaces ``ui.widgets.paired_assignment_dialog.PairedAssignmentDialog``
 
 from __future__ import annotations
 
-from typing import Callable, Dict, Optional
+from typing import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
@@ -23,7 +23,6 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.theme import COLORS, S
 from ui.widgets import ActionButton
-
 
 class QtPairedAssignmentDialog(QDialog):
     """Side-by-side truck and driver picker with paired suggestion.
@@ -43,14 +42,14 @@ class QtPairedAssignmentDialog(QDialog):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         trip_data: dict,
         truck_items: list,
         driver_items: list,
         paired_hint: str = "",
-        on_assign_both: Optional[Callable] = None,
-        on_assign_truck: Optional[Callable] = None,
-        on_assign_driver: Optional[Callable] = None,
+        on_assign_both: Callable | None = None,
+        on_assign_truck: Callable | None = None,
+        on_assign_driver: Callable | None = None,
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("dispatch_board.pair_title"))
@@ -61,17 +60,17 @@ class QtPairedAssignmentDialog(QDialog):
         self._truck_items: list = truck_items
         self._driver_items: list = driver_items
         self._paired_hint: str = paired_hint
-        self._on_assign_both: Optional[Callable] = on_assign_both
-        self._on_assign_truck: Optional[Callable] = on_assign_truck
-        self._on_assign_driver: Optional[Callable] = on_assign_driver
+        self._on_assign_both: Callable | None = on_assign_both
+        self._on_assign_truck: Callable | None = on_assign_truck
+        self._on_assign_driver: Callable | None = on_assign_driver
 
-        self._selected_truck: Optional[int] = None
-        self._selected_driver: Optional[int] = None
-        self._truck_widgets: Dict[int, QFrame] = {}
-        self._driver_widgets: Dict[int, QFrame] = {}
-        self._both_btn: Optional[ActionButton] = None
-        self._truck_btn: Optional[ActionButton] = None
-        self._driver_btn: Optional[ActionButton] = None
+        self._selected_truck: int | None = None
+        self._selected_driver: int | None = None
+        self._truck_widgets: dict[int, QFrame] = {}
+        self._driver_widgets: dict[int, QFrame] = {}
+        self._both_btn: ActionButton | None = None
+        self._truck_btn: ActionButton | None = None
+        self._driver_btn: ActionButton | None = None
 
         self._build()
         self._auto_select_first_available()

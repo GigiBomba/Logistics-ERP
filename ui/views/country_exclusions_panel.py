@@ -6,23 +6,24 @@ for business logic and ``StyledCheckBox`` for the country chip layout.
 
 from __future__ import annotations
 
+import contextlib
 import logging
-from typing import Callable, List, Optional
+from typing import Callable
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QWidget,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QPushButton,
     QVBoxLayout,
-    QHBoxLayout,
+    QWidget,
 )
 
 from services.country_avoidance import CountryAvoidanceManager
 from services.i18n import t
+from ui.design_tokens import BG_ELEVATED
 from ui.widgets import StyledCheckBox
-from ui.design_tokens import BG_ELEVATED, TEXT_MUTED
 
 logger = logging.getLogger(__name__)
 
@@ -32,25 +33,25 @@ class CountryExclusionsPanel(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget],
+        parent: QWidget | None,
         avoidance: CountryAvoidanceManager,
-        on_change: Optional[Callable[[], None]] = None,
+        on_change: Callable[[], None] | None = None,
     ):
         super().__init__(parent)
         self.avoidance = avoidance
         self.on_change = on_change
         self._expanded = False
-        self._checkboxes: List[StyledCheckBox] = []
+        self._checkboxes: list[StyledCheckBox] = []
         self._build()
 
     def _notify(self) -> None:
         if self.on_change:
             self.on_change()
 
-    def get_selected(self) -> List[str]:
+    def get_selected(self) -> list[str]:
         return self.avoidance.get_selected()
 
-    def set_selected(self, codes: List[str]) -> None:
+    def set_selected(self, codes: list[str]) -> None:
         self.avoidance.set_selected(codes)
         self.refresh()
 
@@ -142,10 +143,8 @@ class CountryExclusionsPanel(QWidget):
             return
         code = sender.property("country_code")
         if code:
-            try:
+            with contextlib.suppress(Exception):
                 self.avoidance.toggle(code)
-            except Exception:
-                pass
         self._update_count_label()
         self._notify()
 

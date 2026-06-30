@@ -90,13 +90,15 @@ _KEY_ICONS = {
 
 def iconed(key, *args, **kwargs):
     """Return localized string with prepended icon.
-    
+
     Usage:
         iconed("maint.title", truck_plate)  → "⚙ Karbantartás - TRK-001"
         iconed("maint.save")                → "✔ Mentés"
         iconed("common.no_data")            → "Nincs adat" (no icon)
     """
     text = t(key, *args, **kwargs) if (args or kwargs) else t(key)
+    if text is None:
+        text = key
     icon = _KEY_ICONS.get(key) or _GLYPHS.get(key.split(".")[0], "")
     if icon:
         return f"{icon} {text}"

@@ -6,21 +6,22 @@ and ``QTimer`` for polling. Fully embedded as a QWidget.
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import threading
 from datetime import datetime
-from typing import Callable, List, Optional
+from typing import Callable
 
 from PySide6.QtCore import Qt, QTimer, Signal
 from PySide6.QtWidgets import (
-    QWidget,
     QFrame,
+    QHBoxLayout,
     QLabel,
     QPushButton,
-    QVBoxLayout,
-    QHBoxLayout,
     QScrollArea,
     QSizePolicy,
+    QVBoxLayout,
+    QWidget,
 )
 
 from services.fleet_tracking_service import (
@@ -28,10 +29,10 @@ from services.fleet_tracking_service import (
     fleet_tracking_service,
 )
 from services.i18n import t
+from ui.components import Btn
 from ui.design_tokens import SP
-from ui.components import Btn, Label, PageTitle, SectionTitle
-from ui.theme import COLORS
 from ui.map.map_widget import MapWidget
+from ui.theme import COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +48,12 @@ class QtFleetTrackingView(QWidget):
 
     # Emitted from background thread; main thread slot applies the update
     _positionsFetched = Signal(list)
+    # Emitted from the force-refresh worker thread to re-enable the
+    # refresh button on the GUI thread.  (Previously we used
+    # ``QTimer.singleShot(0, ...)`` from a worker thread — Qt creates
+    # the timer in the calling thread and its event loop never runs,
+    # so the button never came back.)
+    _refreshFinished = Signal()
 
     # Status → leaflet marker color name for MapWidget
     _STATUS_MARKER_COLORS = {
@@ -66,11 +73,11 @@ class QtFleetTrackingView(QWidget):
 
     def __init__(
         self,
-        parent: Optional[QWidget] = None,
+        parent: QWidget | None = None,
         db=None,
         prefs=None,
         ops=None,
-        on_navigate: Optional[Callable[[str], None]] = None,
+        on_navigate: Callable[[str], None] | None = None,
     ):
         super().__init__(parent)
         self.db = db
@@ -79,19 +86,22 @@ class QtFleetTrackingView(QWidget):
         self._on_navigate = on_navigate
 
         # ── State ──────────────────────────────────────────────────────
-        self._map: Optional[MapWidget] = None
-        self._vehicle_list_scroll: Optional[QScrollArea] = None
-        self._vehicle_list_content: Optional[QWidget] = None
-        self._vehicle_list_layout: Optional[QVBoxLayout] = None
-        self._detail_panel: Optional[QFrame] = None
-        self._detail_layout: Optional[QVBoxLayout] = None
-        self._refresh_btn: Optional[QPushButton] = None
-        self._updated_lbl: Optional[QLabel] = None
-        self._selected_position: Optional[VehiclePosition] = None
-        self._selected_truck_id: Optional[int] = None
+        self._map: MapWidget | None = None
+        self._vehicle_list_scroll: QScrollArea | None = None
+        self._vehicle_list_content: QWidget | None = None
+        self._vehicle_list_layout: QVBoxLayout | None = None
+        self._detail_panel: QFrame | None = None
+        self._detail_layout: QVBoxLayout | None = None
+        self._refresh_btn: QPushButton | None = None
+        self._updated_lbl: QLabel | None = None
+        self._selected_position: VehiclePosition | None = None
+        self._selected_truck_id: int | None = None
+        self._fetching = False
+        self._force_refreshing = False
 
         # ── Signal: thread-safe UI updates ─────────────────────────────
         self._positionsFetched.connect(self._apply_update)
+        self._refreshFinished.connect(self._enable_refresh_btn)
 
         # ── Polling timer ──────────────────────────────────────────────
         self._poll_timer = QTimer(self)
@@ -110,11 +120,11 @@ class QtFleetTrackingView(QWidget):
     def shutdown(self) -> None:
         """Stop polling and clean up resources."""
         self._stop_polling()
+        self._fetching = False
         if hasattr(self, "_map") and self._map:
-            try:
+            with contextlib.suppress(Exception):
                 self._map.destroy()
-            except Exception:
-                pass
+            self._map = None
 
     # ── Build ─────────────────────────────────────────────────────────
 
@@ -293,7 +303,7 @@ class QtFleetTrackingView(QWidget):
     def _build_vehicle_row(
         self,
         position: VehiclePosition,
-        matched_truck_id: Optional[int],
+        matched_truck_id: int | None,
     ) -> None:
         row = QFrame()
         row.setFixedHeight(52)
@@ -345,10 +355,9 @@ class QtFleetTrackingView(QWidget):
         row_layout.addWidget(info, 1)
 
         # ── Click handler ──────────────────────────────────────────────
-        def on_click(e, p=position, tid=matched_truck_id):
-            self._select_vehicle(p, tid)
-
-        row.mousePressEvent = on_click
+        row.mouseReleaseEvent = lambda e, p=position, tid=matched_truck_id: (
+            self._select_vehicle(p, tid) if e.button() == Qt.MouseButton.LeftButton else None
+        )
 
         self._vehicle_list_layout.addWidget(row)
 
@@ -363,7 +372,7 @@ class QtFleetTrackingView(QWidget):
     def _select_vehicle(
         self,
         position: VehiclePosition,
-        truck_id: Optional[int],
+        truck_id: int | None,
     ) -> None:
         """Pan map to vehicle and show detail panel."""
         self._selected_position = position
@@ -377,7 +386,7 @@ class QtFleetTrackingView(QWidget):
     def _show_detail_panel(
         self,
         position: VehiclePosition,
-        truck_id: Optional[int],
+        truck_id: int | None,
     ) -> None:
         """Rebuild the detail panel for the selected vehicle."""
         # Clear existing detail content
@@ -394,7 +403,7 @@ class QtFleetTrackingView(QWidget):
         self._detail_layout.addWidget(name_lbl)
 
         # Detail rows
-        details: List[tuple] = [
+        details: list[tuple] = [
             (t("tracking.d_status"), position.status.title()),
             (t("tracking.d_speed"), f"{position.speed_kmh:.0f} km/h"),
             (t("tracking.d_updated"),
@@ -447,7 +456,7 @@ class QtFleetTrackingView(QWidget):
 
     # ── Map markers ───────────────────────────────────────────────────
 
-    def _update_map_markers(self, positions: List[VehiclePosition]) -> None:
+    def _update_map_markers(self, positions: list[VehiclePosition]) -> None:
         if not self._map:
             return
 
@@ -471,7 +480,7 @@ class QtFleetTrackingView(QWidget):
 
     # ── Vehicle list refresh ──────────────────────────────────────────
 
-    def _refresh_vehicle_list(self, positions: List[VehiclePosition]) -> None:
+    def _refresh_vehicle_list(self, positions: list[VehiclePosition]) -> None:
         """Clear and rebuild the vehicle list."""
         # Remove existing rows
         while self._vehicle_list_layout.count():
@@ -499,20 +508,30 @@ class QtFleetTrackingView(QWidget):
 
     def _poll_and_update(self) -> None:
         """Start a background thread to fetch positions."""
+        if self._fetching:
+            return
         thread = threading.Thread(target=self._fetch_positions, daemon=True)
         thread.start()
 
     def _fetch_positions(self) -> None:
         """Fetch positions in background — emits signal to update UI."""
+        if self._fetching:
+            return
+        self._fetching = True
         try:
+            if not self._map:
+                return
             positions = fleet_tracking_service.get_positions(
                 force_refresh=True,
             )
-            self._positionsFetched.emit(positions)
+            if self._map:
+                self._positionsFetched.emit(positions)
         except Exception as e:
             logger.error("Tracking poll error: %s", e)
+        finally:
+            self._fetching = False
 
-    def _apply_update(self, positions: List[VehiclePosition]) -> None:
+    def _apply_update(self, positions: list[VehiclePosition]) -> None:
         """Main-thread slot: update map markers and vehicle list."""
         self._update_map_markers(positions)
         self._refresh_vehicle_list(positions)
@@ -529,6 +548,9 @@ class QtFleetTrackingView(QWidget):
     # ── Refresh button ────────────────────────────────────────────────
 
     def _force_refresh(self) -> None:
+        if self._force_refreshing:
+            return
+        self._force_refreshing = True
         if self._refresh_btn:
             self._refresh_btn.setEnabled(False)
 
@@ -537,17 +559,17 @@ class QtFleetTrackingView(QWidget):
                 positions = fleet_tracking_service.get_positions(
                     force_refresh=True,
                 )
-                # Re-enable button on main thread
-                QTimer.singleShot(0, self._enable_refresh_btn)
+                self._refreshFinished.emit()
                 self._positionsFetched.emit(positions)
             except Exception as e:
                 logger.error("Force refresh failed: %s", e)
-                QTimer.singleShot(0, self._enable_refresh_btn)
+                self._refreshFinished.emit()
 
         thread = threading.Thread(target=do, daemon=True)
         thread.start()
 
     def _enable_refresh_btn(self) -> None:
+        self._force_refreshing = False
         if self._refresh_btn:
             self._refresh_btn.setEnabled(True)
 

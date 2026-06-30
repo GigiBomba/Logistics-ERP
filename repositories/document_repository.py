@@ -1,7 +1,11 @@
 """Document Center repository — CRUD and search for documents + links."""
+import datetime
+import logging
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
+
+logger = logging.getLogger(__name__)
 
 
 class DocumentRepository(BaseRepository):
@@ -17,7 +21,8 @@ class DocumentRepository(BaseRepository):
                description: str, uploaded_by: str,
                uploaded_at: str, updated_at: str,
                copy_type: str = "", cmr_number: str = "",
-               cmr_metadata_json: str = "{}", is_signed: int = 0) -> int:
+               cmr_metadata_json: str = "{}", is_signed: int = 0,
+               commit: bool = True) -> int:
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} "
             f"(doc_number, title, category, entity_type, entity_id, "
@@ -29,6 +34,7 @@ class DocumentRepository(BaseRepository):
              file_path, file_name, file_size, mime_type, file_hash,
              tags, description, uploaded_by, uploaded_at, updated_at,
              copy_type, cmr_number, cmr_metadata_json, is_signed),
+            commit=commit,
         )
 
     def get_by_id(self, doc_id: int) -> Optional[Dict[str, Any]]:
@@ -47,17 +53,17 @@ class DocumentRepository(BaseRepository):
             (file_hash,),
         )
 
-    def update(self, doc_id: int, **fields: Any) -> None:
+    def update(self, doc_id: int, commit: bool = True, **fields: Any) -> None:
         if not fields:
             return
         sets = ", ".join(f"{k} = ?" for k in fields)
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
             tuple(fields.values()) + (doc_id,),
+            commit=commit,
         )
 
     def archive(self, doc_id: int) -> None:
-        import datetime
         self._execute(
             f"UPDATE {self.TABLE} SET is_archived = 1, updated_at = ? WHERE id = ?",
             (datetime.datetime.now().isoformat(), doc_id),
@@ -78,22 +84,37 @@ class DocumentRepository(BaseRepository):
             f"WHERE is_archived = 0 GROUP BY category ORDER BY cnt DESC"
         )
 
-    def get_next_doc_number(self) -> str:
-        import datetime
+    def get_next_doc_number(self, commit: bool = True) -> str:
         year = datetime.datetime.now().year
-        row = self._fetchone(
-            f"SELECT MAX(doc_number) AS last_num FROM {self.TABLE} "
-            f"WHERE doc_number LIKE ?",
-            (f"DOC-{year}-%",),
-        )
-        if row and row.get("last_num"):
-            try:
-                seq = int(row["last_num"].split("-")[-1]) + 1
-            except (ValueError, IndexError):
+        if commit:
+            self.db.conn.execute("BEGIN IMMEDIATE")
+        try:
+            row = self._fetchone(
+                f"SELECT MAX(doc_number) AS last_num FROM {self.TABLE} "
+                f"WHERE doc_number LIKE ?",
+                (f"DOC-{year}-%",),
+            )
+            if row and row.get("last_num"):
+                try:
+                    seq = int(row["last_num"].split("-")[-1]) + 1
+                except (ValueError, IndexError):
+                    seq = 1
+            else:
                 seq = 1
-        else:
-            seq = 1
-        return f"DOC-{year}-{seq:04d}"
+            return f"DOC-{year}-{seq:04d}"
+        except Exception:
+            try:
+                if commit and self.db.conn.in_transaction:
+                    self.db.conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
+        finally:
+            try:
+                if commit and self.db.conn.in_transaction:
+                    self.db.conn.commit()
+            except Exception:
+                pass
 
     def get_ids_by_ids(self, doc_ids: list) -> List[Dict[str, Any]]:
         if not doc_ids:
@@ -235,46 +256,67 @@ class DocumentRepository(BaseRepository):
     # ── Tag CRUD ──────────────────────────────────────────────────────
 
     def add_tag(self, doc_id: int, tag: str) -> bool:
-        doc = self.get_by_id(doc_id)
-        if not doc:
-            return False
         import json
-        try:
-            tags = json.loads(doc["tags"])
-            if not isinstance(tags, list):
-                tags = []
-        except (json.JSONDecodeError, TypeError):
-            tags = []
         tag = tag.strip()
-        if tag and tag not in tags:
+        if not tag:
+            return False
+        try:
+            self.db.conn.execute("BEGIN IMMEDIATE")
+            doc = self.get_by_id(doc_id)
+            if not doc:
+                self.db.conn.execute("ROLLBACK")
+                return False
+            try:
+                tags = json.loads(doc["tags"])
+                if not isinstance(tags, list):
+                    tags = []
+            except (json.JSONDecodeError, TypeError):
+                tags = []
+            if tag in tags:
+                self.db.conn.execute("COMMIT")
+                return False
             tags.append(tag)
             self.update(doc_id, tags=json.dumps(tags),
-                        updated_at=__import__("datetime").datetime.now().isoformat())
+                        updated_at=datetime.datetime.now().isoformat(), commit=False)
+            self.db.conn.execute("COMMIT")
             return True
-        return False
+        except Exception:
+            self.db.conn.execute("ROLLBACK")
+            raise
 
     def remove_tag(self, doc_id: int, tag: str) -> bool:
-        doc = self.get_by_id(doc_id)
-        if not doc:
-            return False
         import json
+        tag = tag.strip()
+        if not tag:
+            return False
         try:
-            tags = json.loads(doc["tags"])
-            if not isinstance(tags, list):
+            self.db.conn.execute("BEGIN IMMEDIATE")
+            doc = self.get_by_id(doc_id)
+            if not doc:
+                self.db.conn.execute("ROLLBACK")
+                return False
+            try:
+                tags = json.loads(doc["tags"])
+                if not isinstance(tags, list):
+                    tags = []
+            except (json.JSONDecodeError, TypeError):
                 tags = []
-        except (json.JSONDecodeError, TypeError):
-            tags = []
-        if tag in tags:
+            if tag not in tags:
+                self.db.conn.execute("COMMIT")
+                return False
             tags.remove(tag)
             self.update(doc_id, tags=json.dumps(tags),
-                        updated_at=__import__("datetime").datetime.now().isoformat())
+                        updated_at=datetime.datetime.now().isoformat(), commit=False)
+            self.db.conn.execute("COMMIT")
             return True
-        return False
+        except Exception:
+            self.db.conn.execute("ROLLBACK")
+            raise
 
     def set_tags(self, doc_id: int, tags: list) -> None:
         import json
         self.update(doc_id, tags=json.dumps(tags),
-                    updated_at=__import__("datetime").datetime.now().isoformat())
+                    updated_at=datetime.datetime.now().isoformat())
 
     # ── Batch operations ──────────────────────────────────────────────
 
@@ -282,15 +324,26 @@ class DocumentRepository(BaseRepository):
         if not doc_ids:
             return 0
         placeholders = ",".join("?" for _ in doc_ids)
-        self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id IN ({placeholders})",
-            tuple(doc_ids),
-        )
-        self._execute(
-            f"DELETE FROM {self.TABLE_LINKS} WHERE document_id IN ({placeholders})",
-            tuple(doc_ids),
-        )
-        return len(doc_ids)
+        try:
+            self.db.conn.execute("BEGIN IMMEDIATE")
+            cursor = self.db.conn.execute(
+                f"DELETE FROM {self.TABLE} WHERE id IN ({placeholders})",
+                tuple(doc_ids),
+            )
+            affected = cursor.rowcount
+            self.db.conn.execute(
+                f"DELETE FROM {self.TABLE_LINKS} WHERE document_id IN ({placeholders})",
+                tuple(doc_ids),
+            )
+            self.db.conn.commit()
+            return affected
+        except Exception:
+            try:
+                if self.db.conn.in_transaction:
+                    self.db.conn.execute("ROLLBACK")
+            except Exception:
+                pass
+            raise
 
     # ── Search (compat wrappers) ──────────────────────────────────────
 
@@ -334,13 +387,15 @@ class DocumentRepository(BaseRepository):
 
     def add_link(self, document_id: int, linked_entity_type: str,
                  linked_entity_id: int, relation_type: str = "attached",
-                 created_at: str = "") -> int:
+                 created_at: str = "",
+                 commit: bool = True) -> int:
         return self._execute_insert(
             f"INSERT OR IGNORE INTO {self.TABLE_LINKS} "
             f"(document_id, linked_entity_type, linked_entity_id, "
             f"relation_type, created_at) VALUES (?, ?, ?, ?, ?)",
             (document_id, linked_entity_type, linked_entity_id,
              relation_type, created_at),
+            commit=commit,
         )
 
     def remove_link(self, link_id: int) -> None:
@@ -350,6 +405,15 @@ class DocumentRepository(BaseRepository):
         self._execute(
             f"DELETE FROM {self.TABLE_LINKS} WHERE document_id = ?",
             (document_id,),
+        )
+
+    def remove_all_links_batch(self, doc_ids: list) -> None:
+        if not doc_ids:
+            return
+        placeholders = ",".join("?" for _ in doc_ids)
+        self._execute(
+            f"DELETE FROM {self.TABLE_LINKS} WHERE document_id IN ({placeholders})",
+            tuple(doc_ids),
         )
 
     def get_links(self, document_id: int) -> List[Dict[str, Any]]:
@@ -443,7 +507,6 @@ class DocumentRepository(BaseRepository):
         return row["cnt"] if row else 0
 
     def get_expiring_documents(self, days_ahead: int = 30) -> List[Dict[str, Any]]:
-        import datetime
         cutoff = (datetime.datetime.now() + datetime.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE expiry_date != '' "
@@ -453,7 +516,6 @@ class DocumentRepository(BaseRepository):
         )
 
     def get_overdue_documents(self) -> List[Dict[str, Any]]:
-        import datetime
         today = datetime.datetime.now().strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE expiry_date != '' "
@@ -554,7 +616,6 @@ class DocumentRepository(BaseRepository):
         )
 
     def get_expiring_contracts(self, days_ahead: int = 30) -> List[Dict[str, Any]]:
-        import datetime
         cutoff = (datetime.datetime.now() + datetime.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
         return self._fetchall(
             "SELECT * FROM contracts WHERE end_date != '' "
@@ -599,5 +660,5 @@ class DocumentRepository(BaseRepository):
             self._execute(
                 "INSERT INTO documents_fts(documents_fts) VALUES('rebuild')"
             )
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("FTS5 index rebuild failed: %s", e)

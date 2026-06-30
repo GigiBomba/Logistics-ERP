@@ -7,20 +7,19 @@ right, topped by a ``TopBar``.
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, Optional
+import contextlib
+from typing import Any, Callable
 
-from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
-    QMainWindow,
-    QWidget,
     QHBoxLayout,
-    QVBoxLayout,
+    QMainWindow,
     QStackedWidget,
+    QVBoxLayout,
+    QWidget,
 )
 
 from ui.widgets.sidebar import Sidebar
 from ui.widgets.topbar import TopBar
-
 
 class AppShell:
     """Creates the overall window layout. Callers use ``view_container`` to add views."""
@@ -29,7 +28,7 @@ class AppShell:
         self,
         root: QMainWindow,
         db,
-        on_nav_select: Optional[Callable[[str, Optional[Dict[str, Any]]], None]] = None,
+        on_nav_select: Callable[[str, dict[str, Any] | None], None] | None = None,
         prefs=None,
         ops=None,
     ):
@@ -61,7 +60,7 @@ class AppShell:
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
-        self.top_bar = TopBar(self.main_area)
+        self.top_bar = TopBar(self.main_area, ops=self.ops)
         self.top_bar.set_alert_navigate_callback(self._on_alert_navigate)
         main_layout.addWidget(self.top_bar)
 
@@ -82,17 +81,13 @@ class AppShell:
     def set_alert_count(self, count: int) -> None:
         self.top_bar.set_alert_count(count)
 
-    def _on_alert_navigate(self, destination: str, data: Optional[Dict[str, Any]] = None) -> None:
+    def _on_alert_navigate(self, destination: str, data: dict[str, Any] | None = None) -> None:
         """Navigate to a view — called from alert click if wired."""
         if self._on_nav_select:
             self._on_nav_select(destination, data)
 
     def destroy(self) -> None:
-        try:
+        with contextlib.suppress(Exception):
             self.top_bar.destroy()
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self.nav.destroy()
-        except Exception:
-            pass
