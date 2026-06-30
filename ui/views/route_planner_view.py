@@ -508,7 +508,7 @@ class QtRoutePlannerView(QWidget):
 
         # ── Left Panel (TASK 1) ──
         panel = QFrame()
-        panel.setFixedWidth(300)
+        panel.setFixedWidth(340)
         panel.setObjectName("route_panel")
         panel.setStyleSheet(f"""
             QFrame#route_panel {{
@@ -1048,7 +1048,7 @@ class QtRoutePlannerView(QWidget):
                 w.deleteLater()
 
         codes = self._core.get_excluded_countries()
-        chips_per_row = 3
+        chips_per_row = 5
         for i in range(0, len(codes), chips_per_row):
             row = QWidget()
             row.setStyleSheet("background: transparent;")
