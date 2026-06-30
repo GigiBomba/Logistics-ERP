@@ -56,7 +56,7 @@ class TachoService:
         return None
 
     def _run_parser(self, file_bytes: bytes):
-        """Run tachograph.exe parse --raw on *file_bytes* via temp file."""
+        """Run tachograph.exe parse on *file_bytes* via temp file (semantic JSON)."""
         parser = self._resolve_parser_path()
         if not parser:
             return None
@@ -66,7 +66,7 @@ class TachoService:
                 tmp_path = tmp.name
             try:
                 result = subprocess.run(
-                    [parser, "parse", "--raw", tmp_path],
+                    [parser, "parse", tmp_path],
                     capture_output=True,
                     timeout=30,
                 )
@@ -79,6 +79,14 @@ class TachoService:
         except FileNotFoundError:
             return None
 
+    @staticmethod
+    def _safe_str(val) -> str:
+        if val is None:
+            return ""
+        if isinstance(val, dict):
+            return str(val.get("value", val.get("name", "")))
+        return str(val)
+
     def import_ddd_file(self, file_path: str) -> dict:
         """Main entry point. Accepts any .DDD file path."""
         parser = self._resolve_parser_path()
@@ -87,8 +95,8 @@ class TachoService:
                 "success": False,
                 "error": (
                     "No tachograph parser found. "
-                    "Please place dddsimple.exe or tachograph.exe in the tools/tachograph/ directory, "
-                    "or set the OPERION_DDDSIMPLE_PATH / OPERION_TACHOGRAPH_PATH environment variable."
+                    "Please place tachograph.exe in the tools/tachograph/ directory, "
+                    "or set the OPERION_TACHOGRAPH_PATH environment variable."
                 )
             }
 
@@ -126,27 +134,31 @@ class TachoService:
             return {"success": False,
                     "error": f"Invalid JSON from parser: {e}"}
 
-        file_type = "unknown"
-        if "driverCard" in data or "cardActivities" in data:
-            file_type = "driver_card"
-        elif "vehicleUnit" in data or "calibrationRecord" in data:
-            file_type = "vehicle_unit"
-
+        # Detect file type — support both tachograph-go and legacy dddsimple formats
+        ftype = data.get("type", "")
         file_name = os.path.basename(file_path)
-        if file_type == "driver_card":
+        if ftype == "DRIVER_CARD":
             return self._process_driver_card(
                 data, file_name, file_hash, raw_json
             )
-        elif file_type == "vehicle_unit":
+        elif ftype == "VEHICLE_UNIT":
             return self._process_vehicle_unit(
                 data, file_name, file_hash, raw_json
             )
-        else:
-            return {
-                "success": False,
-                "error": "Could not determine file type. "
-                         "Is this a valid tachograph file?"
-            }
+        # Legacy format fallback (dddsimple-style keys at top level)
+        if "driverCard" in data or "cardActivities" in data:
+            return self._process_driver_card(
+                data, file_name, file_hash, raw_json
+            )
+        if "vehicleUnit" in data or "calibrationRecord" in data:
+            return self._process_vehicle_unit(
+                data, file_name, file_hash, raw_json
+            )
+        return {
+            "success": False,
+            "error": "Could not determine file type. "
+                     "Is this a valid tachograph file?"
+        }
 
     def get_import_history(self, limit: int = 50) -> list:
         return self.tacho_import_repository.get_recent(limit)
@@ -212,29 +224,44 @@ class TachoService:
                               file_name: str,
                               file_hash: str,
                               raw_json: str) -> dict:
+        # Try legacy dddsimple paths first, then tachograph-go semantic paths
         driver_name = self._get_nested(
             data,
             "driverCard.cardHolderName.holderSurname",
             "driverCard.holderName.holderSurname",
             "cardHolderName.holderSurname",
+            "driverCard.tachograph.identification.cardHolderSurname.value",
+            "driverCard.tachograph.identification.cardHolderSurname",
+            "driverCard.tachograph_g2.identification.cardHolderSurname.value",
+            "driverCard.tachograph_g2.identification.cardHolderSurname",
             default=""
         )
         driver_first = self._get_nested(
             data,
             "driverCard.cardHolderName.holderFirstNames",
             "driverCard.holderName.holderFirstNames",
+            "driverCard.tachograph.identification.cardHolderFirstNames.value",
+            "driverCard.tachograph.identification.cardHolderFirstNames",
+            "driverCard.tachograph_g2.identification.cardHolderFirstNames.value",
+            "driverCard.tachograph_g2.identification.cardHolderFirstNames",
             default=""
         )
         card_number = self._get_nested(
             data,
             "driverCard.cardNumber",
             "cardNumber",
+            "driverCard.tachograph.identification.driverIdentification.value",
+            "driverCard.tachograph.identification.driverIdentification",
+            "driverCard.tachograph_g2.identification.driverIdentification.value",
+            "driverCard.tachograph_g2.identification.driverIdentification",
             default=None
         )
         card_expiry = self._get_nested(
             data,
             "driverCard.cardExpiryDate",
             "driverCard.applicationExpiryDate",
+            "driverCard.tachograph.identification.cardExpiryDate",
+            "driverCard.tachograph_g2.identification.cardExpiryDate",
             default=None
         )
 
@@ -264,12 +291,10 @@ class TachoService:
             "driverCard.cardDrivingLicenceInformation",
             "driverCard.driverActivities.activityDailyRecords",
             "driverCard.activityDailyRecords",
+            "driverCard.tachograph.driverActivityData.dailyRecords",
+            "driverCard.tachograph_g2.driverActivityData.dailyRecords",
             default=[]
         )
-        if not activities:
-            activities = (data.get("driverCard", {})
-                          .get("driverActivities", {})
-                          .get("activityDailyRecords", []))
 
         days_imported = 0
         total_violations = 0
@@ -279,6 +304,7 @@ class TachoService:
                 activity_date = self._parse_tacho_date(
                     day_record.get("activityRecordDate")
                     or day_record.get("date")
+                    or (day_record.get("activityRecordDate", {}) or {}).get("seconds")
                 )
                 if not activity_date:
                     continue
@@ -287,14 +313,17 @@ class TachoService:
                 work = 0
                 rest = 0
                 avail = 0
-                distance = 0
 
                 slots = (day_record.get("activityChangeInfo", [])
                          or day_record.get("activities", []))
+
+                # Handle tachograph-go format where each change info has
+                # activityType (int enum) and duration (int minutes)
                 for slot in slots:
-                    minutes = int(slot.get("duration", 0) or 0)
+                    minutes = int(slot.get("duration", slot.get("activityDuration", 0)) or 0)
                     activity_type_raw = (slot.get("activityType")
-                                         or slot.get("activity", ""))
+                                         or slot.get("activity", "")
+                                         or slot.get("type", ""))
                     atype = str(activity_type_raw).lower()
                     if activity_type_raw == 0 or "drive" in atype:
                         driving += minutes
@@ -306,7 +335,7 @@ class TachoService:
                         avail += minutes
 
                 distance = float(
-                    day_record.get("distanceDriven", 0) or 0
+                    day_record.get("distanceDriven", day_record.get("activityDayDistance", 0)) or 0
                 )
 
                 violations = []
@@ -367,17 +396,26 @@ class TachoService:
                                file_name: str,
                                file_hash: str,
                                raw_json: str) -> dict:
+        # Try legacy dddsimple paths first, then tachograph-go semantic paths
         plate = self._get_nested(
             data,
             "vehicleUnit.vehicleRegistrationIdentification.vehicleRegistrationPlate",
             "vehicleUnit.vuIdentification.vuRegistrationNumber",
             "registrationPlate",
+            "vehicleUnit.gen1.overview.vehicleRegistration.registrationPlate.value",
+            "vehicleUnit.gen1.overview.vehicleRegistration.registrationPlate",
+            "vehicleUnit.gen2_v1.overview.vehicleRegistration.registrationPlate.value",
+            "vehicleUnit.gen2_v2.overview.overview.vehicleRegistration.registrationPlate.value",
             default=None
         )
         vin = self._get_nested(
             data,
             "vehicleUnit.vehicleRegistrationIdentification.vehicleIdentificationNumber",
             "vehicleUnit.vuIdentification.vin",
+            "vehicleUnit.gen1.overview.vehicleRegistration.vin.value",
+            "vehicleUnit.gen1.overview.vehicleRegistration.vin",
+            "vehicleUnit.gen2_v1.overview.vehicleRegistration.vin.value",
+            "vehicleUnit.gen2_v2.overview.overview.vehicleRegistration.vin.value",
             default=None
         )
 
@@ -396,6 +434,9 @@ class TachoService:
             "vehicleUnit.vuCalibrationData.vuCalibrationRecord.0.calibrationDate",
             "vehicleUnit.calibrationData.calibrationDate",
             "calibrationRecord.calibrationDate",
+            "vehicleUnit.gen1.overview.calibrationDate",
+            "vehicleUnit.gen2_v1.overview.calibrationDate",
+            "vehicleUnit.gen2_v2.overview.overview.calibrationDate",
             default=None
         )
         calib_date = self._parse_tacho_date(calib_date_raw)
@@ -408,6 +449,9 @@ class TachoService:
             "vehicleUnit.vuActivities.odometer",
             "vehicleUnit.vuOverview.lastOdometerValue",
             "odometerValueMidnight",
+            "vehicleUnit.gen1.overview.lastOdometerValue",
+            "vehicleUnit.gen2_v1.overview.lastOdometerValue",
+            "vehicleUnit.gen2_v2.overview.overview.lastOdometerValue",
             default=None
         )
         odometer_km = None
@@ -416,23 +460,36 @@ class TachoService:
                 odometer_km = float(odometer_raw) / 1000.0
 
         speed_violations = 0
-        speed_data = self._get_nested(
-            data,
-            "vehicleUnit.vuDetailedSpeedData",
-            default=[]
-        )
-        if isinstance(speed_data, list):
-            for block in speed_data:
-                speeds = block.get("speedsPerSecond", []) or []
+
+        def _count_speed_violations(speed_data_list):
+            count = 0
+            for block in (speed_data_list or []):
+                speeds = block.get("speedsPerSecond", block.get("speedValues", [])) or []
                 if isinstance(speeds, list):
                     in_violation = False
                     for s in speeds:
                         if isinstance(s, (int, float)) and s > 90:
                             if not in_violation:
-                                speed_violations += 1
+                                count += 1
                                 in_violation = True
                         else:
                             in_violation = False
+            return count
+
+        # Try legacy path then tachograph-go gen-specific paths
+        speed_data = self._get_nested(data,
+            "vehicleUnit.vuDetailedSpeedData",
+            default=[])
+        if isinstance(speed_data, list) and speed_data:
+            speed_violations = _count_speed_violations(speed_data)
+        if speed_violations == 0:
+            for gen_key in ("gen1", "gen2_v1", "gen2_v2"):
+                gen_data = data.get("vehicleUnit", data).get(gen_key, {})
+                sd = gen_data.get("detailedSpeed", gen_data.get("detailed_speed", []))
+                if isinstance(sd, list):
+                    speed_violations = _count_speed_violations(sd)
+                    if speed_violations > 0:
+                        break
 
         import_id = self.tacho_import_repository.create({
             "file_name": file_name,
