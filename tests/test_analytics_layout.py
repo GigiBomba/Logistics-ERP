@@ -1633,7 +1633,8 @@ class TestRequirementsTxt:
         with open("requirements.txt", encoding="utf-8") as f:
             content = f.read()
         assert "plotly" in content.lower()
-        assert "kaleido" in content.lower()
+        assert "choreographer" in content.lower()
+        assert "kaleido" not in content.lower()
 
 
 # ── Phase 10: chart lifecycle / cache (UI freeze fix) ─────────────────
@@ -1642,7 +1643,7 @@ class TestRequirementsTxt:
 class TestBaseTabCleanup:
     """``BaseTab.cleanup()`` is a no-op by default — chart widgets and
     their rendered ``QPixmap`` objects survive ``shutdown()`` so
-    re-entering analytics does not trigger a kaleido re-render."""
+    re-entering analytics does not trigger a re-render."""
 
     def test_cleanup_default_is_noop(self, qt_widget, qtbot):
         from PySide6.QtWidgets import QLabel
@@ -1748,7 +1749,7 @@ class TestBaseTabRefresh:
 class TestPlotlyChartWidgetCache:
     """``PlotlyChartWidget`` per-instance LRU pixmap cache.
 
-    These tests exercise the cache directly (no kaleido).  The
+    These tests exercise the cache directly (no renderer).  The
     deliverable is the ``_pixmap_cache`` dict; the test inserts a
     fake pixmap and verifies the cache is consulted before a render
     is submitted."""
@@ -1845,7 +1846,7 @@ class TestAnalyticsViewWakeup:
     """``QtAnalyticsView.wakeup`` must NOT force a full re-render.
 
     The user reported 45-second load times because every view-switch
-    triggered a full kaleido re-render.  After the lifecycle fix,
+    triggered a full re-render.  After the lifecycle fix,
     ``wakeup`` is a near-instant operation that preserves the
     rendered pixmaps.
     """
@@ -1900,7 +1901,7 @@ class TestExplicitRefreshButton:
 # ── Async render manager (Phase 9: UI freeze fix) ────────────────────
 
 class TestRenderManager:
-    """``RenderManager`` off-loads kaleido SVG renders to a thread pool.
+    """``RenderManager`` off-loads SVG renders to a thread pool.
 
     These tests exercise the manager API only — they do **not** spin
     up Chromium.  That is the whole point of the refactor: every chart
@@ -2020,9 +2021,9 @@ class TestSparklineLabelAsync:
         """A second ``render_async`` while a render is in flight is a no-op.
 
         The first render's pixmap will be applied when it completes.
-        We must NOT cancel it (kaleido cannot be interrupted and
+        We must NOT cancel it (renders cannot be interrupted and
         the cancelled render would still complete) and we must NOT
-        submit a duplicate (that would just waste kaleido work).
+        submit a duplicate (that would just waste render work).
         """
         from PySide6.QtWidgets import QApplication
         from ui.views.analytics._tab_base import _SparklineLabel, _render_sparkline
@@ -2059,7 +2060,7 @@ class TestSetFigureDefersWhenHidden:
 
     Pre-Phase-1 the widget was always rendered immediately on
     ``set_figure``, even before the layout pass had run.  This
-    wasted a kaleido call per chart on every analytics open.
+    wasted a render call per chart on every analytics open.
     """
 
     def test_set_figure_defers_when_widget_not_visible(self, qt_widget, qtbot):
@@ -2089,7 +2090,7 @@ class TestShowEventIsIdempotent:
     A widget's ``showEvent`` may fire multiple times during the first
     show (e.g. when the parent layout is re-laid out).  Without
     idempotency, each fire would queue another render — wasting
-    kaleido work.
+    render work.
     """
 
     def test_show_event_skips_when_render_in_flight(self, qt_widget, qtbot):
@@ -2223,37 +2224,12 @@ class TestChartLoadingOverlayAPI:
 
 
 class TestCpuAwareConcurrency:
-    """``_max_concurrent`` is capped at 2 because kaleido is Chromium-bound."""
+    """``_max_concurrent`` always returns 1 — the render engine serialises
+    all work on a single persistent asyncio thread."""
 
-    def test_2_cores_yields_1(self):
+    def test_any_cores_returns_1(self):
         from ui.plotly_renderer import RenderManager
-        import unittest.mock as mock
-        with mock.patch("os.cpu_count", return_value=2):
-            assert RenderManager._max_concurrent() == 1
-
-    def test_4_cores_yields_2(self):
-        from ui.plotly_renderer import RenderManager
-        import unittest.mock as mock
-        with mock.patch("os.cpu_count", return_value=4):
-            assert RenderManager._max_concurrent() == 2
-
-    def test_6_cores_capped_to_2(self):
-        from ui.plotly_renderer import RenderManager
-        import unittest.mock as mock
-        with mock.patch("os.cpu_count", return_value=6):
-            assert RenderManager._max_concurrent() == 2
-
-    def test_8_cores_capped_to_2(self):
-        from ui.plotly_renderer import RenderManager
-        import unittest.mock as mock
-        with mock.patch("os.cpu_count", return_value=8):
-            assert RenderManager._max_concurrent() == 2
-
-    def test_12_cores_capped_to_2(self):
-        from ui.plotly_renderer import RenderManager
-        import unittest.mock as mock
-        with mock.patch("os.cpu_count", return_value=12):
-            assert RenderManager._max_concurrent() == 2
+        assert RenderManager._max_concurrent() == 1
 
 
 class TestEffectiveConcurrencyInStats:
@@ -2266,13 +2242,8 @@ class TestEffectiveConcurrencyInStats:
         manager = get_render_manager()
         s = manager.stats()
         assert "effective_concurrency" in s
-        # The resolved value matches the class method.
-        assert s["effective_concurrency"] == manager._max_concurrent()
-        # And it matches the formula for the host's CPU count.
-        import os
-        cpu = os.cpu_count() or 4
-        expected = max(1, min(2, cpu // 2))
-        assert s["effective_concurrency"] == expected
+        # The resolved value matches the class method (always 1 now).
+        assert s["effective_concurrency"] == manager._max_concurrent() == 1
 
 
 class TestSparklineLabelDeferredRender:
@@ -2312,7 +2283,7 @@ class TestCacheHitNotifiesOwner:
         from ui.plotly_renderer import PlotlyChartWidget
         from ui.plotly_charts import make_line_chart
 
-        # Build a visible widget tree (kaleido is bypassed by
+        # Build a visible widget tree (render is bypassed by
         # pre-populating the cache).
         widget = PlotlyChartWidget()
         QVBoxLayout(qt_widget).addWidget(widget)
@@ -2432,9 +2403,9 @@ class TestCacheHitNotifiesOwner:
 
 
 class TestMaxConcurrentCappedAtTwo:
-    """The kaleido concurrency is capped at 2 regardless of CPU count.
+    """The render concurrency is capped at 2 regardless of CPU count.
 
-    Empirically, kaleido v1 spawns a Chromium process per render and
+    Empirically, each render spawns a Chromium process and
     multiple workers contend for the same Chrome profile directory.
     The net throughput is *worse* with 10 workers than with 2.  The
     cap keeps the user-visible tab snappy without spawning dozens

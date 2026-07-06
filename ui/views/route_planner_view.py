@@ -8,14 +8,15 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 import uuid
 from typing import Any
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPixmap
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
-    QComboBox,
+    QFileDialog,
     QFrame,
     QGraphicsOpacityEffect,
     QGridLayout,
@@ -26,7 +27,6 @@ from PySide6.QtWidgets import (
     QProgressBar,
     QPushButton,
     QScrollArea,
-    QSizePolicy,
     QStackedWidget,
     QVBoxLayout,
     QWidget,
@@ -43,8 +43,12 @@ from services.operations.event_bus import (
 from services.route_history_service import RouteHistoryRecord, RouteHistoryService
 from services.route_persistence import RoutePersistenceService
 from services.route_planner_controller import RoutePlannerController
-from services.route_profiles import GRAPHHOPPER_PROFILES
 from services.route_result_presenter import format_history_loaded_info
+from services.route_sharing_service import (
+    build_google_maps_url,
+    build_share_url,
+    extract_stops_from_route_result,
+)
 from services.route_state import RouteStateManager
 from services.stop_factory import normalize_existing_stop
 from ui.components import (
@@ -54,9 +58,8 @@ from ui.components import (
     get_icon,
 )
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_HOVER,
-    COLOR_BG_BASE,
+    COLOR_ACCENT_PRIMARY,
     COLOR_BG_ELEVATED,
     COLOR_BG_HOVER,
     COLOR_BG_OVERLAY,
@@ -67,24 +70,18 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
-    FONT_SIZE_SM,
-    FONT_SIZE_BASE,
-    FONT_SIZE_MD,
-    FONT_SIZE_LG,
     FONT_WEIGHT_MEDIUM,
-    FONT_WEIGHT_SEMIBOLD,
     FONT_WEIGHT_REGULAR,
+    FONT_WEIGHT_SEMIBOLD,
     SP,
-    SPACE_1,
     SPACE_2,
-    SPACE_3,
-    SPACE_4,
 )
 from ui.map import MapWidget, QtRouteMapRenderer
 from ui.theme import COLORS
 from ui.widgets import (
     StyledComboBox,
 )
+from utils.labels import GRAPHHOPPER_PROFILES
 
 logger = logging.getLogger(__name__)
 
@@ -404,21 +401,30 @@ class QtRoutePlannerView(QWidget):
         parent: QWidget | None = None,
         db=None,
         controller=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self.controller = controller  # MainWindow reference for module switching
+        self._api_client = api_client
 
-        self._core = RoutePlannerController(db)
-        self.route_history_service = RouteHistoryService(db)
-        self.route_state = RouteStateManager(db)
-        self.fleet_service = FleetService(db)
-        self._persistence = RoutePersistenceService(
-            self.route_history_service,
-            self.route_state,
-            self._core.cost_engine,
-        )
-        self._core.bind_persistence(self._persistence)
+        if db is not None:
+            self._core = RoutePlannerController(db)
+            self.route_history_service = RouteHistoryService(db)
+            self.route_state = RouteStateManager(db)
+            self.fleet_service = FleetService(db)
+            self._persistence = RoutePersistenceService(
+                self.route_history_service,
+                self.route_state,
+                self._core.cost_engine,
+            )
+            self._core.bind_persistence(self._persistence)
+        else:
+            self._core = None
+            self.route_history_service = None
+            self.route_state = None
+            self.fleet_service = None
+            self._persistence = None
 
         self.profile_map = GRAPHHOPPER_PROFILES
         self._profile_key_to_display: dict[str, str] = {}
@@ -508,7 +514,7 @@ class QtRoutePlannerView(QWidget):
 
         # ── Left Panel (TASK 1) ──
         panel = QFrame()
-        panel.setFixedWidth(340)
+        panel.setMinimumWidth(280)
         panel.setObjectName("route_panel")
         panel.setStyleSheet(f"""
             QFrame#route_panel {{
@@ -888,6 +894,27 @@ class QtRoutePlannerView(QWidget):
         export_btn.clicked.connect(self._export_route_metadata)
         bl.addWidget(export_btn)
 
+        share_btn = QPushButton(t("route.share", default="Share"))
+        share_btn.setFixedHeight(28)
+        share_btn.setCursor(Qt.PointingHandCursor)
+        share_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {COLOR_BG_OVERLAY};
+                color: {COLOR_TEXT_SECONDARY};
+                border: 1px solid {COLOR_BORDER_SUBTLE};
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: {FONT_WEIGHT_REGULAR};
+            }}
+            QPushButton:hover {{
+                background: {COLOR_BG_HOVER};
+                color: {COLOR_TEXT_PRIMARY};
+                border-color: {COLOR_BORDER_MEDIUM};
+            }}
+        """)
+        share_btn.clicked.connect(self._on_share_route)
+        bl.addWidget(share_btn)
+
         # Remove old sidebar references
         self.calculate_btn = self.calc_btn
 
@@ -905,8 +932,8 @@ class QtRoutePlannerView(QWidget):
     def _load_trucks(self) -> None:
         try:
             from services.conflict_service import TripConflictService
-            conflict_svc = TripConflictService(self.fleet_service.db)
-            rows = self.fleet_service.get_trucks()
+            conflict_svc = TripConflictService(self.fleet_service.db) if self.fleet_service is not None else None
+            rows = self.fleet_service.get_trucks() if self.fleet_service is not None else []
             self._trucks_map = {}
             self._truck_label_to_id = {}
             self.truck_combo.clear()
@@ -914,7 +941,7 @@ class QtRoutePlannerView(QWidget):
                 truck_id = str(row["id"])
                 plate = row["plate_number"]
                 label = f"{plate} - {row.get('model') or ''}"
-                next_slot = conflict_svc.get_next_available_slot(plate)
+                next_slot = conflict_svc.get_next_available_slot(plate) if conflict_svc is not None else None
                 if next_slot:
                     label = f"{label}  [{t('dispatch_board.available_from').format(next_slot)}]"
                 self._truck_label_to_id[label] = truck_id
@@ -932,6 +959,8 @@ class QtRoutePlannerView(QWidget):
     # ── Country exclusions ─────────────────────────────────────────────────────
 
     def _on_exclusions_changed(self) -> None:
+        if self._core is None:
+            return
         codes = self._core.get_excluded_countries()
         if self._map_renderer:
             self._map_renderer.draw_avoided_country_overlays(codes)
@@ -1271,6 +1300,31 @@ class QtRoutePlannerView(QWidget):
         )
         btn_layout.addWidget(calc_btn, 1)
 
+        # Open in Google Maps
+        gmaps_btn = QPushButton(
+            t("route.open_in_gmaps", default="Google Maps")
+        )
+        gmaps_btn.setFixedHeight(36)
+        gmaps_btn.setCursor(Qt.PointingHandCursor)
+        gmaps_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {COLOR_BG_OVERLAY};
+                color: {COLOR_TEXT_SECONDARY};
+                border: 1px solid {COLOR_BORDER_SUBTLE};
+                border-radius: 4px;
+                font-size: 11px;
+                font-weight: {FONT_WEIGHT_REGULAR};
+                padding: 0 12px;
+            }}
+            QPushButton:hover {{
+                background: {COLOR_BG_HOVER};
+                color: {COLOR_TEXT_PRIMARY};
+                border-color: {COLOR_BORDER_MEDIUM};
+            }}
+        """)
+        gmaps_btn.clicked.connect(self._on_open_in_gmaps)
+        btn_layout.addWidget(gmaps_btn)
+
         discard_btn = Btn(btn_row, "", variant="danger", icon_name="mdi6.delete", command=self._discard_route)
         discard_btn.setFixedSize(36, 36)
         btn_layout.addWidget(discard_btn)
@@ -1409,6 +1463,142 @@ class QtRoutePlannerView(QWidget):
         self._summary_text.setText(t("route.export_success").format(path))
         self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
 
+    # ── Share / Google Maps ────────────────────────────────────────────────────
+
+    def _on_share_route(self) -> None:
+        if not self._last_route_result:
+            return
+
+
+        stops = extract_stops_from_route_result(self._last_route_result)
+        route = self._last_route_result
+        truck_label = None
+        truck_id = None
+        if self._selected_truck_id and self._trucks_map:
+            truck_id = self._selected_truck_id
+            truck_obj = self._trucks_map.get(truck_id, {})
+            truck_label = truck_obj.get("plate_number") or truck_obj.get("name")
+
+        profile_key = self._profile_display_to_key.get(
+            self.profile_combo.currentText(), "Recommended"
+        )
+
+        share_url = build_share_url(
+            stops=stops,
+            profile=profile_key,
+            truck_id=truck_id,
+            truck_label=truck_label,
+        )
+
+        # Build Google Maps URL
+        route_stops = route.get("stops") or []
+        gmaps_url = ""
+        if len(route_stops) >= 2:
+            origin = (float(route_stops[0][0]), float(route_stops[0][1]))
+            destination = (float(route_stops[-1][0]), float(route_stops[-1][1]))
+            waypoints = []
+            for s in route_stops[1:-1]:
+                waypoints.append((float(s[0]), float(s[1])))
+            gmaps_url = build_google_maps_url(origin, destination, waypoints)
+
+        from ui.dialogs.share_route_dialog import ShareRouteDialog
+
+        dialog = ShareRouteDialog(
+            parent=self,
+            share_url=share_url,
+            google_maps_url=gmaps_url,
+            on_export_file=self._on_share_export_file,
+            on_share_via_os=self._on_share_via_os,
+            on_open_in_gmaps=self._on_open_in_gmaps,
+        )
+        dialog.exec()
+
+    def _on_share_export_file(self) -> str | None:
+        """Export the current route as a .operionroute file and return the path."""
+        if not self._last_route_result:
+            return None
+
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            t("route.export_file_title", default="Save Route File"),
+            f"route_{self._last_route_history_id or 'export'}.operionroute",
+            "Operion Route (*.operionroute)",
+        )
+        if not path:
+            return None
+
+        from services.route_sharing_service import encode_route_file
+
+        stops = extract_stops_from_route_result(self._last_route_result)
+        route = self._last_route_result
+        profile_key = self._profile_display_to_key.get(
+            self.profile_combo.currentText(), "Recommended"
+        )
+        truck_label = None
+        truck_id = None
+        if self._selected_truck_id:
+            truck_id = self._selected_truck_id
+            truck_obj = self._trucks_map.get(truck_id, {})
+            truck_label = truck_obj.get("plate_number") or truck_obj.get("name")
+
+        data = encode_route_file(
+            stops=stops,
+            profile=profile_key,
+            truck_id=truck_id,
+            truck_label=truck_label,
+            geometry=route.get("geometry"),
+            distance_km=route.get("distance_km"),
+            duration_min=route.get("duration_min"),
+        )
+
+        try:
+            with open(path, "wb") as f:
+                f.write(data)
+            self._summary_text.setText(
+                t("route.export_success_file", default="Route saved: {path}").format(path=path)
+            )
+            self._summary_text.setStyleSheet(
+                f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;"
+            )
+            return path
+        except OSError as exc:
+            self._summary_text.setText(
+                t("route.export_error", default="Failed to save: {error}").format(error=str(exc))
+            )
+            self._summary_text.setStyleSheet(
+                f"color: {COLORS.get('danger', '#ef4444')}; font-size: 11px;"
+            )
+            return None
+
+    def _on_share_via_os(self) -> None:
+        """Open the OS share sheet with the route file."""
+        path = self._on_share_export_file()
+        if not path:
+            return
+        # Use QDesktopServices to open the file's containing folder as a
+        # rudimentary share.  A full Windows Share contract integration
+        # would require winrt, which is not currently a dependency.
+        QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
+
+    def _on_open_in_gmaps(self) -> None:
+        """Open the current route in Google Maps in the default browser."""
+        if not self._last_route_result:
+            return
+
+        route_stops = self._last_route_result.get("stops") or []
+        if len(route_stops) < 2:
+            return
+
+        origin = (float(route_stops[0][0]), float(route_stops[0][1]))
+        destination = (float(route_stops[-1][0]), float(route_stops[-1][1]))
+        waypoints = []
+        for s in route_stops[1:-1]:
+            waypoints.append((float(s[0]), float(s[1])))
+
+        gmaps_url = build_google_maps_url(origin, destination, waypoints)
+
+        QDesktopServices.openUrl(QUrl(gmaps_url))
+
     # ── i18n ───────────────────────────────────────────────────────────────────
 
     def _on_language_changed(self, lang: str) -> None:
@@ -1426,6 +1616,98 @@ class QtRoutePlannerView(QWidget):
             self._render_stops_list()
         except Exception:
             logger.exception("Language refresh failed")
+
+    @property
+    def lbl_info(self) -> QLabel:
+        """Backward-compat alias for the summary text label (used by tests)."""
+        return self._summary_text
+
+    def _remove_stop_field(self) -> None:
+        """Backward-compat: remove the last intermediate stop (used by tests)."""
+        stop_indices = [i for i, s in enumerate(self.stops_state) if s.get("type") == "stop"]
+        if stop_indices:
+            self._remove_stop_index(stop_indices[-1])
+
+    def _toggle_click_add(self, enabled: bool) -> None:
+        """Backward-compat: enable/disable click-to-add mode (used by tests)."""
+        self._click_to_add_enabled = bool(enabled)
+        if hasattr(self, "_click_add_check"):
+            self._click_add_check.setChecked(bool(enabled))
+
+    # ── Navigation data (from deep link / file open) ──────────────────────────
+
+    def handle_nav_data(self, data: dict[str, Any]) -> None:
+        """Handle incoming navigation data from a share URL or file open.
+
+        Called by ``MainWindow._switch_module`` when the module is
+        navigated to with data (e.g. ``--open-url`` or ``--open-file``).
+        """
+        share_url = data.get("share_url")
+        share_file = data.get("share_file")
+        if share_url:
+            self._load_from_share_url(share_url)
+        elif share_file:
+            self._load_from_share_file(share_file)
+
+    def _load_from_share_url(self, url: str) -> None:
+        """Load route state from a share URL and trigger calculation."""
+        patch = self._core.load_from_url(url)
+        if patch is None:
+            return
+        self._apply_share_patch(patch)
+
+    def _load_from_share_file(self, path: str) -> None:
+        """Load route state from a .operionroute file and trigger calculation."""
+        patch = self._core.load_from_route_file(path)
+        if patch is None:
+            return
+        self._apply_share_patch(patch)
+
+    def _apply_share_patch(self, patch: dict[str, Any]) -> None:
+        """Apply a planner state patch from a share URL or file.
+
+        Populates stops, selects the truck/profile, then fires the
+        route calculation so the recipient sees the route immediately.
+        """
+        stops = patch.get("stops", [])
+        if len(stops) >= 2:
+            self.stops_state = stops
+            self.stop_vars = {}
+            self._render_stops_list()
+
+        profile_label = patch.get("profile_label", "Recommended")
+        display = self._profile_key_to_display.get(profile_label)
+        if display:
+            self.profile_combo.setCurrentText(display)
+
+        truck_id = patch.get("truck_id")
+        if truck_id:
+            idx = self.truck_combo.findData(truck_id)
+            if idx >= 0:
+                self.truck_combo.setCurrentIndex(idx)
+
+        # Also handle route result if the file contained full geometry
+        route = patch.get("route")
+        if route and route.get("geometry"):
+            self._last_route_result = route
+            self._show_route_result(
+                distance_km=float(route.get("distance_km", 0)),
+                duration_min=float(route.get("duration_min", 0)),
+                fuel_cost_eur=0,
+                summary_text="",
+            )
+            if self._map_renderer:
+                self._map_renderer.draw_route(
+                    route["geometry"],
+                    route,
+                    show_comparison=self._compare_check.isChecked(),
+                    highlight_avoided=True,
+                )
+                self._map_renderer.update_stop_markers(self.stops_state)
+                self._map_renderer.center_on_geometry(route["geometry"])
+        else:
+            # No geometry — trigger a fresh calculation
+            self._on_calculate_click()
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 

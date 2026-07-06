@@ -104,12 +104,16 @@ class EmailComposerDialog(QDialog):
         ordered_doc_ids: list[int] | None = None,
         package_id: int | None = None,
         documents: list[dict[str, Any]] | None = None,
+        trip_repo=None,
+        pipeline_repo=None,
     ) -> None:
         super().__init__(parent)
         self.db = db
         self.trip_id = int(trip_id) if trip_id is not None else None
         self.prefs = prefs
         self.ordered_doc_ids = list(ordered_doc_ids or [])
+        self._trip_repo = trip_repo if trip_repo is not None else TripRepository(db)
+        self._pipeline_repo = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
         # If the caller already loaded the ordered documents (the
         # package preview does), reuse them.  Otherwise, fall back to
         # a PackageBuilder lookup.
@@ -204,7 +208,7 @@ class EmailComposerDialog(QDialog):
         customer = None
 
         if self.trip_id is not None:
-            trip = TripRepository(self.db).get_by_id(self.trip_id)
+            trip = self._trip_repo.get_by_id(self.trip_id)
             if not trip:
                 self._error_label.setText(
                     t("automation.trip_not_found", default="Trip not found")
@@ -365,7 +369,7 @@ class EmailComposerDialog(QDialog):
             return
         # Ensure package row exists.
         package_id = self._package_id
-        pipeline = PipelineRepository(self.db)
+        pipeline = self._pipeline_repo
         if not package_id:
             try:
                 package_id = pipeline.create_package(self.trip_id)
@@ -417,8 +421,7 @@ class EmailComposerDialog(QDialog):
     def _on_send_succeeded(self, package_id: int) -> None:
         """Mark the package as sent and close the dialog."""
         to = getattr(self, "_send_async_to", "")
-        from repositories.pipeline_repository import PipelineRepository
-        pipeline = PipelineRepository(self.db)
+        pipeline = self._pipeline_repo
         try:
             pipeline.update_package(
                 package_id,
@@ -440,8 +443,7 @@ class EmailComposerDialog(QDialog):
         """Roll package back to draft and show the error."""
         logger.warning("Async email send failed for package %s: %s", package_id, error)
         try:
-            from repositories.pipeline_repository import PipelineRepository
-            PipelineRepository(self.db).update_package(
+            self._pipeline_repo.update_package(
                 package_id, status="draft", error_message=error,
             )
         except Exception:
@@ -453,7 +455,7 @@ class EmailComposerDialog(QDialog):
 
     def _on_save_draft(self) -> None:
         to = self._to_combo.currentText().strip()
-        pipeline = PipelineRepository(self.db)
+        pipeline = self._pipeline_repo
         package_id = self._package_id
         if not package_id:
             package_id = pipeline.create_package(self.trip_id)

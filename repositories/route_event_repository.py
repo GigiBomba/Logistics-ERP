@@ -1,8 +1,7 @@
 """Route event repository — persists route lifecycle events."""
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from repositories import BaseRepository
-
 
 class RouteEventRepository(BaseRepository):
     TABLE = "route_events"
@@ -21,9 +20,7 @@ class RouteEventRepository(BaseRepository):
         )
 
     def delete_orphans(self) -> int:
-        cursor = self.db.conn.execute(
+        return self._execute_with_count(
             f"DELETE FROM {self.TABLE} WHERE route_id IS NOT NULL "
             "AND route_id NOT IN (SELECT id FROM route_history_v2)"
         )
-        self.db.conn.commit()
-        return cursor.rowcount

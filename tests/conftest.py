@@ -41,4 +41,8 @@ def reset_singletons():
     from services.operations.operations_engine import OperationsEngine
     OperationsEngine._instance = None
 
+    # TripContextService
+    from services.trip_context import TripContextService
+    TripContextService._instance = None
+
     yield

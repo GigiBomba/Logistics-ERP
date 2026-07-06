@@ -2,7 +2,7 @@
 
 Renders a translucent dark layer with a CSS-animated spinner and a
 "n / total charts ready" progress label.  Sits on top of a parent
-chart area while kaleido is rendering the SVG pixmaps, and
+chart area while Plotly is rendering the SVG pixmaps, and
 auto-hides when the expected number of renders is reached (or after
 a safety timeout).
 
@@ -96,8 +96,7 @@ class ChartLoadingOverlay(QFrame):
         self._spinner = QLabel("\u21bb")
         self._spinner.setObjectName("chart-loading-spinner")
         self._spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        spinner_font = QFont(FONT_FAMILY)
-        spinner_font.setPointSize(28)
+        spinner_font = QFont(FONT_FAMILY, 28)
         spinner_font.setBold(True)
         self._spinner.setFont(spinner_font)
         self._spinner.setStyleSheet(

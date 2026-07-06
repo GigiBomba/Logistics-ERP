@@ -45,6 +45,11 @@ class OcrService:
                                      name=f"ocr-worker-{i}")
                 t.start()
                 self._ocr_workers.append(t)
+        # Retry OCR for pending documents (best-effort, non-blocking)
+        try:
+            self.retry_pending_ocr(self._repo, self._ocr_queue, max_docs=50)
+        except Exception:
+            logger.exception("OCR retry_pending_ocr failed")
 
     def _ocr_worker(self):
         while self._ocr_running:
@@ -184,6 +189,55 @@ class OcrService:
                 "with new document %d",
                 updated, trip_id, doc_id,
             )
+
+    @staticmethod
+    def retry_pending_ocr(repo: DocumentRepository, ocr_queue: queue.Queue, max_docs: int = 50) -> int:
+        """Re-enqueue documents that have never been OCR'd (standalone helper).
+
+        Queries the document table for rows where ``ocr_run_at`` is NULL/empty
+        AND ``text_content`` is NULL/empty AND the file still exists on disk.
+        Skips files larger than ``MAX_PDF_SIZE_FOR_OCR``.
+        Caps at *max_docs* per call to avoid flooding the queue on restart.
+        Returns the number of documents enqueued.
+        """
+        try:
+            rows = repo._fetchall(
+                """SELECT id, file_path, mime_type FROM documents
+                   WHERE (ocr_run_at IS NULL OR ocr_run_at = '')
+                     AND (text_content IS NULL OR text_content = '')
+                     AND file_path IS NOT NULL
+                     AND file_path != ''
+                   ORDER BY uploaded_at ASC
+                   LIMIT ?""",
+                (max_docs,),
+            )
+        except Exception as exc:
+            logger.warning("Failed to query pending OCR documents: %s", exc)
+            return 0
+
+        count = 0
+        for row in rows:
+            doc_id = row.get("id")
+            file_path = row.get("file_path", "")
+            mime_type = row.get("mime_type", "")
+            if not doc_id or not file_path:
+                continue
+            if not os.path.isfile(file_path):
+                logger.debug("Skipping OCR for deleted file: %s", file_path)
+                continue
+            if os.path.getsize(file_path) > MAX_PDF_SIZE_FOR_OCR:
+                logger.debug("Skipping OCR for large file %s", file_path)
+                continue
+            try:
+                ocr_queue.put_nowait((doc_id, file_path, mime_type))
+                count += 1
+            except queue.Full:
+                logger.debug("OCR queue full, stopping retry after %d docs", count)
+                break
+
+        if count:
+            logger.info("Re-enqueued %d pending OCR document(s) on startup", count)
+        return count
 
     # ── Basic OCR (fallback) ─────────────────────────────────────────
 

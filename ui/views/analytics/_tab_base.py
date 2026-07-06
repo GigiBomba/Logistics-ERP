@@ -85,10 +85,10 @@ class _SparklineLabel(QLabel):
 
         Honours the per-instance LRU cache: if the same figure was
         already rendered at the same size, the cached pixmap is
-        applied directly (no kaleido call).
+        applied directly (no re-render needed).
 
         Defers to the first ``showEvent`` when the label has not
-        been shown yet (saves a kaleido call per sparkline when
+        been shown yet (saves a render call per sparkline when
         the tab is created off-screen).  The ``showEvent``
         re-runs ``render_async`` with the same arguments because
         ``_last_fig`` and ``_target_w``/``_target_h`` are preserved.
@@ -99,7 +99,7 @@ class _SparklineLabel(QLabel):
         ``_pending_tag`` to skip the call when a render is
         already in flight — the in-flight render will populate
         the pixmap, and submitting another render would just
-        waste kaleido work.  This is the same pattern as
+        waste render work.  This is the same pattern as
         ``PlotlyChartWidget.set_figure``.
         """
         w = int(width)
@@ -138,7 +138,7 @@ class _SparklineLabel(QLabel):
         # Skip if a render is already in flight — the in-flight
         # render will populate the pixmap.  Without this guard,
         # a re-fired ``showEvent`` would cancel the in-flight
-        # render and start a new one — wasted kaleido work.
+        # render and start a new one — wasted render work.
         if self._pending_tag is not None:
             return
         # The SVG is generated at the label's display size; the scale
@@ -601,7 +601,7 @@ class BaseTab(QWidget):
                 )
                 card_layout.addWidget(sub)
 
-            # Sparkline (the graphical trend) — Plotly SVG via kaleido
+            # Sparkline (the graphical trend) — Plotly SVG
             # The render is async so the GUI thread stays responsive even
             # when dozens of cards are rendered at once.
             spark_values = kpi.get("sparkline_values", [])
@@ -768,6 +768,7 @@ class BaseTab(QWidget):
                 card_layout.addWidget(title_lbl)
 
             chart_widget = PlotlyChartWidget(min_height=155)
+            chart_widget.set_owner(self)
             chart_widget.set_figure(fig)
             card_layout.addWidget(chart_widget, 1)
             row_layout.addWidget(card, stretch=1)
@@ -849,7 +850,7 @@ class BaseTab(QWidget):
 
         By default this is a **no-op**: chart widgets and their
         rendered ``QPixmap`` objects are kept alive so re-entering the
-        analytics view does not require a full kaleido re-render.
+        analytics view does not require a full SVG re-render.
 
         Pass ``force=True`` for an explicit teardown (e.g. when the
         data shape changes and the old widgets are no longer valid).
@@ -897,7 +898,7 @@ class BaseTab(QWidget):
 
         ``force=False`` (the default) makes the call a no-op when the
         data signature is unchanged — so navigating away and back to
-        analytics does not re-render every chart through kaleido.
+        analytics does not re-render every chart.
 
         Subclasses override ``_do_refresh()`` to load data and add
         chart widgets; the base class wraps it with the
@@ -941,7 +942,7 @@ class BaseTab(QWidget):
         """Return the number of render targets in this tab's layout.
 
         Render targets are ``PlotlyChartWidget`` and
-        ``_SparklineLabel`` instances.  Both kinds submit kaleido
+        ``_SparklineLabel`` instances.  Both kinds submit
         SVG renders, so both count toward the expected total.
         """
         return (

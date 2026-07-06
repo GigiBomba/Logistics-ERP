@@ -30,6 +30,9 @@ INVOICE_CREATED = "invoice.created"
 INVOICE_PAID = "invoice.paid"
 INVOICE_EMAILED = "invoice.emailed"
 
+PROFORMA_CREATED = "proforma.created"
+RECEIPT_CREATED = "receipt.created"
+
 DRIVER_CREATED = "driver.created"
 DRIVER_UPDATED = "driver.updated"
 DRIVER_DELETED = "driver.deleted"

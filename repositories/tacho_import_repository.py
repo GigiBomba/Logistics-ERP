@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class TachoImportRepository(BaseRepository):
     TABLE = "tacho_imports"
 

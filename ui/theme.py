@@ -50,6 +50,11 @@ COLORS = {
     "chip_cancelled":       "#1A1A20",
     "chip_cancelled_text":  "#9CA3AF",
     "chip_idle":            "#27272a",
+
+    # Backward compatibility aliases used by older UI components
+    "bg_card":            "#111113",  # Same as bg_surface
+    "bg_hover":           "#1c1c1f",  # Same as bg_elevated
+    "bg_disabled":        "#18181b",  # Same as bg_input
 }
 
 # ─────────────────────────────────────────────────────────────────

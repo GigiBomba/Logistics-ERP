@@ -83,9 +83,11 @@ COPY_CONFIGS = [
 
 
 class CMRGenerator:
-    def __init__(self, db=None, prefs=None):
+    def __init__(self, db=None, prefs=None, trip_repo=None):
         self.db = db
         self.prefs = prefs
+        from repositories.trip_repository import TripRepository
+        self._trip_repo = trip_repo if trip_repo is not None else (TripRepository(db) if db else None)
         self.styles = getSampleStyleSheet()
         self._init_styles()
 
@@ -164,43 +166,13 @@ class CMRGenerator:
             return colors.HexColor("#6366f1")
 
     def _next_cmr_number(self) -> tuple[str, int]:
-        import time
         year = datetime.now().year
-        if self.db:
-            for attempt in range(3):
-                try:
-                    cur = self.db.conn.cursor()
-                    cur.execute("BEGIN IMMEDIATE")
-                    row = cur.execute(
-                        "SELECT sequence_number FROM cmr_counter WHERE year = ?",
-                        (year,),
-                    ).fetchone()
-                    if row:
-                        seq = int(row["sequence_number"]) + 1
-                        cur.execute(
-                            "UPDATE cmr_counter SET sequence_number = ? WHERE year = ?",
-                            (seq, year),
-                        )
-                    else:
-                        seq = 1
-                        cur.execute(
-                            "INSERT INTO cmr_counter (year, sequence_number) VALUES (?, ?)",
-                            (year, seq),
-                        )
-                    cur.execute("COMMIT")
-                    break
-                except Exception as e:
-                    with contextlib.suppress(Exception):
-                        cur.execute("ROLLBACK")
-                    if attempt < 2:
-                        time.sleep(0.1)
-                        continue
-                    logger.warning("cmr_counter DB error after 3 retries: %s", e)
-                    seq = int(datetime.now().timestamp()) % 100000
+        if self._trip_repo:
+            return self._trip_repo.get_next_cmr_sequence(year)
         else:
             seq = int(datetime.now().timestamp()) % 100000
-        cmr_number = f"CMR-{year}-{seq:06d}"
-        return cmr_number, seq
+            cmr_number = f"CMR-{year}-{seq:06d}"
+            return cmr_number, seq
 
     def _gather_context(self, trip_data: dict[str, Any]) -> dict[str, Any]:
         trip_id = trip_data.get("trip_id", trip_data.get("id", 0))
@@ -318,13 +290,9 @@ class CMRGenerator:
                                            color_hex, bar_text, desig_text)
             paths[suffix] = path
 
-        if self.db and not skip_db_update:
+        if self._trip_repo and not skip_db_update:
             try:
-                self.db.conn.execute(
-                    "UPDATE trips SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ?",
-                    (cmr_number, ctx.get("cmr_sequence", 0), ctx["trip_id"]),
-                )
-                self.db.conn.commit()
+                self._trip_repo.update_cmr_fields(ctx["trip_id"], cmr_number, ctx.get("cmr_sequence", 0))
             except Exception:
                 pass
 

@@ -360,7 +360,7 @@ class QtFleetTab(QWidget):
 
     # Staleness window for the chart on ``wakeup``.  When the chart
     # was last rendered within this many seconds, the cached pixmap is
-    # reused (no kaleido activity).
+    # reused (no render activity).
     CHART_STALENESS_SECONDS = 300
 
     # Column definition for StyledTableWidget: (id, label, width)
@@ -389,14 +389,21 @@ class QtFleetTab(QWidget):
         parent: QWidget | None = None,
         db=None,
         ops=None,
+        fleet_repo=None,
+        fleet_service=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self.ops = ops
-        self.service = FleetService(db)
+        self._api_client = api_client
+        self.service = fleet_service if fleet_service is not None else (
+            FleetService(db) if db is not None else None
+        )
         self.exporter = ExportService()
         self._event_bus = EventBus()
-        self._dta_service = DriverTruckService(db)
+        self._dta_service = DriverTruckService(db) if db is not None else None
+        self._fleet_repo = fleet_repo if fleet_repo is not None else (FleetRepository(db) if db is not None else None)
 
         # -- i18n --
         self._language_callback = self._on_language_changed
@@ -501,7 +508,7 @@ class QtFleetTab(QWidget):
         left_layout.setSpacing(SP["2"])
 
         right = QFrame()
-        right.setFixedWidth(380)
+        right.setMinimumWidth(300)
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
         right_layout.setSpacing(SP["3"])
@@ -764,8 +771,8 @@ class QtFleetTab(QWidget):
         for r in rows:
             driver_name = (
                 self._dta_service.get_driver_name_for_truck(r["id"])
-                or t("fleet.table_driver_unassigned")
-            )
+                if self._dta_service is not None else None
+            ) or t("fleet.table_driver_unassigned")
             table_rows.append(
                 {
                     "id": r["id"],
@@ -924,7 +931,7 @@ class QtFleetTab(QWidget):
         """Re-fetch the cheap data (KPIs, table, alerts) without re-rendering the chart.
 
         Called from ``wakeup`` when the chart's cached pixmap is
-        still fresh, so re-entering the view does not pay the kaleido
+        still fresh, so re-entering the view does not pay the render
         cost.  The chart's underlying figure is also unchanged in
         this path; only the textual / tabular data is refreshed.
         """
@@ -1155,7 +1162,7 @@ class QtFleetTab(QWidget):
 
         # Left panel — info
         left = QFrame()
-        left.setFixedWidth(320)
+        left.setMinimumWidth(260)
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
         left_layout.setSpacing(SP["2"])
@@ -1233,10 +1240,11 @@ class QtFleetTab(QWidget):
         maint_tab_layout.addWidget(maint_desc)
         tabs.addTab(maint_tab, t("fleet.tab_maintenance"))
 
-        # Expenses tab
-        exp_tab = QWidget()
-        self._populate_expenses_tab(exp_tab, truck_id)
-        tabs.addTab(exp_tab, t("fleet.tab_expenses"))
+        # Expenses tab (requires local service with expense methods)
+        if hasattr(self.service, 'get_expenses'):
+            exp_tab = QWidget()
+            self._populate_expenses_tab(exp_tab, truck_id)
+            tabs.addTab(exp_tab, t("fleet.tab_expenses"))
 
         main_layout.addWidget(right, 1)
         dlg.exec_()
@@ -1258,7 +1266,7 @@ class QtFleetTab(QWidget):
     ) -> None:
         if self.db is None:
             return
-        repo = FleetRepository(self.db)
+        repo = self._fleet_repo
 
         section_lbl = QLabel(t("fleet.maint_kpi_title"))
         section_lbl.setProperty("fontRole", "section")
@@ -1375,6 +1383,8 @@ class QtFleetTab(QWidget):
     def _populate_expenses_tab(
         self, parent: QWidget, truck_id: int
     ) -> None:
+        if not hasattr(self.service, 'ensure_expenses_table'):
+            return
         with contextlib.suppress(Exception):
             self.service.ensure_expenses_table()
 

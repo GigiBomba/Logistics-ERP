@@ -200,7 +200,11 @@ class TestRoutePlannerSubscribes(unittest.TestCase):
         # combo.  Look for the button attribute name and the
         # construction call.
         self.assertIn("_truck_refresh_btn", src)
-        self.assertIn('command=self._load_trucks', src)
+        self.assertTrue(
+            'clicked.connect(self._load_trucks)' in src
+            or 'command=self._load_trucks' in src,
+            "Expected _truck_refresh_btn wired to _load_trucks",
+        )
 
     def test_unsubscribes_in_shutdown(self) -> None:
         import inspect

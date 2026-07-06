@@ -89,6 +89,18 @@ class TestCMRGenerator(unittest.TestCase):
                 shutil.rmtree(unauth_dir, ignore_errors=True)
 
 
+class _DbWrapper:
+    """Minimal DatabaseManager-like wrapper for a raw sqlite3 connection."""
+    def __init__(self, conn):
+        self.conn = conn
+
+    def row_to_dict(self, row):
+        return dict(row) if row else None
+
+    def rows_to_dicts(self, rows):
+        return [dict(r) for r in rows] if rows else []
+
+
 class TestCMRNumberCounter(unittest.TestCase):
     def setUp(self):
         import sqlite3
@@ -98,13 +110,14 @@ class TestCMRNumberCounter(unittest.TestCase):
         self.conn.execute("CREATE TABLE IF NOT EXISTS cmr_counter (id INTEGER PRIMARY KEY, year INTEGER, seq INTEGER)")
         self.conn.execute("INSERT OR IGNORE INTO cmr_counter (id, year, seq) VALUES (1, 2024, 0)")
         self.conn.commit()
+        self.db = _DbWrapper(self.conn)
 
     def tearDown(self):
         self.conn.close()
         os.unlink(self._tmp.name)
 
     def test_generate_next_cmr_number_returns_string(self):
-        gen = CMRGenerator(self.conn)
+        gen = CMRGenerator(self.db)
         number, seq = gen._next_cmr_number()
         self.assertIsInstance(number, str)
         self.assertIsInstance(seq, int)

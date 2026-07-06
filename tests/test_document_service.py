@@ -1,0 +1,420 @@
+"""Tests for DocumentService facade."""
+import json
+import os
+from unittest.mock import MagicMock, call, patch
+
+import pytest
+
+from services.document_service import DocumentService
+
+
+@pytest.fixture
+def mock_db():
+    db = MagicMock()
+    db.conn = MagicMock()
+    db.rows_to_dicts.return_value = []
+    return db
+
+
+@pytest.fixture
+def doc_service(mock_db):
+    with patch("services.document_service.DocumentRepository") as mock_repo_cls, \
+         patch("services.document_service.EventBus") as mock_eb_cls:
+        mock_repo = MagicMock()
+        mock_repo_cls.return_value = mock_repo
+        mock_eb = MagicMock()
+        mock_eb_cls.return_value = mock_eb
+        svc = DocumentService(mock_db)
+        svc._repo = mock_repo
+        svc._event_bus = mock_eb
+        return svc
+
+
+class TestUpload:
+    def test_validates_file(self, doc_service, mock_db):
+        mock_svc = MagicMock()
+        mock_svc.validate_file.return_value = (True, None)
+        doc_service._services["upload"] = mock_svc
+
+        ok, err = doc_service.validate_file("/path/doc.pdf")
+        assert ok is True
+
+    def test_upload_creates_and_enqueues_ocr(self, doc_service, mock_db):
+        mock_upload = MagicMock()
+        mock_upload.upload.return_value = 42
+        doc_service._services["upload"] = mock_upload
+
+        mock_ocr = MagicMock()
+        doc_service._services["ocr"] = mock_ocr
+
+        doc_service._repo.get_by_id.return_value = {
+            "id": 42, "file_path": "/docs/test.pdf", "mime_type": "application/pdf",
+        }
+
+        doc_id = doc_service.upload("/path/source.pdf")
+        assert doc_id == 42
+        mock_upload.upload.assert_called_once()
+        mock_ocr.enqueue_ocr.assert_called_once_with(42, "/docs/test.pdf", "application/pdf")
+
+    def test_upload_skips_ocr_for_non_image_pdf(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.upload.return_value = 42
+        doc_service._services["upload"] = mock_upload
+
+        doc_service._repo.get_by_id.return_value = {
+            "id": 42, "file_path": "/docs/doc.txt", "mime_type": "text/plain",
+        }
+
+        doc_id = doc_service.upload("/path/doc.txt")
+        assert doc_id == 42
+
+    def test_batch_upload_delegates(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.batch_upload.return_value = {"success": 3, "failed": []}
+        doc_service._services["upload"] = mock_upload
+
+        result = doc_service.batch_upload(["/a.pdf", "/b.pdf"])
+        assert result["success"] == 3
+        mock_upload.batch_upload.assert_called_once()
+
+
+class TestSearch:
+    def test_advanced_search_delegates(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.advanced_search.return_value = {"results": [], "total": 0}
+        doc_service._services["search"] = mock_search
+
+        result = doc_service.advanced_search(query="test", category="invoices")
+        assert result["total"] == 0
+        mock_search.advanced_search.assert_called_once_with(
+            query="test", category="invoices", entity_type="",
+            entity_id=None, date_from="", date_to="", mime_type="",
+            tag="", order="uploaded_at DESC", page=0, page_size=20,
+        )
+
+    def test_search_delegates(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.search.return_value = {"results": [], "total": 0}
+        doc_service._services["search"] = mock_search
+
+        result = doc_service.search(query="test")
+        assert result["total"] == 0
+
+    def test_get_categories(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.get_categories.return_value = [{"name": "invoices"}]
+        doc_service._services["search"] = mock_search
+
+        cats = doc_service.get_categories()
+        assert cats == [{"name": "invoices"}]
+
+
+class TestLinkDocument:
+    def test_link_document_publishes_event(self, doc_service):
+        doc_service._repo.add_link.return_value = 1
+        doc_service.link_document(42, "trip", 100)
+        doc_service._event_bus.publish.assert_called_once()
+
+    def test_link_document_triggers_retroactive_link_for_trip(self, doc_service):
+        mock_ocr = MagicMock()
+        doc_service._services["ocr"] = mock_ocr
+        doc_service._repo.add_link.return_value = 1
+
+        doc_service.link_document(42, "trip", 100)
+        mock_ocr._retroactively_link_related_runs.assert_called_once_with(100, 42)
+
+    def test_link_document_returns_false_on_failure(self, doc_service):
+        doc_service._repo.add_link.return_value = -1
+        result = doc_service.link_document(42, "trip", 100)
+        assert result is False
+        doc_service._event_bus.publish.assert_not_called()
+
+    def test_unlink_document(self, doc_service):
+        doc_service._repo._fetchone.return_value = {"id": 1, "document_id": 42}
+        doc_service._repo.remove_link = MagicMock()
+        result = doc_service.unlink_document(1)
+        assert result is True
+        doc_service._event_bus.publish.assert_called_once()
+
+
+class TestThumbnail:
+    def test_get_thumbnail_path_returns_existing(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/docs/test.pdf",
+        }
+        with patch("os.path.isfile", return_value=True), \
+             patch("os.makedirs"):
+            with patch.object(doc_service, "_generate_thumbnail") as mock_gen:
+                # Simulate thumbnail already exists
+                with patch("os.path.isfile") as mock_isfile:
+                    mock_isfile.side_effect = [True, True]  # file_path exists, thumb exists
+                    result = doc_service.get_thumbnail_path(1)
+                    assert result is not None
+                    assert "thumb_1.png" in result
+                    mock_gen.assert_not_called()
+
+    def test_get_thumbnail_path_generates_new(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/docs/test.pdf", "mime_type": "application/pdf",
+        }
+        with patch("os.path.isfile") as mock_isfile:
+            mock_isfile.side_effect = [True, False]  # file exists, thumb does not
+            with patch("os.makedirs"), \
+                 patch.object(doc_service, "_generate_thumbnail", return_value="/thumbs/thumb_1.png"):
+                result = doc_service.get_thumbnail_path(1)
+                assert result == "/thumbs/thumb_1.png"
+
+    def test_get_thumbnail_path_none_when_doc_missing(self, doc_service):
+        doc_service._repo.get_by_id.return_value = None
+        result = doc_service.get_thumbnail_path(1)
+        assert result is None
+
+    def test_pdf_thumbnail_uses_pymupdf_when_available(self, doc_service):
+        """When PyMuPDF is available, _pdf_thumbnail should render page 1."""
+        with patch("services.document_automation.image_processor._safe_import_fitz") as mock_fitz_import:
+            mock_fitz = MagicMock()
+            mock_fitz_import.return_value = mock_fitz
+            mock_doc = MagicMock()
+            mock_doc.page_count = 5
+            mock_page = MagicMock()
+            mock_pix = MagicMock()
+            mock_pix.width = 400
+            mock_pix.height = 300
+            mock_pix.samples = b"\x00" * (400 * 300 * 3)
+            mock_page.get_pixmap.return_value = mock_pix
+            mock_doc.__getitem__.return_value = mock_page
+            mock_fitz.open.return_value = mock_doc
+
+            mock_img = MagicMock()
+            with patch("PIL.Image.frombytes", return_value=mock_img):
+                result = doc_service._pdf_thumbnail("/tmp/test.pdf", "/tmp/thumb.png")
+                assert result == "/tmp/thumb.png"
+                mock_fitz.open.assert_called_once_with("/tmp/test.pdf")
+                mock_page.get_pixmap.assert_called_once_with(dpi=72)
+                mock_doc.close.assert_called_once()
+                mock_img.thumbnail.assert_called_once()
+                mock_img.save.assert_called_once()
+
+
+class TestEmail:
+    def test_email_document_sends(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/docs/test.pdf",
+            "title": "Test Doc", "file_name": "test.pdf",
+            "doc_number": "DOC-001",
+        }
+        smtp_config = {
+            "smtp_server": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_user": "user",
+            "smtp_password": "pass",
+        }
+
+        with patch("services.document_service.os.path.isfile", return_value=True), \
+             patch("services.operations.notification_center.NotificationCenter") as mock_nc_cls:
+            mock_nc = MagicMock()
+            mock_nc.send_email.return_value = True
+            mock_nc_cls.return_value = mock_nc
+
+            result = doc_service.email_document(1, "recipient@example.com", smtp_config=smtp_config)
+            assert result is True
+            mock_nc.send_email.assert_called_once()
+            args, _ = mock_nc.send_email.call_args
+            assert "recipient@example.com" in args
+
+    def test_email_document_fails_with_no_file(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/docs/missing.pdf",
+        }
+        with patch("os.path.isfile", return_value=False):
+            result = doc_service.email_document(1, "recipient@example.com")
+            assert result is False
+
+    def test_email_document_fails_without_smtp(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/docs/test.pdf",
+        }
+        with patch("os.path.isfile", return_value=True):
+            result = doc_service.email_document(1, "recipient@example.com", smtp_config=None)
+            assert result is False
+
+
+class TestDownloadZip:
+    def test_download_zip_creates_zip(self, doc_service):
+        import tempfile
+        tmpdir = tempfile.mkdtemp()
+        safe_dir = os.path.join(tmpdir, "data", "documents")
+        os.makedirs(safe_dir)
+        out_path = os.path.join(safe_dir, "out.zip")
+
+        doc_service._repo.get_ids_by_ids.return_value = [
+            {"id": 1, "file_path": os.path.join(safe_dir, "test.pdf"), "file_name": "test.pdf"},
+            {"id": 2, "file_path": os.path.join(safe_dir, "img.jpg"), "file_name": "img.jpg"},
+        ]
+
+        with patch("os.path.isfile", return_value=True), \
+             patch("os.path.realpath", side_effect=lambda p: os.path.join(tmpdir, p) if not os.path.isabs(p) else p), \
+             patch("zipfile.ZipFile") as mock_zip_cls:
+            mock_zf = MagicMock()
+            mock_zip_cls.return_value.__enter__.return_value = mock_zf
+
+            result = doc_service.download_zip([1, 2], out_path)
+            assert result == out_path
+            assert mock_zf.write.call_count == 2
+
+    def test_download_zip_path_traversal_blocked(self, doc_service):
+        with pytest.raises(ValueError, match="must not contain"):
+            doc_service.download_zip([1], os.path.join("data", "documents", "..", "..", "etc", "out.zip"))
+
+    def test_download_zip_path_outside_base_blocked(self, doc_service):
+        base_path = os.path.join("data", "documents")
+        # Use a path without ".." that is outside the base data/documents dir
+        outside_path = os.path.join("somewhere", "else", "out.zip")
+        with patch("os.path.realpath") as mock_realpath:
+            def _realpath_side_effect(p):
+                if p == base_path:
+                    return os.path.abspath(base_path)
+                return os.path.abspath(p)
+            mock_realpath.side_effect = _realpath_side_effect
+            with pytest.raises(ValueError, match="must be within"):
+                doc_service.download_zip([1], outside_path)
+
+
+class TestExpiry:
+    def test_evaluate_document_expiries_delegates(self, doc_service):
+        mock_expiry = MagicMock()
+        mock_expiry.evaluate_document_expiries.return_value = 3
+        doc_service._services["expiry"] = mock_expiry
+
+        result = doc_service.evaluate_document_expiries()
+        assert result == 3
+        mock_expiry.evaluate_document_expiries.assert_called_once()
+
+    def test_set_expiry_date_delegates(self, doc_service):
+        mock_expiry = MagicMock()
+        doc_service._services["expiry"] = mock_expiry
+
+        doc_service.set_expiry_date(1, "2025-01-01")
+        mock_expiry.set_expiry_date.assert_called_once_with(1, "2025-01-01")
+
+
+class TestContracts:
+    def test_create_contract_delegates(self, doc_service):
+        mock_contracts = MagicMock()
+        mock_contracts.create_contract.return_value = 42
+        doc_service._services["contracts"] = mock_contracts
+
+        result = doc_service.create_contract(1, 2, contract_type="transport")
+        assert result == 42
+        mock_contracts.create_contract.assert_called_once()
+
+    def test_get_contracts_delegates(self, doc_service):
+        mock_contracts = MagicMock()
+        mock_contracts.get_contracts.return_value = []
+        doc_service._services["contracts"] = mock_contracts
+
+        result = doc_service.get_contracts(client_id=1)
+        mock_contracts.get_contracts.assert_called_once_with(1, "")
+
+
+class TestTemplates:
+    def test_create_template_delegates(self, doc_service):
+        mock_templates = MagicMock()
+        mock_templates.create_template.return_value = 42
+        doc_service._services["templates"] = mock_templates
+
+        result = doc_service.create_template("Test", category="general")
+        assert result == 42
+        mock_templates.create_template.assert_called_once()
+
+
+class TestMisc:
+    def test_delete_removes_file_and_publishes_event(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/data/documents/test.pdf",
+        }
+        with patch("os.path.isfile", return_value=True), \
+             patch("os.remove") as mock_rm:
+            result = doc_service.delete(1)
+            assert result is True
+            # os.remove called for main file + thumbnail (since isfile is mocked True)
+            assert mock_rm.call_count == 2
+            doc_service._event_bus.publish.assert_called_once()
+
+    def test_get_by_id(self, doc_service):
+        mock_doc = {"id": 1, "title": "Test"}
+        doc_service._repo.get_by_id.return_value = mock_doc
+        assert doc_service.get_by_id(1) == mock_doc
+
+    def test_add_tag(self, doc_service):
+        doc_service._repo.add_tag.return_value = True
+        assert doc_service.add_tag(1, "important") is True
+        doc_service._repo.add_tag.assert_called_once_with(1, "important")
+
+    def test_update_metadata(self, doc_service):
+        doc_service._repo.update = MagicMock()
+        result = doc_service.update_metadata(1, title="New Title", tags=["tag1"])
+        assert result is True
+        doc_service._repo.update.assert_called_once()
+
+    def test_shutdown_is_noop(self):
+        DocumentService.shutdown()
+
+    def test_get_file_path(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/data/documents/test.pdf",
+        }
+        with patch("os.path.isfile", return_value=True):
+            result = doc_service.get_file_path(1)
+            assert result is not None
+            assert "test.pdf" in result
+
+    def test_is_image_true(self, doc_service):
+        assert doc_service.is_image("image/png") is True
+
+    def test_is_image_false(self, doc_service):
+        assert doc_service.is_image("application/pdf") is False
+
+    def test_fts_search_delegates(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.fts_search.return_value = {"results": []}
+        doc_service._services["search"] = mock_search
+
+        doc_service.fts_search(query="test")
+        mock_search.fts_search.assert_called_once()
+
+    def test_extract_text_delegates(self, doc_service):
+        mock_ocr = MagicMock()
+        mock_ocr.extract_text.return_value = "extracted text"
+        doc_service._services["ocr"] = mock_ocr
+
+        result = doc_service.extract_text("/path/file.pdf", "application/pdf")
+        assert result == "extracted text"
+
+    def test_get_versions_delegates(self, doc_service):
+        mock_versioning = MagicMock()
+        mock_versioning.get_versions.return_value = []
+        doc_service._services["versioning"] = mock_versioning
+
+        doc_service.get_versions(1)
+        mock_versioning.get_versions.assert_called_once_with(1)
+
+    def test_rebuild_fts(self, doc_service):
+        doc_service.rebuild_fts()
+        doc_service._repo.rebuild_fts_index.assert_called_once()
+
+    def test_register_existing_enqueues_ocr(self, doc_service, mock_db):
+        mock_upload = MagicMock()
+        mock_upload.register_existing.return_value = 42
+        doc_service._services["upload"] = mock_upload
+
+        mock_ocr = MagicMock()
+        doc_service._services["ocr"] = mock_ocr
+
+        doc_service._repo.get_by_id.return_value = {
+            "id": 42, "file_path": "/docs/test.pdf", "mime_type": "application/pdf",
+        }
+
+        doc_id = doc_service.register_existing("/path/file.pdf")
+        assert doc_id == 42
+        mock_ocr.enqueue_ocr.assert_called_once()

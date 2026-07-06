@@ -53,7 +53,8 @@ class QtPairedAssignmentDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("dispatch_board.pair_title"))
-        self.setFixedSize(600, 520)
+        self.setMinimumSize(480, 400)
+        self.resize(600, 520)
         self.setWindowModality(Qt.ApplicationModal)
 
         self._trip_data: dict = trip_data

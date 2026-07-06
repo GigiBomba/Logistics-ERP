@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QWidget
 
 from ui.map.map_widget import MapBridge
@@ -10,6 +11,8 @@ from ui.map.map_widget import MapBridge
 
 class FakeMapWidget(QWidget):
     """Stub QWidget that mirrors MapWidget's public API."""
+    loadFinished = Signal(bool)
+
     def __init__(self, parent=None, center=(0, 0), zoom=6):
         super().__init__(parent)
         self._map_ready = True

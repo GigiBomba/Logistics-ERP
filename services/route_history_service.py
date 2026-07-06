@@ -20,6 +20,7 @@ from typing import Any
 
 from repositories.route_event_repository import RouteEventRepository
 from repositories.route_repository import RouteRepository
+from repositories.settings_repository import SettingsRepository
 from repositories.truck_route_assignment_repository import TruckRouteAssignmentRepository
 from services.route_result_presenter import format_duration_minutes
 from utils.logger import get_logger
@@ -232,18 +233,16 @@ class RouteHistoryService:
     def set_active_route(self, route_id: int) -> None:
         """Set the central current active route id for ERP-wide sync."""
         with self._lock:
-            self.db.conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                (ACTIVE_ROUTE_SETTING_KEY, str(int(route_id))),
+            SettingsRepository(self.db).upsert_setting(
+                ACTIVE_ROUTE_SETTING_KEY, str(int(route_id)),
             )
-            self.db.conn.commit()
         self.record_event(route_id, "route_updated", {"active": True})
 
     def get_active_route_id(self) -> int | None:
         """Return the active route id if configured."""
         try:
-            row = self.db.conn.execute("SELECT value FROM settings WHERE key = ?", (ACTIVE_ROUTE_SETTING_KEY,)).fetchone()
-            return int(row[0]) if row and row[0] else None
+            value = SettingsRepository(self.db).get_setting_value(ACTIVE_ROUTE_SETTING_KEY)
+            return int(value) if value else None
         except Exception:
             return None
 
@@ -390,6 +389,58 @@ class RouteHistoryService:
             return self._csv_payload(payload)
         raise ValueError(f"Unsupported export format: {fmt}")
 
+    def export_route_file(self, route_id: int, filepath: str) -> str | None:
+        """Export a route history record as a ``.operionroute`` binary file.
+
+        The file can be shared via email, chat, or file transfer, and
+        opened in another Operion instance to reproduce the route.
+
+        Parameters
+        ----------
+        route_id : int
+            The route history record id.
+        filepath : str
+            Destination file path (should end in ``.operionroute``).
+
+        Returns
+        -------
+        str or None
+            The *filepath* on success, ``None`` on failure.
+        """
+        from services.route_sharing_service import encode_route_file
+
+        record = self.load_route(route_id)
+        if not record:
+            return None
+
+        # Build stop dicts from the record's stops
+        stop_dicts: list[dict[str, Any]] = []
+        for i, s in enumerate(record.stops):
+            stop_type = "start" if i == 0 else ("destination" if i == len(record.stops) - 1 else "stop")
+            stop_dicts.append({
+                "lat": s.get("lat"),
+                "lon": s.get("lon"),
+                "type": stop_type,
+            })
+
+        data = encode_route_file(
+            stops=stop_dicts,
+            profile=record.profile,
+            truck_id=record.truck_id,
+            truck_label=record.truck_label,
+            geometry=record.geometry,
+            distance_km=record.total_distance_km,
+            duration_min=record.duration_min,
+        )
+
+        try:
+            with open(filepath, "wb") as f:
+                f.write(data)
+            return filepath
+        except OSError:
+            self.logger.exception("Failed to export route file to %s", filepath)
+            return None
+
     def clear_history(self) -> int:
         """Delete all route history rows and return the deleted count."""
         return self._route_repo.clear_all()
@@ -397,11 +448,9 @@ class RouteHistoryService:
     def set_retention_days(self, days: int) -> None:
         """Persist route history retention in days. Use 0 or lower to disable pruning."""
         with self._lock:
-            self.db.conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)",
-                (RETENTION_SETTING_KEY, str(int(days))),
+            SettingsRepository(self.db).upsert_setting(
+                RETENTION_SETTING_KEY, str(int(days)),
             )
-            self.db.conn.commit()
         self.retention_days = int(days)
 
     def get_retention_days(self) -> int:
@@ -409,12 +458,9 @@ class RouteHistoryService:
         if self.retention_days is not None:
             return int(self.retention_days)
         try:
-            row = self.db.conn.execute(
-                "SELECT value FROM settings WHERE key = ?",
-                (RETENTION_SETTING_KEY,),
-            ).fetchone()
-            if row:
-                return int(row[0])
+            value = SettingsRepository(self.db).get_setting_value(RETENTION_SETTING_KEY)
+            if value:
+                return int(value)
         except Exception:
             self.logger.exception("Failed to read route history retention setting")
         return DEFAULT_RETENTION_DAYS

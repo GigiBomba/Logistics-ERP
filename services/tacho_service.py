@@ -5,7 +5,6 @@ import json
 import logging
 import os
 import subprocess
-import sys
 import tempfile
 import threading
 from datetime import date, datetime, timedelta

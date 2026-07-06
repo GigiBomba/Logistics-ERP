@@ -1,4 +1,3 @@
-import contextlib
 import json
 import logging
 import threading
@@ -8,6 +7,7 @@ from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Optional
 
+from repositories.alert_repository import AlertRepository
 from services.operations.event_bus import ALERT_CREATED, ALERT_RESOLVED, EventBus
 
 logger = logging.getLogger("operations.alert_manager")
@@ -102,6 +102,7 @@ class AlertManager:
         self._max_alerts = 5000
         self._notification_playing = False
         self._event_bus = EventBus()
+        self._alert_repo = AlertRepository(db) if db is not None else None
         if self._db is not None:
             self._load_from_db()
         logger.info("AlertManager initialized (db=%s)", self._db is not None)
@@ -127,45 +128,27 @@ class AlertManager:
 
     def create_alerts_batch(self, alerts: list[Alert]) -> int:
         """Bulk-persist multiple alerts in a single transaction. Returns count inserted."""
-        if self._db is None or not alerts:
+        if self._alert_repo is None or not alerts:
             return 0
         count = 0
         with self._alerts_lock:
-            try:
-                # Defensive: commit any lingering transaction first so we
-                # never hit "cannot start a transaction within a transaction"
-                # from a previous uncommitted operation.
-                with contextlib.suppress(Exception):
-                    self._db.conn.commit()
-                self._db.conn.execute("BEGIN")
-                for alert in alerts:
-                    self._alerts[alert.id] = alert
-                    self._db.conn.execute(
-                        "INSERT OR IGNORE INTO alerts "
-                        "(id, type, severity, title, message, truck_id, trip_id, "
-                        "created_at, resolved, resolved_at, metadata_json) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            alert.id,
-                            alert.type.value,
-                            alert.severity.value,
-                            alert.title,
-                            alert.message,
-                            alert.truck_id,
-                            int(alert.trip_id) if alert.trip_id and str(alert.trip_id).isdigit() else None,
-                            alert.created_at,
-                            1 if alert.resolved else 0,
-                            alert.resolved_at,
-                            json.dumps(alert.metadata, ensure_ascii=False, default=str) if alert.metadata else None,
-                        ),
-                    )
-                    count += 1
-                self._db.conn.commit()
-            except Exception:
-                with contextlib.suppress(Exception):
-                    self._db.conn.execute("ROLLBACK")
-                logger.exception("Failed to persist alert batch")
-                return 0
+            alert_tuples = []
+            for alert in alerts:
+                self._alerts[alert.id] = alert
+                alert_tuples.append((
+                    alert.id,
+                    alert.type.value,
+                    alert.severity.value,
+                    alert.title,
+                    alert.message,
+                    alert.truck_id,
+                    int(alert.trip_id) if alert.trip_id and str(alert.trip_id).isdigit() else None,
+                    alert.created_at,
+                    1 if alert.resolved else 0,
+                    alert.resolved_at,
+                    json.dumps(alert.metadata, ensure_ascii=False, default=str) if alert.metadata else None,
+                ))
+            count = self._alert_repo.create_batch(alert_tuples)
         return count
 
     def create_alert(
@@ -312,13 +295,9 @@ class AlertManager:
                          if a.created_at < cutoff and a.resolved]
             for aid in to_remove:
                 del self._alerts[aid]
-        if self._db is not None:
+        if self._alert_repo is not None:
             try:
-                self._db.conn.execute(
-                    "DELETE FROM alerts WHERE created_at < ? AND resolved = 1",
-                    (cutoff,),
-                )
-                self._db.conn.commit()
+                self._alert_repo.cleanup_old(days)
             except Exception:
                 logger.exception("Failed to clean up old alerts from DB")
         logger.info("Cleaned up %d old alerts (>%d days)", len(to_remove), days)
@@ -328,39 +307,34 @@ class AlertManager:
 
     def _load_from_db(self) -> None:
         """Load unresolved alerts from the database into the in-memory cache."""
-        if self._db is None:
+        if self._db is None or self._alert_repo is None:
             return
         try:
-            rows = self._db.conn.execute(
-                "SELECT id, type, severity, title, message, truck_id, trip_id, "
-                "created_at, resolved, resolved_at, metadata_json "
-                "FROM alerts WHERE resolved = 0 ORDER BY created_at ASC"
-            ).fetchall()
+            rows = self._alert_repo.get_unresolved()
             loaded = 0
             for r in rows:
-                alert_id = r[0]
+                alert_id = r["id"]
                 if alert_id in self._alerts:
-                    # Refresh resolved status from DB for already-loaded alerts
                     existing = self._alerts[alert_id]
-                    if r[8] and not existing.resolved:
+                    if r.get("resolved_at") and not existing.resolved:
                         existing.resolved = True
-                        existing.resolved_at = r[9]
+                        existing.resolved_at = r["resolved_at"]
                     continue
                 try:
-                    metadata = json.loads(r[10]) if r[10] else {}
+                    metadata = json.loads(r["metadata_json"]) if r.get("metadata_json") else {}
                 except Exception:
                     metadata = {}
                 alert = Alert(
                     id=alert_id,
-                    type=AlertType(r[1]),
-                    severity=Severity(r[2]),
-                    title=r[3] or "",
-                    message=r[4] or "",
-                    truck_id=r[5],
-                    trip_id=str(r[6]) if r[6] else None,
-                    created_at=r[7] or "",
-                    resolved=bool(r[8]),
-                    resolved_at=r[9],
+                    type=AlertType(r["type"]),
+                    severity=Severity(r["severity"]),
+                    title=r["title"] or "",
+                    message=r["message"] or "",
+                    truck_id=r["truck_id"],
+                    trip_id=str(r["trip_id"]) if r.get("trip_id") else None,
+                    created_at=r["created_at"] or "",
+                    resolved=bool(r["resolved"]),
+                    resolved_at=r["resolved_at"],
                     metadata=metadata,
                 )
                 self._alerts[alert_id] = alert
@@ -370,40 +344,29 @@ class AlertManager:
             logger.exception("Failed to load alerts from database")
 
     def _persist_alert(self, alert: Alert) -> None:
-        if self._db is None:
+        if self._alert_repo is None:
             return
         try:
-            self._db.conn.execute(
-                "INSERT OR REPLACE INTO alerts "
-                "(id, type, severity, title, message, truck_id, trip_id, "
-                "created_at, resolved, resolved_at, metadata_json) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (
-                    alert.id,
-                    alert.type.value,
-                    alert.severity.value,
-                    alert.title,
-                    alert.message,
-                    alert.truck_id,
-                    int(alert.trip_id) if alert.trip_id and str(alert.trip_id).isdigit() else None,
-                    alert.created_at,
-                    1 if alert.resolved else 0,
-                    alert.resolved_at,
-                    json.dumps(alert.metadata, ensure_ascii=False, default=str) if alert.metadata else None,
-                ),
+            self._alert_repo.create(
+                id=alert.id,
+                alert_type=alert.type.value,
+                severity=alert.severity.value,
+                title=alert.title,
+                message=alert.message,
+                truck_id=alert.truck_id,
+                trip_id=int(alert.trip_id) if alert.trip_id and str(alert.trip_id).isdigit() else None,
+                created_at=alert.created_at,
+                resolved=1 if alert.resolved else 0,
+                resolved_at=alert.resolved_at,
+                metadata_json=json.dumps(alert.metadata, ensure_ascii=False, default=str) if alert.metadata else None,
             )
-            self._db.conn.commit()
         except Exception:
             logger.exception("Failed to persist alert %s", alert.id)
 
     def _persist_resolution(self, alert: Alert) -> None:
-        if self._db is None:
+        if self._alert_repo is None:
             return
         try:
-            self._db.conn.execute(
-                "UPDATE alerts SET resolved = 1, resolved_at = ? WHERE id = ?",
-                (alert.resolved_at, alert.id),
-            )
-            self._db.conn.commit()
+            self._alert_repo.resolve(alert.id, alert.resolved_at)
         except Exception:
             logger.exception("Failed to persist alert resolution %s", alert.id)

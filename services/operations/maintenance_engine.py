@@ -3,6 +3,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from repositories.trip_repository import TripRepository
 from services.fleet_maintenance_service import (
     FleetMaintenanceService,
     MaintType,
@@ -218,9 +219,7 @@ class MaintenanceEngine:
         # ── Inactive truck (query by truck_id FK, not plate string) ─────
         inactive_days = self._rules.get("inactive_truck_days", 30)
         try:
-            last_activity = self._db.conn.execute(
-                "SELECT MAX(created_at) FROM trips WHERE truck_id = ?", (truck_id_int,)
-            ).fetchone()[0]
+            last_activity = TripRepository(self._db).get_last_activity_by_truck_id(truck_id_int)
             if last_activity:
                 last_date = datetime.strptime(last_activity[:10], "%Y-%m-%d")
                 idle = (today - last_date).days
@@ -374,7 +373,7 @@ class MaintenanceEngine:
         try:
             from repositories.document_repository import DocumentRepository
             from services.document.expiry_service import ExpiryService
-            svc = ExpiryService(self._db, DocumentRepository(self._db))
+            svc = ExpiryService(DocumentRepository(self._db))
             return svc.evaluate_document_expiries(alert_mgr=self._alert_mgr)
         except Exception as e:
             logger.debug("Document expiry check skipped: %s", e)

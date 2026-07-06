@@ -6,7 +6,7 @@ methods preserved with identical signatures and SQL.
 
 import logging
 from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from repositories import BaseRepository
 
@@ -101,42 +101,45 @@ class AnalyticsRepository(BaseRepository):
             "SELECT client_name, SUM(net_profit) as p FROM trips GROUP BY client_name ORDER BY p DESC LIMIT 5"
         )
         month_expr = self._month_expr()
-        monthly_rows = self.db.conn.execute(
+        monthly = self._fetchall(
             f"SELECT {month_expr} as month, SUM(net_profit) as p FROM trips GROUP BY month ORDER BY month DESC LIMIT 6"
-        ).fetchall()
-        monthly = self.db.rows_to_dicts(monthly_rows[::-1])
+        )
+        monthly.reverse()
         return top_clients, monthly
 
     def get_available_years(self):
         """Anii disponibili pentru filtre."""
-        return [r[0] for r in self.db.conn.execute(
+        rows = self._fetchall(
             "SELECT DISTINCT SUBSTR(created_at, 1, 4) as year FROM trips ORDER BY year DESC"
-        ).fetchall() if r[0]]
+        )
+        return [r["year"] for r in rows if r.get("year")]
 
     def get_kpi_stats(self):
         """Calculeaza cifrele cheie pentru luna curenta."""
         current_month = datetime.now().strftime("%Y-%m")
 
         # 1. Venit si Profit Luna Curenta
-        m_stats = self.db.conn.execute("""
-            SELECT SUM(total_price_eur), SUM(net_profit), SUM(distance_km)
+        m_row = self._fetchone("""
+            SELECT COALESCE(SUM(total_price_eur), 0) AS m_rev,
+                   COALESCE(SUM(net_profit), 0) AS m_profit,
+                   COALESCE(SUM(distance_km), 0) AS m_km
             FROM trips WHERE created_at LIKE ?
-        """, (f"%{current_month}%",)).fetchone()
-        m_rev = (m_stats[0] or 0) if m_stats else 0
-        m_profit = (m_stats[1] or 0) if m_stats else 0
-        m_km = (m_stats[2] or 0) if m_stats else 0
+        """, (f"%{current_month}%",))
+        m_rev = m_row["m_rev"] if m_row else 0
+        m_profit = m_row["m_profit"] if m_row else 0
+        m_km = m_row["m_km"] if m_row else 0
 
         # 2. Facturi neplatite
-        unpaid_row = self.db.conn.execute(
-            "SELECT COUNT(*) FROM invoices WHERE status = 'Unpaid'"
-        ).fetchone()
-        unpaid = (unpaid_row[0] or 0) if unpaid_row else 0
+        unpaid_row = self._fetchone(
+            "SELECT COUNT(*) AS cnt FROM invoices WHERE status = 'Unpaid'"
+        )
+        unpaid = unpaid_row["cnt"] if unpaid_row else 0
 
         # 3. Curse Active (orice nu e 'Paid')
-        active_row = self.db.conn.execute(
-            "SELECT COUNT(*) FROM trips WHERE status NOT IN ('Paid', 'Cancelled')"
-        ).fetchone()
-        active = (active_row[0] or 0) if active_row else 0
+        active_row = self._fetchone(
+            "SELECT COUNT(*) AS cnt FROM trips WHERE status NOT IN ('Paid', 'Cancelled')"
+        )
+        active = active_row["cnt"] if active_row else 0
 
         return {
             "rev": m_rev,
@@ -158,7 +161,7 @@ class AnalyticsRepository(BaseRepository):
             WHERE i.status = 'Unpaid'
         """
         try:
-            rows = self.db.conn.execute(query).fetchall()
+            rows = self._fetchall(query)
             for r in rows:
                 due_str = r.get("due_date")
                 if not due_str:
@@ -182,9 +185,9 @@ class AnalyticsRepository(BaseRepository):
         except Exception as e:
             logger.error("SQL Overdue error: %s", e)
 
-        neg_margin = self.db.conn.execute(
+        neg_margin = self._fetchall(
             "SELECT id, truck_number FROM trips WHERE net_profit < 0 AND status != 'Paid'"
-        ).fetchall()
+        )
         for nm in neg_margin:
             alerts.append({
                 "type": "RED",
@@ -214,13 +217,13 @@ class AnalyticsRepository(BaseRepository):
         per_driver = self._fetchall(
             f"SELECT driver_name, SUM(net_profit) as p FROM trips {date_clause} GROUP BY driver_name ORDER BY SUM(net_profit) DESC LIMIT 10",
             tuple(date_params))
-        rev_exp_rows = self.db.conn.execute(f"""
+        rev_exp = self._fetchall(f"""
             SELECT {self._month_expr()} as month,
             SUM(total_price_eur) as rev,
             SUM(total_price_eur - net_profit) as exp
             FROM trips {date_clause} GROUP BY month ORDER BY month DESC LIMIT 6
-        """, tuple(date_params)).fetchall()
-        rev_exp = self.db.rows_to_dicts(rev_exp_rows[::-1])
+        """, tuple(date_params))
+        rev_exp.reverse()
         return per_truck, per_driver, rev_exp
 
     # ── Comprehensive Analytics Queries ──────────────────────────────
@@ -333,8 +336,8 @@ class AnalyticsRepository(BaseRepository):
                    CASE WHEN SUM(distance_km) > 0
                         THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
                         ELSE 0 END AS profit_per_km
-            FROM trips {clause}
-            WHERE driver_name IS NOT NULL AND driver_name != ''
+            FROM trips WHERE 1=1 {clause.replace('WHERE', 'AND')}
+              AND driver_name IS NOT NULL AND driver_name != ''
               AND driver_name != 'Unassigned'
             GROUP BY driver_name
             ORDER BY profit DESC LIMIT 15

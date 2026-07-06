@@ -11,6 +11,8 @@ import os
 import sys
 from typing import Any
 
+from repositories.settings_repository import SettingsRepository
+
 logger = logging.getLogger("health_check")
 
 
@@ -25,12 +27,12 @@ def check_database(db_path: str | None = None) -> dict[str, Any]:
             result["status"] = "unhealthy"
             result["error"] = f"Database file not found: {path}"
             return result
-        import sqlite3
-        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
-        tables = conn.execute(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        ).fetchall()
-        conn.close()
+        from database.db_manager import DatabaseManager
+        db = DatabaseManager(path)
+        try:
+            tables = SettingsRepository(db).get_table_names()
+        finally:
+            db.close()
         result["status"] = "healthy"
         result["table_count"] = len(tables)
         return result
@@ -73,7 +75,7 @@ def check_core_imports() -> dict[str, Any]:
     """Verify core Python dependencies can be imported."""
     required = [
         "PySide6", "PySide6.QtWidgets", "PySide6.QtWebEngineWidgets",
-        "plotly", "kaleido", "folium", "requests",
+        "plotly", "choreographer", "folium", "requests",
         "reportlab", "pikepdf", "PIL",
         "qtawesome",
     ]

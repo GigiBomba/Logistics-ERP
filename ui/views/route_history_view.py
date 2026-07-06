@@ -77,12 +77,18 @@ class QtRouteHistoryView(QWidget):
         parent: QWidget | None = None,
         db=None,
         controller=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self.controller = controller
+        self._api_client = api_client
 
-        self.service = RouteHistoryService(db) if db else None
+        if self._api_client is not None:
+            from client.remote_route_history import RemoteRouteHistoryService
+            self.service = RemoteRouteHistoryService(self._api_client)
+        else:
+            self.service = RouteHistoryService(db) if db else None
         self.sort_by = "last_calculated_at"
         self.sort_dir = "DESC"
         self._preview_token = 0
@@ -207,7 +213,8 @@ class QtRouteHistoryView(QWidget):
 
         pc_layout.addStretch()
         splitter.addWidget(preview_card)
-        splitter.setSizes([600, 300])
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 1)
         layout.addWidget(splitter, 1)
 
     def _build_footer(self, layout: QVBoxLayout) -> None:

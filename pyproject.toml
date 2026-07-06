@@ -13,6 +13,10 @@ dev = [
     "ruff>=0.12",
     "pre-commit>=4.0",
 ]
+sharing = [
+    "qrcode>=8.0.0",
+    "qrcode[pil]>=8.0.0",
+]
 
 # ──────────────────────────────────────────────────────────────
 # Ruff — fast Python linter + formatter (replaces flake8, isort, pyflakes, pycodestyle)
@@ -63,12 +67,12 @@ ignore = [
     "RUF012", # mutable class defaults – Qt class constants pattern
     "SIM102", # collapsible if – readability preference
 ]
-per-file-ignores = {}
+per-file-ignores = {"backend/*" = ["UP006", "UP035"], "client/*" = ["UP006", "UP035", "UP045"], "services/*" = ["UP006", "UP035", "UP045"], "repositories/*" = ["UP006", "UP035"], "database/*" = ["UP006", "UP035", "SIM105", "SIM115"], "ui/*" = ["UP045", "UP006", "UP035"], "scripts/*" = ["UP006", "UP035"]}
 
 [tool.ruff.lint.isort]
 force-single-line = false
 lines-after-imports = 1
-known-first-party = ["config", "database", "repositories", "services", "ui", "utils"]
+known-first-party = ["backend", "client", "config", "database", "repositories", "services", "ui", "utils"]
 
 [tool.ruff.format]
 quote-style = "double"

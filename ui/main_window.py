@@ -59,12 +59,14 @@ class MainWindow(QMainWindow):
         api,
         prefs=None,
         ops=None,
+        api_client=None,
     ):
         super().__init__()
         self.db = db
         self.api = api
         self.ops = ops
         self.prefs = prefs
+        self._api_client = api_client
 
         self._event_bus = ops.event_bus if ops is not None else EventBus()
         self._module_cache: dict = {}
@@ -86,24 +88,46 @@ class MainWindow(QMainWindow):
         QTimer.singleShot(500, self._refresh_alerts)
 
     def _init_services(self):
-        from services.preferences import PreferencesManager
+        if self.db is not None:
+            from services.preferences import PreferencesManager
 
-        self.prefs = self.prefs or PreferencesManager(self.db)
-        self.prefs.load()
+            self.prefs = self.prefs or PreferencesManager(self.db)
+            self.prefs.load()
 
-        self.fleet_service = FleetService(self.db)
-        self.trip_service = TripService(self.db)
-        self.client_service = ClientService(self.db)
+            self.fleet_service = FleetService(self.db)
+            self.trip_service = TripService(self.db)
+            self.client_service = ClientService(self.db)
 
-        # self.api is already assigned in __init__
+            if self.ops is None:
+                from services.operations.operations_engine import OperationsEngine
+                self.ops = OperationsEngine(self.db, prefs=self.prefs)
+                self.ops.start()
 
-        if self.ops is None:
-            from services.operations.operations_engine import OperationsEngine
-            self.ops = OperationsEngine(self.db, prefs=self.prefs)
-            self.ops.start()
+            from services.fleet_tracking_service import fleet_tracking_service
+            fleet_tracking_service.initialize(self.db)
+        else:
+            if self.prefs is None:
+                from client.remote_preferences import RemotePreferences
+                self.prefs = RemotePreferences()
+            self.prefs.load()
 
-        from services.fleet_tracking_service import fleet_tracking_service
-        fleet_tracking_service.initialize(self.db)
+            if self._api_client is not None:
+                from client.remote_services import (
+                    RemoteClientService,
+                    RemoteFleetService,
+                    RemoteTripService,
+                )
+                self.fleet_service = RemoteFleetService(self._api_client)
+                self.trip_service = RemoteTripService(self._api_client)
+                self.client_service = RemoteClientService(self._api_client)
+            else:
+                self.fleet_service = None
+                self.trip_service = None
+                self.client_service = None
+
+            if self.ops is None:
+                from client.remote_ops_stub import RemoteOpsStub
+                self.ops = RemoteOpsStub(api_client=self._api_client)
 
         self._fuel_service = FuelPriceService()
         self._fuel_service.refresh_if_stale()
@@ -257,37 +281,55 @@ class MainWindow(QMainWindow):
         parent = self.app_shell.view_container
 
         if MainWindow._VIEW_FACTORIES is None:
+            ac = self._api_client
             MainWindow._VIEW_FACTORIES = {
                 "calculator": lambda: QtCalculatorView(
                     parent, db=self.db, fleet_service=self.fleet_service,
                     trip_service=self.trip_service, client_service=self.client_service,
                     prefs=self.prefs, ops=self.ops, fuel_service=self._fuel_service,
-                    api=self.api,
+                    api=self.api, api_client=ac,
                 ),
-                "overview": lambda: QtOverviewView(parent, db=self.db, ops=self.ops),
-                "route_planner": lambda: QtRoutePlannerView(parent, db=self.db, controller=self),
-                "analytics": lambda: QtAnalyticsView(parent, db=self.db, prefs=self.prefs),
-                "history": lambda: QtHistoryView(parent, db=self.db, controller=self, prefs=self.prefs, ops=self.ops),
-                "route_history": lambda: QtRouteHistoryView(parent, db=self.db, controller=self),
-                "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops),
-                "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module),
-                "fleet": lambda: QtFleetTab(parent, db=self.db, ops=self.ops),
-                "driver_manager": lambda: QtDriverManager(parent, db=self.db, prefs=self.prefs),
-                "clients": lambda: QtClientWorkspace(parent, db=self.db, prefs=self.prefs),
+                "overview": lambda: QtOverviewView(parent, db=self.db, ops=self.ops, api_client=ac),
+                "route_planner": lambda: QtRoutePlannerView(parent, db=self.db, controller=self, api_client=ac),
+                "analytics": lambda: QtAnalyticsView(parent, db=self.db, prefs=self.prefs, api_client=ac),
+                "history": lambda: QtHistoryView(parent, db=self.db, controller=self, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "route_history": lambda: QtRouteHistoryView(parent, db=self.db, controller=self, api_client=ac),
+                "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module, api_client=ac),
+                "fleet": lambda: QtFleetTab(
+                    parent, db=self.db, ops=self.ops,
+                    fleet_service=self.fleet_service, api_client=ac,
+                ),
+                "driver_manager": lambda: QtDriverManager(parent, db=self.db, prefs=self.prefs, api_client=ac),
+                "clients": lambda: QtClientWorkspace(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
                 "documents": lambda: QtDocumentCenterView(
-                    parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                    parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac,
                 ),
-                "maintenance": lambda: QtMaintenanceAnalyticsView(parent, db=self.db),
-                "maintenance_control": lambda: QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops),
-                "tachograph": lambda: QtTachoImportView(parent, db=self.db),
-                "invoices": lambda: QtGeneratorsView(parent, db=self.db, prefs=self.prefs),
-                "settings": lambda: QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops),
+                "maintenance": lambda: QtMaintenanceAnalyticsView(parent, db=self.db, api_client=ac),
+                "maintenance_control": lambda: QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "tachograph": lambda: QtTachoImportView(parent, db=self.db, api_client=ac),
+                "invoices": lambda: QtGeneratorsView(
+                    parent, db=self.db, prefs=self.prefs,
+                    client_service=self.client_service,
+                    fleet_service=self.fleet_service,
+                    trip_service=self.trip_service,
+                    api_client=ac,
+                ),
+                "settings": lambda: QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
             }
 
         factory = MainWindow._VIEW_FACTORIES.get(key)
         widget = factory() if factory else PlaceholderView(parent, key)
         self.app_shell.view_container.addWidget(widget)
         return {"frame": widget, "obj": widget}
+
+    def open_route_url(self, url: str) -> None:
+        """Switch to the route planner and load a route from a share URL."""
+        self._switch_module("route_planner", {"share_url": url})
+
+    def open_route_file(self, path: str) -> None:
+        """Switch to the route planner and load a route from a .operionroute file."""
+        self._switch_module("route_planner", {"share_file": path})
 
     def _open_calculator(self):
         self._switch_module("calculator")

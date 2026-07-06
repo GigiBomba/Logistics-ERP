@@ -53,12 +53,17 @@ class PackagePreviewDialog(QDialog):
         db,
         trip_id: int | None = None,
         prefs=None,
+        trip_repo=None,
+        doc_repo=None,
     ) -> None:
         super().__init__(parent)
         self.db = db
         self.trip_id = int(trip_id) if trip_id is not None else None
         self.prefs = prefs
         self._doc_ids: list[int] = []
+        self._trip_repo = trip_repo if trip_repo is not None else TripRepository(db)
+        from repositories.document_repository import DocumentRepository
+        self._doc_repo = doc_repo if doc_repo is not None else DocumentRepository(db)
         # The already-loaded documents (one per list item) so the
         # downstream email composer doesn't have to re-query the DB.
         self._documents_by_id: dict[int, dict[str, Any]] = {}
@@ -75,7 +80,7 @@ class PackagePreviewDialog(QDialog):
         layout.setSpacing(SP["3"])
 
         if self.trip_id is not None:
-            trip = TripRepository(self.db).get_by_id(self.trip_id)
+            trip = self._trip_repo.get_by_id(self.trip_id)
             if trip:
                 trip_label = t(
                     "automation.preview_trip_format",
@@ -229,8 +234,7 @@ class PackagePreviewDialog(QDialog):
             doc = self._documents_by_id.get(doc_id)
             if doc is None:
                 try:
-                    from repositories.document_repository import DocumentRepository
-                    row = DocumentRepository(self.db).get_by_id(doc_id)
+                    row = self._doc_repo.get_by_id(doc_id)
                 except Exception:
                     row = None
                 if row is None:

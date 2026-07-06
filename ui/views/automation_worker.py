@@ -199,12 +199,15 @@ class PipelineWorker(QThread):
         prefs=None,
         mode: str = "advanced",
         parent: QObject | None = None,
+        pipeline_repo=None,
     ) -> None:
         super().__init__(parent)
         self.db = db
         self.input_paths = list(input_paths)
         self.prefs = prefs
         self._mode = mode
+        from repositories.pipeline_repository import PipelineRepository
+        self._pipeline_repo = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
         from services.document_automation.ocr_extractor import (
             set_paddle_config,
             set_paddle_gpu,
@@ -256,9 +259,7 @@ class PipelineWorker(QThread):
             self.log.emit(self._run_id, message)
 
     def run(self) -> None:
-        from repositories.pipeline_repository import PipelineRepository
-
-        pipeline = PipelineRepository(self.db)
+        pipeline = self._pipeline_repo
         # ── 1. Import ────────────────────────────────────────────────
         first = self.input_paths[0]
         try:

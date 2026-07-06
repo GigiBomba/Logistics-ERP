@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class ClientRepository(BaseRepository):
     TABLE = "clients"
 
@@ -11,6 +10,13 @@ class ClientRepository(BaseRepository):
         return self._fetchone(
             f"SELECT * FROM {self.TABLE} WHERE id = ?", (client_id,)
         )
+
+    def get_client_email_by_name(self, name: str) -> Optional[str]:
+        row = self._fetchone(
+            f"SELECT email FROM {self.TABLE} WHERE name = ? AND email IS NOT NULL AND email != '' LIMIT 1",
+            (name,),
+        )
+        return row["email"] if row else None
 
     def get_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
@@ -89,6 +95,44 @@ class ClientRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ?", (client_id,)
         )
+
+    def merge_client_data(self, from_id: int, to_id: int) -> dict[str, int]:
+        self.begin_transaction()
+        try:
+            moved_trips = self._execute_with_count(
+                "UPDATE trips SET client_id = ? WHERE client_id = ?",
+                (to_id, from_id),
+                commit=False,
+            )
+            moved_invoices = self._execute_with_count(
+                "UPDATE invoices SET trip_id = ? "
+                "WHERE trip_id IN (SELECT id FROM trips WHERE client_id = ?)",
+                (to_id, to_id),
+                commit=False,
+            )
+            from repositories.contact_repository import ContactRepository
+            contacts = ContactRepository(self.db).get_by_client(from_id)
+            for c in contacts:
+                self._execute(
+                    "UPDATE client_contacts SET client_id = ? WHERE id = ?",
+                    (to_id, c["id"]),
+                    commit=False,
+                )
+            self._execute(
+                "UPDATE client_tags SET client_id = ? WHERE client_id = ?",
+                (to_id, from_id),
+                commit=False,
+            )
+            self._execute(
+                f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ?",
+                (from_id,),
+                commit=False,
+            )
+            self.commit_transaction()
+            return {"trips": moved_trips, "invoices": moved_invoices, "contacts": len(contacts)}
+        except Exception:
+            self.rollback_transaction()
+            raise
 
     def get_trip_count(self, client_id: int) -> int:
         row = self._fetchone(

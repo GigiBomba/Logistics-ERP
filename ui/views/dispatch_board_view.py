@@ -134,12 +134,16 @@ class QtDispatchBoardView(QWidget):
         db=None,
         prefs=None,
         ops=None,
+        tacho_repo=None,
+        api_client=None,
     ) -> None:
         super().__init__(parent)
         self.db = db
         self._db = db
         self.prefs = prefs
         self.ops = ops
+        self._tacho_repo = tacho_repo
+        self._api_client = api_client
 
         # ── State ────────────────────────────────────────────────────────────
         self._columns: dict[str, QtKanbanColumn] = {}
@@ -149,18 +153,30 @@ class QtDispatchBoardView(QWidget):
         self._load_thread: threading.Thread | None = None
 
         # Repositories / services
-        self._trip_repo = TripRepository(db)
-        self._fleet_repo = FleetRepository(db)
-        self._driver_repo = DriverRepository(db)
-        self._route_repo = RouteRepository(db)
-        self._status_engine = TripStatusEngine(db)
+        if db is not None:
+            self._trip_repo = TripRepository(db)
+            self._fleet_repo = FleetRepository(db)
+            self._driver_repo = DriverRepository(db)
+            self._route_repo = RouteRepository(db)
+            self._status_engine = TripStatusEngine(db)
+            self._trip_service = TripService(db)
+            self._fleet_service = FleetService(db)
+            self._client_service = ClientService(db)
+            self._dta_service = DriverTruckService(db)
+            self._conflict_service = TripConflictService(db)
+        else:
+            self._trip_repo = None
+            self._fleet_repo = None
+            self._driver_repo = None
+            self._route_repo = None
+            self._status_engine = None
+            self._trip_service = None
+            self._fleet_service = None
+            self._client_service = None
+            self._dta_service = None
+            self._conflict_service = None
         self._event_bus = EventBus()
-        self._trip_service = TripService(db)
-        self._fleet_service = FleetService(db)
-        self._client_service = ClientService(db)
         self._alert_mgr = AlertManager()
-        self._dta_service = DriverTruckService(db)
-        self._conflict_service = TripConflictService(db)
 
         # Caches
         self._driver_cache: dict[int, dict | None] = {}
@@ -1328,7 +1344,7 @@ class QtDispatchBoardView(QWidget):
             driver_hours: dict[int, tuple] = {}
             now = datetime.now()
             cutoff_7 = date.today() - timedelta(days=7)
-            tacho_repo = TachoDriverActivityRepository(self._db)
+            tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
 
             for d in active_drivers:
                 did = d.get("id")
@@ -1493,7 +1509,7 @@ class QtDispatchBoardView(QWidget):
             except Exception:
                 score += 40
             try:
-                tacho_repo = TachoDriverActivityRepository(self._db)
+                tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
                 from datetime import date, timedelta
                 records = tacho_repo.get_by_driver(
                     int(driver_id), date.today() - timedelta(days=7)
@@ -1513,7 +1529,7 @@ class QtDispatchBoardView(QWidget):
         active_drivers = self._driver_repo.get_active_drivers()
         now = datetime.now()
         cutoff_7 = date.today() - timedelta(days=7)
-        tacho_repo = TachoDriverActivityRepository(self._db)
+        tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
 
         truck_items = []
         for trk in active_trucks:

@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from database.db_manager import DatabaseManager
 from repositories.document_repository import DocumentRepository
 
 class ExpiryService:
 
-    def __init__(self, db: DatabaseManager, repo: DocumentRepository) -> None:
-        self.db = db
+    def __init__(self, repo: DocumentRepository) -> None:
         self._repo = repo
 
     def set_expiry_date(self, doc_id: int, expiry_date: str) -> None:
@@ -24,12 +22,12 @@ class ExpiryService:
         return self._repo.get_overdue_documents()
 
     def evaluate_document_expiries(self, alert_mgr=None, db=None) -> int:
+        from services.operations.alert_manager import (
+            AlertManager,
+            AlertType,
+            Severity,
+        )
         if alert_mgr is None:
-            from services.operations.alert_manager import (
-                AlertManager,
-                AlertType,
-                Severity,
-            )
             alert_mgr = AlertManager()
         count = 0
         overdue = self.get_overdue()

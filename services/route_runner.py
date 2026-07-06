@@ -32,9 +32,9 @@ class RouteRunner:
         except Exception:
             pass
 
-    def _log(self, level: str, message: str, **kwargs):
+    def _log(self, level: str, message: str, *args, **kwargs):
         if self.logger:
-            getattr(self.logger, level)(message, **kwargs)
+            getattr(self.logger, level)(message, *args, **kwargs)
 
     def _safe_invoke(self, cb: Optional[Callable[[Any], None]], data: Any):
         """Invoke the callback from the worker thread.

@@ -1,5 +1,4 @@
 """Client service — business logic for client management."""
-import contextlib
 import logging
 from typing import Any, Optional
 
@@ -180,46 +179,13 @@ class ClientService:
             return {"trips": 0, "invoices": 0, "contacts": 0}
 
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
-
-            cursor = self.db.conn.execute(
-                "UPDATE trips SET client_id = ? WHERE client_id = ?",
-                (to_id, from_id),
-            )
-            moved_trips = cursor.rowcount
-
-            cursor = self.db.conn.execute(
-                "UPDATE invoices SET trip_id = ? "
-                "WHERE trip_id IN (SELECT id FROM trips WHERE client_id = ?)",
-                (to_id, to_id),
-            )
-            moved_invoices = cursor.rowcount
-
-            contacts = self._contact_repo.get_by_client(from_id)
-            moved_contacts = 0
-            for c in contacts:
-                self._contact_repo.update(c["id"], {"client_id": to_id})
-                moved_contacts += 1
-
-            self.db.conn.execute(
-                "UPDATE client_tags SET client_id = ? WHERE client_id = ?",
-                (to_id, from_id),
-            )
-            self.deactivate(from_id)
-            self.db.conn.commit()
-
+            result = self._repo.merge_client_data(from_id, to_id)
             self._event_bus.publish(CLIENT_MERGED, {
                 "from_id": from_id, "to_id": to_id,
-                "trips": moved_trips,
+                "trips": result["trips"],
             })
-            return {
-                "trips": moved_trips,
-                "invoices": moved_invoices,
-                "contacts": moved_contacts,
-            }
+            return result
         except Exception:
-            with contextlib.suppress(Exception):
-                self.db.conn.rollback()
             logger.exception("merge_clients failed")
             return {"trips": 0, "invoices": 0, "contacts": 0}
 

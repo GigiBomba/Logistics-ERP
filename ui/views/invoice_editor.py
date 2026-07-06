@@ -44,7 +44,9 @@ from PySide6.QtWidgets import (
 
 from repositories.client_repository import ClientRepository
 from services.app_state import AppState
+from repositories.invoice_repository import INVOICE_NUMBER_FORMATS, DEFAULT_INVOICE_FORMAT_KEY as INV_DEFAULT_FMT
 from services.i18n import register_listener, t, unregister_listener
+from utils.editor_toolkit import DebouncedTask, export_editor_data, register_shortcuts, validate_and_highlight
 from services.invoicing.config_manager import load_company_config, save_company_config
 from services.invoicing.service import InvoiceService
 from services.operations.event_bus import SETTINGS_UPDATED, EventBus
@@ -85,12 +87,15 @@ class QtInvoiceEditor(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs: PreferencesManager | None = None,
+        invoice_repo=None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs or (PreferencesManager(db) if db else None)
         self._trip_service = TripService(db) if db else None
         self._client_repo = ClientRepository(db) if db else None
+        from repositories.invoice_repository import InvoiceRepository
+        self._invoice_repo = invoice_repo if invoice_repo is not None else InvoiceRepository(db)
         self._invoice_service: InvoiceService | None = None  # lazy
         self._app_state = AppState()
         self._event_bus = EventBus()
@@ -166,6 +171,22 @@ class QtInvoiceEditor(QWidget):
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
         self._listener_registered = True
+
+        # Branch / Office
+        self._branch: str = ""
+        self._format_key: str = INV_DEFAULT_FMT
+
+        # Debounced recalculation
+        self._recalc_task = DebouncedTask(self._refresh_totals_display)
+
+        # Keyboard shortcuts
+        self._shortcuts = register_shortcuts(self, {
+            "generate": self._generate_pdf,
+            "save_draft": self._save_draft,
+            "load_draft": self._load_draft,
+            "export_json": self._on_export_json,
+            "print": self._print_invoice,
+        })
 
         # ── Build UI ─────────────────────────────────────────────────────────
         self._build_ui()
@@ -276,6 +297,12 @@ class QtInvoiceEditor(QWidget):
         return self._invoice_service
 
     def _gen_invoice_number(self) -> str:
+        """Generate an invoice number using the format system if available."""
+        try:
+            repo = self._invoice_repo
+            return repo.get_next_number(format_key=self._format_key)
+        except Exception:
+            pass
         year = datetime.now().year
         return f"INV-{year}-{datetime.now().strftime('%m%d')}-001"
 
@@ -565,6 +592,20 @@ class QtInvoiceEditor(QWidget):
                               self._payment_terms_edit)
         grid_layout.addWidget(terms_widget, 1, 1)
 
+        # Row 2: Branch / Office
+        self._branch_entry = StyledLineEdit(text=self._branch,
+                                             placeholder=t("receipt.branch_placeholder"))
+        self._branch_entry.textChanged.connect(self._on_branch_changed)
+        branch_widget = field(grid, t("invoice_editor.branch"), self._branch_entry)
+        grid_layout.addWidget(branch_widget, 2, 0)
+
+        # Number format (row 2, col 1)
+        fmt_display = [f"{key} ({ex})" for key, (_, ex) in INVOICE_NUMBER_FORMATS.items()]
+        self._format_combo = StyledComboBox(grid, values=fmt_display)
+        self._format_combo.currentTextChanged.connect(self._on_format_changed)
+        fmt_widget = field(grid, t("invoice_editor.number_format"), self._format_combo)
+        grid_layout.addWidget(fmt_widget, 2, 1)
+
         card_layout.addWidget(grid)
 
         # Invoice metadata preview row
@@ -646,6 +687,23 @@ class QtInvoiceEditor(QWidget):
     def _on_payment_terms_changed(self, text: str) -> None:
         self._payment_terms = text
         self._payment_terms_label.setText(text)
+
+    def _on_branch_changed(self, text: str) -> None:
+        self._branch = text.strip()
+        self._recalc_all()
+
+    def _on_format_changed(self, text: str) -> None:
+        """Update invoice number when format changes."""
+        if not text:
+            return
+        for key in INVOICE_NUMBER_FORMATS:
+            if text.startswith(key):
+                self._format_key = key
+                break
+        svc = self._get_invoice_service() if hasattr(self, "_get_invoice_service") else None
+        if svc and hasattr(svc, "set_format_key"):
+            svc.set_format_key(self._format_key)
+        self._inv_num_edit.setText(self._gen_invoice_number())
 
     def _on_description_changed(self) -> None:
         self._description = self._desc_text_edit.toPlainText()
@@ -1371,6 +1429,7 @@ class QtInvoiceEditor(QWidget):
             ("\U0001F4E7 " + t("invoice_editor.email"), self._email_invoice, "primary"),
             ("\U0001F4BE " + t("invoice_editor.save_draft"), self._save_draft, "secondary"),
             ("\U0001F4C2 " + t("invoice_editor.load_draft"), self._load_draft, "secondary"),
+            ("\U0001F4C4 " + t("invoice_editor.export_json"), self._on_export_json, "ghost"),
         ]
 
         self._preview_btn = Btn(self._bottom_bar, actions[0][0],
@@ -1396,6 +1455,10 @@ class QtInvoiceEditor(QWidget):
         self._load_draft_btn = Btn(self._bottom_bar, actions[5][0],
                                              command=actions[5][1], variant=actions[5][2])
         layout.addWidget(self._load_draft_btn)
+
+        self._export_json_btn = Btn(self._bottom_bar, actions[6][0],
+                                             command=actions[6][1], variant=actions[6][2])
+        layout.addWidget(self._export_json_btn)
 
         layout.addStretch()
 
@@ -1585,13 +1648,10 @@ class QtInvoiceEditor(QWidget):
         if not self.db:
             return
         try:
-            row = self.db.conn.execute(
-                "SELECT stops_json FROM route_history_v2 WHERE id = ?",
-                (route_id,),
-            ).fetchone()
-            if not row or not row["stops_json"]:
+            stops_json = self._trip_service.get_route_stops_json(route_id) if self._trip_service else None
+            if not stops_json:
                 return
-            stops = json.loads(row["stops_json"])
+            stops = json.loads(stops_json)
             if not isinstance(stops, list) or len(stops) < 2:
                 return
             origin = stops[0].get("address", "")
@@ -1634,7 +1694,8 @@ class QtInvoiceEditor(QWidget):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _recalc_all(self) -> None:
-        self._refresh_totals_display()
+        """Debounced recalculation (called directly from 12+ signal handlers)."""
+        self._recalc_task.schedule()
 
     def _refresh_totals_display(self) -> None:
         """Update all totals displays based on addon items and settings."""
@@ -1775,6 +1836,8 @@ class QtInvoiceEditor(QWidget):
             "due_date": self._due_date,
             "payment_terms": self._payment_terms,
             "currency": self._currency,
+            "branch": self._branch,
+            "_format_key": self._format_key,
             "company": conf,
             "client": client,
             "addon_items": addon_items,
@@ -1820,9 +1883,25 @@ class QtInvoiceEditor(QWidget):
     def _generate_pdf(self) -> None:
         """Generate PDF invoice and record it."""
         data = self._collect_invoice_data()
+
+        # Inline validation
+        all_widgets = self._all_inputs() if hasattr(self, "_all_inputs") else []
+        errors: list[str] = []
+        invalid_fields: list[QWidget] = []
+
         if not data["company"]["company_name"] or not data["company"]["cui"]:
+            errors.append(t("invoice.warning_fields_msg"))
+            if hasattr(self, "_company_name_label"):
+                invalid_fields.append(self._company_name_label)
+
+        if errors:
+            if all_widgets:
+                from utils.editor_toolkit import highlight_invalid_fields, mark_field_invalid
+                highlight_invalid_fields(all_widgets)
+                for w in invalid_fields:
+                    mark_field_invalid(w)
             QMessageBox.warning(self, t("invoice.warning_fields_title"),
-                                t("invoice.warning_fields_msg"))
+                                "\n".join(errors))
             return
 
         try:
@@ -1951,6 +2030,37 @@ class QtInvoiceEditor(QWidget):
             QMessageBox.critical(self, t("invoice.error_generate").format(""), str(e))
 
     # ══════════════════════════════════════════════════════════════════════════
+    # EXPORT / JSON
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _all_inputs(self) -> list[QWidget]:
+        """Return all form input widgets for validation highlighting."""
+        result: list[QWidget] = []
+        for attr in [
+            "_client_combo", "_trip_combo",
+            "_inv_num_edit", "_issue_date_edit", "_due_date_edit",
+            "_payment_terms_edit", "_desc_text_edit",
+            "_truck_plate_edit", "_driver_name_edit", "_distance_edit",
+            "_tax_combo", "_disc_type_combo", "_disc_entry", "_curr_combo",
+            "_notes_edit",
+        ]:
+            w = getattr(self, attr, None)
+            if w is not None:
+                result.append(w)
+        return result
+
+    def _on_export_json(self) -> None:
+        """Export invoice data as JSON."""
+        data = self._collect_invoice_data()
+        default_name = f"invoice_{data.get('invoice_number', 'draft')}.json"
+        export_editor_data(
+            self,
+            data,
+            t("invoice_editor.export_json"),
+            default_name,
+        )
+
+    # ══════════════════════════════════════════════════════════════════════════
     # DRAFT SYSTEM
     # ══════════════════════════════════════════════════════════════════════════
 
@@ -2008,6 +2118,7 @@ class QtInvoiceEditor(QWidget):
             self._tax_rate = str(data.get("tax_rate", 19))
             self._discount_type = data.get("discount_type", t("invoice_editor.discount_percentage"))
             self._discount_value = str(data.get("discount_value", 0))
+            self._branch = data.get("branch", "")
 
             # Company
             c = data.get("company", {})
@@ -2115,6 +2226,7 @@ class QtInvoiceEditor(QWidget):
             self._tax_combo.setCurrentText(self._tax_rate)
             self._curr_combo.setCurrentText(self._currency)
             self._disc_entry.setText(self._discount_value)
+            self._branch_entry.setText(self._branch)
 
             # Try to re-select client/trip
             client_name = cl.get("name", "")

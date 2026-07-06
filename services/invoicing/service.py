@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from typing import Any, Optional
 
 from repositories.client_repository import ClientRepository
+from repositories.invoice_repository import DEFAULT_INVOICE_FORMAT_KEY, INVOICE_NUMBER_FORMATS
 from services.i18n import t
 from services.invoicing.config_manager import load_company_config
 from services.invoicing.generator import InvoiceGenerator
@@ -16,6 +17,15 @@ class InvoiceService:
         self.generator = InvoiceGenerator()
         self._event_bus = EventBus()
         self._client_repo = ClientRepository(db)
+
+    def get_format_key(self) -> str:
+        if self.prefs:
+            return self.prefs.get_setting("invoice_number_format") or DEFAULT_INVOICE_FORMAT_KEY
+        return DEFAULT_INVOICE_FORMAT_KEY
+
+    def set_format_key(self, fmt_key: str) -> None:
+        if self.prefs and fmt_key in INVOICE_NUMBER_FORMATS:
+            self.prefs.save_setting("invoice_number_format", fmt_key)
 
     def _enrich_trip_with_client(self, trip_data: dict[str, Any]) -> dict[str, Any]:
         client_id = trip_data.get("client_id")

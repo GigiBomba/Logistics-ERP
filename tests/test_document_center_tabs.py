@@ -1,8 +1,9 @@
 """Tests for the tabbed Document Center integration.
 
-The Document Center (``QtDocumentCenterView``) now hosts two
-sub-tabs — *Documents* (the original three-panel layout) and
-*Automation* (the embedded ``QtAutomationView``).  These tests
+The Document Center (``QtDocumentCenterView``) now hosts three
+sub-tabs — *Documents* (the original three-panel layout),
+*Automation* (the embedded ``QtAutomationView``), and
+*API Dashboard* (the embedded ``QtApiDashboardView``).  These tests
 verify the wiring without depending on a live database or a real
 automation pipeline.
 """
@@ -44,8 +45,14 @@ class TestDocumentCenterHasAutomationTab(unittest.TestCase):
             os.unlink(self.path)
         self.view.deleteLater()
 
-    def test_two_tabs(self) -> None:
-        self.assertEqual(self.view._tab_widget.count(), 2)
+    def test_three_tabs_at_boot(self) -> None:
+        """Exactly 3 tabs at boot — admin tab is NOT injected."""
+        self.assertEqual(self.view._tab_widget.count(), 3)
+
+    def test_admin_tab_not_injected_at_boot(self) -> None:
+        """Admin tab state tracking confirms no injection at boot."""
+        self.assertFalse(self.view._admin_tab_injected)
+        self.assertEqual(self.view._admin_tab_index, -1)
 
     def test_first_tab_is_documents(self) -> None:
         self.assertIn("Document", self.view._tab_widget.tabText(0))
@@ -53,11 +60,18 @@ class TestDocumentCenterHasAutomationTab(unittest.TestCase):
     def test_second_tab_is_automation(self) -> None:
         self.assertIn("Automation", self.view._tab_widget.tabText(1))
 
+    def test_third_tab_is_api_dashboard(self) -> None:
+        self.assertIn("API", self.view._tab_widget.tabText(2))
+
     def test_automation_view_embedded(self) -> None:
         self.assertIsNotNone(self.view._automation_view)
-        # The embedded widget is the actual QtAutomationView class.
         from ui.views.automation_view import QtAutomationView
         self.assertIsInstance(self.view._automation_view, QtAutomationView)
+
+    def test_api_dashboard_view_embedded(self) -> None:
+        self.assertIsNotNone(self.view._api_dashboard_view)
+        from ui.views.api_dashboard_view import QtApiDashboardView
+        self.assertIsInstance(self.view._api_dashboard_view, QtApiDashboardView)
 
     def test_three_panel_widgets_preserved(self) -> None:
         """The Documents tab still has sidebar + center + detail."""
@@ -65,8 +79,14 @@ class TestDocumentCenterHasAutomationTab(unittest.TestCase):
         self.assertTrue(hasattr(self.view, "_center_panel"))
         self.assertTrue(hasattr(self.view, "_detail_panel"))
 
+    def test_admin_trigger_button_exists(self) -> None:
+        """The admin access trigger button is present in the toolbar."""
+        self.assertTrue(hasattr(self.view, "_admin_trigger"))
+
     def test_switching_tabs_does_not_raise(self) -> None:
         self.view._tab_widget.setCurrentIndex(1)
+        self.view._tab_widget.setCurrentIndex(0)
+        self.view._tab_widget.setCurrentIndex(2)
         self.view._tab_widget.setCurrentIndex(0)
         # No exception means the wakeup hook handled the change cleanly.
 

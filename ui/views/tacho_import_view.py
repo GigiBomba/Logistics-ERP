@@ -56,10 +56,16 @@ class QtTachoImportView(QWidget):
         self,
         parent: QWidget | None = None,
         db=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
-        self.tacho_service = TachoService(db) if db else None
+        self._api_client = api_client
+        if self._api_client is not None:
+            from client.remote_tacho import RemoteTachoService
+            self.tacho_service = RemoteTachoService(self._api_client)
+        else:
+            self.tacho_service = TachoService(db) if db else None
 
         self.import_completed.connect(self._on_import_complete)
         self._language_callback = self._on_language_changed

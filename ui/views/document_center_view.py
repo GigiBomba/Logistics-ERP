@@ -18,8 +18,8 @@ import logging
 import os
 from typing import Any, Callable
 
-from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QPixmap
+from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtGui import QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
@@ -43,6 +43,8 @@ from services.operations.event_bus import (
     DOCUMENT_OCR_RAN,
     DOCUMENT_UPLOADED,
     INVOICE_CREATED,
+    PROFORMA_CREATED,
+    RECEIPT_CREATED,
     EventBus,
 )
 from ui.components import Btn, FieldLabel
@@ -92,19 +94,22 @@ class _DocRow(QFrame):
         on_email: Callable[[dict], None],
         on_delete: Callable[[dict], None],
         selected_ids: set,
+        doc_service=None,
     ):
         super().__init__(parent)
         self._doc = doc
         self._doc_id = doc["id"]
         self._on_toggle_select = on_toggle_select
         self._on_show_detail = on_show_detail
+        self._doc_service = doc_service
+
         self.setProperty("role", "doc-row")
         self.setCursor(Qt.PointingHandCursor)
+        self.setMinimumHeight(80)
 
         layout = QHBoxLayout(self)
         layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
         layout.setSpacing(S["2"])
-
         # ── Checkbox ──────────────────────────────────────────────────────
         self._cb = QCheckBox(self)
         self._cb.setChecked(self._doc_id in selected_ids)
@@ -113,14 +118,14 @@ class _DocRow(QFrame):
 
         # ── Icon / thumbnail ──────────────────────────────────────────────
         self._icon_label = QLabel(self)
-        self._icon_label.setFixedSize(48, 48)
+        self._icon_label.setFixedSize(96, 72)
         self._icon_label.setAlignment(Qt.AlignCenter)
         self._icon_label.setProperty("role", "doc-icon")
         thumb = self._get_thumbnail()
         if thumb:
             pm = QPixmap(thumb)
             if not pm.isNull():
-                pm = pm.scaled(44, 33, Qt.KeepAspectRatio, Qt.SmoothTransformation)
+                pm = pm.scaled(88, 66, Qt.KeepAspectRatio, Qt.SmoothTransformation)
                 self._icon_label.setPixmap(pm)
         if not self._icon_label.pixmap() or self._icon_label.pixmap().isNull():
             self._icon_label.setText(self._icon_for(doc.get("mime_type", "")))
@@ -189,23 +194,29 @@ class _DocRow(QFrame):
 
         view_btn = Btn(
             actions, text=t("docs.view"), command=lambda: on_open(doc),
-            variant="secondary",
+            variant="secondary", size="md",
         )
-        view_btn.setFixedSize(40, 24)
+        view_btn.setMinimumWidth(80)
+        view_btn.setFixedHeight(32)
+        view_btn.adjustSize()
         actions_layout.addWidget(view_btn)
 
         email_btn = Btn(
             actions, text=t("docs.email"), command=lambda: on_email(doc),
-            variant="secondary",
+            variant="secondary", size="md",
         )
-        email_btn.setFixedSize(40, 24)
+        email_btn.setMinimumWidth(80)
+        email_btn.setFixedHeight(32)
+        email_btn.adjustSize()
         actions_layout.addWidget(email_btn)
 
         del_btn = Btn(
             actions, text=t("docs.delete"), command=lambda: on_delete(doc),
             variant="ghost",
         )
-        del_btn.setFixedSize(40, 24)
+        del_btn.setMinimumWidth(80)
+        del_btn.setFixedHeight(32)
+        del_btn.adjustSize()
         actions_layout.addWidget(del_btn)
 
         layout.addWidget(actions)
@@ -216,8 +227,12 @@ class _DocRow(QFrame):
         meta_lbl.mousePressEvent = lambda e: on_show_detail(doc)
 
     def _get_thumbnail(self) -> str | None:
-        """Resolve the thumbnail path from the current app context."""
-        # We rely on a service call — the caller will set up a reference.
+        """Resolve the thumbnail path from the document service."""
+        if self._doc_service is not None:
+            try:
+                return self._doc_service.get_thumbnail_path(self._doc_id)
+            except Exception:
+                pass
         return None
 
     @staticmethod
@@ -254,11 +269,13 @@ class QtDocumentCenterView(QWidget):
         db=None,
         prefs: Any = None,
         ops: Any = None,
+        api_client: Any = None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
         self.ops = ops
+        self._api_client = api_client
         self._service = DocumentService(db) if db is not None else None
         self._page = 0
         self._total = 0
@@ -272,6 +289,12 @@ class QtDocumentCenterView(QWidget):
         self._thumbnail_service = self._service  # for resolving thumbnails
         self._automation_view: QWidget | None = None
 
+        # ── Admin panel (Dual-Gate — injected at runtime, never at boot) ──
+        self._admin_tab_injected: bool = False
+        self._admin_panel_view: QWidget | None = None
+        self._admin_tab_index: int = -1
+        self._admin_auth_in_progress: bool = False
+
         # ── On-demand OCR worker (single-doc) ─────────────────────────────
         self._ocr_worker: Any | None = None
         self._ocr_busy: bool = False
@@ -284,6 +307,8 @@ class QtDocumentCenterView(QWidget):
         self._event_bus = EventBus()
         self._event_bus.subscribe(DOCUMENT_UPLOADED, self._on_document_event)
         self._event_bus.subscribe(INVOICE_CREATED, self._on_document_event)
+        self._event_bus.subscribe(PROFORMA_CREATED, self._on_document_event)
+        self._event_bus.subscribe(RECEIPT_CREATED, self._on_document_event)
         self._event_subscribed = True
 
         # ── Build UI ──────────────────────────────────────────────────────
@@ -333,11 +358,18 @@ class QtDocumentCenterView(QWidget):
             try:
                 self._event_bus.unsubscribe(DOCUMENT_UPLOADED, self._on_document_event)
                 self._event_bus.unsubscribe(INVOICE_CREATED, self._on_document_event)
+                self._event_bus.unsubscribe(PROFORMA_CREATED, self._on_document_event)
+                self._event_bus.unsubscribe(RECEIPT_CREATED, self._on_document_event)
             except Exception:
                 pass
             self._event_subscribed = False
-        # Stop any in-flight OCR worker so the QThread doesn't outlive us
         self._stop_ocr_worker()
+        if hasattr(self, "_api_dashboard_view") and self._api_dashboard_view is not None:
+            if hasattr(self._api_dashboard_view, "shutdown"):
+                with contextlib.suppress(Exception):
+                    self._api_dashboard_view.shutdown()
+        # Eject admin panel if it was injected
+        self._eject_admin_tab()
 
     def _stop_ocr_worker(self) -> None:
         """Cancel / discard the on-demand OCR worker if running."""
@@ -443,6 +475,24 @@ class QtDocumentCenterView(QWidget):
             self._automation_layout.addWidget(self._automation_view, 1)
         self._tab_widget.addTab(self._automation_page, "")
 
+        # ── Tab 3: API Dashboard ─────────────────────────────────────────
+        self._api_dashboard_page = QWidget()
+        self._api_dashboard_layout = QVBoxLayout(self._api_dashboard_page)
+        self._api_dashboard_layout.setContentsMargins(0, 0, 0, 0)
+        self._api_dashboard_layout.setSpacing(0)
+        self._api_dashboard_view = None
+        try:
+            from ui.views.api_dashboard_view import QtApiDashboardView
+            self._api_dashboard_view = QtApiDashboardView(
+                self._api_dashboard_page,
+                db=self.db,
+                api_client=getattr(self, '_api_client', None),
+            )
+            self._api_dashboard_layout.addWidget(self._api_dashboard_view, 1)
+        except Exception:
+            logger.exception("Failed to construct QtApiDashboardView")
+        self._tab_widget.addTab(self._api_dashboard_page, "")
+
         self._refresh_tab_titles()
         self.refresh()
 
@@ -464,10 +514,111 @@ class QtDocumentCenterView(QWidget):
                 db=self.db,
                 prefs=self.prefs,
                 ops=self.ops,
+                api_client=self._api_client,
             )
         except Exception:
             logger.exception("Failed to construct QtAutomationView")
             return None
+
+    # ── Admin panel — conditional runtime injection (Dual-Gate) ───────
+
+    def _try_inject_admin_tab(self) -> bool:
+        """Conditionally inject the admin panel as a 4th tab.
+
+        If the tab is already injected, returns ``True`` immediately.
+        Otherwise, triggers the auth gate — if the user authenticates
+        as admin, the tab is created and injected via ``addTab()``.
+
+        Returns:
+            ``True`` if the admin tab is available after this call.
+        """
+        if self._admin_tab_injected:
+            return True
+
+        if self._admin_auth_in_progress:
+            return False
+
+        self._admin_auth_in_progress = True
+        try:
+            from client.auth_manager import require_admin_async
+
+            if not require_admin_async(self):
+                return False
+
+            # ── Build the admin panel page ─────────────────────────────
+            self._admin_panel_page = QWidget()
+            admin_layout = QVBoxLayout(self._admin_panel_page)
+            admin_layout.setContentsMargins(0, 0, 0, 0)
+            admin_layout.setSpacing(0)
+
+            from ui.views.admin_panel_view import QtAdminPanelView
+            self._admin_panel_view = QtAdminPanelView(
+                self._admin_panel_page,
+                db=self.db,
+                api_client=getattr(self, "_api_client", None),
+            )
+            admin_layout.addWidget(self._admin_panel_view, 1)
+
+            # Inject into QTabWidget — this is the ONLY time addTab is
+            # called for the admin panel.
+            self._tab_widget.addTab(self._admin_panel_page, "")
+            self._admin_tab_index = self._tab_widget.count() - 1
+            self._tab_widget.setTabText(
+                self._admin_tab_index,
+                t("admin.tab_title", default="Admin Panel"),
+            )
+            self._admin_tab_injected = True
+
+            # Switch to the new tab
+            self._tab_widget.setCurrentIndex(self._admin_tab_index)
+            if hasattr(self._admin_panel_view, "wakeup"):
+                self._admin_panel_view.wakeup()
+            return True
+
+        except Exception:
+            logger.exception("Failed to inject admin tab")
+            return False
+        finally:
+            self._admin_auth_in_progress = False
+
+    def _eject_admin_tab(self) -> None:
+        """Remove the admin tab from the QTabWidget (logout / expiry)."""
+        if not self._admin_tab_injected:
+            return
+        try:
+            if self._admin_tab_index >= 0:
+                self._tab_widget.removeTab(self._admin_tab_index)
+        except Exception:
+            logger.exception("Failed to eject admin tab")
+        self._admin_panel_view = None
+        self._admin_panel_page = None
+        self._admin_tab_index = -1
+        self._admin_tab_injected = False
+
+    # ── Admin trigger handler ─────────────────────────────────────────
+
+    def _on_admin_trigger_clicked(self) -> None:
+        """Handle the admin access button click.
+
+        If admin tab is already injected → switch to it.
+        If not → attempt auth and injection.
+        """
+        if self._admin_tab_injected:
+            self._tab_widget.setCurrentIndex(self._admin_tab_index)
+        else:
+            if self._try_inject_admin_tab():
+                if hasattr(self._admin_panel_view, "wakeup"):
+                    self._admin_panel_view.wakeup()
+
+    def _on_token_expired(self) -> None:
+        """Handle token expiry — eject admin tab and clear auth state.
+
+        Connected to ``auth_manager.clear_auth()`` in the main window or
+        called from the ApiClient 401 handler chain.
+        """
+        self._eject_admin_tab()
+        from client.auth_manager import clear_auth
+        clear_auth()
 
     def _refresh_tab_titles(self) -> None:
         """Update QTabWidget tab labels from translation keys."""
@@ -477,6 +628,15 @@ class QtDocumentCenterView(QWidget):
         self._tab_widget.setTabText(
             1, t("automation.tab_title", default="Automation")
         )
+        self._tab_widget.setTabText(
+            2, t("api.tab_title", default="API Dashboard")
+        )
+        # Admin tab (index 3) — only update if injected
+        if self._admin_tab_injected and self._admin_tab_index >= 0:
+            self._tab_widget.setTabText(
+                self._admin_tab_index,
+                t("admin.tab_title", default="Admin Panel"),
+            )
 
     def _on_tab_changed(self, index: int) -> None:
         """Forward tab changes to the embedded views' ``wakeup`` hooks."""
@@ -488,6 +648,22 @@ class QtDocumentCenterView(QWidget):
                     self._automation_view._refresh_from_db()
             except Exception:
                 logger.exception("Failed to wake automation view")
+        elif index == 2 and self._api_dashboard_view is not None:
+            try:
+                if hasattr(self._api_dashboard_view, "wakeup"):
+                    self._api_dashboard_view.wakeup()
+            except Exception:
+                logger.exception("Failed to wake API dashboard view")
+        elif (
+            self._admin_tab_injected
+            and index == self._admin_tab_index
+            and self._admin_panel_view is not None
+        ):
+            try:
+                if hasattr(self._admin_panel_view, "wakeup"):
+                    self._admin_panel_view.wakeup()
+            except Exception:
+                logger.exception("Failed to wake admin panel view")
 
     # ── Left sidebar ───────────────────────────────────────────────────
 
@@ -631,13 +807,15 @@ class QtDocumentCenterView(QWidget):
         cat_labels: dict[str, str] = {
             "maintenance": t("docs.cat_maintenance"),
             "invoices": t("docs.cat_invoices"),
+            "proformas": t("docs.cat_proformas"),
+            "receipts": t("docs.cat_receipts"),
             "trips": t("docs.cat_trips"),
             "drivers": t("docs.cat_drivers"),
             "vehicles": t("docs.cat_vehicles"),
             "other": t("docs.cat_other"),
         }
         cat_counts = {r["category"]: r["cnt"] for r in categories}
-        for cat_key in ["maintenance", "invoices", "trips", "drivers", "vehicles", "other"]:
+        for cat_key in ["maintenance", "invoices", "proformas", "receipts", "trips", "drivers", "vehicles", "other"]:
             count = cat_counts.get(cat_key, 0)
             label = cat_labels.get(cat_key, cat_key)
             active = self._active_category == cat_key
@@ -686,6 +864,15 @@ class QtDocumentCenterView(QWidget):
         self._select_all_cb = QCheckBox(toolbar)
         self._select_all_cb.stateChanged.connect(self._toggle_select_all)
         toolbar_layout.addWidget(self._select_all_cb)
+
+        # Admin access trigger (small shield icon; expands on click)
+        self._admin_trigger = Btn(
+            toolbar, text=t("admin.login_button", default="Admin"),
+            command=self._on_admin_trigger_clicked, variant="ghost",
+        )
+        self._admin_trigger.setFixedWidth(60)
+        self._admin_trigger.setFixedHeight(28)
+        toolbar_layout.addWidget(self._admin_trigger)
 
         layout.addWidget(toolbar)
 
@@ -862,6 +1049,7 @@ class QtDocumentCenterView(QWidget):
                 on_email=self._email_document,
                 on_delete=self._delete_document,
                 selected_ids=self._selected_ids,
+                doc_service=self._service,
             )
             self._list_layout.addWidget(row)
 
@@ -1401,7 +1589,9 @@ class QtDocumentCenterView(QWidget):
 
     def _open_document(self, doc: dict[str, Any]) -> None:
         if self._service:
-            self._service.open_file(doc["id"])
+            path = self._service.get_file_path(doc["id"])
+            if path:
+                QDesktopServices.openUrl(QUrl.fromLocalFile(path))
 
     def _upload_dialog(self) -> None:
         paths, _ = QFileDialog.getOpenFileNames(
@@ -1464,7 +1654,9 @@ class QtDocumentCenterView(QWidget):
             return
         try:
             if self._service:
-                ok_sent = self._service.email_document(doc["id"], recipient)
+                ok_sent = self._service.email_document(
+                    doc["id"], recipient, prefs=self.prefs,
+                )
                 if ok_sent:
                     QMessageBox.information(
                         self, t("docs.email_title"), t("docs.email_sent"),
@@ -1692,7 +1884,11 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
             # Actions
             view_btn = Btn(row, t("docs.view"), variant="ghost")
             view_btn.setFixedWidth(50)
-            view_btn.clicked.connect(lambda checked, d=doc: service.open_file(d["id"]))
+            def _open_doc(d: dict) -> None:
+                path = service.get_file_path(d["id"])
+                if path:
+                    QDesktopServices.openUrl(QUrl.fromLocalFile(path))
+            view_btn.clicked.connect(lambda checked, d=doc: _open_doc(d))
             row_layout.addWidget(view_btn)
 
             unlink_btn = Btn(row, t("docs.unlink"), variant="ghost")

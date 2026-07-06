@@ -209,7 +209,7 @@ def make_bar_chart(
 
     if horizontal:
         # Sort descending so biggest bar at top
-        paired = sorted(zip(labels, values, colors, text_vals), key=lambda x: x[1])
+        paired = sorted(zip(labels, values, colors, text_vals), key=lambda x: x[1], reverse=True)
         labels = [p[0] for p in paired]
         values = [p[1] for p in paired]
         colors = [p[2] for p in paired]
@@ -466,10 +466,13 @@ def make_lollipop_chart(
     # the y-axis labels at x=0.
     fig = go.Figure()
 
-    # Stems: one line per category from 0 to the value
+    # Stems: one line per category from a small negative offset to the value.
+    # Starting at x=0 overlaps the y-axis tick labels, so we shift the origin
+    # slightly left to create breathing room.
+    stem_start = -max(abs(v) for v in values) * 0.03
     stem_x, stem_y = [], []
     for i, v in enumerate(values):
-        stem_x += [0, v, None]
+        stem_x += [stem_start, v, None]
         stem_y += [labels[i], labels[i], None]
     fig.add_trace(
         go.Scatter(
@@ -862,7 +865,15 @@ def make_sparkline_chart(
     r, g, b = _hex_to_rgb_tuple(color)
 
     if len(values) < 2:
-        fig = go.Figure()
+        fig = go.Figure(
+            go.Scatter(
+                x=[0],
+                y=[values[0]],
+                mode="markers",
+                marker={"color": color, "size": 8},
+                showlegend=False,
+            )
+        )
         fig.update_layout(
             paper_bgcolor="rgba(0,0,0,0)",
             plot_bgcolor="rgba(0,0,0,0)",
@@ -931,7 +942,7 @@ def make_cost_per_truck_chart(
 
     text_vals = [_format_value(c) for c in costs]
 
-    paired = sorted(zip(labels, costs, colors, text_vals), key=lambda x: x[1])
+    paired = sorted(zip(labels, costs, colors, text_vals), key=lambda x: x[1], reverse=True)
     labels = [p[0] for p in paired]
     costs = [p[1] for p in paired]
     colors = [p[2] for p in paired]
@@ -982,7 +993,7 @@ def make_fleet_status_chart(
     ]
     text_vals = [_format_value(c) for c in counts]
 
-    paired = sorted(zip(labels, counts, colors, text_vals), key=lambda x: x[1])
+    paired = sorted(zip(labels, counts, colors, text_vals), key=lambda x: x[1], reverse=True)
     labels = [p[0] for p in paired]
     counts = [p[1] for p in paired]
     colors = [p[2] for p in paired]

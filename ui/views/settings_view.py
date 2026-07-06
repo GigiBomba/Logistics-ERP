@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from repositories.automail_repository import AutoMailRepository
 from services.i18n import register_listener, t, unregister_listener
 from services.invoicing.config_manager import load_company_config, save_company_config
 from services.operations.event_bus import SETTINGS_UPDATED, EventBus
@@ -67,11 +68,18 @@ class QtSettingsView(QWidget):
         db=None,
         prefs: PreferencesManager | None = None,
         ops=None,
+        automail_repo=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
+        self._api_client = api_client
         self.prefs = prefs or PreferencesManager(db)
         self.ops = ops
+        if self._api_client is not None:
+            self._automail_repo = None
+        else:
+            self._automail_repo = automail_repo if automail_repo is not None else AutoMailRepository(db)
         self._event_bus = EventBus()
 
         # ── i18n tracking ────────────────────────────────────────────────
@@ -1288,10 +1296,7 @@ class QtSettingsView(QWidget):
         table.setColumnWidth(4, 60)
 
         try:
-            rows = self.db.conn.execute(
-                "SELECT id, recipient, subject, timestamp, status "
-                "FROM email_logs ORDER BY id DESC LIMIT 200"
-            ).fetchall()
+            rows = self._automail_repo.get_recent_email_logs(200)
             table.setRowCount(len(rows))
             for r, row in enumerate(rows):
                 for c, val in enumerate(row):

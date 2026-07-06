@@ -80,7 +80,7 @@ class PipelineRepository(BaseRepository):
         if source_file_size < 0:
             source_file_size = 0
         now = _now_iso()
-        cursor = self.db.conn.execute(
+        return self._execute_insert(
             """
             INSERT INTO document_pipeline_runs
                 (run_uuid, source_file_path, source_file_name, source_mime_type,
@@ -99,8 +99,6 @@ class PipelineRepository(BaseRepository):
                 now,
             ),
         )
-        self.db.conn.commit()
-        return cursor.lastrowid
 
     def update_stage(
         self,
@@ -112,7 +110,7 @@ class PipelineRepository(BaseRepository):
         """Update stage + status atomically.  Sets completed_at if status is terminal."""
         now = _now_iso()
         completed_at = now if status in ("complete", "failed") else None
-        self.db.conn.execute(
+        self._execute(
             """
             UPDATE document_pipeline_runs
             SET stage = ?, status = ?, error_message = ?,
@@ -121,7 +119,6 @@ class PipelineRepository(BaseRepository):
             """,
             (stage, status, error_message, now, completed_at, run_id),
         )
-        self.db.conn.commit()
 
     def set_processed_files(
         self,
@@ -131,7 +128,7 @@ class PipelineRepository(BaseRepository):
         pages_count: int,
     ) -> None:
         now = _now_iso()
-        self.db.conn.execute(
+        self._execute(
             """
             UPDATE document_pipeline_runs
             SET processed_file_path = ?, processed_pdf_path = ?,
@@ -140,7 +137,6 @@ class PipelineRepository(BaseRepository):
             """,
             (processed_file_path, processed_pdf_path, pages_count, now, run_id),
         )
-        self.db.conn.commit()
 
     def set_ocr_result(
         self,
@@ -149,7 +145,7 @@ class PipelineRepository(BaseRepository):
         extracted_data: Dict[str, Any],
     ) -> None:
         now = _now_iso()
-        self.db.conn.execute(
+        self._execute(
             """
             UPDATE document_pipeline_runs
             SET ocr_text = ?, extracted_data_json = ?, updated_at = ?
@@ -157,7 +153,6 @@ class PipelineRepository(BaseRepository):
             """,
             (ocr_text, json.dumps(extracted_data, ensure_ascii=False, default=str), now, run_id),
         )
-        self.db.conn.commit()
 
     def set_match_result(
         self,
@@ -167,7 +162,7 @@ class PipelineRepository(BaseRepository):
         match_signals: Dict[str, float],
     ) -> None:
         now = _now_iso()
-        self.db.conn.execute(
+        self._execute(
             """
             UPDATE document_pipeline_runs
             SET matched_trip_id = ?, match_confidence = ?,
@@ -182,11 +177,10 @@ class PipelineRepository(BaseRepository):
                 run_id,
             ),
         )
-        self.db.conn.commit()
 
     def set_document_id(self, run_id: int, document_id: int) -> None:
         now = _now_iso()
-        self.db.conn.execute(
+        self._execute(
             """
             UPDATE document_pipeline_runs
             SET document_id = ?, updated_at = ?
@@ -194,7 +188,6 @@ class PipelineRepository(BaseRepository):
             """,
             (document_id, now, run_id),
         )
-        self.db.conn.commit()
 
     def set_related_documents(self, run_id: int, doc_ids: List[int]) -> None:
         """Store the list of related document IDs for a pipeline run.
@@ -214,7 +207,7 @@ class PipelineRepository(BaseRepository):
             except (ValueError, TypeError):
                 signals = {}
         signals["related_document_ids"] = doc_ids
-        self.db.conn.execute(
+        self._execute(
             """
             UPDATE document_pipeline_runs
             SET match_signals_json = ?, updated_at = ?
@@ -222,7 +215,6 @@ class PipelineRepository(BaseRepository):
             """,
             (json.dumps(signals, ensure_ascii=False), now, run_id),
         )
-        self.db.conn.commit()
 
     def get_run_by_id(self, run_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
@@ -267,10 +259,9 @@ class PipelineRepository(BaseRepository):
         )
 
     def delete_run(self, run_id: int) -> None:
-        self.db.conn.execute(
+        self._execute(
             "DELETE FROM document_pipeline_runs WHERE id = ?", (run_id,)
         )
-        self.db.conn.commit()
 
     def recover_stuck_runs(self) -> int:
         """Mark non-terminal runs as failed and clear stale data.
@@ -289,7 +280,7 @@ class PipelineRepository(BaseRepository):
         """
         now = _now_iso()
         try:
-            cursor = self.db.conn.execute(
+            count = self._execute_with_count(
                 """
                 UPDATE document_pipeline_runs
                 SET status = 'failed',
@@ -299,12 +290,11 @@ class PipelineRepository(BaseRepository):
                 """,
                 (now, now),
             )
-            self.db.conn.commit()
-            return cursor.rowcount
+            return count
         except Exception:
             logger.exception("recover_stuck_runs failed")
             try:
-                self.db.conn.rollback()
+                self.rollback_transaction()
             except Exception:
                 pass
             raise
@@ -390,7 +380,7 @@ class PipelineRepository(BaseRepository):
         """
         now = _now_iso()
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self.begin_transaction()
             row = self._fetchone(
                 "SELECT match_signals_json "
                 "FROM document_pipeline_runs WHERE id = ?",
@@ -412,26 +402,27 @@ class PipelineRepository(BaseRepository):
                 except (TypeError, ValueError):
                     continue
             if doc_id in cleaned:
-                self.db.conn.execute("COMMIT")
+                self.commit_transaction()
                 return
             cleaned.append(doc_id)
             signals["related_document_ids"] = cleaned
-            self.db.conn.execute(
+            self._execute(
                 """
                 UPDATE document_pipeline_runs
                 SET match_signals_json = ?, updated_at = ?
                 WHERE id = ?
                 """,
                 (json.dumps(signals, ensure_ascii=False), now, run_id),
+                commit=False,
             )
-            self.db.conn.commit()
+            self.commit_transaction()
         except Exception:
             logger.exception(
                 "append_related_document failed for run %d, doc %d",
                 run_id, doc_id,
             )
             try:
-                self.db.conn.execute("ROLLBACK")
+                self.rollback_transaction()
             except Exception:
                 pass
             raise
@@ -445,7 +436,7 @@ class PipelineRepository(BaseRepository):
     ) -> int:
         package_uuid = package_uuid or uuid.uuid4().hex
         now = _now_iso()
-        cursor = self.db.conn.execute(
+        return self._execute_insert(
             """
             INSERT INTO document_package
                 (trip_id, package_uuid, status, created_at, updated_at)
@@ -453,8 +444,6 @@ class PipelineRepository(BaseRepository):
             """,
             (trip_id, package_uuid, now, now),
         )
-        self.db.conn.commit()
-        return cursor.lastrowid
 
     def update_package(
         self,
@@ -494,11 +483,10 @@ class PipelineRepository(BaseRepository):
         sets.append("updated_at = ?")
         params.append(_now_iso())
         params.append(package_id)
-        self.db.conn.execute(
+        self._execute(
             f"UPDATE document_package SET {', '.join(sets)} WHERE id = ?",
             tuple(params),
         )
-        self.db.conn.commit()
 
     def add_package_item(
         self,
@@ -506,15 +494,11 @@ class PipelineRepository(BaseRepository):
         document_id: int,
         sort_order: int = 0,
     ) -> None:
-        self.db.conn.execute(
-            """
-            INSERT OR IGNORE INTO document_package_items
-                (package_id, document_id, sort_order)
-            VALUES (?, ?, ?)
-            """,
+        self._execute(
+            "INSERT OR IGNORE INTO document_package_items "
+            "(package_id, document_id, sort_order) VALUES (?, ?, ?)",
             (package_id, document_id, sort_order),
         )
-        self.db.conn.commit()
 
     def add_package_items_batch(
         self,
@@ -524,27 +508,26 @@ class PipelineRepository(BaseRepository):
         if not document_ids:
             return
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self.begin_transaction()
             self.db.conn.executemany(
                 "INSERT OR IGNORE INTO document_package_items "
                 "(package_id, document_id, sort_order) VALUES (?, ?, ?)",
                 [(package_id, did, i) for i, did in enumerate(document_ids)],
             )
-            self.db.conn.commit()
+            self.commit_transaction()
         except Exception:
             try:
-                self.db.conn.rollback()
+                self.rollback_transaction()
             except Exception:
                 pass
             raise
 
     def remove_package_item(self, package_id: int, document_id: int) -> None:
-        self.db.conn.execute(
+        self._execute(
             "DELETE FROM document_package_items "
             "WHERE package_id = ? AND document_id = ?",
             (package_id, document_id),
         )
-        self.db.conn.commit()
 
     def replace_package_items(
         self,
@@ -558,10 +541,11 @@ class PipelineRepository(BaseRepository):
         DELETE is not visible before the INSERTs.
         """
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
-            self.db.conn.execute(
+            self.begin_transaction()
+            self._execute(
                 "DELETE FROM document_package_items WHERE package_id = ?",
                 (package_id,),
+                commit=False,
             )
             rows = []
             for idx, doc_id in enumerate(document_ids):
@@ -575,11 +559,11 @@ class PipelineRepository(BaseRepository):
                     "VALUES (?, ?, ?)",
                     rows,
                 )
-            self.db.conn.commit()
+            self.commit_transaction()
         except Exception:
             logger.exception("Failed to replace package items for package %s", package_id)
             try:
-                self.db.conn.rollback()
+                self.rollback_transaction()
             except Exception:
                 pass
             raise

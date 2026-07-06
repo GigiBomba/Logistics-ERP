@@ -1,38 +1,53 @@
-import sqlite3
 import logging
+import os
+import sqlite3
 import warnings
 from datetime import datetime
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 
 _emitted_warnings: set = set()
 
+
 def _deprecated(msg: str) -> None:
-    """Emit a DeprecationWarning once per unique message."""
     if msg not in _emitted_warnings:
         _emitted_warnings.add(msg)
         warnings.warn(msg, DeprecationWarning, stacklevel=3)
 
-from database.connection_pool import ConnectionPool
-from database import schema as _schema
 
+from database import schema as _schema
+from database.connection_pool import ConnectionPool
 
 class DatabaseManager:
-    def __init__(self, db_path):
-        # Thread-safe connection pool — each thread gets its own connection
-        self._pool = ConnectionPool(db_path, timeout=30)
-        # Touch the main-thread connection once so _init_db has something to work with
+    def __init__(self, db_path: str, engine: str = ""):
+        self._engine = engine or os.environ.get("OPERION_DB_ENGINE", "sqlite")
+        self._pg_conn: Any = None
+        if self._engine == "postgresql":
+            self._init_pg(db_path)
+        else:
+            self._pool = ConnectionPool(db_path, timeout=30)
         self._init_db()
 
+    def _init_pg(self, dsn: str) -> None:
+        import psycopg2
+        import psycopg2.extras
+        self._pg_conn = psycopg2.connect(dsn)
+        self._pg_conn.autocommit = True
+        self._pg_conn.cursor_factory = psycopg2.extras.RealDictCursor
+
     @property
-    def conn(self) -> sqlite3.Connection:
-        """Return the current thread's SQLite connection."""
+    def conn(self):
+        if self._engine == "postgresql":
+            return self._pg_conn
         return self._pool.conn
 
     def close(self):
-        """Close all database connections. Safe to call multiple times."""
-        self._pool.close_all()
+        if self._engine == "postgresql":
+            if self._pg_conn:
+                self._pg_conn.close()
+        else:
+            self._pool.close_all()
 
     @staticmethod
     def row_to_dict(row):
@@ -43,6 +58,39 @@ class DatabaseManager:
     @staticmethod
     def rows_to_dicts(rows):
         return [dict(r) for r in rows] if rows else []
+
+    # ── Read-only connection (engine-level sandbox) ───────────────────
+
+    @staticmethod
+    def open_readonly_connection(db_path: str) -> sqlite3.Connection:
+        """Open a **read-only** SQLite connection to *db_path*.
+
+        The connection is opened with ``uri=True&mode=ro``, which tells
+        the SQLite engine to reject any write operation (INSERT, UPDATE,
+        DELETE, DROP, etc.) at the file-system + engine level.  This is
+        the primary sandbox for the ``POST /admin/db/query`` endpoint.
+
+        For ``:memory:`` databases (testing), falls back to a normal
+        connection — the engine-level sandbox cannot be applied, but
+        string filtering still protects the endpoint.
+
+        The caller is responsible for calling ``.close()`` on the
+        returned connection.
+
+        Raises:
+            sqlite3.OperationalError: If the database file cannot be
+                opened in read-only mode (e.g. missing file).
+        """
+        if db_path == ":memory:":
+            # In-memory databases cannot use URI read-only mode.
+            conn = sqlite3.connect(":memory:", timeout=10, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            return conn
+
+        uri = f"file:{os.path.abspath(db_path)}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, timeout=10, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
 
     def _init_db(self):
         """Creează tabelele și indecșii necesari."""
@@ -71,6 +119,8 @@ class DatabaseManager:
             S.INDEX_TRIPS_START_DATE, S.INDEX_TRIPS_DELIVERY_COUNTRY,
             S.INDEX_TRIPS_LOADING_COUNTRY, S.INDEX_TRIPS_DRIVER_ID,
             S.TABLE_SETTINGS, S.TABLE_EMAIL_LOGS,
+            # Dunner / Invoice Reminders
+            S.TABLE_INVOICE_REMINDERS, S.INDEX_INVOICE_REMINDERS_LOOKUP,
             # Operations Engine
             S.TABLE_ALERTS, S.TABLE_OPERATION_EVENTS, S.TABLE_TRIP_STATUS_HISTORY,
             S.INDEX_ALERTS_TYPE, S.INDEX_ALERTS_TRUCK, S.INDEX_ALERTS_RESOLVED,
@@ -116,6 +166,28 @@ class DatabaseManager:
             S.INDEX_PACKAGE_ITEMS_DOCUMENT,
             S.TRIGGER_PIPELINE_RUNS_STAGE_CHECK, S.TRIGGER_PIPELINE_RUNS_STAGE_UPDATE,
             S.TRIGGER_PIPELINE_RUNS_STATUS_CHECK, S.TRIGGER_PIPELINE_RUNS_STATUS_UPDATE,
+            # Proforma Invoices
+            S.TABLE_PROFORMA_INVOICES,
+            S.INDEX_PROFORMA_NUMBER, S.INDEX_PROFORMA_CLIENT, S.INDEX_PROFORMA_STATUS,
+            # Receipts
+            S.TABLE_RECEIPTS,
+            S.INDEX_RECEIPT_NUMBER, S.INDEX_RECEIPT_TYPE,
+            S.INDEX_RECEIPT_STATUS, S.INDEX_RECEIPT_TRIP, S.INDEX_RECEIPT_DRIVER,
+            # AutoMail / Dunner
+            S.TABLE_AUTOMAIL_TEMPLATES, S.TABLE_AUTOMAIL_SCHEDULES,
+            S.TABLE_AUTOMAIL_CLIENT_OVERRIDES, S.TABLE_AUTOMAIL_SETTINGS,
+            S.TABLE_GPS_TELEMETRY,
+            # Companies (multi-tenant)
+            S.TABLE_COMPANIES,
+            S.INDEX_COMPANIES_NAME,
+            # Users (authentication)
+            S.TABLE_USERS,
+            S.INDEX_USERS_EMAIL,
+            S.INDEX_USERS_COMPANY,
+            S.INDEX_AUTOMAIL_SCHEDULES_TEMPLATE,
+            S.INDEX_AUTOMAIL_SCHEDULES_ACTIVE_SORT,
+            S.INDEX_AUTOMAIL_CLIENT_OVERRIDES_CLIENT,
+            S.INDEX_GPS_TRUCK, S.INDEX_GPS_RECORDED,
         ]
         for stmt in exec_stmts:
             try:
@@ -151,6 +223,11 @@ class DatabaseManager:
         except Exception:
             pass
         # Document Center P2 (FTS5 is best-effort)
+        # Drop old V1 FTS table if upgrading — V2 adds cmr_number + extracted_data_json columns.
+        try:
+            self.conn.execute(S.MIGRATION_DOCUMENTS_FTS_V2)
+        except Exception as e:
+            logger.warning("FTS migration (drop old table) failed: %s", e)
         for stmt in (S.TABLE_DOCUMENTS_FTS, S.TRIGGER_DOCUMENTS_FTS_INSERT,
                      S.TRIGGER_DOCUMENTS_FTS_DELETE, S.TRIGGER_DOCUMENTS_FTS_UPDATE):
             try:
@@ -364,6 +441,17 @@ class DatabaseManager:
         except Exception as e:
             logger.warning("Migration of status triggers failed: %s", e)
 
+        # ── Users: add company_id (multi-tenant migration) ──────────────
+        self._ensure_column(
+            "users", "company_id",
+            "ALTER TABLE users ADD COLUMN company_id "
+            "INTEGER REFERENCES companies(id)",
+        )
+        try:
+            self.conn.execute("CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id)")
+        except Exception as e:
+            logger.warning("Migration step failed: %s", e)
+
         try:
             self.conn.commit()
         except Exception as e:
@@ -392,6 +480,161 @@ class DatabaseManager:
                     logger.info("Migrated %d legacy maintenance records and dropped old table", migrated)
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
+        self._seed_automail_defaults()
+
+    def _seed_automail_defaults(self):
+        """Seed default AutoMail templates, schedules, and settings if empty.
+
+        This runs once on first database init to ensure the system is
+        immediately usable with sensible defaults mirroring the original
+        hardcoded DunnerEngine behavior.
+        """
+        now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        try:
+            # ── Seed templates if empty ──────────────────────────────────
+            count = self.conn.execute(
+                "SELECT COUNT(*) AS cnt FROM automail_templates"
+            ).fetchone()["cnt"]
+            if count == 0:
+                templates = [
+                    (
+                        "Default",
+                        "Payment Notice: Invoice {invoice_number} / {company_name}",
+                        "Dear Accounts Payable Team,\n\n"
+                        "This is an automated notification regarding invoice {invoice_number} "
+                        "({total_amount} {currency}), due on {due_date}.\n\n"
+                        "Please find the relevant documents attached.\n\n"
+                        "Thank you for your prompt attention.\n\n"
+                        "Best regards,\n{company_name}\n\nGenerated via Operion ERP",
+                        "<p>Dear Accounts Payable Team,</p>"
+                        "<p>This is an automated notification regarding invoice "
+                        "<strong>{invoice_number}</strong> ({total_amount} {currency}), "
+                        "due on <strong>{due_date}</strong>.</p>"
+                        "<p>Please find the relevant documents attached.</p>"
+                        "<p>Thank you for your prompt attention.</p>"
+                        "<p>Best regards,<br>{company_name}</p>"
+                        "<hr><small>Generated via Operion ERP</small>",
+                        1,
+                    ),
+                    (
+                        "Friendly",
+                        "Upcoming Payment: Invoice {invoice_number} / {company_name}",
+                        "Dear Accounts Payable Team,\n\n"
+                        "This is a friendly reminder that invoice {invoice_number} "
+                        "({total_amount} {currency}) is due on {due_date}.\n\n"
+                        "Please let us know if you require any additional information.\n\n"
+                        "Thank you for your continued partnership.\n\n"
+                        "Best regards,\n{company_name}",
+                        "<p>Dear Accounts Payable Team,</p>"
+                        "<p>This is a friendly reminder that invoice "
+                        "<strong>{invoice_number}</strong> ({total_amount} {currency}) "
+                        "is due on <strong>{due_date}</strong>.</p>"
+                        "<p>Please let us know if you require any additional information.</p>"
+                        "<p>Thank you for your continued partnership.</p>"
+                        "<p>Best regards,<br>{company_name}</p>",
+                        0,
+                    ),
+                    (
+                        "Professional",
+                        "Invoice {invoice_number} — Payment Reminder / {company_name}",
+                        "Dear Accounts Payable Team,\n\n"
+                        "This is a professional reminder that invoice {invoice_number} "
+                        "({total_amount} {currency}) is scheduled for payment on {due_date}.\n\n"
+                        "Kindly ensure the payment is processed by the due date. "
+                        "If already executed, please disregard this message.\n\n"
+                        "Sincerely,\n{company_name}",
+                        "<p>Dear Accounts Payable Team,</p>"
+                        "<p>This is a professional reminder that invoice "
+                        "<strong>{invoice_number}</strong> ({total_amount} {currency}) "
+                        "is scheduled for payment on <strong>{due_date}</strong>.</p>"
+                        "<p>Kindly ensure the payment is processed by the due date. "
+                        "If already executed, please disregard this message.</p>"
+                        "<p>Sincerely,<br>{company_name}</p>",
+                        0,
+                    ),
+                    (
+                        "Strict",
+                        "URGENT: Invoice {invoice_number} / {company_name}",
+                        "Dear Accounts Payable Team,\n\n"
+                        "This is an urgent notification regarding invoice {invoice_number} "
+                        "({total_amount} {currency}), originally due on {due_date}.\n\n"
+                        "We must insist on immediate payment to avoid any disruption of services. "
+                        "Please confirm the transfer date at your earliest convenience.\n\n"
+                        "Regards,\n{company_name}",
+                        "<p>Dear Accounts Payable Team,</p>"
+                        "<p>This is an urgent notification regarding invoice "
+                        "<strong>{invoice_number}</strong> ({total_amount} {currency}), "
+                        "originally due on <strong>{due_date}</strong>.</p>"
+                        "<p>We must insist on immediate payment to avoid any disruption "
+                        "of services. Please confirm the transfer date at your earliest "
+                        "convenience.</p>"
+                        "<p>Regards,<br>{company_name}</p>",
+                        0,
+                    ),
+                ]
+                self.conn.executemany(
+                    "INSERT INTO automail_templates "
+                    "(name, subject, body_text, body_html, is_default, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                    [(t[0], t[1], t[2], t[3], t[4], now, now) for t in templates],
+                )
+                logger.info("Seeded %d default automail templates", len(templates))
+            else:
+                logger.debug("automail_templates already populated, skipping seed")
+
+            # ── Seed schedules if empty ─────────────────────────────────
+            count = self.conn.execute(
+                "SELECT COUNT(*) AS cnt FROM automail_schedules"
+            ).fetchone()["cnt"]
+            if count == 0:
+                default_tpl = self.conn.execute(
+                    "SELECT id FROM automail_templates WHERE is_default = 1 LIMIT 1"
+                ).fetchone()
+                tpl_id = default_tpl["id"] if default_tpl else 1
+                schedules = [
+                    ("Day 27 Reminder",    "days_before_due", 3, tpl_id, 1, 0),
+                    ("Due Date Notice",    "on_due_date",     0, tpl_id, 1, 1),
+                    ("Day 33 Follow-Up",   "days_after_due",  3, tpl_id, 1, 2),
+                ]
+                self.conn.executemany(
+                    "INSERT INTO automail_schedules "
+                    "(name, trigger_type, days_offset, template_id, is_active, sort_order, "
+                    " created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                    [(s[0], s[1], s[2], s[3], s[4], s[5], now, now) for s in schedules],
+                )
+                logger.info("Seeded %d default automail schedules", len(schedules))
+            else:
+                logger.debug("automail_schedules already populated, skipping seed")
+
+            # ── Seed settings if empty ───────────────────────────────────
+            count = self.conn.execute(
+                "SELECT COUNT(*) AS cnt FROM automail_settings"
+            ).fetchone()["cnt"]
+            if count == 0:
+                settings = [
+                    ("enabled",                   "0"),
+                    ("max_reminders_per_invoice",  "5"),
+                    ("retry_attempts",             "3"),
+                    ("business_hours_start",       "08:00"),
+                    ("business_hours_end",         "18:00"),
+                    ("skip_weekends",              "1"),
+                ]
+                self.conn.executemany(
+                    "INSERT INTO automail_settings (key, value) VALUES (?, ?)",
+                    settings,
+                )
+                logger.info("Seeded %d default automail settings", len(settings))
+            else:
+                logger.debug("automail_settings already populated, skipping seed")
+
+            self.conn.commit()
+        except Exception as e:
+            logger.exception("Failed to seed automail defaults: %s", e)
+            try:
+                self.conn.execute("ROLLBACK")
+            except Exception:
+                pass
 
     # ── SETTINGS (canonical API, not deprecated) ─────────────────────
 
@@ -499,6 +742,74 @@ class DatabaseManager:
         _deprecated("DatabaseManager.mark_invoice_as_paid — use InvoiceRepository.mark_paid()")
         self.conn.execute("UPDATE invoices SET status = 'Paid' WHERE trip_id = ?", (trip_id,))
         self.conn.commit()
+
+    def _proforma_repo(self):
+        from repositories.proforma_repository import ProformaRepository
+        return ProformaRepository(self)
+
+    def create_proforma_record(
+        self,
+        proforma_number: str = "",
+        issue_date: str = "",
+        valid_until: str = "",
+        client_name: str = "",
+        client_address: str = "",
+        client_vat: str = "",
+        client_phone: str = "",
+        client_email: str = "",
+        description: str = "",
+        notes: str = "",
+        line_items_json: str = "[]",
+        subtotal: float = 0,
+        discount_type: str = "",
+        discount_value: float = 0,
+        discount_amount: float = 0,
+        tax_rate: float = 0,
+        tax_amount: float = 0,
+        grand_total: float = 0,
+        currency: str = "EUR",
+        mode: str = "client",
+        status: str = "Draft",
+        logo_path: str = "",
+        signature_path: str = "",
+        stamp_path: str = "",
+        company_color: str = "#6366f1",
+    ) -> Optional[int]:
+        """Insert a proforma invoice record. Returns the new row id or None on failure."""
+        repo = self._proforma_repo()
+        import json
+        return repo.create(
+            proforma_number=proforma_number,
+            issue_date=issue_date,
+            valid_until=valid_until,
+            client_name=client_name,
+            client_address=client_address,
+            client_vat=client_vat,
+            client_phone=client_phone,
+            client_email=client_email,
+            description=description,
+            notes=notes,
+            line_items=json.loads(line_items_json) if line_items_json else [],
+            subtotal=subtotal,
+            discount_type=discount_type,
+            discount_value=discount_value,
+            discount_amount=discount_amount,
+            tax_rate=tax_rate,
+            tax_amount=tax_amount,
+            grand_total=grand_total,
+            currency=currency,
+            mode=mode,
+            status=status,
+            logo_path=logo_path,
+            signature_path=signature_path,
+            stamp_path=stamp_path,
+            company_color=company_color,
+        )
+
+    def update_proforma(self, proforma_id: int, **kwargs) -> bool:
+        """Update proforma invoice fields by id. Returns True on success."""
+        repo = self._proforma_repo()
+        return repo.update(proforma_id, **kwargs)
 
     # ── Truck CRUD (deprecated — use FleetRepository) ────────────────
 

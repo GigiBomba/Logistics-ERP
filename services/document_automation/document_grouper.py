@@ -24,42 +24,15 @@ import os
 from datetime import datetime
 from typing import Any
 
+from repositories.document_repository import DocumentRepository
 from repositories.pipeline_repository import PipelineRepository
+from repositories.trip_repository import TripRepository
 
 logger = logging.getLogger("document_automation.document_grouper")
 
 
 def _read_documents_attached(db, trip_id: int) -> list[int]:
-    """Return the list of doc IDs in ``trips.documents_attached``.
-
-    Returns an empty list on parse error or missing column — never
-    raises.  This keeps the read-modify-write path safe against
-    malformed JSON or pre-migration data.
-    """
-    try:
-        row = db.conn.execute(
-            "SELECT documents_attached FROM trips WHERE id = ?", (trip_id,),
-        ).fetchone()
-    except Exception:
-        return []
-    if not row:
-        return []
-    raw = row["documents_attached"] if hasattr(row, "keys") else row[0]
-    if not raw:
-        return []
-    try:
-        parsed = json.loads(raw)
-    except (ValueError, TypeError):
-        return []
-    if not isinstance(parsed, list):
-        return []
-    out: list[int] = []
-    for x in parsed:
-        try:
-            out.append(int(x))
-        except (TypeError, ValueError):
-            continue
-    return out
+    return TripRepository(db).get_documents_attached(trip_id)
 
 
 class DocumentGrouper:
@@ -69,14 +42,13 @@ class DocumentGrouper:
     its own :class:`DocumentService` and :class:`PipelineRepository`.
     """
 
-    def __init__(self, db, document_service=None) -> None:
+    def __init__(self, db, document_service=None,
+                 pipeline_repo=None, doc_repo=None, trip_repo=None) -> None:
         self.db = db
-        # ``DocumentService`` is imported lazily in ``group_and_link``
-        # to avoid a circular dependency (``document_service`` imports
-        # from ``document_automation.pipeline``).  Callers may pass a
-        # pre-existing ``DocumentService`` instance for efficiency.
         self._document_service = document_service
-        self.pipeline = PipelineRepository(db)
+        self.pipeline = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
+        self._doc_repo = doc_repo if doc_repo is not None else DocumentRepository(db)
+        self._trip_repo = trip_repo if trip_repo is not None else TripRepository(db)
 
     def group_and_link(
         self,
@@ -150,7 +122,7 @@ class DocumentGrouper:
             from services.document.upload_service import UploadService
             self._document_service = UploadService(self.db, DocumentRepository(self.db))
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self._doc_repo.begin_transaction()
             doc_id = self._document_service.register_existing(
                 file_path=processed_pdf,
                 title=title,
@@ -164,16 +136,16 @@ class DocumentGrouper:
                 commit=False,
             )
             if doc_id is None:
-                self.db.conn.execute("ROLLBACK")
+                self._doc_repo.rollback_transaction()
                 logger.error("group_and_link: register_existing returned None")
                 return None
             self._update_document_extraction(doc_id, extracted, ocr_text, tags)
             self._update_trip_after_link(trip_id, cmr_number, doc_id)
-            self.db.conn.commit()
+            self._doc_repo.commit_transaction()
         except Exception:
             logger.exception("group_and_link: transaction failed — rolling back")
             with contextlib.suppress(Exception):
-                self.db.conn.execute("ROLLBACK")
+                self._doc_repo.rollback_transaction()
             return None
 
         # Save the resolved document id on the pipeline run.
@@ -221,54 +193,50 @@ class DocumentGrouper:
         now = datetime.now().isoformat()
 
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self._doc_repo.begin_transaction()
 
             # Update document metadata and extracted data.
-            self.db.conn.execute(
-                "UPDATE documents SET entity_type = 'trip', entity_id = ?, "
-                "extracted_data_json = ?, automation_tags = ?, "
-                "cmr_number = ?, cmr_metadata_json = ?, is_signed = ?, "
-                "text_content = COALESCE(?, text_content), "
-                "updated_at = ? WHERE id = ?",
-                (trip_id, extraction_json, automation_tags, cmr_number,
-                 cmr_metadata, is_signed, ocr_text or None, now, doc_id),
+            self._doc_repo.update(
+                doc_id,
+                entity_type="trip",
+                entity_id=trip_id,
+                extracted_data_json=extraction_json,
+                automation_tags=automation_tags,
+                cmr_number=cmr_number,
+                cmr_metadata_json=cmr_metadata,
+                is_signed=is_signed,
+                text_content=ocr_text or None,
+                updated_at=now,
+                commit=False,
             )
 
             # Create document link if not already present.
-            existing_link = self.db.conn.execute(
-                "SELECT id FROM document_links "
-                "WHERE document_id = ? AND linked_entity_type = 'trip' "
-                "AND linked_entity_id = ?",
-                (doc_id, trip_id),
-            ).fetchone()
-            if not existing_link:
-                self.db.conn.execute(
-                    "INSERT INTO document_links "
-                    "(document_id, linked_entity_type, linked_entity_id, "
-                    "relation_type, created_at) "
-                    "VALUES (?, 'trip', ?, 'attached', ?)",
-                    (doc_id, trip_id, now),
+            if not self._doc_repo.has_link(doc_id, "trip", trip_id):
+                self._doc_repo.add_link(
+                    doc_id, "trip", trip_id, "attached", now, commit=False,
                 )
 
             # Update trip's documents_attached.
-            existing = _read_documents_attached(self.db, trip_id)
+            existing = self._trip_repo.get_documents_attached(trip_id)
             if doc_id not in existing:
                 existing.append(doc_id)
-            self.db.conn.execute(
+            self._trip_repo._execute(
                 "UPDATE trips SET documents_attached = ? WHERE id = ?",
                 (json.dumps(existing), trip_id),
+                commit=False,
             )
 
             # Update trip's CMR number if the document is a CMR.
             if cmr_number:
-                self.db.conn.execute(
+                self._trip_repo._execute(
                     "UPDATE trips SET "
                     "cmr_number = COALESCE(NULLIF(?, ''), cmr_number), "
                     "cmr_status = 'signed' WHERE id = ?",
                     (cmr_number, trip_id),
+                    commit=False,
                 )
 
-            self.db.conn.commit()
+            self._doc_repo.commit_transaction()
             logger.info(
                 "Linked document %d to trip %d (cmr=%s, invoice=%s, type=%s)",
                 doc_id, trip_id, cmr_number or "-",
@@ -280,7 +248,7 @@ class DocumentGrouper:
                 "Failed to link document %d to trip %d", doc_id, trip_id
             )
             with contextlib.suppress(Exception):
-                self.db.conn.execute("ROLLBACK")
+                self._doc_repo.rollback_transaction()
             return False
 
     def _update_document_extraction(
@@ -290,20 +258,16 @@ class DocumentGrouper:
         ocr_text: str,
         tags: list[str] | None = None,
     ) -> None:
-        """Write the structured extraction + raw OCR text onto the
-        ``documents`` row (and through the FTS5 trigger by also
-        updating ``text_content``).
-        """
         extraction_json = json.dumps(extracted, ensure_ascii=False, default=str)
         automation_tags = ",".join(
             str(t) for t in (tags or []) if t
         ) if tags else ""
-        self.db.conn.execute(
-            "UPDATE documents SET extracted_data_json = ?, "
-            "text_content = COALESCE(?, text_content), "
-            "automation_tags = ? "
-            "WHERE id = ?",
-            (extraction_json, ocr_text or None, automation_tags, doc_id),
+        self._doc_repo.update(
+            doc_id,
+            extracted_data_json=extraction_json,
+            text_content=ocr_text or None,
+            automation_tags=automation_tags,
+            commit=False,
         )
 
     def _update_trip_after_link(
@@ -312,22 +276,19 @@ class DocumentGrouper:
         cmr_number: str,
         doc_id: int,
     ) -> None:
-        """Update trip columns after a new document is linked.
-
-        The read-modify-write of ``documents_attached`` is safe inside
-        the surrounding transaction — SQLite serialises writes.
-        """
         if cmr_number:
-            self.db.conn.execute(
+            self._trip_repo._execute(
                 "UPDATE trips SET cmr_number = COALESCE(NULLIF(?, ''), cmr_number), "
                 "cmr_status = 'signed' "
                 "WHERE id = ?",
                 (cmr_number, trip_id),
+                commit=False,
             )
-        existing = _read_documents_attached(self.db, trip_id)
+        existing = self._trip_repo.get_documents_attached(trip_id)
         if doc_id not in existing:
             existing.append(doc_id)
-        self.db.conn.execute(
+        self._trip_repo._execute(
             "UPDATE trips SET documents_attached = ? WHERE id = ?",
             (json.dumps(existing), trip_id),
+            commit=False,
         )

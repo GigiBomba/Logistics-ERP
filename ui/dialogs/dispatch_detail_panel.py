@@ -56,7 +56,8 @@ class QtDispatchDetailPanel(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("dispatch_board.detail_title"))
-        self.setFixedSize(480, 620)
+        self.setMinimumSize(480, 500)
+        self.resize(580, 620)
         self.setWindowModality(Qt.ApplicationModal)
 
         self._trip_data: dict = dict(trip_data)

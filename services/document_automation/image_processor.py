@@ -337,12 +337,16 @@ def _enhance_single_image(image_path: str, output_png_path: str) -> tuple[tuple[
         # Without OpenCV we just transcode the file as-is.  OCR will
         # still work on the original.
         from PIL import Image  # type: ignore
-        with Image.open(image_path) as img:
-            orig_mode = img.mode
-            if orig_mode not in ("RGB", "L", "1"):
-                img = img.convert("RGB")
-            orig_size = img.size
-            img.save(output_png_path, "PNG")
+        try:
+            with Image.open(image_path) as img:
+                orig_mode = img.mode
+                if orig_mode not in ("RGB", "L", "1"):
+                    img = img.convert("RGB")
+                orig_size = img.size
+                img.save(output_png_path, "PNG")
+        except (OSError, ValueError) as exc:
+            logger.warning("Image load failed for %s: %s", image_path, exc)
+            raise ProcessingError(f"Cannot load image: {image_path}") from exc
         return orig_size, False, [output_png_path]
 
     import numpy as np  # type: ignore

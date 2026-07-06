@@ -1,13 +1,13 @@
 """Plotly-to-Qt rendering bridge for Operion ERP.
 
 Replaces matplotlib's ``FigureCanvasQTAgg`` embedding with a lightweight
-kaleido → SVG → QPixmap pipeline.  Key components:
+Plotly SVG → QPixmap pipeline.  Key components:
 
 * ``figure_to_svg_bytes()`` — render a Plotly figure to raw SVG bytes.
 * ``figure_to_qpixmap()`` — convert SVG bytes to a QPixmap for ``QLabel``.
 * ``empty_figure()`` — return a placeholder figure for no-data states.
 * ``sparkline_figure()`` — minimal sparkline figure (no axes / chrome).
-* ``RenderManager`` — singleton background render queue.  Kaleido SVG
+* ``RenderManager`` — singleton background render queue.  SVG
   rendering takes ~1 second per chart on the main thread, freezing the
   UI.  ``RenderManager`` runs renders in a ``QThreadPool`` and emits the
   resulting ``QPixmap`` back to the main thread via a queued signal.
@@ -29,6 +29,7 @@ import itertools
 import logging
 
 import plotly.graph_objects as go
+import plotly.io as pio
 from PySide6.QtCore import (
     QByteArray,
     QObject,
@@ -65,24 +66,27 @@ _log = logging.getLogger(__name__)
 
 # ── Rendering helpers ──────────────────────────────────────────────
 
-
 def figure_to_svg_bytes(
     fig: go.Figure,
     width: int = 700,
     height: int = 300,
     scale: float = 1.0,
 ) -> bytes:
-    """Render *fig* to SVG bytes via the kaleido engine.
+    """Render *fig* to SVG bytes using Choreographer-backed headless Chrome.
+
+    Uses ``plotly.io.to_svg()`` (Plotly 5.x) or falls back to
+    Choreographer headless Chrome SVG extraction (Plotly 6.x+).
+    Zero subprocess windows — Chrome runs in ``--headless`` mode
+    via the Choreographer CDP bridge.
 
     Parameters
     ----------
     fig : go.Figure
-        The Plotly figure to render.  Its template should already be set
-        (call ``apply_operion_theme(fig)`` beforehand).
+        The Plotly figure to render.
     width, height : int
-        Desired output dimensions in CSS pixels.
+        Output dimensions in CSS pixels.
     scale : float
-        Scale factor for HiDPI displays (2.0 for Retina).
+        Scale factor (used to set width/height attributes).
 
     Returns
     -------
@@ -90,15 +94,34 @@ def figure_to_svg_bytes(
         Raw SVG markup.
     """
     try:
-        img_bytes: bytes = fig.to_image(
-            format="svg",
+        # Plotly 5.x path — pure Python, no engine needed
+        svg_str: str = pio.to_svg(fig)
+        svg_str = svg_str.replace(
+            "<svg ",
+            f'<svg width="{int(width * scale)}" height="{int(height * scale)}" ',
+            1,
+        )
+        return svg_str.encode("utf-8")
+    except AttributeError:
+        pass
+    except Exception:
+        _log.warning(
+            "Plotly 5.x SVG path failed, falling back to Choreographer",
+            exc_info=True,
+        )
+
+    # Plotly 6.x path — use Choreographer headless Chrome
+    try:
+        from utils.chart_export import generate_svg_bytes_sync
+
+        return generate_svg_bytes_sync(
+            fig=fig,
             width=width,
             height=height,
             scale=scale,
         )
-        return img_bytes
-    except Exception:
-        _log.exception("Kaleido SVG render failed")
+    except BaseException:
+        _log.exception("Plotly + Choreographer SVG generation failed")
         return _fallback_svg(width, height, "Render error")
 
 
@@ -130,7 +153,7 @@ def _svg_bytes_to_pixmap(
 
     renderer = QSvgRenderer(QByteArray(svg_bytes))
     if not renderer.isValid():
-        _log.warning("Invalid SVG produced by kaleido")
+        _log.warning("Invalid SVG produced by Plotly renderer")
         return _error_pixmap(width, height, scale)
 
     painter = QPainter(pixmap)
@@ -229,7 +252,7 @@ def sparkline_figure(
     -------
     go.Figure
         A figure with transparent background, hidden axes, and no
-        margins — ready to be rendered to SVG via kaleido.
+        margins — ready to be rendered to SVG.
     """
     if not color:
         color = PLOTLY_ACCENT
@@ -269,7 +292,7 @@ class _RenderSignals(QObject):
 
 
 class _RenderJob(QRunnable):
-    """A single kaleido SVG render that runs in a worker thread.
+    """A single Plotly SVG render that runs in a worker thread.
 
     The job is submitted to ``QThreadPool``.  When the render finishes
     (or fails) the result is delivered back to the main thread via the
@@ -315,8 +338,8 @@ class _RenderJob(QRunnable):
             pixmap = _svg_bytes_to_pixmap(
                 svg_bytes, self.width, self.height, self.scale
             )
-        except Exception:
-            _log.exception("Async kaleido render failed")
+        except BaseException:
+            _log.exception("Async SVG render failed")
             pixmap = _error_pixmap(self.width, self.height, self.scale)
         # The signals object is a process-wide singleton owned by
         # ``RenderManager``.  Guard against the case where the manager
@@ -328,10 +351,10 @@ class _RenderJob(QRunnable):
 
 
 class RenderManager(QObject):
-    """Process-wide queue that off-loads kaleido SVG renders to a thread pool.
+    """Process-wide queue that off-loads SVG renders to a thread pool.
 
-    Kaleido v1 takes roughly one second per chart to render a Plotly
-    figure to SVG, and the operation is CPU-bound (Chromium subprocess).
+    SVG generation takes roughly one second per chart to render a Plotly
+    figure to SVG, and the operation is CPU-bound.
     Doing this on the GUI thread freezes the application for several
     seconds on a typical analytics page (10+ charts).
 
@@ -351,39 +374,18 @@ class RenderManager(QObject):
 
     @classmethod
     def _max_concurrent(cls) -> int:
-        """Resolve the kaleido concurrency for the current machine.
+        """Resolve the render concurrency.
 
-        Uses the formula ``max(1, min(2, cpu // 2))`` which produces:
-
-        ===========  ==============  =================
-        CPU cores    Max concurrent  Notes
-        ===========  ==============  =================
-        2            1               small / low-end
-        4            2               typical workstation
-        6            2               modern desktop
-        8+           2               capped to limit Chromium spawn
-        ===========  ==============  =================
-
-        Kaleido is **Chromium-bound**, not CPU-bound: each concurrent
-        render spawns a headless Chrome process.  Empirically,
-        multiple kaleido workers contend for the same Chrome profile
-        directory and the resulting overhead is much worse than
-        running 1–2 renders in parallel — the cap of 2 keeps the
-        profile contention in check while still allowing some
-        parallelism on a 4+ core machine.  The lower bound of 1
-        ensures single-CPU laptops are not deadlocked.
+        Returns 1 because all renders are serialised through the single
+        persistent asyncio thread in ``utils.chart_export._RenderEngine``.
+        Additional QThreadPool workers would just queue behind the engine.
         """
-        try:
-            import os
-            cpu = os.cpu_count() or 4
-        except Exception:
-            cpu = 4
-        return max(1, min(2, cpu // 2))
+        return 1
 
     def __init__(self, parent: QObject | None = None) -> None:
         super().__init__(parent)
         self._pool = QThreadPool(self)
-        # Cap concurrent kaleido renders to a CPU-aware value.  See
+        # Cap concurrent renders to a CPU-aware value.  See
         # ``_max_concurrent`` for the formula.  Resolved at
         # construction time so the user can see the value in
         # ``stats()``.
@@ -440,7 +442,7 @@ class RenderManager(QObject):
         """Mark a tag as no longer relevant.
 
         Note: the underlying render still runs to completion in the
-        worker thread (kaleido cannot be interrupted mid-render), but
+        worker thread (renders cannot be interrupted mid-operation), but
         the result will be dropped by the consumer.
         """
         self._active_tags.discard(tag)
@@ -495,7 +497,7 @@ def get_render_manager() -> RenderManager:
 
 
 class PlotlyChartWidget(QFrame):
-    """A QFrame that displays a Plotly figure rendered to SVG via kaleido.
+    """A QFrame that displays a Plotly figure rendered to SVG via Plotly's renderer.
 
     Drop-in replacement for ``FigureCanvasQTAgg``.  Call
     ``set_figure(fig)`` to display a chart.
@@ -503,7 +505,7 @@ class PlotlyChartWidget(QFrame):
     Rendering is **asynchronous**: ``set_figure`` returns immediately
     and the resulting ``QPixmap`` is delivered later via
     ``RenderManager``.  This keeps the GUI thread responsive while
-    kaleido spins up Chromium for the SVG export.
+    Plotly generates the SVG for the export.
 
     The widget handles resize events with a 150 ms debounce to avoid
     re-rendering on every pixel change during window resize.  Stale
@@ -516,10 +518,10 @@ class PlotlyChartWidget(QFrame):
 
     _DEBOUNCE_MS = 150
 
-    # Only re-render the kaleido SVG when the size change exceeds this
+    # Only re-render the SVG when the size change exceeds this
     # threshold.  Below it, the existing pixmap is just re-stretched
     # by Qt (free).  16 px is enough to absorb window-drag jitter and
-    # DPI rounding without spurious kaleido calls.
+    # DPI rounding without spurious render calls.
     RESIZE_THRESHOLD_PX = 16
 
     def __init__(
@@ -557,7 +559,7 @@ class PlotlyChartWidget(QFrame):
         # ``(id(fig), w, h)`` so a re-render of the same figure at the
         # same size is a free hit.  Common case: re-entering a view
         # that already rendered the chart — the cached pixmap is
-        # applied directly without a kaleido call.
+        # applied directly without a render call.
         self._pixmap_cache: dict[tuple[int, int, int], QPixmap] = {}
 
         self.setObjectName("plotly-chart-card")
@@ -595,7 +597,7 @@ class PlotlyChartWidget(QFrame):
 
         The per-instance LRU cache is consulted first: if the same
         figure was rendered at the current target size, the cached
-        pixmap is applied directly without a kaleido call.  This is
+        pixmap is applied directly without a render call.  This is
         the common case after a view-switch — re-entering a view that
         already rendered the chart is instant.
 
@@ -611,7 +613,7 @@ class PlotlyChartWidget(QFrame):
           Without this guard we would submit a render at the
           ``MIN_WIDTH × MIN_HEIGHT`` default size, which is then
           immediately superseded by ``showEvent`` when the real
-          layout completes — wasting a kaleido call per chart.
+          layout completes — wasting a render call per chart.
 
         When any of these conditions hold, the figure is stored and
         ``showEvent`` is the single first-render entry point.  On
@@ -748,7 +750,7 @@ class PlotlyChartWidget(QFrame):
     # Maximum number of pixmaps cached per widget.  Bound chosen so
     # the worst-case memory is ~4 × 1000×500×4 bytes ≈ 8 MB per chart
     # widget — well under typical memory ceilings while still
-    # amortising kaleido cost across typical UI navigation patterns.
+    # amortising render cost across typical UI navigation patterns.
     CACHE_MAX_ENTRIES = 4
 
     def _cache_pixmap(self, fig_id: int, w: int, h: int, pixmap: QPixmap) -> None:
@@ -840,7 +842,7 @@ class PlotlyChartWidget(QFrame):
            pixmap (free).
         4. If the cache has a pixmap for the new size, apply it
            directly (free).
-        5. Otherwise, submit a fresh kaleido render.
+        5. Otherwise, submit a fresh render.
         """
         new_w = self._label.width()
         new_h = self._label.height()
@@ -874,7 +876,7 @@ class PlotlyChartWidget(QFrame):
         widget size is 0×0; ``set_figure`` defers the first render to
         this event.  Subsequent re-renders (e.g. after a tab switch)
         skip when the pixmap is still present — so a view-switch
-        does not trigger a kaleido call when the cached pixmap is
+        does not trigger a render call when the cached pixmap is
         reusable.
 
         ``showEvent`` may fire multiple times during the first

@@ -12,6 +12,7 @@ from typing import Any
 
 from database.db_manager import DatabaseManager
 from repositories.document_repository import DocumentRepository
+from repositories.fleet_repository import FleetRepository
 from services.operations.event_bus import (
     DOCUMENT_LINKED,
     DOCUMENT_UPLOADED,
@@ -323,13 +324,7 @@ class UploadService:
     # ── Migration ─────────────────────────────────────────────────────
 
     def migrate_existing_attachments(self) -> int:
-        rows = self.db.rows_to_dicts(
-            self.db.conn.execute(
-                "SELECT id, truck_id, maintenance_type, date, attachment_path "
-                "FROM maintenance_records "
-                "WHERE attachment_path IS NOT NULL AND attachment_path != ''"
-            ).fetchall()
-        )
+        rows = FleetRepository(self.db).get_maintenance_records_with_attachments()
         count = 0
         for row in rows:
             path = row["attachment_path"].strip()

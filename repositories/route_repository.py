@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class RouteRepository(BaseRepository):
     TABLE = "route_history_v2"
     COLUMNS = [
@@ -71,6 +70,12 @@ class RouteRepository(BaseRepository):
         self._execute(f"DELETE FROM {self.TABLE} WHERE id = ?", (route_id,))
 
     # ── Domain-specific queries ───────────────────────────────────────
+
+    def get_stops_json(self, route_id: int) -> Optional[str]:
+        row = self._fetchone(
+            f"SELECT stops_json FROM {self.TABLE} WHERE id = ?", (route_id,)
+        )
+        return row["stops_json"] if row else None
 
     def get_by_trip_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
         """Fetch the route associated with a trip via route_history_v2_id."""
@@ -221,14 +226,10 @@ class RouteRepository(BaseRepository):
     # ── Maintenance / housekeeping ─────────────────────────────────────
 
     def clear_all(self) -> int:
-        cursor = self.db.conn.execute(f"DELETE FROM {self.TABLE}")
-        self.db.conn.commit()
-        return cursor.rowcount
+        return self._execute_with_count(f"DELETE FROM {self.TABLE}")
 
     def prune_before(self, cutoff_iso: str) -> int:
-        cursor = self.db.conn.execute(
+        return self._execute_with_count(
             f"DELETE FROM {self.TABLE} WHERE last_calculated_at < ?",
             (cutoff_iso,),
         )
-        self.db.conn.commit()
-        return cursor.rowcount

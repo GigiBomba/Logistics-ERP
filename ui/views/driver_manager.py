@@ -370,15 +370,36 @@ class QtDriverManager(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs: dict | None = None,
+        tacho_activity_repo=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self._prefs = prefs or {}
+        self._api_client = api_client
 
         self._event_bus = EventBus()
-        self._driver_repo = DriverRepository(db) if db is not None else None
-        self._trip_repo = TripRepository(db) if db is not None else None
-        self._dta_service = DriverTruckService(db) if db is not None else None
+        if self._api_client is not None:
+            from client.remote_driver_service import RemoteDriverService
+            self._driver_repo = RemoteDriverService(self._api_client)
+        else:
+            self._driver_repo = DriverRepository(db) if db is not None else None
+        if self._api_client is not None:
+            from client.remote_services import RemoteTripService
+            self._trip_repo = RemoteTripService(self._api_client)
+        else:
+            self._trip_repo = TripRepository(db) if db is not None else None
+        if self._api_client is not None:
+            from client.remote_driver_service import RemoteDriverService
+            self._dta_service = RemoteDriverService(self._api_client)
+        else:
+            self._dta_service = DriverTruckService(db) if db is not None else None
+        from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
+        if self._api_client is not None:
+            from client.remote_driver_service import RemoteDriverService
+            self._tacho_activity_repo = RemoteDriverService(self._api_client)
+        else:
+            self._tacho_activity_repo = tacho_activity_repo if tacho_activity_repo is not None else TachoDriverActivityRepository(db)
 
         self._kpi_value_labels: dict[str, MonoLabel] = {}
         self._kpi_strip_layout: QHBoxLayout | None = None
@@ -973,13 +994,8 @@ class QtDriverManager(QWidget):
         self._tacho_layout.addWidget(title_lbl)
 
         try:
-            from repositories.tacho_driver_activity_repository import (
-                TachoDriverActivityRepository,
-            )
-
-            activity_repo = TachoDriverActivityRepository(self.db)
             from_date = datetime.now().date() - timedelta(days=28)
-            records = activity_repo.get_by_driver(driver_id, from_date)
+            records = self._tacho_activity_repo.get_by_driver(driver_id, from_date)
         except Exception:
             records = []
 

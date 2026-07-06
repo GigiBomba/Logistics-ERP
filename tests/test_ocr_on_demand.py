@@ -170,8 +170,8 @@ class ReRunOcrWorkerTest(unittest.TestCase):
                 )
                 worker.run()
                 self.assertEqual(received, [(7, None)])
-                # Persist must include all four OCR fields.
-                self.assertEqual(len(update_calls), 1)
+                # First call: OCR persistence. Second call: rename (file_path, file_name, title).
+                self.assertGreaterEqual(len(update_calls), 1, "Expected at least 1 DB update (OCR persistence)")
                 doc_id, fields = update_calls[0]
                 self.assertEqual(doc_id, 7)
                 self.assertEqual(fields.get("ocr_text"), "hello world")
@@ -179,6 +179,11 @@ class ReRunOcrWorkerTest(unittest.TestCase):
                 # extracted_data_json is a serialised string
                 self.assertIn("cmr_number", fields.get("extracted_data_json", ""))
                 self.assertTrue(fields.get("ocr_run_at"))
+                # Second update: rename (if present)
+                if len(update_calls) >= 2:
+                    _, rename_fields = update_calls[1]
+                    self.assertIn("file_path", rename_fields,
+                                  "Second update should be a rename (file_path present)")
         os.unlink(tmp.name)
 
 

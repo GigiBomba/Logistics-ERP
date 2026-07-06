@@ -1,6 +1,6 @@
 from typing import Any, Dict, List, Optional
-from repositories import BaseRepository
 
+from repositories import BaseRepository
 
 class DriverTruckAssignmentRepository(BaseRepository):
     TABLE = "driver_truck_assignments"
@@ -36,15 +36,18 @@ class DriverTruckAssignmentRepository(BaseRepository):
         )
 
     def swap(self, driver1_id: int, truck1_id: int, driver2_id: int, truck2_id: int) -> None:
-        with self.db.conn:
-            self.db.conn.execute(
-                f"UPDATE {self.TABLE} SET truck_id = ? WHERE driver_id = ?",
-                (truck2_id, driver1_id),
-            )
-            self.db.conn.execute(
-                f"UPDATE {self.TABLE} SET truck_id = ? WHERE driver_id = ?",
-                (truck1_id, driver2_id),
-            )
+        self.begin_transaction()
+        self._execute(
+            f"UPDATE {self.TABLE} SET truck_id = ? WHERE driver_id = ?",
+            (truck2_id, driver1_id),
+            commit=False,
+        )
+        self._execute(
+            f"UPDATE {self.TABLE} SET truck_id = ? WHERE driver_id = ?",
+            (truck1_id, driver2_id),
+            commit=False,
+        )
+        self.commit_transaction()
 
     def get_truck_plate_for_driver(self, driver_id: int) -> str:
         row = self._fetchone(

@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class ContactRepository(BaseRepository):
     TABLE = "client_contacts"
 
@@ -48,10 +47,13 @@ class ContactRepository(BaseRepository):
         self._execute(f"DELETE FROM {self.TABLE} WHERE id = ?", (contact_id,))
 
     def set_primary(self, client_id: int, contact_id: int) -> None:
-        with self.db.conn:
-            self.db.conn.execute(
-                f"UPDATE {self.TABLE} SET is_primary = 0 WHERE client_id = ?", (client_id,)
-            )
-            self.db.conn.execute(
-                f"UPDATE {self.TABLE} SET is_primary = 1 WHERE id = ?", (contact_id,)
-            )
+        self.begin_transaction()
+        self._execute(
+            f"UPDATE {self.TABLE} SET is_primary = 0 WHERE client_id = ?", (client_id,),
+            commit=False,
+        )
+        self._execute(
+            f"UPDATE {self.TABLE} SET is_primary = 1 WHERE id = ?", (contact_id,),
+            commit=False,
+        )
+        self.commit_transaction()
