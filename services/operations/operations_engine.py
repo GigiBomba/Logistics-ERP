@@ -5,6 +5,7 @@ from typing import Optional
 
 from services.operations.alert_manager import Alert, AlertManager, AlertType, Severity
 from services.operations.cmr_auto_generator import AutoCMRGenerator
+from services.operations.dunner_engine import DunnerEngine
 from services.operations.event_bus import (
     DAILY_CHECK,
     SYSTEM_STARTUP,
@@ -48,6 +49,7 @@ class OperationsEngine:
         self._trip_service = TripService(db) if db else None
         self._maintenance_engine = MaintenanceEngine(db) if db else None
         self._notification_center = NotificationCenter(db) if db else None
+        self._dunner_engine = DunnerEngine(db, self._notification_center, prefs) if db else None
         self._undo_stack = UndoStack()
         self._cmr_generator = AutoCMRGenerator(db, prefs, self._alert_mgr) if db else None
         self._trip_workflow = TripStatusWorkflow(
@@ -80,6 +82,8 @@ class OperationsEngine:
         self._schedule_daily_check()
         if self._maintenance_engine:
             self._maintenance_engine.evaluate_all()
+        if self._dunner_engine:
+            self._dunner_engine.evaluate_all()
         if self._db:
             self._configure_smtp_from_db()
             self.migrate_existing_data()
@@ -119,6 +123,8 @@ class OperationsEngine:
         self._running = False
         if hasattr(self, "_daily_timer"):
             self._daily_timer.cancel()
+        if self._dunner_engine:
+            self._dunner_engine.shutdown()
         logger.info("OperationsEngine stopped")
 
     def get_active_alerts(self, limit: int = 200) -> list[Alert]:

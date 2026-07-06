@@ -77,11 +77,17 @@ class QtAnalyticsView(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
-        self._svc = AnalyticsService(db) if db else None
+        self._api_client = api_client
+        if self._api_client is not None:
+            from client.remote_analytics import RemoteAnalyticsService
+            self._svc = RemoteAnalyticsService(self._api_client)
+        else:
+            self._svc = AnalyticsService(db) if db else None
         self._tabs: dict[int, QWidget] = {}
         self._period_index: int = DEFAULT_PERIOD_INDEX
         self._first_open: bool = True
@@ -101,6 +107,12 @@ class QtAnalyticsView(QWidget):
     def showEvent(self, event):
         """Start loading tabs when the view is first shown (lazy)."""
         super().showEvent(event)
+        if self._load_started:
+            return
+        self._start_loading()
+
+    def _start_loading(self) -> None:
+        """Start staggered tab loading and show the overlay."""
         if self._load_started:
             return
         self._load_started = True

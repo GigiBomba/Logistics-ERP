@@ -64,16 +64,21 @@ class QtMaintenanceControlPanel(QWidget):
 
     REFRESH_INTERVAL_MS = 60_000
 
-    def __init__(self, parent=None, db=None, prefs=None, ops=None, dialog_mode=False):
+    def __init__(self, parent=None, db=None, prefs=None, ops=None, dialog_mode=False, api_client=None):
         super().__init__(parent)
         self._dialog_mode = dialog_mode
         self.db = db
-        self.ops = ops or OperationsEngine()
+        self._api_client = api_client
+        if hasattr(self, '_api_client') and self._api_client is not None:
+            from client.remote_ops_stub import RemoteOpsStub
+            self.ops = RemoteOpsStub(api_client=self._api_client)
+        else:
+            self.ops = ops or (OperationsEngine(db) if db is not None else None)
         self._closed = False
         self._i18n_tags: list = []
 
         # ViewModel (shared data source)
-        self._vm = MaintenanceViewModel(self, db=db, ops=self.ops)
+        self._vm = MaintenanceViewModel(self, db=db, ops=self.ops) if db is not None else None
 
         # ── KPI widgets ────────────────────────────────────────────
         self._kpi_widgets: dict[str, QFrame] = {}
@@ -95,16 +100,18 @@ class QtMaintenanceControlPanel(QWidget):
         self._alert_proxy = AlertFilterProxy(self)
 
         self._build_ui()
-        self._vm.data_changed.connect(self._on_data_changed)
-        self._vm.refresh_now()
+        if self._vm is not None:
+            self._vm.data_changed.connect(self._on_data_changed)
+            self._vm.refresh_now()
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
         # Auto-refresh
         self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self._vm.refresh)
-        self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
+        if self._vm is not None:
+            self._refresh_timer.timeout.connect(self._vm.refresh)
+            self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
 
     # ── Public API ───────────────────────────────────────────────
 
@@ -121,7 +128,8 @@ class QtMaintenanceControlPanel(QWidget):
         return panel
 
     def wakeup(self):
-        self._vm.refresh_now()
+        if self._vm is not None:
+            self._vm.refresh_now()
 
     def shutdown(self):
         self._closed = True
@@ -159,8 +167,9 @@ class QtMaintenanceControlPanel(QWidget):
         self._alert_count_lbl = Label(header, "", role="muted")
         hdr.addWidget(self._alert_count_lbl)
 
-        refresh_btn = Btn(header, t("maint.refresh"), variant="secondary", command=self._vm.refresh_now)
-        hdr.addWidget(refresh_btn)
+        if self._vm is not None:
+            refresh_btn = Btn(header, t("maint.refresh"), variant="secondary", command=self._vm.refresh_now)
+            hdr.addWidget(refresh_btn)
 
         layout.addWidget(header)
 
@@ -206,23 +215,24 @@ class QtMaintenanceControlPanel(QWidget):
             right_widget=Btn(None, t("tacho.import_now"), variant="secondary", size="sm"),
         )
 
-        self._tacho_table = QTableView()
-        self._tacho_table.setModel(self._vm.tacho_model)
-        self._tacho_table.setSelectionBehavior(QTableView.SelectRows)
-        self._tacho_table.setSelectionMode(QTableView.SingleSelection)
-        self._tacho_table.verticalHeader().setVisible(False)
-        self._tacho_table.setShowGrid(False)
-        self._tacho_table.setAlternatingRowColors(True)
-        self._tacho_table.setFixedHeight(160)
+        if self._vm is not None:
+            self._tacho_table = QTableView()
+            self._tacho_table.setModel(self._vm.tacho_model)
+            self._tacho_table.setSelectionBehavior(QTableView.SelectRows)
+            self._tacho_table.setSelectionMode(QTableView.SingleSelection)
+            self._tacho_table.verticalHeader().setVisible(False)
+            self._tacho_table.setShowGrid(False)
+            self._tacho_table.setAlternatingRowColors(True)
+            self._tacho_table.setMinimumHeight(160)
 
-        hdr = self._tacho_table.horizontalHeader()
-        hdr.setStretchLastSection(True)
-        for c in range(self._vm.tacho_model.columnCount()):
-            hdr.setSectionResizeMode(c, QHeaderView.Fixed)
-            w = self._vm.tacho_model.header_width(c)
-            self._tacho_table.setColumnWidth(c, w)
+            hdr = self._tacho_table.horizontalHeader()
+            hdr.setStretchLastSection(True)
+            for c in range(self._vm.tacho_model.columnCount()):
+                hdr.setSectionResizeMode(c, QHeaderView.Fixed)
+                w = self._vm.tacho_model.header_width(c)
+                self._tacho_table.setColumnWidth(c, w)
 
-        card.layout().addWidget(self._tacho_table)
+            card.layout().addWidget(self._tacho_table)
         layout.addWidget(card)
 
     def _build_filter_bar(self, layout):
@@ -283,6 +293,8 @@ class QtMaintenanceControlPanel(QWidget):
         layout.addWidget(fb)
 
     def _build_alert_list(self, layout):
+        if self._vm is None:
+            return
         container = Card()
         cl = container.layout()
         cl.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
@@ -314,7 +326,7 @@ class QtMaintenanceControlPanel(QWidget):
         self._on_filter_changed()
 
     def _update_kpis(self):
-        summary = self._vm.get_summary()
+        summary = self._vm.get_summary() if self._vm is not None else {}
         for key, val_lbl in self._kpi_value_labels.items():
             val = summary.get(key, t("common.na"))
             if key == "avg_health":
@@ -392,4 +404,5 @@ class QtMaintenanceControlPanel(QWidget):
     # ── i18n ─────────────────────────────────────────────────────
 
     def _on_language_changed(self, lang: str):
-        QTimer.singleShot(0, self._vm.refresh_now)
+        if self._vm is not None:
+            QTimer.singleShot(0, self._vm.refresh_now)

@@ -44,7 +44,8 @@ class CountryExclusionsDialog(QDialog):
 
     def _build(self) -> None:
         self.setWindowTitle(t("route.exclusions_label", default="Țări excluse"))
-        self.setFixedSize(320, 400)
+        self.setMinimumSize(280, 320)
+        self.resize(360, 440)
         self.setStyleSheet(f"""
             QDialog {{
                 background: {COLOR_BG_ELEVATED};

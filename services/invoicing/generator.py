@@ -20,10 +20,11 @@ class InvoiceGenerator:
             os.makedirs(self.reports_dir)
         self.styles = getSampleStyleSheet()
 
-    def _tr(self, key, mode):
+    def _tr(self, key: str, mode: str) -> str:
         """Translate key: client mode always uses English, internal uses current app language."""
         if mode == "client":
-            return _get_translations("en").get(key, key)
+            result = _get_translations("en").get(key, key)
+            return str(result) if result is not None else key
         return t(key)
 
     def generate(self, trip_data, mode="client"):
@@ -130,7 +131,7 @@ class InvoiceGenerator:
 
         story.append(Spacer(1, 2*cm))
         story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
-        footer_msg = f"Email: {conf['email']} | Tel: {conf['phone']}"
+        footer_msg = f"Email: {conf.get('email', '')} | Tel: {conf.get('phone', '')}"
         story.append(Paragraph(remove_accents(footer_msg), self.styles["Italic"]))
         story.append(Spacer(1, 0.5*cm))
         story.append(Paragraph(self._tr("invoice_pdf.footer", mode), self.styles["Italic"]))
@@ -138,13 +139,26 @@ class InvoiceGenerator:
         doc.build(story)
         return full_path
 
-    def generate_rich(self, invoice_data):
+    def _draw_watermark(self, canvas, doc, text="PROFORMA"):
+        """Draw a light diagonal watermark across each page."""
+        from reportlab.lib import colors as rl_colors
+        canvas.saveState()
+        canvas.setFont("Helvetica", 80)
+        canvas.setFillColor(rl_colors.Color(0.85, 0.85, 0.85, alpha=0.35))
+        canvas.translate(A4[0] / 2, A4[1] / 2)
+        canvas.rotate(45)
+        canvas.drawCentredString(0, 0, text)
+        canvas.restoreState()
+
+    def generate_rich(self, invoice_data, document_type="invoice"):
         """Generate a rich invoice PDF with line items, tax, discount, notes, and branding.
 
         invoice_data dict with keys: invoice_number, issue_date, due_date, payment_terms,
         currency, company, client, line_items, tax_rate, discount_type, discount_value,
         subtotal, total_tax, discount, grand_total, notes, logo_path, signature_path,
         stamp_path, company_color, mode.
+
+        document_type: "invoice" (default) or "proforma".
         """
         conf = invoice_data.get("company", load_company_config())
         client = invoice_data.get("client", {})
@@ -167,7 +181,7 @@ class InvoiceGenerator:
             company_color = colors.HexColor("#1a73e8")
 
         invoice_id = invoice_data.get("invoice_number", f"INV-{datetime.now().year}-0001")
-        if invoice_id.startswith("INV-"):
+        if invoice_id.startswith(("INV-", "PROF-")):
             invoice_id = f"{invoice_id}_{datetime.now().strftime('%H%M%S')}"
         mode = invoice_data.get("mode", "client")
         filename = f"{invoice_id}_{mode}.pdf"
@@ -178,20 +192,34 @@ class InvoiceGenerator:
                                 topMargin=1.5*cm, bottomMargin=1.5*cm)
         story = []
 
+        is_proforma = document_type == "proforma"
+
         # ── HEADER ──────────────────────────────────────────────────
-        title_text = mode_title
+        if is_proforma:
+            title_text = "PROFORMA INVOICE"
+        else:
+            title_text = mode_title
         title_style = ParagraphStyle("InvTitle", parent=self.styles["Title"],
                                      fontSize=22, textColor=company_color, alignment=2)
         story.append(Paragraph(f"<b>{title_text}</b>", title_style))
         story.append(Spacer(1, 0.3*cm))
 
-        # Invoice number and dates
-        header_info = (
-            f"<b>Invoice #:</b> {invoice_id}<br/>"
-            f"<b>Date:</b> {invoice_data.get('issue_date', '')}<br/>"
-            f"<b>Due Date:</b> {invoice_data.get('due_date', '')}<br/>"
-            f"<b>Payment Terms:</b> {invoice_data.get('payment_terms', 'Net 30')}"
-        )
+        # Proforma number and dates
+        if is_proforma:
+            valid_until = invoice_data.get("valid_until", invoice_data.get("due_date", ""))
+            header_info = (
+                f"<b>Proforma #:</b> {invoice_id}<br/>"
+                f"<b>Date:</b> {invoice_data.get('issue_date', '')}<br/>"
+                f"<b>Valid Until:</b> {valid_until}<br/>"
+                f"<b>Payment Terms:</b> {invoice_data.get('payment_terms', 'Net 30')}"
+            )
+        else:
+            header_info = (
+                f"<b>Invoice #:</b> {invoice_id}<br/>"
+                f"<b>Date:</b> {invoice_data.get('issue_date', '')}<br/>"
+                f"<b>Due Date:</b> {invoice_data.get('due_date', '')}<br/>"
+                f"<b>Payment Terms:</b> {invoice_data.get('payment_terms', 'Net 30')}"
+            )
         header_style = ParagraphStyle("InvHeader", parent=self.styles["Normal"],
                                       fontSize=9, alignment=2)
         story.append(Paragraph(header_info, header_style))
@@ -436,7 +464,21 @@ class InvoiceGenerator:
                                      fontSize=12, textColor=company_color)
         story.append(Paragraph(
             f"<b>GRAND TOTAL: {grand_total:,.2f} {currency}</b>", grand_style))
-        story.append(Spacer(1, 1*cm))
+        story.append(Spacer(1, 0.4*cm))
+
+        # ── AMOUNT IN WORDS ─────────────────────────────────────────
+        if grand_total > 0:
+            try:
+                from utils.number_to_words import number_to_words as _ntw
+                lang = "en" if mode == "client" else "en"
+                words = _ntw(grand_total, currency, lang)
+                word_style = ParagraphStyle("AmountWords", parent=self.styles["Normal"],
+                                            fontSize=9, fontName="Helvetica-Oblique",
+                                            textColor=colors.HexColor("#555555"))
+                story.append(Paragraph(f"<b>Amount in words:</b> {words}", word_style))
+                story.append(Spacer(1, 0.6*cm))
+            except Exception:
+                pass
 
         # ── NOTES ───────────────────────────────────────────────────
         notes = invoice_data.get("notes", "")
@@ -493,5 +535,16 @@ class InvoiceGenerator:
             "Thank you for your trust! — Generated by Operion ERP",
             self.styles["Italic"]))
 
-        doc.build(story)
+        if is_proforma:
+            story.append(Spacer(1, 0.3*cm))
+            story.append(Paragraph(
+                "<i>This is a proforma invoice and does not constitute a tax invoice.</i>",
+                self.styles["Italic"]))
+
+        # Build with optional watermark for proforma
+        if is_proforma:
+            doc.build(story, onFirstPage=self._draw_watermark,
+                      onLaterPages=self._draw_watermark)
+        else:
+            doc.build(story)
         return full_path

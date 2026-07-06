@@ -1,7 +1,7 @@
 """Client revenue chart — Plotly bar chart embedded in a QWidget.
 
 Replaces ``ui/client_revenue_chart.py``. Uses ``PlotlyChartWidget`` for
-rendering via kaleido SVG instead of matplotlib ``FigureCanvasQTAgg``.
+rendering via Plotly SVG instead of matplotlib ``FigureCanvasQTAgg``.
 """
 
 from __future__ import annotations

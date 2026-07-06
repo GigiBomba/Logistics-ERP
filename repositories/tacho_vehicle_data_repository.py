@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class TachoVehicleDataRepository(BaseRepository):
     TABLE = "tacho_vehicle_data"
 
@@ -35,6 +34,28 @@ class TachoVehicleDataRepository(BaseRepository):
                 ORDER BY ti.imported_at DESC LIMIT 1""",
             (truck_id,),
         )
+
+    def get_tacho_status_data(self) -> List[Dict[str, Any]]:
+        rows = self._fetchall(
+            """SELECT
+                t.id AS truck_id,
+                t.plate_number,
+                tvd.calibration_date,
+                tvd.calibration_expiry,
+                ti.imported_at,
+                ti.id AS import_id
+            FROM trucks t
+            LEFT JOIN (
+                SELECT tvd2.*,
+                       ROW_NUMBER() OVER (PARTITION BY tvd2.truck_id ORDER BY ti2.imported_at DESC) AS rn
+                FROM tacho_vehicle_data tvd2
+                JOIN tacho_imports ti2 ON ti2.id = tvd2.import_id
+            ) tvd ON tvd.truck_id = t.id AND tvd.rn = 1
+            LEFT JOIN tacho_imports ti ON ti.id = tvd.import_id
+            WHERE t.active_status = 1
+            ORDER BY t.plate_number ASC"""
+        )
+        return rows
 
     def get_latest_per_truck(self) -> List[Dict[str, Any]]:
         """Return the most recent vehicle unit import for each truck."""

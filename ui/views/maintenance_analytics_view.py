@@ -63,10 +63,15 @@ class QtMaintenanceAnalyticsView(QWidget):
     Chart/table widgets persist across refreshes (no rebuild).
     """
 
-    def __init__(self, parent=None, db=None):
+    def __init__(self, parent=None, db=None, api_client=None):
         super().__init__(parent)
         self.db = db
-        self.repo = FleetRepository(db) if db else None
+        self._api_client = api_client
+        if self._api_client is not None:
+            from client.remote_maintenance import RemoteMaintenanceService
+            self.repo = RemoteMaintenanceService(self._api_client)
+        else:
+            self.repo = FleetRepository(db) if db else None
 
         # Chart widgets (created once, re-used)
         self._chart_widget_a: PlotlyChartWidget | None = None

@@ -16,8 +16,6 @@ from __future__ import annotations
 
 import sqlite3
 import threading
-from typing import Optional
-
 
 class ConnectionPool:
     """Per-thread :class:`sqlite3.Connection` pool.

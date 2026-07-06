@@ -11,6 +11,10 @@ import threading
 from datetime import datetime
 from typing import Any
 
+from repositories.client_repository import ClientRepository
+from repositories.driver_repository import DriverRepository
+from repositories.fleet_repository import FleetRepository
+
 logger = logging.getLogger("operations.cmr_auto_generator")
 
 
@@ -80,10 +84,7 @@ class AutoCMRGenerator:
                 driver_id = trip.get("driver_id")
                 if driver_id:
                     try:
-                        driver = self._db.conn.execute(
-                            "SELECT name, adr_certificate_expiry FROM drivers WHERE id = ?",
-                            (driver_id,),
-                        ).fetchone()
+                        driver = DriverRepository(self._db).get_by_id_with_adr(driver_id)
                         if driver and driver["adr_certificate_expiry"]:
                             expiry = datetime.strptime(driver["adr_certificate_expiry"], "%Y-%m-%d")
                             if expiry < datetime.now():
@@ -109,33 +110,24 @@ class AutoCMRGenerator:
             ctx["truck_plate"] = trip.get("truck_number", "")
             if trip.get("driver_id"):
                 try:
-                    dr = self._db.conn.execute(
-                        "SELECT * FROM drivers WHERE id = ?", (trip["driver_id"],)
-                    ).fetchone()
-                    if dr:
-                        d = dict(dr)
+                    d = DriverRepository(self._db).get_by_id(trip["driver_id"])
+                    if d:
                         ctx["driver_license"] = d.get("license_number", "")
                         ctx["driver_name"] = d.get("name", trip.get("driver_name", ""))
                 except Exception:
                     logger.debug("CMR: driver lookup failed for driver_id=%s", trip.get("driver_id"))
             if trip.get("truck_id"):
                 try:
-                    tr = self._db.conn.execute(
-                        "SELECT * FROM trucks WHERE id = ?", (trip["truck_id"],)
-                    ).fetchone()
-                    if tr:
-                        t = dict(tr)
+                    t = FleetRepository(self._db).get_by_id(trip["truck_id"])
+                    if t:
                         ctx["trailer_plate"] = t.get("trailer_plate", "")
                         ctx["cmr_insurance_number"] = t.get("cmr_insurance_number", "")
                 except Exception:
                     logger.debug("CMR: truck lookup failed for truck_id=%s", trip.get("truck_id"))
             if trip.get("client_id"):
                 try:
-                    cl = self._db.conn.execute(
-                        "SELECT * FROM clients WHERE id = ?", (trip["client_id"],)
-                    ).fetchone()
-                    if cl:
-                        c = dict(cl)
+                    c = ClientRepository(self._db).get_by_id(trip["client_id"])
+                    if c:
                         ctx["consignee_vat"] = c.get("vat_number", "")
                         ctx["consignee_eori"] = c.get("eori_number", "")
                 except Exception:

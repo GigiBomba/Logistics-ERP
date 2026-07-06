@@ -41,6 +41,7 @@ from typing import Any
 from repositories.client_repository import ClientRepository
 from repositories.contact_repository import ContactRepository
 from repositories.invoice_repository import InvoiceRepository
+from repositories.settings_repository import SettingsRepository
 from repositories.trip_repository import TripRepository
 
 from .field_extractors import normalize_date, normalize_plate
@@ -106,7 +107,9 @@ def _filename_hints(filename: str) -> dict[str, str]:
     base = os.path.splitext(os.path.basename(filename or ""))[0]
     # Strip common prefixes like "WhatsApp Image 2024-01-15 at 12.34.56"
     cleaned = re.sub(r"(?i)^(whatsapp\s*image|scan|IMG|image|photo)\s*", "", base)
-    # Replace separators with spaces
+    # Preserve hyphens for date detection before replacing separators
+    text_for_date = re.sub(r"[_]+", " ", cleaned).strip()
+    # Replace separators with spaces (including hyphens for final text)
     cleaned = re.sub(r"[_\-]+", " ", cleaned)
     cleaned = re.sub(r"\.+", " ", cleaned)
     cleaned = re.sub(r"\s+", " ", cleaned).strip()
@@ -122,12 +125,13 @@ def _filename_hints(filename: str) -> dict[str, str]:
         hints["trip_id_hint"] = m.group(1)
 
     # Try to find an ISO date (YYYY-MM-DD or DD.MM.YYYY) — used for
-    # date proximity matching.
-    m = re.search(r"\b(\d{4}[-/]\d{1,2}[-/]\d{1,2})\b", cleaned)
+    # date proximity matching. Run on text_with_dates so hyphens in
+    # YYYY-MM-DD are preserved.
+    m = re.search(r"\b(\d{4}[-/]\d{1,2}[-/]\d{1,2})\b", text_for_date)
     if m:
         hints["date_hint"] = m.group(1)
     else:
-        m = re.search(r"\b(\d{1,2}[./]\d{1,2}[./]\d{2,4})\b", cleaned)
+        m = re.search(r"\b(\d{1,2}[./]\d{1,2}[./]\d{2,4})\b", text_for_date)
         if m:
             hints["date_hint"] = m.group(1)
 
@@ -167,13 +171,11 @@ def _load_weights(db) -> dict[str, float]:
             return _WEIGHTS_CACHE
     w = dict(_DEFAULT_WEIGHTS)
     try:
-        rows = db.conn.execute(
-            "SELECT key, value FROM settings WHERE key LIKE 'match_weight_%'"
-        ).fetchall()
-        for r in rows:
-            key = r["key"].replace("match_weight_", "")
+        raw = SettingsRepository(db).get_settings_by_key_pattern('match_weight_%')
+        for k, v in raw.items():
+            key = k.replace("match_weight_", "")
             with contextlib.suppress(ValueError, TypeError):
-                w[key] = float(r["value"])
+                w[key] = float(v)
     except Exception:
         pass
     with _WEIGHTS_LOCK:
@@ -196,12 +198,10 @@ def _load_auto_link_threshold(db) -> float:
             return _AUTO_LINK_THRESHOLD_CACHE
     threshold = 0.50
     try:
-        row = db.conn.execute(
-            "SELECT value FROM settings WHERE key = 'auto_link_threshold'"
-        ).fetchone()
-        if row:
+        val = SettingsRepository(db).get_setting_value('auto_link_threshold')
+        if val is not None:
             try:
-                threshold = float(row["value"])
+                threshold = float(val)
                 threshold = max(0.0, min(1.0, threshold))
             except (ValueError, TypeError):
                 pass
@@ -233,12 +233,13 @@ class TripMatcher:
                  suggest_threshold: float = 0.70,
                  auto_link_threshold: float | None = None,
                  recent_fallback_days: int = RECENT_FALLBACK_DAYS,
-                 recent_fallback_limit: int = RECENT_FALLBACK_LIMIT) -> None:
+                 recent_fallback_limit: int = RECENT_FALLBACK_LIMIT,
+                 trips_repo=None, clients_repo=None, contacts_repo=None, invoices_repo=None) -> None:
         self.db = db
-        self.trips = TripRepository(db)
-        self.clients = ClientRepository(db)
-        self.contacts = ContactRepository(db)
-        self.invoices = InvoiceRepository(db)
+        self.trips = trips_repo if trips_repo is not None else TripRepository(db)
+        self.clients = clients_repo if clients_repo is not None else ClientRepository(db)
+        self.contacts = contacts_repo if contacts_repo is not None else ContactRepository(db)
+        self.invoices = invoices_repo if invoices_repo is not None else InvoiceRepository(db)
         self.auto_attach_threshold = auto_attach_threshold
         self.suggest_threshold = suggest_threshold
         self.auto_link_threshold = (
@@ -433,14 +434,9 @@ class TripMatcher:
         trip_rows: dict[int, dict[str, Any]] = {}
         for chunk_start in range(0, len(trip_ids), 100):
             chunk = trip_ids[chunk_start:chunk_start + 100]
-            placeholders = ",".join("?" for _ in chunk)
             try:
-                rows = self.db.conn.execute(
-                    f"SELECT * FROM trips WHERE id IN ({placeholders})",
-                    tuple(chunk),
-                ).fetchall()
-                for r in rows:
-                    trip_rows[int(r["id"])] = dict(r)
+                for r in self.trips.get_by_ids(chunk):
+                    trip_rows[int(r["id"])] = r
             except Exception:
                 logger.exception("Batch trip fetch failed")
         if (loading or delivery) and trip_rows:
@@ -522,14 +518,9 @@ class TripMatcher:
             trip_ids = list(per_trip.keys())
             for chunk_start in range(0, len(trip_ids), 100):
                 chunk = trip_ids[chunk_start:chunk_start + 100]
-                placeholders = ",".join("?" for _ in chunk)
                 try:
-                    rows = self.db.conn.execute(
-                        f"SELECT * FROM trips WHERE id IN ({placeholders})",
-                        tuple(chunk),
-                    ).fetchall()
-                    for r in rows:
-                        trip_rows[int(r["id"])] = dict(r)
+                    for r in self.trips.get_by_ids(chunk):
+                        trip_rows[int(r["id"])] = r
                 except Exception:
                     logger.exception("Batch trip fetch failed")
 

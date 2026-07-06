@@ -4,7 +4,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class DriverRepository(BaseRepository):
     TABLE = "drivers"
     COLUMNS = [
@@ -16,6 +15,12 @@ class DriverRepository(BaseRepository):
     ]
 
     # ── Base CRUD ─────────────────────────────────────────────────────
+
+    def get_by_id_with_adr(self, driver_id: int) -> Optional[Dict[str, Any]]:
+        return self._fetchone(
+            f"SELECT name, adr_certificate_expiry FROM {self.TABLE} WHERE id = ?",
+            (driver_id,),
+        )
 
     def get_by_id(self, driver_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(

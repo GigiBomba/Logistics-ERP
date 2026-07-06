@@ -61,6 +61,44 @@ CREATE TABLE IF NOT EXISTS invoices (
 );
 """
 
+# Proforma invoices — independent of trips (manual line items, no trip FK)
+TABLE_PROFORMA_INVOICES = """
+CREATE TABLE IF NOT EXISTS proforma_invoices (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    proforma_number TEXT UNIQUE,
+    issue_date TEXT,
+    valid_until TEXT,
+    client_name TEXT,
+    client_address TEXT,
+    client_vat TEXT,
+    client_phone TEXT,
+    client_email TEXT,
+    description TEXT,
+    notes TEXT,
+    line_items_json TEXT DEFAULT '[]',
+    subtotal REAL DEFAULT 0,
+    discount_type TEXT DEFAULT '',
+    discount_value REAL DEFAULT 0,
+    discount_amount REAL DEFAULT 0,
+    tax_rate REAL DEFAULT 0,
+    tax_amount REAL DEFAULT 0,
+    grand_total REAL DEFAULT 0,
+    currency TEXT DEFAULT 'EUR',
+    mode TEXT DEFAULT 'client',
+    status TEXT DEFAULT 'Draft',
+    logo_path TEXT DEFAULT '',
+    signature_path TEXT DEFAULT '',
+    stamp_path TEXT DEFAULT '',
+    company_color TEXT DEFAULT '#6366f1',
+    created_at TEXT,
+    updated_at TEXT
+);
+"""
+
+INDEX_PROFORMA_NUMBER = "CREATE UNIQUE INDEX IF NOT EXISTS idx_proforma_number ON proforma_invoices(proforma_number);"
+INDEX_PROFORMA_CLIENT = "CREATE INDEX IF NOT EXISTS idx_proforma_client ON proforma_invoices(client_name);"
+INDEX_PROFORMA_STATUS = "CREATE INDEX IF NOT EXISTS idx_proforma_status ON proforma_invoices(status);"
+
 # Re-definim statusurile permise pentru trips (logică internă):
 # 'Planned', 'Loading', 'In Transit', 'Delivered', 'Invoiced', 'Paid'
 
@@ -86,6 +124,25 @@ CREATE TABLE IF NOT EXISTS email_logs (
     FOREIGN KEY (trip_id) REFERENCES trips (id)
 );
 """
+
+TABLE_INVOICE_REMINDERS = """
+CREATE TABLE IF NOT EXISTS invoice_reminders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    invoice_id INTEGER NOT NULL,
+    trip_id INTEGER NOT NULL,
+    reminder_type TEXT NOT NULL,
+    days_offset INTEGER NOT NULL,
+    sent_at TEXT NOT NULL,
+    recipient_email TEXT NOT NULL,
+    status TEXT DEFAULT 'sent',
+    FOREIGN KEY (invoice_id) REFERENCES invoices(id)
+);
+"""
+
+INDEX_INVOICE_REMINDERS_LOOKUP = (
+    "CREATE INDEX IF NOT EXISTS idx_invoice_reminders_lookup "
+    "ON invoice_reminders(invoice_id, reminder_type, status)"
+)
 
 # Adăugați la schema.py existent:
 
@@ -526,30 +583,43 @@ ALTER_DOCUMENTS_ADD_SIGNED_AT = "ALTER TABLE documents ADD COLUMN signed_at TEXT
 TABLE_DOCUMENTS_FTS = """
 CREATE VIRTUAL TABLE IF NOT EXISTS documents_fts USING fts5(
     title, file_name, description, tags, doc_number, text_content,
+    cmr_number, extracted_data_json,
     content='documents', content_rowid='id'
 );
 """
 
+MIGRATION_DOCUMENTS_FTS_V2 = """
+DROP TABLE IF EXISTS documents_fts;
+"""
+
 TRIGGER_DOCUMENTS_FTS_INSERT = """
 CREATE TRIGGER IF NOT EXISTS documents_fts_ai AFTER INSERT ON documents BEGIN
-    INSERT INTO documents_fts(rowid, title, file_name, description, tags, doc_number, text_content)
-    VALUES (new.id, new.title, new.file_name, new.description, new.tags, new.doc_number, '');
+    INSERT INTO documents_fts(rowid, title, file_name, description, tags, doc_number, text_content,
+                              cmr_number, extracted_data_json)
+    VALUES (new.id, new.title, new.file_name, new.description, new.tags, new.doc_number, '',
+            new.cmr_number, new.extracted_data_json);
 END;
 """
 
 TRIGGER_DOCUMENTS_FTS_DELETE = """
 CREATE TRIGGER IF NOT EXISTS documents_fts_ad AFTER DELETE ON documents BEGIN
-    INSERT INTO documents_fts(documents_fts, rowid, title, file_name, description, tags, doc_number, text_content)
-    VALUES ('delete', old.id, old.title, old.file_name, old.description, old.tags, old.doc_number, old.text_content);
+    INSERT INTO documents_fts(documents_fts, rowid, title, file_name, description, tags, doc_number, text_content,
+                              cmr_number, extracted_data_json)
+    VALUES ('delete', old.id, old.title, old.file_name, old.description, old.tags, old.doc_number, old.text_content,
+            old.cmr_number, old.extracted_data_json);
 END;
 """
 
 TRIGGER_DOCUMENTS_FTS_UPDATE = """
 CREATE TRIGGER IF NOT EXISTS documents_fts_au AFTER UPDATE ON documents BEGIN
-    INSERT INTO documents_fts(documents_fts, rowid, title, file_name, description, tags, doc_number, text_content)
-    VALUES ('delete', old.id, old.title, old.file_name, old.description, old.tags, old.doc_number, old.text_content);
-    INSERT INTO documents_fts(rowid, title, file_name, description, tags, doc_number, text_content)
-    VALUES (new.id, new.title, new.file_name, new.description, new.tags, new.doc_number, new.text_content);
+    INSERT INTO documents_fts(documents_fts, rowid, title, file_name, description, tags, doc_number, text_content,
+                              cmr_number, extracted_data_json)
+    VALUES ('delete', old.id, old.title, old.file_name, old.description, old.tags, old.doc_number, old.text_content,
+            old.cmr_number, old.extracted_data_json);
+    INSERT INTO documents_fts(rowid, title, file_name, description, tags, doc_number, text_content,
+                              cmr_number, extracted_data_json)
+    VALUES (new.id, new.title, new.file_name, new.description, new.tags, new.doc_number, new.text_content,
+            new.cmr_number, new.extracted_data_json);
 END;
 """
 
@@ -833,3 +903,176 @@ ALTER_DOCUMENTS_ADD_AUTOMATION_TAGS = "ALTER TABLE documents ADD COLUMN automati
 ALTER_DOCUMENTS_ADD_OCR_TEXT = "ALTER TABLE documents ADD COLUMN ocr_text TEXT DEFAULT ''"
 ALTER_DOCUMENTS_ADD_OCR_RUN_AT = "ALTER TABLE documents ADD COLUMN ocr_run_at TEXT DEFAULT ''"
 ALTER_DOCUMENTS_ADD_OCR_ENGINE = "ALTER TABLE documents ADD COLUMN ocr_engine TEXT DEFAULT ''"
+
+# ── Receipt Generator ─────────────────────────────────────────────────────
+
+TABLE_RECEIPTS = """
+CREATE TABLE IF NOT EXISTS receipts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    receipt_number TEXT UNIQUE NOT NULL,
+    receipt_type TEXT NOT NULL DEFAULT 'customer_payment',
+    issue_date TEXT,
+    payment_date TEXT,
+    currency TEXT DEFAULT 'EUR',
+    company_name TEXT, company_address TEXT, company_vat TEXT,
+    company_reg TEXT, company_phone TEXT, company_email TEXT,
+    received_from_name TEXT, received_from_address TEXT,
+    received_from_vat TEXT, received_from_reg TEXT, received_from_contact TEXT,
+    received_by_name TEXT, received_by_address TEXT,
+    received_by_vat TEXT, received_by_reg TEXT, received_by_contact TEXT,
+    payment_method TEXT,
+    reference_number TEXT, transaction_id TEXT,
+    bank_reference TEXT, invoice_reference TEXT,
+    related_trip_id INTEGER, driver_id INTEGER,
+    vehicle_id INTEGER, trailer_id INTEGER,
+    purpose TEXT,
+    amount REAL NOT NULL DEFAULT 0,
+    vat_rate REAL DEFAULT 0,
+    vat_amount REAL DEFAULT 0,
+    total REAL DEFAULT 0,
+    amount_words TEXT,
+    notes TEXT,
+    status TEXT DEFAULT 'Draft',
+    logo_path TEXT, signature_path TEXT, stamp_path TEXT,
+    attachments_json TEXT DEFAULT '[]',
+    employee_name TEXT, department TEXT, expense_category TEXT,
+    mileage REAL, fuel REAL, accommodation REAL,
+    meals REAL, parking REAL, tolls REAL, other_expense REAL,
+    pickup_location TEXT, delivery_location TEXT,
+    route TEXT, dispatcher TEXT,
+    language TEXT DEFAULT 'en',
+    created_at TEXT, updated_at TEXT
+);
+"""
+
+INDEX_RECEIPT_NUMBER    = "CREATE INDEX IF NOT EXISTS idx_receipt_number ON receipts(receipt_number);"
+INDEX_RECEIPT_TYPE      = "CREATE INDEX IF NOT EXISTS idx_receipt_type   ON receipts(receipt_type);"
+INDEX_RECEIPT_STATUS    = "CREATE INDEX IF NOT EXISTS idx_receipt_status ON receipts(status);"
+INDEX_RECEIPT_TRIP      = "CREATE INDEX IF NOT EXISTS idx_receipt_trip   ON receipts(related_trip_id);"
+INDEX_RECEIPT_DRIVER    = "CREATE INDEX IF NOT EXISTS idx_receipt_driver ON receipts(driver_id);"
+
+# ── AutoMail / Dunner ────────────────────────────────────────────────────
+
+TABLE_AUTOMAIL_TEMPLATES = """
+CREATE TABLE IF NOT EXISTS automail_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    subject TEXT NOT NULL,
+    body_text TEXT NOT NULL,
+    body_html TEXT DEFAULT '',
+    variables_json TEXT DEFAULT '[]',
+    is_default INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+TABLE_AUTOMAIL_SCHEDULES = """
+CREATE TABLE IF NOT EXISTS automail_schedules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT DEFAULT '',
+    trigger_type TEXT NOT NULL,
+    days_offset INTEGER NOT NULL,
+    template_id INTEGER NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    sort_order INTEGER DEFAULT 0,
+    attach_invoice INTEGER DEFAULT 1,
+    attach_cmr INTEGER DEFAULT 1,
+    attach_all_docs INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    FOREIGN KEY (template_id) REFERENCES automail_templates(id)
+);
+"""
+
+TABLE_AUTOMAIL_CLIENT_OVERRIDES = """
+CREATE TABLE IF NOT EXISTS automail_client_overrides (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id INTEGER NOT NULL UNIQUE,
+    is_disabled INTEGER DEFAULT 0,
+    custom_template_id INTEGER,
+    custom_days_offset INTEGER,
+    custom_trigger_type TEXT,
+    skip_attachments INTEGER DEFAULT 0,
+    notes TEXT DEFAULT '',
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+"""
+
+TABLE_AUTOMAIL_SETTINGS = """
+CREATE TABLE IF NOT EXISTS automail_settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+INDEX_AUTOMAIL_SCHEDULES_TEMPLATE = (
+    "CREATE INDEX IF NOT EXISTS idx_automail_schedules_template "
+    "ON automail_schedules(template_id)"
+)
+INDEX_AUTOMAIL_SCHEDULES_ACTIVE_SORT = (
+    "CREATE INDEX IF NOT EXISTS idx_automail_schedules_active_sort "
+    "ON automail_schedules(is_active, sort_order)"
+)
+INDEX_AUTOMAIL_CLIENT_OVERRIDES_CLIENT = (
+    "CREATE INDEX IF NOT EXISTS idx_automail_client_overrides_client "
+    "ON automail_client_overrides(client_id)"
+)
+
+TABLE_COMPANIES = """
+CREATE TABLE IF NOT EXISTS companies (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    subscription_tier TEXT NOT NULL DEFAULT 'starter'
+        CHECK (subscription_tier IN ('starter', 'professional', 'enterprise')),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+INDEX_COMPANIES_NAME = (
+    "CREATE INDEX IF NOT EXISTS idx_companies_name ON companies(company_name)"
+)
+
+TABLE_USERS = """
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    email TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'dispatcher',
+    company_id INTEGER REFERENCES companies(id),
+    is_active INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+INDEX_USERS_EMAIL = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
+)
+
+INDEX_USERS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id)"
+)
+
+TABLE_GPS_TELEMETRY = """
+CREATE TABLE IF NOT EXISTS gps_telemetry (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    truck_id INTEGER NOT NULL,
+    latitude REAL NOT NULL,
+    longitude REAL NOT NULL,
+    speed_kmh REAL DEFAULT 0,
+    heading INTEGER DEFAULT 0,
+    driver_id INTEGER,
+    recorded_at TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+INDEX_GPS_TRUCK = (
+    "CREATE INDEX IF NOT EXISTS idx_gps_truck ON gps_telemetry(truck_id)"
+)
+INDEX_GPS_RECORDED = (
+    "CREATE INDEX IF NOT EXISTS idx_gps_recorded ON gps_telemetry(recorded_at)"
+)

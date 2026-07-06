@@ -11,28 +11,8 @@ from typing import Any
 
 from PySide6.QtCore import QAbstractTableModel, QModelIndex, Qt
 
+from repositories.tacho_vehicle_data_repository import TachoVehicleDataRepository
 from services.i18n import t
-
-# Single joined query: trucks + latest tacho vehicle data + import timestamps
-_TACHO_COLUMNS_SQL = """
-    SELECT
-        t.id AS truck_id,
-        t.plate_number,
-        tvd.calibration_date,
-        tvd.calibration_expiry,
-        ti.imported_at,
-        ti.id AS import_id
-    FROM trucks t
-    LEFT JOIN (
-        SELECT tvd2.*,
-               ROW_NUMBER() OVER (PARTITION BY tvd2.truck_id ORDER BY ti2.imported_at DESC) AS rn
-        FROM tacho_vehicle_data tvd2
-        JOIN tacho_imports ti2 ON ti2.id = tvd2.import_id
-    ) tvd ON tvd.truck_id = t.id AND tvd.rn = 1
-    LEFT JOIN tacho_imports ti ON ti.id = tvd.import_id
-    WHERE t.active_status = 1
-    ORDER BY t.plate_number ASC
-"""
 
 
 class TachoStatusModel(QAbstractTableModel):
@@ -131,10 +111,11 @@ class TachoStatusModel(QAbstractTableModel):
         return t("tacho.status_valid", default="Valid")
 
     def refresh(self, db) -> None:
-        """Fetch all tacho status data in a single query."""
+        """Fetch all tacho status data through the repository."""
         try:
-            rows = db.conn.execute(_TACHO_COLUMNS_SQL).fetchall()
-            self._rows = [dict(r) for r in rows] if rows else []
+            repo = TachoVehicleDataRepository(db)
+            rows = repo.get_tacho_status_data()
+            self._rows = list(rows) if rows else []
         except Exception:
             self._rows = []
         self.beginResetModel()

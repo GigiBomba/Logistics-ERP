@@ -234,10 +234,12 @@ class _RunDetailPanel(QFrame):
     skip_and_package_clicked = Signal(int)  # run_id — simple mode, no trip
     delete_requested = Signal(int)      # run_id
 
-    def __init__(self, parent: QWidget | None = None, db=None) -> None:
+    def __init__(self, parent: QWidget | None = None, db=None, pipeline_repo=None, document_repo=None) -> None:
         super().__init__(parent)
         self.setObjectName("automationDetailPanel")
         self._db = db
+        self._pipeline_repo = pipeline_repo
+        self._document_repo = document_repo
         self._current_trip_id: int | None = None
         self._current_run_id: int | None = None
         self._current_mode: str = "advanced"
@@ -639,7 +641,7 @@ class _RunDetailPanel(QFrame):
             if confirm != QMessageBox.Yes:
                 return
             from repositories.pipeline_repository import PipelineRepository
-            repo = PipelineRepository(self._db)
+            repo = self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)
             run = repo.get_run_by_id(self._current_run_id)
             if run:
                 import os
@@ -655,7 +657,7 @@ class _RunDetailPanel(QFrame):
                 if doc_id:
                     try:
                         from repositories.document_repository import DocumentRepository
-                        DocumentRepository(self._db).delete(doc_id)
+                        (self._document_repo if self._document_repo is not None else DocumentRepository(self._db)).delete(doc_id)
                     except Exception:
                         pass
             self.delete_requested.emit(self._current_run_id)
@@ -665,7 +667,7 @@ class _RunDetailPanel(QFrame):
         if self._current_run_id is None or self._db is None:
             return
         from repositories.pipeline_repository import PipelineRepository
-        run = PipelineRepository(self._db).get_run_by_id(self._current_run_id)
+        run = (self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)).get_run_by_id(self._current_run_id)
         if run:
             pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
             if pdf and os.path.isfile(pdf):
@@ -678,7 +680,7 @@ class _RunDetailPanel(QFrame):
         if self._current_run_id is None or self._db is None:
             return
         from repositories.pipeline_repository import PipelineRepository
-        run = PipelineRepository(self._db).get_run_by_id(self._current_run_id)
+        run = (self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)).get_run_by_id(self._current_run_id)
         if run:
             pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
             if pdf and os.path.isfile(pdf):
@@ -735,11 +737,18 @@ class QtAutomationView(QWidget):
         db=None,
         prefs=None,
         ops=None,
+        api_client=None,
+        pipeline_repo=None,
+        doc_repo=None,
     ) -> None:
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
         self.ops = ops
+        self._api_client = api_client
+        self._pipeline_repo = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
+        from repositories.document_repository import DocumentRepository
+        self._doc_repo = doc_repo if doc_repo is not None else DocumentRepository(db)
         # Key workers by their run_id (stable, in the DB) rather than
         # by ``id(worker)`` which can be reused after a deleteLater().
         self._workers: dict[int, PipelineWorker] = {}
@@ -1062,7 +1071,7 @@ class QtAutomationView(QWidget):
             return
             return
         try:
-            pipeline = PipelineRepository(self.db)
+            pipeline = self._pipeline_repo
             runs = pipeline.list_runs(limit=30)
         except Exception:
             logger.exception("Failed to load pipeline runs")
@@ -1128,7 +1137,7 @@ class QtAutomationView(QWidget):
         if not self.db:
             return
         try:
-            recovered = PipelineRepository(self.db).recover_stuck_runs()
+            recovered = self._pipeline_repo.recover_stuck_runs()
         except Exception:
             recovered = 0
             logger.exception("recover_stuck_runs failed")
@@ -1150,7 +1159,7 @@ class QtAutomationView(QWidget):
         if not self.db or self._selected_run_id is None:
             return
         try:
-            pipeline = PipelineRepository(self.db)
+            pipeline = self._pipeline_repo
             run = pipeline.get_run_by_id(self._selected_run_id)
         except Exception:
             run = None
@@ -1169,7 +1178,7 @@ class QtAutomationView(QWidget):
     def selected_trip_id(self) -> int | None:
         if not self.db or self._selected_run_id is None:
             return None
-        run = PipelineRepository(self.db).get_run_by_id(self._selected_run_id)
+        run = self._pipeline_repo.get_run_by_id(self._selected_run_id)
         if not run:
             return None
         return int(run["matched_trip_id"]) if run.get("matched_trip_id") else None
@@ -1233,7 +1242,7 @@ class QtAutomationView(QWidget):
         for rid in ordered_run_ids:
             did = register_standalone_document(self.db, rid)
             if did:
-                doc = DocumentRepository(self.db).get_by_id(did)
+                doc = self._doc_repo.get_by_id(did)
                 if doc:
                     docs.append(doc)
 

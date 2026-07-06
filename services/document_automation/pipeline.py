@@ -17,10 +17,13 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import shutil
 import threading
 from datetime import datetime
 from typing import Any, Callable, Optional
+
+from repositories.settings_repository import SettingsRepository
 
 logger = logging.getLogger("document_automation.pipeline")
 
@@ -64,11 +67,9 @@ def run_for_existing_document(
     # Read PaddleOCR settings from the DB if not already configured
     # by the caller (e.g. ReRunOcrWorker).
     try:
-        row = db.conn.execute(
-            "SELECT key, value FROM settings WHERE key IN (?, ?, ?)",
-            ("ocr_use_gpu", "ocr_det_limit_side_len", "ocr_rec_batch_num"),
-        ).fetchall()
-        overrides = {r["key"]: r["value"] for r in row}
+        overrides = SettingsRepository(db).get_settings_by_keys(
+            ["ocr_use_gpu", "ocr_det_limit_side_len", "ocr_rec_batch_num"]
+        )
         gpu_val = overrides.get("ocr_use_gpu", "0")
         set_paddle_gpu(gpu_val in ("1", "true", "yes"))
         det_len = int(overrides.get("ocr_det_limit_side_len", "960"))
@@ -118,11 +119,25 @@ def run_for_existing_document(
     if progress_callback:
         progress_callback("persisting", 80)
 
+    extracted_fields = extraction.extracted or {}
+
+    # ── Cross-reference extracted company names against client DB ──
+    from repositories.client_repository import ClientRepository
+
+    from .field_extractors import match_clients_from_extracted
+    matched_clients: list[str] = []
+    try:
+        client_repo = ClientRepository(db)
+        matched_clients = match_clients_from_extracted(extracted_fields, client_repo)
+    except Exception as exc:
+        logger.debug("Client cross-reference failed for doc %d: %s", doc_id, exc)
+
+    # ── Persist OCR results to the documents row ──
     try:
         DocumentRepository(db).update(
             doc_id,
             ocr_text=extraction.full_text or "",
-            extracted_data_json=json.dumps(extraction.extracted or {}, ensure_ascii=False, default=str),
+            extracted_data_json=json.dumps(extracted_fields, ensure_ascii=False, default=str),
             ocr_run_at=datetime.now().isoformat(timespec="seconds"),
             ocr_engine=extraction.engine or "",
         )
@@ -133,15 +148,133 @@ def run_for_existing_document(
         raise RuntimeError(f"OCR persistence failed: {exc}") from exc
 
     if progress_callback:
+        progress_callback("rename", 90)
+
+    # ── Rename document to DOCID-CLIENT-DATE.pdf ──
+    try:
+        _rename_document_after_ocr(db, doc_id, extracted_fields, matched_clients)
+    except Exception as exc:
+        logger.warning("Document rename failed for doc %d: %s", doc_id, exc)
+
+    if progress_callback:
         progress_callback("complete", 100)
 
     return {
         "ocr_text": extraction.full_text,
-        "extracted": extraction.extracted,
+        "extracted": extracted_fields,
         "engine": extraction.engine,
         "confidence": extraction.confidence,
         "pages": extraction.pages_processed,
+        "matched_clients": matched_clients,
     }
+
+
+def _rename_document_after_ocr(
+    db: Any,
+    doc_id: int,
+    extracted: dict[str, str],
+    matched_clients: list[str],
+) -> None:
+    """Rename the physical document file and update DB metadata after OCR.
+
+    New filename format: ``{DOC_ID}-{CLIENT_NAMES}-{DATE}.pdf``
+
+    - DOC_ID is the first of: doc_id, cmr_number, invoice_number, or
+      the original file stem.
+    - CLIENT_NAMES are the matched client names joined with ``-and-``.
+    - DATE is the best date found in extracted fields.
+    """
+    from repositories.document_repository import DocumentRepository
+
+    from .field_extractors import normalize_date
+
+    repo = DocumentRepository(db)
+    doc = repo.get_by_id(doc_id)
+    if not doc:
+        logger.warning("rename_after_ocr: doc %d not found", doc_id)
+        return
+
+    old_path = doc.get("file_path", "")
+    if not old_path or not os.path.isfile(old_path):
+        logger.warning("rename_after_ocr: file missing for doc %d: %s", doc_id, old_path)
+        return
+
+    ext = os.path.splitext(old_path)[1].lower() or ".pdf"
+
+    # ── Build doc_id component ──
+    doc_id_part = (
+        extracted.get("doc_id")
+        or extracted.get("cmr_number")
+        or extracted.get("invoice_number")
+        or os.path.splitext(doc.get("file_name", ""))[0]
+    )
+    doc_id_part = _sanitize_filename_part(doc_id_part)
+
+    # ── Build client names component ──
+    if matched_clients:
+        client_part = _sanitize_filename_part(" and ".join(matched_clients))
+    else:
+        # Fall back to raw extracted names
+        raw_name = (
+            extracted.get("consignor_stamp")
+            or extracted.get("consignee_stamp")
+            or extracted.get("haulier_stamp")
+            or extracted.get("consignor")
+            or extracted.get("consignee")
+            or ""
+        )
+        client_part = _sanitize_filename_part(raw_name) if raw_name else "Unknown"
+
+    # ── Build date component ──
+    raw_date = extracted.get("date", "")
+    date_part = normalize_date(raw_date) if raw_date else ""
+    if not date_part:
+        # Fall back to upload date
+        uploaded = doc.get("uploaded_at", "")
+        date_part = uploaded[:10] if uploaded else "nodate"
+
+    new_name = f"{doc_id_part}-{client_part}-{date_part}{ext}"
+    new_path = os.path.join(os.path.dirname(old_path), new_name)
+
+    if old_path == new_path:
+        return
+
+    try:
+        os.rename(old_path, new_path)
+    except OSError as exc:
+        logger.warning("rename_after_ocr: os.rename failed for doc %d: %s", doc_id, exc)
+        return
+
+    try:
+        repo.update(
+            doc_id,
+            file_path=new_path,
+            file_name=new_name,
+            title=os.path.splitext(new_name)[0],
+        )
+    except Exception as exc:
+        logger.warning("rename_after_ocr: DB update failed for doc %d, rolling back rename: %s", doc_id, exc)
+        try:
+            os.rename(new_path, old_path)
+        except OSError:
+            pass
+        return
+
+    logger.info(
+        "Renamed document %d: %s -> %s   (matched_clients=%s)",
+        doc_id, os.path.basename(old_path), new_name, matched_clients,
+    )
+
+
+def _sanitize_filename_part(value: str) -> str:
+    """Strip or replace characters that are unsafe in filenames."""
+    # Replace path separators, null, control chars
+    value = re.sub(r'[\0\n\r\t\\/:*?"<>|]', "_", value)
+    # Collapse consecutive underscores/spaces
+    value = re.sub(r"[_\s]+", "_", value)
+    # Strip leading/trailing separators
+    value = value.strip("._ ")
+    return value if value else "Unknown"
 
 
 def _temp_dir(job_id: str) -> str:

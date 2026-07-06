@@ -13,7 +13,7 @@ import hashlib
 import math
 import threading
 import time
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 import requests
 from requests.adapters import HTTPAdapter

@@ -74,6 +74,7 @@ class QtHistoryView(QWidget):
         controller=None,
         prefs=None,
         ops=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
@@ -81,9 +82,18 @@ class QtHistoryView(QWidget):
         self.prefs = prefs or (PreferencesManager(db) if db else None)
         self.ops = ops
         self._main_app = main_app or controller
+        self._api_client = api_client
 
-        self.trip_service = TripService(db) if db else None
-        self.invoice_service = InvoiceService(db, prefs=self.prefs) if db else None
+        if self._api_client is not None:
+            from client.remote_services import RemoteTripService
+            self.trip_service = RemoteTripService(self._api_client)
+        else:
+            self.trip_service = TripService(db) if db else None
+        if self._api_client is not None:
+            from client.remote_invoice_service import RemoteInvoiceService
+            self.invoice_service = RemoteInvoiceService(self._api_client)
+        else:
+            self.invoice_service = InvoiceService(db, prefs=self.prefs) if db else None
         self.export_service = ExportService(prefs=self.prefs) if self.prefs else None
 
         self._limit = 200

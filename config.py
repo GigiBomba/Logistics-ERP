@@ -10,11 +10,42 @@ class Config:
     LOG_FILE = os.environ.get("OPERION_LOGS_DIR") or data_path("logs") + "/app.log"
     REPORTS_DIR = os.environ.get("OPERION_REPORTS_DIR") or data_path("reports")
 
+    # Database engine selection
+    DB_ENGINE = os.environ.get("OPERION_DB_ENGINE", "sqlite")
+    POSTGRES_DSN = os.environ.get("OPERION_POSTGRES_DSN", "")
+
+    # Redis
+    REDIS_URL = os.environ.get("OPERION_REDIS_URL", "redis://localhost:6379/0")
+    REDIS_CACHE_TTL = int(os.environ.get("OPERION_REDIS_CACHE_TTL", "3600"))
+
+    # Celery
+    CELERY_BROKER_URL = os.environ.get("OPERION_CELERY_BROKER", "redis://localhost:6379/1")
+    CELERY_RESULT_BACKEND = os.environ.get("OPERION_CELERY_RESULT", "redis://localhost:6379/2")
+
+    # Server
+    API_HOST = os.environ.get("OPERION_API_HOST", "127.0.0.1")
+    API_PORT = int(os.environ.get("OPERION_API_PORT", "8000"))
+    API_WORKERS = int(os.environ.get("OPERION_API_WORKERS", "4"))
+
+    # Client
+    API_BASE_URL = os.environ.get("OPERION_API_BASE_URL", "http://127.0.0.1:8000")
+
     # Default costs for automated calculations
     DEFAULT_DRIVER_SALARY = float(os.environ.get("OPERION_DEFAULT_DRIVER_SALARY", "100.0"))
     DEFAULT_TOLL_RATE = float(os.environ.get("OPERION_DEFAULT_TOLL_RATE", "0.22"))
     EXTRA_COST_PER_KM = float(os.environ.get("OPERION_EXTRA_COST_PER_KM", "0.03"))
     EXTRA_COST_PER_DAY = float(os.environ.get("OPERION_EXTRA_COST_PER_DAY", "12.0"))
+
+    # API Authentication (empty = no auth required; set to secure API)
+    API_KEY = os.environ.get("OPERION_API_KEY", "")
+
+    # JWT / Admin authentication
+    JWT_SECRET_KEY = os.environ.get("OPERION_JWT_SECRET_KEY", "")
+    JWT_ALGORITHM = os.environ.get("OPERION_JWT_ALGORITHM", "HS256")
+    ACCESS_TOKEN_EXPIRE_MINUTES = int(os.environ.get("OPERION_ACCESS_TOKEN_EXPIRE_MINUTES", "480"))
+    ADMIN_EMAIL = os.environ.get("OPERION_ADMIN_EMAIL", "")
+    # OPERION_ADMIN_PASSWORD is deprecated — use OPERION_ADMIN_PASSWORD_HASH (bcrypt) instead
+    ADMIN_PASSWORD_HASH = os.environ.get("OPERION_ADMIN_PASSWORD_HASH", "")
 
     # External API endpoints (overridable via environment)
     CURRENCY_API_PRIMARY = os.environ.get(

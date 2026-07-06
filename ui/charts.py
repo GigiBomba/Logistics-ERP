@@ -18,7 +18,7 @@
 
 Migration history
 =================
-Phase 0: Decision — Kaleido SVG rendering chosen over QWebEngineView.
+Phase 0: Decision — Plotly SVG rendering chosen over QWebEngineView.
 Phase 1: Foundation — ``ui/plotly_theme.py`` + ``ui/plotly_renderer.py``.
 Phase 2: ``ui/plotly_charts.py`` (19 chart factories).
 Phase 3: ``_tab_base.py`` plotly-aware helpers.

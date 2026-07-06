@@ -1,5 +1,6 @@
 from typing import Any, Optional
 
+from repositories.route_repository import RouteRepository
 from repositories.trip_repository import TripRepository
 from services.operations.event_bus import TRIP_CREATED, TRIP_DELETED, TRIP_UPDATED, EventBus
 
@@ -8,6 +9,7 @@ class TripService:
         self.db = db
         self._event_bus = EventBus()
         self._trip_repo = TripRepository(db)
+        self._route_repo = RouteRepository(db)
 
     def get_filtered(self, search: str = "", status: str = "", limit: int = 200) -> list[dict[str, Any]]:
         return self.db.get_filtered_trips(search, status=status, limit=limit)
@@ -29,6 +31,12 @@ class TripService:
     def update(self, trip_id: int, data: dict[str, Any]) -> None:
         self._trip_repo.update(trip_id, data)
         self._event_bus.publish(TRIP_UPDATED, {"trip_id": trip_id, "changes": data})
+
+    def update_cmr_fields(self, trip_id: int, cmr_number: str, cmr_seq: int) -> None:
+        self._trip_repo.update_cmr_fields(trip_id, cmr_number, cmr_seq)
+
+    def get_route_stops_json(self, route_id: int) -> Optional[str]:
+        return self._route_repo.get_stops_json(route_id)
 
     def delete(self, trip_id: int) -> None:
         self._trip_repo.delete(trip_id)

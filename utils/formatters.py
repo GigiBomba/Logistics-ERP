@@ -9,7 +9,10 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
-from ui.design_tokens import COLOR_SUCCESS_TEXT, COLOR_ERROR_TEXT, COLOR_TEXT_SECONDARY
+# Color constants (local copies avoid circular via ui.design_tokens)
+_COLOR_SUCCESS_TEXT = "#34D399"
+_COLOR_ERROR_TEXT = "#F87171"
+_COLOR_TEXT_SECONDARY = "#8E8EA0"
 
 
 def fmt_currency(value: float, currency: str = "€", decimals: int = 2) -> str:
@@ -55,10 +58,10 @@ def fmt_date(date_str: str) -> str:
 def fmt_profit_color(value: float) -> str:
     """Return appropriate color token for profit value."""
     if value > 0:
-        return COLOR_SUCCESS_TEXT
+        return _COLOR_SUCCESS_TEXT
     if value < 0:
-        return COLOR_ERROR_TEXT
-    return COLOR_TEXT_SECONDARY
+        return _COLOR_ERROR_TEXT
+    return _COLOR_TEXT_SECONDARY
 
 
 def fmt_number(value: float, decimals: int = 2) -> str:

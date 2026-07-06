@@ -1,9 +1,8 @@
 """Tacho driver activity repository."""
-from typing import Any, Dict, List, Optional
 from datetime import date
+from typing import Any, Dict, List
 
 from repositories import BaseRepository
-
 
 class TachoDriverActivityRepository(BaseRepository):
     TABLE = "tacho_driver_activity"

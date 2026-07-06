@@ -59,11 +59,11 @@ def _row_to_doc_summary(row: dict[str, Any]) -> dict[str, Any]:
 class PackageBuilder:
     """Stateless builder — safe to call from worker threads."""
 
-    def __init__(self, db) -> None:
+    def __init__(self, db, docs_repo=None, trips_repo=None, pipeline_repo=None) -> None:
         self.db = db
-        self.docs = DocumentRepository(db)
-        self.trips = TripRepository(db)
-        self.pipeline = PipelineRepository(db)
+        self.docs = docs_repo if docs_repo is not None else DocumentRepository(db)
+        self.trips = trips_repo if trips_repo is not None else TripRepository(db)
+        self.pipeline = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
 
     def list_trip_documents(self, trip_id: int) -> list[dict[str, Any]]:
         """Return all documents linked to the given trip, deduped and ordered.
@@ -98,12 +98,7 @@ class PackageBuilder:
                         missing.append(did)
                 # Batch-fetch missing docs in a single query.
                 if missing:
-                    placeholders = ",".join("?" for _ in missing)
-                    rows = self.db.conn.execute(
-                        f"SELECT * FROM documents WHERE id IN ({placeholders})",
-                        tuple(missing),
-                    ).fetchall()
-                    for r in rows:
+                    for r in self.docs.get_by_ids_batch(missing):
                         doc_id = r["id"]
                         seen[int(doc_id)] = _row_to_doc_summary(dict(r))
         # Sort: signed CMRs first, then invoices, then by title.

@@ -178,7 +178,6 @@ class DriverAnalyticsTab(BaseTab):
             )
             driver_table.set_data(table_data)
             driver_table.setMinimumHeight(min(38 * len(table_data) + 38, 320))
-            driver_table.setMaximumHeight(400)
             self._chart_layout.addWidget(driver_table)
 
             # Color Profit/KM cells by threshold

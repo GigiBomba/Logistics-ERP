@@ -12,6 +12,8 @@ import os
 import threading
 from typing import Any
 
+from repositories.settings_repository import SettingsRepository
+
 from .types import ExtractionResult
 
 logger = logging.getLogger("document_automation.cloud_ocr")
@@ -29,15 +31,13 @@ def init_from_db(db) -> None:
     and after the user saves cloud OCR settings.
     """
     try:
-        row = db.conn.execute(
-            "SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?)",
-            ("ocr_google_key", "ocr_google_project_id",
-             "ocr_azure_endpoint", "ocr_azure_key",
-             "ocr_language_hints"),
-        ).fetchall()
         with _db_overrides_lock:
             global _db_overrides
-            _db_overrides = {r["key"]: r["value"] for r in row}
+            _db_overrides = SettingsRepository(db).get_settings_by_keys(
+                ["ocr_google_key", "ocr_google_project_id",
+                 "ocr_azure_endpoint", "ocr_azure_key",
+                 "ocr_language_hints"]
+            )
     except Exception:
         logger.warning("init_from_db failed to load cloud OCR settings", exc_info=True)
         with _db_overrides_lock:

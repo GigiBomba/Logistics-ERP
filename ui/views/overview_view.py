@@ -75,7 +75,7 @@ class QtOverviewView(QScrollArea):
     REFRESH_INTERVAL_MS = 30_000
     # Staleness window for the profit chart on ``wakeup``.  When the
     # chart was last rendered within this many seconds, the cached
-    # pixmap is reused (no kaleido activity).
+    # pixmap is reused (no render activity).
     CHART_STALENESS_SECONDS = 300
 
     _KPI_SOURCES: list[dict[str, str]] = [
@@ -128,10 +128,12 @@ class QtOverviewView(QScrollArea):
         parent: QWidget | None = None,
         db=None,
         ops=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self.ops = ops
+        self._api_client = api_client
         self._event_bus = EventBus()
         self._handlers: dict[str, Any] = {}
         self._last_refresh_ts = 0
@@ -141,15 +143,22 @@ class QtOverviewView(QScrollArea):
         self._chart_fig = None
         # Key of the chart last rendered into the profit chart slot.
         # ``wakeup`` compares against ``_selected_chart['key']`` to skip
-        # a kaleido re-render when the user has not changed the chart.
+        # a re-render when the user has not changed the chart.
         self._last_rendered_chart_key: str | None = None
         # Wall-clock timestamp of the most recent successful chart
         # render.  Used by ``wakeup`` for staleness detection.
         self._chart_last_render_ts: float = 0.0
 
-        self._trip_repo = TripRepository(db) if db else None
-        self._fleet_repo = FleetRepository(db) if db else None
-        self._analytics_svc = AnalyticsService(db) if db else None
+        if self._api_client is not None:
+            from client.remote_services import RemoteTripService, RemoteFleetService
+            from client.remote_analytics import RemoteAnalyticsService
+            self._trip_repo = RemoteTripService(self._api_client)
+            self._fleet_repo = RemoteFleetService(self._api_client)
+            self._analytics_svc = RemoteAnalyticsService(self._api_client)
+        else:
+            self._trip_repo = TripRepository(db) if db else None
+            self._fleet_repo = FleetRepository(db) if db else None
+            self._analytics_svc = AnalyticsService(db) if db else None
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
@@ -1101,9 +1110,9 @@ class QtOverviewView(QScrollArea):
 
         The previously-rendered chart widget and its ``QPixmap`` are
         kept alive (see ``shutdown``), so the common case — re-entering
-        the overview after visiting another module — does not trigger
-        a kaleido re-render.  Only the cheap KPI / active-trips /
-        alerts lists are refreshed.
+the overview after visiting another module — does not trigger
+a re-render.  Only the cheap KPI / active-trips /
+alerts lists are refreshed.
         """
         self._subscribe_events()
         register_listener(self._language_callback)
@@ -1130,7 +1139,7 @@ class QtOverviewView(QScrollArea):
         if self._refresh_timer is not None:
             self._refresh_timer.stop()
         # Keep the chart widget and its ``QPixmap`` alive so re-entering
-        # the overview does not require a kaleido re-render.  We only
+        # the overview does not require a re-render.  We only
         # unhook event subscriptions and stop timers.
         with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)

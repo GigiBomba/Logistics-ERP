@@ -93,6 +93,7 @@ class QtCalculatorView(QWidget):
         ops=None,
         fuel_service=None,
         api=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
@@ -103,6 +104,7 @@ class QtCalculatorView(QWidget):
         self.ops = ops
         self.fuel_service = fuel_service
         self.api = api
+        self._api_client = api_client
 
         self.calculator = TripCalculator()
         self.conflict_service = TripConflictService(self.db) if self.db else None
@@ -164,7 +166,7 @@ class QtCalculatorView(QWidget):
         left_scroll.setWidgetResizable(True)
         left_scroll.setFrameShape(QFrame.NoFrame)
         self.left_content = QWidget()
-        self.left_content.setMaximumWidth(740)
+        self.left_content.setMaximumWidth(960)
         self.left_layout = QVBoxLayout(self.left_content)
         self.left_layout.setSpacing(SP["6"])
         self.left_layout.setAlignment(Qt.AlignTop)
@@ -180,7 +182,7 @@ class QtCalculatorView(QWidget):
 
         # ── Right panel: results ──
         self.results_card = Card(self)
-        self.results_card.setMaximumWidth(500)
+        self.results_card.setMaximumWidth(640)
         self._build_result_section()
         split.addWidget(self.results_card, 45)
 

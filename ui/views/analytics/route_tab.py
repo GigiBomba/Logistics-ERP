@@ -6,6 +6,7 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from services.i18n import t
 from ui.design_tokens import (
+    COLOR_BG_ELEVATED,
     COLOR_BG_OVERLAY,
     COLOR_ERROR_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
@@ -148,7 +149,6 @@ class RouteAnalyticsTab(BaseTab):
         )
         route_table.set_data(table_data)
         route_table.setMinimumHeight(min(38 * len(table_data) + 38, 360))
-        route_table.setMaximumHeight(420)
         self._chart_layout.addWidget(route_table)
 
         # Color Profit/KM cells
@@ -229,7 +229,7 @@ class RouteAnalyticsTab(BaseTab):
         card.setStyleSheet(
             f"QFrame#kpi-spark-card {{"
             f" background: {COLOR_BG_OVERLAY};"
-            f" border: 1px solid {COLOR_BG_OVERLAY};"
+            f" border: 1px solid {COLOR_BG_ELEVATED};"
             f" border-radius: 8px;"
             f" }}"
         )

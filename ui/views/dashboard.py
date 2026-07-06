@@ -75,6 +75,7 @@ class QtFleetDashboard(QWidget):
         db=None,
         prefs=None,
         ops=None,
+        analytics_repo=None,
     ):
         super().__init__(parent)
         self.db = db
@@ -82,6 +83,8 @@ class QtFleetDashboard(QWidget):
 
         self.prefs = prefs or (PreferencesManager(db) if db else None)
         self.ops = ops
+        from repositories.analytics_repository import AnalyticsRepository
+        self._analytics_repo = analytics_repo if analytics_repo is not None else (AnalyticsRepository(db) if db else None)
 
         # ── Period state ────────────────────────────────────────────────────────
         self._period = "today"
@@ -123,10 +126,13 @@ class QtFleetDashboard(QWidget):
         self._update_last_refresh_label()
 
         try:
-            from repositories.analytics_repository import AnalyticsRepository
-            analytics = AnalyticsRepository(self.db) if self.db else None
-            trucks = self.db.get_all_trucks() if self.db else []
-            trips = self.db.get_all_trips() if self.db else []
+            from services.fleet_service import FleetService
+            from services.trip_service import TripService
+            analytics = self._analytics_repo
+            fleet_svc = FleetService(self.db) if self.db else None
+            trip_svc = TripService(self.db) if self.db else None
+            trucks = fleet_svc.get_trucks() if fleet_svc else []
+            trips = trip_svc.get_all() if trip_svc else []
             alerts, _ = analytics.get_overdue_data() if analytics else ([], None)
             kpi = analytics.get_kpi_stats() if analytics else {}
             _best_truck, best_driver, _ = (
@@ -234,7 +240,7 @@ class QtFleetDashboard(QWidget):
         The previously-rendered chart widgets and their ``QPixmap``
         objects are kept alive across view-switches (see
         ``shutdown``), so the common case — re-entering the dashboard
-        after visiting another module — does not trigger a kaleido
+        after visiting another module — does not trigger a
         re-render.  ``refresh_all`` re-queries the cheap data and
         updates the chart figures; if the chart signature is unchanged
         the existing ``QPixmap`` is reused.
@@ -246,7 +252,7 @@ class QtFleetDashboard(QWidget):
 
         The chart widgets and their rendered ``QPixmap`` objects are
         preserved across view-switches, so re-entering the dashboard
-        does not require a kaleido re-render.  We only stop the timer
+        does not require a re-render.  We only stop the timer
         and unsubscribe listeners here.
         """
         self._shutting_down = True

@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class TruckRouteAssignmentRepository(BaseRepository):
     TABLE = "truck_route_assignments"
 
@@ -23,13 +22,11 @@ class TruckRouteAssignmentRepository(BaseRepository):
         )
 
     def complete(self, route_id: int, completed_at: str) -> bool:
-        cursor = self.db.conn.execute(
+        return self._execute_with_count(
             f"UPDATE {self.TABLE} SET status = 'completed', completed_at = ? "
             "WHERE route_id = ? AND status IN ('assigned', 'active')",
             (completed_at, route_id),
-        )
-        self.db.conn.commit()
-        return cursor.rowcount > 0
+        ) > 0
 
     def get_by_truck(
         self, truck_id: str, status: Optional[str] = None

@@ -14,6 +14,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from database.db_manager import DatabaseManager
+from repositories.audit_repository import AuditRepository
 from repositories.document_repository import DocumentRepository
 from services.operations.event_bus import (
     DOCUMENT_ARCHIVED,
@@ -62,6 +63,7 @@ CATEGORY_MAP = {
     "driver": "drivers",
     "trip": "trips",
     "invoice": "invoices",
+    "receipt": "receipts",
     "client": "other",
 }
 
@@ -75,9 +77,23 @@ class DocumentService:
     def __init__(self, db: DatabaseManager):
         self.db = db
         self._repo = DocumentRepository(db)
+        self._audit_repo = AuditRepository(db)
         self._event_bus = EventBus()
         self._ocr_db = db
         self._services: dict = {}
+        self._cache: Any = None
+
+    def _get_cache(self):
+        if self._cache is None:
+            try:
+                from backend.cache import get_cache
+                self._cache = get_cache()
+            except Exception:
+                self._cache = None  # type: ignore
+        return self._cache
+
+    def _cache_key(self, doc_id: int) -> str:
+        return f"doc:{doc_id}"
 
     def _svc(self, name: str):
         """Lazy-create and cache a focused sub-service."""
@@ -90,7 +106,7 @@ class DocumentService:
                 self._services[name] = SearchService(self._repo)
             elif name == "expiry":
                 from services.document.expiry_service import ExpiryService
-                self._services[name] = ExpiryService(self.db, self._repo)
+                self._services[name] = ExpiryService(self._repo)
             elif name == "upload":
                 from services.document.upload_service import UploadService
                 self._services[name] = UploadService(self.db, self._repo)
@@ -258,7 +274,15 @@ class DocumentService:
     # ── Document operations ────────────────────────────────────────────
 
     def get_by_id(self, doc_id: int) -> Optional[dict[str, Any]]:
-        return self._repo.get_by_id(doc_id)
+        cache = self._get_cache()
+        if cache:
+            cached = cache.get(self._cache_key(doc_id))
+            if cached is not None:
+                return cached
+        doc = self._repo.get_by_id(doc_id)
+        if doc and cache:
+            cache.set(self._cache_key(doc_id), doc, ttl=300)
+        return doc
 
     def get_links(self, doc_id: int) -> list[dict[str, Any]]:
         return self._repo.get_links(doc_id)
@@ -332,6 +356,10 @@ class DocumentService:
         self._cleanup_versions(doc_id)
         self._repo.remove_all_links(doc_id)
         self._repo.delete(doc_id)
+        cache = self._get_cache()
+        if cache:
+            cache.delete(self._cache_key(doc_id))
+            cache.flush_pattern("doc:*")
         self._event_bus.publish(DOCUMENT_DELETED, {"document_id": doc_id})
         self._log_audit("document.deleted", f"Deleted document {doc_id}")
         return True
@@ -375,12 +403,11 @@ class DocumentService:
             with contextlib.suppress(OSError):
                 os.rmdir(version_dir)
 
-    def open_file(self, doc_id: int) -> bool:
+    def get_file_path(self, doc_id: int) -> Optional[str]:
         doc = self._repo.get_by_id(doc_id)
         if doc and doc.get("file_path") and os.path.isfile(doc["file_path"]):
-            os.startfile(os.path.abspath(doc["file_path"]))
-            return True
-        return False
+            return os.path.abspath(doc["file_path"])
+        return None
 
     def is_image(self, mime_type: str) -> bool:
         return mime_type in IMAGE_MIME
@@ -472,6 +499,30 @@ class DocumentService:
         return None
 
     def _pdf_thumbnail(self, pdf_path: str, thumb_path: str) -> Optional[str]:
+        """Render the first page of a PDF as a thumbnail image using PyMuPDF.
+
+        Falls back to a placeholder if PyMuPDF is not available or on error.
+        """
+        try:
+            from .document_automation.image_processor import _safe_import_fitz
+            fitz = _safe_import_fitz()
+            if fitz is not None:
+                doc = fitz.open(pdf_path)
+                if doc.page_count == 0:
+                    doc.close()
+                    return None
+                page = doc[0]
+                pix = page.get_pixmap(dpi=72)
+                doc.close()
+                from PIL import Image
+                img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                img.thumbnail(THUMB_SIZE, Image.LANCZOS)
+                img.save(thumb_path, "PNG")
+                return thumb_path
+        except Exception:
+            logger.debug("PyMuPDF thumbnail failed for %s, using placeholder", pdf_path)
+
+        # Fallback: placeholder with page count
         try:
             from PIL import Image, ImageDraw
             from PyPDF2 import PdfReader
@@ -479,12 +530,12 @@ class DocumentService:
             return None
         try:
             reader = PdfReader(pdf_path)
-            if len(reader.pages) == 0:
-                return None
             img = Image.new("RGB", THUMB_SIZE, "#1c1c1f")
             d = ImageDraw.Draw(img)
-            d.text((10, 50), f"PDF\n{len(reader.pages)} page(s)",
-                   fill="#a1a1aa")
+            page_count = len(reader.pages) if reader.pages else 0
+            if page_count:
+                d.text((10, 50), f"PDF\n{page_count} page(s)",
+                       fill="#a1a1aa")
             img.save(thumb_path, "PNG")
             return thumb_path
         except Exception:
@@ -493,34 +544,10 @@ class DocumentService:
     # ── Audit Log ──────────────────────────────────────────────────────
 
     def _log_audit(self, event_type: str, description: str) -> None:
-        try:
-            import uuid
-            now = datetime.now().isoformat()
-            ev_id = uuid.uuid4().hex[:12]
-            payload = json.dumps({"event": event_type, "description": description})
-            self.db.conn.execute("BEGIN IMMEDIATE")
-            self.db.conn.execute(
-                "INSERT INTO operation_events (id, event_type, data_json, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (ev_id, event_type, payload, now),
-            )
-            self.db.conn.execute(
-                "DELETE FROM operation_events WHERE id NOT IN ("
-                "SELECT id FROM operation_events ORDER BY created_at DESC LIMIT ?"
-                ")",
-                (MAX_OPERATION_EVENTS,),
-            )
-            self.db.conn.commit()
-        except Exception as e:
-            logger.debug("Audit log write failed: %s", e)
+        self._audit_repo.log_event(event_type, description)
 
     def get_audit_log(self, limit: int = 50) -> list[dict[str, Any]]:
-        rows = self.db.conn.execute(
-            "SELECT * FROM operation_events WHERE event_type LIKE 'document.%' "
-            "ORDER BY created_at DESC LIMIT ?",
-            (limit,),
-        ).fetchall()
-        return self.db.rows_to_dicts(rows)
+        return self._audit_repo.get_events(event_type_prefix="document.", limit=limit)
 
     # ── Migration ──────────────────────────────────────────────────────
 

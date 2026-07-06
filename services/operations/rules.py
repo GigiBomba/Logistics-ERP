@@ -34,6 +34,9 @@ _DEFAULT_RULES: dict[str, Any] = {
     "max_alerts_per_truck": 50,
     "alert_retention_days": 90,
 
+    # Dunner / invoice reminders
+    "dunner_enabled": True,
+
     # Health score weights
     "health_overdue_weight": 15,
     "health_recurring_weight": 10,

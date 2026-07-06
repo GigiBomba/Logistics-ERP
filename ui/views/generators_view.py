@@ -26,6 +26,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from services.client_service import ClientService
+from services.fleet_service import FleetService
 from services.i18n import register_listener, t, unregister_listener
 from services.trip_service import TripService
 from ui.components import (
@@ -41,6 +43,7 @@ from ui.design_tokens import SP
 from ui.theme import COLORS
 from ui.views.cmr_form_view import QtCmrFormView
 from ui.views.invoice_editor import QtInvoiceEditor
+from ui.views.receipt_editor import QtReceiptEditor
 from ui.widgets import (
     ActionButton,
     StyledComboBox,
@@ -91,12 +94,28 @@ class QtGeneratorsView(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs: Any | None = None,
+        client_service=None,
+        fleet_service=None,
+        trip_service=None,
+        driver_repo=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
-        self._trip_svc_instance: TripService | None = None
+        self._client_svc_instance = client_service
+        self._fleet_svc_instance = fleet_service
+        self._trip_svc_instance = trip_service
         self._cmr_doc_service = None
+        self._api_client = api_client
+        from repositories.driver_repository import DriverRepository
+        if driver_repo is not None:
+            self._driver_repo = driver_repo
+        elif self._api_client is not None:
+            from client.remote_driver_service import RemoteDriverService
+            self._driver_repo = RemoteDriverService(self._api_client)
+        else:
+            self._driver_repo = DriverRepository(db) if db is not None else None
 
         # ── State ───────────────────────────────────────────────────────
         self._trips_list: list[dict[str, Any]] = []
@@ -110,6 +129,7 @@ class QtGeneratorsView(QWidget):
         self._cmr_lang2_combo: StyledComboBox | None = None
         self._invoice_built = False
         self._cmr_built = False
+        self._receipt_built = False
 
         # ── i18n tracking ───────────────────────────────────────────────
         self._i18n_labels: list[tuple[QLabel, str]] = []
@@ -129,8 +149,32 @@ class QtGeneratorsView(QWidget):
     @property
     def _trip_svc(self) -> TripService:
         if self._trip_svc_instance is None:
-            self._trip_svc_instance = TripService(self.db)
+            if self._api_client is not None:
+                from client.remote_services import RemoteTripService
+                self._trip_svc_instance = RemoteTripService(self._api_client)
+            else:
+                self._trip_svc_instance = TripService(self.db)
         return self._trip_svc_instance
+
+    @property
+    def _client_svc(self) -> ClientService:
+        if not hasattr(self, "_client_svc_instance") or self._client_svc_instance is None:
+            if self._api_client is not None:
+                from client.remote_services import RemoteClientService
+                self._client_svc_instance = RemoteClientService(self._api_client)
+            else:
+                self._client_svc_instance = ClientService(self.db)
+        return self._client_svc_instance
+
+    @property
+    def _fleet_svc(self) -> FleetService:
+        if not hasattr(self, "_fleet_svc_instance") or self._fleet_svc_instance is None:
+            if self._api_client is not None:
+                from client.remote_services import RemoteFleetService
+                self._fleet_svc_instance = RemoteFleetService(self._api_client)
+            else:
+                self._fleet_svc_instance = FleetService(self.db)
+        return self._fleet_svc_instance
 
     def _lazy_cmr_doc_service(self):
         """Lazy import + singleton for document registration."""
@@ -232,6 +276,21 @@ class QtGeneratorsView(QWidget):
         self._build_cmr_tab(cmr_layout)
         self._tab_widget.addTab(self._cmr_tab, "")
 
+        # Receipt tab
+        self._receipt_tab = QWidget()
+        receipt_layout = QVBoxLayout(self._receipt_tab)
+        receipt_layout.setContentsMargins(0, 0, 0, 0)
+        self._build_receipt_tab(receipt_layout)
+        self._tab_widget.addTab(self._receipt_tab, "")
+
+        # Proforma tab
+        self._proforma_tab = QWidget()
+        proforma_layout = QVBoxLayout(self._proforma_tab)
+        proforma_layout.setContentsMargins(0, 0, 0, 0)
+        proforma_layout.setSpacing(0)
+        self._build_proforma_tab(proforma_layout)
+        self._tab_widget.addTab(self._proforma_tab, "")
+
         # Set tab text after construction so refresh_translations can
         # update them later.
         self._refresh_tab_titles()
@@ -240,6 +299,8 @@ class QtGeneratorsView(QWidget):
         """Update QTabWidget tab labels from translation keys."""
         self._tab_widget.setTabText(0, t("generators.doc_invoice_title"))
         self._tab_widget.setTabText(1, t("generators.doc_cmr_title"))
+        self._tab_widget.setTabText(2, t("generators.doc_receipt_title"))
+        self._tab_widget.setTabText(3, t("generators.doc_proforma_title", "Proforma"))
 
     # ── Invoice tab content ────────────────────────────────────────────
 
@@ -282,9 +343,6 @@ class QtGeneratorsView(QWidget):
 
         splitter.addWidget(right_panel)
         splitter.setStretchFactor(1, 0)
-
-        # Initial sizes: left gets the bulk, right fixed
-        splitter.setSizes([700, 340])
 
         layout.addWidget(splitter, 1)
 
@@ -464,6 +522,33 @@ class QtGeneratorsView(QWidget):
             "icon": "\U0001F4C4",
         })
 
+    # ── Receipt tab content ───────────────────────────────────────────
+
+    def _build_receipt_tab(self, layout: QVBoxLayout) -> None:
+        """Embed the full QtReceiptEditor in the Receipt tab."""
+        self._receipt_editor = QtReceiptEditor(
+            self._receipt_tab, db=self.db, prefs=self.prefs,
+        )
+        layout.addWidget(self._receipt_editor, 1)
+
+    # ── Proforma tab ───────────────────────────────────────────────────
+
+    def _build_proforma_tab(self, layout: QVBoxLayout) -> None:
+        """Embed the full QtProformaEditor in the Proforma tab."""
+        try:
+            from ui.views.proforma_editor import QtProformaEditor
+        except Exception:
+            logger.exception("Failed to import QtProformaEditor")
+            return None
+        try:
+            self._proforma_editor = QtProformaEditor(
+                self._proforma_tab, db=self.db, prefs=self.prefs,
+            )
+            layout.addWidget(self._proforma_editor, 1)
+            self._proforma_built = False
+        except Exception:
+            logger.exception("Failed to construct QtProformaEditor")
+
     # ── Tab switching ──────────────────────────────────────────────────
 
     def _on_tab_changed(self, index: int) -> None:
@@ -475,6 +560,16 @@ class QtGeneratorsView(QWidget):
             self._refresh_trip_lists()
         elif index == 1 and not self._cmr_built:
             self._cmr_built = True
+            self._refresh_trip_lists()
+        elif index == 2 and not self._receipt_built:
+            self._receipt_built = True
+            if self._receipt_editor:
+                self._receipt_editor.wakeup()
+            self._refresh_trip_lists()
+        elif index == 3 and not self._proforma_built:
+            self._proforma_built = True
+            if hasattr(self, "_proforma_editor") and self._proforma_editor:
+                self._proforma_editor.wakeup()
             self._refresh_trip_lists()
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -525,6 +620,8 @@ class QtGeneratorsView(QWidget):
             if trip.get("id") != self._cmr_filled_trip_id:
                 self._cmr_filled_trip_id = None
             self._auto_fill_cmr(trip)
+        if self._receipt_built and self._receipt_editor:
+            self._auto_fill_receipt(trip)
 
     def _auto_fill_cmr(self, trip: dict[str, Any]) -> None:
         """Auto-fill the CMR form fields from the selected trip."""
@@ -544,29 +641,17 @@ class QtGeneratorsView(QWidget):
 
         if trip.get("client_id"):
             try:
-                row = self.db.conn.execute(
-                    "SELECT * FROM clients WHERE id = ?", (trip["client_id"],)
-                ).fetchone()
-                if row:
-                    client_data = dict(row)
+                client_data = self._client_svc.get_by_id(trip["client_id"]) or {}
             except Exception as e:
                 logger.warning("Could not load clients for CMR autofill: %s", e)
         if trip.get("truck_id"):
             try:
-                row = self.db.conn.execute(
-                    "SELECT * FROM trucks WHERE id = ?", (trip["truck_id"],)
-                ).fetchone()
-                if row:
-                    truck_data = dict(row)
+                truck_data = self._fleet_svc.get_truck(trip["truck_id"]) or {}
             except Exception as e:
                 logger.warning("Could not load truck for CMR autofill: %s", e)
         if trip.get("driver_id"):
             try:
-                row = self.db.conn.execute(
-                    "SELECT * FROM drivers WHERE id = ?", (trip["driver_id"],)
-                ).fetchone()
-                if row:
-                    driver_data = dict(row)
+                driver_data = self._driver_repo.get_by_id(trip["driver_id"]) or {}
             except Exception as e:
                 logger.warning("Could not load driver for CMR autofill: %s", e)
 
@@ -579,13 +664,10 @@ class QtGeneratorsView(QWidget):
     def _fill_stops_from_route(self, route_id: int) -> None:
         """Extract origin/destination from route stops and fill CMR fields."""
         try:
-            row = self.db.conn.execute(
-                "SELECT stops_json FROM route_history_v2 WHERE id = ?",
-                (route_id,),
-            ).fetchone()
-            if not row or not row["stops_json"]:
+            stops_json = self._trip_svc.get_route_stops_json(route_id)
+            if not stops_json:
                 return
-            stops = json.loads(row["stops_json"])
+            stops = json.loads(stops_json)
             if not isinstance(stops, list) or len(stops) < 2:
                 return
             origin = stops[0].get("address", "")
@@ -602,6 +684,28 @@ class QtGeneratorsView(QWidget):
                         w.setText(destination)
         except Exception as e:
             logger.debug("Could not fill stops from route %d: %s", route_id, e)
+
+    def _auto_fill_receipt(self, trip: dict) -> None:
+        """Auto-fill receipt logistics fields from the selected trip."""
+        if not self.db:
+            return
+        try:
+            pickup = ""
+            delivery = ""
+            if trip.get("route_history_v2_id"):
+                stops_json = self._trip_svc.get_route_stops_json(trip["route_history_v2_id"])
+                if stops_json:
+                    stops = json.loads(stops_json)
+                    if isinstance(stops, list) and len(stops) >= 2:
+                        pickup = stops[0].get("address", "")
+                        delivery = stops[-1].get("address", "")
+
+            if hasattr(self._receipt_editor, "_pickup_location_entry") and pickup:
+                self._receipt_editor._pickup_location_entry.setText(pickup)
+            if hasattr(self._receipt_editor, "_delivery_location_entry") and delivery:
+                self._receipt_editor._delivery_location_entry.setText(delivery)
+        except Exception as e:
+            logger.debug("Could not auto-fill receipt from trip %s: %s", trip.get("id"), e)
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Invoice actions
@@ -759,12 +863,7 @@ class QtGeneratorsView(QWidget):
                     logger.warning("CMR: no database reference, skipping registration")
                     return
                 try:
-                    self.db.conn.execute(
-                        "UPDATE trips SET cmr_number = ?, cmr_sequence = ?, "
-                        "cmr_status = 'generated' WHERE id = ?",
-                        (cmr_number, cmr_seq, trip_id),
-                    )
-                    self.db.conn.commit()
+                    self._trip_svc.update_cmr_fields(trip_id, cmr_number, cmr_seq)
                 except Exception:
                     pass
 

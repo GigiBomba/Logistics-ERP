@@ -19,6 +19,8 @@ import time
 
 import numpy as np  # type: ignore
 
+from repositories.settings_repository import SettingsRepository
+
 from .field_extractors import extract_fields, normalize_date
 from .types import ExtractionResult, OcrLine
 
@@ -106,12 +108,10 @@ def _load_paddle_confidence_threshold(db=None) -> float:
     threshold = 40.0
     if db is not None:
         try:
-            row = db.conn.execute(
-                "SELECT value FROM settings WHERE key = 'paddle_confidence_threshold'"
-            ).fetchone()
+            row = SettingsRepository(db).get_setting_value('paddle_confidence_threshold')
             if row:
                 try:
-                    threshold = float(row["value"])
+                    threshold = float(row)
                     threshold = max(0.0, min(100.0, threshold))
                 except (ValueError, TypeError):
                     pass
@@ -450,14 +450,15 @@ class OcrExtractor:
 
         # ── Helper: compute effective confidence with field boost ────
         # Uses a local cache to avoid re-extracting fields from the same text.
-        _field_cache: dict[ExtractionResult, dict[str, str]] = {}
+        # Uses id(result) as key because ExtractionResult is not hashable.
+        _field_cache: dict[int, dict[str, str]] = {}
 
         def _effective(result: ExtractionResult | None) -> tuple:
             """Return (effective_confidence, result) or (0, None)."""
             if result is None or not result.full_text:
                 return (0.0, None)
             fields = extract_fields(result.full_text, user_company=user_company)
-            _field_cache[result] = fields
+            _field_cache[id(result)] = fields
             fcount = sum(1 for v in fields.values() if v)
             conf = result.confidence
             if fcount >= 2:
@@ -516,7 +517,7 @@ class OcrExtractor:
             if cn:
                 extracted.setdefault("consignee", cn)
         else:
-            extracted = _field_cache.get(result) or extract_fields(result.full_text, user_company=user_company)
+            extracted = _field_cache.get(id(result)) or extract_fields(result.full_text, user_company=user_company)
         extracted.setdefault("raw_text", result.full_text)
         if "date" in extracted:
             extracted["date"] = normalize_date(extracted["date"])

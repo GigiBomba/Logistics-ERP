@@ -9,6 +9,7 @@ import shutil
 from datetime import datetime
 from typing import Any
 
+from repositories.audit_repository import AuditRepository
 from repositories.document_repository import DocumentRepository
 
 logger = logging.getLogger("document_versioning_service")
@@ -146,17 +147,4 @@ class VersioningService:
         return candidate
 
     def _log_audit(self, event_type: str, description: str) -> None:
-        try:
-            import json
-            import uuid
-            now = datetime.now().isoformat()
-            ev_id = uuid.uuid4().hex[:12]
-            payload = json.dumps({"event": event_type, "description": description})
-            self._repo.db.conn.execute(
-                "INSERT INTO operation_events (id, event_type, data_json, created_at) "
-                "VALUES (?, ?, ?, ?)",
-                (ev_id, event_type, payload, now),
-            )
-            self._repo.db.conn.commit()
-        except Exception as e:
-            logger.debug("Audit log write failed: %s", e)
+        AuditRepository(self._repo.db).log_event(event_type, description)

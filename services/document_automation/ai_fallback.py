@@ -20,6 +20,8 @@ import time
 
 import requests
 
+from repositories.settings_repository import SettingsRepository
+
 from .types import ExtractionResult
 
 logger = logging.getLogger("document_automation.ai_fallback")
@@ -112,15 +114,13 @@ def init_from_db(db) -> None:
     Call once at startup and after the user saves AI settings.
     """
     try:
-        row = db.conn.execute(
-            "SELECT key, value FROM settings WHERE key IN (?, ?, ?, ?, ?, ?, ?)",
-            ("qwen_endpoint", "qwen_model", "qwen_api_mode",
-             "qwen_max_pages", "qwen_rpm_limit",
-             "qwen_timeout_s", "ai_confidence_threshold"),
-        ).fetchall()
         with _db_lock:
             global _db_overrides
-            _db_overrides = {r["key"]: r["value"] for r in row}
+            _db_overrides = SettingsRepository(db).get_settings_by_keys(
+                ["qwen_endpoint", "qwen_model", "qwen_api_mode",
+                 "qwen_max_pages", "qwen_rpm_limit",
+                 "qwen_timeout_s", "ai_confidence_threshold"]
+            )
         # Migrate stale localhost endpoints to the cloud URL.
         stored = _db_overrides.get("qwen_endpoint", "")
         if stored and ("localhost" in stored or "127.0.0.1" in stored):
@@ -130,11 +130,7 @@ def init_from_db(db) -> None:
             )
             _db_overrides["qwen_endpoint"] = DEFAULT_ENDPOINT
             try:
-                db.conn.execute(
-                    "UPDATE settings SET value = ? WHERE key = 'qwen_endpoint'",
-                    (DEFAULT_ENDPOINT,),
-                )
-                db.conn.commit()
+                SettingsRepository(db).update_setting('qwen_endpoint', DEFAULT_ENDPOINT)
             except Exception:
                 pass
     except Exception:

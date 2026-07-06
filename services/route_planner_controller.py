@@ -5,6 +5,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
+from repositories.settings_repository import SettingsRepository
 from services.constraint_engine import TruckConstraintEngine
 from services.cost_engine import CostEngineService
 from services.country_avoidance import CountryAvoidanceManager
@@ -225,6 +226,104 @@ class RoutePlannerController:
             "route": RoutePersistenceService.record_to_planner_route(record),
         }
 
+    def load_from_url(self, url: str) -> dict[str, Any] | None:
+        """Parse a share URL and return a planner state patch.
+
+        Returns a dict with keys ``stops``, ``profile_label``,
+        ``truck_id``, ``truck_label`` — ready to populate the
+        route planner view (same shape as ``load_history_record``).
+        Returns ``None`` if the URL is invalid or has no stops.
+        """
+        from services.route_sharing_service import parse_share_url
+
+        parsed = parse_share_url(url)
+        stops = parsed.get("stops", [])
+        if not stops:
+            return None
+
+        from services.route_profiles import ui_label_for_profile
+
+        # Build stop dicts compatible with the view's stops_state
+        stop_dicts: list[dict[str, Any]] = []
+        for i, (lat, lng) in enumerate(stops):
+            stop_type = "start" if i == 0 else ("destination" if i == len(stops) - 1 else "stop")
+            stop_dicts.append({
+                "id": str(hash(f"{lat}{lng}{i}") & 0xFFFFFFFF),
+                "type": stop_type,
+                "lat": lat,
+                "lon": lng,
+                "address": None,
+                "source": "share",
+                "resolved": True,
+            })
+
+        profile = parsed.get("profile") or ""
+        profile_label = ui_label_for_profile(profile) if profile else "Recommended"
+
+        return {
+            "stops": stop_dicts,
+            "profile_label": profile_label,
+            "truck_id": parsed.get("truck_id"),
+            "truck_label": parsed.get("truck_label"),
+            "excluded_countries": [],
+        }
+
+    def load_from_route_file(self, filepath: str) -> dict[str, Any] | None:
+        """Load a ``.operionroute`` file and return a planner state patch.
+
+        Same return shape as ``load_from_url``.
+        """
+        from services.route_sharing_service import decode_route_file
+
+        try:
+            with open(filepath, "rb") as f:
+                data = f.read()
+        except OSError as exc:
+            logger.warning("load_from_route_file: could not read %s — %s", filepath, exc)
+            return None
+
+        try:
+            parsed = decode_route_file(data)
+        except ValueError as exc:
+            logger.warning("load_from_route_file: decode failed — %s", exc)
+            return None
+
+        stops = parsed.get("stops", [])
+        if not stops:
+            return None
+
+        from services.route_profiles import ui_label_for_profile
+
+        stop_dicts: list[dict[str, Any]] = []
+        for i, (lat, lng) in enumerate(stops):
+            stop_type = "start" if i == 0 else ("destination" if i == len(stops) - 1 else "stop")
+            stop_dicts.append({
+                "id": str(hash(f"{lat}{lng}{i}") & 0xFFFFFFFF),
+                "type": stop_type,
+                "lat": lat,
+                "lon": lng,
+                "address": None,
+                "source": "share",
+                "resolved": True,
+            })
+
+        profile = parsed.get("profile") or ""
+        profile_label = ui_label_for_profile(profile) if profile else "Recommended"
+
+        return {
+            "stops": stop_dicts,
+            "profile_label": profile_label,
+            "truck_id": parsed.get("truck_id"),
+            "truck_label": parsed.get("truck_label"),
+            "excluded_countries": [],
+            "route": {
+                "distance_km": parsed.get("distance_km"),
+                "duration_min": parsed.get("duration_min"),
+                "geometry": parsed.get("geometry"),
+                "stops": [(s[0], s[1]) for s in stops],
+            },
+        }
+
     def export_route_metadata(self, route: dict[str, Any] | None) -> tuple[str | None, str | None]:
         if not route:
             return None, f"⚠️ {t('result.controller_no_metadata')}"
@@ -257,19 +356,19 @@ def _get_preferred_currency() -> str:
         pass
     try:
         import os
-        import sqlite3
 
         from config import Config
+        from database.db_manager import DatabaseManager
         db_path = Config.DB_PATH
         if os.path.isfile(db_path):
-            conn = sqlite3.connect(db_path)
+            db = DatabaseManager(db_path)
             try:
-                row = conn.execute("SELECT value FROM settings WHERE key = ?", ("pref_currency",)).fetchone()
+                value = SettingsRepository(db).get_setting_value('pref_currency')
             finally:
-                conn.close()
-            if row and row[0]:
-                _PREFERRED_CURRENCY = row[0]
-                return row[0]
+                db.close()
+            if value:
+                _PREFERRED_CURRENCY = value
+                return value
     except Exception:
         pass
     _PREFERRED_CURRENCY = "EUR"

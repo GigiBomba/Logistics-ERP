@@ -4,11 +4,38 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class TripRepository(BaseRepository):
     TABLE = "trips"
+    TABLE_CMR_COUNTER = "cmr_counter"
 
     # ── Base CRUD ─────────────────────────────────────────────────────
+
+    def get_documents_attached(self, trip_id: int) -> list[int]:
+        import json
+        try:
+            row = self._fetchone(
+                f"SELECT documents_attached FROM {self.TABLE} WHERE id = ?", (trip_id,)
+            )
+        except Exception:
+            return []
+        if not row:
+            return []
+        raw = row.get("documents_attached")
+        if not raw:
+            return []
+        try:
+            parsed = json.loads(raw)
+        except (ValueError, TypeError):
+            return []
+        if not isinstance(parsed, list):
+            return []
+        out: list[int] = []
+        for x in parsed:
+            try:
+                out.append(int(x))
+            except (TypeError, ValueError):
+                continue
+        return out
 
     def get_by_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
@@ -34,6 +61,65 @@ class TripRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
             tuple(data.values()) + (trip_id,),
+        )
+
+    def get_next_cmr_sequence(self, year: int) -> tuple[str, int]:
+        import time
+        seq = 1
+        for attempt in range(3):
+            try:
+                self.begin_transaction()
+                row = self._fetchone(
+                    f"SELECT sequence_number FROM {self.TABLE_CMR_COUNTER} WHERE year = ?",
+                    (year,),
+                )
+                if row:
+                    seq = int(row["sequence_number"]) + 1
+                    self._execute(
+                        f"UPDATE {self.TABLE_CMR_COUNTER} SET sequence_number = ? WHERE year = ?",
+                        (seq, year),
+                        commit=False,
+                    )
+                else:
+                    seq = 1
+                    self._execute(
+                        f"INSERT INTO {self.TABLE_CMR_COUNTER} (year, sequence_number) VALUES (?, ?)",
+                        (year, seq),
+                        commit=False,
+                    )
+                self.commit_transaction()
+                break
+            except Exception as e:
+                self.rollback_transaction()
+                if attempt < 2:
+                    time.sleep(0.1)
+                    continue
+                logger = __import__('logging').getLogger(__name__)
+                logger.warning("cmr_counter DB error after 3 retries: %s", e)
+                seq = int(datetime.now().timestamp()) % 100000
+        cmr_number = f"CMR-{year}-{seq:06d}"
+        return cmr_number, seq
+
+    def get_by_ids(self, trip_ids: List[int]) -> List[Dict[str, Any]]:
+        if not trip_ids:
+            return []
+        placeholders = ",".join("?" for _ in trip_ids)
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders})",
+            tuple(trip_ids),
+        )
+
+    def get_last_activity_by_truck_id(self, truck_id: int) -> Optional[str]:
+        row = self._fetchone(
+            f"SELECT MAX(created_at) AS last_activity FROM {self.TABLE} WHERE truck_id = ?",
+            (truck_id,),
+        )
+        return row["last_activity"] if row else None
+
+    def update_cmr_fields(self, trip_id: int, cmr_number: str, cmr_seq: int) -> None:
+        self._execute(
+            f"UPDATE {self.TABLE} SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ?",
+            (cmr_number, cmr_seq, trip_id),
         )
 
     def delete(self, trip_id: int) -> None:

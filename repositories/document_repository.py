@@ -87,7 +87,7 @@ class DocumentRepository(BaseRepository):
     def get_next_doc_number(self, commit: bool = True) -> str:
         year = datetime.datetime.now().year
         if commit:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self.begin_transaction()
         try:
             row = self._fetchone(
                 f"SELECT MAX(doc_number) AS last_num FROM {self.TABLE} "
@@ -105,16 +105,25 @@ class DocumentRepository(BaseRepository):
         except Exception:
             try:
                 if commit and self.db.conn.in_transaction:
-                    self.db.conn.execute("ROLLBACK")
+                    self.rollback_transaction()
             except Exception:
                 pass
             raise
         finally:
             try:
                 if commit and self.db.conn.in_transaction:
-                    self.db.conn.commit()
+                    self.commit_transaction()
             except Exception:
                 pass
+
+    def get_by_ids_batch(self, doc_ids: List[int]) -> List[Dict[str, Any]]:
+        if not doc_ids:
+            return []
+        placeholders = ",".join("?" for _ in doc_ids)
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders})",
+            tuple(doc_ids),
+        )
 
     def get_ids_by_ids(self, doc_ids: list) -> List[Dict[str, Any]]:
         if not doc_ids:
@@ -139,10 +148,11 @@ class DocumentRepository(BaseRepository):
         if query:
             conditions.append(
                 "(d.title LIKE ? OR d.file_name LIKE ? OR d.description LIKE ? "
-                "OR d.tags LIKE ? OR d.doc_number LIKE ?)"
+                "OR d.tags LIKE ? OR d.doc_number LIKE ? "
+                "OR d.cmr_number LIKE ? OR d.extracted_data_json LIKE ?)"
             )
             q = f"%{query}%"
-            params.extend([q, q, q, q, q])
+            params.extend([q, q, q, q, q, q, q])
 
         if category:
             conditions.append("d.category = ?")
@@ -199,10 +209,11 @@ class DocumentRepository(BaseRepository):
         if query:
             conditions.append(
                 "(d.title LIKE ? OR d.file_name LIKE ? OR d.description LIKE ? "
-                "OR d.tags LIKE ? OR d.doc_number LIKE ?)"
+                "OR d.tags LIKE ? OR d.doc_number LIKE ? "
+                "OR d.cmr_number LIKE ? OR d.extracted_data_json LIKE ?)"
             )
             q = f"%{query}%"
-            params.extend([q, q, q, q, q])
+            params.extend([q, q, q, q, q, q, q])
 
         if category:
             conditions.append("d.category = ?")
@@ -261,10 +272,10 @@ class DocumentRepository(BaseRepository):
         if not tag:
             return False
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self.begin_transaction()
             doc = self.get_by_id(doc_id)
             if not doc:
-                self.db.conn.execute("ROLLBACK")
+                self.rollback_transaction()
                 return False
             try:
                 tags = json.loads(doc["tags"])
@@ -273,15 +284,15 @@ class DocumentRepository(BaseRepository):
             except (json.JSONDecodeError, TypeError):
                 tags = []
             if tag in tags:
-                self.db.conn.execute("COMMIT")
+                self.commit_transaction()
                 return False
             tags.append(tag)
             self.update(doc_id, tags=json.dumps(tags),
                         updated_at=datetime.datetime.now().isoformat(), commit=False)
-            self.db.conn.execute("COMMIT")
+            self.commit_transaction()
             return True
         except Exception:
-            self.db.conn.execute("ROLLBACK")
+            self.rollback_transaction()
             raise
 
     def remove_tag(self, doc_id: int, tag: str) -> bool:
@@ -290,10 +301,10 @@ class DocumentRepository(BaseRepository):
         if not tag:
             return False
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self.begin_transaction()
             doc = self.get_by_id(doc_id)
             if not doc:
-                self.db.conn.execute("ROLLBACK")
+                self.rollback_transaction()
                 return False
             try:
                 tags = json.loads(doc["tags"])
@@ -302,15 +313,15 @@ class DocumentRepository(BaseRepository):
             except (json.JSONDecodeError, TypeError):
                 tags = []
             if tag not in tags:
-                self.db.conn.execute("COMMIT")
+                self.commit_transaction()
                 return False
             tags.remove(tag)
             self.update(doc_id, tags=json.dumps(tags),
                         updated_at=datetime.datetime.now().isoformat(), commit=False)
-            self.db.conn.execute("COMMIT")
+            self.commit_transaction()
             return True
         except Exception:
-            self.db.conn.execute("ROLLBACK")
+            self.rollback_transaction()
             raise
 
     def set_tags(self, doc_id: int, tags: list) -> None:
@@ -325,22 +336,23 @@ class DocumentRepository(BaseRepository):
             return 0
         placeholders = ",".join("?" for _ in doc_ids)
         try:
-            self.db.conn.execute("BEGIN IMMEDIATE")
-            cursor = self.db.conn.execute(
+            self.begin_transaction()
+            affected = self._execute_with_count(
                 f"DELETE FROM {self.TABLE} WHERE id IN ({placeholders})",
                 tuple(doc_ids),
+                commit=False,
             )
-            affected = cursor.rowcount
-            self.db.conn.execute(
+            self._execute(
                 f"DELETE FROM {self.TABLE_LINKS} WHERE document_id IN ({placeholders})",
                 tuple(doc_ids),
+                commit=False,
             )
-            self.db.conn.commit()
+            self.commit_transaction()
             return affected
         except Exception:
             try:
                 if self.db.conn.in_transaction:
-                    self.db.conn.execute("ROLLBACK")
+                    self.rollback_transaction()
             except Exception:
                 pass
             raise
@@ -384,6 +396,14 @@ class DocumentRepository(BaseRepository):
         return sorted(tag_set)
 
     # ── Document Links ─────────────────────────────────────────────────
+
+    def update_link_entity_id(self, document_id: int, old_entity_id: int, new_entity_id: int,
+                               entity_type: str = "proforma") -> None:
+        self._execute(
+            f"UPDATE {self.TABLE_LINKS} SET linked_entity_id = ? "
+            "WHERE document_id = ? AND linked_entity_type = ? AND linked_entity_id = ?",
+            (new_entity_id, document_id, entity_type, old_entity_id),
+        )
 
     def add_link(self, document_id: int, linked_entity_type: str,
                  linked_entity_id: int, relation_type: str = "attached",
@@ -442,6 +462,14 @@ class DocumentRepository(BaseRepository):
         )
 
     # ── Primary entity link helpers ────────────────────────────────────
+
+    def has_link(self, document_id: int, entity_type: str, entity_id: int) -> bool:
+        row = self._fetchone(
+            f"SELECT id FROM {self.TABLE_LINKS} "
+            "WHERE document_id = ? AND linked_entity_type = ? AND linked_entity_id = ?",
+            (document_id, entity_type, entity_id),
+        )
+        return row is not None
 
     def get_primary_link(self, document_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
@@ -535,10 +563,10 @@ class DocumentRepository(BaseRepository):
                     file_path: str, file_size: int, file_hash: str,
                     comment: str, uploaded_by: str, created_at: str) -> int:
         return self._execute_insert(
-            f"INSERT INTO document_versions "
-            f"(document_id, version_number, file_path, file_size, file_hash, "
-            f"comment, uploaded_by, created_at) "
-            f"VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            "INSERT INTO document_versions "
+            "(document_id, version_number, file_path, file_size, file_hash, "
+            "comment, uploaded_by, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (document_id, version_number, file_path, file_size, file_hash,
              comment, uploaded_by, created_at),
         )

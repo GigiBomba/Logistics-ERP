@@ -3,7 +3,6 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
-
 class FleetRepository(BaseRepository):
     TABLE = "trucks"
     TABLE_MAINT_RECORDS = "maintenance_records"
@@ -55,6 +54,13 @@ class FleetRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE status = ? ORDER BY plate_number ASC",
             (status,),
+        )
+
+    def get_maintenance_records_with_attachments(self) -> List[Dict[str, Any]]:
+        return self._fetchall(
+            f"SELECT id, truck_id, maintenance_type, date, attachment_path "
+            f"FROM {self.TABLE_MAINT_RECORDS} "
+            f"WHERE attachment_path IS NOT NULL AND attachment_path != ''"
         )
 
     def get_active_trucks(self) -> List[Dict[str, Any]]:

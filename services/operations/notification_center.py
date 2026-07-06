@@ -212,12 +212,8 @@ class NotificationCenter:
             logger.info("Email sent to %s: %s", to_address, subject)
             if self._db:
                 try:
-                    self._db.conn.execute(
-                        "INSERT INTO email_logs (trip_id, recipient, subject, timestamp, status) "
-                        "VALUES (?, ?, ?, ?, ?)",
-                        (None, to_address, subject, __import__("datetime").datetime.now().isoformat(), "sent"),
-                    )
-                    self._db.conn.commit()
+                    from repositories.automail_repository import AutoMailRepository
+                    AutoMailRepository(self._db).log_email(trip_id, recipient, subject, "sent")
                 except Exception:
                     pass
             return True

@@ -1,8 +1,7 @@
 """Successive carrier repository — sub-contracted carriers per CMR trip."""
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from repositories import BaseRepository
-
 
 class SuccessiveCarrierRepository(BaseRepository):
     TABLE = "successive_carriers"
@@ -42,17 +41,20 @@ class SuccessiveCarrierRepository(BaseRepository):
         )
 
     def replace_for_trip(self, trip_id: int, carriers: List[Dict[str, Any]]) -> None:
-        with self.db.conn:
-            self.db.conn.execute(
-                f"DELETE FROM {self.TABLE} WHERE trip_id = ?", (trip_id,)
+        self.begin_transaction()
+        self._execute(
+            f"DELETE FROM {self.TABLE} WHERE trip_id = ?", (trip_id,),
+            commit=False,
+        )
+        for i, c in enumerate(carriers):
+            c = dict(c)
+            c["trip_id"] = trip_id
+            c["sequence_order"] = i + 1
+            cols = ", ".join(c.keys())
+            vals = ", ".join("?" for _ in c)
+            self._execute(
+                f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
+                tuple(c.values()),
+                commit=False,
             )
-            for i, c in enumerate(carriers):
-                c = dict(c)
-                c["trip_id"] = trip_id
-                c["sequence_order"] = i + 1
-                cols = ", ".join(c.keys())
-                vals = ", ".join("?" for _ in c)
-                self.db.conn.execute(
-                    f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-                    tuple(c.values()),
-                )
+        self.commit_transaction()

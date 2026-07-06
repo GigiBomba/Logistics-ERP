@@ -171,10 +171,19 @@ class QtClientWorkspace(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs: dict | None = None,
+        ops=None,
+        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
-        self.service = ClientService(db) if db is not None else None
+        self.prefs = prefs
+        self.ops = ops
+        self._api_client = api_client
+        if self._api_client is not None:
+            from client.remote_services import RemoteClientService
+            self.service = RemoteClientService(self._api_client)
+        else:
+            self.service = ClientService(db) if db is not None else None
         self._selected_id: int | None = None
         self._all_clients: list[dict[str, Any]] = []
 
@@ -220,10 +229,13 @@ class QtClientWorkspace(QWidget):
         self._edit_btn.setText(t("client.edit_button"))
         self._deact_btn.setText(t("client.deactivate_button"))
 
-        self._tabs.setTabText(0, t("client.tab_details", "Details"))
-        self._tabs.setTabText(1, t("client.tab_trips", "Trips"))
-        self._tabs.setTabText(2, t("client.tab_invoices", "Invoices"))
-        self._tabs.setTabText(3, t("client.tab_revenue", "Revenue"))
+        self._tabs.setTabText(0, t("client.tab_manager", "Manager"))
+        self._tabs.setTabText(1, t("client.tab_automail", "AutoMail"))
+
+        self._client_tabs.setTabText(0, t("client.tab_details", "Details"))
+        self._client_tabs.setTabText(1, t("client.tab_trips", "Trips"))
+        self._client_tabs.setTabText(2, t("client.tab_invoices", "Invoices"))
+        self._client_tabs.setTabText(3, t("client.tab_revenue", "Revenue"))
 
         # Rebuild column labels for trips & invoices tables
         trips_labels = [t(label) for _, label, _ in _TRIPS_COLUMNS]
@@ -238,10 +250,36 @@ class QtClientWorkspace(QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
-        self._build_top_bar(layout)
-        self._build_content_split(layout)
+        # Outer tabs: Manager | Automail
+        self._tabs = QTabWidget()
+        self._tabs.setProperty("role", "client-workspace-tabs")
+        self._tabs.currentChanged.connect(self._on_outer_tab_changed)
 
-    def _build_top_bar(self, parent_layout: QVBoxLayout) -> None:
+        # ── Tab 0: Manager (client table + detail tabs) ────────────────────
+        manager_page = QWidget()
+        manager_layout = QVBoxLayout(manager_page)
+        manager_layout.setContentsMargins(0, 0, 0, 0)
+        manager_layout.setSpacing(0)
+
+        self._build_manager_top_bar(manager_layout)
+        self._build_client_detail_area(manager_layout)
+
+        self._tabs.addTab(manager_page, t("client.tab_manager", "Manager"))
+
+        # ── Tab 1: AutoMail ────────────────────────────────────────────────
+        from ui.views.automail_view import QtAutoMailView
+
+        self._automail_view = QtAutoMailView(
+            self,
+            db=self.db,
+            prefs=self.prefs,
+            ops=self.ops,
+        )
+        self._tabs.addTab(self._automail_view, t("client.tab_automail", "AutoMail"))
+
+        layout.addWidget(self._tabs, 1)
+
+    def _build_manager_top_bar(self, parent_layout: QVBoxLayout) -> None:
         top = QFrame()
         top.setFixedHeight(72)
         top_layout = QHBoxLayout(top)
@@ -270,8 +308,8 @@ class QtClientWorkspace(QWidget):
 
         parent_layout.addWidget(top)
 
-    def _build_content_split(self, parent_layout: QVBoxLayout) -> None:
-        """Build the client table, action bar, and tabbed detail area."""
+    def _build_client_detail_area(self, parent_layout: QVBoxLayout) -> None:
+        """Build the client table, action bar, and per-client tabbed detail area."""
         split = QFrame()
         split_layout = QVBoxLayout(split)
         split_layout.setContentsMargins(SP["5"], 0, SP["5"], SP["5"])
@@ -282,7 +320,7 @@ class QtClientWorkspace(QWidget):
         self._table = StyledTableWidget(self, columns=columns)
         self._table.rowSelected.connect(self._on_row_selected)
         self._table.rowDoubleClicked.connect(self._on_row_double_clicked)
-        self._table.setMaximumHeight(280)
+        self._table.setMaximumHeight(500)
         split_layout.addWidget(self._table)
 
         # ── Action bar ─────────────────────────────────────────────────────
@@ -308,36 +346,36 @@ class QtClientWorkspace(QWidget):
         bar_layout.addStretch()
         split_layout.addWidget(bar)
 
-        # ── QTabWidget ─────────────────────────────────────────────────────
-        self._tabs = QTabWidget()
-        self._tabs.setProperty("role", "client-workspace-tabs")
-        self._tabs.currentChanged.connect(self._on_tab_changed)
+        # ── Per-client detail tabs ─────────────────────────────────────────
+        self._client_tabs = QTabWidget()
+        self._client_tabs.setProperty("role", "client-detail-tabs")
+        self._client_tabs.currentChanged.connect(self._on_client_tab_changed)
 
         # Details tab
-        self._details_tab = _QtClientDetailsTab(self._tabs)
-        self._tabs.addTab(self._details_tab, t("client.tab_details", "Details"))
+        self._details_tab = _QtClientDetailsTab(self._client_tabs)
+        self._client_tabs.addTab(self._details_tab, t("client.tab_details", "Details"))
 
         # Trips tab
         trips_cols = _trips_columns_for_table()
-        self._trips_table = StyledTableWidget(self._tabs, columns=trips_cols)
-        self._tabs.addTab(self._trips_table, t("client.tab_trips", "Trips"))
+        self._trips_table = StyledTableWidget(self._client_tabs, columns=trips_cols)
+        self._client_tabs.addTab(self._trips_table, t("client.tab_trips", "Trips"))
 
         # Invoices tab
         inv_cols = _invoice_columns_for_table()
-        self._invoices_table = StyledTableWidget(self._tabs, columns=inv_cols)
-        self._tabs.addTab(self._invoices_table, t("client.tab_invoices", "Invoices"))
+        self._invoices_table = StyledTableWidget(self._client_tabs, columns=inv_cols)
+        self._client_tabs.addTab(self._invoices_table, t("client.tab_invoices", "Invoices"))
 
         # Revenue tab
         self._revenue_tab = QWidget()
         revenue_layout = QVBoxLayout(self._revenue_tab)
         revenue_layout.setContentsMargins(0, 0, 0, 0)
         self._revenue_chart: QtClientRevenueChart | None = None
-        self._tabs.addTab(self._revenue_tab, t("client.tab_revenue", "Revenue"))
+        self._client_tabs.addTab(self._revenue_tab, t("client.tab_revenue", "Revenue"))
 
-        # Disable tabs until a client is selected
-        self._tabs.setEnabled(False)
+        # Disable detail tabs until a client is selected
+        self._client_tabs.setEnabled(False)
 
-        split_layout.addWidget(self._tabs, 1)
+        split_layout.addWidget(self._client_tabs, 1)
         parent_layout.addWidget(split, 1)
 
     # ── Search ─────────────────────────────────────────────────────────────
@@ -396,8 +434,13 @@ class QtClientWorkspace(QWidget):
 
     # ── Tab management ─────────────────────────────────────────────────────
 
-    def _on_tab_changed(self, index: int) -> None:
-        """Refresh active tab content when switching tabs."""
+    def _on_outer_tab_changed(self, index: int) -> None:
+        """Handle switching between Manager and AutoMail tabs."""
+        if index == 1 and hasattr(self, "_automail_view"):
+            self._automail_view._ensure_wired()
+
+    def _on_client_tab_changed(self, index: int) -> None:
+        """Refresh active client detail tab content when switching tabs."""
         if self._selected_id is None or self.service is None:
             return
         if index == 0:
@@ -412,13 +455,13 @@ class QtClientWorkspace(QWidget):
     def _show_detail(self, client_id: int | None) -> None:
         """Populate all tabs with the selected client's data."""
         if client_id is None or self.service is None:
-            self._tabs.setEnabled(False)
+            self._client_tabs.setEnabled(False)
             return
 
-        self._tabs.setEnabled(True)
+        self._client_tabs.setEnabled(True)
 
         # Populate the currently visible tab; others are lazy-loaded on switch.
-        idx = self._tabs.currentIndex()
+        idx = self._client_tabs.currentIndex()
         if idx == 0:
             self._details_tab.refresh(self.service, client_id)
         elif idx == 1:

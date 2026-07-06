@@ -14,6 +14,7 @@ from __future__ import annotations
 import logging
 import re
 from datetime import datetime
+from typing import Any
 
 logger = logging.getLogger("document_automation.field_extractors")
 
@@ -77,6 +78,11 @@ EXTRACTION_PATTERNS: dict[str, list[str]] = {
         r"(?:16[\.)]\s*).*?(?:Name|Nume|Denumirea|Carrier|Haulier|Transport)[:\s]*([A-Za-z\u00C0-\u017F][\w\s.,\-/&]{2,80})",
         r"Stamp\s*16[:\s]*([A-Za-z\u00C0-\u017F][\w\s.,\-/&]{2,80})",
     ],
+    "doc_id": [
+        r"\b([A-Z]{2,6}[-_.\s]?\d{3,8})\b",
+        r"\b(\d{4,}[-/][A-Z]{2,6}\d{0,4})\b",
+        r"\b([A-Z]{2,4}\d{4,8})\b",
+    ],
 }
 
 
@@ -90,8 +96,49 @@ def _compile_patterns() -> dict[str, list[re.Pattern]]:
 _COMPILED = _compile_patterns()
 
 
+# ── Keyword markers that typically precede a document ID ────────────
+_DOC_ID_KEYWORDS = [
+    r"CMR", r"No\.", r"Nr\.", r"Number", r"N[°o]\.?",
+    r"Invoice", r"Factura", r"Facture", r"Rechnung",
+    r"Document", r"Ref\.", r"Reference", r"Referință",
+    r"Contract", r"Ordin", r"Comandă",
+]
+
+# ── Proximity window (chars) around a keyword to search for doc ID ─
+_DOC_ID_PROXIMITY = 80
+
+
+def _extract_doc_id(text: str) -> str:
+    """Extract a document ID with keyword-proximity priority.
+
+    Searches for ID patterns near known document-ID keywords first;
+    falls back to the first generic ID pattern found anywhere in text.
+    """
+    for kw in _DOC_ID_KEYWORDS:
+        kw_rx = re.compile(kw, re.IGNORECASE)
+        for kw_match in kw_rx.finditer(text):
+            start = max(0, kw_match.start() - _DOC_ID_PROXIMITY)
+            end = min(len(text), kw_match.end() + _DOC_ID_PROXIMITY)
+            window = text[start:end]
+            for rx_str in EXTRACTION_PATTERNS["doc_id"]:
+                rx = re.compile(rx_str, re.IGNORECASE | re.MULTILINE)
+                m = rx.search(window)
+                if m:
+                    return _strip(m.group(1))
+    # Fallback: search entire text with generic patterns
+    for rx_str in EXTRACTION_PATTERNS["doc_id"]:
+        rx = re.compile(rx_str, re.IGNORECASE | re.MULTILINE)
+        m = rx.search(text)
+        if m:
+            return _strip(m.group(1))
+    return ""
+
+
 def _strip(value: str) -> str:
-    return value.strip(" \t\r\n.,;:-")
+    value = value.strip(" \t\r\n.,;:-")
+    # Normalize internal whitespace runs (including newlines) to a single space
+    # so that multi-line captures don't carry unwanted formatting.
+    return re.sub(r"\s+", " ", value)
 
 
 def extract_fields(text: str, user_company: str = "") -> dict[str, str]:
@@ -100,9 +147,14 @@ def extract_fields(text: str, user_company: str = "") -> dict[str, str]:
     Values that match the *user_company* string (the logged-in transport
     company) are stripped out of stamp fields to avoid false-positive
     client matches against the user's own company.
+
+    ``doc_id`` is handled separately with keyword-proximity priority so
+    that IDs near CMR/invoice/document-number keywords are preferred.
     """
     out: dict[str, str] = {}
     for key, regexes in _COMPILED.items():
+        if key == "doc_id":
+            continue  # handled below with keyword proximity
         for rx in regexes:
             m = rx.search(text)
             if m:
@@ -116,6 +168,13 @@ def extract_fields(text: str, user_company: str = "") -> dict[str, str]:
             val = out.get(sk)
             if val and val.strip().lower() == uc:
                 del out[sk]
+
+    # doc_id uses keyword-proximity priority, then falls back to
+    # the generic patterns registered in EXTRACTION_PATTERNS["doc_id"].
+    doc_id = _extract_doc_id(text)
+    if doc_id:
+        out["doc_id"] = doc_id
+
     return out
 
 
@@ -127,6 +186,50 @@ def find_first(text: str, regex_list: list[str]) -> str:
         if m:
             return _strip(m.group(1))
     return ""
+
+
+def collect_client_name_candidates(extracted: dict[str, str]) -> list[str]:
+    """Return a deduplicated, stripped list of company names extracted from
+    OCR fields that could represent a client (consignor, consignee, stamps).
+
+    The caller (typically the pipeline) cross-references these against
+    the ClientRepository to find the actual client.
+    """
+    seen: set[str] = set()
+    candidates: list[str] = []
+    for key in ("consignor", "consignee", "consignor_stamp", "consignee_stamp", "haulier_stamp"):
+        val = extracted.get(key, "")
+        val = val.strip()
+        if val and val.lower() not in seen:
+            seen.add(val.lower())
+            candidates.append(val)
+    return candidates
+
+
+def match_clients_from_extracted(
+    extracted: dict[str, str],
+    client_repo: Any,
+) -> list[str]:
+    """Cross-reference extracted company names against the client repository
+    (fuzzy LIKE match).  Returns a sorted list of matched client names.
+
+    Every extracted field is checked against the client DB via
+    ``ClientRepository.search_by_name``.
+    """
+    if not hasattr(client_repo, "search_by_name"):
+        return []
+    candidates = collect_client_name_candidates(extracted)
+    matched: set[str] = set()
+    for name in candidates:
+        try:
+            rows = client_repo.search_by_name(name, fuzzy=True, limit=3)
+        except Exception:
+            continue
+        for row in rows:
+            client_name = (row.get("name") or "").strip()
+            if client_name:
+                matched.add(client_name)
+    return sorted(matched)
 
 
 # Fuzzy matching of free-form text against known client / driver names
