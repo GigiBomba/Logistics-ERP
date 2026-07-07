@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from backend.cache import get_cache
 from backend.dependencies import get_db, get_fleet_service
+from backend.dependencies_security import require_dispatcher
 from backend.schemas.fleet import GpsPing, GpsPosition, TruckResponse
 from database.db_manager import DatabaseManager
 from services.fleet_service import FleetService
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/fleet", tags=["fleet"])
 
 @router.get("/trucks", response_model=Dict[str, Any])
 async def list_trucks(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
     trucks = service.get_trucks()
@@ -22,6 +24,7 @@ async def list_trucks(
 @router.get("/trucks/{truck_id}", response_model=TruckResponse)
 async def get_truck(
     truck_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
     truck = service.get_truck(truck_id)
@@ -33,6 +36,7 @@ async def get_truck(
 @router.post("/trucks", response_model=Dict[str, int])
 async def create_truck(
     data: dict,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
     truck_id = service.add_truck(data)
@@ -43,6 +47,7 @@ async def create_truck(
 async def update_truck(
     truck_id: int,
     data: dict,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
     service.update_truck(truck_id, data)
@@ -52,6 +57,7 @@ async def update_truck(
 @router.delete("/trucks/{truck_id}")
 async def delete_truck(
     truck_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
     service.delete_truck(truck_id)
@@ -61,6 +67,7 @@ async def delete_truck(
 @router.post("/gps/ingest", status_code=202)
 async def ingest_gps_ping(
     ping: GpsPing,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
 ):
     cache = get_cache()
     key = f"gps:live:{ping.truck_id}"
@@ -70,7 +77,10 @@ async def ingest_gps_ping(
 
 
 @router.get("/gps/live/{truck_id}", response_model=GpsPosition)
-async def get_live_position(truck_id: int):
+async def get_live_position(
+    truck_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+):
     cache = get_cache()
     data = cache.get(f"gps:live:{truck_id}")
     if data:
@@ -87,7 +97,10 @@ async def get_live_position(truck_id: int):
 
 
 @router.post("/gps/batch", status_code=202)
-async def ingest_gps_batch(pings: List[GpsPing]):
+async def ingest_gps_batch(
+    pings: List[GpsPing],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+):
     cache = get_cache()
     for ping in pings:
         key = f"gps:live:{ping.truck_id}"
@@ -99,6 +112,7 @@ async def ingest_gps_batch(pings: List[GpsPing]):
 @router.get("/gps/history/{truck_id}")
 async def get_gps_history(
     truck_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     limit: int = 100,
     db: DatabaseManager = Depends(get_db),
 ):

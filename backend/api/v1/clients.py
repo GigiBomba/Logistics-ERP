@@ -6,11 +6,14 @@ from backend.dependencies import get_client_service
 from backend.schemas.client import ClientResponse
 from services.client_service import ClientService
 
+from backend.dependencies_security import require_dispatcher
+
 router = APIRouter(prefix="/clients", tags=["clients"])
 
 
 @router.get("/", response_model=Dict[str, Any])
 async def list_clients(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     query: str = Query("", description="Search query"),
     include_inactive: bool = Query(False),
     limit: int = Query(200, ge=1, le=1000),
@@ -26,6 +29,7 @@ async def list_clients(
 @router.get("/{client_id}", response_model=ClientResponse)
 async def get_client(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     client = service.get_by_id(client_id)
@@ -38,6 +42,7 @@ async def get_client(
 async def create_client(
     name: str,
     data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     client_id = service.create(name=name, **data)
@@ -48,6 +53,7 @@ async def create_client(
 async def update_client(
     client_id: int,
     data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     service.update(client_id, **data)
@@ -57,6 +63,7 @@ async def update_client(
 @router.get("/{client_id}/dashboard")
 async def get_client_dashboard(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     return service.get_client_dashboard(client_id)
@@ -65,6 +72,7 @@ async def get_client_dashboard(
 @router.get("/{client_id}/trips")
 async def get_client_trips(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     limit: int = Query(100, ge=1, le=500),
     offset: int = Query(0, ge=0),
     service: ClientService = Depends(get_client_service),
@@ -76,6 +84,7 @@ async def get_client_trips(
 @router.get("/{client_id}/invoices")
 async def get_client_invoices(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     limit: int = Query(100, ge=1, le=500),
     service: ClientService = Depends(get_client_service),
 ):
@@ -86,6 +95,7 @@ async def get_client_invoices(
 @router.get("/{client_id}/trip-count")
 async def get_client_trip_count(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     return {"count": service.get_trip_count(client_id)}
@@ -94,6 +104,7 @@ async def get_client_trip_count(
 @router.post("/{client_id}/deactivate")
 async def deactivate_client(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     service.deactivate(client_id)
@@ -103,6 +114,7 @@ async def deactivate_client(
 @router.get("/{client_id}/contacts")
 async def get_client_contacts(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     items = service.get_contacts(client_id)
@@ -113,6 +125,7 @@ async def get_client_contacts(
 async def add_client_contact(
     client_id: int,
     data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     contact_id = service.add_contact(client_id, **data)
@@ -122,6 +135,7 @@ async def add_client_contact(
 @router.get("/{client_id}/tags")
 async def get_client_tags(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     tags = service.get_tags(client_id)
@@ -132,6 +146,7 @@ async def get_client_tags(
 async def add_client_tag(
     client_id: int,
     data: Dict[str, str],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     tag = data.get("tag", "")
@@ -143,6 +158,7 @@ async def add_client_tag(
 @router.get("/{client_id}/payment-summary")
 async def get_payment_summary(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
     return service.get_payment_summary(client_id)
@@ -151,6 +167,7 @@ async def get_payment_summary(
 @router.get("/{client_id}/revenue-history")
 async def get_client_revenue_history(
     client_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(12, ge=1, le=60),
     service: ClientService = Depends(get_client_service),
 ):

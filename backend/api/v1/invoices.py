@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from backend.dependencies import get_db
+from backend.dependencies_security import require_dispatcher
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/invoices", tags=["invoices"])
 @router.post("/generate")
 async def generate_invoice(
     data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.invoicing.service import InvoiceService
@@ -27,6 +29,7 @@ async def generate_invoice(
 async def send_invoice_email(
     invoice_id: int,
     data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.invoicing.service import InvoiceService

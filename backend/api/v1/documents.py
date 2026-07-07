@@ -1,9 +1,10 @@
 import json
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 
 from backend.dependencies import get_document_service
+from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.document import (
     DocumentLinkResponse,
@@ -17,6 +18,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 @router.get("/", response_model=PaginatedResponse[DocumentResponse])
 async def list_documents(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     query: str = Query("", description="Search query"),
     category: str = Query("", description="Document category filter"),
     entity_type: str = Query("", description="Entity type filter"),
@@ -46,6 +48,7 @@ async def list_documents(
 @router.get("/{doc_id}", response_model=DocumentResponse)
 async def get_document(
     doc_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
     doc = service.get_by_id(doc_id)
@@ -57,6 +60,7 @@ async def get_document(
 @router.get("/{doc_id}/read", response_model=DocumentReadResult)
 async def read_document_info(
     doc_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
     doc = service.get_by_id(doc_id)
@@ -93,8 +97,32 @@ async def read_document_info(
     )
 
 
+ALLOWED_DOCUMENT_MIME_TYPES = {
+    "application/pdf", "image/jpeg", "image/png", "image/tiff",
+    "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "text/plain", "text/csv",
+}
+MAX_UPLOAD_SIZE = 50 * 1024 * 1024  # 50 MB
+
+
+def _validate_upload(file: UploadFile) -> None:
+    if file.content_type and file.content_type not in ALLOWED_DOCUMENT_MIME_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File type '{file.content_type}' is not allowed. "
+                   f"Allowed types: {', '.join(sorted(ALLOWED_DOCUMENT_MIME_TYPES))}",
+        )
+    if file.size and file.size > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024*1024)} MB.",
+        )
+
+
 @router.post("/upload", response_model=DocumentResponse)
 async def upload_document(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     file: UploadFile = File(...),
     category: str = Form(""),
     entity_type: str = Form(""),
@@ -102,12 +130,19 @@ async def upload_document(
     uploaded_by: str = Form("user"),
     service=Depends(get_document_service),
 ):
+    _validate_upload(file)
+
     import os
     import tempfile
 
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename or ".bin")[1])  # noqa: SIM115
     try:
         content = await file.read()
+        if len(content) > MAX_UPLOAD_SIZE:
+            raise HTTPException(
+                status_code=400,
+                detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024*1024)} MB.",
+            )
         temp.write(content)
         temp.close()
 
@@ -129,6 +164,7 @@ async def upload_document(
 async def update_document(
     doc_id: int,
     update: DocumentUpdate,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
     service.update(doc_id, **update.model_dump(exclude_none=True))
@@ -141,6 +177,7 @@ async def update_document(
 @router.delete("/{doc_id}")
 async def delete_document(
     doc_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
     success = service.delete(doc_id)

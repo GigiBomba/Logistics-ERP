@@ -28,6 +28,8 @@ class DatabaseManager:
         else:
             self._pool = ConnectionPool(db_path, timeout=30)
         self._init_db()
+        self.user_company_id: Optional[int] = None
+        self.user_role: str = ""
 
     def _init_pg(self, dsn: str) -> None:
         import psycopg2
@@ -95,8 +97,12 @@ class DatabaseManager:
     def _init_db(self):
         """Creează tabelele și indecșii necesari."""
         self.conn.execute("BEGIN")
-        self._create_tables_and_indices()
-        self.conn.commit()
+        try:
+            self._create_tables_and_indices()
+            self.conn.commit()
+        except Exception:
+            self.conn.execute("ROLLBACK")
+            raise
         self._run_column_migrations()
         self._migrate_legacy_data()
 
@@ -326,6 +332,15 @@ class DatabaseManager:
             logger.warning(
                 "Could not add month generated column (SQLite < 3.31 or unsupported): %s", e
             )
+            # Fallback: add a regular TEXT column and backfill
+            try:
+                self._ensure_column(
+                    "trips", "month",
+                    "ALTER TABLE trips ADD COLUMN month TEXT",
+                )
+                self.conn.execute("UPDATE trips SET month = SUBSTR(created_at, 1, 7) WHERE month IS NULL AND created_at IS NOT NULL")
+            except Exception as e2:
+                logger.warning("Month column fallback also failed: %s", e2)
 
         self._ensure_column("trucks", "tachograph_expiry", "ALTER TABLE trucks ADD COLUMN tachograph_expiry TEXT")
         self._ensure_column("trucks", "tracking_device_id", S.ALTER_TRUCKS_ADD_TRACKING_DEVICE_ID)
@@ -457,6 +472,8 @@ class DatabaseManager:
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
 
+        self._seed_automail_defaults()
+
     def _migrate_legacy_data(self):
         """One-off data migrations (legacy maintenance table, etc.)."""
         try:
@@ -480,7 +497,6 @@ class DatabaseManager:
                     logger.info("Migrated %d legacy maintenance records and dropped old table", migrated)
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
-        self._seed_automail_defaults()
 
     def _seed_automail_defaults(self):
         """Seed default AutoMail templates, schedules, and settings if empty.
@@ -491,6 +507,13 @@ class DatabaseManager:
         """
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         try:
+            # Ensure tables exist before querying (handles DBs created
+            # before automail tables were added to the schema).
+            self.conn.execute(_schema.TABLE_AUTOMAIL_TEMPLATES)
+            self.conn.execute(_schema.TABLE_AUTOMAIL_SCHEDULES)
+            self.conn.execute(_schema.TABLE_AUTOMAIL_CLIENT_OVERRIDES)
+            self.conn.execute(_schema.TABLE_AUTOMAIL_SETTINGS)
+
             # ── Seed templates if empty ──────────────────────────────────
             count = self.conn.execute(
                 "SELECT COUNT(*) AS cnt FROM automail_templates"

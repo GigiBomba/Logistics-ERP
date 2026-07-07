@@ -31,6 +31,9 @@ class BackendSettings(BaseSettings):
     # ── Refresh token ─────────────────────────────────────────────────────
     refresh_token_expire_days: int = 7
 
+    # ── bcrypt ─────────────────────────────────────────────────────────────
+    bcrypt_rounds: int = 12
+
     # ── Admin gateway (bcrypt hash, never plaintext) ──────────────────────
     admin_email: str = ""
     admin_password_hash: str = ""

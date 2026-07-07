@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 def _parse_json_str(value: Any) -> Any:
     if isinstance(value, str):
@@ -13,6 +13,8 @@ def _parse_json_str(value: Any) -> Any:
 
 
 class DocumentBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: str = ""
     category: str = ""
     entity_type: str = ""
@@ -61,6 +63,8 @@ class DocumentResponse(DocumentBase):
 
 
 class DocumentUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     title: Optional[str] = None
     category: Optional[str] = None
     tags: Optional[List[str]] = None
@@ -69,12 +73,16 @@ class DocumentUpdate(BaseModel):
 
 
 class DocumentLinkCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     linked_entity_type: str
     linked_entity_id: int
     relation_type: str = "attached"
 
 
 class DocumentLinkResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: int
     document_id: int
     linked_entity_type: str
@@ -84,6 +92,8 @@ class DocumentLinkResponse(BaseModel):
 
 
 class DocumentReadResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     document: DocumentResponse
     ocr_text: str = ""
     extracted_fields: Dict[str, Any] = Field(default_factory=dict)

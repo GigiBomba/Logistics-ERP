@@ -8,11 +8,14 @@ from backend.schemas.driver import DriverCreate, DriverResponse, DriverUpdate
 from database.db_manager import DatabaseManager
 from repositories.driver_repository import DriverRepository
 
+from backend.dependencies_security import require_dispatcher
+
 router = APIRouter(prefix="/drivers", tags=["drivers"])
 
 
 @router.get("/", response_model=Dict[str, Any])
 async def list_drivers(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     limit: int = Query(500, ge=1, le=1000),
     offset: int = Query(0, ge=0),
     repo: DriverRepository = Depends(get_driver_repo),
@@ -24,6 +27,7 @@ async def list_drivers(
 @router.get("/{driver_id}", response_model=DriverResponse)
 async def get_driver(
     driver_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     repo: DriverRepository = Depends(get_driver_repo),
 ):
     driver = repo.get_by_id(driver_id)
@@ -35,6 +39,7 @@ async def get_driver(
 @router.post("/", response_model=Dict[str, int], status_code=201)
 async def create_driver(
     data: DriverCreate,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     repo: DriverRepository = Depends(get_driver_repo),
 ):
     driver_id = repo.create(data.model_dump())
@@ -45,6 +50,7 @@ async def create_driver(
 async def update_driver(
     driver_id: int,
     data: DriverUpdate,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     repo: DriverRepository = Depends(get_driver_repo),
 ):
     existing = repo.get_by_id(driver_id)
@@ -59,6 +65,7 @@ async def update_driver(
 @router.delete("/{driver_id}")
 async def delete_driver(
     driver_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     repo: DriverRepository = Depends(get_driver_repo),
 ):
     existing = repo.get_by_id(driver_id)
@@ -72,6 +79,7 @@ async def delete_driver(
 async def assign_driver_to_truck(
     driver_id: int,
     truck_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.driver_truck_service import DriverTruckService
@@ -83,6 +91,7 @@ async def assign_driver_to_truck(
 @router.post("/{driver_id}/unassign")
 async def unassign_driver(
     driver_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.driver_truck_service import DriverTruckService
@@ -94,6 +103,7 @@ async def unassign_driver(
 @router.get("/{driver_id}/truck-plate")
 async def get_driver_truck_plate(
     driver_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.driver_truck_service import DriverTruckService
@@ -105,6 +115,7 @@ async def get_driver_truck_plate(
 @router.get("/{driver_id}/tacho-activity")
 async def get_driver_tacho_activity(
     driver_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: str = Query(""),
     limit: int = Query(100, ge=1, le=500),
     db: DatabaseManager = Depends(get_db),

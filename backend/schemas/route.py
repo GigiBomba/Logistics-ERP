@@ -1,6 +1,8 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class RouteBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     fingerprint: str = ""
     total_km: float = 0.0
 
