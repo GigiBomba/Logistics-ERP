@@ -19,7 +19,7 @@ from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError
 
 from backend.config import BackendSettings
-from backend.dependencies import get_db
+from backend.dependencies import get_db, set_request_user_context
 from backend.security import decode_access_token
 
 logger = logging.getLogger(__name__)
@@ -68,7 +68,7 @@ async def get_current_user(
 
     # ── Admin identity — resolved from env, zero DB access ──────────────
     if email == settings.admin_email:
-        return {
+        user = {
             "id": 0,
             "email": email,
             "role": role,
@@ -76,6 +76,8 @@ async def get_current_user(
             "company_id": 0,
             "company_name": None,
         }
+        set_request_user_context(company_id=0, role=role)
+        return user
 
     # ── Standard user — look up in the database ─────────────────────────
     async for db in get_db():
@@ -102,6 +104,10 @@ async def get_current_user(
 
         user: Dict[str, Any] = dict(row)
         user["is_admin"] = False
+        set_request_user_context(
+            company_id=user.get("company_id"),
+            role=user.get("role", ""),
+        )
         return user
 
     # Should never reach here

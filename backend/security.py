@@ -1,4 +1,4 @@
-"""Password hashing (passlib/bcrypt) and JWT encoding/decoding (python-jose).
+"""Password hashing (bcrypt) and JWT encoding/decoding (python-jose).
 
 All functions are synchronous and thread-safe.  CPU-bound operations such as
 ``verify_password`` should be wrapped in ``loop.run_in_executor()`` when
@@ -7,35 +7,31 @@ called from async FastAPI handlers (see ``backend/api/v1/auth.py``).
 
 import logging
 import secrets
-import warnings
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+import bcrypt
 from jose import jwt
-from passlib.context import CryptContext
 
 from backend.config import BackendSettings
 
 logger = logging.getLogger(__name__)
 
-# ── Suppress noisy passlib/bcrypt compatibility warnings ─────────────────────
-# Passlib 1.7.4 + bcrypt >= 4.1 emits an AttributeError during backend probe
-# but falls back to a working backend.  The warning is harmless.
-warnings.filterwarnings("ignore", message="error reading bcrypt version")
-warnings.filterwarnings("ignore", category=UserWarning, module="passlib")
-
-# ── Password hashing (bcrypt via passlib) ─────────────────────────────────────
-
-_pctx = CryptContext(schemes=["bcrypt"])
+# ── Password hashing (bcrypt) ─────────────────────────────────────────────────
 
 
-def hash_password(password: str) -> str:
+def hash_password(password: str, rounds: Optional[int] = None) -> str:
     """Return a salted bcrypt hash of *password*.
 
     This function is used by the **one-time** ``hash_admin_password.py``
     script and should not be called at runtime from API handlers.
     """
-    return _pctx.hash(password)
+    if rounds is None:
+        rounds = BackendSettings().bcrypt_rounds
+    return bcrypt.hashpw(
+        password.encode("utf-8"),
+        bcrypt.gensalt(rounds=rounds),
+    ).decode("utf-8")
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -45,7 +41,10 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     This is a CPU-bound operation (~5-15 ms per call on modern hardware).
     """
     try:
-        return _pctx.verify(plain_password, hashed_password)
+        return bcrypt.checkpw(
+            plain_password.encode("utf-8"),
+            hashed_password.encode("utf-8"),
+        )
     except Exception as exc:
         logger.error("Password verification error: %s", exc)
         return False

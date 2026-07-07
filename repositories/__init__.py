@@ -15,6 +15,27 @@ class BaseRepository:
     def __init__(self, db):
         self.db = db
 
+    def _company_filter(self, alias: str = "") -> str:
+        """Return an SQL fragment to filter by the current user's company.
+
+        If the user is an admin (role="admin" or no company set), no filter
+        is applied so admins can see all tenants.  Otherwise, the filter
+        restricts queries to rows belonging to the user's company.
+
+        Usage::
+
+            rows = self._fetchall(
+                f"SELECT * FROM trips WHERE 1=1 {self._company_filter('t')}",
+                params,
+            )
+        """
+        cid = getattr(self.db, "user_company_id", None)
+        role = getattr(self.db, "user_role", "")
+        if cid is not None and role != "admin":
+            prefix = f"{alias}." if alias else ""
+            return f"AND {prefix}company_id = {cid}"
+        return ""
+
     def _adapt_query(self, query: str) -> str:
         if getattr(self.db, "_engine", "sqlite") == "postgresql":
             return query.replace("?", "%s")

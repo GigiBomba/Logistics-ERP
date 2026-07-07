@@ -20,6 +20,9 @@ venv/
 .venv/
 env/
 .env
+admin.env
+securityprompt.env
+securityreworkplan.env
 
 # Ruff
 .ruff_cache/

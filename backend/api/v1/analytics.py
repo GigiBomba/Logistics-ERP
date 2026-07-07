@@ -1,8 +1,9 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 
 from fastapi import APIRouter, Depends, Query
 
 from backend.dependencies import get_analytics_service
+from backend.dependencies_security import require_dispatcher
 from services.analytics_service import AnalyticsService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
@@ -10,6 +11,7 @@ router = APIRouter(prefix="/analytics", tags=["analytics"])
 
 @router.get("/financial", )
 async def get_financial_analytics(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -19,6 +21,7 @@ async def get_financial_analytics(
 
 @router.get("/financial/monthly", )
 async def get_monthly_financial(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(24, ge=1, le=60),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
@@ -29,6 +32,7 @@ async def get_monthly_financial(
 
 @router.get("/financial/cost-breakdown", )
 async def get_cost_breakdown(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(12, ge=1, le=60),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
@@ -39,6 +43,7 @@ async def get_cost_breakdown(
 
 @router.get("/financial/trip-status", )
 async def get_trip_status_distribution(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -48,6 +53,7 @@ async def get_trip_status_distribution(
 
 @router.get("/financial/trip-volume", )
 async def get_monthly_trip_volume(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(12, ge=1, le=60),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
@@ -58,6 +64,7 @@ async def get_monthly_trip_volume(
 
 @router.get("/financial/by-country", )
 async def get_revenue_by_country(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -67,6 +74,7 @@ async def get_revenue_by_country(
 
 @router.get("/financial/quarterly", )
 async def get_revenue_quarterly(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     quarters: int = Query(8, ge=1, le=20),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
@@ -77,6 +85,7 @@ async def get_revenue_quarterly(
 
 @router.get("/financial/invoice-aging", )
 async def get_invoice_aging(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_invoice_aging()
@@ -84,6 +93,7 @@ async def get_invoice_aging(
 
 @router.get("/revenue-by-client", )
 async def get_revenue_by_client(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -93,6 +103,7 @@ async def get_revenue_by_client(
 
 @router.get("/client", )
 async def get_client_analytics(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -102,6 +113,7 @@ async def get_client_analytics(
 
 @router.get("/client/growth", )
 async def get_client_growth(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(12, ge=1, le=60),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
@@ -112,6 +124,7 @@ async def get_client_growth(
 
 @router.get("/client/retention", )
 async def get_client_retention(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_client_retention()
@@ -119,6 +132,7 @@ async def get_client_retention(
 
 @router.get("/client/concentration", )
 async def get_revenue_concentration(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_revenue_concentration()
@@ -126,6 +140,7 @@ async def get_revenue_concentration(
 
 @router.get("/fleet", )
 async def get_fleet_analytics(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -135,6 +150,7 @@ async def get_fleet_analytics(
 
 @router.get("/fleet/utilization", )
 async def get_truck_utilization(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_truck_utilization()
@@ -142,6 +158,7 @@ async def get_truck_utilization(
 
 @router.get("/route/profitability", )
 async def get_route_profitability(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -151,6 +168,7 @@ async def get_route_profitability(
 
 @router.get("/route/by-country", )
 async def get_profit_per_km_by_country(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_profit_per_km_by_country()
@@ -158,6 +176,7 @@ async def get_profit_per_km_by_country(
 
 @router.get("/route/profit-vs-distance", )
 async def get_profit_vs_distance(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     limit: int = Query(100, ge=1, le=1000),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
@@ -166,6 +185,7 @@ async def get_profit_vs_distance(
 
 @router.get("/driver", )
 async def get_driver_analytics(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -175,6 +195,7 @@ async def get_driver_analytics(
 
 @router.get("/driver/comparison", )
 async def get_driver_comparison(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
     service: AnalyticsService = Depends(get_analytics_service),
@@ -184,6 +205,7 @@ async def get_driver_comparison(
 
 @router.get("/driver/profit-per-km", )
 async def get_driver_profit_per_km(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_driver_profit_per_km()
@@ -191,6 +213,7 @@ async def get_driver_profit_per_km(
 
 @router.get("/driver/violations", )
 async def get_driver_tacho_violations(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_driver_tacho_violations()
@@ -198,6 +221,7 @@ async def get_driver_tacho_violations(
 
 @router.get("/driver/monthly-activity", )
 async def get_driver_monthly_activity(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(12, ge=1, le=60),
     from_date: Optional[str] = Query(None),
     to_date: Optional[str] = Query(None),
@@ -208,6 +232,7 @@ async def get_driver_monthly_activity(
 
 @router.get("/document", )
 async def get_document_analytics(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_document()
@@ -215,6 +240,7 @@ async def get_document_analytics(
 
 @router.get("/document/upload-trend", )
 async def get_document_upload_trend(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(12, ge=1, le=60),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
@@ -223,6 +249,7 @@ async def get_document_upload_trend(
 
 @router.get("/maintenance/alerts", )
 async def get_maintenance_alerts(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_maintenance_alerts()
@@ -230,6 +257,7 @@ async def get_maintenance_alerts(
 
 @router.post("/invalidate")
 async def invalidate_cache(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     service.invalidate()
@@ -238,6 +266,7 @@ async def invalidate_cache(
 
 @router.get("/overview")
 async def get_overview(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ):
     return service.get_data()

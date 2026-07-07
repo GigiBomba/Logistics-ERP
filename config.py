@@ -28,7 +28,7 @@ class Config:
     API_WORKERS = int(os.environ.get("OPERION_API_WORKERS", "4"))
 
     # Client
-    API_BASE_URL = os.environ.get("OPERION_API_BASE_URL", "http://127.0.0.1:8000")
+    API_BASE_URL = os.environ.get("OPERION_API_BASE_URL", "https://api.operionerp.xyz")
 
     # Default costs for automated calculations
     DEFAULT_DRIVER_SALARY = float(os.environ.get("OPERION_DEFAULT_DRIVER_SALARY", "100.0"))

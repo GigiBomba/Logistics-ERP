@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 
 from backend.dependencies import get_db
+from backend.dependencies_security import require_dispatcher
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
@@ -13,6 +14,7 @@ router = APIRouter(prefix="/receipts", tags=["receipts"])
 @router.post("/generate")
 async def generate_receipt(
     data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     receipt_data = data.get("receipt_data", {})

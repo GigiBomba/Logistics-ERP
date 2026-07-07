@@ -3,6 +3,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import get_db
+from backend.dependencies_security import require_dispatcher
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
@@ -10,6 +11,7 @@ router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 @router.get("/", response_model=Dict[str, Any])
 async def list_alerts(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     limit: int = Query(50, ge=1, le=2000),
     db: DatabaseManager = Depends(get_db),
 ):
@@ -31,6 +33,7 @@ async def list_alerts(
 
 @router.get("/count")
 async def get_alert_count(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.operations.operations_engine import OperationsEngine
@@ -43,6 +46,7 @@ async def get_alert_count(
 @router.post("/{alert_id}/resolve")
 async def resolve_alert(
     alert_id: str,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.operations.operations_engine import OperationsEngine

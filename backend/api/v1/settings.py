@@ -4,6 +4,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from backend.dependencies import get_db
+from backend.dependencies_security import require_dispatcher
 from config import Config
 from database.db_manager import DatabaseManager
 
@@ -11,7 +12,9 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("/company")
-async def get_company_config():
+async def get_company_config(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+):
     import os
     config_path = os.path.join(
         os.environ.get("OPERION_REPORTS_DIR", ""),
@@ -25,6 +28,7 @@ async def get_company_config():
 
 @router.put("/company")
 async def save_company_config(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     data: Dict[str, Any] = Body(...),
 ):
     import os
@@ -39,6 +43,7 @@ async def save_company_config(
 @router.get("/{key}")
 async def get_setting(
     key: str,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     value = db.get_setting(key)
@@ -50,6 +55,7 @@ async def get_setting(
 @router.put("/{key}")
 async def save_setting(
     key: str,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     data: Dict[str, str] = Body(...),
     db: DatabaseManager = Depends(get_db),
 ):

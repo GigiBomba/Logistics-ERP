@@ -2,12 +2,14 @@
 
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 # ── Multi-tenant ─────────────────────────────────────────────────────────────
 
 
 class CompanyInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     id: int = 0
     name: str = ""
     subscription_tier: str = "starter"
@@ -18,6 +20,8 @@ class CompanyInfo(BaseModel):
 
 
 class CeleryStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     active_tasks: int = 0
     scheduled_tasks: int = 0
     queue_size: int = 0
@@ -25,6 +29,8 @@ class CeleryStatus(BaseModel):
 
 
 class RedisStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     connected: bool = False
     memory_used_mb: Optional[float] = None
     keys_count: Optional[int] = None
@@ -32,6 +38,8 @@ class RedisStatus(BaseModel):
 
 
 class ConfigFlags(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     db_engine: str = ""
     env_mode: str = ""
     api_version: str = ""
@@ -39,6 +47,8 @@ class ConfigFlags(BaseModel):
 
 
 class DiagnosticsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     latency_ms: float = 0.0
     server_time_utc: str = ""
     celery: Optional[CeleryStatus] = None
@@ -50,6 +60,8 @@ class DiagnosticsResponse(BaseModel):
 
 
 class ColumnInfo(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     type: str
     notnull: bool = False
@@ -57,12 +69,16 @@ class ColumnInfo(BaseModel):
 
 
 class TableInfoResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     row_count: int
     columns: List[ColumnInfo]
 
 
 class RawQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str
     limit: int = 100
 
@@ -71,6 +87,8 @@ class RawQueryRequest(BaseModel):
 
 
 class DocumentStatsResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     total_documents: int = 0
     total_storage_bytes: int = 0
     ocr_coverage_pct: float = 0.0
@@ -82,6 +100,8 @@ class DocumentStatsResponse(BaseModel):
 
 
 class SystemInfoResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     python_version: str = ""
     db_engine: str = ""
     db_path: str = ""
@@ -90,6 +110,8 @@ class SystemInfoResponse(BaseModel):
 
 
 class SystemEnvResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     variables: Dict[str, str] = {}
 
 
@@ -97,6 +119,8 @@ class SystemEnvResponse(BaseModel):
 
 
 class LogTailResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     lines: List[str] = []
     file: str = ""
     total_lines_read: int = 0
@@ -106,10 +130,14 @@ class LogTailResponse(BaseModel):
 
 
 class ServiceHealth(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str
     status: str  # "ok", "error", "unavailable"
     detail: Optional[str] = None
 
 
 class HealthDetailedResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     services: List[ServiceHealth] = []

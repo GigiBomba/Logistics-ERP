@@ -34,6 +34,9 @@ class ConnectionPool:
         # WAL mode is set on the first connection's conn property access.
         # Concurrent connections inherit it from the database file.
         self._wal_configured = False
+        # Incremented on close_all(); threads with a stale generation
+        # detect that their cached connection was closed by another thread.
+        self._generation = 0
 
     # ── Public API ────────────────────────────────────────────────────────
 
@@ -46,7 +49,11 @@ class ConnectionPool:
     @property
     def conn(self) -> sqlite3.Connection:
         """Return the current thread's connection (create if missing)."""
-        if not hasattr(self._local, "conn") or self._local.conn is None:
+        if (
+            not hasattr(self._local, "conn")
+            or self._local.conn is None
+            or getattr(self._local, "_pool_gen", 0) != self._generation
+        ):
             c = sqlite3.connect(
                 self._db_path,
                 timeout=self._timeout,
@@ -54,12 +61,11 @@ class ConnectionPool:
             )
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA foreign_keys=ON")
-            # Set WAL journal mode once on the first connection;
-            # subsequent connections inherit it from the database file.
             if not self._wal_configured:
                 c.execute("PRAGMA journal_mode=WAL")
                 self._wal_configured = True
             self._local.conn = c
+            self._local._pool_gen = self._generation
             with self._lock:
                 self._connections.append(c)
         return self._local.conn
@@ -68,6 +74,8 @@ class ConnectionPool:
         """Close every connection managed by this pool.
 
         Safe to call multiple times.  Intended for app shutdown.
+        After calling, the pool is reset and future ``.conn`` accesses
+        create fresh connections.
         """
         with self._lock:
             for c in self._connections:
@@ -76,10 +84,12 @@ class ConnectionPool:
                 except Exception:
                     pass
             self._connections.clear()
-        # Clear the current thread's reference so ``conn`` will
-        # re-create if called after shutdown.
-        if hasattr(self._local, "conn"):
-            try:
-                self._local.conn = None
-            except Exception:
-                pass
+        # Clear thread-local references in the current thread so
+        # the next ``.conn`` access creates a new connection.
+        # Other threads that had connections will detect stale
+        # references via ``.conn`` checking ``_generation``.
+        try:
+            del self._local.conn
+        except AttributeError:
+            pass
+        self._generation += 1

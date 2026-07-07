@@ -12,6 +12,8 @@ Usage::
     python -m uvicorn backend.main:app
 """
 
+import hmac
+
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -36,7 +38,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         api_key = request.headers.get("X-API-Key", "")
-        if api_key != self._api_key:
+        if not hmac.compare_digest(api_key, self._api_key):
             return JSONResponse(
                 status_code=401,
                 content={"detail": "Missing or invalid API key"},

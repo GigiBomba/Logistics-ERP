@@ -7,12 +7,13 @@ POST /api/v1/auth/logout  — Revoke a refresh token.
 
 import asyncio
 import hashlib
+import json
 import logging
 import time
 from datetime import timedelta
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordRequestForm
 
 from backend.config import BackendSettings
@@ -26,6 +27,45 @@ from backend.security import (
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# ── Brute-force lockout ─────────────────────────────────────────────────────
+# Tracks failed login attempts per normalized email.
+# After FAILED_LOGIN_THRESHOLD attempts within LOCKOUT_WINDOW seconds,
+# further attempts are blocked for LOCKOUT_DURATION seconds.
+FAILED_LOGIN_THRESHOLD = 5
+LOCKOUT_WINDOW = 300       # 5 minutes
+LOCKOUT_DURATION = 900     # 15 minutes
+_failed_attempts: Dict[str, list] = {}  # email -> [timestamps]
+
+
+def _check_lockout(email: str) -> None:
+    now = time.time()
+    attempts = _failed_attempts.get(email, [])
+    attempts[:] = [t for t in attempts if now - t < LOCKOUT_WINDOW]
+    if len(attempts) >= FAILED_LOGIN_THRESHOLD:
+        oldest = attempts[0] if attempts else now
+        retry_after = int(LOCKOUT_DURATION - (now - oldest))
+        if retry_after > 0:
+            raise HTTPException(
+                status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                detail=f"Too many login attempts. Please try again in {retry_after} seconds.",
+                headers={"Retry-After": str(retry_after)},
+            )
+
+
+def _record_failure(email: str) -> None:
+    now = time.time()
+    if email not in _failed_attempts:
+        _failed_attempts[email] = []
+    _failed_attempts[email].append(now)
+    # Trim old entries
+    _failed_attempts[email][:] = [
+        t for t in _failed_attempts[email] if now - t < LOCKOUT_WINDOW
+    ]
+
+
+def _clear_lockout(email: str) -> None:
+    _failed_attempts.pop(email, None)
 
 # ── Refresh token store ───────────────────────────────────────────────────────
 # In-memory dict keyed by SHA-256 hash of the refresh token.
@@ -43,7 +83,7 @@ def _store_refresh(token_hash: str, payload: Dict[str, Any]) -> None:
             r.setex(
                 f"refresh:{token_hash}",
                 settings.refresh_token_expire_days * 86400,
-                str(payload),
+                json.dumps(payload),
             )
             r.close()
             return
@@ -62,7 +102,11 @@ def _get_refresh(token_hash: str) -> Optional[Dict[str, Any]]:
             raw = r.get(f"refresh:{token_hash}")
             r.close()
             if raw:
-                return eval(raw)  # simple stringified dict
+                try:
+                    return json.loads(raw)
+                except (json.JSONDecodeError, TypeError):
+                    logger.warning("Failed to parse refresh token payload from Redis")
+                    return None
             return None
     except Exception:
         logger.debug("Redis unavailable for refresh token lookup — using in-memory.")
@@ -124,6 +168,7 @@ def _issue_tokens(email: str, role: str) -> Dict[str, Any]:
 
 @router.post("/token")
 async def login_for_access_token(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
 ) -> Dict[str, Any]:
     """Authenticate and return an access token + refresh token pair.
@@ -132,10 +177,16 @@ async def login_for_access_token(
     Admin authentication is **zero-database**.
     """
     settings = BackendSettings()
+    email = form_data.username.strip().lower()
+    client_ip = request.client.host if request.client else "unknown"
+
+    # ── Brute-force lockout check ──────────────────────────────────────
+    _check_lockout(email)
 
     # ── Gate 1: Admin gateway (env-var driven, zero DB) ────────────────
-    if form_data.username == settings.admin_email:
+    if email == settings.admin_email:
         if not settings.admin_password_hash:
+            logger.warning("Admin login attempted but no password hash configured [%s]", client_ip)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Admin authentication is not configured.",
@@ -147,13 +198,17 @@ async def login_for_access_token(
             form_data.password, settings.admin_password_hash,
         )
         if not is_valid:
+            _record_failure(email)
+            logger.warning("Failed admin login attempt for %s from %s", email, client_ip)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect admin email or password.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
-        return _issue_tokens(settings.admin_email, "admin")
+        _clear_lockout(email)
+        logger.info("Admin login successful for %s from %s", email, client_ip)
+        return _issue_tokens(email, "admin")
 
     # ── Gate 2: Database users table (future-proof fallback) ───────────
     async for db in get_db():
@@ -161,10 +216,12 @@ async def login_for_access_token(
             cursor = db.conn.execute(
                 "SELECT id, email, password_hash, role FROM users "
                 "WHERE email = ? AND is_active = 1",
-                (form_data.username,),
+                (email,),
             )
             row = cursor.fetchone()
             if row is None:
+                _record_failure(email)
+                logger.warning("Failed login attempt (unknown user) for %s from %s", email, client_ip)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
                     detail="Incorrect email or password.",
@@ -174,7 +231,7 @@ async def login_for_access_token(
         except HTTPException:
             raise
         except Exception as exc:
-            logger.debug("Users table query failed for %s", form_data.username)
+            logger.debug("Users table query failed for %s from %s: %s", email, client_ip, exc)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password.",
@@ -186,12 +243,16 @@ async def login_for_access_token(
             form_data.password, user["password_hash"],
         )
         if not pw_valid:
+            _record_failure(email)
+            logger.warning("Failed login attempt (bad password) for %s from %s", email, client_ip)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
+        _clear_lockout(email)
+        logger.info("Login successful for %s from %s", email, client_ip)
         return _issue_tokens(user["email"], user.get("role", "dispatcher"))
 
     raise HTTPException(
@@ -236,15 +297,11 @@ async def refresh_access_token(
             detail="Refresh token expired — please re-authenticate.",
         )
 
-    # Issue a new access token (same email, same role)
-    new_access_token = create_access_token(
-        data={"sub": payload["email"], "role": payload["role"]},
-    )
-    return {
-        "access_token": new_access_token,
-        "token_type": "bearer",
-        "expires_in": BackendSettings().access_token_expire_minutes * 60,
-    }
+    # Rotate: delete old refresh token, issue new pair
+    _delete_refresh(token_hash)
+    email: str = payload["email"]
+    role: str = payload["role"]
+    return _issue_tokens(email, role)
 
 
 @router.post("/logout")

@@ -3,6 +3,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import get_db
+from backend.dependencies_security import require_dispatcher
 from backend.schemas.route import RouteResponse
 from database.db_manager import DatabaseManager
 
@@ -11,6 +12,7 @@ router = APIRouter(prefix="/routes", tags=["routes"])
 
 @router.get("/history", response_model=Dict[str, Any])
 async def list_route_history(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     limit: int = Query(50, ge=1, le=500),
     db: DatabaseManager = Depends(get_db),
 ):
@@ -25,6 +27,7 @@ async def list_route_history(
 
 @router.get("/history/statistics")
 async def get_route_statistics(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.route_history_service import RouteHistoryService
@@ -36,6 +39,7 @@ async def get_route_statistics(
 @router.get("/history/{route_id}", response_model=RouteResponse)
 async def get_route(
     route_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from repositories.route_repository import RouteRepository
@@ -49,6 +53,7 @@ async def get_route(
 @router.post("/calculate")
 async def calculate_route(
     data: Dict[str, Any],
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.route_service import RouteService
@@ -85,6 +90,7 @@ async def calculate_route(
 @router.post("/history/{route_id}/duplicate")
 async def duplicate_route(
     route_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.route_history_service import RouteHistoryService
@@ -96,6 +102,7 @@ async def duplicate_route(
 @router.post("/history/{route_id}/archive")
 async def archive_route(
     route_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from repositories.route_repository import RouteRepository
@@ -110,6 +117,7 @@ async def archive_route(
 @router.delete("/history/{route_id}")
 async def delete_route(
     route_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from repositories.route_repository import RouteRepository
@@ -124,6 +132,7 @@ async def delete_route(
 @router.get("/history/{route_id}/export")
 async def export_route(
     route_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     fmt: str = Query("json", pattern="^(json|csv)$"),
     db: DatabaseManager = Depends(get_db),
 ):

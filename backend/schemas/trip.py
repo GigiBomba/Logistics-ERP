@@ -1,8 +1,10 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 class TripBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     client_name: str = ""
     loading_city: str = ""
     loading_country: str = ""
@@ -17,6 +19,8 @@ class TripResponse(TripBase):
 
 
 class TripSearchParams(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     query: str = ""
     status: Optional[str] = None
     date_from: Optional[str] = None

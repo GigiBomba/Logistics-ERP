@@ -3,6 +3,7 @@ from typing import Any, Dict
 from fastapi import APIRouter, Depends, Query
 
 from backend.dependencies import get_db
+from backend.dependencies_security import require_dispatcher
 from database.db_manager import DatabaseManager
 from repositories.fleet_repository import FleetRepository
 
@@ -11,6 +12,7 @@ router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
 @router.get("/summary", response_model=Dict[str, Any])
 async def get_maintenance_summary(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     repo = FleetRepository(db)
@@ -27,6 +29,7 @@ async def get_maintenance_summary(
 
 @router.get("/cost-monthly", response_model=Dict[str, Any])
 async def get_maintenance_cost_monthly(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     since: str = Query(""),
     db: DatabaseManager = Depends(get_db),
 ):
@@ -37,6 +40,7 @@ async def get_maintenance_cost_monthly(
 
 @router.get("/cost-by-truck-monthly", response_model=Dict[str, Any])
 async def get_maintenance_cost_by_truck_monthly(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     since: str = Query(""),
     db: DatabaseManager = Depends(get_db),
 ):
@@ -47,6 +51,7 @@ async def get_maintenance_cost_by_truck_monthly(
 
 @router.get("/truck-summary", response_model=Dict[str, Any])
 async def get_maintenance_truck_summary(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     since: str = Query(""),
     db: DatabaseManager = Depends(get_db),
 ):
@@ -57,6 +62,7 @@ async def get_maintenance_truck_summary(
 
 @router.get("/top-categories", response_model=Dict[str, Any])
 async def get_maintenance_top_categories(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
     since: str = Query(""),
     db: DatabaseManager = Depends(get_db),
 ):

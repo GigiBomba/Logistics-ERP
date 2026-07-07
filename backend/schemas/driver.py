@@ -1,9 +1,11 @@
 from typing import Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class DriverBase(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = ""
     phone: str = ""
     email: str = ""
@@ -28,6 +30,8 @@ class DriverResponse(DriverBase):
 
 
 class DriverUpdate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: Optional[str] = None
     phone: Optional[str] = None
     email: Optional[str] = None
