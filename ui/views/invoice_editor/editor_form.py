@@ -18,7 +18,6 @@ Usage as standalone window (QDialog)::
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
@@ -45,11 +44,12 @@ from PySide6.QtWidgets import (
 from repositories.client_repository import ClientRepository
 from services.app_state import AppState
 from repositories.invoice_repository import INVOICE_NUMBER_FORMATS, DEFAULT_INVOICE_FORMAT_KEY as INV_DEFAULT_FMT
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from utils.editor_toolkit import DebouncedTask, export_editor_data, register_shortcuts, validate_and_highlight
 from services.invoicing.config_manager import load_company_config, save_company_config
 from services.invoicing.service import InvoiceService
-from services.operations.event_bus import SETTINGS_UPDATED, EventBus
+from services.operations.event_bus import SETTINGS_UPDATED
 from services.preferences import PreferencesManager
 from services.trip_service import TripService
 from ui.components import Btn, Card, Divider, Label, PageTitle, SectionTitle
@@ -75,7 +75,7 @@ DRAFTS_DIR = os.path.join("data", "invoice_drafts")
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-class QtInvoiceEditor(QWidget, LineItemsMixin):
+class QtInvoiceEditor(BaseView, LineItemsMixin):
     """Professional invoice editor with live preview.
 
     This is a QWidget for embedding in tab views. It uses ``ScrollableFormContainer``
@@ -99,7 +99,7 @@ class QtInvoiceEditor(QWidget, LineItemsMixin):
         self._invoice_repo = invoice_repo if invoice_repo is not None else InvoiceRepository(db)
         self._invoice_service: InvoiceService | None = None  # lazy
         self._app_state = AppState()
-        self._event_bus = EventBus()
+
 
         # ── Data state ────────────────────────────────────────────────────────
         self._clients: list[dict[str, Any]] = []
@@ -170,8 +170,7 @@ class QtInvoiceEditor(QWidget, LineItemsMixin):
 
         # i18n
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
-        self._listener_registered = True
+        self._register_i18n(self._language_callback)
 
         # Branch / Office
         self._branch: str = ""
@@ -195,15 +194,12 @@ class QtInvoiceEditor(QWidget, LineItemsMixin):
         self._add_default_addon_item()
 
         self._data_loaded: bool = False
-        self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        self._subscribe(SETTINGS_UPDATED, self._on_settings_updated)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 
     def wakeup(self) -> None:
         """Load DB-dependent data. Called when the tab becomes visible."""
-        if not getattr(self, '_listener_registered', False):
-            register_listener(self._language_callback)
-            self._listener_registered = True
         if not self._data_loaded:
             self._load_clients()
             self._load_trips()
@@ -212,10 +208,7 @@ class QtInvoiceEditor(QWidget, LineItemsMixin):
 
     def shutdown(self) -> None:
         """Clean up resources."""
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        with contextlib.suppress(Exception):
-            self._event_bus.unsubscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        super().shutdown()
 
     def _on_language_changed(self, _lang: str) -> None:
         """Refresh UI text when language changes."""

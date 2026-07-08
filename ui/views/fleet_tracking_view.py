@@ -78,14 +78,12 @@ class QtFleetTrackingView(QWidget):
         prefs=None,
         ops=None,
         on_navigate: Callable[[str, dict | None], None] | None = None,
-        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
         self.ops = ops
         self._on_navigate = on_navigate
-        self._api_client = api_client
 
         # ── State ──────────────────────────────────────────────────────
         self._map: MapWidget | None = None

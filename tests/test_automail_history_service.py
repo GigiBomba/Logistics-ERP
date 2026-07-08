@@ -67,3 +67,61 @@ def test_search_emails(service):
     results = service.search_emails("test")
     assert len(results) == 1
     assert results[0]["recipient"] == "a@b.com"
+
+
+def test_search_emails_empty(service):
+    service._repo.search_emails = MagicMock(return_value=[])
+    results = service.search_emails("nonexistent")
+    assert results == []
+
+
+def test_get_stats_empty_db(service):
+    service._repo.get_email_stats = MagicMock(return_value={"emails_sent": 0, "emails_failed": 0})
+    service._repo._fetchone = MagicMock(return_value=None)
+    stats = service.get_stats(days=30)
+    assert stats["emails_sent"] == 0
+    assert stats["emails_failed"] == 0
+    assert stats["total_outstanding_amount"] == 0.0
+    assert stats["overdue_invoice_count"] == 0
+
+
+def test_get_stats_zero_values(service):
+    service._repo.get_email_stats = MagicMock(return_value={"emails_sent": 0, "emails_failed": 0})
+    service._repo._fetchone = MagicMock(return_value={"total": 0, "cnt": 0})
+    stats = service.get_stats(days=30)
+    assert stats["emails_sent"] == 0
+    assert stats["emails_failed"] == 0
+    assert stats["total_outstanding_amount"] == 0.0
+    assert stats["overdue_invoice_count"] == 0
+
+
+def test_get_stats_different_days(service):
+    service._repo.get_email_stats = MagicMock(return_value={"emails_sent": 5, "emails_failed": 1})
+    service._repo._fetchone = MagicMock(return_value={"total": 1000.0, "cnt": 2})
+    stats = service.get_stats(days=7)
+    service._repo.get_email_stats.assert_called_with(7)
+    assert stats["emails_sent"] == 5
+
+
+def test_get_email_history_default_params(service):
+    """Default page=0 and page_size=20."""
+    service._repo.get_email_history = MagicMock(return_value=([], 0))
+    results, total = service.get_email_history()
+    service._repo.get_email_history.assert_called_with("", "", 0, 20)
+    assert results == []
+    assert total == 0
+
+
+def test_get_email_history_pagination(service):
+    """Pagination parameters are passed through."""
+    service._repo.get_email_history = MagicMock(return_value=([{"id": 1}], 50))
+    results, total = service.get_email_history(page=2, page_size=10)
+    service._repo.get_email_history.assert_called_with("", "", 2, 10)
+    assert total == 50
+
+
+def test_get_email_history_empty(service):
+    service._repo.get_email_history = MagicMock(return_value=([], 0))
+    results, total = service.get_email_history(search="zzz_nonexistent_zzz")
+    assert results == []
+    assert total == 0

@@ -38,14 +38,14 @@ from PySide6.QtWidgets import (
 )
 
 from services.document_service import IMAGE_MIME, DocumentService
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from services.operations.event_bus import (
     DOCUMENT_OCR_RAN,
     DOCUMENT_UPLOADED,
     INVOICE_CREATED,
     PROFORMA_CREATED,
     RECEIPT_CREATED,
-    EventBus,
 )
 from ui.components import Btn, FieldLabel
 from ui.theme import COLORS, S
@@ -54,6 +54,7 @@ from ui.widgets import (
     StyledComboBox,
     StyledLineEdit,
 )
+from ui.widgets.debounced_line_edit import DebouncedLineEdit
 from ui.widgets.layout_utils import clear_layout
 
 from ui.views.document_center.document_actions import DocumentActionsMixin
@@ -256,7 +257,7 @@ class _DocRow(QFrame):
         self._on_toggle_select(self._doc_id, checked)
 
 
-class QtDocumentCenterView(QWidget, DocumentActionsMixin):
+class QtDocumentCenterView(BaseView, DocumentActionsMixin):
     """Document management view for embedding in a QStackedWidget.
 
     Three-panel layout:
@@ -271,6 +272,7 @@ class QtDocumentCenterView(QWidget, DocumentActionsMixin):
         db=None,
         prefs: Any = None,
         ops: Any = None,
+        document_service=None,
         api_client: Any = None,
     ):
         super().__init__(parent)
@@ -278,7 +280,7 @@ class QtDocumentCenterView(QWidget, DocumentActionsMixin):
         self.prefs = prefs
         self.ops = ops
         self._api_client = api_client
-        self._service = DocumentService(db) if db is not None else None
+        self._service = document_service if document_service is not None else (DocumentService(db) if db is not None else None)
         self._page = 0
         self._total = 0
         self._total_pages = 0
@@ -303,21 +305,19 @@ class QtDocumentCenterView(QWidget, DocumentActionsMixin):
 
         # ── i18n ──────────────────────────────────────────────────────────
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
 
         # ── Event bus subscriptions — auto-refresh when docs are added ───
-        self._event_bus = EventBus()
-        self._event_bus.subscribe(DOCUMENT_UPLOADED, self._on_document_event)
-        self._event_bus.subscribe(INVOICE_CREATED, self._on_document_event)
-        self._event_bus.subscribe(PROFORMA_CREATED, self._on_document_event)
-        self._event_bus.subscribe(RECEIPT_CREATED, self._on_document_event)
-        self._event_subscribed = True
+        self._subscribe(DOCUMENT_UPLOADED, self._on_document_event)
+        self._subscribe(INVOICE_CREATED, self._on_document_event)
+        self._subscribe(PROFORMA_CREATED, self._on_document_event)
+        self._subscribe(RECEIPT_CREATED, self._on_document_event)
 
         # ── Build UI ──────────────────────────────────────────────────────
         self._build_ui()
 
         # ── Cleanup hook ──────────────────────────────────────────────────
-        self.destroyed.connect(self._cleanup)
+        self.destroyed.connect(self.shutdown)
 
     # ------------------------------------------------------------------
     # Public API
@@ -347,24 +347,6 @@ class QtDocumentCenterView(QWidget, DocumentActionsMixin):
 
     def shutdown(self) -> None:
         """Clean up listeners and resources."""
-        self._cleanup()
-
-    # ------------------------------------------------------------------
-    # Lifecycle
-    # ------------------------------------------------------------------
-
-    def _cleanup(self) -> None:
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        if getattr(self, "_event_subscribed", False):
-            try:
-                self._event_bus.unsubscribe(DOCUMENT_UPLOADED, self._on_document_event)
-                self._event_bus.unsubscribe(INVOICE_CREATED, self._on_document_event)
-                self._event_bus.unsubscribe(PROFORMA_CREATED, self._on_document_event)
-                self._event_bus.unsubscribe(RECEIPT_CREATED, self._on_document_event)
-            except Exception:
-                pass
-            self._event_subscribed = False
         self._stop_ocr_worker()
         if hasattr(self, "_api_dashboard_view") and self._api_dashboard_view is not None:
             if hasattr(self._api_dashboard_view, "shutdown"):
@@ -372,6 +354,7 @@ class QtDocumentCenterView(QWidget, DocumentActionsMixin):
                     self._api_dashboard_view.shutdown()
         # Eject admin panel if it was injected
         self._eject_admin_tab()
+        super().shutdown()
 
     def _stop_ocr_worker(self) -> None:
         """Cancel / discard the on-demand OCR worker if running."""
@@ -856,10 +839,10 @@ class QtDocumentCenterView(QWidget, DocumentActionsMixin):
         toolbar_layout.addWidget(self._sort_combo)
 
         # Search entry
-        self._search_entry = StyledLineEdit(
+        self._search_entry = DebouncedLineEdit(
             toolbar, placeholder=t("docs.search_placeholder"),
         )
-        self._search_entry.textChanged.connect(self._on_search)
+        self._search_entry.debouncedTextChanged.connect(self._on_search)
         toolbar_layout.addWidget(self._search_entry, 1)
 
         # Select all

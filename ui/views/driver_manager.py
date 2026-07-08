@@ -33,16 +33,15 @@ from PySide6.QtWidgets import (
 )
 
 from repositories.driver_repository import DriverRepository
-from repositories.trip_repository import TripRepository
 from services.driver_truck_service import DriverTruckService
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
 from services.operations.event_bus import (
     DRIVER_CREATED,
     DRIVER_DELETED,
     DRIVER_UPDATED,
     TRUCK_UPDATED,
-    EventBus,
 )
+from ui.base_view import BaseView
 from ui.components import (
     Btn,
     Card,
@@ -61,6 +60,7 @@ from ui.widgets import (
     StyledTableWidget,
     field,
 )
+from ui.widgets.debounced_line_edit import DebouncedLineEdit
 
 logger = logging.getLogger(__name__)
 
@@ -91,56 +91,6 @@ def _columns_for_table() -> list[tuple]:
     """Return ``(cid, label, width)`` tuples for ``StyledTableWidget``."""
     labels = _resolve_column_labels()
     return [(cid, labels[i], width) for i, (cid, _, width, _) in enumerate(_COLUMNS)]
-
-
-# ── Search line edit (focus-driven placeholder) ────────────────────────────────
-
-
-class _SearchLineEdit(StyledLineEdit):
-    """Single-line input with focus-driven placeholder behaviour.
-
-    Mirrors the original ``ui/driver_manager.py`` pattern where the
-    placeholder is shown as actual text and cleared on focus.
-    """
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self._placeholder: str = ""
-        self._user_typed: bool = False
-
-    # ── Public API ─────────────────────────────────────────────────────────
-
-    def set_placeholder(self, text: str) -> None:
-        self._placeholder = text
-        if not self._user_typed:
-            blocked = self.blockSignals(True)
-            self.setText(text)
-            self.blockSignals(blocked)
-
-    def search_value(self) -> str:
-        if not self._user_typed:
-            return ""
-        return self.text().strip()
-
-    # ── Event overrides ────────────────────────────────────────────────────
-
-    def focusInEvent(self, event) -> None:
-        if not self._user_typed:
-            self.clear()
-        self._user_typed = True
-        super().focusInEvent(event)
-
-    def focusOutEvent(self, event) -> None:
-        if not self.text().strip():
-            self._user_typed = False
-            blocked = self.blockSignals(True)
-            self.setText(self._placeholder)
-            self.blockSignals(blocked)
-        super().focusOutEvent(event)
-
-    def keyPressEvent(self, event) -> None:
-        self._user_typed = True
-        super().keyPressEvent(event)
 
 
 # ── Driver form dialog (add / edit) ────────────────────────────────────────────
@@ -358,7 +308,7 @@ class QtDriverFormDialog(QDialog):
 # ── Main view ──────────────────────────────────────────────────────────────────
 
 
-class QtDriverManager(QWidget):
+class QtDriverManager(BaseView):
     """Driver management view for embedding in ``QStackedWidget``.
 
     Provides KPI cards, a searchable driver table, CRUD operations,
@@ -370,43 +320,26 @@ class QtDriverManager(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs: dict | None = None,
-        tacho_activity_repo=None,
-        api_client=None,
+        driver_svc=None,
+        trip_svc=None,
+        dta_svc=None,
+        tacho_repo=None,
     ):
         super().__init__(parent)
         self.db = db
         self._prefs = prefs or {}
-        self._api_client = api_client
-
         self._event_bus = EventBus()
-        if self._api_client is not None:
-            from client.remote_driver_service import RemoteDriverService
-            self._driver_repo = RemoteDriverService(self._api_client)
-        else:
-            self._driver_repo = DriverRepository(db) if db is not None else None
-        if self._api_client is not None:
-            from client.remote_services import RemoteTripService
-            self._trip_repo = RemoteTripService(self._api_client)
-        else:
-            self._trip_repo = TripRepository(db) if db is not None else None
-        if self._api_client is not None:
-            from client.remote_driver_service import RemoteDriverService
-            self._dta_service = RemoteDriverService(self._api_client)
-        else:
-            self._dta_service = DriverTruckService(db) if db is not None else None
-        from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
-        if self._api_client is not None:
-            from client.remote_driver_service import RemoteDriverService
-            self._tacho_activity_repo = RemoteDriverService(self._api_client)
-        else:
-            self._tacho_activity_repo = tacho_activity_repo if tacho_activity_repo is not None else TachoDriverActivityRepository(db)
+        self._driver_repo = driver_svc
+        self._trip_repo = trip_svc
+        self._dta_service = dta_svc
+        self._tacho_activity_repo = tacho_repo
 
         self._kpi_value_labels: dict[str, MonoLabel] = {}
         self._kpi_strip_layout: QHBoxLayout | None = None
-        self._search_timer: QTimer | None = None
+
 
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
 
         self._build_ui()
         self._subscribe_events()
@@ -424,9 +357,7 @@ class QtDriverManager(QWidget):
         """Called when this view is hidden / removed from the stack."""
         if hasattr(self, "_search_timer") and self._search_timer is not None:
             self._search_timer.stop()
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        self._unsubscribe_events()
+        super().shutdown()
 
     def _cleanup(self) -> None:
         self.shutdown()
@@ -435,12 +366,7 @@ class QtDriverManager(QWidget):
 
     def _subscribe_events(self) -> None:
         for evt in (DRIVER_CREATED, DRIVER_UPDATED, DRIVER_DELETED, TRUCK_UPDATED):
-            self._event_bus.subscribe(evt, self._on_bus_event)
-
-    def _unsubscribe_events(self) -> None:
-        for evt in (DRIVER_CREATED, DRIVER_UPDATED, DRIVER_DELETED, TRUCK_UPDATED):
-            with contextlib.suppress(Exception):
-                self._event_bus.unsubscribe(evt, self._on_bus_event)
+            self._subscribe(evt, self._on_bus_event)
 
     def _on_bus_event(self, ev: dict) -> None:
         """Schedule a refresh on the UI thread after any relevant event."""
@@ -457,7 +383,7 @@ class QtDriverManager(QWidget):
         labels = _resolve_column_labels()
         self.table.setHorizontalHeaderLabels(labels)
 
-        self._search_entry.set_placeholder(t("driver_manager.search_placeholder"))
+        self._search_entry.setPlaceholderText(t("driver_manager.search_placeholder"))
         self._title_label.setText(t("driver_manager.title"))
 
         self._add_btn.setText("+ " + t("driver_manager.add_driver"))
@@ -539,23 +465,15 @@ class QtDriverManager(QWidget):
         search_layout = QHBoxLayout(search_row)
         search_layout.setContentsMargins(0, 0, 0, 0)
 
-        self._search_entry = _SearchLineEdit()
-        self._search_entry.set_placeholder(t("driver_manager.search_placeholder"))
+        self._search_entry = DebouncedLineEdit(
+            placeholder=t("driver_manager.search_placeholder"),
+        )
         self._search_entry.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-
-        # Debounced search: 200 ms after last keystroke
-        self._search_timer = QTimer(self)
-        self._search_timer.setSingleShot(True)
-        self._search_timer.timeout.connect(self._filter_table)
-        self._search_entry.textChanged.connect(self._on_search_debounce)
+        self._search_entry.debouncedTextChanged.connect(self._filter_table)
 
         search_layout.addWidget(self._search_entry, 1)
 
         parent_layout.addWidget(search_row)
-
-    def _on_search_debounce(self) -> None:
-        if self._search_timer is not None:
-            self._search_timer.start(200)
 
     def _build_table(self, parent_layout: QVBoxLayout) -> None:
         columns = _columns_for_table()
@@ -733,7 +651,7 @@ class QtDriverManager(QWidget):
 
     def _filter_table(self) -> None:
         """Filter visible rows based on search text."""
-        query = self._search_entry.search_value().lower()
+        query = self._search_entry.text().strip().lower()
         for r in range(self.table.rowCount()):
             visible = False
             if not query:

@@ -28,7 +28,8 @@ from PySide6.QtWidgets import (
 )
 
 from repositories.automail_repository import AutoMailRepository
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from services.invoicing.config_manager import load_company_config, save_company_config
 from services.operations.event_bus import SETTINGS_UPDATED, EventBus
 from services.operations.notification_center import NotificationCenter
@@ -53,7 +54,7 @@ logger = logging.getLogger(__name__)
 # ══════════════════════════════════════════════════════════════════════════════
 
 
-class QtSettingsView(SettingsFieldsMixin, QWidget):
+class QtSettingsView(SettingsFieldsMixin, BaseView):
     """Settings page with form fields organized in section cards.
 
     Designed for embedded use in a QStackedWidget.  Provides company
@@ -79,8 +80,6 @@ class QtSettingsView(SettingsFieldsMixin, QWidget):
             self._automail_repo = None
         else:
             self._automail_repo = automail_repo if automail_repo is not None else AutoMailRepository(db)
-        self._event_bus = EventBus()
-
         # ── i18n tracking ────────────────────────────────────────────────
         self._i18n_labels: list[tuple[QLabel, str]] = []
         self._i18n_buttons: list[tuple[ActionButton, str]] = []
@@ -111,7 +110,7 @@ class QtSettingsView(SettingsFieldsMixin, QWidget):
 
         # ── Build UI ─────────────────────────────────────────────────────
         self._build_ui()
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Lifecycle
@@ -148,7 +147,7 @@ class QtSettingsView(SettingsFieldsMixin, QWidget):
 
     def shutdown(self) -> None:
         """Clean up resources when the view is destroyed / hidden."""
-        unregister_listener(self._language_callback)
+        super().shutdown()
 
     # ──────────────────────────────────────────────────────────────────────────
     #  i18n

@@ -1,4 +1,6 @@
 """Tests for CostEngineService."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -93,3 +95,75 @@ def test_toll_rate_from_config(mock_config):
     engine = CostEngineService(fuel_price_eur_per_liter=1.5)
     result = engine.estimate(100.0, {"fuel_consumption_l_per_100km": 30}, country_code="RO")
     assert result["toll_cost"] == pytest.approx(100.0 * 0.12 * 1.0 * 0.5)
+
+
+def test_estimate_negative_distance(engine):
+    """Negative distance should be treated like zero (returns all zeroes)."""
+    result = engine.estimate(-100.0, {"fuel_consumption_l_per_100km": 30}, country_code="RO")
+    assert result["fuel_liters"] == 0.0
+    assert result["fuel_cost"] == 0.0
+    assert result["toll_cost"] == 0.0
+    assert result["total_cost"] == 0.0
+
+
+def test_estimate_large_distance(engine):
+    """Very large distance should still produce sensible results."""
+    result = engine.estimate(1_000_000.0, {"fuel_consumption_l_per_100km": 30}, country_code="RO")
+    assert result["fuel_liters"] == 300_000.0
+    assert result["fuel_cost"] == 450_000.0
+    assert result["toll_cost"] > 0
+    assert result["total_cost"] == pytest.approx(result["fuel_cost"] + result["toll_cost"])
+
+
+def test_estimate_unknown_country_uses_default_factor(engine):
+    """An unrecognised country code should fall back to DEFAULT factor."""
+    result = engine.estimate(100.0, {"fuel_consumption_l_per_100km": 30}, country_code="XX")
+    # DEFAULT country factor is 1.0 (same as RO)
+    result_ro = engine.estimate(100.0, {"fuel_consumption_l_per_100km": 30}, country_code="RO")
+    assert result["toll_cost"] == result_ro["toll_cost"]
+
+
+def test_estimate_fallback_consumption_alt_key(engine):
+    """When fuel_consumption_l_per_100km is missing, fall back to fuel_consumption."""
+    result = engine.estimate(100.0, {"fuel_consumption": 30}, country_code="RO")
+    expected_liters = (100.0 / 100.0) * 30.0
+    assert result["fuel_liters"] == expected_liters
+
+
+def test_estimate_no_consumption_keys_uses_default(engine):
+    """When no consumption key is present at all, default to 34.0 L/100km."""
+    result = engine.estimate(100.0, {}, country_code="RO")
+    expected_liters = (100.0 / 100.0) * 34.0
+    assert result["fuel_liters"] == expected_liters
+
+
+def test_estimate_zero_fuel_price():
+    """Zero fuel price should result in zero fuel cost."""
+    engine = CostEngineService(fuel_price_eur_per_liter=0.0)
+    result = engine.estimate(100.0, {"fuel_consumption_l_per_100km": 30}, country_code="RO")
+    assert result["fuel_cost"] == 0.0
+    assert result["total_cost"] == pytest.approx(result["toll_cost"])
+
+
+@patch("services.cost_engine.FuelPriceService")
+def test_estimate_route_with_road_class_as_float(mock_fps):
+    """Route details road_class as a float should be used for toll calculation."""
+    mock_fps_instance = MagicMock()
+    mock_fps_instance.get_price.return_value = 1.5
+    mock_fps.return_value = mock_fps_instance
+    engine = CostEngineService(country_code="RO")
+    result = engine.estimate(100.0, {"fuel_consumption_l_per_100km": 30},
+                             route_details={"road_class": 0.8}, country_code="RO")
+    # toll = 100 * DEFAULT_TOLL_RATE * 1.0 * 0.8
+    from config import Config
+    expected_toll = 100.0 * Config.DEFAULT_TOLL_RATE * 1.0 * 0.8
+    assert result["toll_cost"] == pytest.approx(expected_toll)
+
+
+def test_estimate_rounding_precision(engine):
+    """Verify rounding to 2 decimal places."""
+    result = engine.estimate(1.0, {"fuel_consumption_l_per_100km": 30})
+    # fuel_liters = (1/100)*30 = 0.3 → rounded to 2 dp → 0.3
+    assert result["fuel_liters"] == 0.3
+    # fuel_cost = 0.3 * 1.5 = 0.45
+    assert result["fuel_cost"] == 0.45

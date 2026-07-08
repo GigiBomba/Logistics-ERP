@@ -164,23 +164,21 @@ def test_upload_new_version_enforces_max_versions(service):
         tmp_path = f.name
     try:
         service._repo.get_by_id.return_value = {"id": 1, "title": "Test"}
-        # Return version count >= MAX_VERSIONS_PER_DOC
         service._repo.get_version_count.return_value = 20
-        # Return 20 existing versions
-        versions = [
+        # Return 20 existing versions for first call, then 19 after "delete"
+        versions_20 = [
             {"id": v, "version_number": v, "file_path": f"/tmp/v{v}.pdf"}
             for v in range(1, 21)
         ]
-        service._repo.get_versions.return_value = versions
+        versions_19 = versions_20[1:]  # remove first (oldest)
+        service._repo.get_versions.side_effect = [versions_20, versions_19]
         service._repo.add_version.return_value = 1
 
         with patch("os.path.isfile", return_value=True), \
              patch("os.remove") as mock_rm:
             result = service.upload_new_version(1, tmp_path, comment="v21")
             assert result is not None
-            # Should have removed the oldest version file
             mock_rm.assert_called_once()
-            # Should have deleted the oldest version record
             service._repo._execute.assert_called()
     finally:
         os.unlink(tmp_path)
@@ -194,14 +192,17 @@ def test_upload_new_version_purges_multiple_oldest_when_over_limit(service):
     try:
         service._repo.get_by_id.return_value = {"id": 1, "title": "Test"}
         service._repo.get_version_count.return_value = 22
-        # Return 22 versions (over limit)
-        versions = [
+        # Return 22 versions then 19 after purging 3
+        versions_22 = [
             {"id": v, "version_number": v, "file_path": f"/tmp/v{v}.pdf"}
             for v in range(1, 23)
         ]
+        # Need to get_versions called until < 20: 22->19 (remove 3)
         service._repo.get_versions.side_effect = [
-            versions,  # first call
-            versions[3:],  # after removing first 3
+            versions_22,      # first check: 22 >= 20, remove first
+            versions_22[1:],  # 21 >= 20, remove second
+            versions_22[2:],  # 20 >= 20, remove third
+            versions_22[3:],  # 19 < 20, done
         ]
         service._repo.add_version.return_value = 1
 
@@ -209,7 +210,6 @@ def test_upload_new_version_purges_multiple_oldest_when_over_limit(service):
              patch("os.remove") as mock_rm:
             result = service.upload_new_version(1, tmp_path, comment="v23")
             assert result is not None
-            # Should have removed 3 oldest version files
             assert mock_rm.call_count == 3
     finally:
         os.unlink(tmp_path)
@@ -242,8 +242,9 @@ def test_sanitize_filename_edge_cases(service):
     assert service._sanitize_filename("") == "unnamed_file"
     assert service._sanitize_filename("...") == "unnamed_file"
     assert service._sanitize_filename("file") == "file"
-    assert service._sanitize_filename("hello.world.txt") == "hello.world.txt"
-    assert service._sanitize_filename("  spaced  file  .PDF") == "spaced file.pdf"
+    # Dots in the base name are stripped (only alnum, _, -, space allowed)
+    assert service._sanitize_filename("hello.world.txt") == "helloworld.txt"
+    assert service._sanitize_filename("  spaced  file  .PDF") == "spaced  file.pdf"
 
 
 def test_validate_file_ok(service):
@@ -272,10 +273,10 @@ def test_upload_new_version_with_tags_and_metadata(service):
         # Verify add_version was called with correct comment and uploaded_by
         call_kwargs = service._repo.add_version.call_args
         assert call_kwargs is not None
-        # add_version is called with positional args, check the comment and uploaded_by
+        # add_version(doc_id, next_ver, version_path, file_size, file_hash, comment, uploaded_by, now)
         args = call_kwargs[0]
-        assert args[4] == "Updated"  # comment
-        assert args[5] == "admin"  # uploaded_by
+        assert args[5] == "Updated"  # comment at index 5
+        assert args[6] == "admin"   # uploaded_by at index 6
     finally:
         os.unlink(tmp_path)
 

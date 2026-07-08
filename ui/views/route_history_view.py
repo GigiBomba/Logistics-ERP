@@ -41,6 +41,7 @@ from ui.widgets import (
     StyledCheckBox,
     StyledTableWidget,
 )
+from ui.widgets.debounced_line_edit import DebouncedLineEdit
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +133,9 @@ class QtRouteHistoryView(QWidget):
         bar_layout.setContentsMargins(0, SP["2"], 0, SP["2"])
         bar_layout.setSpacing(SP["2"])
 
-        self.e_search = QLineEdit()
-        self.e_search.setPlaceholderText(t("route_history.search_placeholder"))
+        self.e_search = DebouncedLineEdit(placeholder=t("route_history.search_placeholder"))
         self.e_search.returnPressed.connect(self._reset_and_load)
+        self.e_search.debouncedTextChanged.connect(self._reset_and_load)
         bar_layout.addWidget(self.e_search)
 
         self.c_profile = QComboBox()

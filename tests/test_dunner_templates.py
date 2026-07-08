@@ -235,3 +235,82 @@ class TestEdgeCases:
         assert "INV/123" in subject
         assert "$1,000.00" in body
         assert "O'Brien" in body or "O&Brien" in body
+
+
+class TestTemplateDay30Expanded:
+    """Additional tests for template_day_30."""
+
+    def test_body_contains_due_today_phrase(self):
+        _, body = template_day_30(
+            SAMPLE_INVOICE, SAMPLE_AMOUNT, SAMPLE_CURRENCY, SAMPLE_DATE, SAMPLE_COMPANY,
+        )
+        assert "due today" in body.lower()
+
+    def test_body_mentions_remittance_advice(self):
+        _, body = template_day_30(
+            SAMPLE_INVOICE, SAMPLE_AMOUNT, SAMPLE_CURRENCY, SAMPLE_DATE, SAMPLE_COMPANY,
+        )
+        assert "remittance" in body.lower()
+
+
+class TestTemplateDay33Expanded:
+    """Additional tests for template_day_33."""
+
+    def test_body_contains_3_days_ago(self):
+        _, body = template_day_33(
+            SAMPLE_INVOICE, SAMPLE_AMOUNT, SAMPLE_CURRENCY, SAMPLE_DATE, SAMPLE_COMPANY,
+        )
+        assert "3 days ago" in body.lower()
+
+    def test_body_mentions_transaction_receipt(self):
+        _, body = template_day_33(
+            SAMPLE_INVOICE, SAMPLE_AMOUNT, SAMPLE_CURRENCY, SAMPLE_DATE, SAMPLE_COMPANY,
+        )
+        assert "receipt" in body.lower() or "transaction" in body.lower()
+
+
+class TestAllSubjectsDistinct:
+    """All three templates should have distinct subject lines."""
+
+    def test_subjects_are_distinct(self):
+        s27, _ = template_day_27(
+            SAMPLE_INVOICE, SAMPLE_AMOUNT, SAMPLE_CURRENCY, SAMPLE_DATE, SAMPLE_COMPANY,
+        )
+        s30, _ = template_day_30(
+            SAMPLE_INVOICE, SAMPLE_AMOUNT, SAMPLE_CURRENCY, SAMPLE_DATE, SAMPLE_COMPANY,
+        )
+        s33, _ = template_day_33(
+            SAMPLE_INVOICE, SAMPLE_AMOUNT, SAMPLE_CURRENCY, SAMPLE_DATE, SAMPLE_COMPANY,
+        )
+        assert s27 != s30
+        assert s30 != s33
+        assert s27 != s33
+
+
+class TestRenderTemplateExpanded:
+    """Additional tests for render_template."""
+
+    def test_replaces_overlapping_keys(self):
+        """Overlapping keys should be replaced correctly (longer key after shorter)."""
+        result = render_template("{key} and {key_extra}", {"key": "A", "key_extra": "B"})
+        assert result == "A and B"
+
+    def test_with_html_content(self):
+        """HTML content in values should be treated as literal (no escaping)."""
+        result = render_template("<p>{name}</p>", {"name": "<b>Bold</b>"})
+        assert result == "<p><b>Bold</b></p>"
+
+    def test_empty_template_string(self):
+        """Empty template string should return empty string."""
+        result = render_template("", {"key": "value"})
+        assert result == ""
+
+    def test_context_with_non_string_values(self):
+        """Non-string context values should be converted to strings."""
+        result = render_template("{a} + {b} = {c}", {"a": 1, "b": 2.5, "c": True})
+        assert result == "1 + 2.5 = True"
+
+    def test_newlines_are_preserved(self):
+        """Newlines in the template should be preserved."""
+        result = render_template("Line1\nLine2\n{name}", {"name": "Test"})
+        assert result == "Line1\nLine2\nTest"

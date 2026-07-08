@@ -35,7 +35,8 @@ from services.client_service import ClientService
 from services.conflict_service import TripConflictService
 from services.driver_truck_service import DriverTruckService
 from services.fleet_service import FleetService
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from services.operations.alert_manager import AlertManager, AlertType
 from services.operations.event_bus import (
     ALERT_CREATED,
@@ -49,7 +50,6 @@ from services.operations.event_bus import (
     TRUCK_CREATED,
     TRUCK_DELETED,
     TRUCK_UPDATED,
-    EventBus,
 )
 from services.operations.trip_status_engine import TripStatusEngine
 from services.trip_service import TripService
@@ -75,7 +75,7 @@ from .board_state import (
 logger = logging.getLogger(__name__)
 
 
-class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, QWidget):
+class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
     """Kanban dispatch board for trip management.
 
     Embedded in a QStackedWidget in the main window.  Provides three tabs:
@@ -137,7 +137,6 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, QWidget):
             self._client_service = None
             self._dta_service = None
             self._conflict_service = None
-        self._event_bus = EventBus()
         self._alert_mgr = AlertManager()
 
         # Caches
@@ -166,7 +165,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, QWidget):
 
         # i18n
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
 
         # Cross-thread marshal
         self._dispatchSignal.connect(self._run_dispatched)
@@ -178,9 +177,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, QWidget):
         self._start_load()
 
         # ── Auto-refresh timer ───────────────────────────────────────────────
-        self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self._start_load)
-        self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
+        self._refresh_timer = self._add_timer(self.REFRESH_INTERVAL_MS, self._start_load)
 
     # ══════════════════════════════════════════════════════════════════════════
     # UI Construction
@@ -414,16 +411,9 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, QWidget):
             DRIVER_DELETED: self._on_driver_deleted_ev,
         }
         for event_type, handler in handlers.items():
-            self._event_bus.subscribe(event_type, handler)
+            self._subscribe(event_type, handler)
             self._event_handlers[event_type] = handler
         logger.debug("QtDispatchBoardView subscribed to %d event types", len(handlers))
-
-    def _unsubscribe_events(self) -> None:
-        for event_type, handler in list(self._event_handlers.items()):
-            with contextlib.suppress(Exception):
-                self._event_bus.unsubscribe(event_type, handler)
-        self._event_handlers.clear()
-        logger.debug("QtDispatchBoardView unsubscribed all events")
 
     # ── Dispatch helpers ─────────────────────────────────────────────────────
 
@@ -733,7 +723,6 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, QWidget):
         """Called when the view becomes visible (e.g. tab switch)."""
         if self._destroyed:
             return
-        self._unsubscribe_events()
         self._subscribe_events()
         self._start_load()
         if self._refresh_timer is not None and not self._refresh_timer.isActive():
@@ -769,9 +758,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, QWidget):
                 self._detail_panel.close()
             self._detail_panel = None
 
-        self._unsubscribe_events()
         with contextlib.suppress(Exception):
             self._status_engine.shutdown()
 
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
+        super().shutdown()

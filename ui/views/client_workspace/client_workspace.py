@@ -39,6 +39,7 @@ from ui.widgets import (
     StyledTableWidget,
     field,
 )
+from ui.widgets.debounced_line_edit import DebouncedLineEdit
 from ui.views.client_workspace.client_details import _QtClientDetailsTab
 
 # ======================================================================
@@ -93,60 +94,6 @@ def _invoice_columns_for_table() -> list[tuple]:
 
 
 # ======================================================================
-# Search entry  (tk-style placeholder)
-# ======================================================================
-
-
-class _SearchLineEdit(StyledLineEdit):
-    """Search input with focus-driven placeholder behaviour."""
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self._placeholder: str = ""
-        self._user_typed: bool = False
-
-    # ------------------------------------------------------------------
-    # Public API
-    # ------------------------------------------------------------------
-
-    def set_placeholder(self, text: str) -> None:
-        """Update the placeholder text (shown when user has not typed)."""
-        self._placeholder = text
-        if not self._user_typed:
-            blocked = self.blockSignals(True)
-            self.setText(text)
-            self.blockSignals(blocked)
-
-    def search_value(self) -> str:
-        """Return the current search query, or ``""`` if user never typed."""
-        if not self._user_typed:
-            return ""
-        return self.text().strip()
-
-    # ------------------------------------------------------------------
-    # Event overrides
-    # ------------------------------------------------------------------
-
-    def focusInEvent(self, event) -> None:
-        if not self._user_typed:
-            self.clear()
-        self._user_typed = True
-        super().focusInEvent(event)
-
-    def focusOutEvent(self, event) -> None:
-        if not self.text().strip():
-            self._user_typed = False
-            blocked = self.blockSignals(True)
-            self.setText(self._placeholder)
-            self.blockSignals(blocked)
-        super().focusOutEvent(event)
-
-    def keyPressEvent(self, event) -> None:
-        self._user_typed = True
-        super().keyPressEvent(event)
-
-
-# ======================================================================
 # Main workspace
 # ======================================================================
 
@@ -160,18 +107,13 @@ class QtClientWorkspace(QWidget):
         db=None,
         prefs: dict | None = None,
         ops=None,
-        api_client=None,
+        client_service=None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
         self.ops = ops
-        self._api_client = api_client
-        if self._api_client is not None:
-            from client.remote_services import RemoteClientService
-            self.service = RemoteClientService(self._api_client)
-        else:
-            self.service = ClientService(db) if db is not None else None
+        self.service = client_service
         self._selected_id: int | None = None
         self._all_clients: list[dict[str, Any]] = []
 
@@ -215,7 +157,7 @@ class QtClientWorkspace(QWidget):
     def _update_translations(self) -> None:
         labels = _resolve_client_labels()
         self._table.setHorizontalHeaderLabels(labels)
-        self._search_entry.set_placeholder(t("common.search"))
+        self._search_entry.setPlaceholderText(t("common.search"))
         self._title_label.setText(t("client.title"))
         self._new_btn.setText("+ " + t("client.new_button"))
         self._edit_btn.setText(t("client.edit_button"))
@@ -284,10 +226,11 @@ class QtClientWorkspace(QWidget):
 
         top_layout.addSpacing(SP["3"])
 
-        self._search_entry = _SearchLineEdit()
-        self._search_entry.set_placeholder(t("common.search"))
+        self._search_entry = DebouncedLineEdit(
+            placeholder=t("common.search"),
+        )
         self._search_entry.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._search_entry.textChanged.connect(self._on_search_changed)
+        self._search_entry.debouncedTextChanged.connect(self._on_search_changed)
         top_layout.addWidget(self._search_entry, 1)
 
         top_layout.addStretch()
@@ -386,7 +329,7 @@ class QtClientWorkspace(QWidget):
         if self.service is None:
             return
 
-        query = self._search_entry.search_value()
+        query = self._search_entry.text().strip()
         if query:
             self._all_clients = self.service.search_advanced(
                 query, include_inactive=True, limit=200,

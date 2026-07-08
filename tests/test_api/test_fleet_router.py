@@ -32,14 +32,14 @@ class TestFleetRouter:
 
     def test_get_truck_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        truck = {"id": 1, "plate_number": "AB123CD", "model": "Volvo FH"}
+        truck = {"id": 1, "plate": "AB123CD", "brand": "Volvo", "year": 2022}
         mocks["fleet_service"].get_truck.return_value = truck
 
         resp = client.get(f"{BASE}/trucks/1")
         assert resp.status_code == 200
         body = resp.json()
         assert body["id"] == 1
-        assert body["plate_number"] == "AB123CD"
+        assert body["plate"] == "AB123CD"
 
     def test_get_truck_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks

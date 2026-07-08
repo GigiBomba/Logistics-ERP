@@ -18,7 +18,8 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.theme import COLORS, S
-from ui.widgets import ActionButton, StyledCheckBox, StyledLineEdit
+from ui.widgets import ActionButton, StyledCheckBox
+from ui.widgets.debounced_line_edit import DebouncedLineEdit
 
 STATUS_OPTIONS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
 
@@ -76,12 +77,11 @@ class QtDispatchSearchBar(QFrame):
         row_layout.addWidget(icon)
 
         # Search entry
-        self._entry = StyledLineEdit(
+        self._entry = DebouncedLineEdit(
             parent=row,
             placeholder=t("dispatch_board.search_placeholder"),
-            height=30,
         )
-        self._entry.textEdited.connect(self._fire_search)
+        self._entry.debouncedTextChanged.connect(self._fire_search)
         row_layout.addWidget(self._entry, 1)
 
         # Status checkboxes

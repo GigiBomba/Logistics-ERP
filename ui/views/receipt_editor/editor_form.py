@@ -5,7 +5,6 @@ Modeled after ``QtProformaEditor`` per the Operion pattern.
 """
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
@@ -32,12 +31,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from utils.editor_toolkit import DebouncedTask, export_editor_data, mark_field_invalid, register_shortcuts, validate_and_highlight
 from services.invoicing.config_manager import load_company_config
 from repositories.receipt_repository import RECEIPT_NUMBER_FORMATS, DEFAULT_FORMAT_KEY
 from services.invoicing.receipt_service import ReceiptService
-from services.operations.event_bus import SETTINGS_UPDATED, EventBus
+from services.operations.event_bus import SETTINGS_UPDATED
 from services.preferences import PreferencesManager
 from ui.components import Btn, Card, CardHeader, Divider, Label, PageTitle, SectionTitle
 from ui.theme import COLORS, S
@@ -88,7 +88,7 @@ ATTACHMENT_TYPES = [
 ]
 
 
-class QtReceiptEditor(QWidget, LineItemsMixin):
+class QtReceiptEditor(BaseView, LineItemsMixin):
     """Professional receipt editor.
 
     Provides a scrollable form on the left and a QWebEngineView
@@ -112,7 +112,7 @@ class QtReceiptEditor(QWidget, LineItemsMixin):
         self._client_repo_instance = client_repo
         self._fleet_repo_instance = fleet_repo
         self._invoice_repo_instance = invoice_repo
-        self._event_bus = EventBus()
+
 
         # ── State ────────────────────────────────────────────────────
         self._receipt_number: str = ""
@@ -193,8 +193,7 @@ class QtReceiptEditor(QWidget, LineItemsMixin):
 
         # i18n
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
-        self._listener_registered = True
+        self._register_i18n(self._language_callback)
 
         # Debounced preview refresh
         self._refresh_task = DebouncedTask(self._refresh_preview)
@@ -214,24 +213,18 @@ class QtReceiptEditor(QWidget, LineItemsMixin):
         self._load_company_config()
         self._update_receipt_number()
 
-        self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        self._subscribe(SETTINGS_UPDATED, self._on_settings_updated)
 
     # ── Lifecycle ────────────────────────────────────────────────────
 
     def wakeup(self) -> None:
         """Called when the tab becomes visible."""
-        if not getattr(self, "_listener_registered", False):
-            register_listener(self._language_callback)
-            self._listener_registered = True
         self._load_all_db_combos()
         self._refresh_preview()
 
     def shutdown(self) -> None:
         """Clean up resources."""
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        with contextlib.suppress(Exception):
-            self._event_bus.unsubscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        super().shutdown()
 
     def _on_language_changed(self, _lang: str) -> None:
         self._retranslate_ui()

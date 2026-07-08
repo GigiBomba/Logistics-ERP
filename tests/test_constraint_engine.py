@@ -237,3 +237,124 @@ class TestGetTruckValue:
         obj = TruckObj()
         assert TruckConstraintEngine._get_truck_value(obj, "height_m") == 4.0
         assert TruckConstraintEngine._get_truck_value(obj, "missing") is None
+
+    def test_list_input_returns_none(self):
+        """A list input should not crash and return None."""
+        assert TruckConstraintEngine._get_truck_value([1, 2, 3], "height_m") is None
+
+
+class TestValidateTruckEdgeCases:
+    """Additional edge-case tests for validate_truck."""
+
+    def test_height_exactly_at_max_is_clearance(self, engine: TruckConstraintEngine):
+        """Height exactly at MAX_HEIGHT_M triggers route clearance note."""
+        truck = {"height_m": engine.MAX_HEIGHT_M}
+        valid, msg = engine.validate_truck(truck)
+        assert valid is True
+        assert "clearance" in msg.lower()
+
+    def test_width_exactly_at_max_is_ok(self, engine: TruckConstraintEngine):
+        """Width exactly at MAX_WIDTH_M should be valid."""
+        truck = {"width_m": engine.MAX_WIDTH_M}
+        valid, msg = engine.validate_truck(truck)
+        assert valid is True
+        assert msg == "OK"
+
+    def test_weight_exactly_at_max_is_ok(self, engine: TruckConstraintEngine):
+        """Weight exactly at MAX_WEIGHT_KG should be valid."""
+        truck = {"max_weight_kg": engine.MAX_WEIGHT_KG}
+        valid, msg = engine.validate_truck(truck)
+        assert valid is True
+        assert msg == "OK"
+
+    def test_height_below_min_clearance_no_warning(self, engine: TruckConstraintEngine):
+        """Height below MIN_CLEARANCE_M should not trigger clearance warning."""
+        truck = {"height_m": engine.MIN_CLEARANCE_M - 0.5}
+        valid, msg = engine.validate_truck(truck)
+        assert valid is True
+        assert msg == "OK"
+
+    def test_all_excessive_values(self, engine: TruckConstraintEngine):
+        """All dimensions exceeding limits — weight check fires first."""
+        truck = {
+            "height_m": 5.0,   # > MAX_HEIGHT → clearance (true)
+            "max_weight_kg": 50000,  # > MAX_WEIGHT → false
+            "width_m": 3.0,   # > MAX_WIDTH → false
+        }
+        # Weight check happens before width, so weight error returns first
+        valid, msg = engine.validate_truck(truck)
+        assert valid is False
+        assert "weight" in msg.lower()
+
+
+class TestBuildParamsEdgeCases:
+    """Additional edge-case tests for build_params."""
+
+    def test_hazmat_string_yes(self, engine: TruckConstraintEngine):
+        """Hazmat string 'yes' should resolve to True."""
+        truck = {"hazmat": "yes"}
+        params = engine.build_params(truck)
+        assert params["hazmat"] is True
+
+    def test_hazmat_string_1(self, engine: TruckConstraintEngine):
+        """Hazmat string '1' should resolve to True."""
+        truck = {"hazmat": "1"}
+        params = engine.build_params(truck)
+        assert params["hazmat"] is True
+
+    def test_hazmat_string_no(self, engine: TruckConstraintEngine):
+        """Hazmat string 'no' should resolve to False."""
+        truck = {"hazmat": "no"}
+        params = engine.build_params(truck)
+        assert params["hazmat"] is False
+
+    def test_hazmat_string_0(self, engine: TruckConstraintEngine):
+        """Hazmat string '0' should resolve to False."""
+        truck = {"hazmat": "0"}
+        params = engine.build_params(truck)
+        assert params["hazmat"] is False
+
+    def test_length_exactly_at_max_is_included(self, engine: TruckConstraintEngine):
+        """Length exactly at MAX_LENGTH_M should be included."""
+        truck = {"length_m": engine.MAX_LENGTH_M}
+        params = engine.build_params(truck)
+        assert params["length"] == str(engine.MAX_LENGTH_M)
+
+    def test_negative_axleload_excluded(self, engine: TruckConstraintEngine):
+        """Negative axleload should be excluded (not > 0)."""
+        truck = {"axleload_kg": -1000}
+        params = engine.build_params(truck)
+        assert "axleload" not in params
+
+    def test_axleload_positive_included(self, engine: TruckConstraintEngine):
+        """Positive axleload should be included."""
+        truck = {"axleload_kg": 5000}
+        params = engine.build_params(truck)
+        assert params["axleload"] == "5000.0"
+
+    def test_build_params_handles_numeric_strings(self, engine: TruckConstraintEngine):
+        """String-form numbers should be handled without crashing."""
+        truck = {
+            "max_weight_kg": "20000",
+            "height_m": "3.5",
+            "width_m": "2.4",
+        }
+        params = engine.build_params(truck)
+        assert params["weight"] == "20000.0"
+        assert params["height"] == "3.5"
+        assert params["width"] == "2.4"
+
+
+class TestValidateProfileEdgeCases:
+    """Additional edge-case tests for validate_profile."""
+
+    def test_profile_with_whitespace(self, engine: TruckConstraintEngine):
+        """Profile with surrounding whitespace should be stripped."""
+        # Note: current implementation uses .lower() but doesn't strip
+        # This documents current behavior
+        assert engine.validate_profile(" Truck ") is False
+
+    def test_partial_profile_match(self, engine: TruckConstraintEngine):
+        """Partial profiles should not match."""
+        assert engine.validate_profile("truc") is False
+        assert engine.validate_profile("truck_") is False

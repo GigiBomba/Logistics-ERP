@@ -27,6 +27,10 @@ from services.i18n import t
 from services.operations.event_bus import ALERT_CREATED, ALERT_RESOLVED, SETTINGS_UPDATED, EventBus
 from services.trip_service import TripService
 from ui.app_shell import AppShell
+from services.csv_service import CsvService
+from services.draft_service import DraftService
+from services.numbering_service import NumberingService
+from services.status_service import canonical_status
 from ui.views import (
     QtAnalyticsView,
     QtCalculatorView,
@@ -128,6 +132,11 @@ class MainWindow(QMainWindow):
             if self.ops is None:
                 from client.remote_ops_stub import RemoteOpsStub
                 self.ops = RemoteOpsStub(api_client=self._api_client)
+
+        # Shared centralized services
+        self._csv_service = CsvService()
+        self._draft_service = DraftService()
+        self._numbering_service = NumberingService(self.db) if self.db else None
 
         self._fuel_service = FuelPriceService()
         self._fuel_service.refresh_if_stale()
@@ -292,31 +301,44 @@ class MainWindow(QMainWindow):
                     prefs=self.prefs, ops=self.ops, fuel_service=self._fuel_service,
                     api=self.api, api_client=ac,
                 ),
-                "overview": lambda: QtOverviewView(parent, db=self.db, ops=self.ops, api_client=ac),
+                "overview": lambda: QtOverviewView(
+                    parent, db=self.db, ops=self.ops,
+                    trip_service=self.trip_service,
+                    fleet_service=self.fleet_service,
+                ),
                 "route_planner": lambda: QtRoutePlannerView(parent, db=self.db, controller=self, api_client=ac),
-                "analytics": lambda: QtAnalyticsView(parent, db=self.db, prefs=self.prefs, api_client=ac),
-                "history": lambda: QtHistoryView(parent, db=self.db, controller=self, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "analytics": lambda: QtAnalyticsView(
+                    parent, db=self.db, prefs=self.prefs,
+                ),
+                "history": lambda: QtHistoryView(
+                    parent, db=self.db, controller=self,
+                    prefs=self.prefs, ops=self.ops,
+                    trip_service=self.trip_service,
+                ),
                 "route_history": lambda: QtRouteHistoryView(parent, db=self.db, controller=self, api_client=ac),
                 "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
-                "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module, api_client=ac),
+                "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module),
                 "fleet": lambda: QtFleetTab(
                     parent, db=self.db, ops=self.ops,
-                    fleet_service=self.fleet_service, api_client=ac,
+                    fleet_service=self.fleet_service,
+                    api_client=ac,
                 ),
-                "driver_manager": lambda: QtDriverManager(parent, db=self.db, prefs=self.prefs, api_client=ac),
-                "clients": lambda: QtClientWorkspace(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "driver_manager": lambda: QtDriverManager(
+                    parent, db=self.db, prefs=self.prefs,
+                    trip_svc=self.trip_service,
+                ),
+                "clients": lambda: QtClientWorkspace(parent, db=self.db, prefs=self.prefs, ops=self.ops),
                 "documents": lambda: QtDocumentCenterView(
-                    parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac,
+                    parent, db=self.db, prefs=self.prefs, ops=self.ops,
                 ),
-                "maintenance": lambda: QtMaintenanceAnalyticsView(parent, db=self.db, api_client=ac),
-                "maintenance_control": lambda: QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "maintenance": lambda: QtMaintenanceAnalyticsView(parent, db=self.db),
+                "maintenance_control": lambda: QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops),
                 "tachograph": lambda: QtTachoImportView(parent, db=self.db, api_client=ac),
                 "invoices": lambda: QtGeneratorsView(
                     parent, db=self.db, prefs=self.prefs,
                     client_service=self.client_service,
                     fleet_service=self.fleet_service,
                     trip_service=self.trip_service,
-                    api_client=ac,
                 ),
                 "settings": lambda: QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
             }

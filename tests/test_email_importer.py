@@ -207,3 +207,91 @@ class TestIntegration:
         thread = importer._thread
         importer.stop()
         assert importer._thread is None
+
+
+# ── Additional tests ───────────────────────────────────────────────
+
+class TestAdditional:
+    def test_configure_empty_whitelist_defaults_to_empty(self, mock_callback):
+        imp = EmailImporter(mock_callback)
+        assert imp._whitelist == set()
+
+    @patch("imaplib.IMAP4_SSL")
+    def test_process_message_skips_when_fetch_fails(self, mock_imap, importer):
+        mock_conn = MagicMock()
+        mock_imap.return_value = mock_conn
+        mock_conn.fetch.return_value = ("BAD", None)
+        # Should not raise
+        importer._process_message(mock_conn, b"1")
+
+    @patch("imaplib.IMAP4_SSL")
+    def test_process_message_handles_non_tuple_data(self, mock_imap, importer, mock_callback):
+        """If fetch returns raw bytes instead of a tuple, it should still work."""
+        mock_conn = MagicMock()
+        mock_imap.return_value = mock_conn
+        raw_email = (
+            "From: allowed@example.com\r\n"
+            "Subject: Test\r\n"
+            "Content-Type: application/pdf; name=\"doc.pdf\"\r\n"
+            "Content-Disposition: attachment; filename=\"doc.pdf\"\r\n"
+            "\r\n"
+            "content"
+        ).encode("utf-8")
+        mock_conn.fetch.return_value = ("OK", [raw_email])
+
+        with patch("os.makedirs"), patch("builtins.open", MagicMock()):
+            importer._process_message(mock_conn, b"1")
+
+        assert mock_callback.called
+
+    @patch("imaplib.IMAP4_SSL")
+    def test_check_mailbox_handles_no_unseen(self, mock_imap, importer):
+        """When search returns no messages, nothing should be processed."""
+        mock_conn = MagicMock()
+        mock_imap.return_value = mock_conn
+        mock_conn.search.return_value = ("OK", [b""])
+        importer._check_mailbox()
+        mock_conn.fetch.assert_not_called()
+
+    @patch("imaplib.IMAP4_SSL")
+    def test_check_mailbox_handles_search_error(self, mock_imap, importer):
+        """If search fails, the method should not raise."""
+        mock_conn = MagicMock()
+        mock_imap.return_value = mock_conn
+        mock_conn.search.return_value = ("NO", None)
+        importer._check_mailbox()
+        mock_conn.logout.assert_called_once()
+
+    def test_extract_sender_with_display_name_no_brackets(self, importer):
+        msg = MagicMock()
+        msg.get.return_value = "=?UTF-8?B?Tm9yYmVydA==?= <norbert@example.com>"
+        result = importer._extract_sender(msg)
+        assert result == "norbert@example.com"
+
+    def test_extract_sender_with_invalid_email(self, importer):
+        msg = MagicMock()
+        msg.get.return_value = "Not an email at all"
+        result = importer._extract_sender(msg)
+        assert result is None
+
+    def test_save_attachments_skips_multipart(self, importer):
+        """Multipart parts should be skipped when walking attachments."""
+        msg = MagicMock()
+        multipart_part = MagicMock()
+        multipart_part.get_content_maintype.return_value = "multipart"
+        msg.walk.return_value = [multipart_part]
+        paths = importer._save_attachments(msg)
+        assert paths == []
+
+    def test_configure_with_none_whitelist(self, mock_callback):
+        imp = EmailImporter(mock_callback, host="imap.test.com", user="u", password="p")
+        imp.configure(whitelist=None)
+        assert imp._whitelist == set()
+
+    def test_configure_with_partial_update(self, importer):
+        """configure should only update specified fields."""
+        importer.configure(host="new.host.com")
+        assert importer._host == "new.host.com"
+        # Other fields should remain unchanged
+        assert importer._port == 993
+        assert importer._user == "test@example.com"

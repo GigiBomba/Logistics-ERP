@@ -140,6 +140,9 @@ class TestFullKillChain:
         f. Admin diagnostics endpoint       (403, not admin)
         g. Raw SQL sandbox                  (403, not admin)
         """
+        # Clear lockout so login is deterministic
+        _clear_lockout(DISPATCHER_A_EMAIL)
+
         # ── a. Login ───────────────────────────────────────────────────
         r = client.post(
             "/api/v1/auth/token",
@@ -233,6 +236,9 @@ class TestInsiderThreat:
         d. Access company B truck   – 404
         e. Access company B driver  – 404
         """
+        # Clear lockout so login is deterministic
+        _clear_lockout(DISPATCHER_A_EMAIL)
+
         # Login as company A dispatcher
         r = client.post(
             "/api/v1/auth/token",
@@ -340,6 +346,9 @@ class TestPrivilegeEscalation:
         c. POST /api/v1/admin/db/query        → 403
         d. GET  /api/v1/settings/company      → 200 (dispatcher-level)
         """
+        # Clear lockout so login is deterministic
+        _clear_lockout(DISPATCHER_A_EMAIL)
+
         # Login as company A dispatcher
         r = client.post(
             "/api/v1/auth/token",

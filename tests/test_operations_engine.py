@@ -203,6 +203,7 @@ def test_start_without_db():
     OperationsEngine._instance = None
     engine = OperationsEngine(db=None)
     engine._event_bus = MagicMock()
+    engine._cmr_generator = MagicMock()
     engine.start()
     assert engine._running is True
     engine.stop()
@@ -247,7 +248,7 @@ def test_migrate_existing_data_with_overdue_invoices():
     db = make_db()
     # Insert a truck
     db.conn.execute(
-        "INSERT INTO trucks (id, truck_number, plate_number) VALUES (1, 'T1', 'ABC-123')"
+        "INSERT INTO trucks (id, plate_number) VALUES (1, 'ABC-123')"
     )
     # Insert a delivered trip with an unpaid invoice past due
     db.conn.execute(
