@@ -236,5 +236,114 @@ class TestAlertPersistence(unittest.TestCase):
         self.assertEqual(removed, 1)
 
 
+class TestAlertMetadataOperations(unittest.TestCase):
+    """Tests for display type, severity updates, and duplicate detection."""
+
+    def setUp(self):
+        AlertManager._instance = None
+        self.mgr = AlertManager(db=None)
+
+    def test_display_type_known(self):
+        alert = self.mgr.create_alert(
+            AlertType.MAINTENANCE, Severity.WARNING, "T", "M",
+        )
+        self.assertEqual(alert.display_type(), "Maintenance")
+
+    def test_display_type_overdue_invoice(self):
+        alert = self.mgr.create_alert(
+            AlertType.OVERDUE_INVOICE, Severity.CRITICAL, "T", "M",
+        )
+        self.assertEqual(alert.display_type(), "Overdue Invoice")
+
+    def test_update_severity(self):
+        alert = self.mgr.create_alert(
+            AlertType.INSPECTION, Severity.INFO, "T", "M",
+        )
+        self.mgr.update_severity(alert.id, Severity.WARNING)
+        self.assertEqual(self.mgr.get_alert(alert.id).severity, Severity.WARNING)
+
+    def test_update_severity_with_message(self):
+        alert = self.mgr.create_alert(
+            AlertType.MAINTENANCE, Severity.WARNING, "T", "M",
+        )
+        self.mgr.update_severity(alert.id, Severity.CRITICAL, new_message="Updated msg")
+        updated = self.mgr.get_alert(alert.id)
+        self.assertEqual(updated.severity, Severity.CRITICAL)
+        self.assertEqual(updated.message, "Updated msg")
+
+    def test_update_severity_nonexistent_does_not_raise(self):
+        self.mgr.update_severity("no-such-id", Severity.WARNING)
+
+    def test_duplicate_alert_resolves_old(self):
+        a1 = self.mgr.create_alert(
+            AlertType.MAINTENANCE, Severity.WARNING, "T", "Same message",
+            truck_id="T1",
+        )
+        a2 = self.mgr.create_alert(
+            AlertType.MAINTENANCE, Severity.WARNING, "New T", "Same message",
+            truck_id="T1",
+        )
+        # a1 should now be resolved (duplicate found)
+        resolved = self.mgr.get_alert(a1.id)
+        self.assertTrue(resolved.resolved)
+        self.assertIsNotNone(resolved.resolved_at)
+        # a2 is the active one
+        self.assertFalse(a2.resolved)
+
+    def test_duplicate_no_truck_id_resolves_by_type_and_message(self):
+        a1 = self.mgr.create_alert(
+            AlertType.ROUTE_ISSUE, Severity.WARNING, "T1", "Road closed",
+            truck_id=None,
+        )
+        a2 = self.mgr.create_alert(
+            AlertType.ROUTE_ISSUE, Severity.WARNING, "T2", "Road closed",
+            truck_id=None,
+        )
+        self.assertTrue(self.mgr.get_alert(a1.id).resolved)
+        self.assertFalse(a2.resolved)
+
+    def test_create_alerts_batch_no_repo(self):
+        mgr = AlertManager(db=None)
+        alerts = [
+            Alert(type=AlertType.MAINTENANCE, severity=Severity.INFO, title="A", message="M1"),
+        ]
+        count = mgr.create_alerts_batch(alerts)
+        self.assertEqual(count, 0)
+
+    def test_create_alerts_batch_empty_list(self):
+        mgr = AlertManager(db=None)
+        count = mgr.create_alerts_batch([])
+        self.assertEqual(count, 0)
+
+    def test_get_active_by_type_and_entity_no_match(self):
+        result = self.mgr.get_active_by_type_and_entity(
+            AlertType.MAINTENANCE, "nonexistent", entity_field="truck_id"
+        )
+        self.assertIsNone(result)
+
+    def test_get_alert_returns_none_for_missing(self):
+        result = self.mgr.get_alert("no-such-id")
+        self.assertIsNone(result)
+
+    def test_resolve_by_truck_no_type_filter_clears_all_matching(self):
+        self.mgr.create_alert(AlertType.MAINTENANCE, Severity.INFO, "T1", "M1", truck_id="T1")
+        self.mgr.create_alert(AlertType.INSPECTION, Severity.INFO, "T2", "M2", truck_id="T1")
+        count = self.mgr.resolve_by_truck("T1")
+        self.assertEqual(count, 2)
+        self.assertEqual(self.mgr.get_active_count(), 0)
+
+    def test_cleanup_old_no_resolved_alerts(self):
+        """No resolved alerts to clean up."""
+        self.mgr.create_alert(AlertType.MAINTENANCE, Severity.INFO, "T", "M")
+        removed = self.mgr.cleanup_old(days=1)
+        self.assertEqual(removed, 0)
+
+    def test_cleanup_old_without_db_does_not_raise(self):
+        mgr = AlertManager(db=None)
+        mgr.create_alert(AlertType.MAINTENANCE, Severity.INFO, "T", "M")
+        removed = mgr.cleanup_old(days=1)
+        self.assertEqual(removed, 0)
+
+
 if __name__ == "__main__":
     unittest.main()

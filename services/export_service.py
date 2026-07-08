@@ -1,6 +1,8 @@
 import contextlib
+import logging
 import os
 from datetime import datetime
+from typing import Any
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -12,6 +14,8 @@ from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Table, 
 
 from config import Config
 from utils.helpers import remove_accents
+
+logger = logging.getLogger(__name__)
 
 _ALLOWED_EXTENSIONS = {".pdf", ".xlsx"}
 
@@ -147,3 +151,51 @@ class ExportService:
 
         wb.save(full_path)
         return full_path
+
+    # ── PDF generation for documents ─────────────────────────────────
+    # These methods delegate to the reportlab-based engine or the
+    # dedicated document automation pipeline.
+
+    def generate_invoice_pdf(
+        self, invoice_data: dict[str, Any], output_path: str | None = None
+    ) -> str | None:
+        """Generate a PDF for an invoice. Returns the file path or None."""
+        try:
+            from utils.pdf_utils import generate_invoice_pdf as _gen
+            return _gen(invoice_data, output_path=output_path, reports_dir=self.reports_dir)
+        except Exception as e:
+            logger.error("Failed to generate invoice PDF: %s", e)
+            return None
+
+    def generate_receipt_pdf(
+        self, receipt_data: dict[str, Any], output_path: str | None = None
+    ) -> str | None:
+        """Generate a PDF for a receipt. Returns the file path or None."""
+        try:
+            from utils.pdf_utils import generate_receipt_pdf as _gen
+            return _gen(receipt_data, output_path=output_path, reports_dir=self.reports_dir)
+        except Exception as e:
+            logger.error("Failed to generate receipt PDF: %s", e)
+            return None
+
+    def generate_cmr_pdf(
+        self, cmr_data: dict[str, Any], output_path: str | None = None
+    ) -> str | None:
+        """Generate a CMR document PDF. Returns the file path or None."""
+        try:
+            from utils.pdf_utils import generate_cmr_pdf as _gen
+            return _gen(cmr_data, output_path=output_path, reports_dir=self.reports_dir)
+        except Exception as e:
+            logger.error("Failed to generate CMR PDF: %s", e)
+            return None
+
+    def generate_proforma_pdf(
+        self, proforma_data: dict[str, Any], output_path: str | None = None
+    ) -> str | None:
+        """Generate a proforma PDF. Returns the file path or None."""
+        try:
+            from utils.pdf_utils import generate_proforma_pdf as _gen
+            return _gen(proforma_data, output_path=output_path, reports_dir=self.reports_dir)
+        except Exception as e:
+            logger.error("Failed to generate proforma PDF: %s", e)
+            return None

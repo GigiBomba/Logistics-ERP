@@ -1,4 +1,6 @@
 """Tests for VersioningService."""
+from __future__ import annotations
+
 import os
 import tempfile
 from unittest.mock import MagicMock, call, patch
@@ -139,3 +141,166 @@ def test_unique_path(service):
         p2 = service._unique_path(tmpdir, "test.pdf")
         assert p1 != p2
         assert "_1" in p2
+
+
+def test_get_versions_empty(service):
+    service._repo.get_versions.return_value = []
+    assert service.get_versions(999) == []
+
+
+def test_get_versions_multiple(service):
+    service._repo.get_versions.return_value = [
+        {"version_number": 1},
+        {"version_number": 2},
+    ]
+    result = service.get_versions(1)
+    assert len(result) == 2
+    assert result[1]["version_number"] == 2
+
+
+def test_upload_new_version_enforces_max_versions(service):
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(b"new version content")
+        tmp_path = f.name
+    try:
+        service._repo.get_by_id.return_value = {"id": 1, "title": "Test"}
+        # Return version count >= MAX_VERSIONS_PER_DOC
+        service._repo.get_version_count.return_value = 20
+        # Return 20 existing versions
+        versions = [
+            {"id": v, "version_number": v, "file_path": f"/tmp/v{v}.pdf"}
+            for v in range(1, 21)
+        ]
+        service._repo.get_versions.return_value = versions
+        service._repo.add_version.return_value = 1
+
+        with patch("os.path.isfile", return_value=True), \
+             patch("os.remove") as mock_rm:
+            result = service.upload_new_version(1, tmp_path, comment="v21")
+            assert result is not None
+            # Should have removed the oldest version file
+            mock_rm.assert_called_once()
+            # Should have deleted the oldest version record
+            service._repo._execute.assert_called()
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_upload_new_version_purges_multiple_oldest_when_over_limit(service):
+    """When more than MAX_VERSIONS_PER_DOC exist, purge until under limit."""
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(b"overflow test")
+        tmp_path = f.name
+    try:
+        service._repo.get_by_id.return_value = {"id": 1, "title": "Test"}
+        service._repo.get_version_count.return_value = 22
+        # Return 22 versions (over limit)
+        versions = [
+            {"id": v, "version_number": v, "file_path": f"/tmp/v{v}.pdf"}
+            for v in range(1, 23)
+        ]
+        service._repo.get_versions.side_effect = [
+            versions,  # first call
+            versions[3:],  # after removing first 3
+        ]
+        service._repo.add_version.return_value = 1
+
+        with patch("os.path.isfile", return_value=True), \
+             patch("os.remove") as mock_rm:
+            result = service.upload_new_version(1, tmp_path, comment="v23")
+            assert result is not None
+            # Should have removed 3 oldest version files
+            assert mock_rm.call_count == 3
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_restore_version_not_found_on_disk(service):
+    service._repo.get_versions.return_value = [
+        {"version_number": 2, "file_path": "/tmp/deleted.pdf", "file_size": 100, "file_hash": "abc"},
+    ]
+    with patch("os.path.isfile", return_value=False):
+        result = service.restore_version(1, 2)
+        assert result is False
+        service._repo.update.assert_not_called()
+
+
+def test_restore_version_updates_document(service):
+    service._repo.get_versions.return_value = [
+        {"version_number": 1, "file_path": "/tmp/v1.pdf", "file_size": 100, "file_hash": "abc123"},
+    ]
+    with patch("os.path.isfile", return_value=True):
+        result = service.restore_version(1, 1)
+        assert result is True
+        service._repo.update.assert_called_once_with(
+            1, file_path="/tmp/v1.pdf", file_size=100,
+            file_hash="abc123", updated_at=service._repo.update.call_args[1]["updated_at"],
+        )
+
+
+def test_sanitize_filename_edge_cases(service):
+    assert service._sanitize_filename("") == "unnamed_file"
+    assert service._sanitize_filename("...") == "unnamed_file"
+    assert service._sanitize_filename("file") == "file"
+    assert service._sanitize_filename("hello.world.txt") == "hello.world.txt"
+    assert service._sanitize_filename("  spaced  file  .PDF") == "spaced file.pdf"
+
+
+def test_validate_file_ok(service):
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(b"valid")
+        tmp_path = f.name
+    try:
+        # Should not raise
+        service._validate_file(tmp_path)
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_upload_new_version_with_tags_and_metadata(service):
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(b"meta test")
+        tmp_path = f.name
+    try:
+        service._repo.get_by_id.return_value = {"id": 1, "title": "Test"}
+        service._repo.get_version_count.return_value = 0
+        service._repo.get_versions.return_value = []
+        service._repo.add_version.return_value = 1
+
+        result = service.upload_new_version(1, tmp_path, comment="Updated", uploaded_by="admin")
+        assert result == 1
+        # Verify add_version was called with correct comment and uploaded_by
+        call_kwargs = service._repo.add_version.call_args
+        assert call_kwargs is not None
+        # add_version is called with positional args, check the comment and uploaded_by
+        args = call_kwargs[0]
+        assert args[4] == "Updated"  # comment
+        assert args[5] == "admin"  # uploaded_by
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_compute_sha256_consistency(service):
+    with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as f:
+        f.write(b"exact content for hash check")
+        tmp_path = f.name
+    try:
+        h1 = service._compute_sha256(tmp_path)
+        h2 = service._compute_sha256(tmp_path)
+        assert h1 == h2
+        assert len(h1) == 64  # SHA-256 hex digest
+    finally:
+        os.unlink(tmp_path)
+
+
+def test_unique_path_multiple_collisions(service):
+    with tempfile.TemporaryDirectory() as tmpdir:
+        p1 = service._unique_path(tmpdir, "doc.pdf")
+        open(p1, "w").close()
+        p2 = service._unique_path(tmpdir, "doc.pdf")
+        open(p2, "w").close()
+        p3 = service._unique_path(tmpdir, "doc.pdf")
+        assert p1 != p2
+        assert p2 != p3
+        assert "doc_1.pdf" in p2
+        assert "doc_2.pdf" in p3

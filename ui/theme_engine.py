@@ -17,8 +17,45 @@ from __future__ import annotations
 from PySide6.QtGui import QFont
 from PySide6.QtWidgets import QApplication
 
-from ui.design_tokens import TEXT_WHITE
-from ui.theme import COLORS, RADIUS_BUTTON, RADIUS_CARD, RADIUS_CHIP, RADIUS_INPUT, S
+from ui.design_tokens import (
+    COLOR_ACCENT_HOVER,
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ACCENT_SUBTLE,
+    COLOR_BG_BASE,
+    COLOR_BG_ELEVATED,
+    COLOR_BG_HOVER,
+    COLOR_BG_OVERLAY,
+    COLOR_BG_SELECTED,
+    COLOR_BORDER_MEDIUM,
+    COLOR_BORDER_STRONG,
+    COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_DEFAULT,
+    COLOR_ERROR_SUBTLE,
+    COLOR_ERROR_TEXT,
+    COLOR_INFO_DEFAULT,
+    COLOR_INFO_SUBTLE,
+    COLOR_INFO_TEXT,
+    COLOR_NEUTRAL_DEFAULT,
+    COLOR_NEUTRAL_SUBTLE,
+    COLOR_NEUTRAL_TEXT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_SUCCESS_SUBTLE,
+    COLOR_SUCCESS_TEXT,
+    COLOR_TEXT_INVERSE,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+    COLOR_WARNING_SUBTLE,
+    COLOR_WARNING_TEXT,
+    TEXT_WHITE,
+    RADIUS_SM as RADIUS_CHIP,
+    RADIUS_MD as RADIUS_INPUT,
+    RADIUS_LG as RADIUS_CARD,
+    RADIUS_MD as RADIUS_BUTTON,
+    SPACE_2 as _P2,
+    SPACE_4 as _P4,
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # TYPOGRAPHY
@@ -117,7 +154,8 @@ class QtTheme:
 
     @classmethod
     def _px(cls, key: str) -> int:
-        return S[key]
+        sizes = {"2": 8, "4": 16, "5": 20, "6": 24, "8": 32, "10": 40, "12": 48, "16": 64}
+        return sizes.get(key, 8)
 
     # ── Base / reset ──────────────────────────────────────────────────────────
 
@@ -125,19 +163,19 @@ class QtTheme:
     def _base_qss(cls) -> str:
         return f"""
         QWidget {{
-            background-color: {COLORS["bg_base"]};
-            color: {COLORS["text_primary"]};
+            background-color: {COLOR_BG_BASE};
+            color: {COLOR_TEXT_PRIMARY};
             font-family: {cls._ff("sans")};
             font-size: {cls._fs("body")}px;
             outline: none;
         }}
 
         QMainWindow, QDialog, QMessageBox {{
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
         }}
 
         QWidget:disabled {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
         }}
         """
 
@@ -148,35 +186,35 @@ class QtTheme:
         return f"""
         QLabel {{
             background-color: transparent;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QLabel[fontRole="muted"] {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
         }}
 
         QLabel[fontRole="secondary"] {{
-            color: {COLORS["text_secondary"]};
+            color: {COLOR_TEXT_SECONDARY};
         }}
 
         QLabel[fontRole="accent"] {{
-            color: {COLORS["text_accent"]};
+            color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QLabel[fontRole="success"] {{
-            color: {COLORS["text_success"]};
+            color: {COLOR_SUCCESS_TEXT};
         }}
 
         QLabel[fontRole="warning"] {{
-            color: {COLORS["text_warning"]};
+            color: {COLOR_WARNING_TEXT};
         }}
 
         QLabel[fontRole="danger"] {{
-            color: {COLORS["text_danger"]};
+            color: {COLOR_ERROR_TEXT};
         }}
 
         QLabel[fontRole="label"] {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("label")}px;
             text-transform: uppercase;
         }}
@@ -186,7 +224,7 @@ class QtTheme:
         }}
 
         QLabel[fontRole="helper"] {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("small")}px;
         }}
 
@@ -208,7 +246,7 @@ class QtTheme:
         QLabel[fontRole="hero"] {{
             font-family: {cls._ff("hero")};
             font-size: {cls._fs("mono_xl")}px;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QLabel[fontRole="mono"] {{
@@ -229,20 +267,20 @@ class QtTheme:
         }}
 
         QLabel[fontRole="section"] {{
-            color: {COLORS["accent"]};
+            color: {COLOR_ACCENT_PRIMARY};
             font-size: {cls._fs("body")}px;
             font-weight: bold;
         }}
 
         QLabel[fontRole="kpi-title"] {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("label")}px;
             font-weight: bold;
             text-transform: uppercase;
         }}
 
         QLabel[fontRole="kpi-value"] {{
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             font-size: {cls._fs("mono_lg")}px;
             font-family: {cls._ff("mono")};
             font-weight: bold;
@@ -251,20 +289,20 @@ class QtTheme:
         QLabel[class="page-title"] {{
             font-size: 20px;
             font-weight: 600;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QLabel[class="section-title"] {{
             font-size: 13px;
             font-weight: 600;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }}
 
         QLabel[class="field-label"] {{
             font-size: 11px;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             text-transform: uppercase;
             letter-spacing: 0.08em;
         }}
@@ -273,12 +311,12 @@ class QtTheme:
             font-size: 22px;
             font-weight: 700;
             font-family: {cls._ff("mono")};
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QLabel[class="kpi-label"] {{
             font-size: 11px;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             text-transform: uppercase;
         }}
         """
@@ -289,7 +327,7 @@ class QtTheme:
     def _button_qss(cls) -> str:
         return f"""
         QPushButton {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
             color: {TEXT_WHITE};
             border: none;
             border-radius: {RADIUS_BUTTON}px;
@@ -301,58 +339,58 @@ class QtTheme:
         }}
 
         QPushButton:hover {{
-            background-color: {COLORS["accent_hover"]};
+            background-color: {COLOR_ACCENT_HOVER};
         }}
 
         QPushButton:pressed {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QPushButton:disabled {{
-            background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_muted"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_TERTIARY};
         }}
 
         QPushButton[variant="secondary"] {{
             background-color: transparent;
-            color: {COLORS["text_secondary"]};
-            border: 1px solid {COLORS["border"]};
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
         }}
 
         QPushButton[variant="secondary"]:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QPushButton[variant="danger"] {{
             background-color: transparent;
-            color: {COLORS["text_danger"]};
-            border: 1px solid {COLORS["danger_dim"]};
+            color: {COLOR_ERROR_TEXT};
+            border: 1px solid {COLOR_ERROR_SUBTLE};
         }}
 
         QPushButton[variant="danger"]:hover {{
-            background-color: {COLORS["danger_dim"]};
+            background-color: {COLOR_ERROR_SUBTLE};
         }}
 
         QPushButton[variant="ghost"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             border: none;
         }}
 
         QPushButton[variant="ghost"]:hover {{
-            background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_secondary"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
         }}
 
         QPushButton[variant="success"] {{
-            background-color: {COLORS["success_dim"]};
-            color: {COLORS["text_success"]};
-            border: 1px solid {COLORS["success_dim"]};
+            background-color: {COLOR_SUCCESS_SUBTLE};
+            color: {COLOR_SUCCESS_TEXT};
+            border: 1px solid {COLOR_SUCCESS_SUBTLE};
         }}
 
         QPushButton[variant="success"]:hover {{
-            background-color: {COLORS["success_dim"]};
-            border-color: {COLORS["text_success"]};
+            background-color: {COLOR_SUCCESS_SUBTLE};
+            border-color: {COLOR_SUCCESS_TEXT};
         }}
         """
 
@@ -362,26 +400,26 @@ class QtTheme:
     def _input_qss(cls) -> str:
         return f"""
         QLineEdit, QPlainTextEdit, QTextEdit, QDateEdit, QSpinBox, QDoubleSpinBox {{
-            background-color: {COLORS["bg_input"]};
-            color: {COLORS["text_primary"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_INPUT}px;
             padding: 6px 10px;
             font-family: {cls._ff("sans")};
             font-size: {cls._fs("body")}px;
-            selection-background-color: {COLORS["accent"]};
+            selection-background-color: {COLOR_ACCENT_PRIMARY};
             selection-color: {TEXT_WHITE};
         }}
 
         QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
         QDateEdit:focus, QSpinBox:focus, QDoubleSpinBox:focus {{
-            border-color: {COLORS["border_focus"]};
+            border-color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QLineEdit:disabled, QPlainTextEdit:disabled, QTextEdit:disabled,
         QDateEdit:disabled, QSpinBox:disabled, QDoubleSpinBox:disabled {{
-            background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_muted"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_TERTIARY};
         }}
 
         QPlainTextEdit, QTextEdit {{
@@ -389,14 +427,14 @@ class QtTheme:
         }}
 
         QLineEdit::placeholder, QPlainTextEdit::placeholder {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
         }}
 
         QDateEdit::drop-down {{
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 24px;
-            border-left: 1px solid {COLORS["border"]};
+            border-left: 1px solid {COLOR_BORDER_MEDIUM};
             border-top-right-radius: {RADIUS_INPUT}px;
             border-bottom-right-radius: {RADIUS_INPUT}px;
         }}
@@ -405,7 +443,7 @@ class QtTheme:
             image: none;
             border-left: 5px solid transparent;
             border-right: 5px solid transparent;
-            border-top: 5px solid {COLORS["text_secondary"]};
+            border-top: 5px solid {COLOR_TEXT_SECONDARY};
             width: 0px;
             height: 0px;
         }}
@@ -418,7 +456,7 @@ class QtTheme:
         return f"""
         QCheckBox {{
             background-color: transparent;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             spacing: {cls._px("2")}px;
             font-size: {cls._fs("body")}px;
         }}
@@ -426,24 +464,24 @@ class QtTheme:
         QCheckBox::indicator {{
             width: 18px;
             height: 18px;
-            border: 1px solid {COLORS["border"]};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: 4px;
-            background-color: {COLORS["bg_input"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QCheckBox::indicator:hover {{
-            border-color: {COLORS["border_hover"]};
+            border-color: {COLOR_BORDER_STRONG};
         }}
 
         QCheckBox::indicator:checked {{
-            background-color: {COLORS["accent"]};
-            border-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
+            border-color: {COLOR_ACCENT_PRIMARY};
             image: none;
         }}
 
         QCheckBox::indicator:disabled {{
-            background-color: {COLORS["bg_elevated"]};
-            border-color: {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            border-color: {COLOR_BORDER_MEDIUM};
         }}
         """
 
@@ -452,7 +490,7 @@ class QtTheme:
         return f"""
         QRadioButton {{
             background-color: transparent;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             spacing: {cls._px("2")}px;
             font-size: {cls._fs("body")}px;
         }}
@@ -460,18 +498,18 @@ class QtTheme:
         QRadioButton::indicator {{
             width: 18px;
             height: 18px;
-            border: 1px solid {COLORS["border"]};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: 9px;
-            background-color: {COLORS["bg_input"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QRadioButton::indicator:hover {{
-            border-color: {COLORS["border_hover"]};
+            border-color: {COLOR_BORDER_STRONG};
         }}
 
         QRadioButton::indicator:checked {{
-            background-color: {COLORS["accent"]};
-            border-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
+            border-color: {COLOR_ACCENT_PRIMARY};
         }}
         """
 
@@ -481,9 +519,9 @@ class QtTheme:
     def _combobox_qss(cls) -> str:
         return f"""
         QComboBox {{
-            background-color: {COLORS["bg_input"]};
-            color: {COLORS["text_primary"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_INPUT}px;
             padding: 6px 10px;
             min-height: 38px;
@@ -491,14 +529,14 @@ class QtTheme:
         }}
 
         QComboBox:focus {{
-            border-color: {COLORS["border_focus"]};
+            border-color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QComboBox::drop-down {{
             subcontrol-origin: padding;
             subcontrol-position: top right;
             width: 24px;
-            border-left: 1px solid {COLORS["border"]};
+            border-left: 1px solid {COLOR_BORDER_MEDIUM};
             border-top-right-radius: {RADIUS_INPUT}px;
             border-bottom-right-radius: {RADIUS_INPUT}px;
         }}
@@ -507,17 +545,17 @@ class QtTheme:
             image: none;
             border-left: 5px solid transparent;
             border-right: 5px solid transparent;
-            border-top: 5px solid {COLORS["text_secondary"]};
+            border-top: 5px solid {COLOR_TEXT_SECONDARY};
             width: 0px;
             height: 0px;
         }}
 
         QComboBox QAbstractItemView {{
-            background-color: {COLORS["bg_surface"]};
-            color: {COLORS["text_primary"]};
-            border: 1px solid {COLORS["border"]};
-            selection-background-color: {COLORS["bg_elevated"]};
-            selection-color: {COLORS["text_primary"]};
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            selection-background-color: {COLOR_BG_OVERLAY};
+            selection-color: {COLOR_TEXT_PRIMARY};
             outline: none;
         }}
 
@@ -527,12 +565,12 @@ class QtTheme:
         }}
 
         QComboBox QAbstractItemView::item:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QComboBox QAbstractItemView::item:selected {{
-            background-color: {COLORS["accent_dim"]};
-            color: {COLORS["text_accent"]};
+            background-color: {COLOR_ACCENT_SUBTLE};
+            color: {COLOR_ACCENT_PRIMARY};
         }}
         """
 
@@ -543,14 +581,14 @@ class QtTheme:
         return f"""
         QSpinBox::up-button, QDoubleSpinBox::up-button,
         QSpinBox::down-button, QDoubleSpinBox::down-button {{
-            background-color: {COLORS["bg_elevated"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             width: 20px;
         }}
 
         QSpinBox::up-button:hover, QDoubleSpinBox::up-button:hover,
         QSpinBox::down-button:hover, QDoubleSpinBox::down-button:hover {{
-            background-color: {COLORS["border_hover"]};
+            background-color: {COLOR_BORDER_STRONG};
         }}
         """
 
@@ -560,10 +598,10 @@ class QtTheme:
     def _table_qss(cls) -> str:
         return f"""
         QTableWidget, QTableView {{
-            background-color: {COLORS["bg_surface"]};
-            alternate-background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_primary"]};
-            gridline-color: {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            alternate-background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            gridline-color: {COLOR_BORDER_MEDIUM};
             border: none;
             font-size: {cls._fs("body")}px;
         }}
@@ -574,24 +612,24 @@ class QtTheme:
         }}
 
         QTableWidget::item:selected, QTableView::item:selected {{
-            background-color: {COLORS["accent_dim"]};
-            color: {COLORS["text_primary"]};
+            background-color: {COLOR_ACCENT_SUBTLE};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QTableWidget::item:hover, QTableView::item:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QHeaderView {{
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
         }}
 
         QHeaderView::section {{
-            background-color: {COLORS["bg_base"]};
-            color: {COLORS["text_muted"]};
+            background-color: {COLOR_BG_BASE};
+            color: {COLOR_TEXT_TERTIARY};
             padding: 8px 12px;
             border: none;
-            border-bottom: 1px solid {COLORS["border"]};
+            border-bottom: 1px solid {COLOR_BORDER_MEDIUM};
             font-weight: 600;
             font-size: {cls._fs("label")}px;
             text-transform: uppercase;
@@ -599,11 +637,11 @@ class QtTheme:
         }}
 
         QHeaderView::section:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QTableCornerButton::section {{
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
             border: none;
         }}
         """
@@ -614,9 +652,9 @@ class QtTheme:
     def _tree_qss(cls) -> str:
         return f"""
         QTreeWidget, QTreeView {{
-            background-color: {COLORS["bg_surface"]};
-            alternate-background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_primary"]};
+            background-color: {COLOR_BG_ELEVATED};
+            alternate-background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
             border: none;
             outline: none;
         }}
@@ -627,12 +665,12 @@ class QtTheme:
         }}
 
         QTreeWidget::item:selected, QTreeView::item:selected {{
-            background-color: {COLORS["accent_dim"]};
-            color: {COLORS["text_primary"]};
+            background-color: {COLOR_ACCENT_SUBTLE};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QTreeWidget::item:hover, QTreeView::item:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QTreeWidget::branch:has-siblings:!adjoins-item {{
@@ -663,19 +701,19 @@ class QtTheme:
     def _scrollbar_qss(cls) -> str:
         return f"""
         QScrollBar:vertical {{
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
             width: 8px;
             border-radius: 4px;
         }}
 
         QScrollBar::handle:vertical {{
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
             min-height: 40px;
             border-radius: 4px;
         }}
 
         QScrollBar::handle:vertical:hover {{
-            background-color: {COLORS["border_hover"]};
+            background-color: {COLOR_BORDER_STRONG};
         }}
 
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
@@ -688,19 +726,19 @@ class QtTheme:
         }}
 
         QScrollBar:horizontal {{
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
             height: 8px;
             border-radius: 4px;
         }}
 
         QScrollBar::handle:horizontal {{
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
             min-width: 40px;
             border-radius: 4px;
         }}
 
         QScrollBar::handle:horizontal:hover {{
-            background-color: {COLORS["border_hover"]};
+            background-color: {COLOR_BORDER_STRONG};
         }}
 
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
@@ -716,13 +754,13 @@ class QtTheme:
         return f"""
         QTabWidget::pane {{
             border: none;
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
             top: -1px;
         }}
 
         QTabBar::tab {{
-            background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_secondary"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
             border: none;
             border-top-left-radius: {RADIUS_CHIP}px;
             border-top-right-radius: {RADIUS_CHIP}px;
@@ -732,17 +770,17 @@ class QtTheme:
         }}
 
         QTabBar::tab:selected {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
             color: {TEXT_WHITE};
         }}
 
         QTabBar::tab:hover:!selected {{
-            background-color: {COLORS["bg_input"]};
-            color: {COLORS["text_primary"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QTabBar::tab:disabled {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
         }}
         """
 
@@ -752,16 +790,16 @@ class QtTheme:
     def _progressbar_qss(cls) -> str:
         return f"""
         QProgressBar {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
             border: none;
             border-radius: {RADIUS_CHIP}px;
             text-align: center;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             font-size: {cls._fs("small")}px;
         }}
 
         QProgressBar::chunk {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
             border-radius: {RADIUS_CHIP}px;
         }}
         """
@@ -772,8 +810,8 @@ class QtTheme:
     def _groupbox_qss(cls) -> str:
         return f"""
         QGroupBox {{
-            background-color: {COLORS["bg_surface"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
             margin-top: 12px;
             padding: 12px;
@@ -786,7 +824,7 @@ class QtTheme:
             left: 12px;
             top: -10px;
             padding: 0 6px;
-            color: {COLORS["text_secondary"]};
+            color: {COLOR_TEXT_SECONDARY};
         }}
         """
 
@@ -799,83 +837,83 @@ class QtTheme:
         }}
 
         QFrame[role="card"] {{
-            background-color: {COLORS["bg_surface"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
         }}
 
         QFrame[role="card-elevated"] {{
-            background-color: {COLORS["bg_elevated"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
         }}
 
         QFrame[role="input"] {{
-            background-color: {COLORS["bg_input"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_INPUT}px;
         }}
 
         QFrame[role="divider"] {{
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
             max-height: 1px;
             min-height: 1px;
         }}
 
         QFrame[role="accent-bar"] {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
             max-width: 3px;
             min-width: 3px;
             border-radius: 2px;
         }}
 
         QFrame[role="section-line"] {{
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
             max-height: 1px;
             min-height: 1px;
         }}
 
         QFrame[role="kpi-card"] {{
-            background-color: {COLORS["bg_surface"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
         }}
 
         QFrame[role="chip-critical"] {{
-            background-color: {COLORS["danger_dim"]};
-            color: {COLORS["text_danger"]};
+            background-color: {COLOR_ERROR_SUBTLE};
+            color: {COLOR_ERROR_TEXT};
             border: none;
             border-radius: {RADIUS_CHIP}px;
             padding: 2px 8px;
         }}
 
         QFrame[role="chip-warning"] {{
-            background-color: {COLORS["warning_dim"]};
-            color: {COLORS["text_warning"]};
+            background-color: {COLOR_WARNING_SUBTLE};
+            color: {COLOR_WARNING_TEXT};
             border: none;
             border-radius: {RADIUS_CHIP}px;
             padding: 2px 8px;
         }}
 
         QFrame[role="chip-info"] {{
-            background-color: {COLORS["info_dim"]};
-            color: {COLORS["text_accent"]};
+            background-color: {COLOR_INFO_SUBTLE};
+            color: {COLOR_ACCENT_PRIMARY};
             border: none;
             border-radius: {RADIUS_CHIP}px;
             padding: 2px 8px;
         }}
 
         QFrame[role="chip-success"] {{
-            background-color: {COLORS["success_dim"]};
-            color: {COLORS["text_success"]};
+            background-color: {COLOR_SUCCESS_SUBTLE};
+            color: {COLOR_SUCCESS_TEXT};
             border: none;
             border-radius: {RADIUS_CHIP}px;
             padding: 2px 8px;
         }}
 
         QFrame[role="chip-neutral"] {{
-            background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_secondary"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
             border: none;
             border-radius: {RADIUS_CHIP}px;
             padding: 2px 8px;
@@ -888,19 +926,19 @@ class QtTheme:
     def _menu_qss(cls) -> str:
         return f"""
         QMenuBar {{
-            background-color: {COLORS["bg_surface"]};
-            color: {COLORS["text_primary"]};
-            border-bottom: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_PRIMARY};
+            border-bottom: 1px solid {COLOR_BORDER_MEDIUM};
         }}
 
         QMenuBar::item:selected {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QMenu {{
-            background-color: {COLORS["bg_surface"]};
-            color: {COLORS["text_primary"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             padding: 4px;
         }}
 
@@ -910,13 +948,13 @@ class QtTheme:
         }}
 
         QMenu::item:selected {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
             color: {TEXT_WHITE};
         }}
 
         QMenu::separator {{
             height: 1px;
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
             margin: 4px 8px;
         }}
         """
@@ -925,9 +963,9 @@ class QtTheme:
     def _tooltip_qss(cls) -> str:
         return f"""
         QToolTip {{
-            background-color: {COLORS["bg_surface"]};
-            color: {COLORS["text_primary"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CHIP}px;
             padding: 4px 8px;
             font-size: {cls._fs("small")}px;
@@ -940,11 +978,11 @@ class QtTheme:
     def _dialog_qss(cls) -> str:
         return f"""
         QMessageBox {{
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
         }}
 
         QMessageBox QLabel {{
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QDialogButtonBox QPushButton {{
@@ -958,7 +996,7 @@ class QtTheme:
     def _splitter_qss(cls) -> str:
         return f"""
         QSplitter::handle {{
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
         }}
 
         QSplitter::handle:horizontal {{
@@ -976,9 +1014,9 @@ class QtTheme:
     def _nav_qss(cls) -> str:
         return f"""
         QFrame[role="nav-panel"] {{
-            background-color: {COLORS["bg_surface"]};
+            background-color: {COLOR_BG_ELEVATED};
             border: none;
-            border-right: 1px solid {COLORS["border"]};
+            border-right: 1px solid {COLOR_BORDER_MEDIUM};
         }}
 
         QFrame[role="nav-top-section"] {{
@@ -987,7 +1025,7 @@ class QtTheme:
         }}
 
         QFrame[role="nav-divider"] {{
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
             max-height: 1px;
             min-height: 1px;
         }}
@@ -999,11 +1037,11 @@ class QtTheme:
         }}
 
         QFrame[role="nav-item"]:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QFrame[role="nav-item"][state="active"] {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QFrame[role="nav-accent"] {{
@@ -1014,41 +1052,41 @@ class QtTheme:
         }}
 
         QFrame[role="nav-item"][state="active"] QFrame[role="nav-accent"] {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QLabel[role="nav-icon"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-family: "'Segoe UI Emoji', 'Segoe UI Symbol', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
             font-size: 18px;
         }}
 
         QFrame[role="nav-item"][state="active"] QLabel[role="nav-icon"] {{
-            color: {COLORS["text_accent"]};
+            color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QLabel[role="nav-label"] {{
             background-color: transparent;
-            color: {COLORS["text_secondary"]};
+            color: {COLOR_TEXT_SECONDARY};
             font-size: {cls._fs("body")}px;
         }}
 
         QFrame[role="nav-item"][state="active"] QLabel[role="nav-label"] {{
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             font-weight: bold;
         }}
 
         QLabel[role="nav-group-label"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("label")}px;
             font-weight: bold;
             text-transform: uppercase;
         }}
 
         QFrame[role="nav-monogram"] {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
             border-radius: 6px;
         }}
 
@@ -1061,20 +1099,20 @@ class QtTheme:
 
         QLabel[role="nav-app-name"] {{
             background-color: transparent;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             font-weight: bold;
             font-size: 13px;
         }}
 
         QLabel[role="nav-app-subtitle"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-size: 11px;
         }}
 
         QPushButton[role="nav-toggle"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             border: none;
             border-radius: 4px;
             padding: 2px 6px;
@@ -1085,8 +1123,8 @@ class QtTheme:
         }}
 
         QPushButton[role="nav-toggle"]:hover {{
-            background-color: {COLORS["bg_elevated"]};
-            color: {COLORS["text_secondary"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
         }}
         """
 
@@ -1096,50 +1134,50 @@ class QtTheme:
     def _topbar_qss(cls) -> str:
         return f"""
         QFrame[role="top-bar"] {{
-            background-color: {COLORS["bg_base"]};
+            background-color: {COLOR_BG_BASE};
             border: none;
-            border-bottom: 1px solid {COLORS["border"]};
+            border-bottom: 1px solid {COLOR_BORDER_MEDIUM};
         }}
 
         QFrame[role="top-bar-divider"] {{
-            background-color: {COLORS["border"]};
+            background-color: {COLOR_BORDER_MEDIUM};
             max-height: 1px;
             min-height: 1px;
         }}
 
         QLabel[role="breadcrumb"] {{
             background-color: transparent;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             font-size: {cls._fs("body")}px;
             font-weight: bold;
         }}
 
         QLabel[role="fuel-status"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-family: {cls._ff("mono")};
             font-size: {cls._fs("small")}px;
         }}
 
         QLabel[role="clock"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-family: {cls._ff("mono")};
             font-size: {cls._fs("body")}px;
         }}
 
         QLabel[role="bell"] {{
             background-color: transparent;
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
             font-size: 16px;
         }}
 
         QLabel[role="bell"][alert="true"] {{
-            color: {COLORS["text_danger"]};
+            color: {COLOR_ERROR_TEXT};
         }}
 
         QLabel[role="badge"] {{
-            background-color: {COLORS["danger"]};
+            background-color: {COLOR_ERROR_DEFAULT};
             color: {TEXT_WHITE};
             border-radius: 9px;
             font-size: {cls._fs("label")}px;
@@ -1169,19 +1207,19 @@ class QtTheme:
     def _calendar_qss(cls) -> str:
         return f"""
         QCalendarWidget {{
-            background-color: {COLORS["bg_surface"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
         }}
 
         QCalendarWidget QWidget {{
-            background-color: {COLORS["bg_surface"]};
-            color: {COLORS["text_primary"]};
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_PRIMARY};
         }}
 
         QCalendarWidget QToolButton {{
             background-color: transparent;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             border: none;
             border-radius: {RADIUS_CHIP}px;
             padding: 4px 8px;
@@ -1189,33 +1227,33 @@ class QtTheme:
         }}
 
         QCalendarWidget QToolButton:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QCalendarWidget QMenu {{
-            background-color: {COLORS["bg_surface"]};
+            background-color: {COLOR_BG_ELEVATED};
         }}
 
         QCalendarWidget QSpinBox {{
-            background-color: {COLORS["bg_input"]};
-            color: {COLORS["text_primary"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
         }}
 
         QCalendarWidget QAbstractItemView:enabled {{
-            background-color: {COLORS["bg_surface"]};
-            color: {COLORS["text_primary"]};
-            selection-background-color: {COLORS["accent"]};
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_PRIMARY};
+            selection-background-color: {COLOR_ACCENT_PRIMARY};
             selection-color: {TEXT_WHITE};
         }}
 
         QCalendarWidget QAbstractItemView:disabled {{
-            color: {COLORS["text_muted"]};
+            color: {COLOR_TEXT_TERTIARY};
         }}
 
         QCalendarWidget QWidget#qt_calendar_navigationbar {{
-            background-color: {COLORS["bg_elevated"]};
-            border-bottom: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_OVERLAY};
+            border-bottom: 1px solid {COLOR_BORDER_MEDIUM};
         }}
 
         QCalendarWidget QAbstractItemView::item {{
@@ -1224,11 +1262,11 @@ class QtTheme:
         }}
 
         QCalendarWidget QAbstractItemView::item:hover {{
-            background-color: {COLORS["bg_elevated"]};
+            background-color: {COLOR_BG_OVERLAY};
         }}
 
         QCalendarWidget QAbstractItemView::item:selected {{
-            background-color: {COLORS["accent"]};
+            background-color: {COLOR_ACCENT_PRIMARY};
             color: {TEXT_WHITE};
         }}
         """
@@ -1237,14 +1275,14 @@ class QtTheme:
     def _toast_qss(cls) -> str:
         return f"""
         QFrame[role="toast"] {{
-            background-color: {COLORS["bg_surface"]};
-            color: {COLORS["text_primary"]};
-            border: 1px solid {COLORS["border"]};
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
         }}
 
         QFrame[role="toast"][state="error"] {{
-            border: 1px solid {COLORS["danger"]};
+            border: 1px solid {COLOR_ERROR_DEFAULT};
         }}
 
         QLabel[role="toast-icon"] {{
@@ -1254,7 +1292,7 @@ class QtTheme:
 
         QLabel[role="toast-label"] {{
             background-color: transparent;
-            color: {COLORS["text_primary"]};
+            color: {COLOR_TEXT_PRIMARY};
             font-size: {cls._fs("body")}px;
         }}
         """

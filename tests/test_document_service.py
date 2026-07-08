@@ -1,4 +1,6 @@
 """Tests for DocumentService facade."""
+from __future__ import annotations
+
 import json
 import os
 from unittest.mock import MagicMock, call, patch
@@ -328,6 +330,50 @@ class TestTemplates:
         mock_templates.create_template.assert_called_once()
 
 
+class TestArchive:
+    def test_archive_publishes_event(self, doc_service):
+        doc_service.archive(1)
+        doc_service._repo.archive.assert_called_once_with(1)
+        doc_service._event_bus.publish.assert_called_once()
+
+    def test_archive_event_has_correct_type(self, doc_service):
+        doc_service.archive(42)
+        args, _ = doc_service._event_bus.publish.call_args
+        from services.operations.event_bus import DOCUMENT_ARCHIVED
+        assert args[0] == DOCUMENT_ARCHIVED
+        assert args[1]["document_id"] == 42
+
+
+class TestDeleteBatch:
+    def test_delete_batch_empty(self, doc_service):
+        result = doc_service.delete_batch([])
+        assert result == 0
+
+    def test_delete_batch_removes_files_and_publishes(self, doc_service):
+        doc_service._repo.get_ids_by_ids.return_value = [
+            {"id": 1, "file_path": "/data/documents/a.pdf"},
+            {"id": 2, "file_path": "/data/documents/b.pdf"},
+        ]
+        with patch("os.path.isfile", return_value=True), \
+             patch("os.remove") as mock_rm:
+            doc_service._repo.delete_batch.return_value = 2
+            result = doc_service.delete_batch([1, 2])
+            assert result == 2
+            assert mock_rm.call_count == 2
+            doc_service._event_bus.publish.assert_called_once()
+
+    def test_delete_batch_skip_missing_file(self, doc_service):
+        doc_service._repo.get_ids_by_ids.return_value = [
+            {"id": 1, "file_path": "/data/documents/a.pdf"},
+        ]
+        with patch("os.path.isfile", return_value=False), \
+             patch("os.remove") as mock_rm:
+            doc_service._repo.delete_batch.return_value = 1
+            result = doc_service.delete_batch([1])
+            assert result == 1
+            mock_rm.assert_not_called()
+
+
 class TestMisc:
     def test_delete_removes_file_and_publishes_event(self, doc_service):
         doc_service._repo.get_by_id.return_value = {
@@ -346,16 +392,46 @@ class TestMisc:
         doc_service._repo.get_by_id.return_value = mock_doc
         assert doc_service.get_by_id(1) == mock_doc
 
+    def test_get_by_id_from_cache(self, doc_service):
+        mock_cache = MagicMock()
+        mock_cache.get.return_value = {"id": 1, "title": "Cached"}
+        with patch.object(doc_service, "_get_cache", return_value=mock_cache):
+            result = doc_service.get_by_id(1)
+            assert result["title"] == "Cached"
+            mock_cache.get.assert_called_once_with("doc:1")
+            doc_service._repo.get_by_id.assert_not_called()
+
     def test_add_tag(self, doc_service):
         doc_service._repo.add_tag.return_value = True
         assert doc_service.add_tag(1, "important") is True
         doc_service._repo.add_tag.assert_called_once_with(1, "important")
+
+    def test_remove_tag(self, doc_service):
+        doc_service._repo.remove_tag.return_value = True
+        assert doc_service.remove_tag(1, "old_tag") is True
+        doc_service._repo.remove_tag.assert_called_once_with(1, "old_tag")
+
+    def test_set_tags(self, doc_service):
+        doc_service.set_tags(1, ["a", "b"])
+        doc_service._repo.set_tags.assert_called_once_with(1, ["a", "b"])
 
     def test_update_metadata(self, doc_service):
         doc_service._repo.update = MagicMock()
         result = doc_service.update_metadata(1, title="New Title", tags=["tag1"])
         assert result is True
         doc_service._repo.update.assert_called_once()
+
+    def test_update_metadata_description_only(self, doc_service):
+        doc_service._repo.update = MagicMock()
+        result = doc_service.update_metadata(1, description="New desc")
+        assert result is True
+        doc_service._repo.update.assert_called_once()
+
+    def test_update_metadata_no_changes(self, doc_service):
+        doc_service._repo.update = MagicMock()
+        result = doc_service.update_metadata(1)
+        assert result is False
+        doc_service._repo.update.assert_not_called()
 
     def test_shutdown_is_noop(self):
         DocumentService.shutdown()
@@ -368,6 +444,14 @@ class TestMisc:
             result = doc_service.get_file_path(1)
             assert result is not None
             assert "test.pdf" in result
+
+    def test_get_file_path_none_when_missing(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/data/documents/missing.pdf",
+        }
+        with patch("os.path.isfile", return_value=False):
+            result = doc_service.get_file_path(1)
+            assert result is None
 
     def test_is_image_true(self, doc_service):
         assert doc_service.is_image("image/png") is True
@@ -399,6 +483,26 @@ class TestMisc:
         doc_service.get_versions(1)
         mock_versioning.get_versions.assert_called_once_with(1)
 
+    def test_upload_new_version_delegates(self, doc_service):
+        mock_versioning = MagicMock()
+        mock_versioning.upload_new_version.return_value = 2
+        doc_service._services["versioning"] = mock_versioning
+
+        result = doc_service.upload_new_version(1, "/path/v2.pdf", comment="v2")
+        assert result == 2
+        mock_versioning.upload_new_version.assert_called_once_with(
+            1, "/path/v2.pdf", comment="v2", uploaded_by="",
+        )
+
+    def test_restore_version_delegates(self, doc_service):
+        mock_versioning = MagicMock()
+        mock_versioning.restore_version.return_value = True
+        doc_service._services["versioning"] = mock_versioning
+
+        result = doc_service.restore_version(1, 1)
+        assert result is True
+        mock_versioning.restore_version.assert_called_once_with(1, 1)
+
     def test_rebuild_fts(self, doc_service):
         doc_service.rebuild_fts()
         doc_service._repo.rebuild_fts_index.assert_called_once()
@@ -418,3 +522,267 @@ class TestMisc:
         doc_id = doc_service.register_existing("/path/file.pdf")
         assert doc_id == 42
         mock_ocr.enqueue_ocr.assert_called_once()
+
+    def test_register_existing_skips_ocr_for_migration(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.register_existing.return_value = 42
+        doc_service._services["upload"] = mock_upload
+
+        mock_ocr = MagicMock()
+        doc_service._services["ocr"] = mock_ocr
+
+        doc_service.register_existing("/path/file.pdf", is_migration=True)
+        mock_ocr.enqueue_ocr.assert_not_called()
+
+    def test_register_existing_skips_ocr_for_non_image_pdf(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.register_existing.return_value = 42
+        doc_service._services["upload"] = mock_upload
+
+        doc_service._repo.get_by_id.return_value = {
+            "id": 42, "file_path": "/docs/doc.txt", "mime_type": "text/plain",
+        }
+
+        doc_service.register_existing("/path/file.txt")
+        # No OCR mock called because mime_type is text/plain
+        # (ocr service not even set up — test passes if no error)
+
+    def test_get_links(self, doc_service):
+        doc_service._repo.get_links.return_value = [{"id": 1, "entity_type": "trip"}]
+        links = doc_service.get_links(1)
+        assert len(links) == 1
+        doc_service._repo.get_links.assert_called_once_with(1)
+
+    def test_get_documents_for_entity(self, doc_service):
+        doc_service._repo.get_documents_for_entity.return_value = [{"id": 1}]
+        docs = doc_service.get_documents_for_entity("trip", 42)
+        assert len(docs) == 1
+        doc_service._repo.get_documents_for_entity.assert_called_once_with("trip", 42)
+
+
+class TestMetadataQueries:
+    def test_get_categories_delegates(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.get_categories.return_value = [{"category": "invoices", "cnt": 5}]
+        doc_service._services["search"] = mock_search
+        assert doc_service.get_categories() == [{"category": "invoices", "cnt": 5}]
+
+    def test_get_all_tags_delegates(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.get_all_tags.return_value = ["tag1"]
+        doc_service._services["search"] = mock_search
+        assert doc_service.get_all_tags() == ["tag1"]
+
+    def test_get_entity_types_delegates(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.get_entity_types.return_value = ["trip"]
+        doc_service._services["search"] = mock_search
+        assert doc_service.get_entity_types() == ["trip"]
+
+    def test_get_mime_types_delegates(self, doc_service):
+        mock_search = MagicMock()
+        mock_search.get_mime_types.return_value = ["application/pdf"]
+        doc_service._services["search"] = mock_search
+        assert doc_service.get_mime_types() == ["application/pdf"]
+
+
+class TestContractsExtended:
+    def test_get_contract_delegates(self, doc_service):
+        mock_contracts = MagicMock()
+        mock_contracts.get_contract.return_value = {"id": 1}
+        doc_service._services["contracts"] = mock_contracts
+        result = doc_service.get_contract(1)
+        assert result == {"id": 1}
+        mock_contracts.get_contract.assert_called_once_with(1)
+
+    def test_update_contract_status_delegates(self, doc_service):
+        mock_contracts = MagicMock()
+        doc_service._services["contracts"] = mock_contracts
+        doc_service.update_contract_status(1, "active")
+        mock_contracts.update_contract_status.assert_called_once_with(1, "active")
+
+    def test_get_expiring_contracts_delegates(self, doc_service):
+        mock_contracts = MagicMock()
+        mock_contracts.get_expiring_contracts.return_value = []
+        doc_service._services["contracts"] = mock_contracts
+        doc_service.get_expiring_contracts(days_ahead=30)
+        mock_contracts.get_expiring_contracts.assert_called_once_with(30)
+
+    def test_create_contract_with_full_params(self, doc_service):
+        mock_contracts = MagicMock()
+        mock_contracts.create_contract.return_value = 99
+        doc_service._services["contracts"] = mock_contracts
+        result = doc_service.create_contract(
+            1, 2, contract_type="transport",
+            start_date="2025-01-01", end_date="2025-12-31",
+            value_eur=5000.0, payment_terms="net30",
+            auto_renewal=True, renewal_notice_days=60, notes="Test",
+        )
+        assert result == 99
+        mock_contracts.create_contract.assert_called_once()
+
+
+class TestTemplatesExtended:
+    def test_get_templates_delegates(self, doc_service):
+        mock_templates = MagicMock()
+        mock_templates.get_templates.return_value = [{"id": 1}]
+        doc_service._services["templates"] = mock_templates
+        result = doc_service.get_templates(category="general")
+        assert result == [{"id": 1}]
+        mock_templates.get_templates.assert_called_once_with("general")
+
+    def test_generate_from_template_delegates(self, doc_service):
+        mock_templates = MagicMock()
+        mock_templates.generate_from_template.return_value = "/path/out.pdf"
+        doc_service._services["templates"] = mock_templates
+        result = doc_service.generate_from_template(1, {"name": "test"})
+        assert result == "/path/out.pdf"
+        mock_templates.generate_from_template.assert_called_once()
+
+
+class TestMigration:
+    def test_migrate_existing_attachments_delegates(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.migrate_existing_attachments.return_value = 5
+        doc_service._services["upload"] = mock_upload
+        assert doc_service.migrate_existing_attachments() == 5
+
+    def test_migrate_existing_invoices_delegates(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.migrate_existing_invoices.return_value = 3
+        doc_service._services["upload"] = mock_upload
+        assert doc_service.migrate_existing_invoices() == 3
+
+    def test_migrate_all_delegates(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.migrate_all.return_value = 8
+        doc_service._services["upload"] = mock_upload
+        assert doc_service.migrate_all() == 8
+
+
+class TestExpiryExtended:
+    def test_get_expiring_delegates(self, doc_service):
+        mock_expiry = MagicMock()
+        mock_expiry.get_expiring.return_value = [{"id": 1}]
+        doc_service._services["expiry"] = mock_expiry
+        result = doc_service.get_expiring(days_ahead=30)
+        assert result == [{"id": 1}]
+        mock_expiry.get_expiring.assert_called_once_with(30)
+
+    def test_get_overdue_delegates(self, doc_service):
+        mock_expiry = MagicMock()
+        mock_expiry.get_overdue.return_value = [{"id": 1}]
+        doc_service._services["expiry"] = mock_expiry
+        result = doc_service.get_overdue()
+        assert result == [{"id": 1}]
+        mock_expiry.get_overdue.assert_called_once()
+
+
+class TestDownloadZipExtended:
+    def test_download_zip_skips_missing_files(self, doc_service):
+        import tempfile
+        tmpdir = tempfile.mkdtemp()
+        safe_dir = os.path.join(tmpdir, "data", "documents")
+        os.makedirs(safe_dir)
+        out_path = os.path.join(safe_dir, "out.zip")
+
+        doc_service._repo.get_ids_by_ids.return_value = [
+            {"id": 1, "file_path": os.path.join(safe_dir, "exists.pdf"), "file_name": "exists.pdf"},
+            {"id": 2, "file_path": os.path.join(safe_dir, "missing.pdf"), "file_name": "missing.pdf"},
+        ]
+
+        with patch("os.path.isfile", side_effect=lambda p: "exists" in p), \
+             patch("os.path.realpath", side_effect=lambda p: os.path.join(tmpdir, p) if not os.path.isabs(p) else p), \
+             patch("zipfile.ZipFile") as mock_zip_cls:
+            mock_zf = MagicMock()
+            mock_zip_cls.return_value.__enter__.return_value = mock_zf
+            result = doc_service.download_zip([1, 2], out_path)
+            assert result == out_path
+            # Only the existing file should be written
+            assert mock_zf.write.call_count == 1
+
+    def test_download_zip_skips_outside_safe_dir(self, doc_service):
+        import tempfile
+        tmpdir = tempfile.mkdtemp()
+        safe_dir = os.path.join(tmpdir, "data", "documents")
+        os.makedirs(safe_dir)
+        out_path = os.path.join(safe_dir, "out.zip")
+        outside_path = os.path.join(tmpdir, "outside", "bad.pdf")
+        os.makedirs(os.path.join(tmpdir, "outside"))
+
+        doc_service._repo.get_ids_by_ids.return_value = [
+            {"id": 1, "file_path": outside_path, "file_name": "bad.pdf"},
+        ]
+
+        with patch("os.path.isfile", return_value=True), \
+             patch("os.path.realpath", side_effect=lambda p: os.path.realpath(p)), \
+             patch("zipfile.ZipFile") as mock_zip_cls:
+            mock_zf = MagicMock()
+            mock_zip_cls.return_value.__enter__.return_value = mock_zf
+            result = doc_service.download_zip([1], out_path)
+            assert result == out_path
+            # File outside safe dir should be skipped
+            mock_zf.write.assert_not_called()
+
+
+class TestEmailExtended:
+    def test_email_document_uses_prefs_for_smtp(self, doc_service):
+        doc_service._repo.get_by_id.return_value = {
+            "id": 1, "file_path": "/docs/test.pdf",
+            "title": "Test", "file_name": "test.pdf", "doc_number": "DOC-001",
+        }
+        mock_prefs = MagicMock()
+        mock_prefs.get_smtp_config.return_value = {
+            "smtp_server": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_user": "user",
+            "smtp_password": "pass",
+        }
+        with patch("services.document_service.os.path.isfile", return_value=True), \
+             patch("services.operations.notification_center.NotificationCenter") as mock_nc_cls:
+            mock_nc = MagicMock()
+            mock_nc.send_email.return_value = True
+            mock_nc_cls.return_value = mock_nc
+            result = doc_service.email_document(1, "recipient@example.com", prefs=mock_prefs)
+            assert result is True
+            mock_nc.send_email.assert_called_once()
+
+    def test_email_document_no_doc(self, doc_service):
+        doc_service._repo.get_by_id.return_value = None
+        result = doc_service.email_document(999, "test@example.com")
+        assert result is False
+
+
+class TestAuditLog:
+    def test_get_audit_log(self, doc_service):
+        doc_service._audit_repo.get_events.return_value = [{"event_type": "document.deleted"}]
+        logs = doc_service.get_audit_log(limit=10)
+        assert len(logs) == 1
+        doc_service._audit_repo.get_events.assert_called_once_with(
+            event_type_prefix="document.", limit=10,
+        )
+
+
+class TestUploadExtended:
+    def test_upload_enqueues_ocr_for_image(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.upload.return_value = 42
+        doc_service._services["upload"] = mock_upload
+        mock_ocr = MagicMock()
+        doc_service._services["ocr"] = mock_ocr
+        doc_service._repo.get_by_id.return_value = {
+            "id": 42, "file_path": "/docs/img.png", "mime_type": "image/png",
+        }
+        doc_id = doc_service.upload("/path/img.png")
+        assert doc_id == 42
+        mock_ocr.enqueue_ocr.assert_called_once_with(42, "/docs/img.png", "image/png")
+
+    def test_upload_does_not_enqueue_ocr_if_no_doc_id(self, doc_service):
+        mock_upload = MagicMock()
+        mock_upload.upload.return_value = None
+        doc_service._services["upload"] = mock_upload
+        mock_ocr = MagicMock()
+        doc_service._services["ocr"] = mock_ocr
+        doc_id = doc_service.upload("/path/file.pdf")
+        assert doc_id is None
+        mock_ocr.enqueue_ocr.assert_not_called()

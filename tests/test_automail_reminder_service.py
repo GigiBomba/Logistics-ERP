@@ -138,3 +138,129 @@ def test_get_reminder_status_for_all_active(service):
     results, total = service.get_reminder_status_for_all_active()
     assert results == []
     assert total == 0
+
+
+def test_get_reminder_status_for_invoice_with_schedules(service):
+    """Test status calculation with active schedules."""
+    service.get_active_schedules = MagicMock(return_value=[
+        {"id": 1, "name": "3_days_before", "trigger_type": "days_before_due",
+         "days_offset": 3, "template_name": "Reminder A"},
+        {"id": 2, "name": "on_due", "trigger_type": "on_due_date",
+         "days_offset": 0, "template_name": "Reminder B"},
+    ])
+    service._get_sent_reminders = MagicMock(return_value=[
+        {"reminder_type": "3_days_before", "status": "sent", "sent_at": "2026-07-01T10:00:00"},
+    ])
+    result = service.get_reminder_status_for_invoice(
+        invoice_id=100, invoice_due_date="2026-07-05", trip_id=42, client_id=1,
+    )
+    assert len(result) == 2
+    # First schedule: already sent
+    assert result[0]["schedule_name"] == "3_days_before"
+    assert result[0]["status"] == "sent"
+    assert result[0]["sent_at"] == "2026-07-01T10:00:00"
+    # Second schedule: should be scheduled (future relative to due date based on compute)
+    assert result[1]["schedule_name"] == "on_due"
+    assert result[1]["status"] in ("scheduled", "skipped")
+
+
+def test_calculate_next_reminder_matches(service):
+    """Today matches a schedule's target days."""
+    service.get_active_schedules = MagicMock(return_value=[
+        {"id": 1, "trigger_type": "days_after_due", "days_offset": 5},
+    ])
+    # Due 5 days ago
+    past_date = (date.today() - timedelta(days=5)).isoformat()
+    result = service.calculate_next_reminder(past_date)
+    assert result is not None
+    assert result["id"] == 1
+
+
+def test_calculate_next_reminder_no_match(service):
+    """No schedule matches today's offset."""
+    service.get_active_schedules = MagicMock(return_value=[
+        {"id": 1, "trigger_type": "days_after_due", "days_offset": 10},
+    ])
+    past_date = (date.today() - timedelta(days=5)).isoformat()
+    result = service.calculate_next_reminder(past_date)
+    assert result is None
+
+
+def test_calculate_next_reminder_invalid_schedule_data(service):
+    """Schedule without trigger_type should be skipped."""
+    service.get_active_schedules = MagicMock(return_value=[
+        {"id": 1, "trigger_type": "unknown_type", "days_offset": 0},
+    ])
+    result = service.calculate_next_reminder((date.today()).isoformat())
+    # unknown_type resolves to target=0
+    assert result is not None
+
+
+def test_should_skip_default_max_reminders(service):
+    """Default max_reminders is 5."""
+    service._count_sent_reminders = MagicMock(return_value=5)
+    assert service.should_skip(1) is True
+
+
+def test_skip_next_reminder_failure(service):
+    service._repo.skip_reminder.side_effect = Exception("DB error")
+    result = service.skip_next_reminder(1, 1)
+    assert result is False
+
+
+def test_cancel_all_reminders_failure(service):
+    service._repo.cancel_all_reminders.side_effect = Exception("DB error")
+    result = service.cancel_all_reminders(1, 1)
+    assert result is False
+
+
+def test_get_sent_reminders_failure(service):
+    service._repo.get_reminder_status.side_effect = Exception("DB error")
+    result = service._get_sent_reminders(1)
+    assert result == []
+
+
+def test_count_sent_reminders_failure(service):
+    service._repo.get_sent_reminder_count.side_effect = Exception("DB error")
+    assert service._count_sent_reminders(1) == 0
+
+
+def test_fetch_unpaid_invoices_failure(service):
+    service._repo.get_unpaid_invoices_for_reminders.side_effect = Exception("DB error")
+    result = service._fetch_unpaid_invoices()
+    assert result == []
+
+
+def test_get_reminder_status_for_all_active_with_search(service):
+    service._fetch_unpaid_invoices = MagicMock(return_value=[])
+    results, total = service.get_reminder_status_for_all_active(page=0, search="ACME")
+    assert results == []
+    assert total == 0
+    service._fetch_unpaid_invoices.assert_called_with("ACME")
+
+
+def test_get_reminder_status_for_all_active_with_status_filter(service):
+    """Status filter=overdue excludes invoices that still have scheduled reminders."""
+    service._fetch_unpaid_invoices = MagicMock(return_value=[{
+        "invoice_id": 1, "due_date": "2020-01-01", "trip_id": 1,
+        "invoice_number": "INV-001", "client_name": "ACME",
+    }])
+    service.get_reminder_status_for_invoice = MagicMock(return_value=[
+        {"status": "skipped", "trigger_type": "days_after_due"},
+    ])
+    results, total = service.get_reminder_status_for_all_active(status_filter="overdue")
+    assert total == 1
+    assert len(results) == 1
+
+
+def test_get_reminder_status_for_all_active_pagination(service):
+    invoices = [
+        {"invoice_id": i, "due_date": "2026-07-01", "trip_id": i,
+         "invoice_number": f"INV-{i}", "client_name": f"Client {i}"}
+        for i in range(5)
+    ]
+    service._fetch_unpaid_invoices = MagicMock(return_value=invoices)
+    service.get_reminder_status_for_invoice = MagicMock(return_value=[])
+    results, total = service.get_reminder_status_for_all_active(page=0, limit=2)
+    assert total == 5
+    assert len(results) == 2

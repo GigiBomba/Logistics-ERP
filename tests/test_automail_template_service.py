@@ -125,3 +125,63 @@ def test_preview_email(service):
     subject, body_text, body_html = service.preview_email(template)
     assert "Preview" in body_text
     assert "Preview" in body_html
+
+
+def test_render_template_empty_string():
+    result = render_template("", {"key": "val"})
+    assert result == ""
+
+
+def test_render_template_html_preserved():
+    template = "<p>Dear {client_name},</p><br/><p>Amount: {total_amount}</p>"
+    context = {"client_name": "ACME", "total_amount": "500"}
+    result = render_template(template, context)
+    assert "<p>Dear ACME,</p>" in result
+    assert "500" in result
+
+
+def test_render_email_empty_context(service):
+    template = {
+        "subject": "Invoice {invoice_number}",
+        "body_text": "Amount: {total_amount}",
+        "body_html": "",
+    }
+    subject, body_text, body_html = service.render_email(template, {})
+    assert "{invoice_number}" in subject
+    assert "{total_amount}" in body_text
+
+
+def test_render_email_no_subject_key(service):
+    template = {"body_text": "Hello {name}", "body_html": ""}
+    subject, body_text, body_html = service.render_email(template, {"name": "John"})
+    assert subject == ""
+    assert "John" in body_text
+    assert body_html == ""
+
+
+def test_render_email_subject_sanitizes_tabs(service):
+    template = {"subject": "Inv\t\t\tDetails", "body_text": "", "body_html": ""}
+    subject, _, _ = service.render_email(template, {})
+    assert "\t" not in subject
+
+
+def test_preview_email_with_custom_context(service):
+    template = {"subject": "{custom_var}", "body_text": "Value: {custom_var}", "body_html": ""}
+    custom_ctx = {"custom_var": "MyValue"}
+    subject, body_text, body_html = service.preview_email(template, sample_context=custom_ctx)
+    assert "MyValue" in subject
+    assert "Preview" in body_text
+
+
+def test_get_available_variables_structure():
+    vars = get_available_variables()
+    for v in vars:
+        assert "name" in v
+        assert "label" in v
+        assert "example" in v
+        assert "description" in v
+
+
+def test_get_default_template_not_found(service):
+    service._repo.get_default_template.return_value = None
+    assert service.get_default_template() is None

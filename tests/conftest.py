@@ -46,6 +46,35 @@ def reset_singletons():
     from services.trip_context import TripContextService
     TripContextService._instance = None
 
+    # Rules singleton
+    from services.operations.rules import Rules
+    Rules._instance = None
+
+    # FleetTrackingService
+    from services.fleet_tracking_service import FleetTrackingService
+    FleetTrackingService._instance = None
+
+    # AppState
+    from services.app_state import AppState
+    AppState._instance = None
+
+    # RouteStateManager (dict of instances)
+    from services.route_state import RouteStateManager
+    RouteStateManager._instances = {}
+
+    # i18n module-level globals
+    import services.i18n as _i18n
+    _i18n._translations = {}
+    _i18n._current_lang = "en"
+
+    # Auth manager
+    import client.auth_manager as _auth_mgr
+    _auth_mgr._auth_instance = None
+
+    # Backend cache
+    import backend.cache as _backend_cache
+    _backend_cache._cache_instance = None
+
     # ── Chart-export engine (Choreographer/Chrome) ────────────────
     # Replace with a mock so that async QThreadPool render workers
     # from any test never try to boot real Chrome during test runs.

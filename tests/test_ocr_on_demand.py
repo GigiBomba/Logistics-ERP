@@ -200,11 +200,11 @@ class DocumentCenterOcrWiringTest(unittest.TestCase):
         """The view must own a ``_ocr_worker`` slot and a busy
         flag so the button can be disabled mid-run."""
         from ui.views.document_center_view import QtDocumentCenterView
-        # Inspect the class for the attributes.
+        # Inspect the class source (now in document_center/__init__ → document_center.py).
         src = open(
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "ui", "views", "document_center_view.py",
+                "..", "ui", "views", "document_center", "document_center.py",
             ),
             encoding="utf-8",
         ).read()
@@ -222,7 +222,7 @@ class DocumentCenterOcrWiringTest(unittest.TestCase):
         src = open(
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "ui", "views", "document_center_view.py",
+                "..", "ui", "views", "document_center", "document_center.py",
             ),
             encoding="utf-8",
         ).read()
@@ -236,7 +236,7 @@ class DocumentCenterOcrWiringTest(unittest.TestCase):
         src = open(
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "ui", "views", "document_center_view.py",
+                "..", "ui", "views", "document_center", "document_actions.py",
             ),
             encoding="utf-8",
         ).read()
@@ -252,7 +252,7 @@ class DocumentCenterOcrWiringTest(unittest.TestCase):
         src = open(
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "ui", "views", "document_center_view.py",
+                "..", "ui", "views", "document_center", "document_actions.py",
             ),
             encoding="utf-8",
         ).read()
@@ -268,7 +268,7 @@ class DocumentCenterOcrWiringTest(unittest.TestCase):
         src = open(
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "ui", "views", "document_center_view.py",
+                "..", "ui", "views", "document_center", "document_actions.py",
             ),
             encoding="utf-8",
         ).read()
@@ -358,7 +358,7 @@ class OcrRanEventTest(unittest.TestCase):
         src = open(
             os.path.join(
                 os.path.dirname(__file__),
-                "..", "ui", "views", "document_center_view.py",
+                "..", "ui", "views", "document_center", "document_actions.py",
             ),
             encoding="utf-8",
         ).read()

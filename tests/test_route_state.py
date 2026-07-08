@@ -144,3 +144,58 @@ def test_subscribe_unsubscribe(db_mock):
         mock_bus.subscribe.assert_called_with("test_event", cb)
         manager.unsubscribe("test_event", cb)
         mock_bus.unsubscribe.assert_called_with("test_event", cb)
+
+
+def test_get_active_route_returns_cached_state(db_mock):
+    """When _state already has route_id and route, it should return directly."""
+    manager = RouteStateManager(db_mock)
+    route_mock = MagicMock(truck_id=1)
+    manager._state = ActiveRouteState(route_id=5, route=route_mock)
+    state = manager.get_active_route()
+    assert state.route_id == 5
+    assert state.route is route_mock
+    # Should NOT call DB
+    manager.history.get_active_route_id.assert_not_called()
+
+
+def test_on_route_calculated_emits_event(db_mock):
+    manager = RouteStateManager(db_mock)
+    route_mock = MagicMock(truck_id=1, total_distance_km=500, duration_min=240)
+    manager.history = MagicMock()
+    manager.trip_context = MagicMock()
+    manager.on_route_calculated(10, route_mock, source="planner")
+    manager.history.record_event.assert_called_once_with(
+        10, "route_calculated", {"source": "planner"},
+    )
+
+
+def test_complete_active_route_emits_event(db_mock):
+    manager = RouteStateManager(db_mock)
+    manager._state = ActiveRouteState(route_id=5, route=MagicMock())
+    manager.history.complete_route.return_value = True
+    result = manager.complete_active_route()
+    assert result is True
+    manager.history.record_event.assert_called_with(
+        5, "route_completed", {"source": "route_state"},
+    )
+
+
+def test_archive_route_different_id_does_not_clear_state(db_mock):
+    """Archiving a different route should not clear the active state."""
+    manager = RouteStateManager(db_mock)
+    manager._state = ActiveRouteState(route_id=5, route=MagicMock())
+    manager.history.archive_route.return_value = True
+    result = manager.archive_route(10)
+    assert result is True
+    assert manager._state.route_id == 5  # unchanged
+
+
+def test_sync_to_trip_context_delegates(db_mock):
+    manager = RouteStateManager(db_mock)
+    manager._state = ActiveRouteState(route_id=5, route=MagicMock())
+    route_mock = MagicMock(total_distance_km=200, duration_min=90)
+    manager.trip_context = MagicMock()
+    manager.sync_to_trip_context(route_mock)
+    manager.trip_context.set_active_trip_info.assert_called_with(
+        distance_km=200, duration_min=90, route_history_v2_id=5,
+    )

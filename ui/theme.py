@@ -1,109 +1,153 @@
 # ── ui/theme.py ──────────────────────────────────────────────────
-
+# BACKWARD-COMPATIBILITY SHIM — do not import in new code.
+# Use ``ui.design_tokens`` directly for all new / refactored code.
 # ─────────────────────────────────────────────────────────────────
-# COLOR TOKENS
-# Zinc/neutral palette. No blue or purple tint on background
-# surfaces. Color appears ONLY on interactive elements as accent.
-# ─────────────────────────────────────────────────────────────────
-COLORS = {
-    # Backgrounds — layered darkness, barely distinguishable
-    "bg_base":        "#09090b",  # Root window — near-pure black
-    "bg_surface":     "#111113",  # Cards, sidebar — barely lighter
-    "bg_elevated":    "#1c1c1f",  # Hover rows, active nav, selected
-    "bg_input":       "#18181b",  # Inputs, comboboxes, dropdowns
 
-    # Borders — subtle, just defines edges
-    "border":         "#27272a",  # Card outlines, dividers, input borders
-    "border_hover":   "#3f3f46",  # Border on interactive hover
-    "border_focus":   "#6366f1",  # Input focus ring ONLY
+from __future__ import annotations
 
-    # Accent — indigo, used sparingly
-    "accent":         "#6366f1",  # Buttons, active state, key indicators
-    "accent_hover":   "#4f46e5",  # Button hover
-    "accent_dim":     "#1e1b4b",  # Subtle accent fill (badges only)
-    "accent_text":    "#a5b4fc",  # Indigo text on dark surfaces
+from ui.design_tokens import (
+    # Surface colors
+    COLOR_BG_BASE as BG_BASE,
+    COLOR_BG_ELEVATED as BG_SURFACE,
+    COLOR_BG_OVERLAY as BG_ELEVATED,
+    COLOR_BG_HOVER as BG_HOVER,
+    COLOR_BG_SELECTED as BG_SELECTED,
+    COLOR_BG_CARD as BG_CARD,
+    COLOR_BG_ELEVATED as _BG_BASE_ALIAS,
+
+    # Border colors
+    COLOR_BORDER_SUBTLE as BORDER_FAINT,
+    COLOR_BORDER_MEDIUM as BORDER_DEFAULT,
+    COLOR_BORDER_STRONG as BORDER_STRONG,
+    COLOR_ACCENT_PRIMARY as BORDER_FOCUS,
+
+    # Accent
+    COLOR_ACCENT_PRIMARY as ACCENT,
+    COLOR_ACCENT_HOVER as ACCENT_HOVER,
+    COLOR_ACCENT_SUBTLE as ACCENT_DIM,
+    COLOR_ACCENT_PRIMARY as _ACCENT_ALIAS,
+
+    # Text colors
+    COLOR_TEXT_PRIMARY as TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY as TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY as TEXT_MUTED,
+    COLOR_TEXT_WHITE as TEXT_WHITE,
 
     # Semantic
-    "success":        "#22c55e",
-    "success_dim":    "#052e16",
-    "warning":        "#f59e0b",
-    "warning_dim":    "#341a00",
-    "danger":         "#ef4444",
-    "danger_dim":     "#3b0000",
-    "info":           "#3b82f6",
-    "info_dim":       "#0f1f4a",
+    COLOR_SUCCESS_DEFAULT as SUCCESS,
+    COLOR_SUCCESS_SUBTLE as SUCCESS_DIM,
+    COLOR_SUCCESS_TEXT as SUCCESS_TEXT,
+    COLOR_WARNING_DEFAULT as WARNING,
+    COLOR_WARNING_SUBTLE as WARNING_DIM,
+    COLOR_WARNING_TEXT as WARNING_TEXT,
+    COLOR_ERROR_DEFAULT as DANGER,
+    COLOR_ERROR_SUBTLE as DANGER_DIM,
+    COLOR_ERROR_TEXT as DANGER_TEXT,
+    COLOR_INFO_DEFAULT as INFO,
+    COLOR_INFO_SUBTLE as INFO_DIM,
+    COLOR_INFO_TEXT as INFO_TEXT,
 
-    # Text hierarchy
-    "text_primary":   "#fafafa",  # Main — near-pure white
-    "text_secondary": "#a1a1aa",  # Labels, secondary info
-    "text_muted":     "#52525b",  # Placeholders, captions, disabled
-    "text_accent":    "#a5b4fc",  # Indigo-tinted interactive text
-    "text_success":   "#4ade80",
-    "text_warning":   "#fbbf24",
-    "text_danger":    "#f87171",
+    # Spacing
+    SP,
+    SPACE_1, SPACE_2, SPACE_3, SPACE_4, SPACE_5,
+    SPACE_6, SPACE_8, SPACE_10, SPACE_12, SPACE_16,
 
-    # Status chips
-    "chip_planned":   "#1c1917",
-    "chip_loading":   "#341a00",
-    "chip_transit":   "#0f1f4a",
-    "chip_delivered": "#052e16",
-    "chip_cancelled":       "#1A1A20",
-    "chip_cancelled_text":  "#9CA3AF",
-    "chip_idle":            "#27272a",
+    # Radius
+    RADIUS_SM, RADIUS_MD, RADIUS_LG, RADIUS_XL, RADIUS_PILL,
 
-    # Backward compatibility aliases used by older UI components
-    "bg_card":            "#111113",  # Same as bg_surface
-    "bg_hover":           "#1c1c1f",  # Same as bg_elevated
-    "bg_disabled":        "#18181b",  # Same as bg_input
+    # Typography
+    FONT_FAMILY, FONT_MONO,
+    FONT_SIZE_XS, FONT_SIZE_SM, FONT_SIZE_BASE, FONT_SIZE_MD,
+    FONT_SIZE_LG, FONT_SIZE_XL, FONT_SIZE_2XL,
+
+    # Font weights
+    FONT_WEIGHT_REGULAR, FONT_WEIGHT_MEDIUM,
+    FONT_WEIGHT_SEMIBOLD, FONT_WEIGHT_BOLD,
+
+    # Dimensions
+    SIDEBAR_EXPANDED, SIDEBAR_COLLAPSED, TOPBAR_HEIGHT,
+    ROW_HEIGHT, INPUT_HEIGHT, BTN_HEIGHT, BTN_HEIGHT_SM,
+
+    # Status
+    STATUS_STYLES, STATUS,
+
+    # Chart
+    COLOR_CHART_1, COLOR_CHART_2, COLOR_CHART_3,
+    COLOR_CHART_4, COLOR_CHART_5, COLOR_CHART_GRID, COLOR_CHART_AXIS,
+
+    # Legacy aliases
+    TEXT_DISABLED,
+    ACCENT_TEXT,
+)
+
+# ── Legacy COLORS dict (preserved for existing ui.theme imports) ──
+COLORS = {
+    "bg_base":          BG_BASE,
+    "bg_surface":       BG_SURFACE,
+    "bg_elevated":      BG_ELEVATED,
+    "bg_input":         BG_ELEVATED,
+    "bg_card":          BG_CARD,
+    "bg_hover":         BG_HOVER,
+    "bg_disabled":      "#18181b",
+
+    "border":           BORDER_DEFAULT,
+    "border_hover":     BORDER_STRONG,
+    "border_focus":     BORDER_FOCUS,
+
+    "accent":           ACCENT,
+    "accent_hover":     ACCENT_HOVER,
+    "accent_dim":       ACCENT_DIM,
+    "accent_text":      ACCENT_TEXT,
+
+    "success":          SUCCESS,
+    "success_dim":      SUCCESS_DIM,
+    "warning":          WARNING,
+    "warning_dim":      WARNING_DIM,
+    "danger":           DANGER,
+    "danger_dim":       DANGER_DIM,
+    "info":             INFO,
+    "info_dim":         INFO_DIM,
+
+    "text_primary":     TEXT_PRIMARY,
+    "text_secondary":   TEXT_SECONDARY,
+    "text_muted":       TEXT_MUTED,
+    "text_accent":      ACCENT_TEXT,
+    "text_success":     SUCCESS_TEXT,
+    "text_warning":     WARNING_TEXT,
+    "text_danger":      DANGER_TEXT,
+
+    "chip_planned":     "#1c1917",
+    "chip_loading":     "#341a00",
+    "chip_transit":     "#0f1f4a",
+    "chip_delivered":   "#052e16",
+    "chip_cancelled":        "#1A1A20",
+    "chip_cancelled_text":   "#9CA3AF",
+    "chip_idle":             "#27272a",
 }
 
-# ─────────────────────────────────────────────────────────────────
-# TYPOGRAPHY — Segoe UI scale
-# ─────────────────────────────────────────────────────────────────
-FONTS = {
-    "display":    ("Segoe UI", 28, "bold"),   # Page titles
-    "h1":         ("Segoe UI", 20, "bold"),   # Section page titles
-    "h2":         ("Segoe UI", 16, "bold"),   # Card titles, dialogs
-    "h3":         ("Segoe UI", 13, "bold"),   # Sub-section titles
-    "body":       ("Segoe UI", 13),           # All body text
-    "body_bold":  ("Segoe UI", 13, "bold"),
-    "small":      ("Segoe UI", 12),           # Secondary text
-    "label":      ("Segoe UI", 11),           # Field labels (uppercase)
-    "mono":       ("Consolas", 13),           # Numbers, IDs, dates
-    "mono_lg":    ("Consolas", 20, "bold"),   # Large KPI values
-    "mono_xl":    ("Consolas", 32, "bold"),   # Hero profit number
-}
-
-# ─────────────────────────────────────────────────────────────────
-# SPACING — 8px grid
-# Use S["N"] everywhere. Never hardcode spacing values.
-# ─────────────────────────────────────────────────────────────────
+# ── Legacy S dict (preserved for backward compat) ──
 S = {
-    "1":  4,    # micro
-    "2":  8,    # xs — between icon and text
-    "3":  12,   # sm — between items in a group
-    "4":  16,   # md — between form fields
-    "5":  20,   # lg — card internal padding (sides)
-    "6":  24,   # xl — card internal padding (top/bottom)
-    "8":  32,   # 2xl — between major sections
-    "10": 40,   # 3xl — view outer padding
-    "12": 48,   # 4xl — section top margin
+    "1":  SPACE_1,
+    "2":  SPACE_2,
+    "3":  SPACE_3,
+    "4":  SPACE_4,
+    "5":  SPACE_5,
+    "6":  SPACE_6,
+    "8":  SPACE_8,
+    "10": SPACE_10,
+    "12": SPACE_12,
 }
 
-# ─────────────────────────────────────────────────────────────────
-# DIMENSIONS
-# ─────────────────────────────────────────────────────────────────
-RADIUS_CARD   = 8
-RADIUS_INPUT  = 6
-RADIUS_BUTTON = 6
-RADIUS_CHIP   = 4
+MAX_FORM_WIDTH = 720
 
-MAX_FORM_WIDTH = 720  # Forms never wider than this — ever
+RADIUS_CARD   = RADIUS_LG
+RADIUS_INPUT  = RADIUS_MD
+RADIUS_BUTTON = RADIUS_MD
+RADIUS_CHIP   = RADIUS_SM
 
-# ─────────────────────────────────────────────────────────────────
-# BACKWARD COMPATIBILITY — chart colour aliases
-# Preserved because ``ui.views.dashboard`` still references them.
-# ─────────────────────────────────────────────────────────────────
+CHART_PRIMARY   = COLOR_CHART_1
+CHART_SECONDARY = COLOR_CHART_2
+CHART_ACCENT    = COLOR_CHART_1
 
-CHART_PRIMARY   = "#3730a3"
-CHART_SECONDARY = "#4338ca"
+# Legacy FONTS dict
+FONTS = {}

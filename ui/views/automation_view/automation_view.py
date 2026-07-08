@@ -1,14 +1,7 @@
-"""Document Automation tab — drop-zone + pipeline view.
+"""Main QtAutomationView class — UI, lifecycle, pipeline listing.
 
-The tab has three areas:
-    * Top: drop zone + browse button
-    * Left: scrollable list of active / completed pipeline runs (cards)
-    * Right: detail panel for the selected run (preview, OCR fields,
-      trip match, action buttons)
-
-A drop into the drop-zone or a click on "Browse..." creates a
-:class:`PipelineWorker` per file (or per multi-file batch) and lets
-the user watch the live status.
+Contains the drop zone, run cards, detail panel, and the top-level
+:class:`QtAutomationView` widget that ties everything together.
 """
 
 from __future__ import annotations
@@ -52,11 +45,16 @@ from ui.design_tokens import (
     SUCCESS_TEXT,
     TEXT_MUTED,
 )
+from ui.views.automation_view.automation_queue import QueueManagementMixin
 from ui.views.automation_worker import PipelineWorker, register_standalone_document
 from ui.widgets import StyledRadioButton
 
 logger = logging.getLogger(__name__)
 
+
+# ======================================================================
+# Module-level helpers
+# ======================================================================
 
 _RUN_STATUS_COLORS = {
     "imported":     TEXT_MUTED,
@@ -67,6 +65,37 @@ _RUN_STATUS_COLORS = {
     "complete":     SUCCESS_TEXT,
     "failed":       DANGER_TEXT,
 }
+
+
+def _progress_from_status(status: str) -> int:
+    return {
+        "imported": 5,
+        "import": 5,
+        "processing": 25,
+        "processed": 50,
+        "ocr": 50,
+        "matched": 75,
+        "complete": 100,
+        "failed": 100,
+    }.get(status, 5)
+
+
+def _subtitle_for_run(run: dict[str, Any]) -> str:
+    status = run.get("status", "")
+    if status == "failed":
+        msg = (run.get("error_message") or "").strip()
+        return f"\u274c {msg[:100]}" if msg else "\u274c Failed"
+    if status == "complete":
+        trip_id = run.get("matched_trip_id")
+        return f"\u2705 Linked to trip #{trip_id}" if trip_id else "\u2705 Complete"
+    if status == "processed":
+        return "\U0001F4C4 Processed \u2014 awaiting action"
+    return run.get("stage", "\u2014")
+
+
+# ======================================================================
+# Drop zone
+# ======================================================================
 
 
 class DropZone(QFrame):
@@ -91,7 +120,7 @@ class DropZone(QFrame):
         title.setAlignment(Qt.AlignCenter)
         sub = QLabel(t(
             "automation.drop_subtitle",
-            default="…or click to browse. Supported: JPG, PNG, PDF, TIFF, HEIC.",
+            default="\u2026or click to browse. Supported: JPG, PNG, PDF, TIFF, HEIC.",
         ))
         sub.setProperty("fontRole", "muted")
         sub.setAlignment(Qt.AlignCenter)
@@ -133,6 +162,11 @@ class DropZone(QFrame):
             self.files_dropped.emit(paths)
 
 
+# ======================================================================
+# Run card
+# ======================================================================
+
+
 class _RunCard(QFrame):
     """One pipeline run shown as a card in the run list."""
 
@@ -158,10 +192,10 @@ class _RunCard(QFrame):
         layout.addWidget(self._title)
 
         status_row = QHBoxLayout()
-        self._status_dot = QLabel("●")
+        self._status_dot = QLabel("\u25cf")
         self._status_dot.setStyleSheet(f"color: {_RUN_STATUS_COLORS.get(run.get('status', 'imported'), TEXT_MUTED)};")
         status_row.addWidget(self._status_dot)
-        self._stage_lbl = QLabel(run.get("stage") or "—")
+        self._stage_lbl = QLabel(run.get("stage") or "\u2014")
         self._stage_lbl.setProperty("fontRole", "small")
         status_row.addWidget(self._stage_lbl)
         status_row.addStretch(1)
@@ -189,7 +223,7 @@ class _RunCard(QFrame):
         new_title = run.get("source_file_name") or f"Run #{run.get('id', self.run_id)}"
         if self._title.text() != new_title:
             self._title.setText(new_title)
-        self._stage_lbl.setText(run.get("stage") or "—")
+        self._stage_lbl.setText(run.get("stage") or "\u2014")
         self._status_dot.setStyleSheet(
             f"color: {_RUN_STATUS_COLORS.get(run.get('status', ''), TEXT_MUTED)};"
         )
@@ -199,39 +233,18 @@ class _RunCard(QFrame):
             self._subtitle.setText(new_subtitle)
 
 
-def _progress_from_status(status: str) -> int:
-    return {
-        "imported": 5,
-        "import": 5,
-        "processing": 25,
-        "processed": 50,
-        "ocr": 50,
-        "matched": 75,
-        "complete": 100,
-        "failed": 100,
-    }.get(status, 5)
-
-
-def _subtitle_for_run(run: dict[str, Any]) -> str:
-    status = run.get("status", "")
-    if status == "failed":
-        msg = (run.get("error_message") or "").strip()
-        return f"❌ {msg[:100]}" if msg else "❌ Failed"
-    if status == "complete":
-        trip_id = run.get("matched_trip_id")
-        return f"✅ Linked to trip #{trip_id}" if trip_id else "✅ Complete"
-    if status == "processed":
-        return "\U0001F4C4 Processed — awaiting action"
-    return run.get("stage", "—")
+# ======================================================================
+# Run detail panel
+# ======================================================================
 
 
 class _RunDetailPanel(QFrame):
-    """Right-side panel — preview + OCR fields + match + actions."""
+    """Right-side panel \u2014 preview + OCR fields + match + actions."""
 
     prepare_clicked = Signal(int)       # trip_id
     send_clicked = Signal(int)          # trip_id
-    link_requested = Signal(int, int)   # run_id, trip_id — user selected a candidate manually
-    skip_and_package_clicked = Signal(int)  # run_id — simple mode, no trip
+    link_requested = Signal(int, int)   # run_id, trip_id
+    skip_and_package_clicked = Signal(int)  # run_id
     delete_requested = Signal(int)      # run_id
 
     def __init__(self, parent: QWidget | None = None, db=None, pipeline_repo=None, document_repo=None) -> None:
@@ -250,9 +263,12 @@ class _RunDetailPanel(QFrame):
         self._send_btn.clicked.connect(self._on_send_clicked)
         self._skip_btn.clicked.connect(self._on_skip_clicked)
 
+    # ------------------------------------------------------------------
+    # Style helpers
+    # ------------------------------------------------------------------
+
     @staticmethod
     def _style_primary_btn(btn: QPushButton) -> None:
-        """Apply primary button style: accent background, white text."""
         btn.setStyleSheet(
             f"QPushButton {{"
             f"  background: {ACCENT};"
@@ -276,7 +292,6 @@ class _RunDetailPanel(QFrame):
 
     @staticmethod
     def _style_secondary_btn(btn: QPushButton) -> None:
-        """Apply secondary button style: border, surface background."""
         btn.setStyleSheet(
             f"QPushButton {{"
             f"  background: {BG_SURFACE};"
@@ -300,6 +315,10 @@ class _RunDetailPanel(QFrame):
             f"  border: 1px solid transparent;"
             f"}}"
         )
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
@@ -379,7 +398,7 @@ class _RunDetailPanel(QFrame):
         action_row.addStretch(1)
         layout.addLayout(action_row)
 
-        # File action buttons (Delete / Copy / Download) — hidden by default
+        # File action buttons (Delete / Copy / Download) \u2014 hidden by default
         file_actions = QHBoxLayout()
         self._delete_btn = QPushButton(
             t("automation.delete_run", default="\U0001F5D1 Delete")
@@ -403,6 +422,10 @@ class _RunDetailPanel(QFrame):
         layout.addLayout(file_actions)
 
         layout.addStretch(1)
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
 
     def clear(self) -> None:
         self._title.setText(t("automation.detail_title", default="Select a run to view details"))
@@ -436,7 +459,7 @@ class _RunDetailPanel(QFrame):
         body = []
         body.append(
             f"<b>{t('automation.label_status', default='Status:')}</b> "
-            f"{run.get('status')}  ·  "
+            f"{run.get('status')}  \u00b7  "
             f"<b>{t('automation.label_stage', default='Stage:')}</b> "
             f"{run.get('stage')}"
         )
@@ -462,7 +485,7 @@ class _RunDetailPanel(QFrame):
                 body.append(
                     f"&nbsp;&nbsp;{idx}. Trip #{trip.get('id')} "
                     f"({trip.get('client_name')}, {trip.get('start_date')}) "
-                    f"· {float(c.get('confidence', 0)):.0%}"
+                    f"\u00b7 {float(c.get('confidence', 0)):.0%}"
                 )
         if run.get("error_message"):
             body.append(f"<br><b>Error:</b> {run['error_message']}")
@@ -482,8 +505,10 @@ class _RunDetailPanel(QFrame):
             link.deleteLater()
         self._candidate_links.clear()
 
-        # ── Simple mode — show action panel when run has a processed
+        # ------------------------------------------------------------------
+        # Simple mode \u2014 show action panel when run has a processed
         # file and hasn't been matched to a trip yet.
+        # ------------------------------------------------------------------
         has_file = bool(run.get("processed_pdf_path") or run.get("processed_file_path"))
         is_complete = run.get("status") == "complete"
         is_simple_awaiting = (
@@ -496,16 +521,14 @@ class _RunDetailPanel(QFrame):
             self._simple_status.setText(
                 t(
                     "automation.simple_awaiting",
-                    default="Document processed — choose an action below.",
+                    default="Document processed \u2014 choose an action below.",
                 )
             )
             self._simple_status.show()
 
-            # Show trip candidates or search prompt
             if trip_id:
-                # Already linked (shouldn't happen in simple mode, but handle gracefully)
                 self._fields_box.setText(
-                    f"<b>Status:</b> processed  ·  Linked to trip #{trip_id}"
+                    f"<b>Status:</b> processed  \u00b7  Linked to trip #{trip_id}"
                 )
                 self._fields_box.setStyleSheet(f"color: {TEXT_MUTED};")
             else:
@@ -527,12 +550,13 @@ class _RunDetailPanel(QFrame):
                 self._skip_btn.setEnabled(True)
             return
 
-        # ── Advanced mode: buttons enabled only when complete + matched ──
+        # ------------------------------------------------------------------
+        # Advanced mode: buttons enabled only when complete + matched
+        # ------------------------------------------------------------------
         complete = run.get("status") == "complete" and self._current_trip_id
         self._prepare_btn.setEnabled(bool(complete))
         self._send_btn.setEnabled(bool(complete))
 
-        # Show manual candidate buttons if the run needs manual selection.
         need_manual = run.get("stage") == "matching" and not trip_id and run.get("status") != "failed"
         if need_manual and candidates:
             self._candidates_box.setText(
@@ -564,7 +588,7 @@ class _RunDetailPanel(QFrame):
         else:
             self._related_label.hide()
 
-        # ── File action buttons (Delete / Copy / Download) ───────────
+        # File action buttons (Delete / Copy / Download)
         has_file = bool(run.get("processed_pdf_path") or run.get("processed_file_path"))
         if self._current_run_id is not None and has_file:
             self._delete_btn.show()
@@ -575,11 +599,16 @@ class _RunDetailPanel(QFrame):
             self._copy_btn.hide()
             self._download_btn.hide()
 
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
     def _on_search_all_clicked(self, event=None) -> None:
         """Open the trip search dialog so the user can manually pick a trip."""
         if self._current_run_id is None or self._db is None:
             return
         from ui.dialogs.trip_search_dialog import QtTripSearchDialog
+
         dlg = QtTripSearchDialog(
             self._db,
             parent=self.window() if self.window() else self,
@@ -596,7 +625,7 @@ class _RunDetailPanel(QFrame):
         if tid is None:
             return
         label = (
-            f"Trip #{tid}  —  {trip.get('client_name') or '?'}  "
+            f"Trip #{tid}  \u2014  {trip.get('client_name') or '?'}  "
             f"({trip.get('start_date') or '?'})"
         )
         btn = QPushButton(label)
@@ -611,8 +640,7 @@ class _RunDetailPanel(QFrame):
         self._candidate_links.append(btn)
 
     def _on_skip_clicked(self) -> None:
-        """Simple mode: user chose to skip trip association and create a
-        standalone package."""
+        """Simple mode: skip trip association and create a standalone package."""
         if self._current_run_id is not None:
             self.skip_and_package_clicked.emit(self._current_run_id)
 
@@ -627,7 +655,6 @@ class _RunDetailPanel(QFrame):
     def _on_delete_run(self) -> None:
         """Delete the current pipeline run and its processed files."""
         if self._current_run_id is not None and self._db is not None:
-            from PySide6.QtWidgets import QMessageBox
             confirm = QMessageBox.question(
                 self,
                 t("automation.confirm_delete_title", default="Delete run"),
@@ -641,10 +668,10 @@ class _RunDetailPanel(QFrame):
             if confirm != QMessageBox.Yes:
                 return
             from repositories.pipeline_repository import PipelineRepository
+
             repo = self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)
             run = repo.get_run_by_id(self._current_run_id)
             if run:
-                import os
                 pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
                 output_dir = os.path.dirname(pdf) if pdf and os.path.isfile(pdf) else ""
                 repo.delete_run(self._current_run_id)
@@ -652,7 +679,6 @@ class _RunDetailPanel(QFrame):
                     import shutil
                     with contextlib.suppress(Exception):
                         shutil.rmtree(output_dir, ignore_errors=True)
-                # Also remove any created document row
                 doc_id = run.get("document_id")
                 if doc_id:
                     try:
@@ -667,11 +693,13 @@ class _RunDetailPanel(QFrame):
         if self._current_run_id is None or self._db is None:
             return
         from repositories.pipeline_repository import PipelineRepository
+
         run = (self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)).get_run_by_id(self._current_run_id)
         if run:
             pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
             if pdf and os.path.isfile(pdf):
                 from PySide6.QtWidgets import QApplication
+
                 cb = QApplication.clipboard()
                 cb.setText(os.path.abspath(pdf))
 
@@ -680,16 +708,15 @@ class _RunDetailPanel(QFrame):
         if self._current_run_id is None or self._db is None:
             return
         from repositories.pipeline_repository import PipelineRepository
+
         run = (self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)).get_run_by_id(self._current_run_id)
         if run:
             pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
             if pdf and os.path.isfile(pdf):
-                from PySide6.QtWidgets import QFileDialog
-                default_name = run.get("source_file_name", "document.pdf")
                 save_path, _ = QFileDialog.getSaveFileName(
                     self,
-                    t("automation.save_pdf", default="Save document as…"),
-                    default_name,
+                    t("automation.save_pdf", default="Save document as\u2026"),
+                    run.get("source_file_name", "document.pdf"),
                     "PDF (*.pdf)",
                 )
                 if save_path:
@@ -700,19 +727,20 @@ class _RunDetailPanel(QFrame):
                         logger.error("Failed to copy PDF: %s", exc)
 
 
-class QtAutomationView(QWidget):
-    """The new 'Automation' tab inside the Document Center."""
+# ======================================================================
+# Main automation view
+# ======================================================================
+
+
+class QtAutomationView(QueueManagementMixin, QWidget):
+    """The 'Automation' tab inside the Document Center."""
 
     package_requested = Signal(int)         # trip_id
-    send_requested = Signal(int)           # trip_id
+    send_requested = Signal(int)            # trip_id
 
-    # Hard upper bound on concurrent pipeline workers regardless of
-    # what the user configures.  Each worker opens the same SQLite
-    # handle for writes — letting dozens run in parallel only makes
-    # the UI freeze on the writer lock.
+    # Hard upper bound on concurrent pipeline workers.
     HARD_MAX_CONCURRENT_WORKERS = 8
     DEFAULT_MAX_CONCURRENT_WORKERS = 2
-    # Settings key read at startup to let power users raise the cap.
     MAX_WORKERS_SETTING_KEY = "automation_max_concurrent_workers"
 
     def _load_max_concurrent_workers(self) -> int:
@@ -748,21 +776,14 @@ class QtAutomationView(QWidget):
         self._api_client = api_client
         self._pipeline_repo = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
         from repositories.document_repository import DocumentRepository
+
         self._doc_repo = doc_repo if doc_repo is not None else DocumentRepository(db)
-        # Key workers by their run_id (stable, in the DB) rather than
-        # by ``id(worker)`` which can be reused after a deleteLater().
-        self._workers: dict[int, PipelineWorker] = {}
-        self._pending_workers: list[PipelineWorker] = []  # workers awaiting run_id
-        self._cards: dict[int, _RunCard] = {}
-        self._selected_run_id: int | None = None
-        self._refresh_pending = False
-        self._candidate_cache: dict[int, list[dict[str, Any]]] = {}
-        self._placeholder_label: QLabel | None = None
+
+        # Queue management state (initialised by the mixin)
+        self._init_queue_management()
+
         self._max_concurrent_workers = self._load_max_concurrent_workers()
         self._mode: str = "advanced"
-        # Batch tracking for simple mode: maps batch_id → [run_id, ...]
-        self._batch_counter: int = 0
-        self._batch_for_run: dict[int, int] = {}  # run_id → batch_id
 
         from services.email_importer import EmailImporter
         self._email_importer = EmailImporter(self._on_files_dropped)
@@ -774,7 +795,9 @@ class QtAutomationView(QWidget):
         self._refresh_from_db()
         QTimer.singleShot(200, self._recover_stuck_runs)
 
-    # ── Layout ──────────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -792,7 +815,7 @@ class QtAutomationView(QWidget):
         h.addWidget(refresh_btn)
         root.addWidget(header)
 
-        # ── Mode switch ──────────────────────────────────────────────
+        # Mode switch
         mode_row = QFrame()
         mode_row.setStyleSheet(f"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};")
         mode_layout = QHBoxLayout(mode_row)
@@ -847,228 +870,29 @@ class QtAutomationView(QWidget):
         body.addWidget(self._detail, 5)
         root.addLayout(body, 1)
 
-    # ── Mode switch ─────────────────────────────────────────────────
+    # ------------------------------------------------------------------
+    # Mode switch
+    # ------------------------------------------------------------------
 
     def _on_mode_changed(self) -> None:
-        """Update the current pipeline mode when the user toggles
-        Simple / Advanced."""
         self._mode = "simple" if self._radio_simple.isChecked() else "advanced"
         logger.info("Automation mode switched to: %s", self._mode)
 
-    # ── Run management ──────────────────────────────────────────────
-
-    def _on_files_dropped(self, file_paths: list[str]) -> None:
-        # Expand directories one level deep.
-        expanded: list[str] = []
-        for p in file_paths:
-            if os.path.isdir(p):
-                try:
-                    for entry in sorted(os.listdir(p)):
-                        full = os.path.join(p, entry)
-                        if os.path.isfile(full):
-                            expanded.append(full)
-                except OSError:
-                    pass
-            elif os.path.isfile(p):
-                expanded.append(p)
-        # Filter to supported extensions.  The ImageProcessor also
-        # skips unsupported files but rejecting here avoids a useless
-        # DB row per junk file.
-        from services.document_automation.image_processor import (
-            _IMAGE_EXTENSIONS,
-            _PDF_EXTENSIONS,
-        )
-        supported = []
-        for p in expanded:
-            ext = os.path.splitext(p)[1].lower()
-            if ext in _IMAGE_EXTENSIONS or ext in _PDF_EXTENSIONS:
-                supported.append(p)
-            else:
-                logger.debug("Drop rejected (unsupported): %s", p)
-        if not supported:
-            return
-        # Each drop starts a new batch so simple-mode skip-package
-        # groups all files from this drop into a single package.
-        self._batch_counter += 1
-        self._current_batch_id = self._batch_counter
-        # Queue the files (start as many as the cap allows, defer the
-        # rest to be picked up by _on_worker_finished).
-        self._queue = list(getattr(self, "_queue", [])) + supported
-        self._drain_pending_files()
-
-    def _drain_pending_files(self) -> None:
-        queue = getattr(self, "_queue", None) or []
-        if not queue:
-            return
-        active = sum(
-            1 for w in self._workers.values()
-            if w.isRunning() and not w.isFinished()
-        )
-        while queue and active < self.MAX_CONCURRENT_WORKERS:
-            path = queue.pop(0)
-            self._start_worker_for_file(path)
-            active += 1
-
-    def _start_worker_for_file(self, path: str) -> None:
-        worker = PipelineWorker(
-            self.db, [path], prefs=self.prefs, mode=self._mode,
-        )
-        worker.stage_changed.connect(self._on_stage_changed)
-        worker.ocr_extracted.connect(self._on_ocr_extracted)
-        worker.match_ready.connect(self._on_match_ready)
-        worker.manual_needed.connect(self._on_manual_needed)
-        worker.processing_done.connect(self._on_processing_done)
-        worker.finished.connect(self._on_worker_finished)
-        worker.log.connect(self._on_worker_log)
-        worker.finished.connect(worker.deleteLater)
-        # Wire the detail panel's manual selection to the standalone
-        # linker (no dependency on the worker's C++ object).
-        self._detail.link_requested.connect(self._on_link_requested)
-        # Hold a reference to the worker in a pending list so it is not
-        # garbage collected before worker_ready fires (which would destroy
-        # the QThread while its thread is still running).
-        self._pending_workers.append(worker)
-        worker.start()
-        self._refresh_from_db()
-        worker.worker_ready.connect(self._on_worker_ready)
-
-    # ── Worker signal handlers ──────────────────────────────────────────────
-
-    def _on_stage_changed(self, run_id: int, stage: str, status: str) -> None:
-        """Update the in-memory card for the run, if we already
-        have it.  Falls back to a full refresh from the DB when the
-        card hasn't been created yet (e.g. the user opened the tab
-        after the run started)."""
-        card = self._cards.get(int(run_id))
-        if card is not None:
-            try:
-                card.update({"id": int(run_id), "stage": stage, "status": status})
-            except Exception:
-                logger.exception("Failed to update run card in place")
-                self._refresh_from_db()
-        else:
-            self._refresh_from_db()
-
-    def _on_ocr_extracted(self, run_id: int, extracted: dict, ocr_text: str) -> None:
-        """OCR is done — refresh so the card shows the latest status.
-        The detail panel reads the OCR text directly from the DB."""
-        self._refresh_from_db()
-
-    def _on_match_ready(
-        self,
-        run_id: int,
-        best_match: Any,
-        confidence: float,
-        candidates: Any,
-    ) -> None:
-        """Trip match found — refresh the run list and, if this run is
-        currently selected, update the detail panel."""
-        if candidates:
-            self._candidate_cache[int(run_id)] = list(candidates)
-        self._refresh_from_db()
-        if self._selected_run_id == int(run_id):
-            self._update_selected_run()
-
-    def _on_manual_needed(self, run_id: int, candidates: Any) -> None:
-        """Worker reached the matching stage but found no auto-match.
-        Store candidates and refresh so the detail panel shows manual
-        selection links."""
-        if candidates:
-            self._candidate_cache[int(run_id)] = list(candidates)
-        self._refresh_from_db()
-        if self._selected_run_id == int(run_id):
-            self._update_selected_run()
-
-    def _on_processing_done(self, run_id: int, processed_pdf_path: str) -> None:
-        """Simple-mode processing is complete — the document has been
-        cropped, transformed, and saved as PDF.  Refresh the run list
-        and, if this run is selected, update the detail panel to show
-        the trip-selection / skip-send options."""
-        self._refresh_from_db()
-        if self._selected_run_id == int(run_id):
-            self._update_selected_run()
-
-    def _on_worker_ready(self, run_id: int) -> None:
-        """Worker created its DB row — add it to the tracking dict."""
-        if run_id in self._workers:
-            return
-        worker = self.sender()
-        if worker is not None:
-            self._workers[run_id] = worker
-            # Remove from pending list; now owned by _workers dict.
-            with contextlib.suppress(ValueError):
-                self._pending_workers.remove(worker)
-        # Associate this run with the current batch so simple-mode
-        # skip-package groups all files from the same drop together.
-        self._batch_for_run[run_id] = getattr(self, "_current_batch_id", 0)
-        self._refresh_from_db()
-
-    def _on_link_requested(self, run_id: int, trip_id: int) -> None:
-        """User clicked a candidate link — manually link the document to the trip.
-
-        Uses the standalone ``link_document_to_trip`` which does not need
-        the original ``PipelineWorker`` (which may have been deleted).
-        """
-        from ui.views.automation_worker import link_document_to_trip
-        doc_id = link_document_to_trip(self.db, run_id, trip_id)
-        if doc_id:
-            logger.info("Manual link: run %s -> trip %s -> doc %s", run_id, trip_id, doc_id)
-        else:
-            logger.warning("Manual link failed: run %s -> trip %s", run_id, trip_id)
-        self._refresh_from_db()
-        if self._selected_run_id == run_id:
-            self._update_selected_run()
-
-    def _on_worker_finished(
-        self, run_id: int, document_id: Any, error: Any
-    ) -> None:
-        """Worker thread finished.  Remove the worker from the cache,
-        drain any queued files (so the concurrency cap is respected),
-        surface errors via the log, and refresh the run list."""
-        try:
-            rid = int(run_id) if run_id is not None else None
-        except (TypeError, ValueError):
-            rid = None
-        if rid is not None and rid in self._workers:
-            del self._workers[rid]
-        # Clean up pending list in case worker_ready never fired.
-        self._pending_workers[:] = [w for w in self._pending_workers
-                                    if w.isRunning() and not w.isFinished()]
-        if error:
-            logger.warning(
-                "Pipeline run %s finished with error: %s", run_id, error
-            )
-        # If the worker aborted before creating a row, the run_id
-        # may be the sentinel ``PIPELINE_ERROR_RUN_ID``.  In that
-        # case, still drain the queue so the user can drop more files.
-        self._drain_pending_files()
-        self._refresh_from_db()
-
-    def _on_worker_log(self, run_id: int, message: str) -> None:
-        """Forward worker log lines to the application logger.  They
-        appear in the console / log file but not in the UI; the run
-        card and detail panel surface persistent state via
-        ``_refresh_from_db``."""
-        logger.info("[run %s] %s", run_id, message)
+    # ------------------------------------------------------------------
+    # Pipeline listing / refresh
+    # ------------------------------------------------------------------
 
     def _refresh_from_db(self) -> None:
-        """Refresh the run list from the database.
-
-        When called multiple times within the same event-loop iteration
-        (e.g., stage_changed + ocr_extracted firing in rapid sequence),
-        only the first call runs the query immediately.  Subsequent
-        calls are coalesced into a single deferred refresh.
-        """
+        """Refresh the run list from the database, coalescing rapid calls."""
         if self._refresh_pending:
             return
         self._refresh_pending = True
         self._do_refresh()
 
     def _do_refresh(self) -> None:
-        """Actual refresh — runs synchronously on first call, coalesces subsequent calls."""
+        """Actual refresh \u2014 runs synchronously, coalesces subsequent calls."""
         if not self.db:
             self._refresh_pending = False
-            return
             return
         try:
             pipeline = self._pipeline_repo
@@ -1114,7 +938,7 @@ class QtAutomationView(QWidget):
             if existing is None:
                 existing = QLabel(t(
                     "automation.empty",
-                    default="No imports yet — drop a file above to start.",
+                    default="No imports yet \u2014 drop a file above to start.",
                 ))
                 existing.setProperty("fontRole", "muted")
                 existing.setAlignment(Qt.AlignCenter)
@@ -1132,18 +956,6 @@ class QtAutomationView(QWidget):
                     self._selected_run_id = None
                     self._detail.clear()
         self._refresh_pending = False
-
-    def _recover_stuck_runs(self) -> None:
-        if not self.db:
-            return
-        try:
-            recovered = self._pipeline_repo.recover_stuck_runs()
-        except Exception:
-            recovered = 0
-            logger.exception("recover_stuck_runs failed")
-        if recovered:
-            logger.info("Recovered %d stuck pipeline runs on startup", recovered)
-            self._refresh_from_db()
 
     def _select_run(self, run_id: int) -> None:
         self._selected_run_id = int(run_id)
@@ -1173,7 +985,9 @@ class QtAutomationView(QWidget):
         candidates = self._candidate_cache.get(self._selected_run_id, [])
         self._detail.show_run(run, extracted, candidates, mode=self._mode)
 
-    # ── Public API used by the package / email flow ─────────────────
+    # ------------------------------------------------------------------
+    # Public API  (used by the package / email flow)
+    # ------------------------------------------------------------------
 
     def selected_trip_id(self) -> int | None:
         if not self.db or self._selected_run_id is None:
@@ -1197,39 +1011,36 @@ class QtAutomationView(QWidget):
         self.send_requested.emit(trip_id)
         return trip_id
 
+    # ------------------------------------------------------------------
+    # Action handlers
+    # ------------------------------------------------------------------
+
     def _on_prepare_package(self, trip_id: int) -> None:
         """Open the package preview modal and chain into the email composer."""
         if not self.db or not trip_id:
             return
         from ui.views.package_preview_modal import PackagePreviewDialog
+
         preview = PackagePreviewDialog(self, self.db, trip_id, prefs=self.prefs)
         preview.continue_to_email.connect(self._open_email_composer)
         preview.exec()
 
     def _on_send_documents(self, trip_id: int) -> None:
-        """Skip the preview and go straight to the email composer with default order."""
+        """Skip the preview and go straight to the email composer."""
         self._open_email_composer(trip_id, None)
 
     def _on_skip_and_package(self, run_id: int) -> None:
-        """Simple mode: user chose to skip trip association.
-
-        Registers ALL processed documents from the same batch (all files
-        that were dropped together) as standalone documents, creates a
-        single package with no trip, and opens the email composer.
-        """
+        """Simple mode: skip trip association, create a standalone package."""
         if not self.db:
             return
         from repositories.document_repository import DocumentRepository
         from services.document_automation.package_builder import PackageBuilder
 
-        # Collect all run_ids from the same batch that are still in
-        # "processed" status (awaiting action).
         batch_id = self._batch_for_run.get(run_id, 0)
         batch_run_ids = [
             rid for rid, bid in self._batch_for_run.items()
             if bid == batch_id and rid > 0
         ] if batch_id else [run_id]
-        # Deduplicate and keep order.
         seen: set = set()
         ordered_run_ids: list[int] = []
         for rid in batch_run_ids:
@@ -1237,7 +1048,6 @@ class QtAutomationView(QWidget):
                 seen.add(rid)
                 ordered_run_ids.append(rid)
 
-        # Register each run as a standalone document.
         docs: list[dict[str, Any]] = []
         for rid in ordered_run_ids:
             did = register_standalone_document(self.db, rid)
@@ -1291,14 +1101,11 @@ class QtAutomationView(QWidget):
         ordered_doc_ids=None,
         documents=None,
     ) -> None:
-        """Open the email composer modal pre-populated with package docs.
-
-        ``trip_id`` can be ``None`` for standalone (no-trip) packages;
-        in that case the email composer shows manual address entry.
-        """
+        """Open the email composer modal pre-populated with package docs."""
         if not self.db:
             return
         from ui.views.email_composer_modal import EmailComposerDialog
+
         composer = EmailComposerDialog(
             self, self.db, trip_id,
             prefs=self.prefs,
@@ -1315,7 +1122,9 @@ class QtAutomationView(QWidget):
         """Remove a pipeline run and its card from the UI."""
         self._refresh_from_db()
 
-    # ── Lifecycle (used by main_window) ───────────────────────────
+    # ------------------------------------------------------------------
+    # Lifecycle  (used by main_window)
+    # ------------------------------------------------------------------
 
     def _configure_email_importer(self) -> None:
         """Read settings and start/stop the email importer accordingly."""
@@ -1364,10 +1173,6 @@ class QtAutomationView(QWidget):
     def shutdown(self) -> None:
         self._email_importer.stop()
         self._folder_watcher.stop()
-        # Signal stop to every worker then wait (bounded).
-        # stop_event cascades through → OcrExtractor polling loops
-        # → streaming HTTP calls, so the worker QThread can exit
-        # within 1-2 seconds instead of being stuck for 5 minutes.
         for worker in list(self._workers.values()):
             try:
                 worker.stop_event.set()
@@ -1378,7 +1183,7 @@ class QtAutomationView(QWidget):
                 pass
         queue = getattr(self, "_queue", [])
         if queue:
-            logger.warning("Shutdown with %d pending files in queue — discarding: %s",
+            logger.warning("Shutdown with %d pending files in queue \u2014 discarding: %s",
                            len(queue), queue[:5])
         self._workers.clear()
         self._pending_workers.clear()
