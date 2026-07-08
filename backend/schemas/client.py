@@ -1,4 +1,5 @@
 
+from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 class ClientBase(BaseModel):
@@ -7,10 +8,12 @@ class ClientBase(BaseModel):
     name: str = ""
     email: str = ""
     phone: str = ""
-    address: str = ""
+    address: Optional[str] = None
 
 
 class ClientResponse(ClientBase):
+    model_config = ConfigDict(extra="ignore")
+
     id: int
     is_active: bool = True
     created_at: str = ""

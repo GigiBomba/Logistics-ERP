@@ -1,3 +1,4 @@
+import os
 import time
 from collections import defaultdict
 from typing import Dict, List
@@ -7,9 +8,10 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 class RateLimitMiddleware(BaseHTTPMiddleware):
-    def __init__(self, app, max_requests: int = 100, window_seconds: int = 60):
+    def __init__(self, app, max_requests: int = None, window_seconds: int = 60):
         super().__init__(app)
-        self.max_requests = max_requests
+        # Allow env var override for testing
+        self.max_requests = max_requests or int(os.environ.get("OPERION_RATE_LIMIT", "100"))
         self.window_seconds = window_seconds
         self.requests: Dict[str, List[float]] = defaultdict(list)
 

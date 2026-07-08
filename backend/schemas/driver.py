@@ -24,6 +24,8 @@ class DriverCreate(DriverBase):
 
 
 class DriverResponse(DriverBase):
+    model_config = ConfigDict(extra="ignore")
+
     id: int
     created_at: str = ""
     updated_at: str = ""

@@ -12,6 +12,8 @@ class TruckBase(BaseModel):
 
 
 class TruckResponse(TruckBase):
+    model_config = ConfigDict(extra="ignore")
+
     id: int
     is_active: bool = True
 
