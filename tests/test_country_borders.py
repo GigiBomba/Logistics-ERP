@@ -213,3 +213,90 @@ class TestGetBounds:
         bounds_upper = get_bounds("FR")
         bounds_lower = get_bounds("fr")
         assert bounds_upper == bounds_lower
+
+
+# ── Additional edge-case tests ─────────────────────────────────────
+
+
+class TestEdgeCases:
+    def test_load_returns_existing_data(self, mock_borders_data):
+        """Calling _load() after a previous call returns cached data."""
+        # _DATA is already set by the fixture, so _load should return it
+        data = cb._load()
+        assert data is not None
+        assert "FR" in data
+
+    @pytest.mark.parametrize("lat,lon,code,expected", [
+        (48.5, 2.5, "FR", True),
+        (42.5, 12.5, "IT", True),
+        (50.0, 5.0, "FR", False),
+        (44.0, 8.0, "IT", False),
+    ])
+    def test_point_in_country_parametrized(self, mock_borders_data, lat, lon, code, expected):
+        assert point_in_country(lat, lon, code) is expected
+
+    def test_countries_at_point_multiple_matches(self, mock_borders_data):
+        """A point near the border may match multiple countries if
+        polygon data overlaps.  Our mock data is non-overlapping so
+        only one country should match."""
+        countries = countries_at_point(48.5, 2.5)
+        assert len(countries) == 1
+        assert countries == ["FR"]
+
+    def test_countries_from_points_deduplicates(self, mock_borders_data):
+        """Duplicate country codes should be returned only once."""
+        points = [(48.5, 2.5), (48.6, 2.6)]  # both in FR
+        result = countries_from_points(points)
+        assert len(result) == 1
+
+    def test_countries_from_points_handles_large_input(self, mock_borders_data):
+        """A very large list of points should be sampled without error."""
+        points = [(48.5, 2.0 + i * 0.001) for i in range(5000)]
+        result = countries_from_points(points)
+        assert isinstance(result, list)
+
+    def test_get_polygon_data_is_none(self):
+        """When _DATA is None, get_polygon returns []."""
+        old = cb._DATA
+        cb._DATA = None
+        try:
+            assert get_polygon("FR") == []
+        finally:
+            cb._DATA = old
+
+    def test_get_polygons_data_is_none(self):
+        """When _DATA is None, get_polygons returns []."""
+        old = cb._DATA
+        cb._DATA = None
+        try:
+            assert get_polygons("FR") == []
+        finally:
+            cb._DATA = old
+
+    def test_bbox_contains_data_is_none(self):
+        """When _DATA is None, bbox_contains returns False."""
+        old_data = cb._DATA
+        old_bbox = cb._BBOX
+        cb._DATA = None
+        cb._BBOX = {}
+        try:
+            assert bbox_contains("FR", 48.5, 2.5) is False
+        finally:
+            cb._DATA = old_data
+            cb._BBOX = old_bbox
+
+    def test_get_bounds_data_is_none(self):
+        """When _DATA is None, get_bounds returns None."""
+        old_data = cb._DATA
+        cb._DATA = None
+        try:
+            assert get_bounds("FR") is None
+        finally:
+            cb._DATA = old_data
+
+    def test_large_polygon_performance(self, mock_borders_data):
+        """A large polygon should still yield correct results."""
+        # Build a large square polygon
+        polygon = [(i, j) for i in range(-90, 91, 10) for j in range(-180, 181, 10)]
+        assert point_in_polygon(0, 0, polygon) is True
+        assert point_in_polygon(100, 200, polygon) is False

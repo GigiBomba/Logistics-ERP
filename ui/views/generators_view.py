@@ -98,7 +98,6 @@ class QtGeneratorsView(QWidget):
         fleet_service=None,
         trip_service=None,
         driver_repo=None,
-        api_client=None,
     ):
         super().__init__(parent)
         self.db = db
@@ -107,15 +106,7 @@ class QtGeneratorsView(QWidget):
         self._fleet_svc_instance = fleet_service
         self._trip_svc_instance = trip_service
         self._cmr_doc_service = None
-        self._api_client = api_client
-        from repositories.driver_repository import DriverRepository
-        if driver_repo is not None:
-            self._driver_repo = driver_repo
-        elif self._api_client is not None:
-            from client.remote_driver_service import RemoteDriverService
-            self._driver_repo = RemoteDriverService(self._api_client)
-        else:
-            self._driver_repo = DriverRepository(db) if db is not None else None
+        self._driver_repo = driver_repo
 
         # ── State ───────────────────────────────────────────────────────
         self._trips_list: list[dict[str, Any]] = []
@@ -149,31 +140,19 @@ class QtGeneratorsView(QWidget):
     @property
     def _trip_svc(self) -> TripService:
         if self._trip_svc_instance is None:
-            if self._api_client is not None:
-                from client.remote_services import RemoteTripService
-                self._trip_svc_instance = RemoteTripService(self._api_client)
-            else:
-                self._trip_svc_instance = TripService(self.db)
+            self._trip_svc_instance = TripService(self.db)
         return self._trip_svc_instance
 
     @property
     def _client_svc(self) -> ClientService:
         if not hasattr(self, "_client_svc_instance") or self._client_svc_instance is None:
-            if self._api_client is not None:
-                from client.remote_services import RemoteClientService
-                self._client_svc_instance = RemoteClientService(self._api_client)
-            else:
-                self._client_svc_instance = ClientService(self.db)
+            self._client_svc_instance = ClientService(self.db)
         return self._client_svc_instance
 
     @property
     def _fleet_svc(self) -> FleetService:
         if not hasattr(self, "_fleet_svc_instance") or self._fleet_svc_instance is None:
-            if self._api_client is not None:
-                from client.remote_services import RemoteFleetService
-                self._fleet_svc_instance = RemoteFleetService(self._api_client)
-            else:
-                self._fleet_svc_instance = FleetService(self.db)
+            self._fleet_svc_instance = FleetService(self.db)
         return self._fleet_svc_instance
 
     def _lazy_cmr_doc_service(self):

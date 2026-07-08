@@ -141,11 +141,10 @@ class TestUpdate:
         assert row["phone"] == "+999"
 
     def test_sets_updated_at(self, db, repo):
-        did = _driver(db)
-        old_updated = repo.get_by_id(did)["updated_at"]
+        did = _driver(db, updated_at="2020-01-01T00:00:00")  # force old timestamp
         repo.update(did, {"name": "Updated"})
         new_updated = repo.get_by_id(did)["updated_at"]
-        assert new_updated != old_updated
+        assert new_updated != "2020-01-01T00:00:00"
 
     def test_rejects_invalid_column(self, repo):
         with pytest.raises(ValueError, match="Invalid column"):

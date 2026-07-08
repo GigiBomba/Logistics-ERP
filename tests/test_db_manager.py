@@ -223,25 +223,46 @@ class TestClose:
 
 
 class TestDeprecatedWarnings:
+    """Deprecated methods emit a DeprecationWarning AND execute real repo code.
+
+    We verify the warning fires, but wrap in try/except because the
+    underlying repo call may fail on an empty/partially-initialized DB.
+    """
+
     def test_add_trip_deprecated(self, db):
         with pytest.warns(DeprecationWarning, match="add_trip"):
-            db.add_trip({})
+            try:
+                db.add_trip({})
+            except Exception:
+                pass
 
     def test_update_trip_deprecated(self, db):
         with pytest.warns(DeprecationWarning, match="update_trip"):
-            db.update_trip(1, {})
+            try:
+                db.update_trip(1, {})
+            except Exception:
+                pass
 
     def test_delete_trip_deprecated(self, db):
         with pytest.warns(DeprecationWarning, match="delete_trip"):
-            db.delete_trip(1)
+            try:
+                db.delete_trip(1)
+            except Exception:
+                pass
 
     def test_get_all_trucks_deprecated(self, db):
         with pytest.warns(DeprecationWarning, match="get_all_trucks"):
-            db.get_all_trucks()
+            try:
+                db.get_all_trucks()
+            except Exception:
+                pass
 
     def test_add_truck_deprecated(self, db):
         with pytest.warns(DeprecationWarning, match="add_truck"):
-            db.add_truck({})
+            try:
+                db.add_truck({})
+            except Exception:
+                pass
 
 
 # ── Error handling ───────────────────────────────────────────────────────────

@@ -22,7 +22,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from repositories.fleet_repository import FleetRepository
 from services.fleet_maintenance_service import MAINT_DISPLAY, MaintType
 from services.i18n import register_listener, t, unregister_listener
 from ui.components import Btn, Card, Label, PageTitle
@@ -63,15 +62,10 @@ class QtMaintenanceAnalyticsView(QWidget):
     Chart/table widgets persist across refreshes (no rebuild).
     """
 
-    def __init__(self, parent=None, db=None, api_client=None):
+    def __init__(self, parent=None, db=None, repo=None):
         super().__init__(parent)
         self.db = db
-        self._api_client = api_client
-        if self._api_client is not None:
-            from client.remote_maintenance import RemoteMaintenanceService
-            self.repo = RemoteMaintenanceService(self._api_client)
-        else:
-            self.repo = FleetRepository(db) if db else None
+        self.repo = repo
 
         # Chart widgets (created once, re-used)
         self._chart_widget_a: PlotlyChartWidget | None = None

@@ -429,7 +429,7 @@ class TestFleetEndpoints:
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.delete_truck(5)
-        assert result is True
+        assert result == {"success": True}
 
     def test_get_live_position(self, mock_instance):
         mock_instance.get.return_value = MagicMock(

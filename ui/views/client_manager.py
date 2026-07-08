@@ -45,6 +45,7 @@ from ui.widgets import (
     StyledTableWidget,
     field,
 )
+from ui.widgets.debounced_line_edit import DebouncedLineEdit
 
 # ── Column definition ──────────────────────────────────────────────────────────
 # (column_id,  label_or_i18n_key,  width_px,  translate)
@@ -69,57 +70,6 @@ def _columns_for_table() -> list[tuple]:
     return [(cid, labels[i], width) for i, (cid, _, width, _) in enumerate(_COLUMNS)]
 
 
-# ── Search entry with tk-style placeholder ─────────────────────────────────────
-
-class _SearchLineEdit(StyledLineEdit):
-    """Single-line input with focus-driven placeholder behaviour.
-
-    Mirrors the original ``ui/client_manager.py`` pattern where the placeholder
-    is shown as actual text and cleared/restored on focus events.
-    """
-
-    def __init__(self, parent: QWidget | None = None):
-        super().__init__(parent)
-        self._placeholder: str = ""
-        self._user_typed: bool = False
-
-    # ── Public API ─────────────────────────────────────────────────────────
-
-    def set_placeholder(self, text: str) -> None:
-        """Update the placeholder text (shown when user has not typed)."""
-        self._placeholder = text
-        if not self._user_typed:
-            blocked = self.blockSignals(True)
-            self.setText(text)
-            self.blockSignals(blocked)
-
-    def search_value(self) -> str:
-        """Return the current search query, or ``""`` if user never typed."""
-        if not self._user_typed:
-            return ""
-        return self.text().strip()
-
-    # ── Event overrides ────────────────────────────────────────────────────
-
-    def focusInEvent(self, event) -> None:
-        if not self._user_typed:
-            self.clear()
-        self._user_typed = True
-        super().focusInEvent(event)
-
-    def focusOutEvent(self, event) -> None:
-        if not self.text().strip():
-            self._user_typed = False
-            blocked = self.blockSignals(True)
-            self.setText(self._placeholder)
-            self.blockSignals(blocked)
-        super().focusOutEvent(event)
-
-    def keyPressEvent(self, event) -> None:
-        self._user_typed = True
-        super().keyPressEvent(event)
-
-
 # ── Main view ──────────────────────────────────────────────────────────────────
 
 class QtClientManager(QWidget):
@@ -134,10 +84,11 @@ class QtClientManager(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs: dict | None = None,
+        client_service=None,
     ):
         super().__init__(parent)
         self.db = db
-        self.service = ClientService(db) if db is not None else None
+        self.service = client_service
         self._selected_id: int | None = None
 
         self._language_callback = self._on_language_changed
@@ -175,7 +126,7 @@ class QtClientManager(QWidget):
         labels = _resolve_column_labels()
         self.table.setHorizontalHeaderLabels(labels)
 
-        self._search_entry.set_placeholder(t("common.search"))
+        self._search_entry.setPlaceholderText(t("common.search"))
 
         self._title_label.setText(t("client.title"))
         self._new_btn.setText("+ " + t("client.new_button"))
@@ -205,10 +156,11 @@ class QtClientManager(QWidget):
 
         top_layout.addSpacing(SP["3"])
 
-        self._search_entry = _SearchLineEdit()
-        self._search_entry.set_placeholder(t("common.search"))
+        self._search_entry = DebouncedLineEdit(
+            placeholder=t("common.search"),
+        )
         self._search_entry.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        self._search_entry.textChanged.connect(self._on_search_changed)
+        self._search_entry.debouncedTextChanged.connect(self._on_search_changed)
         top_layout.addWidget(self._search_entry, 1)
 
         top_layout.addStretch()
@@ -263,7 +215,7 @@ class QtClientManager(QWidget):
         if self.service is None:
             return
 
-        query = self._search_entry.search_value()
+        query = self._search_entry.text().strip()
         clients = self.service.search(query, limit=200) if query else self.service.get_all()
 
         rows: list[dict[str, Any]] = []

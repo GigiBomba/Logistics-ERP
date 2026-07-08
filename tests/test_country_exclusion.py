@@ -2,6 +2,7 @@
 import json
 import os
 import unittest
+from unittest.mock import patch
 
 from services.country_exclusion import (
     COUNTRY_BOUNDS,
@@ -110,6 +111,112 @@ class TestCountryExclusionLive(unittest.TestCase):
         for code in CountryAvoidanceManager.EUROPEAN_COUNTRIES:
             self.assertIn(code, COUNTRY_BOUNDS)
             self.assertIn(code, ISO2_TO_ISO3)
+
+
+# ── Additional unit tests ──────────────────────────────────────────
+
+# Patch country_borders so exclusion unit tests don't need real JSON.
+FAKE_POLYGONS: dict[str, list[list[list[float]]]] = {
+    "HU": [[[46.5, 16.5], [46.5, 22.0], [48.5, 22.0], [48.5, 16.5], [46.5, 16.5]]],
+    "RS": [[[42.5, 18.5], [42.5, 23.0], [46.5, 23.0], [46.5, 18.5], [42.5, 18.5]]],
+}
+
+
+class TestExclusionPlan(unittest.TestCase):
+    def test_plan_defaults(self):
+        from services.country_exclusion import ExclusionPlan
+
+        plan = ExclusionPlan()
+        self.assertEqual(plan.requested, [])
+        self.assertEqual(plan.applied, [])
+        self.assertEqual(plan.strategy, "none")
+        self.assertFalse(plan.active)
+
+    def test_plan_active_when_custom_model_set(self):
+        from services.country_exclusion import ExclusionPlan
+
+        plan = ExclusionPlan(custom_model={"areas": {}}, applied=["HU"])
+        self.assertTrue(plan.active)
+
+    def test_plan_repr(self):
+        from services.country_exclusion import ExclusionPlan
+
+        plan = ExclusionPlan(requested=["HU"], applied=["HU"], strategy="test")
+        self.assertFalse(plan.active)  # no custom_model
+
+
+class TestCountryExclusionEngineAdditional(unittest.TestCase):
+    def test_skip_empty_excluded_list(self):
+        engine = CountryExclusionEngine()
+        plan = engine.prepare([], [(44.4, 26.1)])
+        self.assertEqual(plan.strategy, "none")
+        self.assertFalse(plan.active)
+
+    def test_skip_none_excluded_list(self):
+        engine = CountryExclusionEngine()
+        plan = engine.prepare(None, [(44.4, 26.1)])
+        self.assertEqual(plan.strategy, "none")
+
+    def test_normalize_codes(self):
+        normalized = CountryExclusionEngine.normalize_codes(["ro", "DE", "", None, "hU"])
+        self.assertEqual(normalized, ["RO", "DE", "HU"])
+
+    def test_normalize_codes_none_input(self):
+        self.assertEqual(CountryExclusionEngine.normalize_codes(None), [])
+
+    def test_point_in_bounds_inside(self):
+        self.assertTrue(
+            CountryExclusionEngine._point_in_bounds(
+                17.0, 47.0, (16.5, 46.5, 22.0, 48.5)
+            )
+        )
+
+    def test_point_in_bounds_outside(self):
+        self.assertFalse(
+            CountryExclusionEngine._point_in_bounds(
+                10.0, 50.0, (16.5, 46.5, 22.0, 48.5)
+            )
+        )
+
+    @patch("services.country_exclusion.get_polygons", side_effect=lambda c: FAKE_POLYGONS.get(c, []))
+    def test_prepare_skips_countries_without_polygon(self, mock_get):
+        engine = CountryExclusionEngine()
+        plan = engine.prepare(["XX", "HU"], [(44.4, 26.1)])
+        self.assertIn("HU", plan.applied)
+        self.assertNotIn("XX", plan.applied)
+
+    def test_merge_into_params_inactive_plan(self):
+        engine = CountryExclusionEngine()
+        plan = engine.prepare([], [(44.4, 26.1)])
+        params = engine.merge_into_params({"weight": "40000"}, plan)
+        self.assertEqual(params, {"weight": "40000"})
+
+    @patch("services.country_exclusion.get_polygons", side_effect=lambda c: FAKE_POLYGONS.get(c, []))
+    def test_merge_into_params_adds_keys(self, mock_get):
+        engine = CountryExclusionEngine()
+        plan = engine.prepare(["HU"], [(44.4, 26.1), (50.1, 8.7)])
+        params = engine.merge_into_params({"weight": "40000"}, plan)
+        self.assertTrue(params["ch.disable"])
+        self.assertEqual(params["avoid_countries"], ["HU"])
+        self.assertIn("_custom_model", params)
+        self.assertEqual(params["_exclusion_strategy"], "custom_model_areas_post")
+
+    @patch("services.country_exclusion.get_polygons")
+    def test_build_custom_model_with_multipolygon(self, mock_get):
+        """A country with multiple rings should build a MultiPolygon geometry."""
+        mock_get.return_value = [
+            [[46.0, 16.0], [46.0, 17.0], [47.0, 17.0], [47.0, 16.0], [46.0, 16.0]],
+            [[45.0, 18.0], [45.0, 19.0], [46.0, 19.0], [46.0, 18.0], [45.0, 18.0]],
+        ]
+        engine = CountryExclusionEngine()
+        model = engine._build_custom_model(["XX"])
+        self.assertIsNotNone(model)
+        self.assertIn("areas", model)
+        found_multipolygon = any(
+            area["geometry"]["type"] == "MultiPolygon"
+            for area in model["areas"].values()
+        )
+        self.assertTrue(found_multipolygon, "Expected at least one MultiPolygon geometry")
 
 
 if __name__ == "__main__":

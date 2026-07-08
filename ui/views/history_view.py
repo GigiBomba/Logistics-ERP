@@ -6,7 +6,6 @@ with filtering, invoice generation, PDF/Excel export, and delete actions.
 
 from __future__ import annotations
 
-import contextlib
 import logging
 import os
 from datetime import datetime, timedelta
@@ -24,10 +23,9 @@ from PySide6.QtWidgets import (
 )
 
 from services.export_service import ExportService
-from services.i18n import register_listener, t, unregister_listener
-from services.invoicing.service import InvoiceService
+from services.i18n import t
+from ui.base_view import BaseView
 from services.preferences import PreferencesManager
-from services.trip_service import TripService
 from ui.components import Btn, Card, FieldLabel, Label, PageTitle
 from ui.design_tokens import SP
 from ui.theme import COLORS
@@ -35,6 +33,7 @@ from ui.widgets import (
     StyledComboBox,
     StyledTableWidget,
 )
+from ui.widgets.debounced_line_edit import DebouncedLineEdit
 from utils.formatters import fmt_currency, fmt_distance, fmt_rate
 
 logger = logging.getLogger(__name__)
@@ -63,7 +62,7 @@ STATUS_TAG_KEYS = {
 _STATUS_TAG_LOOKUP = {k.strip().lower(): v for k, v in STATUS_TAGS.items()}
 
 
-class QtHistoryView(QWidget):
+class QtHistoryView(BaseView):
     """Trip history browser with filters, invoice generation, and export."""
 
     def __init__(
@@ -74,7 +73,8 @@ class QtHistoryView(QWidget):
         controller=None,
         prefs=None,
         ops=None,
-        api_client=None,
+        trip_service=None,
+        invoice_service=None,
     ):
         super().__init__(parent)
         self.db = db
@@ -82,25 +82,15 @@ class QtHistoryView(QWidget):
         self.prefs = prefs or (PreferencesManager(db) if db else None)
         self.ops = ops
         self._main_app = main_app or controller
-        self._api_client = api_client
-
-        if self._api_client is not None:
-            from client.remote_services import RemoteTripService
-            self.trip_service = RemoteTripService(self._api_client)
-        else:
-            self.trip_service = TripService(db) if db else None
-        if self._api_client is not None:
-            from client.remote_invoice_service import RemoteInvoiceService
-            self.invoice_service = RemoteInvoiceService(self._api_client)
-        else:
-            self.invoice_service = InvoiceService(db, prefs=self.prefs) if db else None
+        self.trip_service = trip_service
+        self.invoice_service = invoice_service
         self.export_service = ExportService(prefs=self.prefs) if self.prefs else None
 
         self._limit = 200
 
         self._build_ui()
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
         self.refresh()
 
     # ── UI build ───────────────────────────────────────────────────────────────
@@ -139,9 +129,9 @@ class QtHistoryView(QWidget):
         lbl = FieldLabel(bar, f"\U0001f50d {t('history.search_label')}")
         bar_layout.addWidget(lbl)
 
-        self.e_search = QLineEdit()
-        self.e_search.setPlaceholderText(t("history.search_placeholder"))
+        self.e_search = DebouncedLineEdit(placeholder=t("history.search_placeholder"))
         self.e_search.returnPressed.connect(self._on_search)
+        self.e_search.debouncedTextChanged.connect(self._on_search)
         bar_layout.addWidget(self.e_search, 1)
 
         self.c_status = StyledComboBox(bar)
@@ -416,7 +406,4 @@ class QtHistoryView(QWidget):
         self.refresh()
 
     def shutdown(self) -> None:
-        if hasattr(self, '_timer') and self._timer is not None:
-            self._timer.stop()
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
+        super().shutdown()

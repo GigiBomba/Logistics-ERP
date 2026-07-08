@@ -20,7 +20,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from services.analytics_service import AnalyticsService
 from services.i18n import register_listener, t, unregister_listener
 from ui.components import Label, PageTitle
 from ui.design_tokens import (
@@ -77,17 +76,12 @@ class QtAnalyticsView(QWidget):
         parent: QWidget | None = None,
         db=None,
         prefs=None,
-        api_client=None,
+        analytics_service=None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
-        self._api_client = api_client
-        if self._api_client is not None:
-            from client.remote_analytics import RemoteAnalyticsService
-            self._svc = RemoteAnalyticsService(self._api_client)
-        else:
-            self._svc = AnalyticsService(db) if db else None
+        self._svc = analytics_service
         self._tabs: dict[int, QWidget] = {}
         self._period_index: int = DEFAULT_PERIOD_INDEX
         self._first_open: bool = True

@@ -19,16 +19,13 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
-    QScrollArea,
     QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
 
-from repositories.fleet_repository import FleetRepository
-from repositories.trip_repository import TripRepository
-from services.analytics_service import AnalyticsService
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from services.invoicing.config_manager import load_company_config
 from services.operations.event_bus import (
     ALERT_CREATED,
@@ -37,7 +34,6 @@ from services.operations.event_bus import (
     TRIP_STATUS_CHANGED,
     TRIP_UPDATED,
     TRUCK_UPDATED,
-    EventBus,
 )
 from ui.components import (
     Card,
@@ -69,7 +65,7 @@ from utils.formatters import fmt_currency, fmt_distance, fmt_percentage
 logger = logging.getLogger(__name__)
 
 
-class QtOverviewView(QScrollArea):
+class QtOverviewView(BaseView):
     """Overview dashboard with KPIs, profit chart, and activity lists."""
 
     REFRESH_INTERVAL_MS = 30_000
@@ -128,13 +124,16 @@ class QtOverviewView(QScrollArea):
         parent: QWidget | None = None,
         db=None,
         ops=None,
-        api_client=None,
+        trip_service=None,
+        fleet_service=None,
+        analytics_svc=None,
     ):
         super().__init__(parent)
         self.db = db
         self.ops = ops
-        self._api_client = api_client
-        self._event_bus = EventBus()
+        self._trip_repo = trip_service
+        self._fleet_repo = fleet_service
+        self._analytics_svc = analytics_svc
         self._handlers: dict[str, Any] = {}
         self._last_refresh_ts = 0
         self._shutting_down = False
@@ -149,19 +148,8 @@ class QtOverviewView(QScrollArea):
         # render.  Used by ``wakeup`` for staleness detection.
         self._chart_last_render_ts: float = 0.0
 
-        if self._api_client is not None:
-            from client.remote_services import RemoteTripService, RemoteFleetService
-            from client.remote_analytics import RemoteAnalyticsService
-            self._trip_repo = RemoteTripService(self._api_client)
-            self._fleet_repo = RemoteFleetService(self._api_client)
-            self._analytics_svc = RemoteAnalyticsService(self._api_client)
-        else:
-            self._trip_repo = TripRepository(db) if db else None
-            self._fleet_repo = FleetRepository(db) if db else None
-            self._analytics_svc = AnalyticsService(db) if db else None
-
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
 
         self._selected_kpis: list[dict[str, str]] = []
         self._selected_chart: dict[str, str] | None = None
@@ -171,9 +159,7 @@ class QtOverviewView(QScrollArea):
         self._subscribe_events()
         self.refresh()
 
-        self._refresh_timer = QTimer(self)
-        self._refresh_timer.timeout.connect(self.refresh)
-        self._refresh_timer.start(self.REFRESH_INTERVAL_MS)
+        self._add_timer(self.REFRESH_INTERVAL_MS, self.refresh)
 
     # ── UI build ───────────────────────────────────────────────────────────────
 
@@ -1094,7 +1080,7 @@ class QtOverviewView(QScrollArea):
         }
         for ev_type, handler in events.items():
             if ev_type not in self._handlers:
-                self._event_bus.subscribe(ev_type, handler)
+                self._subscribe(ev_type, handler)
                 self._handlers[ev_type] = handler
 
     def _on_data_changed(self, ev):
@@ -1115,7 +1101,7 @@ a re-render.  Only the cheap KPI / active-trips /
 alerts lists are refreshed.
         """
         self._subscribe_events()
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
         self._last_refresh_ts = 0
         self.refresh()
         if self._should_rerender_chart():
@@ -1136,14 +1122,4 @@ alerts lists are refreshed.
 
     def shutdown(self):
         self._shutting_down = True
-        if self._refresh_timer is not None:
-            self._refresh_timer.stop()
-        # Keep the chart widget and its ``QPixmap`` alive so re-entering
-        # the overview does not require a re-render.  We only
-        # unhook event subscriptions and stop timers.
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        for ev_type, handler in list(self._handlers.items()):
-            with contextlib.suppress(Exception):
-                self._event_bus.unsubscribe(ev_type, handler)
-        self._handlers.clear()
+        super().shutdown()

@@ -12,7 +12,6 @@ Usage as embedded widget::
 
 from __future__ import annotations
 
-import contextlib
 import json
 import logging
 import os
@@ -39,7 +38,8 @@ from PySide6.QtWidgets import (
 from repositories.client_repository import ClientRepository
 from repositories.document_repository import DocumentRepository
 from repositories.proforma_repository import PROFORMA_NUMBER_FORMATS, DEFAULT_PROFORMA_FORMAT_KEY as PROF_DEFAULT_FMT
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from utils.editor_toolkit import DebouncedTask, export_editor_data, mark_field_invalid, register_shortcuts
 from services.invoicing.config_manager import load_company_config
 from services.invoicing.proforma_service import ProformaService
@@ -59,7 +59,7 @@ from ui.widgets import (
 _logger = logging.getLogger(__name__)
 
 
-class QtProformaEditor(QWidget, LineItemsMixin):
+class QtProformaEditor(BaseView, LineItemsMixin):
     """Professional proforma invoice editor.
 
     This is a QWidget for embedding in tab views. It uses ``ScrollableFormContainer``
@@ -79,7 +79,7 @@ class QtProformaEditor(QWidget, LineItemsMixin):
         self._client_repo = ClientRepository(db) if db else None
         self._doc_repo = DocumentRepository(db) if db else None
         self._proforma_service: ProformaService | None = None
-        self._event_bus = EventBus()
+
 
         # ── Data state ────────────────────────────────────────────────────────
         self._clients: list[dict[str, Any]] = []
@@ -133,8 +133,7 @@ class QtProformaEditor(QWidget, LineItemsMixin):
 
         # i18n
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
-        self._listener_registered = True
+        self._register_i18n(self._language_callback)
 
         self._data_loaded: bool = False
 
@@ -147,7 +146,7 @@ class QtProformaEditor(QWidget, LineItemsMixin):
         self._load_company_config()
         self._add_default_item()
 
-        self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        self._subscribe(SETTINGS_UPDATED, self._on_settings_updated)
 
         # Debounced recalculation
         self._recalc_task = DebouncedTask(self._recalc_all, interval_ms=300)
@@ -165,9 +164,6 @@ class QtProformaEditor(QWidget, LineItemsMixin):
 
     def wakeup(self) -> None:
         """Load DB-dependent data. Called when the tab becomes visible."""
-        if not getattr(self, '_listener_registered', False):
-            register_listener(self._language_callback)
-            self._listener_registered = True
         if not self._data_loaded:
             self._load_clients()
             self._data_loaded = True
@@ -175,10 +171,7 @@ class QtProformaEditor(QWidget, LineItemsMixin):
 
     def shutdown(self) -> None:
         """Clean up resources."""
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        with contextlib.suppress(Exception):
-            self._event_bus.unsubscribe(SETTINGS_UPDATED, self._on_settings_updated)
+        super().shutdown()
 
     def _on_language_changed(self, _lang: str) -> None:
         """Refresh UI text when language changes."""

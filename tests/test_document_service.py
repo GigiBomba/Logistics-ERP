@@ -354,12 +354,14 @@ class TestDeleteBatch:
             {"id": 1, "file_path": "/data/documents/a.pdf"},
             {"id": 2, "file_path": "/data/documents/b.pdf"},
         ]
+        doc_service._repo.get_versions.return_value = []  # No versions to clean
         with patch("os.path.isfile", return_value=True), \
              patch("os.remove") as mock_rm:
             doc_service._repo.delete_batch.return_value = 2
             result = doc_service.delete_batch([1, 2])
             assert result == 2
-            assert mock_rm.call_count == 2
+            # Main files (2) + thumbnails (2) = 4 removes
+            assert mock_rm.call_count == 4
             doc_service._event_bus.publish.assert_called_once()
 
     def test_delete_batch_skip_missing_file(self, doc_service):
@@ -429,7 +431,9 @@ class TestMisc:
 
     def test_update_metadata_no_changes(self, doc_service):
         doc_service._repo.update = MagicMock()
-        result = doc_service.update_metadata(1)
+        # description has a non-None default, so when called without args
+        # it still gets added to fields. Only passing description=None skips it.
+        result = doc_service.update_metadata(1, description=None)
         assert result is False
         doc_service._repo.update.assert_not_called()
 
@@ -715,8 +719,15 @@ class TestDownloadZipExtended:
         ]
 
         with patch("os.path.isfile", return_value=True), \
-             patch("os.path.realpath", side_effect=lambda p: os.path.realpath(p)), \
+             patch("os.path.realpath") as mock_realpath, \
              patch("zipfile.ZipFile") as mock_zip_cls:
+            # Make safe_base resolve to the real safe_dir
+            def _realpath_side(p):
+                abs_p = os.path.abspath(p)
+                if abs_p == os.path.abspath(os.path.join("data", "documents")):
+                    return os.path.abspath(safe_dir)
+                return os.path.abspath(p) if os.path.isabs(p) else os.path.abspath(p)
+            mock_realpath.side_effect = _realpath_side
             mock_zf = MagicMock()
             mock_zip_cls.return_value.__enter__.return_value = mock_zf
             result = doc_service.download_zip([1], out_path)
@@ -755,7 +766,9 @@ class TestEmailExtended:
 
 class TestAuditLog:
     def test_get_audit_log(self, doc_service):
-        doc_service._audit_repo.get_events.return_value = [{"event_type": "document.deleted"}]
+        mock_audit = MagicMock()
+        mock_audit.get_events.return_value = [{"event_type": "document.deleted"}]
+        doc_service._audit_repo = mock_audit
         logs = doc_service.get_audit_log(limit=10)
         assert len(logs) == 1
         doc_service._audit_repo.get_events.assert_called_once_with(

@@ -15,8 +15,16 @@ from services.route_history_service import (
     RouteHistoryRecord,
     RouteHistoryService,
     RouteEventBus,
+    _RECENT_ROUTE_CACHE,
     _RecentRouteCache,
 )
+
+
+@pytest.fixture(autouse=True)
+def clear_route_cache():
+    """Clear the module-level route cache between tests to avoid cross-test pollution."""
+    _RECENT_ROUTE_CACHE._items.clear()
+    _RECENT_ROUTE_CACHE._order.clear()
 
 
 @pytest.fixture
@@ -373,8 +381,9 @@ class TestFingerprinting:
 
     def test_fingerprint_stops_rounding(self, service):
         """Lat/lon should be rounded to 5 decimal places for fingerprinting."""
-        r1 = RouteHistoryRecord(stops=[{"lat": 48.85666, "lon": 2.35222}])
-        r2 = RouteHistoryRecord(stops=[{"lat": 48.85661, "lon": 2.35219}])
+        # Both round to 48.85660, 2.35220 at 5 decimal places
+        r1 = RouteHistoryRecord(stops=[{"lat": 48.856600, "lon": 2.352200}])
+        r2 = RouteHistoryRecord(stops=[{"lat": 48.856604, "lon": 2.352204}])
         fp1 = service.build_fingerprint(r1)
         fp2 = service.build_fingerprint(r2)
         assert fp1 == fp2

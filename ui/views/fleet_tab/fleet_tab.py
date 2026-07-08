@@ -33,7 +33,8 @@ from repositories.fleet_repository import FleetRepository
 from services.driver_truck_service import DriverTruckService
 from services.export_service import ExportService
 from services.fleet_service import FleetService
-from services.i18n import register_listener, t, unregister_listener
+from services.i18n import t
+from ui.base_view import BaseView
 from services.operations.event_bus import (
     ALERT_CREATED,
     ALERT_RESOLVED,
@@ -66,7 +67,7 @@ from ui.views.fleet_tab.truck_form import _TruckFormDialog
 logger = logging.getLogger(__name__)
 
 
-class QtFleetTab(QWidget):
+class QtFleetTab(BaseView):
     """Fleet management view — truck table, KPI cards, charts, CRUD.
 
     Designed for embedding in a ``QStackedWidget``. Call ``wakeup()``
@@ -106,6 +107,7 @@ class QtFleetTab(QWidget):
         ops=None,
         fleet_repo=None,
         fleet_service=None,
+        dta_service=None,
         api_client=None,
     ):
         super().__init__(parent)
@@ -116,18 +118,17 @@ class QtFleetTab(QWidget):
             FleetService(db) if db is not None else None
         )
         self.exporter = ExportService()
-        self._event_bus = EventBus()
-        self._dta_service = DriverTruckService(db) if db is not None else None
+        self._dta_service = dta_service if dta_service is not None else (DriverTruckService(db) if db is not None else None)
         self._fleet_repo = fleet_repo if fleet_repo is not None else (FleetRepository(db) if db is not None else None)
 
         # -- i18n --
         self._language_callback = self._on_language_changed
-        register_listener(self._language_callback)
+        self._register_i18n(self._language_callback)
 
         # -- Event subscriptions --
-        self._event_bus.subscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
-        self._event_bus.subscribe(ALERT_CREATED, self._on_alert_ev)
-        self._event_bus.subscribe(ALERT_RESOLVED, self._on_alert_ev)
+        self._subscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
+        self._subscribe(ALERT_CREATED, self._on_alert_ev)
+        self._subscribe(ALERT_RESOLVED, self._on_alert_ev)
 
         # -- Chart references --
         self._chart_widget: PlotlyChartWidget | None = None
@@ -177,13 +178,7 @@ class QtFleetTab(QWidget):
 
     def shutdown(self) -> None:
         """Called when the view is hidden or destroyed."""
-        with contextlib.suppress(Exception):
-            unregister_listener(self._language_callback)
-        with contextlib.suppress(Exception):
-            self._event_bus.unsubscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
-        with contextlib.suppress(Exception):
-            self._event_bus.unsubscribe(ALERT_CREATED, self._on_alert_ev)
-            self._event_bus.unsubscribe(ALERT_RESOLVED, self._on_alert_ev)
+        super().shutdown()
         # The chart widget lifecycle is managed by Qt's parent-child system.
 
     # ==================================================================
