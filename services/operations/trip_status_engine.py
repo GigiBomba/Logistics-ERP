@@ -101,7 +101,7 @@ class TripStatusEngine:
     def get_valid_transitions(self, current_status: str) -> list:
         return VALID_TRANSITIONS.get(current_status, [])
 
-    def transition(self, trip_id: int, new_status: str) -> bool:
+    def transition(self, trip_id: int, new_status: str, trigger: str = "manual") -> bool:
         try:
             trip = self._trip_service.get_by_id(trip_id)
             if not trip:
@@ -114,6 +114,17 @@ class TripStatusEngine:
                 raise ValueError(f"Cannot transition from {old_status} to {new_status}")
 
             self._trip_service.update(trip_id, {"status": new_status})
+
+            # Record trip status history
+            try:
+                self._trip_service.db.conn.execute(
+                    "INSERT INTO trip_status_history (trip_id, old_status, new_status, trigger, created_at) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (trip_id, old_status, new_status, trigger, datetime.now().isoformat()),
+                )
+                self._trip_service.db.conn.commit()
+            except Exception as hist_err:
+                logger.warning("Failed to record status history for trip %d: %s", trip_id, hist_err)
 
             self._event_bus.publish(TRIP_STATUS_CHANGED, {
                 "trip_id": trip_id,

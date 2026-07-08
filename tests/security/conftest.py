@@ -21,9 +21,12 @@ os.environ["OPERION_DB_PATH"] = TEST_DB_PATH
 os.environ["OPERION_RATE_LIMIT"] = "10000"  # Disable effective rate limiting for tests
 
 import bcrypt
+import json
 import pytest
+import tempfile
 from datetime import datetime
 from fastapi.testclient import TestClient
+from typing import Any, Dict, Optional
 
 # Passwords
 ADMIN_PW = "test-admin-pw-123"
@@ -234,3 +237,95 @@ def company_b_token(tokens):
 @pytest.fixture
 def auth_b(company_b_token):
     return {"Authorization": f"Bearer {company_b_token}"}
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# E2E test helpers
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def get_db():
+    """Return a DatabaseManager connected to the test DB for direct DB verification."""
+    from database.db_manager import DatabaseManager
+    return DatabaseManager(TEST_DB_PATH)
+
+
+def create_test_trip(client, headers, overrides: dict = None) -> Dict[str, Any]:
+    """POST /api/v1/trips/ and return the response JSON."""
+    data = {
+        "client_name": "E2E Test Client",
+        "driver_name": "E2E Driver",
+        "truck_number": "E2E-TRUCK",
+        "status": "Planned",
+    }
+    if overrides:
+        data.update(overrides)
+    try:
+        resp = client.post("/api/v1/trips/", json=data, headers=headers)
+        return resp.json() if resp.status_code == 200 else {"error": resp.text, "status": resp.status_code}
+    except Exception as e:
+        return {"error": str(e), "status": 500}
+
+
+def create_test_client(client, headers, name: str = "E2E Client", overrides: dict = None) -> Dict[str, Any]:
+    """POST /api/v1/clients/ and return the response JSON."""
+    data = {"email": "e2e@test.com", "phone": "+40-700-000-000"}
+    if overrides:
+        data.update(overrides)
+    try:
+        resp = client.post(f"/api/v1/clients/?name={name}", json=data, headers=headers)
+        return resp.json() if resp.status_code == 200 else {"error": resp.text, "status": resp.status_code}
+    except Exception as e:
+        return {"error": str(e), "status": 500}
+
+
+def create_test_driver(client, headers, overrides: dict = None) -> Dict[str, Any]:
+    """POST /api/v1/drivers/ and return the response JSON."""
+    data = {"name": "E2E Driver", "phone": "+40-711-000-999", "email": "e2e-driver@test.com"}
+    if overrides:
+        data.update(overrides)
+    try:
+        resp = client.post("/api/v1/drivers/", json=data, headers=headers)
+        return resp.json() if resp.status_code == 201 else {"error": resp.text, "status": resp.status_code}
+    except Exception as e:
+        return {"error": str(e), "status": 500}
+
+
+def create_test_truck(client, headers, overrides: dict = None) -> Dict[str, Any]:
+    """POST /api/v1/fleet/trucks/ and return the response JSON."""
+    data = {"plate_number": "E2E-001", "manufacturer": "TestTruck", "year": 2026, "model": "E2E Model", "status": "Active"}
+    if overrides:
+        data.update(overrides)
+    try:
+        resp = client.post("/api/v1/fleet/trucks/", json=data, headers=headers)
+        return resp.json() if resp.status_code == 200 else {"error": resp.text, "status": resp.status_code}
+    except Exception as e:
+        return {"error": str(e), "status": 500}
+
+
+def upload_test_document(client, headers, filename: str = "test.pdf",
+                         content: bytes = None, mime: str = "application/pdf") -> Dict[str, Any]:
+    """POST /api/v1/documents/upload and return the response JSON."""
+    if content is None:
+        content = b"%PDF-1.4 fake pdf content for testing"
+    try:
+        resp = client.post(
+            "/api/v1/documents/upload",
+            files={"file": (filename, content, mime)},
+            data={"category": "test"},
+            headers=headers,
+        )
+        return resp.json() if resp.status_code == 200 else {"error": resp.text, "status": resp.status_code}
+    except Exception as e:
+        return {"error": str(e), "status": 500}
+
+
+def verify_db_company_id(table: str, record_id: int, expected_company_id: int) -> bool:
+    """Query the test DB directly to verify a record's company_id."""
+    db = get_db()
+    try:
+        row = db.conn.execute(
+            f"SELECT company_id FROM {table} WHERE id = ?", (record_id,)
+        ).fetchone()
+        return row is not None and row["company_id"] == expected_company_id
+    finally:
+        db.close()

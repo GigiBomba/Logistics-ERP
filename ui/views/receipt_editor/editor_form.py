@@ -50,6 +50,8 @@ from ui.widgets import (
 )
 from ui.widgets.layout_utils import clear_layout
 
+from ui.views.receipt_editor.line_items import LineItemsMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -86,7 +88,7 @@ ATTACHMENT_TYPES = [
 ]
 
 
-class QtReceiptEditor(QWidget):
+class QtReceiptEditor(QWidget, LineItemsMixin):
     """Professional receipt editor.
 
     Provides a scrollable form on the left and a QWebEngineView

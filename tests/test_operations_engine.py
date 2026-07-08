@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from services.operations.alert_manager import Alert, AlertType, Severity
 from services.operations.operations_engine import OperationsEngine
 
 
@@ -177,3 +178,115 @@ def test_migrate_existing_data(db_mock):
     result = engine.migrate_existing_data()
     assert "trucks" in result
     assert "trips" in result
+
+
+def test_force_trip_status_no_workflow(db_mock):
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db_mock)
+    engine._trip_workflow = None
+    assert engine.force_trip_status(1, "In Transit") is False
+
+
+def test_evaluate_all_no_maintenance():
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db=None)
+    assert engine.evaluate_all() == 0
+
+
+def test_evaluate_truck_no_maintenance():
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db=None)
+    assert engine.evaluate_truck("T1") == 0
+
+
+def test_start_without_db():
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db=None)
+    engine._event_bus = MagicMock()
+    engine.start()
+    assert engine._running is True
+    engine.stop()
+    assert engine._running is False
+
+
+def test_get_active_alerts_limit(db_mock):
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db_mock)
+    engine._alert_mgr = MagicMock()
+    engine._alert_mgr.get_active_alerts.return_value = [{"id": "1"}]
+    result = engine.get_active_alerts(limit=10)
+    engine._alert_mgr.get_active_alerts.assert_called_with(limit=10)
+    assert result == [{"id": "1"}]
+
+
+def test_get_alerts_with_all_filters(db_mock):
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db_mock)
+    engine._alert_mgr = MagicMock()
+    engine.get_alerts(
+        alert_type=AlertType.MAINTENANCE,
+        severity=Severity.CRITICAL,
+        truck_id="T1",
+        resolved=False,
+        limit=25,
+    )
+    engine._alert_mgr.get_alerts.assert_called_with(
+        alert_type=AlertType.MAINTENANCE,
+        severity=Severity.CRITICAL,
+        truck_id="T1",
+        resolved=False,
+        limit=25,
+    )
+
+
+def test_migrate_existing_data_with_overdue_invoices():
+    """Integration test: migrate_existing_data creates overdue invoice alerts."""
+    from tests.test_helpers import make_db
+
+    OperationsEngine._instance = None
+    db = make_db()
+    # Insert a truck
+    db.conn.execute(
+        "INSERT INTO trucks (id, truck_number, plate_number) VALUES (1, 'T1', 'ABC-123')"
+    )
+    # Insert a delivered trip with an unpaid invoice past due
+    db.conn.execute(
+        "INSERT INTO trips (id, status, client_name, total_price_eur, created_at) "
+        "VALUES (1, 'Delivered', 'ACME', 1500.00, '2025-01-15')"
+    )
+    db.conn.execute(
+        "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, total_amount, status) "
+        "VALUES (1, 'INV-001', '2025-01-15', '2025-02-14', 1500.00, 'Unpaid')"
+    )
+    db.conn.commit()
+
+    engine = OperationsEngine(db)
+    engine._maintenance_engine = MagicMock()
+    engine._event_bus = MagicMock()
+
+    result = engine.migrate_existing_data()
+    assert result["trips"] >= 1
+    # Overdue invoices alert should have been created
+    active = engine.get_active_alerts()
+    overdue = [a for a in active if a.type == AlertType.OVERDUE_INVOICE]
+    assert len(overdue) >= 1
+    assert "INV-001" in overdue[0].message or "1500" in overdue[0].message
+
+
+def test_migrate_existing_data_no_db():
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db=None)
+    result = engine.migrate_existing_data()
+    assert result == {"trucks": 0, "trips": 0, "overdue_invoices": 0}
+
+
+def test_alert_manager_delegation(db_mock):
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db_mock)
+    assert engine.alert_manager is engine._alert_mgr
+
+
+def test_event_bus_delegation(db_mock):
+    OperationsEngine._instance = None
+    engine = OperationsEngine(db_mock)
+    assert engine.event_bus is engine._event_bus

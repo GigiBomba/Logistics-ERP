@@ -1,6 +1,9 @@
 """Unit tests for RouteService — cache, geocode, validation."""
+import json
 import unittest
 from unittest import mock
+
+import pytest
 
 from services.route_service import GeocodeCache, RouteCache, RouteService, GraphHopperClient
 

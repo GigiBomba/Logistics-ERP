@@ -1,0 +1,18 @@
+{
+  "inspection_warning_days": 10,
+  "insurance_warning_days": 10,
+  "overdue_invoice_warning_days": 3,
+  "trip_delay_hours": 2,
+  "service_km_buffer": 5000,
+  "inactive_truck_days": 30,
+  "default_service_km_interval": 30000,
+  "loading_window_minutes": 60,
+  "in_transit_auto_after_start": true,
+  "max_alerts_per_truck": 50,
+  "alert_retention_days": 90,
+  "dunner_enabled": true,
+  "health_overdue_weight": 15,
+  "health_recurring_weight": 10,
+  "health_downtime_weight": 30,
+  "health_max_penalty": 100
+}
