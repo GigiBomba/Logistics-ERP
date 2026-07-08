@@ -77,7 +77,7 @@ class QtFleetTrackingView(QWidget):
         db=None,
         prefs=None,
         ops=None,
-        on_navigate: Callable[[str], None] | None = None,
+        on_navigate: Callable[[str, dict | None], None] | None = None,
         api_client=None,
     ):
         super().__init__(parent)
@@ -208,8 +208,9 @@ class QtFleetTrackingView(QWidget):
         layout.addWidget(container)
 
     def _navigate_settings(self) -> None:
+        logger.debug("Navigate to settings from fleet tracking not-configured state")
         if self._on_navigate:
-            self._on_navigate("settings")
+            self._on_navigate("settings", {"scroll_to": "tracking"})
 
     def _build_map(self, parent: QFrame) -> None:
         map_layout = QVBoxLayout(parent)

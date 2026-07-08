@@ -39,16 +39,18 @@ class AnalyticsRepository(BaseRepository):
         self._ensure_month_checked()
         return "month" if self._month_col_available else "SUBSTR(created_at, 1, 7)"
 
-    @staticmethod
-    def _date_clause(from_date, to_date):
+    def _date_clause(self, from_date, to_date):
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
         if from_date and to_date:
-            return ("WHERE created_at >= ? AND created_at <= ?",
-                    [from_date, to_date])
-        return ("WHERE 1=1", [])
+            return (f"WHERE created_at >= ? AND created_at <= ? {company_filter}",
+                    [from_date, to_date] + company_params)
+        return (f"WHERE 1=1 {company_filter}",
+                company_params)
 
     def get_stats_by_period(self, start=None, end=None):
         """Statistici calculate pe o perioada (format date: YYYY-MM-DD)."""
-        query = """
+        query = f"""
             SELECT
                 COUNT(*) as total,
                 SUM(CASE WHEN net_profit > 0 THEN 1 ELSE 0 END) as profitable,
@@ -57,9 +59,9 @@ class AnalyticsRepository(BaseRepository):
                 SUM(distance_km) as total_km,
                 SUM(total_price_eur) as total_rev
             FROM trips
-            WHERE 1=1
+            WHERE 1=1 {self._company_filter()}
         """
-        params = []
+        params = list(self._company_params())
         if start and end:
             query += " AND created_at BETWEEN ? AND ?"
             params.extend([start, end])
@@ -72,37 +74,48 @@ class AnalyticsRepository(BaseRepository):
         month_expr = self._month_expr()
         best_month = self._fetchone(
             f"SELECT {month_expr} as month, SUM(net_profit) as m_profit "
-            "FROM trips "
+            f"FROM trips WHERE 1=1 {self._company_filter()} "
             "GROUP BY month "
-            "ORDER BY m_profit DESC LIMIT 1"
+            "ORDER BY m_profit DESC LIMIT 1",
+            self._company_params(),
         )
         return stats, best_month
 
     def get_advanced_analytics(self):
         """Top performeri: Camion, Sofer, Luna."""
         bt = self._fetchone(
-            "SELECT COALESCE(t.plate_number, trips.truck_number) as truck_number, SUM(trips.net_profit) as p "
-            "FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id "
+            f"SELECT COALESCE(t.plate_number, trips.truck_number) as truck_number, SUM(trips.net_profit) as p "
+            f"FROM trips LEFT JOIN trucks t ON trips.truck_id = t.id "
+            f"WHERE 1=1 {self._company_filter()} "
             "GROUP BY COALESCE(trips.truck_id, trips.truck_number) "
-            "ORDER BY p DESC LIMIT 1"
+            "ORDER BY p DESC LIMIT 1",
+            self._company_params(),
         )
         bd = self._fetchone(
-            "SELECT driver_name, SUM(net_profit) as p FROM trips GROUP BY driver_name ORDER BY p DESC LIMIT 1"
+            f"SELECT driver_name, SUM(net_profit) as p FROM trips WHERE 1=1 {self._company_filter()} GROUP BY driver_name ORDER BY p DESC LIMIT 1",
+            self._company_params(),
         )
         month_expr = self._month_expr()
         bm = self._fetchone(
-            f"SELECT {month_expr} as month, SUM(net_profit) as m_profit FROM trips GROUP BY month ORDER BY m_profit DESC LIMIT 1"
+            f"SELECT {month_expr} as month, SUM(net_profit) as m_profit "
+            f"FROM trips WHERE 1=1 {self._company_filter()} "
+            "GROUP BY month ORDER BY m_profit DESC LIMIT 1",
+            self._company_params(),
         )
         return bt, bd, bm
 
     def get_dashboard_charts(self):
         """Date pentru graficul evolutiv (ultimele 6 luni)."""
         top_clients = self._fetchall(
-            "SELECT client_name, SUM(net_profit) as p FROM trips GROUP BY client_name ORDER BY p DESC LIMIT 5"
+            f"SELECT client_name, SUM(net_profit) as p FROM trips "
+            f"WHERE 1=1 {self._company_filter()} GROUP BY client_name ORDER BY p DESC LIMIT 5",
+            self._company_params(),
         )
         month_expr = self._month_expr()
         monthly = self._fetchall(
-            f"SELECT {month_expr} as month, SUM(net_profit) as p FROM trips GROUP BY month ORDER BY month DESC LIMIT 6"
+            f"SELECT {month_expr} as month, SUM(net_profit) as p FROM trips "
+            f"WHERE 1=1 {self._company_filter()} GROUP BY month ORDER BY month DESC LIMIT 6",
+            self._company_params(),
         )
         monthly.reverse()
         return top_clients, monthly
@@ -110,7 +123,8 @@ class AnalyticsRepository(BaseRepository):
     def get_available_years(self):
         """Anii disponibili pentru filtre."""
         rows = self._fetchall(
-            "SELECT DISTINCT SUBSTR(created_at, 1, 4) as year FROM trips ORDER BY year DESC"
+            f"SELECT DISTINCT SUBSTR(created_at, 1, 4) as year FROM trips WHERE 1=1 {self._company_filter()} ORDER BY year DESC",
+            self._company_params(),
         )
         return [r["year"] for r in rows if r.get("year")]
 
@@ -119,25 +133,27 @@ class AnalyticsRepository(BaseRepository):
         current_month = datetime.now().strftime("%Y-%m")
 
         # 1. Venit si Profit Luna Curenta
-        m_row = self._fetchone("""
+        m_row = self._fetchone(f"""
             SELECT COALESCE(SUM(total_price_eur), 0) AS m_rev,
                    COALESCE(SUM(net_profit), 0) AS m_profit,
                    COALESCE(SUM(distance_km), 0) AS m_km
-            FROM trips WHERE created_at LIKE ?
-        """, (f"%{current_month}%",))
+            FROM trips WHERE created_at LIKE ? {self._company_filter()}
+        """, (f"%{current_month}%",) + self._company_params())
         m_rev = m_row["m_rev"] if m_row else 0
         m_profit = m_row["m_profit"] if m_row else 0
         m_km = m_row["m_km"] if m_row else 0
 
         # 2. Facturi neplatite
         unpaid_row = self._fetchone(
-            "SELECT COUNT(*) AS cnt FROM invoices WHERE status = 'Unpaid'"
+            f"SELECT COUNT(*) AS cnt FROM invoices WHERE status = 'Unpaid' {self._company_filter()}",
+            self._company_params(),
         )
         unpaid = unpaid_row["cnt"] if unpaid_row else 0
 
         # 3. Curse Active (orice nu e 'Paid')
         active_row = self._fetchone(
-            "SELECT COUNT(*) AS cnt FROM trips WHERE status NOT IN ('Paid', 'Cancelled')"
+            f"SELECT COUNT(*) AS cnt FROM trips WHERE status NOT IN ('Paid', 'Cancelled') {self._company_filter()}",
+            self._company_params(),
         )
         active = active_row["cnt"] if active_row else 0
 
@@ -154,11 +170,11 @@ class AnalyticsRepository(BaseRepository):
         alerts = []
         total_overdue_amount = 0
 
-        query = """
+        query = f"""
             SELECT t.id, t.client_name, i.invoice_number, i.due_date, i.total_amount
             FROM trips t
             JOIN invoices i ON t.id = i.trip_id
-            WHERE i.status = 'Unpaid'
+            WHERE i.status = 'Unpaid' {self._company_filter('t')}
         """
         try:
             rows = self._fetchall(query)
@@ -186,7 +202,8 @@ class AnalyticsRepository(BaseRepository):
             logger.error("SQL Overdue error: %s", e)
 
         neg_margin = self._fetchall(
-            "SELECT id, truck_number FROM trips WHERE net_profit < 0 AND status != 'Paid'"
+            f"SELECT id, truck_number FROM trips WHERE net_profit < 0 AND status != 'Paid' {self._company_filter()}",
+            self._company_params(),
         )
         for nm in neg_margin:
             alerts.append({
@@ -198,6 +215,8 @@ class AnalyticsRepository(BaseRepository):
 
     def get_analytics_data(self, from_date=None, to_date=None):
         """Date grupate pentru grafice — optional date range filtering."""
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
         date_clause = ""
         date_params = []
         if from_date and to_date:
@@ -205,8 +224,11 @@ class AnalyticsRepository(BaseRepository):
                 WHERE LENGTH(created_at) >= 10
                   AND created_at >= ?
                   AND created_at <= ?
-            """
-            date_params = [from_date, to_date]
+            """ + (" " + company_filter if company_filter else "")
+            date_params = [from_date, to_date] + company_params
+        else:
+            date_clause = f"WHERE 1=1 {company_filter}" if company_filter else ""
+            date_params = company_params
 
         per_truck = self._fetchall(
             f"SELECT COALESCE(t.plate_number, trips.truck_number) as truck_number, SUM(trips.net_profit) as p "
@@ -344,17 +366,25 @@ class AnalyticsRepository(BaseRepository):
         """, tuple(params))
 
     def get_document_analytics(self):
-        inv_row = self._fetchone("SELECT COUNT(*) AS cnt FROM invoices")
+        inv_row = self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM invoices WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
+        )
         inv_count = (inv_row.get("cnt", 0) or 0) if inv_row else 0
         cmr_row = self._fetchone(
-            "SELECT COUNT(*) AS cnt FROM documents WHERE tags LIKE '%cmr%'"
+            f"SELECT COUNT(*) AS cnt FROM documents WHERE tags LIKE '%cmr%' {self._company_filter()}",
+            self._company_params(),
         )
         cmr_count = (cmr_row.get("cnt", 0) or 0) if cmr_row else 0
         expiring = self._fetchall(
-            "SELECT title, expiry_date FROM documents WHERE expiry_date IS NOT NULL "
-            "AND expiry_date <= date('now', '+30 days') ORDER BY expiry_date ASC LIMIT 10"
+            f"SELECT title, expiry_date FROM documents WHERE expiry_date IS NOT NULL "
+            f"AND expiry_date <= date('now', '+30 days') {self._company_filter()} ORDER BY expiry_date ASC LIMIT 10",
+            self._company_params(),
         )
-        total_row = self._fetchone("SELECT COUNT(*) AS cnt FROM documents")
+        total_row = self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM documents WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
+        )
         total_docs = (total_row.get("cnt", 0) or 0) if total_row else 0
         return {
             "invoice_count": inv_count,
@@ -364,95 +394,96 @@ class AnalyticsRepository(BaseRepository):
         }
 
     def get_maintenance_alerts(self):
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT t.plate_number AS truck, s.maintenance_type AS description,
                    s.fixed_expiry_date AS next_due_date, s.interval_km AS next_due_mileage
             FROM maintenance_schedules s
             JOIN trucks t ON t.id = s.truck_id
-            WHERE s.active = 1
+            WHERE s.active = 1 {self._company_filter('s')}
             ORDER BY s.fixed_expiry_date ASC LIMIT 10
-        """)
+        """, self._company_params())
 
     # ── Analytics 2.0: Additional query methods ──────────────────────
 
     def get_client_growth(self, months: int = 12, from_date=None, to_date=None):
         extra = ""
-        extra_params = []
+        extra_params = list(self._company_params())
         if from_date and to_date:
             extra = " AND created_at >= ? AND created_at <= ?"
-            extra_params = [from_date, to_date]
+            extra_params.extend([from_date, to_date])
+        company_filter = self._company_filter()
         return self._fetchall(
             f"SELECT SUBSTR(created_at, 1, 7) AS month, COUNT(*) AS new_clients "
-            f"FROM clients WHERE is_active = 1{extra} "
+            f"FROM clients WHERE is_active = 1 {company_filter}{extra} "
             "GROUP BY month ORDER BY month ASC LIMIT ?",
             tuple(extra_params + [months]),
         )
 
     def get_truck_utilization(self) -> list:
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT t.plate_number AS truck,
                    COUNT(tr.id) AS trip_count,
                    COALESCE(SUM(tr.distance_km), 0) AS total_km,
                    MAX(tr.created_at) AS last_trip,
                    MIN(tr.created_at) AS first_trip
             FROM trucks t LEFT JOIN trips tr ON t.id = tr.truck_id
-            WHERE t.active_status = 1
+            WHERE t.active_status = 1 {self._company_filter('tr')}
             GROUP BY t.id ORDER BY trip_count DESC LIMIT 15
-        """)
+        """, self._company_params())
 
     def get_document_upload_trend(self, months: int = 12):
         return self._fetchall(
-            "SELECT SUBSTR(uploaded_at, 1, 7) AS month, COUNT(*) AS count, "
-            "SUM(CASE WHEN category IN ('invoices','trips','cmr') THEN 1 ELSE 0 END) AS doc_count, "
-            "SUM(CASE WHEN category = 'cmr' THEN 1 ELSE 0 END) AS cmr_count "
-            "FROM documents WHERE is_archived = 0 "
+            f"SELECT SUBSTR(uploaded_at, 1, 7) AS month, COUNT(*) AS count, "
+            f"SUM(CASE WHEN category IN ('invoices','trips','cmr') THEN 1 ELSE 0 END) AS doc_count, "
+            f"SUM(CASE WHEN category = 'cmr' THEN 1 ELSE 0 END) AS cmr_count "
+            f"FROM documents WHERE is_archived = 0 {self._company_filter()} "
             "GROUP BY month ORDER BY month ASC LIMIT ?",
-            (months,),
+            self._company_params() + (months,),
         )
 
     def get_driver_tacho_violations(self):
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT d.name AS driver, COUNT(da.id) AS activity_days,
                    COALESCE(SUM(da.violations), 0) AS total_violations,
                    COALESCE(SUM(da.driving_minutes) / 60.0, 0) AS driving_hours,
                    COALESCE(SUM(da.rest_minutes) / 60.0, 0) AS rest_hours
             FROM tacho_driver_activity da
             JOIN drivers d ON da.driver_id = d.id
-            WHERE da.activity_date >= DATE('now', '-90 days')
+            WHERE da.activity_date >= DATE('now', '-90 days') {self._company_filter('da')}
             GROUP BY da.driver_id ORDER BY total_violations DESC LIMIT 15
-        """)
+        """, self._company_params())
 
     def get_profit_per_km_by_country(self):
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT delivery_country AS country, COUNT(*) AS trip_count,
                    COALESCE(SUM(net_profit), 0) AS profit,
                    COALESCE(SUM(distance_km), 0) AS total_km,
                    CASE WHEN SUM(distance_km) > 0
                         THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
                         ELSE 0 END AS profit_per_km
-            FROM trips WHERE delivery_country IS NOT NULL AND delivery_country != ''
+            FROM trips WHERE delivery_country IS NOT NULL AND delivery_country != '' {self._company_filter()}
             GROUP BY delivery_country ORDER BY profit DESC LIMIT 15
-        """)
+        """, self._company_params())
 
     def get_revenue_concentration(self):
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
                    COALESCE(SUM(total_price_eur), 0) AS revenue,
                    COALESCE(SUM(net_profit), 0) AS profit
-            FROM trips GROUP BY client_name ORDER BY revenue DESC
-        """)
+            FROM trips WHERE 1=1 {self._company_filter()} GROUP BY client_name ORDER BY revenue DESC
+        """, self._company_params())
 
     def get_driver_profit_per_km(self):
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT driver_name, COUNT(*) AS trip_count,
                    COALESCE(SUM(distance_km), 0) AS total_km,
                    COALESCE(SUM(net_profit), 0) AS total_profit,
                    CASE WHEN SUM(distance_km) > 0
                         THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
                         ELSE 0 END AS profit_per_km
-            FROM trips WHERE driver_name IS NOT NULL AND driver_name != ''
+            FROM trips WHERE driver_name IS NOT NULL AND driver_name != '' {self._company_filter()}
             GROUP BY driver_name ORDER BY profit_per_km DESC LIMIT 15
-        """)
+        """, self._company_params())
 
     def get_monthly_financial_summary(self, months: int = 24, from_date=None, to_date=None):
         month_expr = self._month_expr()
@@ -513,22 +544,22 @@ class AnalyticsRepository(BaseRepository):
     def get_profit_vs_distance(self, limit: int = 100):
         """Scatter data: net_profit vs distance_km for each trip."""
         return self._fetchall(
-            "SELECT distance_km, net_profit, truck_number, driver_name, "
-            "COALESCE(NULLIF(place_of_loading, ''), 'Unknown') AS origin, "
-            "COALESCE(NULLIF(delivery_country, ''), 'Unknown') AS destination "
-            "FROM trips WHERE distance_km IS NOT NULL AND distance_km > 0 "
-            "AND net_profit IS NOT NULL ORDER BY created_at DESC LIMIT ?",
-            (limit,),
+            f"SELECT distance_km, net_profit, truck_number, driver_name, "
+            f"COALESCE(NULLIF(place_of_loading, ''), 'Unknown') AS origin, "
+            f"COALESCE(NULLIF(delivery_country, ''), 'Unknown') AS destination "
+            f"FROM trips WHERE distance_km IS NOT NULL AND distance_km > 0 "
+            f"AND net_profit IS NOT NULL {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            (limit,) + self._company_params(),
         )
 
     def get_truck_age_distribution(self):
         """Distribution of trucks by manufacture year."""
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT year AS truck_year, COUNT(*) AS count,
                    COALESCE(SUM(mileage), 0) AS total_mileage
-            FROM trucks WHERE year IS NOT NULL AND year != ''
+            FROM trucks WHERE year IS NOT NULL AND year != '' {self._company_filter()}
             GROUP BY year ORDER BY year DESC
-        """)
+        """, self._company_params())
 
     def get_driver_efficiency_trend(self, months: int = 12):
         """Monthly profit per km trend per driver."""
@@ -543,19 +574,21 @@ class AnalyticsRepository(BaseRepository):
             "     THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4) "
             "     ELSE 0 END AS profit_per_km "
             "FROM trips WHERE driver_name IS NOT NULL AND driver_name != '' "
+            + self._company_filter() + " "
             "GROUP BY month, driver_name ORDER BY month ASC LIMIT ?",
-            (months * 15,),
+            self._company_params() + (months * 15,),
         )
 
     def get_client_retention(self):
         """Active vs inactive clients with trip counts."""
-        return self._fetchall("""
+        return self._fetchall(f"""
             SELECT c.is_active, COUNT(DISTINCT c.id) AS client_count,
                    COUNT(t.id) AS total_trips,
                    COALESCE(SUM(t.total_price_eur), 0) AS total_revenue
             FROM clients c LEFT JOIN trips t ON c.id = t.client_id
+            WHERE 1=1 {self._company_filter('t')}
             GROUP BY c.is_active
-        """)
+        """, self._company_params())
 
     def get_revenue_quarterly(self, quarters: int = 8, from_date=None, to_date=None):
         """Quarterly revenue and profit summary."""
@@ -582,15 +615,15 @@ class AnalyticsRepository(BaseRepository):
         d_60 = (today - timedelta(days=60)).strftime("%Y-%m-%d")
         d_61 = (today - timedelta(days=61)).strftime("%Y-%m-%d")
         d_90 = (today - timedelta(days=90)).strftime("%Y-%m-%d")
-        return self._fetchone("""
+        return self._fetchone(f"""
             SELECT
                 COALESCE(SUM(CASE WHEN due_date BETWEEN ? AND ? THEN total_amount ELSE 0 END), 0) AS current_bucket,
                 COALESCE(SUM(CASE WHEN due_date BETWEEN ? AND ? THEN total_amount ELSE 0 END), 0) AS bucket_31_60,
                 COALESCE(SUM(CASE WHEN due_date BETWEEN ? AND ? THEN total_amount ELSE 0 END), 0) AS bucket_61_90,
                 COALESCE(SUM(CASE WHEN due_date < ? THEN total_amount ELSE 0 END), 0) AS overdue_bucket,
                 COALESCE(SUM(total_amount), 0) AS total_outstanding
-            FROM invoices WHERE status = 'Unpaid'
-        """, (d_30, d_today, d_60, d_31, d_90, d_61, d_90))
+            FROM invoices WHERE status = 'Unpaid' {self._company_filter()}
+        """, (d_30, d_today, d_60, d_31, d_90, d_61, d_90) + self._company_params())
 
     def get_client_payment_timeline(self, from_date=None, to_date=None):
         """Per-client payment history: last 6 invoices with payment delay.
@@ -600,18 +633,22 @@ class AnalyticsRepository(BaseRepository):
         Ordered by client revenue DESC, then invoice issue_date DESC.
         Limited to top 5 clients by total invoice amount.
         """
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
         clause = "WHERE 1=1"
         params: list = []
         if from_date and to_date:
             clause = "WHERE i.issue_date >= ? AND i.issue_date <= ?"
             params = [from_date, to_date]
+        full_clause = f"{clause} {company_filter}" if company_filter else clause
+        full_params = params + company_params
         return self._fetchall(
             f"""WITH client_totals AS (
                     SELECT t.client_name,
                            COALESCE(SUM(i.total_amount), 0) AS total_invoiced
                     FROM invoices i
                     JOIN trips t ON t.id = i.trip_id
-                    {clause}
+                    {full_clause}
                     GROUP BY t.client_name
                     ORDER BY total_invoiced DESC
                     LIMIT 5
@@ -631,14 +668,14 @@ class AnalyticsRepository(BaseRepository):
                     FROM invoices i
                     JOIN trips t ON t.id = i.trip_id
                     JOIN client_totals ct ON ct.client_name = t.client_name
-                    {clause}
+                    {full_clause}
                 )
                 SELECT client_name, invoice_number, issue_date, due_date,
                        total_amount, status, payment_date, delay_days
                 FROM ranked_invoices
                 WHERE rn <= 6
                 ORDER BY client_name, issue_date DESC""",
-            tuple(params + params),
+            tuple(full_params + full_params),
         )
 
     def get_driver_monthly_activity(self, months: int = 12, from_date=None, to_date=None):
@@ -649,8 +686,8 @@ class AnalyticsRepository(BaseRepository):
         """
         clause, clause_params = self._date_clause(from_date, to_date)
         filter_condition = "driver_name IS NOT NULL AND driver_name != '' AND driver_name != 'Unassigned'"
-        if clause.strip() == "WHERE 1=1":
-            drivers_clause = f"WHERE {filter_condition}"
+        if clause.strip().startswith("WHERE 1=1"):
+            drivers_clause = f"WHERE {filter_condition} {self._company_filter()}"
         else:
             drivers_clause = f"{clause} AND {filter_condition}"
         return self._fetchall(

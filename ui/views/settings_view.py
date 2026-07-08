@@ -28,6 +28,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from PySide6.QtCore import QTimer
+
 from repositories.automail_repository import AutoMailRepository
 from services.i18n import register_listener, t, unregister_listener
 from services.invoicing.config_manager import load_company_config, save_company_config
@@ -121,6 +123,31 @@ class QtSettingsView(QWidget):
     def wakeup(self) -> None:
         """Called when the view becomes visible (e.g. tab switch)."""
         pass
+
+    def handle_nav_data(self, data: dict) -> None:
+        """Accept deep-link data, e.g. ``{"scroll_to": "tracking"}``."""
+        section = data.get("scroll_to")
+        if section == "tracking" and hasattr(self, "_scroll"):
+            self._scroll_to_section("tracking")
+
+    def _scroll_to_section(self, section: str) -> None:
+        """Scroll the form to *section*, deferred to after layout."""
+        object_names = {
+            "tracking": "settings_section_tracking",
+        }
+        obj_name = object_names.get(section)
+        if obj_name is None:
+            return
+
+        def _do_scroll() -> None:
+            widget = getattr(self, "_scroll", None)
+            if widget is None:
+                return
+            target = widget.findChild(QFrame, obj_name)
+            if target is not None:
+                widget.ensureWidgetVisible(target, xMargin=0, yMargin=20)
+
+        QTimer.singleShot(50, _do_scroll)
 
     def shutdown(self) -> None:
         """Clean up resources when the view is destroyed / hidden."""
@@ -521,6 +548,7 @@ class QtSettingsView(QWidget):
 
     def _build_section_tracking(self) -> None:
         card = self._section_card("tracking.section_title")
+        card.setObjectName("settings_section_tracking")
         self._scroll.add_widget(card)
 
         # Hint label

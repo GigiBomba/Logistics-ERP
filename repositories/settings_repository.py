@@ -5,38 +5,47 @@ from repositories import BaseRepository
 
 class SettingsRepository(BaseRepository):
     TABLE = "settings"
+    COLUMNS = ["key", "value", "company_id"]
 
     def get_settings_by_keys(self, keys: List[str]) -> Dict[str, str]:
         placeholders = ",".join("?" for _ in keys)
         rows = self._fetchall(
-            f"SELECT key, value FROM {self.TABLE} WHERE key IN ({placeholders})",
-            tuple(keys),
+            f"SELECT key, value FROM {self.TABLE} WHERE key IN ({placeholders}) "
+            f"{self._company_filter()}",
+            tuple(keys) + self._company_params(),
         )
         return {r["key"]: r["value"] for r in rows}
 
     def get_settings_by_key_pattern(self, pattern: str) -> Dict[str, str]:
         rows = self._fetchall(
-            f"SELECT key, value FROM {self.TABLE} WHERE key LIKE ?",
-            (pattern,),
+            f"SELECT key, value FROM {self.TABLE} WHERE key LIKE ? "
+            f"{self._company_filter()}",
+            (pattern,) + self._company_params(),
         )
         return {r["key"]: r["value"] for r in rows}
 
     def get_setting_value(self, key: str) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT value FROM {self.TABLE} WHERE key = ?", (key,)
+            f"SELECT value FROM {self.TABLE} WHERE key = ? {self._company_filter()}",
+            (key,) + self._company_params(),
         )
         return row["value"] if row else None
 
     def upsert_setting(self, key: str, value: str) -> None:
+        data = {"key": key, "value": value}
+        self._validate_columns(data, extra_allowed={"company_id"})
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            f"INSERT OR REPLACE INTO {self.TABLE} (key, value) VALUES (?, ?)",
-            (key, value),
+            f"INSERT OR REPLACE INTO {self.TABLE} ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def update_setting(self, key: str, value: str) -> None:
         self._execute(
-            f"UPDATE {self.TABLE} SET value = ? WHERE key = ?",
-            (value, key),
+            f"UPDATE {self.TABLE} SET value = ? WHERE key = ? {self._company_filter()}",
+            (value, key) + self._company_params(),
         )
 
     def get_table_names(self) -> List[str]:

@@ -33,14 +33,17 @@ from ui.components import (
     Btn,
     Card,
     CardHeader,
-    CompactKPICard,
+    EmptyState,
     FieldLabel,
     Label,
     PageTitle,
 )
 from ui.delegates.alert_card_delegate import AlertCardDelegate
 from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_BG_CARD,
     COLOR_BG_OVERLAY,
+    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_WARNING_DEFAULT,
@@ -51,6 +54,8 @@ from ui.icons import iconed
 from ui.models.alert_list_model import AlertFilterProxy
 from ui.models.maintenance_view_model import MaintenanceViewModel
 from ui.widgets.fuel_panel import QtFuelPricePanel
+from ui.widgets.stat_card import StatCard
+from ui.widgets.stat_card_row import StatCardRow
 from utils.formatters import fmt_currency
 
 logger = logging.getLogger(__name__)
@@ -83,9 +88,14 @@ class QtMaintenanceControlPanel(QWidget):
         # ── KPI widgets ────────────────────────────────────────────
         self._kpi_widgets: dict[str, QFrame] = {}
         self._kpi_value_labels: dict[str, QLabel] = {}
+        self._filter_severities: list[Severity] | None = None
+        
+        # ── Shimmer animation ──────────────────────────────────────
+        self._shimmer_timer = QTimer(self)
+        self._shimmer_timer.setInterval(800)
+        self._shimmer_on = False
 
         # ── Filter state ───────────────────────────────────────────
-        self._filter_severities: list[Severity] | None = None
         self._cb_critical: QCheckBox | None = None
         self._cb_warning: QCheckBox | None = None
         self._cb_info: QCheckBox | None = None
@@ -100,10 +110,10 @@ class QtMaintenanceControlPanel(QWidget):
         self._alert_proxy = AlertFilterProxy(self)
 
         self._build_ui()
+        self._start_shimmer()
         if self._vm is not None:
             self._vm.data_changed.connect(self._on_data_changed)
             self._vm.refresh_now()
-
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
@@ -176,9 +186,9 @@ class QtMaintenanceControlPanel(QWidget):
     def _build_kpi_row(self, layout):
         row = QFrame()
         row.setProperty("role", "card")
-        rl = QHBoxLayout(row)
+        rl = QVBoxLayout(row)
         rl.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["4"])
-        rl.setSpacing(SP["3"])
+        rl.setSpacing(0)
 
         kpi_defs = [
             ("avg_health", "maint.avg_health"),
@@ -187,9 +197,10 @@ class QtMaintenanceControlPanel(QWidget):
             ("cost_30d", "maint.cost_30d"),
             ("total_cost", "maint.total_cost_kpi"),
         ]
+        kpi_row = StatCardRow()
         for key, title_key in kpi_defs:
-            card = CompactKPICard(row, label=t(title_key), value="\u2026")
-            rl.addWidget(card, 1)
+            card = StatCard(row, label=t(title_key).upper(), value="\u2026")
+            kpi_row.add_card(card)
             self._kpi_widgets[key] = card
             self._kpi_value_labels[key] = card.value_label
             if key == "avg_health":
@@ -202,17 +213,22 @@ class QtMaintenanceControlPanel(QWidget):
                     QProgressBar {{ background: {COLOR_BG_OVERLAY}; border: none; border-radius: 2px; }}
                     QProgressBar::chunk {{ background: {COLOR_SUCCESS_DEFAULT}; border-radius: 2px; }}
                 """)
-                card.layout().addWidget(pb)
+                card.layout().addWidget(pb, 2, 0, 1, 2)
                 self._health_progress = pb
-
+        rl.addWidget(kpi_row)
         layout.addWidget(row)
 
     def _build_tacho_table(self, layout):
         card = Card()
+        import_btn = Btn(None, t("tacho.import_now"), variant="secondary", size="sm")
+        import_btn.setStyleSheet(
+            f"color: {COLOR_ACCENT_PRIMARY}; font-size: 13px; font-weight: 500; background: transparent;"
+        )
         CardHeader(
             card.layout(),
             title=t("tacho.section_status_title"),
-            right_widget=Btn(None, t("tacho.import_now"), variant="secondary", size="sm"),
+            title_role="section-header",
+            right_widget=import_btn,
         )
 
         if self._vm is not None:
@@ -233,6 +249,13 @@ class QtMaintenanceControlPanel(QWidget):
                 self._tacho_table.setColumnWidth(c, w)
 
             card.layout().addWidget(self._tacho_table)
+        else:
+            empty = EmptyState(
+                icon_name="mdi6.tacho",
+                title=t("tacho.no_data_title", default="No tachograph data"),
+                subtitle=t("tacho.no_data_subtitle", default="Import tachograph files to view status"),
+            )
+            card.layout().addWidget(empty)
         layout.addWidget(card)
 
     def _build_filter_bar(self, layout):
@@ -244,16 +267,19 @@ class QtMaintenanceControlPanel(QWidget):
         fbl.addWidget(sev_lbl)
 
         self._cb_critical = QCheckBox(t("maint.severity_critical"))
+        self._cb_critical.setProperty("role", "filter")
         self._cb_critical.setChecked(True)
         self._cb_critical.stateChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._cb_critical)
 
         self._cb_warning = QCheckBox(t("maint.severity_warning"))
+        self._cb_warning.setProperty("role", "filter")
         self._cb_warning.setChecked(True)
         self._cb_warning.stateChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._cb_warning)
 
         self._cb_info = QCheckBox(t("maint.severity_info"))
+        self._cb_info.setProperty("role", "filter")
         self._cb_info.setChecked(True)
         self._cb_info.stateChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._cb_info)
@@ -262,6 +288,7 @@ class QtMaintenanceControlPanel(QWidget):
         fbl.addWidget(type_lbl)
 
         self._c_type = QComboBox()
+        self._c_type.setProperty("role", "filter")
         self._c_type.addItem(t("common.all"))
         for at in AlertType:
             self._c_type.addItem(at.value)
@@ -271,6 +298,7 @@ class QtMaintenanceControlPanel(QWidget):
         truck_lbl = FieldLabel(None, t("maint.filter_truck"))
         fbl.addWidget(truck_lbl)
         self._e_truck = QLineEdit()
+        self._e_truck.setProperty("role", "filter")
         self._e_truck.setPlaceholderText("Filter...")
         self._e_truck.textChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._e_truck)
@@ -278,11 +306,13 @@ class QtMaintenanceControlPanel(QWidget):
         trip_lbl = FieldLabel(None, t("maint.filter_trip"))
         fbl.addWidget(trip_lbl)
         self._e_trip = QLineEdit()
+        self._e_trip.setProperty("role", "filter")
         self._e_trip.setPlaceholderText("Filter...")
         self._e_trip.textChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._e_trip)
 
         self._cb_show_resolved = QCheckBox(t("maint.show_resolved"))
+        self._cb_show_resolved.setProperty("role", "filter")
         self._cb_show_resolved.stateChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._cb_show_resolved)
 
@@ -319,20 +349,43 @@ class QtMaintenanceControlPanel(QWidget):
 
     # ── Data callbacks ───────────────────────────────────────────
 
+    def _start_shimmer(self) -> None:
+        self._shimmer_on = False
+        self._shimmer_timer.timeout.connect(self._tick_shimmer)
+        self._shimmer_timer.start()
+
+    def _stop_shimmer(self) -> None:
+        self._shimmer_timer.stop()
+        with contextlib.suppress(Exception):
+            self._shimmer_timer.timeout.disconnect(self._tick_shimmer)
+        for lbl in self._kpi_value_labels.values():
+            lbl.setStyleSheet("")
+
+    def _tick_shimmer(self) -> None:
+        self._shimmer_on = not self._shimmer_on
+        color = COLOR_BORDER_SUBTLE if self._shimmer_on else COLOR_BG_CARD
+        for lbl in self._kpi_value_labels.values():
+            if lbl.text() == "\u2026":
+                lbl.setStyleSheet(f"color: {color}; background: transparent;")
+
     def _on_data_changed(self):
         """Reactively update KPIs and summary when ViewModel emits data_changed."""
+        self._stop_shimmer()
         self._update_kpis()
         self._update_summary()
         self._on_filter_changed()
 
     def _update_kpis(self):
         summary = self._vm.get_summary() if self._vm is not None else {}
+        logger.info("Maintenance KPIs updated: %s", {k: summary.get(k, None) for k in self._kpi_value_labels})
         for key, val_lbl in self._kpi_value_labels.items():
             val = summary.get(key, t("common.na"))
+            card = self._kpi_widgets.get(key)
             if key == "avg_health":
                 color = COLOR_SUCCESS_DEFAULT if val >= 80 else COLOR_WARNING_DEFAULT if val >= 50 else COLOR_ERROR_DEFAULT
                 val_lbl.setText(f"{val}/100")
-                val_lbl.setStyleSheet(f"color: {color};")
+                if card is not None:
+                    card.set_value_color(color)
                 if hasattr(self, "_health_progress"):
                     self._health_progress.setValue(int(val))
                     self._health_progress.setStyleSheet(f"""
@@ -342,17 +395,21 @@ class QtMaintenanceControlPanel(QWidget):
             elif key == "overdue_schedules":
                 color = COLOR_ERROR_DEFAULT if val > 0 else COLOR_SUCCESS_DEFAULT
                 val_lbl.setText(str(val))
-                val_lbl.setStyleSheet(f"color: {color};")
+                if card is not None:
+                    card.set_value_color(color)
             elif key in ("cost_30d", "total_cost"):
                 val_lbl.setText(fmt_currency(float(val), decimals=0))
-                val_lbl.setStyleSheet(f"color: {INFO};")
+                if card is not None:
+                    card.set_value_color(INFO)
             elif key == "trucks_needing_service":
                 color = COLOR_WARNING_DEFAULT if int(val) > 0 else COLOR_SUCCESS_DEFAULT
                 val_lbl.setText(str(val))
-                val_lbl.setStyleSheet(f"color: {color};")
+                if card is not None:
+                    card.set_value_color(color)
             else:
                 val_lbl.setText(str(val))
-                val_lbl.setStyleSheet("")
+                if card is not None:
+                    card.set_value_color(INFO)
 
     def _update_summary(self):
         total = self._vm.alert_model.rowCount()

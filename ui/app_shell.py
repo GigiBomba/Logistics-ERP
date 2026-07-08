@@ -41,7 +41,7 @@ class AppShell:
         self._build()
 
     def _build(self):
-        central = QWidget()
+        central = QWidget(self.root)
         central_layout = QHBoxLayout(central)
         central_layout.setContentsMargins(0, 0, 0, 0)
         central_layout.setSpacing(0)
@@ -55,7 +55,7 @@ class AppShell:
         central_layout.addWidget(self.nav)
 
         # ── Main area ───────────────────────────────────────────────────────────
-        self.main_area = QWidget()
+        self.main_area = QWidget(central)
         main_layout = QVBoxLayout(self.main_area)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -64,7 +64,7 @@ class AppShell:
         self.top_bar.set_alert_navigate_callback(self._on_alert_navigate)
         main_layout.addWidget(self.top_bar)
 
-        self.view_container = QStackedWidget()
+        self.view_container = QStackedWidget(self.main_area)
         self.view_container.setProperty("role", "view-container")
         main_layout.addWidget(self.view_container, 1)
 

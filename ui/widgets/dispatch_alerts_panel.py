@@ -21,10 +21,13 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from services.operations.alert_manager import Severity
-from ui.design_tokens import TEXT_WHITE
+from ui.components import EmptyState
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_WHITE
 from ui.theme import COLORS, S
-from ui.widgets import ActionButton, KpiCard
+from ui.widgets import ActionButton
 from ui.widgets.layout_utils import clear_layout
+from ui.widgets.stat_card import StatCard
+from ui.widgets.stat_card_row import StatCardRow
 
 # Terminal statuses that are excluded from KPI and unassigned counts.
 _DONE_STATUSES = frozenset({
@@ -33,24 +36,7 @@ _DONE_STATUSES = frozenset({
 
 
 class QtDispatchAlertsPanel(QWidget):
-    """Combined panel showing: active alerts, unassigned trips, assignment summary.
-
-    Parameters
-    ----------
-    parent : QWidget or None
-        Parent widget.
-    db : optional
-        Database handle.
-    ops : optional
-        Operations engine instance providing ``get_alerts``, ``get_active_alerts``,
-        and ``resolve_alert``.
-    on_assign_truck : callable or None
-        Called with the trip dict when "Quick Assign" is triggered for a missing truck.
-    on_assign_driver : callable or None
-        Called with the trip dict when "Quick Assign" is triggered for a missing driver.
-    on_resolve_alert : callable or None
-        Called after an alert is resolved (no arguments).
-    """
+    """Combined panel showing: active alerts, unassigned trips, assignment summary."""
 
     def __init__(
         self,
@@ -73,13 +59,11 @@ class QtDispatchAlertsPanel(QWidget):
     # ── UI construction ──────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        # ── Scroll area ──────────────────────────────────────────────────
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        # ── Content widget ───────────────────────────────────────────────
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
@@ -88,13 +72,12 @@ class QtDispatchAlertsPanel(QWidget):
 
         scroll.setWidget(content)
 
-        # Outer layout — scroll area fills the whole panel.
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
         outer.addWidget(scroll)
 
-        # ── Four card sections ───────────────────────────────────────────
+        # Four card sections — each sizes to its content (no stretch)
         self._brief_content = self._build_card_section(
             content_layout, "dispatch_board.brief_title", has_resolve_all=False,
         )
@@ -116,28 +99,26 @@ class QtDispatchAlertsPanel(QWidget):
         title_key: str,
         has_resolve_all: bool = False,
     ) -> QVBoxLayout:
-        """Build a card section with a header row and return the inner content layout.
-
-        The card is a ``QFrame[role="card"]``.  The header contains the translated
-        title and, when *has_resolve_all* is ``True``, a ghost "Resolve All" button
-        on the right.  Callers add content widgets to the returned layout.
-        """
+        """Build a card section with a header row and return the inner content layout."""
         card = QFrame()
         card.setProperty("role", "card")
         card.setFrameShape(QFrame.StyledPanel)
 
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        card_layout.setSpacing(S["2"])
+        card_layout.setSpacing(S["4"])
 
-        # Header row
+        # Header row — matches Step 7 spec (14px, 600 weight, white)
         header = QWidget()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
         header_layout.setSpacing(S["2"])
 
         title_lbl = QLabel(t(title_key))
-        title_lbl.setProperty("fontRole", "h3")
+        title_lbl.setStyleSheet(
+            f"font-size: 14px; font-weight: 600; color: {COLOR_TEXT_PRIMARY}; "
+            f"letter-spacing: 0.3px; background: transparent;"
+        )
         header_layout.addWidget(title_lbl)
 
         if has_resolve_all:
@@ -148,13 +129,18 @@ class QtDispatchAlertsPanel(QWidget):
                 command=self._resolve_all_alerts,
                 variant="ghost",
             )
+            resolve_btn.setStyleSheet(
+                f"color: {COLOR_ACCENT_PRIMARY}; font-size: 13px; font-weight: 500; "
+                f"background: transparent;"
+            )
             resolve_btn.setFixedHeight(24)
             header_layout.addWidget(resolve_btn)
 
         card_layout.addWidget(header)
 
-        # Inner content container
+        # Inner content container — sizes to content
         content = QWidget()
+        content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         inner_layout = QVBoxLayout(content)
         inner_layout.setContentsMargins(0, 0, 0, 0)
         inner_layout.setSpacing(S["2"])
@@ -166,19 +152,13 @@ class QtDispatchAlertsPanel(QWidget):
     # ── Public API ───────────────────────────────────────────────────────────
 
     def refresh(self, cards_data: list[dict[str, Any]] | None = None) -> None:
-        """Rebuild all four sections from *cards_data*.
-
-        Each dict should contain (at minimum) ``status``, ``departure_date``,
-        ``eta``, ``truck_plate``, ``driver_name``, ``trip_id``, ``origin``,
-        and ``destination``.
-        """
         data = cards_data or []
         self._refresh_brief(data)
         self._refresh_alerts()
         self._refresh_unassigned(data)
         self._refresh_summary(data)
 
-    # ── Brief KPIs ───────────────────────────────────────────────────────────
+    # ── Brief KPIs (Rezumatul Zilei) ─────────────────────────────────────────
 
     def _refresh_brief(self, cards_data: list[dict[str, Any]]) -> None:
         clear_layout(self._brief_content)
@@ -228,36 +208,36 @@ class QtDispatchAlertsPanel(QWidget):
             ),
         ]
 
-        kpi_row = QWidget()
-        kpi_row_layout = QHBoxLayout(kpi_row)
-        kpi_row_layout.setContentsMargins(0, 0, 0, 0)
-        kpi_row_layout.setSpacing(S["2"])
-
+        row = StatCardRow()
         for key, val, color in kpis:
-            card_widget = KpiCard(kpi_row, t(key), str(val))
-            card_widget.value_label.setStyleSheet(f"color: {color};")
-            kpi_row_layout.addWidget(card_widget, 1)
+            card = StatCard(row, label=t(key).upper(), value=str(val))
+            card.set_value_color(color)
+            row.add_card(card)
 
-        self._brief_content.addWidget(kpi_row)
+        self._brief_content.addWidget(row)
 
-    # ── Alerts ───────────────────────────────────────────────────────────────
+    # ── Alerts (Alerte Operationale) ─────────────────────────────────────────
 
     def _refresh_alerts(self) -> None:
         clear_layout(self._alerts_content)
 
         if not self._ops:
-            label = QLabel(t("common.ops_unavailable", default="Ops not available"))
-            label.setProperty("fontRole", "muted")
-            label.setAlignment(Qt.AlignCenter)
-            self._alerts_content.addWidget(label)
+            empty = EmptyState(
+                icon_name="mdi6.information-outline",
+                title=t("common.ops_unavailable", default="Ops not available"),
+            )
+            self._alerts_content.addWidget(empty)
             return
 
         alerts = self._ops.get_active_alerts(limit=20)
         if not alerts:
-            label = QLabel(t("dispatch_board.alerts_panel_no_alerts"))
-            label.setProperty("fontRole", "muted")
-            label.setAlignment(Qt.AlignCenter)
-            self._alerts_content.addWidget(label)
+            empty = EmptyState(
+                icon_name="mdi6.check-circle-outline",
+                title=t("dispatch_board.alerts_panel_no_alerts"),
+                subtitle=t("dispatch_board.alerts_no_alerts_hint",
+                          default="All alerts have been resolved"),
+            )
+            self._alerts_content.addWidget(empty)
             return
 
         for alert in alerts:
@@ -277,24 +257,21 @@ class QtDispatchAlertsPanel(QWidget):
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(S["2"])
 
-        # Severity chip
         chip = QLabel(sev.upper()[:3])
         chip.setFixedWidth(36)
         chip.setAlignment(Qt.AlignCenter)
         chip.setStyleSheet(
-            f"background-color: {chip_color}; color: {TEXT_WHITE}; "
+            f"background-color: {chip_color}; color: {COLOR_TEXT_WHITE}; "
             f"border-radius: 3px; padding: 2px 0; font-size: 11px; font-weight: bold;"
         )
         row_layout.addWidget(chip)
 
-        # Message text
         text = getattr(alert, "title", "") or getattr(alert, "message", "")
         msg_lbl = QLabel(text[:60])
         msg_lbl.setProperty("fontRole", "secondary")
         msg_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         row_layout.addWidget(msg_lbl, 1)
 
-        # Resolve button
         resolve_btn = ActionButton(
             row,
             text="\u2713",
@@ -321,7 +298,7 @@ class QtDispatchAlertsPanel(QWidget):
         if self._on_resolve_alert:
             self._on_resolve_alert()
 
-    # ── Unassigned trips ─────────────────────────────────────────────────────
+    # ── Unassigned trips (Curse Nealocate) ───────────────────────────────────
 
     def _refresh_unassigned(self, cards_data: list[dict[str, Any]]) -> None:
         clear_layout(self._unassigned_content)
@@ -345,10 +322,13 @@ class QtDispatchAlertsPanel(QWidget):
 
         all_unassigned = no_truck + no_driver + no_both
         if not all_unassigned:
-            label = QLabel(t("dispatch_board.alerts_panel_no_unassigned"))
-            label.setProperty("fontRole", "success")
-            label.setAlignment(Qt.AlignCenter)
-            self._unassigned_content.addWidget(label)
+            empty = EmptyState(
+                icon_name="mdi6.check-all",
+                title=t("dispatch_board.alerts_panel_no_unassigned"),
+                subtitle=t("dispatch_board.alerts_no_unassigned_hint",
+                          default="All trips are fully assigned"),
+            )
+            self._unassigned_content.addWidget(empty)
             return
 
         if no_truck:
@@ -368,7 +348,6 @@ class QtDispatchAlertsPanel(QWidget):
         grp_layout.setContentsMargins(0, 0, 0, 0)
         grp_layout.setSpacing(S["1"])
 
-        # Group title
         title_lbl = QLabel(t(title_key))
         title_lbl.setProperty("fontRole", "warning")
         grp_layout.addWidget(title_lbl)
@@ -414,7 +393,7 @@ class QtDispatchAlertsPanel(QWidget):
         if self._on_assign_driver and not item.get("driver_name"):
             self._on_assign_driver(item)
 
-    # ── Summary KPIs ─────────────────────────────────────────────────────────
+    # ── Summary KPIs (Sumar Alocari) ─────────────────────────────────────────
 
     def _refresh_summary(self, cards_data: list[dict[str, Any]]) -> None:
         clear_layout(self._summary_content)
@@ -449,27 +428,20 @@ class QtDispatchAlertsPanel(QWidget):
             ),
         ]
 
-        kpi_row = QWidget()
-        kpi_row_layout = QHBoxLayout(kpi_row)
-        kpi_row_layout.setContentsMargins(0, 0, 0, 0)
-        kpi_row_layout.setSpacing(S["2"])
-
+        row = StatCardRow()
         for key, val, color in kpis:
-            card_widget = KpiCard(kpi_row, t(key), str(val))
-            card_widget.value_label.setStyleSheet(f"color: {color};")
-            kpi_row_layout.addWidget(card_widget, 1)
+            card = StatCard(row, label=t(key).upper(), value=str(val))
+            card.set_value_color(color)
+            row.add_card(card)
 
-        self._summary_content.addWidget(kpi_row)
+        self._summary_content.addWidget(row)
 
     # ── Cleanup ──────────────────────────────────────────────────────────────
 
     def destroy(self) -> None:
-        """Clear references and schedule deletion."""
         self._db = None
         self._ops = None
         self._on_assign_truck = None
         self._on_assign_driver = None
         self._on_resolve_alert = None
         super().deleteLater()
-
-    # ── Layout helpers ───────────────────────────────────────────────────────

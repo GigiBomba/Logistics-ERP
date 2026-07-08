@@ -90,9 +90,14 @@ class ApiClient:
         return False
 
     def _get(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
-        resp = self._client.get(f"{self._base_url}{path}", params=params)
-        if self._check_response(resp):
+        try:
             resp = self._client.get(f"{self._base_url}{path}", params=params)
+            if self._check_response(resp):
+                resp = self._client.get(f"{self._base_url}{path}", params=params)
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"API server unreachable at {self._base_url}"
+            )
         resp.raise_for_status()
         return resp.json()
 
@@ -100,35 +105,68 @@ class ApiClient:
         self, path: str, json_data: Optional[Dict] = None,
         files: Optional[Dict] = None, data: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        resp = self._client.post(
-            f"{self._base_url}{path}", json=json_data, files=files, data=data
-        )
-        if self._check_response(resp):
+        try:
             resp = self._client.post(
                 f"{self._base_url}{path}", json=json_data, files=files, data=data
+            )
+            if self._check_response(resp):
+                resp = self._client.post(
+                    f"{self._base_url}{path}", json=json_data, files=files, data=data
+                )
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"API server unreachable at {self._base_url}"
             )
         resp.raise_for_status()
         return resp.json()
 
     def _put(self, path: str, json_data: Dict) -> Dict[str, Any]:
-        resp = self._client.put(f"{self._base_url}{path}", json=json_data)
-        if self._check_response(resp):
+        try:
             resp = self._client.put(f"{self._base_url}{path}", json=json_data)
+            if self._check_response(resp):
+                resp = self._client.put(f"{self._base_url}{path}", json=json_data)
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"API server unreachable at {self._base_url}"
+            )
         resp.raise_for_status()
         return resp.json()
 
-    def _delete(self, path: str) -> Dict[str, Any]:
-        resp = self._client.delete(f"{self._base_url}{path}")
-        if self._check_response(resp):
-            resp = self._client.delete(f"{self._base_url}{path}")
+    def _delete(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+        try:
+            resp = self._client.delete(f"{self._base_url}{path}", params=params)
+            if self._check_response(resp):
+                resp = self._client.delete(f"{self._base_url}{path}", params=params)
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"API server unreachable at {self._base_url}"
+            )
         resp.raise_for_status()
         return resp.json()
 
     def _download(self, path: str, params: Optional[Dict] = None) -> bytes:
         """GET a binary response (PDF, XLSX) and return raw bytes."""
-        resp = self._client.get(f"{self._base_url}{path}", params=params)
-        if self._check_response(resp):
+        try:
             resp = self._client.get(f"{self._base_url}{path}", params=params)
+            if self._check_response(resp):
+                resp = self._client.get(f"{self._base_url}{path}", params=params)
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"API server unreachable at {self._base_url}"
+            )
+        resp.raise_for_status()
+        return resp.content
+
+    def _post_binary(self, path: str, json_data: Dict) -> bytes:
+        """POST returning raw bytes (PDF/XLSX) with auth retry support."""
+        try:
+            resp = self._client.post(f"{self._base_url}{path}", json=json_data)
+            if self._check_response(resp):
+                resp = self._client.post(f"{self._base_url}{path}", json=json_data)
+        except httpx.ConnectError:
+            raise RuntimeError(
+                f"API server unreachable at {self._base_url}"
+            )
         resp.raise_for_status()
         return resp.content
 
@@ -144,11 +182,11 @@ class ApiClient:
         date_from: str = "", date_to: str = "", mime_type: str = "",
         order: str = "uploaded_at DESC", page: int = 0, page_size: int = 20,
     ) -> Dict[str, Any]:
-        return self._get("/api/v1/documents/", params={
-            "query": query, "category": category, "entity_type": entity_type,
-            "date_from": date_from, "date_to": date_to, "mime_type": mime_type,
-            "order": order, "page": page, "page_size": page_size,
-        })
+        return self._get("/api/v1/documents/", params=self._clean_params(
+            query=query, category=category, entity_type=entity_type,
+            date_from=date_from, date_to=date_to, mime_type=mime_type,
+            order=order, page=page, page_size=page_size,
+        ))
 
     def get_document(self, doc_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/documents/{doc_id}")
@@ -216,9 +254,9 @@ class ApiClient:
     # ── Trip endpoints ────────────────────────────────────────────────
 
     def list_trips(self, search: str = "", status: str = "", limit: int = 200) -> Dict[str, Any]:
-        return self._get("/api/v1/trips/", params={
-            "search": search, "status": status, "limit": limit,
-        })
+        return self._get("/api/v1/trips/", params=self._clean_params(
+            search=search, status=status, limit=limit,
+        ))
 
     def get_trip(self, trip_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/trips/{trip_id}")
@@ -244,7 +282,7 @@ class ApiClient:
     # ── Client endpoints ──────────────────────────────────────────────
 
     def list_clients(self, query: str = "", limit: int = 200) -> Dict[str, Any]:
-        return self._get("/api/v1/clients/", params={"query": query, "limit": limit})
+        return self._get("/api/v1/clients/", params=self._clean_params(query=query, limit=limit))
 
     def get_client(self, client_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/clients/{client_id}")
@@ -322,12 +360,7 @@ class ApiClient:
         return self._get(f"/api/v1/fleet/gps/live/{truck_id}")
 
     def ingest_gps_batch(self, pings: List[Dict[str, Any]]) -> Dict[str, Any]:
-        resp = self._client.post(
-            f"{self._base_url}/api/v1/fleet/gps/batch",
-            json=pings,
-        )
-        resp.raise_for_status()
-        return resp.json()
+        return self._post("/api/v1/fleet/gps/batch", json_data=pings)
 
     def get_gps_history(self, truck_id: int, limit: int = 100) -> Dict[str, Any]:
         return self._get(f"/api/v1/fleet/gps/history/{truck_id}",
@@ -577,12 +610,8 @@ class ApiClient:
     # ── Invoice endpoints ─────────────────────────────────────────────
 
     def generate_invoice(self, trip_data: Dict[str, Any], mode: str = "client") -> bytes:
-        resp = self._client.post(
-            f"{self._base_url}/api/v1/invoices/generate",
-            json={"trip_data": trip_data, "mode": mode},
-        )
-        resp.raise_for_status()
-        return resp.content
+        return self._post_binary("/api/v1/invoices/generate",
+                                 json_data={"trip_data": trip_data, "mode": mode})
 
     def send_invoice_email(self, invoice_id: int, recipient: str,
                            trip_data: Optional[Dict[str, Any]] = None,
@@ -596,22 +625,14 @@ class ApiClient:
     # ── CMR endpoints ─────────────────────────────────────────────────
 
     def generate_cmr(self, trip_data: Dict[str, Any]) -> bytes:
-        resp = self._client.post(
-            f"{self._base_url}/api/v1/cmr/generate",
-            json={"trip_data": trip_data},
-        )
-        resp.raise_for_status()
-        return resp.content
+        return self._post_binary("/api/v1/cmr/generate",
+                                 json_data={"trip_data": trip_data})
 
     # ── Receipt endpoints ─────────────────────────────────────────────
 
     def generate_receipt(self, receipt_data: Dict[str, Any]) -> bytes:
-        resp = self._client.post(
-            f"{self._base_url}/api/v1/receipts/generate",
-            json={"receipt_data": receipt_data},
-        )
-        resp.raise_for_status()
-        return resp.content
+        return self._post_binary("/api/v1/receipts/generate",
+                                 json_data={"receipt_data": receipt_data})
 
     # ── Admin endpoints ───────────────────────────────────────────────
 

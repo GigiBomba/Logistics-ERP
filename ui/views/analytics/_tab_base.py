@@ -58,6 +58,7 @@ class _SparklineLabel(QLabel):
     def __init__(self, parent=None) -> None:
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
         self.setStyleSheet("background: transparent; border: none;")
         self._pending_tag: object | None = None
         self._target_w: int = 0
@@ -689,7 +690,7 @@ class BaseTab(QWidget):
         Drop-in replacement for ``_build_chart_card`` when the caller
         produces ``go.Figure`` objects instead of matplotlib figures.
         """
-        card = QFrame()
+        card = QFrame(self)
         card.setObjectName("chart-card")
         card.setStyleSheet(
             f"QFrame#chart-card {{ background: transparent;"
@@ -701,14 +702,14 @@ class BaseTab(QWidget):
         card_layout.setSpacing(SP["1"])
 
         if title:
-            title_lbl = QLabel(title)
+            title_lbl = QLabel(title, card)
             title_lbl.setStyleSheet(
                 f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: 600;"
                 f"font-family: '{FONT_FAMILY}'; padding-bottom: 2px; background: transparent;"
             )
             card_layout.addWidget(title_lbl)
 
-        chart_widget = PlotlyChartWidget(min_height=min_height)
+        chart_widget = PlotlyChartWidget(card, min_height=min_height)
         if min_height:
             chart_widget.setMinimumHeight(min_height)
         # Register the owning tab so the chart's render-delivery
@@ -738,7 +739,7 @@ class BaseTab(QWidget):
         columns: how many charts per row (2 or 3).
         Returns list of ``PlotlyChartWidget`` instances.
         """
-        row_widget = QWidget()
+        row_widget = QWidget(self)
         row_layout = QHBoxLayout(row_widget)
         row_layout.setContentsMargins(0, 0, 0, 0)
         row_layout.setSpacing(SP["4"])
@@ -748,7 +749,7 @@ class BaseTab(QWidget):
 
         widgets = []
         for i, fig in enumerate(figures):
-            card = QFrame()
+            card = QFrame(row_widget)
             card.setObjectName("chart-card")
             card.setStyleSheet(
                 f"QFrame#chart-card {{ background: transparent;"
@@ -760,14 +761,14 @@ class BaseTab(QWidget):
             card_layout.setSpacing(SP["2"])
 
             if i < len(titles) and titles[i]:
-                title_lbl = QLabel(titles[i])
+                title_lbl = QLabel(titles[i], card)
                 title_lbl.setStyleSheet(
                     f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: 600;"
                     f"font-family: '{FONT_FAMILY}'; padding-bottom: 2px; background: transparent;"
                 )
                 card_layout.addWidget(title_lbl)
 
-            chart_widget = PlotlyChartWidget(min_height=155)
+            chart_widget = PlotlyChartWidget(card, min_height=155)
             chart_widget.set_owner(self)
             chart_widget.set_figure(fig)
             card_layout.addWidget(chart_widget, 1)
@@ -921,8 +922,8 @@ class BaseTab(QWidget):
         self._render_received = 0
         try:
             self._do_refresh()
-        except Exception:
-            _log.exception("Tab refresh failed — showing no-data state")
+        except Exception as exc:
+            _log.warning("Tab refresh failed — showing no-data state: %s", exc)
             self._add_no_data()
         # Count the chart widgets (full + sparkline) that this tab
         # has just enqueued.  Used by the loading overlay to know

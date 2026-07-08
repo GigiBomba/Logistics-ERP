@@ -112,6 +112,89 @@ class QtCmrFormView(QWidget):
         # Bottom action bar (inside the scroll so it scrolls with the form)
         self._build_action_bar()
 
+        # Initialize navigator state after all fields are built
+        self._update_box_navigator()
+        self._connect_box_signals()
+
+    # ── Box navigator state ─────────────────────────────────────────────────
+
+    _BOX_FIELDS: dict[int, list[str]] = {
+        1:  ["consignor_name"],
+        2:  ["consignee_name"],
+        3:  ["place_of_loading", "loading_country"],
+        4:  ["destination", "delivery_country"],
+        5:  ["documents_attached"],
+        6:  ["cargo_marks"],
+        7:  ["package_count"],
+        8:  ["package_type"],
+        9:  ["cargo_description"],
+        10: ["hs_code"],
+        11: ["gross_weight_kg"],
+        12: ["volume_m3"],
+        13: ["carrier_instructions"],
+        14: ["carrier_reservations"],
+        15: ["carriage_payer"],
+        16: ["cod_amount"],
+        17: ["special_agreements", "distance_km"],
+        18: ["carrier_name"],
+        19: [],
+        20: [],
+        21: ["issue_place"],
+        22: [],
+        23: [],
+        24: [],
+    }
+
+    def _update_box_navigator(self):
+        for box_num, field_keys in self._BOX_FIELDS.items():
+            badge = self._box_badges.get(box_num)
+            if badge is None:
+                continue
+            has_content = any(
+                self._field_has_content(k) for k in field_keys
+            )
+            if has_content:
+                badge.setStyleSheet(
+                    f"background-color: {COLORS['success_dim']};"
+                    f"color: {COLORS['success']};"
+                    f"border-radius: 4px; font-size: 7px; font-weight: bold;"
+                )
+            elif field_keys:
+                badge.setStyleSheet(
+                    f"background-color: {COLORS['warning_dim']};"
+                    f"color: {COLORS['warning']};"
+                    f"border-radius: 4px; font-size: 7px; font-weight: bold;"
+                )
+            else:
+                badge.setStyleSheet(
+                    f"background-color: {COLORS['accent_dim']};"
+                    f"color: {COLORS['accent_text']};"
+                    f"border-radius: 4px; font-size: 7px; font-weight: bold;"
+                )
+
+    def _field_has_content(self, key: str) -> bool:
+        widget = self._cmr_entries.get(key)
+        if widget is None:
+            return False
+        if hasattr(widget, "toPlainText"):
+            return bool(widget.toPlainText().strip())
+        if hasattr(widget, "text"):
+            return bool(widget.text().strip())
+        if hasattr(widget, "date"):
+            return True
+        return False
+
+    def _connect_box_signals(self):
+        for field_keys in self._BOX_FIELDS.values():
+            for key in field_keys:
+                widget = self._cmr_entries.get(key)
+                if widget is None:
+                    continue
+                if hasattr(widget, "textChanged"):
+                    widget.textChanged.connect(self._update_box_navigator)
+                elif hasattr(widget, "dateChanged"):
+                    widget.dateChanged.connect(self._update_box_navigator)
+
     # ── Helpers ─────────────────────────────────────────────────────────────
 
     def _build_page_heading(self):
@@ -137,6 +220,7 @@ class QtCmrFormView(QWidget):
         nav_layout = QHBoxLayout(nav)
         nav_layout.setContentsMargins(0, S["1"], 0, 0)
         nav_layout.setSpacing(2)
+        self._box_badges = {}
         for i in range(1, 25):
             badge = QLabel(str(i))
             badge.setFixedSize(18, 18)
@@ -148,12 +232,16 @@ class QtCmrFormView(QWidget):
                 f"border-radius: 4px; font-size: 7px; font-weight: bold;"
             )
             nav_layout.addWidget(badge)
+            self._box_badges[i] = badge
         nav_layout.addStretch(1)
         heading_layout.addWidget(nav)
 
         self._scroll_container.add_widget(heading)
 
     def _build_role_selector(self):
+        """Role toggle using the standard toggle-button pattern:
+        active = primary (filled indigo), inactive = secondary (outlined).
+        Reuse this pattern for any binary either/or choice."""
         card = Card()
         card.layout().setSpacing(S["2"])
 
@@ -385,12 +473,14 @@ class QtCmrFormView(QWidget):
             t("cmr.consignor", "Sender (Consignor)"),
             t("cmr.consignor_ro", "Expeditor"),
             kind="textbox", height=90,
+            placeholder=t("cmr.consignor_placeholder", "Nume, adresa, tara"),
         )
         self._cmr_entries["consignee_name"] = self._box_field(
             right, 2,
             t("cmr.consignee", "Consignee"),
             t("cmr.consignee_ro", "Destinatar"),
             kind="textbox", height=90,
+            placeholder=t("cmr.consignee_placeholder", "Nume, adresa, tara"),
         )
 
     # ── Section: Route & Documents (Boxes 3, 4, 5) ─────────────────────────
@@ -446,32 +536,31 @@ class QtCmrFormView(QWidget):
         left.layout().addWidget(date_container)
         self._cmr_entries["place_of_loading_date"] = wld
 
-        # ISO country row for Box 3 / 4
+        # ISO country fields for Box 3 / 4
         iso_container = QWidget()
         iso_layout = QHBoxLayout(iso_container)
         iso_layout.setContentsMargins(0, 0, 0, 0)
-        iso_layout.setSpacing(S["2"])
-
-        iso_label_a = QLabel(t("cmr.loading_country", "Loading Country ISO:"))
-        iso_label_a.setProperty("fontRole", "small")
-        iso_label_a.setStyleSheet(f"color: {COLORS['text_muted']};")
-        iso_layout.addWidget(iso_label_a)
+        iso_layout.setSpacing(S["3"])
 
         wlc = StyledLineEdit(height=32)
         wlc.setFixedWidth(60)
         wlc.setMaxLength(2)
-        iso_layout.addWidget(wlc)
-
-        iso_label_b = QLabel(t("cmr.delivery_country", "Delivery Country ISO:"))
-        iso_label_b.setProperty("fontRole", "small")
-        iso_label_b.setStyleSheet(f"color: {COLORS['text_muted']};")
-        iso_layout.addWidget(iso_label_b)
+        iso_layout.addWidget(field(
+            iso_container,
+            t("cmr.loading_country", "Loading Country ISO:"),
+            wlc,
+        ))
 
         wdc = StyledLineEdit(height=32)
         wdc.setFixedWidth(60)
         wdc.setMaxLength(2)
-        iso_layout.addWidget(wdc)
+        iso_layout.addWidget(field(
+            iso_container,
+            t("cmr.delivery_country", "Delivery Country ISO:"),
+            wdc,
+        ))
 
+        iso_layout.addStretch()
         left.layout().addWidget(iso_container)
         self._cmr_entries["loading_country"] = wlc
         self._cmr_entries["delivery_country"] = wdc
@@ -482,6 +571,7 @@ class QtCmrFormView(QWidget):
             t("cmr.documents", "Documents Attached"),
             t("cmr.documents_ro", "Documente Atasate"),
             kind="textbox", height=90,
+            placeholder=t("cmr.documents_placeholder", "Listati documentele atasate"),
         )
 
     # ── Section: Vehicle & Driver ──────────────────────────────────────────

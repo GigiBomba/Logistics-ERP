@@ -45,6 +45,22 @@ def _now_iso() -> str:
 
 
 class PipelineRepository(BaseRepository):
+    COLUMNS_PIPELINE_RUNS = [
+        "id", "run_uuid", "source_file_path", "source_file_name", "source_mime_type",
+        "source_file_size", "source_file_hash", "status", "stage", "error_message",
+        "processed_file_path", "processed_pdf_path", "pages_count",
+        "ocr_text", "extracted_data_json", "matched_trip_id", "match_confidence",
+        "match_signals_json", "document_id", "created_at", "updated_at",
+        "completed_at", "company_id",
+    ]
+    COLUMNS_PACKAGE = [
+        "id", "trip_id", "package_uuid", "status", "recipient_email", "subject",
+        "body", "email_message_id", "error_message", "sent_at",
+        "created_at", "updated_at", "company_id",
+    ]
+    COLUMNS_PACKAGE_ITEMS = [
+        "id", "package_id", "document_id", "sort_order", "company_id",
+    ]
 
     # ── Pipeline runs ─────────────────────────────────────────────────
 
@@ -80,24 +96,25 @@ class PipelineRepository(BaseRepository):
         if source_file_size < 0:
             source_file_size = 0
         now = _now_iso()
+        data = {
+            "run_uuid": run_uuid,
+            "source_file_path": source_file_path,
+            "source_file_name": source_file_name,
+            "source_mime_type": source_mime_type,
+            "source_file_size": source_file_size,
+            "source_file_hash": source_file_hash,
+            "status": "imported",
+            "stage": "import",
+            "created_at": now,
+            "updated_at": now,
+        }
+        self._validate_columns(data, extra_allowed={"company_id"})
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         return self._execute_insert(
-            """
-            INSERT INTO document_pipeline_runs
-                (run_uuid, source_file_path, source_file_name, source_mime_type,
-                 source_file_size, source_file_hash, status, stage,
-                 created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, 'imported', 'import', ?, ?)
-            """,
-            (
-                run_uuid,
-                source_file_path,
-                source_file_name,
-                source_mime_type,
-                source_file_size,
-                source_file_hash,
-                now,
-                now,
-            ),
+            f"INSERT INTO document_pipeline_runs ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def update_stage(
@@ -111,13 +128,13 @@ class PipelineRepository(BaseRepository):
         now = _now_iso()
         completed_at = now if status in ("complete", "failed") else None
         self._execute(
-            """
+            f"""
             UPDATE document_pipeline_runs
             SET stage = ?, status = ?, error_message = ?,
                 updated_at = ?, completed_at = COALESCE(?, completed_at)
-            WHERE id = ?
+            WHERE id = ? {self._company_filter()}
             """,
-            (stage, status, error_message, now, completed_at, run_id),
+            (stage, status, error_message, now, completed_at, run_id) + self._company_params(),
         )
 
     def set_processed_files(
@@ -129,13 +146,13 @@ class PipelineRepository(BaseRepository):
     ) -> None:
         now = _now_iso()
         self._execute(
-            """
+            f"""
             UPDATE document_pipeline_runs
             SET processed_file_path = ?, processed_pdf_path = ?,
                 pages_count = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? {self._company_filter()}
             """,
-            (processed_file_path, processed_pdf_path, pages_count, now, run_id),
+            (processed_file_path, processed_pdf_path, pages_count, now, run_id) + self._company_params(),
         )
 
     def set_ocr_result(
@@ -146,12 +163,12 @@ class PipelineRepository(BaseRepository):
     ) -> None:
         now = _now_iso()
         self._execute(
-            """
+            f"""
             UPDATE document_pipeline_runs
             SET ocr_text = ?, extracted_data_json = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? {self._company_filter()}
             """,
-            (ocr_text, json.dumps(extracted_data, ensure_ascii=False, default=str), now, run_id),
+            (ocr_text, json.dumps(extracted_data, ensure_ascii=False, default=str), now, run_id) + self._company_params(),
         )
 
     def set_match_result(
@@ -163,11 +180,11 @@ class PipelineRepository(BaseRepository):
     ) -> None:
         now = _now_iso()
         self._execute(
-            """
+            f"""
             UPDATE document_pipeline_runs
             SET matched_trip_id = ?, match_confidence = ?,
                 match_signals_json = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? {self._company_filter()}
             """,
             (
                 matched_trip_id,
@@ -175,18 +192,18 @@ class PipelineRepository(BaseRepository):
                 json.dumps(match_signals, ensure_ascii=False, default=str),
                 now,
                 run_id,
-            ),
+            ) + self._company_params(),
         )
 
     def set_document_id(self, run_id: int, document_id: int) -> None:
         now = _now_iso()
         self._execute(
-            """
+            f"""
             UPDATE document_pipeline_runs
             SET document_id = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? {self._company_filter()}
             """,
-            (document_id, now, run_id),
+            (document_id, now, run_id) + self._company_params(),
         )
 
     def set_related_documents(self, run_id: int, doc_ids: List[int]) -> None:
@@ -197,8 +214,9 @@ class PipelineRepository(BaseRepository):
         """
         now = _now_iso()
         row = self._fetchone(
-            "SELECT match_signals_json FROM document_pipeline_runs WHERE id = ?",
-            (run_id,),
+            "SELECT match_signals_json FROM document_pipeline_runs "
+            "WHERE id = ? " + self._company_filter(),
+            (run_id,) + self._company_params(),
         )
         signals = {}
         if row:
@@ -208,29 +226,32 @@ class PipelineRepository(BaseRepository):
                 signals = {}
         signals["related_document_ids"] = doc_ids
         self._execute(
-            """
+            f"""
             UPDATE document_pipeline_runs
             SET match_signals_json = ?, updated_at = ?
-            WHERE id = ?
+            WHERE id = ? {self._company_filter()}
             """,
-            (json.dumps(signals, ensure_ascii=False), now, run_id),
+            (json.dumps(signals, ensure_ascii=False), now, run_id) + self._company_params(),
         )
 
     def get_run_by_id(self, run_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM document_pipeline_runs WHERE id = ?", (run_id,)
+            "SELECT * FROM document_pipeline_runs WHERE id = ? " + self._company_filter(),
+            (run_id,) + self._company_params(),
         )
 
     def get_run_by_uuid(self, run_uuid: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM document_pipeline_runs WHERE run_uuid = ?", (run_uuid,)
+            "SELECT * FROM document_pipeline_runs WHERE run_uuid = ? " + self._company_filter(),
+            (run_uuid,) + self._company_params(),
         )
 
     def get_run_by_hash(self, source_file_hash: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
             "SELECT * FROM document_pipeline_runs WHERE source_file_hash = ? "
+            + self._company_filter() + " "
             "ORDER BY id DESC LIMIT 1",
-            (source_file_hash,),
+            (source_file_hash,) + self._company_params(),
         )
 
     def list_runs(
@@ -239,8 +260,8 @@ class PipelineRepository(BaseRepository):
         trip_id: Optional[int] = None,
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
-        query = "SELECT * FROM document_pipeline_runs WHERE 1=1"
-        params: List[Any] = []
+        query = "SELECT * FROM document_pipeline_runs WHERE 1=1 " + self._company_filter()
+        params: List[Any] = list(self._company_params())
         if status:
             query += " AND status = ?"
             params.append(status)
@@ -255,12 +276,15 @@ class PipelineRepository(BaseRepository):
         """Return runs in any non-terminal state (used for crash recovery)."""
         return self._fetchall(
             "SELECT * FROM document_pipeline_runs "
-            "WHERE status NOT IN ('complete', 'failed')"
+            "WHERE status NOT IN ('complete', 'failed') "
+            + self._company_filter(),
+            self._company_params(),
         )
 
     def delete_run(self, run_id: int) -> None:
         self._execute(
-            "DELETE FROM document_pipeline_runs WHERE id = ?", (run_id,)
+            "DELETE FROM document_pipeline_runs WHERE id = ? " + self._company_filter(),
+            (run_id,) + self._company_params(),
         )
 
     def recover_stuck_runs(self) -> int:
@@ -281,14 +305,15 @@ class PipelineRepository(BaseRepository):
         now = _now_iso()
         try:
             count = self._execute_with_count(
-                """
+                f"""
                 UPDATE document_pipeline_runs
                 SET status = 'failed',
                     error_message = 'Recovered from crash — process did not complete',
                     updated_at = ?, completed_at = ?
                 WHERE status NOT IN ('complete', 'failed', 'processed')
+                {self._company_filter()}
                 """,
-                (now, now),
+                (now, now) + self._company_params(),
             )
             return count
         except Exception:
@@ -363,8 +388,9 @@ class PipelineRepository(BaseRepository):
         return self._fetchall(
             "SELECT * FROM document_pipeline_runs "
             "WHERE matched_trip_id = ? "
+            + self._company_filter() + " "
             "ORDER BY id DESC",
-            (trip_id,),
+            (trip_id,) + self._company_params(),
         )
 
     def append_related_document(self, run_id: int, doc_id: int) -> None:
@@ -383,8 +409,9 @@ class PipelineRepository(BaseRepository):
             self.begin_transaction()
             row = self._fetchone(
                 "SELECT match_signals_json "
-                "FROM document_pipeline_runs WHERE id = ?",
-                (run_id,),
+                "FROM document_pipeline_runs WHERE id = ? "
+                + self._company_filter(),
+                (run_id,) + self._company_params(),
             )
             signals: Dict[str, Any] = {}
             if row:
@@ -407,12 +434,12 @@ class PipelineRepository(BaseRepository):
             cleaned.append(doc_id)
             signals["related_document_ids"] = cleaned
             self._execute(
-                """
+                f"""
                 UPDATE document_pipeline_runs
                 SET match_signals_json = ?, updated_at = ?
-                WHERE id = ?
+                WHERE id = ? {self._company_filter()}
                 """,
-                (json.dumps(signals, ensure_ascii=False), now, run_id),
+                (json.dumps(signals, ensure_ascii=False), now, run_id) + self._company_params(),
                 commit=False,
             )
             self.commit_transaction()
@@ -436,13 +463,20 @@ class PipelineRepository(BaseRepository):
     ) -> int:
         package_uuid = package_uuid or uuid.uuid4().hex
         now = _now_iso()
+        data = {
+            "trip_id": trip_id,
+            "package_uuid": package_uuid,
+            "status": "draft",
+            "created_at": now,
+            "updated_at": now,
+        }
+        self._validate_columns(data, extra_allowed={"company_id"})
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         return self._execute_insert(
-            """
-            INSERT INTO document_package
-                (trip_id, package_uuid, status, created_at, updated_at)
-            VALUES (?, ?, 'draft', ?, ?)
-            """,
-            (trip_id, package_uuid, now, now),
+            f"INSERT INTO document_package ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def update_package(
@@ -455,8 +489,11 @@ class PipelineRepository(BaseRepository):
         email_message_id: Optional[str] = None,
         error_message: Optional[str] = None,
     ) -> None:
+        fields = {k: v for k, v in locals().items()
+                  if k != "self" and k != "package_id" and v is not None}
+        self._validate_columns(fields, extra_allowed={"company_id"})
         sets: List[str] = []
-        params: List[Any] = []
+        params: List[Any] = list(self._company_params())
         if status is not None:
             sets.append("status = ?")
             params.append(status)
@@ -484,7 +521,7 @@ class PipelineRepository(BaseRepository):
         params.append(_now_iso())
         params.append(package_id)
         self._execute(
-            f"UPDATE document_package SET {', '.join(sets)} WHERE id = ?",
+            f"UPDATE document_package SET {', '.join(sets)} WHERE id = ? {self._company_filter()}",
             tuple(params),
         )
 
@@ -494,10 +531,18 @@ class PipelineRepository(BaseRepository):
         document_id: int,
         sort_order: int = 0,
     ) -> None:
+        data = {
+            "package_id": package_id,
+            "document_id": document_id,
+            "sort_order": sort_order,
+        }
+        self._validate_columns(data, extra_allowed={"company_id"})
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            "INSERT OR IGNORE INTO document_package_items "
-            "(package_id, document_id, sort_order) VALUES (?, ?, ?)",
-            (package_id, document_id, sort_order),
+            f"INSERT OR IGNORE INTO document_package_items ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def add_package_items_batch(
@@ -509,11 +554,19 @@ class PipelineRepository(BaseRepository):
             return
         try:
             self.begin_transaction()
-            self.db.conn.executemany(
-                "INSERT OR IGNORE INTO document_package_items "
-                "(package_id, document_id, sort_order) VALUES (?, ?, ?)",
-                [(package_id, did, i) for i, did in enumerate(document_ids)],
-            )
+            company_id = self._user_company_id if self._scoped else None
+            if company_id is not None:
+                self.db.conn.executemany(
+                    "INSERT OR IGNORE INTO document_package_items "
+                    "(package_id, document_id, sort_order, company_id) VALUES (?, ?, ?, ?)",
+                    [(package_id, did, i, company_id) for i, did in enumerate(document_ids)],
+                )
+            else:
+                self.db.conn.executemany(
+                    "INSERT OR IGNORE INTO document_package_items "
+                    "(package_id, document_id, sort_order) VALUES (?, ?, ?)",
+                    [(package_id, did, i) for i, did in enumerate(document_ids)],
+                )
             self.commit_transaction()
         except Exception:
             try:
@@ -525,8 +578,9 @@ class PipelineRepository(BaseRepository):
     def remove_package_item(self, package_id: int, document_id: int) -> None:
         self._execute(
             "DELETE FROM document_package_items "
-            "WHERE package_id = ? AND document_id = ?",
-            (package_id, document_id),
+            "WHERE package_id = ? AND document_id = ? "
+            + self._company_filter(),
+            (package_id, document_id) + self._company_params(),
         )
 
     def replace_package_items(
@@ -543,8 +597,9 @@ class PipelineRepository(BaseRepository):
         try:
             self.begin_transaction()
             self._execute(
-                "DELETE FROM document_package_items WHERE package_id = ?",
-                (package_id,),
+                "DELETE FROM document_package_items WHERE package_id = ? "
+                + self._company_filter(),
+                (package_id,) + self._company_params(),
                 commit=False,
             )
             rows = []
@@ -570,18 +625,21 @@ class PipelineRepository(BaseRepository):
 
     def get_package_by_id(self, package_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM document_package WHERE id = ?", (package_id,)
+            "SELECT * FROM document_package WHERE id = ? " + self._company_filter(),
+            (package_id,) + self._company_params(),
         )
 
     def get_package_by_uuid(self, package_uuid: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM document_package WHERE package_uuid = ?", (package_uuid,)
+            "SELECT * FROM document_package WHERE package_uuid = ? "
+            + self._company_filter(),
+            (package_uuid,) + self._company_params(),
         )
 
     def get_package_items(self, package_id: int) -> List[Dict[str, Any]]:
         """Return package items joined with their document rows, ordered by sort_order."""
         return self._fetchall(
-            """
+            f"""
             SELECT
                 pi.id            AS item_id,
                 pi.sort_order    AS sort_order,
@@ -597,10 +655,10 @@ class PipelineRepository(BaseRepository):
                 d.is_signed      AS is_signed
             FROM document_package_items pi
             JOIN documents d ON d.id = pi.document_id
-            WHERE pi.package_id = ?
+            WHERE pi.package_id = ? {self._company_filter('pi')}
             ORDER BY pi.sort_order ASC, pi.id ASC
             """,
-            (package_id,),
+            (package_id,) + self._company_params(),
         )
 
     def list_packages(
@@ -609,8 +667,8 @@ class PipelineRepository(BaseRepository):
         status: Optional[str] = None,
         limit: int = 50,
     ) -> List[Dict[str, Any]]:
-        query = "SELECT * FROM document_package WHERE 1=1"
-        params: List[Any] = []
+        query = "SELECT * FROM document_package WHERE 1=1 " + self._company_filter()
+        params: List[Any] = list(self._company_params())
         if trip_id is not None:
             query += " AND trip_id = ?"
             params.append(trip_id)

@@ -39,7 +39,7 @@ from repositories.receipt_repository import RECEIPT_NUMBER_FORMATS, DEFAULT_FORM
 from services.invoicing.receipt_service import ReceiptService
 from services.operations.event_bus import SETTINGS_UPDATED, EventBus
 from services.preferences import PreferencesManager
-from ui.components import Btn, Card, Label, PageTitle, SectionTitle
+from ui.components import Btn, Card, CardHeader, Divider, Label, PageTitle, SectionTitle
 from ui.theme import COLORS, S
 from ui.widgets import (
     ScrollableFormContainer,
@@ -474,6 +474,8 @@ class QtReceiptEditor(QWidget):
         )
         layout.addWidget(self._generate_btn)
 
+        layout.addWidget(Divider(self._toolbar, vertical=True))
+
         self._print_btn = Btn(
             self._toolbar,
             f"\U0001F5A8  {t('receipt.editor.print')}",
@@ -494,7 +496,7 @@ class QtReceiptEditor(QWidget):
             self._toolbar,
             f"\U0001F4C2  {t('receipt.editor.load_draft')}",
             command=self._load_draft,
-            variant="ghost",
+            variant="secondary",
         )
         layout.addWidget(self._load_draft_btn)
 
@@ -502,7 +504,7 @@ class QtReceiptEditor(QWidget):
             self._toolbar,
             f"\U0001F4CB  {t('receipt.editor.duplicate')}",
             command=self._on_duplicate,
-            variant="ghost",
+            variant="secondary",
         )
         layout.addWidget(self._duplicate_btn)
 
@@ -510,7 +512,7 @@ class QtReceiptEditor(QWidget):
             self._toolbar,
             f"\U0001F4C4  {t('receipt.editor.export_json')}",
             command=self._on_export_json,
-            variant="ghost",
+            variant="secondary",
         )
         layout.addWidget(self._export_json_btn)
 
@@ -518,7 +520,7 @@ class QtReceiptEditor(QWidget):
             self._toolbar,
             f"\U0001F4E7  {t('receipt.editor.email')}",
             command=self._on_email,
-            variant="ghost",
+            variant="secondary",
         )
         layout.addWidget(self._email_btn)
 
@@ -527,22 +529,20 @@ class QtReceiptEditor(QWidget):
     # ── View Header ─────────────────────────────────────────────────
 
     def _build_view_header(self) -> None:
-        header = QWidget()
-        hlayout = QVBoxLayout(header)
-        hlayout.setContentsMargins(0, 0, 0, S["3"])
-        hlayout.setSpacing(S["1"])
+        card = Card(self._scroll.content)
+        card_layout = card.layout()
 
-        self._page_title = PageTitle(header, t("receipt.editor.title"))
-        hlayout.addWidget(self._page_title)
+        self._page_title = PageTitle(card, t("receipt.editor.title"))
+        card_layout.addWidget(self._page_title)
 
         self._page_subtitle = Label(
-            header,
+            card,
             t("receipt.editor.subtitle", "Create professional receipts"),
             role="secondary",
         )
-        hlayout.addWidget(self._page_subtitle)
+        card_layout.addWidget(self._page_subtitle)
 
-        self._scroll.add_widget(header)
+        self._scroll.add_widget(card)
 
     # ── Receipt Type Section ────────────────────────────────────────
 
@@ -552,6 +552,7 @@ class QtReceiptEditor(QWidget):
 
         self._type_header = SectionTitle(card, t("receipt.section_type").upper())
         card_layout.addWidget(self._type_header)
+        card_layout.addWidget(Divider(card))
 
         type_values = [t(key) for _, key in RECEIPT_TYPES]
         self._type_combo = StyledComboBox(card, values=type_values)
@@ -573,6 +574,7 @@ class QtReceiptEditor(QWidget):
 
         self._invoice_header = SectionTitle(card, t("receipt.section_invoice_autofill").upper())
         card_layout.addWidget(self._invoice_header)
+        card_layout.addWidget(Divider(card))
 
         from ui.widgets import field
         self._invoice_combo = StyledComboBox(card, state="readonly")
@@ -594,6 +596,7 @@ class QtReceiptEditor(QWidget):
 
         self._info_header = SectionTitle(card, t("receipt.section_info").upper())
         card_layout.addWidget(self._info_header)
+        card_layout.addWidget(Divider(card))
 
         # Two-column row
         row = QWidget()
@@ -665,6 +668,7 @@ class QtReceiptEditor(QWidget):
 
         self._parties_header = SectionTitle(card, t("receipt.section_parties").upper())
         card_layout.addWidget(self._parties_header)
+        card_layout.addWidget(Divider(card))
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
@@ -737,6 +741,7 @@ class QtReceiptEditor(QWidget):
 
         self._payment_header = SectionTitle(card, t("receipt.section_payment").upper())
         card_layout.addWidget(self._payment_header)
+        card_layout.addWidget(Divider(card))
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
@@ -788,6 +793,7 @@ class QtReceiptEditor(QWidget):
 
         self._logistics_header = SectionTitle(card, t("receipt.section_logistics").upper())
         card_layout.addWidget(self._logistics_header)
+        card_layout.addWidget(Divider(card))
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
@@ -853,6 +859,7 @@ class QtReceiptEditor(QWidget):
 
         self._purpose_header = SectionTitle(card, t("receipt.section_purpose").upper())
         card_layout.addWidget(self._purpose_header)
+        card_layout.addWidget(Divider(card))
 
         self._purpose_edit = StyledTextEdit(card, height=80)
         self._purpose_edit.textChanged.connect(self._on_field_changed)
@@ -868,6 +875,7 @@ class QtReceiptEditor(QWidget):
 
         self._financial_header = SectionTitle(card, t("receipt.section_financial").upper())
         card_layout.addWidget(self._financial_header)
+        card_layout.addWidget(Divider(card))
 
         from ui.widgets import field
         grid = QWidget()
@@ -913,6 +921,7 @@ class QtReceiptEditor(QWidget):
 
         self._employee_header = SectionTitle(self._employee_card, t("receipt.section_employee").upper())
         card_layout.addWidget(self._employee_header)
+        card_layout.addWidget(Divider(self._employee_card))
 
         grid = QWidget()
         grid_layout = QHBoxLayout(grid)
@@ -993,6 +1002,7 @@ class QtReceiptEditor(QWidget):
 
         self._attachments_header = SectionTitle(card, t("receipt.section_attachments").upper())
         card_layout.addWidget(self._attachments_header)
+        card_layout.addWidget(Divider(card))
 
         from ui.widgets import field
         # Attachment type selector
@@ -1036,6 +1046,7 @@ class QtReceiptEditor(QWidget):
 
         self._notes_header = SectionTitle(card, t("receipt.section_notes").upper())
         card_layout.addWidget(self._notes_header)
+        card_layout.addWidget(Divider(card))
 
         self._notes_edit = StyledTextEdit(card, height=100)
         self._notes_edit.textChanged.connect(self._on_field_changed)
@@ -1051,6 +1062,7 @@ class QtReceiptEditor(QWidget):
 
         self._branding_header = SectionTitle(card, t("receipt.section_branding").upper())
         card_layout.addWidget(self._branding_header)
+        card_layout.addWidget(Divider(card))
 
         from ui.widgets import field
         # Logo
@@ -1502,10 +1514,11 @@ class QtReceiptEditor(QWidget):
   <div class="parties">
     <div class="party">
       <b>{t('receipt.received_from')}</b>
-      <p>{self._received_from_name}</p>
-      <p>{self._received_from_address}</p>
-      <p>{'VAT: ' + self._received_from_vat if self._received_from_vat else ''}</p>
-      <p>{'Reg: ' + self._received_from_reg if self._received_from_reg else ''}</p>
+      {'<p style="color:#bbb;font-size:9px">' + t("receipt.received_from_placeholder", "—") + '</p>' if not (self._received_from_name or self._received_from_address or self._received_from_vat or self._received_from_reg) else ''}
+      {'<p>' + self._received_from_name + '</p>' if self._received_from_name else ''}
+      {'<p>' + self._received_from_address + '</p>' if self._received_from_address else ''}
+      {'<p>VAT: ' + self._received_from_vat + '</p>' if self._received_from_vat else ''}
+      {'<p>Reg: ' + self._received_from_reg + '</p>' if self._received_from_reg else ''}
     </div>
     <div class="party">
       <b>{t('receipt.received_by')}</b>
@@ -1527,6 +1540,7 @@ class QtReceiptEditor(QWidget):
     {f'<tr><td>{t("receipt.vat_rate_label")}</td><td>{self._vat_rate:.1f}%</td></tr>' if self._vat_rate > 0 else ''}
     {f'<tr><td>{t("receipt.vat_amount_label")}</td><td>{self._vat_amount:.2f} {self._currency}</td></tr>' if self._vat_rate > 0 else ''}
     <tr class="total-line"><td class="total">{t('receipt.total_label')}</td><td class="total">{self._total:.2f} {self._currency}</td></tr>
+    {'<tr><td colspan="2" style="color:#999;font-size:9px;text-align:center;padding-top:4px">' + t("receipt.amount_hint", "Introduceti suma mai jos") + '</td></tr>' if self._amount == 0 and self._total == 0 else ''}
   </table>
 
   {f'<div class="words">{self._amount_words}</div>' if self._amount_words else ''}

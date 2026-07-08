@@ -127,12 +127,13 @@ def Card(parent=None, padding=True) -> QFrame:
 
 
 def CardHeader(parent_layout, title="", subtitle="",
-               right_widget=None) -> QWidget:
+               right_widget=None, title_role="section-title") -> QWidget:
     """
     Add a card header to a layout.
     title: the card's section name
     subtitle: optional secondary text
     right_widget: optional widget placed at the right edge (e.g. a button)
+    title_role: QSS role for the title label (default "section-title")
     """
     header = QWidget()
     row = QHBoxLayout(header)
@@ -141,7 +142,7 @@ def CardHeader(parent_layout, title="", subtitle="",
 
     text_col = QVBoxLayout()
     text_col.setSpacing(2)
-    title_lbl = Label(header, title, role="section-title")
+    title_lbl = Label(header, title, role=title_role)
     text_col.addWidget(title_lbl)
     if subtitle:
         sub_lbl = Label(header, subtitle, role="muted")
@@ -377,6 +378,7 @@ class EmptyState(QFrame):
         super().__init__(parent)
         self.setObjectName("card")
         self.setMinimumHeight(120)
+        self.setMaximumWidth(320)
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE_5, SPACE_5, SPACE_5, SPACE_5)
@@ -385,7 +387,7 @@ class EmptyState(QFrame):
 
         icon_lbl = QLabel()
         icon_lbl.setPixmap(
-            qta.icon(icon_name, color=COLOR_TEXT_TERTIARY).pixmap(32, 32)
+            qta.icon(icon_name, color=COLOR_TEXT_TERTIARY).pixmap(48, 48)
         )
         icon_lbl.setAlignment(Qt.AlignCenter)
         layout.addWidget(icon_lbl)
@@ -393,7 +395,7 @@ class EmptyState(QFrame):
         if title:
             title_lbl = QLabel(title)
             title_lbl.setStyleSheet(
-                f"font-size: 14px; font-weight: {FONT_WEIGHT_MEDIUM}; "
+                "font-size: 15px; font-weight: 500; "
                 f"color: {COLOR_TEXT_SECONDARY};"
             )
             title_lbl.setAlignment(Qt.AlignCenter)
@@ -402,7 +404,7 @@ class EmptyState(QFrame):
         if subtitle:
             sub_lbl = QLabel(subtitle)
             sub_lbl.setStyleSheet(
-                f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
+                "font-size: 13px; font-weight: 400; "
                 f"color: {COLOR_TEXT_TERTIARY};"
             )
             sub_lbl.setAlignment(Qt.AlignCenter)

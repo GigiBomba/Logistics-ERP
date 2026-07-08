@@ -38,6 +38,10 @@ try:
 except Exception:
     pass
 
+# Apply the QWebEngine Chromium flags BEFORE any PySide6 import.
+from utils.webengine_flags import apply_webengine_flags
+apply_webengine_flags()
+
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
@@ -54,6 +58,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout), _handler],
+    force=True,
 )
 logger = logging.getLogger("remote_app")
 
@@ -120,20 +125,32 @@ def run_remote() -> int:
 
         app.setStyleSheet(build_stylesheet())
 
+        # ── Pre-warm QWebEngine Chromium process ──────────────────
+        # Force-initialize the embedded Chromium engine NOW, while
+        # no visible window exists, so its transient GPU/compositor
+        # windows flash harmlessly in the background rather than
+        # appearing as ghost boxes after the main window is shown.
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView
+            _prewarm = QWebEngineView()
+            _prewarm.resize(1, 1)
+            app.processEvents()
+            _prewarm.deleteLater()
+            del _prewarm
+        except Exception:
+            pass
+
         # If no stored session was restored, prompt the user to log in now.
         # The login dialog is modal so the main window is not visible until
-        # the dialog is dismissed.  Cancelling the dialog is allowed — the
-        # app continues in unauthenticated (guest) mode.
+        # the dialog is dismissed.
         if not hydrated:
-            try:
-                logged_in = require_admin_async()
-                if logged_in:
-                    auth = get_auth()
-                    if auth is not None:
-                        api_client.update_auth(auth)
-                        logger.info("Remote app — admin session established at startup.")
-            except Exception:
-                logger.debug("Startup login dialog skipped.", exc_info=True)
+            if not require_admin_async():
+                logger.info("Login cancelled or failed — exiting.")
+                return 0
+            auth = get_auth()
+            if auth is not None:
+                api_client.update_auth(auth)
+                logger.info("Remote app — admin session established at startup.")
 
         from ui.main_window import MainWindow
         window = MainWindow(db=None, api=None, prefs=prefs, ops=ops,

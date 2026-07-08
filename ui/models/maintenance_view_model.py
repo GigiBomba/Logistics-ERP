@@ -9,10 +9,13 @@ service/repository layer. Provides:
 """
 from __future__ import annotations
 
+import logging
 import time
 from typing import Any
 
 from PySide6.QtCore import QObject, QTimer, Signal
+
+logger = logging.getLogger(__name__)
 
 from services.fleet_maintenance_service import FleetMaintenanceService, TruckHealth
 from services.operations.event_bus import (
@@ -98,18 +101,29 @@ class MaintenanceViewModel(QObject):
         self._do_refresh()
 
     def _do_refresh(self) -> None:
-        """Fetch fresh data and emit signals."""
+        """Fetch fresh data and emit signals.
+
+        Always emits ``data_changed`` so the UI never gets stuck on a
+        loading placeholder — even when individual sub-refresh calls fail.
+        """
         if not self._db:
+            logger.warning("MaintenanceViewModel: no db, emitting empty data_changed")
+            self.data_changed.emit()
             return
         try:
             self.alert_model.refresh_from(self._ops)
+        except Exception as e:
+            logger.warning("MaintenanceViewModel: alert_model refresh failed: %s", e)
+        try:
             self.tacho_model.refresh(self._db)
+        except Exception as e:
+            logger.warning("MaintenanceViewModel: tacho_model refresh failed: %s", e)
+        try:
             self._invalidate_summary_cache()
-            self._dirty = False
-            self.data_changed.emit()
-        except Exception:
-            import logging
-            logging.getLogger(__name__).exception("MaintenanceViewModel refresh failed")
+        except Exception as e:
+            logger.warning("MaintenanceViewModel: invalidate_summary_cache failed: %s", e)
+        self._dirty = False
+        self.data_changed.emit()
 
     # ── Summary (cached 60s) ───────────────────────────────────────
 

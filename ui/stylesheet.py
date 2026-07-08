@@ -11,6 +11,8 @@ def build_stylesheet() -> str:
         COLOR_ACCENT_PRIMARY,
         COLOR_ACCENT_SUBTLE,
         COLOR_BG_BASE,
+        COLOR_BG_CARD,
+        COLOR_BG_CARD_HOVER,
         COLOR_BG_ELEVATED,
         COLOR_BG_HOVER,
         COLOR_BG_OVERLAY,
@@ -43,6 +45,7 @@ def build_stylesheet() -> str:
         RADIUS_LG,
         RADIUS_MD,
         RADIUS_SM,
+        RADIUS_XL,
         SPACE_4,
     )
     return f"""
@@ -106,6 +109,68 @@ QFrame#card[variant="alert-info"], QWidget#card[variant="alert-info"] {{
     border: 1px solid {COLOR_BORDER_SUBTLE};
     border-left: 3px solid {COLOR_INFO_DEFAULT};
     border-radius: {RADIUS_LG}px;
+}}
+
+/* StatCard — compact KPI metric card */
+QFrame#stat-card, QWidget#stat-card {{
+    background: {COLOR_BG_CARD};
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: {RADIUS_XL}px;
+}}
+QFrame#stat-card[hovered="true"], QWidget#stat-card[hovered="true"] {{
+    background: {COLOR_BG_CARD_HOVER};
+    border: 1px solid rgba(255,255,255,0.16);
+}}
+
+/* === Filter controls (shared across screens) === */
+QCheckBox[role="filter"] {{
+    spacing: 8px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.75);
+}}
+QCheckBox[role="filter"]::indicator {{
+    width: 18px;
+    height: 18px;
+    border: 1px solid rgba(255,255,255,0.2);
+    border-radius: 4px;
+    background: transparent;
+}}
+QCheckBox[role="filter"]::indicator:checked {{
+    background: {COLOR_ACCENT_PRIMARY};
+    border-color: {COLOR_ACCENT_PRIMARY};
+    image: none;
+}}
+QCheckBox[role="filter"]::indicator:unchecked:hover {{
+    border-color: rgba(255,255,255,0.4);
+}}
+QLineEdit[role="filter"], QComboBox[role="filter"] {{
+    height: 36px;
+    background: #14141C;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    padding: 0 12px;
+    font-size: 13px;
+    color: {COLOR_TEXT_PRIMARY};
+}}
+QLineEdit[role="filter"]:focus, QComboBox[role="filter"]:focus {{
+    border-color: {COLOR_ACCENT_PRIMARY};
+    background: #14141C;
+}}
+QLineEdit[role="filter"]:hover, QComboBox[role="filter"]:hover {{
+    border-color: rgba(255,255,255,0.25);
+}}
+QComboBox[role="filter"]::drop-down {{
+    border: none;
+    width: 28px;
+}}
+QComboBox[role="filter"]::down-arrow {{
+    image: none;
+    width: 0;
+    height: 0;
+    border-left: 4px solid transparent;
+    border-right: 4px solid transparent;
+    border-top: 5px solid {COLOR_TEXT_TERTIARY};
+    margin-right: 8px;
 }}
 
 /* === 5. TABLES === */
@@ -510,6 +575,13 @@ QLabel[role="page-title"] {{
     font-size: 18px;
     font-weight: {FONT_WEIGHT_SEMIBOLD};
     color: {COLOR_TEXT_PRIMARY};
+}}
+QLabel[role="section-header"] {{
+    font-size: 14px;
+    font-weight: 600;
+    color: #FFFFFF;
+    letter-spacing: 0.3px;
+    background: transparent;
 }}
 QLabel[role="section-title"] {{
     font-size: 11px;

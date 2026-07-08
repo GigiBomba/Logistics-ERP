@@ -130,7 +130,7 @@ class ChartLoadingOverlay(QFrame):
         self._skeleton_bars: list[QFrame] = []
         from PySide6.QtWidgets import QGraphicsOpacityEffect
         for i in range(3):
-            bar = QFrame()
+            bar = QFrame(self)
             bar.setFixedHeight(12)
             bar.setFixedWidth(260)
             effect = QGraphicsOpacityEffect(bar)

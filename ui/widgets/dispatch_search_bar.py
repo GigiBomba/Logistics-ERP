@@ -92,14 +92,8 @@ class QtDispatchSearchBar(QFrame):
 
         for status in STATUS_OPTIONS:
             cb = StyledCheckBox(parent=status_frame, text=status)
+            cb.setProperty("role", "filter")
             cb.setChecked(True)
-            chip_color = _STATUS_COLORS.get(status, COLORS["chip_idle"])
-            cb.setStyleSheet(
-                "QCheckBox::indicator:checked {"
-                f"  background-color: {chip_color};"
-                f"  border-color: {chip_color};"
-                "}"
-            )
             cb.stateChanged.connect(self._fire_search)
             self._checkboxes[status] = cb
             status_layout.addWidget(cb)

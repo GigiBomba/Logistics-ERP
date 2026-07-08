@@ -14,20 +14,31 @@ DEFAULT_INVOICE_FORMAT_KEY = "inv_year_seq"
 
 class InvoiceRepository(BaseRepository):
     TABLE = "invoices"
+    COLUMNS = [
+        "id", "trip_id", "invoice_number", "issue_date", "due_date",
+        "total_amount", "status", "company_id",
+    ]
+    COLUMNS_INVOICE_REMINDERS = [
+        "id", "invoice_id", "trip_id", "reminder_type", "days_offset",
+        "sent_at", "recipient_email", "status", "company_id",
+    ]
 
     def get_by_id(self, invoice_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ?", (invoice_id,)
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (invoice_id,) + self._company_params(),
         )
 
     def get_by_trip_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE trip_id = ?", (trip_id,)
+            f"SELECT * FROM {self.TABLE} WHERE trip_id = ? {self._company_filter()}",
+            (trip_id,) + self._company_params(),
         )
 
     def get_by_number(self, inv_number: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ?", (inv_number,)
+            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ? {self._company_filter()}",
+            (inv_number,) + self._company_params(),
         )
 
     def get_by_client_id(self, client_id: int, limit: int = 100) -> List[Dict[str, Any]]:
@@ -35,10 +46,10 @@ class InvoiceRepository(BaseRepository):
             """SELECT i.*, t.client_name, t.truck_number, t.start_date, t.status AS trip_status
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ?
+               WHERE t.client_id = ? {0}
                ORDER BY i.issue_date DESC
-               LIMIT ?""",
-            (client_id, limit),
+               LIMIT ?""".format(self._company_filter("i")),
+            (client_id,) + self._company_params() + (limit,),
         )
 
     def get_outstanding_by_client(self, client_id: int) -> List[Dict[str, Any]]:
@@ -46,9 +57,9 @@ class InvoiceRepository(BaseRepository):
             """SELECT i.*, t.client_name, t.truck_number, t.start_date
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? AND i.status = 'Unpaid'
-               ORDER BY i.due_date ASC""",
-            (client_id,),
+               WHERE t.client_id = ? AND i.status = 'Unpaid' {0}
+               ORDER BY i.due_date ASC""".format(self._company_filter("i")),
+            (client_id,) + self._company_params(),
         )
 
     def get_outstanding_balance(self, client_id: int) -> float:
@@ -56,8 +67,8 @@ class InvoiceRepository(BaseRepository):
             """SELECT COALESCE(SUM(i.total_amount), 0) AS balance
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? AND i.status = 'Unpaid'""",
-            (client_id,),
+               WHERE t.client_id = ? AND i.status = 'Unpaid' {0}""".format(self._company_filter("i")),
+            (client_id,) + self._company_params(),
         )
         return round(float(row["balance"]), 2) if row else 0.0
 
@@ -68,21 +79,21 @@ class InvoiceRepository(BaseRepository):
             """SELECT i.*, t.client_name, t.truck_number, t.start_date
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? AND i.status = 'Unpaid' AND i.due_date < ?
-               ORDER BY i.due_date ASC""",
-            (client_id, today),
+               WHERE t.client_id = ? AND i.status = 'Unpaid' AND i.due_date < ? {0}
+               ORDER BY i.due_date ASC""".format(self._company_filter("i")),
+            (client_id, today) + self._company_params(),
         )
 
     def get_all(self, limit: int = 500) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} ORDER BY issue_date DESC LIMIT ?",
-            (limit,),
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY issue_date DESC LIMIT ?",
+            self._company_params() + (limit,),
         )
 
     def get_by_status(self, status: str, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT i.*, t.client_name FROM {self.TABLE} i JOIN trips t ON t.id = i.trip_id WHERE i.status = ? ORDER BY i.due_date ASC LIMIT ?",
-            (status, limit),
+            f"SELECT i.*, t.client_name FROM {self.TABLE} i JOIN trips t ON t.id = i.trip_id WHERE i.status = ? {self._company_filter('i')} ORDER BY i.due_date ASC LIMIT ?",
+            (status,) + self._company_params() + (limit,),
         )
 
     def get_payment_summary(self, client_id: int) -> Optional[Dict[str, Any]]:
@@ -96,8 +107,8 @@ class InvoiceRepository(BaseRepository):
                  COALESCE(SUM(CASE WHEN i.status = 'Unpaid' AND i.due_date < ? THEN i.total_amount ELSE 0 END), 0) AS overdue
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ?""",
-            (today, client_id),
+               WHERE t.client_id = ? {0}""".format(self._company_filter("i")),
+            (today, client_id) + self._company_params(),
         )
 
     def get_dunner_due_invoices(self) -> List[Dict[str, Any]]:
@@ -123,7 +134,9 @@ class InvoiceRepository(BaseRepository):
             WHERE i.status = 'Unpaid'
               AND i.due_date IS NOT NULL
               AND i.due_date != ''
-            ORDER BY i.due_date ASC"""
+              {0}
+            ORDER BY i.due_date ASC""".format(self._company_filter("i")),
+            self._company_params(),
         )
 
     def get_unpaid_with_client_trip_data(self, status: str = "Unpaid") -> List[Dict[str, Any]]:
@@ -131,9 +144,9 @@ class InvoiceRepository(BaseRepository):
             """SELECT i.*, t.client_name, t.truck_number, t.start_date, t.status AS trip_status
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE i.status = ?
-               ORDER BY i.due_date ASC""",
-            (status,),
+               WHERE i.status = ? {0}
+               ORDER BY i.due_date ASC""".format(self._company_filter("i")),
+            (status,) + self._company_params(),
         )
 
     def get_client_email(self, client_name: str) -> Optional[str]:
@@ -143,33 +156,44 @@ class InvoiceRepository(BaseRepository):
     def has_reminder_been_sent(self, invoice_id: int, reminder_type: str) -> bool:
         row = self._fetchone(
             "SELECT 1 FROM invoice_reminders "
-            "WHERE invoice_id = ? AND reminder_type = ? AND status = 'sent' LIMIT 1",
-            (invoice_id, reminder_type),
+            "WHERE invoice_id = ? AND reminder_type = ? AND status = 'sent' {0} LIMIT 1".format(self._company_filter()),
+            (invoice_id, reminder_type) + self._company_params(),
         )
         return row is not None
 
     def get_reminder_count(self, invoice_id: int) -> int:
         row = self._fetchone(
             "SELECT COUNT(*) AS cnt FROM invoice_reminders "
-            "WHERE invoice_id = ? AND status = 'sent'",
-            (invoice_id,),
+            "WHERE invoice_id = ? AND status = 'sent' {0}".format(self._company_filter()),
+            (invoice_id,) + self._company_params(),
         )
         return int(row["cnt"]) if row else 0
 
     def insert_reminder(self, invoice_id: int, trip_id: int, reminder_type: str,
                         days_offset: int, sent_at: str, recipient_email: str,
                         status: str = "sent") -> int:
+        data = {
+            "invoice_id": invoice_id,
+            "trip_id": trip_id,
+            "reminder_type": reminder_type,
+            "days_offset": days_offset,
+            "sent_at": sent_at,
+            "recipient_email": recipient_email,
+            "status": status,
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_INVOICE_REMINDERS))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         return self._execute_insert(
-            "INSERT INTO invoice_reminders "
-            "(invoice_id, trip_id, reminder_type, days_offset, sent_at, recipient_email, status) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (invoice_id, trip_id, reminder_type, days_offset, sent_at, recipient_email, status),
+            "INSERT INTO invoice_reminders ({0}) VALUES ({1})".format(cols, vals),
+            tuple(data.values()),
         )
 
     def get_invoice_count(self, client_id: int) -> int:
         row = self._fetchone(
-            "SELECT COUNT(*) AS cnt FROM invoices i JOIN trips t ON t.id = i.trip_id WHERE t.client_id = ?",
-            (client_id,),
+            "SELECT COUNT(*) AS cnt FROM invoices i JOIN trips t ON t.id = i.trip_id WHERE t.client_id = ? {0}".format(self._company_filter("i")),
+            (client_id,) + self._company_params(),
         )
         return int(row["cnt"]) if row else 0
 
@@ -179,7 +203,8 @@ class InvoiceRepository(BaseRepository):
         fmt_key = format_key or DEFAULT_INVOICE_FORMAT_KEY
         template = INVOICE_NUMBER_FORMATS.get(fmt_key, INVOICE_NUMBER_FORMATS[DEFAULT_INVOICE_FORMAT_KEY])[0]
         row = self._fetchone(
-            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE}"
+            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
         )
         nxt = int(row["nxt"]) if row else 1
         return template.format(year=year, seq=nxt)

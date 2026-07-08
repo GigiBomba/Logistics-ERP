@@ -145,7 +145,7 @@ class QtFuelPricePanel(QFrame):
         header_layout.setSpacing(S["2"])
 
         title_lbl = QLabel(t("fuel.section_title"))
-        title_lbl.setProperty("fontRole", "section")
+        title_lbl.setProperty("role", "section-header")
         title_lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         header_layout.addWidget(title_lbl)
 

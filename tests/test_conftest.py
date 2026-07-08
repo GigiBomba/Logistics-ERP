@@ -13,25 +13,14 @@ from PySide6.QtWidgets import QApplication, QMainWindow, QWidget
 from ui.theme_engine import QtTheme
 
 
-def _ensure_webengine_software_rendering() -> None:
-    """Set environment flags so QWebEngineView uses CPU rendering in headless CI.
-
-    Without these, Chromium crashes with an access violation when no GPU is
-    available.  The flags must be set *before* ``QApplication`` is instantiated.
-    """
-    flags = os.environ.get("QTWEBENGINE_CHROMIUM_FLAGS", "")
-    if "--disable-gpu" not in flags:
-        flags += " --disable-gpu"
-    if "--no-sandbox" not in flags and os.name == "nt":
-        flags += " --no-sandbox"
-    os.environ["QTWEBENGINE_CHROMIUM_FLAGS"] = flags.strip()
-    os.environ.setdefault("QT_WEBENGINE_DISABLE_SANDBOX", "1")
-
-    # Set flag to indicate WebEngine should work with software rendering.
-    os.environ["_QT_TEST_WEBENGINE_READY"] = "1"
-
-
-_ensure_webengine_software_rendering()
+# Apply the same ghost-window-suppressing Chromium flags that main.py uses
+# for QWebEngine's child process.  Must execute before any PySide6 import
+# that transitively loads ``QWebEngineWidgets``.
+from utils.webengine_flags import apply_webengine_flags
+apply_webengine_flags()
+# Additional sandbox-disabling for CI/test environments.
+os.environ.setdefault("QT_WEBENGINE_DISABLE_SANDBOX", "1")
+os.environ["_QT_TEST_WEBENGINE_READY"] = "1"
 
 
 @pytest.fixture(scope="session")

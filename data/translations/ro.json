@@ -1063,8 +1063,10 @@
     "resource_next_free": "Urm. disponibil",
     "alerts_panel_title": "Alerte Operationale",
     "alerts_panel_no_alerts": "Nicio alerta activa",
+    "alerts_no_alerts_hint": "Toate alertele au fost rezolvate",
     "alerts_panel_unassigned_title": "Curse Nealocate",
     "alerts_panel_no_unassigned": "Toate cursele sunt alocate",
+    "alerts_no_unassigned_hint": "Toate cursele sunt complet alocate",
     "alerts_panel_no_truck": "Fara Camion",
     "alerts_panel_no_driver": "Fara Sofer",
     "alerts_panel_neither": "Fara Camion si Sofer",
@@ -1102,6 +1104,8 @@
     "status_bar_trucks_free": "Camioane Libere",
     "timeline_title": "Planificare",
     "timeline_no_data": "Nicio cursa programata",
+    "timeline_no_data_hint": "Nu exista curse programate pentru perioada selectata",
+    "timeline_plan_trip": "Planifică o cursă",
     "timeline_now": "ACUM",
     "assign_both": "Aloca Ambele",
     "assign_both_title": "Alocare Rapida",
@@ -1140,7 +1144,9 @@
     "undo_nothing": "Nimic de anulat",
     "redo_nothing": "Nimic de refacut",
     "showing_trips": "Se afișează {} din {} curse",
-    "count_trips": "{} curse"
+    "count_trips": "{} curse",
+    "no_results_title": "Nicio cursa gasita",
+    "no_results_subtitle": "Incearca sa ajustezi criteriile de cautare sau filtrare"
   },
   "driver_manager": {
     "add_driver": "Adauga Sofer",
@@ -1428,7 +1434,12 @@
     "hdr_type": "Type",
     "status_error": "Error",
     "status_ok": "OK",
-    "status_partial": "Partial"
+    "status_partial": "Partial",
+    "drop_hint": "Trage\u021Bi fi\u0219ierele aici sau ap\u0103sa\u021Bi pentru a selecta",
+    "drop_supported": "DDD / TGD / alte fi\u0219iere tahograf",
+    "select_file": "Selecteaz\u0103 fi\u0219ier tahograf",
+    "history_empty_title": "Niciun import",
+    "history_empty_subtitle": "Importa\u021Bi un fi\u0219ier tahograf pentru a vedea istoricul"
   },
   "time": {
     "days_ago": "acum {n}z",
@@ -1875,7 +1886,10 @@
     "tel": "Tel:",
     "contact": "Contact:",
     "email": "Email:",
-    "reg_no": "Nr. Reg:"
+    "reg_no": "Nr. Reg:",
+    "consignor_placeholder": "Nume, adresa, tara",
+    "consignee_placeholder": "Nume, adresa, tara",
+    "documents_placeholder": "Listati documentele atasate"
   },
   "text_danger": "Danger",
   "text_success": "Success",
@@ -1990,6 +2004,7 @@
     "editor.save_draft": "Salvează Ciornă",
     "editor.load_draft": "Încarcă Ciornă",
     "editor.duplicate": "Duplică",
+    "editor.export_json": "Exportă JSON",
     "editor.email": "Email",
     "editor.browse": "Răsfoiește",
     "editor.attach_files": "Atașează Fișiere",
@@ -2111,7 +2126,9 @@
     "attach_type_pod": "POD",
     "attach_type_document": "Document",
     "attach_type_image": "Imagine",
-    "attach_type_other": "Altul"
+    "attach_type_other": "Altul",
+    "received_from_placeholder": "Se va completa",
+    "amount_hint": "Introduceți suma mai jos"
   },
   "proforma_editor": {
     "export_json": "Exportă JSON",

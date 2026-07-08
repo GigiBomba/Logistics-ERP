@@ -327,7 +327,7 @@ class QtGeneratorsView(QWidget):
         right_panel = QWidget()
         right_lyt = QVBoxLayout(right_panel)
         right_lyt.setContentsMargins(SP["3"], 0, 0, 0)
-        right_lyt.setSpacing(SP["3"])
+        right_lyt.setSpacing(SP["4"])
 
         # Options card (languages)
         options_card = self._build_cmr_options_card(right_panel)

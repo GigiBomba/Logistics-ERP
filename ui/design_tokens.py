@@ -15,6 +15,8 @@ COLOR_BG_ELEVATED   = "#141416"   # Card/panel background
 COLOR_BG_OVERLAY    = "#1C1C1F"   # Input fields, dropdowns, table rows
 COLOR_BG_HOVER      = "#222226"   # Hover state for interactive rows/items
 COLOR_BG_SELECTED   = "#27272C"   # Selected row/item
+COLOR_BG_CARD       = "#1A1A24"   # StatCard background
+COLOR_BG_CARD_HOVER = "#1F1F2C"   # StatCard hover background
 
 # === BORDER COLORS ===
 COLOR_BORDER_SUBTLE = "#2A2A30"   # Default card/panel border (1px)
@@ -78,6 +80,7 @@ FONT_SIZE_MD   = 13  # Card values (secondary), navigation labels
 FONT_SIZE_LG   = 16  # Card primary values
 FONT_SIZE_XL   = 22  # KPI metric values (large)
 FONT_SIZE_2XL  = 32  # Hero numbers (main dashboard KPIs)
+FONT_SIZE_3XL  = 26  # StatCard value (between XL and 2XL)
 
 # Font weights
 FONT_WEIGHT_REGULAR  = 400

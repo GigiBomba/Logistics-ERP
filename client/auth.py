@@ -6,6 +6,7 @@ convenience properties for role gating in the UI layer.
 
 import json
 import logging
+import threading
 import time
 from typing import Any, Dict, Optional
 
@@ -50,6 +51,7 @@ class Auth:
     ) -> None:
         self._token: Optional[str] = token
         self._refresh_token: Optional[str] = refresh_token
+        self._refresh_lock = threading.Lock()
 
     # ── Token accessors ─────────────────────────────────────────────────
 
@@ -155,7 +157,7 @@ class Auth:
             return True
 
         except httpx.RequestError as exc:
-            logger.error("Login request failed: %s", exc)
+            logger.debug("Login request failed: %s", exc)
             return False
 
     def refresh(self) -> bool:
@@ -164,12 +166,21 @@ class Auth:
         Uses the stored ``_refresh_token`` to call ``POST /auth/refresh``.
         On success, updates the in-memory access token and persists both.
 
+        Protected by ``_refresh_lock`` to prevent concurrent refresh calls
+        from racing (both would use the same old refresh token; the second
+        would fail if the server rotates refresh tokens).
+
         Returns:
             ``True`` if the access token was refreshed, ``False`` otherwise.
         """
         if not self._refresh_token:
             return False
 
+        with self._refresh_lock:
+            return self._do_refresh()
+
+    def _do_refresh(self) -> bool:
+        """Core refresh logic — must be called with ``_refresh_lock`` held."""
         config = get_client_config()
         url = f"{config.api_url}/api/v1/auth/refresh"
 
@@ -177,7 +188,7 @@ class Auth:
             resp = httpx.post(
                 url,
                 json={"refresh_token": self._refresh_token},
-                timeout=15.0,
+                timeout=30.0,
                 verify=config.verify_ssl,
             )
             if resp.status_code != 200:
@@ -190,6 +201,11 @@ class Auth:
                 return False
 
             self._token = new_token
+            # Update the refresh token if the server issued a new one
+            # (common with refresh-token rotation security policies).
+            new_refresh: Optional[str] = data.get("refresh_token")
+            if new_refresh:
+                self._refresh_token = new_refresh
             self._save_tokens()
             return True
 
