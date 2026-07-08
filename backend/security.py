@@ -1,4 +1,4 @@
-"""Password hashing (bcrypt) and JWT encoding/decoding (python-jose).
+"""Password hashing (bcrypt) and JWT encoding/decoding (PyJWT).
 
 All functions are synchronous and thread-safe.  CPU-bound operations such as
 ``verify_password`` should be wrapped in ``loop.run_in_executor()`` when
@@ -11,7 +11,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
 import bcrypt
-from jose import jwt
+import jwt
+from jwt.exceptions import PyJWTError
 
 from backend.config import BackendSettings
 
@@ -50,7 +51,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 
-# ── JWT token creation / decoding (python-jose) ──────────────────────────────
+# ── JWT token creation / decoding (PyJWT) ────────────────────────────────────
 
 
 def create_access_token(
@@ -78,12 +79,12 @@ def create_access_token(
         )
 
     to_encode.update({"exp": expire})
-    encoded_jwt: str = jwt.encode(
+    encoded_jwt: bytes = jwt.encode(
         to_encode,
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
-    return encoded_jwt
+    return encoded_jwt.decode("utf-8")
 
 
 def decode_access_token(token: str) -> Dict[str, Any]:
@@ -96,7 +97,7 @@ def decode_access_token(token: str) -> Dict[str, Any]:
         The decoded payload as a dictionary.
 
     Raises:
-        JWTError: If the token is expired, malformed, or signature is invalid.
+        PyJWTError: If the token is expired, malformed, or signature is invalid.
     """
     settings = BackendSettings()
     payload: Dict[str, Any] = jwt.decode(

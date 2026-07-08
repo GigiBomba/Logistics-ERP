@@ -16,7 +16,7 @@ from typing import Any, Dict
 
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError
+from jwt.exceptions import PyJWTError as JWTError
 
 from backend.config import BackendSettings
 from backend.dependencies import get_db, set_request_user_context
