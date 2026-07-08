@@ -47,6 +47,7 @@ def build_stylesheet() -> str:
         RADIUS_SM,
         RADIUS_XL,
         SPACE_4,
+        SPACE_5,
     )
     return f"""
 
@@ -171,6 +172,71 @@ QComboBox[role="filter"]::down-arrow {{
     border-right: 4px solid transparent;
     border-top: 5px solid {COLOR_TEXT_TERTIARY};
     margin-right: 8px;
+}}
+
+/* === 4b. TABS (Dispatch Board) === */
+QWidget[role="tab-bar"] {{
+    background: {COLOR_BG_ELEVATED};
+    border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+}}
+QPushButton[tabRole="tab-button"] {{
+    background: transparent;
+    color: {COLOR_TEXT_TERTIARY};
+    font-size: {FONT_SIZE_BASE}px;
+    font-weight: {FONT_WEIGHT_MEDIUM};
+    padding: 0 {SPACE_5}px;
+    border: none;
+    border-bottom: 2px solid transparent;
+    text-transform: none;
+}}
+QPushButton[tabRole="tab-button"]:hover {{
+    color: {COLOR_TEXT_SECONDARY};
+    background: rgba(255,255,255,0.03);
+}}
+QPushButton[tabRole="tab-button"][tabActive="true"] {{
+    color: {COLOR_TEXT_PRIMARY};
+    font-weight: {FONT_WEIGHT_SEMIBOLD};
+    border-bottom: 2px solid {COLOR_ACCENT_PRIMARY};
+}}
+QWidget[role="tab-separator"] {{
+    background: {COLOR_BORDER_SUBTLE};
+}}
+
+/* === 4c. KANBAN COLUMNS === */
+QWidget[role="kanban-columns-container"] {{
+    background: {COLOR_BG_BASE};
+}}
+QFrame[role="kanban-column"] {{
+    background: {COLOR_BG_ELEVATED};
+    border: 1px solid {COLOR_BORDER_SUBTLE};
+    border-radius: {RADIUS_LG}px;
+    min-width: 260px;
+    max-width: 380px;
+}}
+QWidget[role="kanban-column-header"] {{
+    background: transparent;
+    border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+    padding: 0;
+}}
+QLabel[fontRole="kanban-column-title"] {{
+    font-size: {FONT_SIZE_SM}px;
+    font-weight: {FONT_WEIGHT_SEMIBOLD};
+    color: {COLOR_TEXT_SECONDARY};
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+}}
+QLabel[fontRole="kanban-column-count"] {{
+    font-size: {FONT_SIZE_SM}px;
+    font-weight: {FONT_WEIGHT_REGULAR};
+    color: {COLOR_TEXT_TERTIARY};
+}}
+QLabel[fontRole="kanban-column-loading"] {{
+    font-size: {FONT_SIZE_BASE}px;
+    color: {COLOR_TEXT_TERTIARY};
+}}
+QLabel[fontRole="kanban-column-error"] {{
+    font-size: {FONT_SIZE_BASE}px;
+    color: {COLOR_ERROR_TEXT};
 }}
 
 /* === 5. TABLES === */

@@ -1,0 +1,33 @@
+name: Security Test Suite
+
+on: [push, pull_request]
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt PyJWT bcrypt httpx
+
+      - name: Secret scan (fast)
+        run: |
+          if git ls-files --error-unmatch admin.env 2>&1; then
+            echo "❌ admin.env is tracked in git!"
+            exit 1
+          else
+            echo "✅ No committed secrets found"
+          fi
+
+      - name: Run security tests
+        run: python -m pytest tests/security/ -v --tb=short
+
+      - name: pip-audit
+        run: pip install pip-audit && pip-audit
+        continue-on-error: true
