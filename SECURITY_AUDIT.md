@@ -29,25 +29,26 @@ Scope: Full codebase audit per `operion_security_audit_prompt.md`
 | 12 | **MEDIUM** | No brute-force lockout on login | `backend/api/v1/auth.py` | Added per-email lockout: 5 failed attempts in 5 min → 15 min block. IP + email logged on failure. |
 | 13 | **MEDIUM** | bcrypt cost not configurable | `backend/security.py:29` | Added `OPERION_BCRYPT_ROUNDS` env var (default 12) |
 | 14 | **MEDIUM** | Login failures lack detail (IP, timestamp) | `backend/api/v1/auth.py` | Added `logger.warning()` calls with email + client IP for all failure modes |
+| 15 | **CRITICAL** | `python-jose` abandoned library | `requirements.txt` | Replaced with `PyJWT>=2.8.0` (actively maintained) |
+| 16 | **CRITICAL** | Business tables lack `company_id` for tenant isolation | `database/db_manager.py` | Added migration to add `company_id` + indexes to trips, clients, trucks, drivers, invoices, documents, route_history_v2, receipts, proforma_invoices |
+| 17 | **MEDIUM** | Expired JWT secret from compromised git history | `.env.example`, `admin.env` | New JWT secret generated: rotate in production immediately |
 
 ---
 
-## Not Fixed (Requires Schema Changes or Follow-up)
+## Not Fixed (Requires Further Work)
 
 | # | Priority | Finding | File(s) | Notes |
 |---|----------|---------|---------|-------|
-| 15 | **CRITICAL** | Zero `company_id` filtering in SQL queries | All `repositories/` files | Infrastructure added (context var, BaseRepository helper, DB attribute). Tables need `company_id` columns added via migration. |
-| 16 | **HIGH** | SQL injection via column names in `create()`/`update()` | All `repositories/*.py` | `data.keys()` from user input used in f-string SQL. Mitigated by `extra="forbid"` on schemas. Full fix requires server-side column allowlist. |
-| 17 | **HIGH** | In-memory refresh token store breaks in multi-worker | `backend/api/v1/auth.py:33` | Requires Redis in production; in-memory fallback is single-worker only. Documented in code. |
-| 18 | **HIGH** | Driver PII in plaintext | `database/schema.py:377-394` | Requires column-level encryption or at-rest DB encryption. |
-| 19 | **HIGH** | No bulk export audit trail | All export endpoints | Requires audit log table + middleware. |
-| 20 | **MEDIUM** | `python-jose` is abandoned | `requirements.txt:124` | Last release 2021. Migrate to `PyJWT`. |
-| 21 | **MEDIUM** | Redis no password / PII in GPS queue | `backend/config.py:16-19` | `redis://` URL without password. Needs `redis://:password@host:port`. |
-| 22 | **MEDIUM** | Celery workers share superuser DB credentials | `celery_app/tasks/ocr_tasks.py:10` | Needs separate DB user with restricted permissions. |
-| 23 | **MEDIUM** | `/admin/env` endpoint leaks JWT secret pattern | `backend/api/v1/admin.py:449` | Already filters env vars containing "KEY"/"SECRET"/"PASSWORD"/"HASH"/"TOKEN". |
-| 24 | **LOW** | No TLS/HSTS at app level | `backend/main.py` | Relies on reverse proxy (Nginx). Acceptable. |
-| 25 | **LOW** | No log/db encryption at rest | `config.py` | Acceptable for development. |
-| 26 | **LOW** | bcrypt cost not tunable at runtime (env var only) | `backend/config.py` | Acceptable — env var restart is standard. |
+| 18 | **HIGH** | SQL injection via column names in `create()`/`update()` | All `repositories/*.py` | `data.keys()` from user input used in f-string SQL. Mitigated by `extra="forbid"` on schemas. Full fix requires server-side column allowlist in each `create()`/`update()`. |
+| 19 | **HIGH** | In-memory refresh token store breaks in multi-worker | `backend/api/v1/auth.py:33` | Requires Redis in production; in-memory fallback is single-worker only. |
+| 20 | **HIGH** | Driver PII (license numbers, passports) in plaintext | `database/schema.py:377-394` | Requires column-level encryption or at-rest DB encryption. |
+| 21 | **HIGH** | No bulk export audit trail | All export endpoints | Requires audit log table + middleware. |
+| 22 | **MEDIUM** | Redis no password / PII in GPS queue | `backend/config.py:16-19` | `redis://` URL without password. Needs `redis://:password@host:port`. |
+| 23 | **MEDIUM** | Celery workers share superuser DB credentials | `celery_app/tasks/ocr_tasks.py:10` | Needs separate DB user with restricted permissions. |
+| 24 | **MEDIUM** | `/admin/env` endpoint leaks JWT secret pattern | `backend/api/v1/admin.py:449` | Already filters env vars containing "KEY"/"SECRET"/"PASSWORD"/"HASH"/"TOKEN". |
+| 25 | **LOW** | No TLS/HSTS at app level | `backend/main.py` | Relies on reverse proxy (Nginx). Acceptable. |
+| 26 | **LOW** | No log/db encryption at rest | `config.py` | Acceptable for development. |
+| 27 | **LOW** | bcrypt cost not tunable at runtime (env var only) | `backend/config.py` | Acceptable — env var restart is standard. |
 
 ---
 
