@@ -25,6 +25,7 @@ Usage::
 
 from __future__ import annotations
 
+import concurrent.futures
 import itertools
 import logging
 
@@ -64,6 +65,25 @@ from ui.plotly_theme import (
 
 _log = logging.getLogger(__name__)
 
+# ── Thread-pool for running blocking calls with a timeout ───────────
+_THREAD_POOL: concurrent.futures.ThreadPoolExecutor | None = None
+
+
+def _get_thread_pool() -> concurrent.futures.ThreadPoolExecutor:
+    global _THREAD_POOL
+    if _THREAD_POOL is None:
+        _THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
+    return _THREAD_POOL
+
+
+def _run_with_timeout(fn, timeout: float = 5.0):
+    """Run *fn* in a worker thread and return its result.
+
+    Raises ``concurrent.futures.TimeoutError`` if *fn* does not
+    complete within *timeout* seconds.
+    """
+    return _get_thread_pool().submit(fn).result(timeout=timeout)
+
 # ── Rendering helpers ──────────────────────────────────────────────
 
 def figure_to_svg_bytes(
@@ -74,10 +94,10 @@ def figure_to_svg_bytes(
 ) -> bytes:
     """Render *fig* to SVG bytes using Choreographer-backed headless Chrome.
 
-    Uses ``plotly.io.to_svg()`` (Plotly 5.x) or falls back to
-    Choreographer headless Chrome SVG extraction (Plotly 6.x+).
-    Zero subprocess windows — Chrome runs in ``--headless`` mode
-    via the Choreographer CDP bridge.
+    Uses ``plotly.io.to_svg()`` (Plotly 5.x) with a 5-second timeout,
+    falling back to Choreographer headless Chrome SVG extraction
+    (Plotly 6.x+).  Zero subprocess windows — Chrome runs in
+    ``--headless`` mode via the Choreographer CDP bridge.
 
     Parameters
     ----------
@@ -94,15 +114,21 @@ def figure_to_svg_bytes(
         Raw SVG markup.
     """
     try:
-        # Plotly 5.x path — pure Python, no engine needed
-        svg_str: str = pio.to_svg(fig)
-        svg_str = svg_str.replace(
-            "<svg ",
-            f'<svg width="{int(width * scale)}" height="{int(height * scale)}" ',
-            1,
-        )
-        return svg_str.encode("utf-8")
-    except AttributeError:
+        # Plotly 5.x path — pure Python, no engine needed.
+        # Run in a thread with a short timeout so a hung ``to_svg``
+        # (e.g. a stray browser-open attempt) doesn't block the caller.
+        # Skip entirely on Plotly 6.x where ``to_svg`` was removed.
+        if hasattr(pio, "to_svg"):
+            svg_str: str = _run_with_timeout(
+                lambda: pio.to_svg(fig), timeout=5.0,
+            )
+            svg_str = svg_str.replace(
+                "<svg ",
+                f'<svg width="{int(width * scale)}" height="{int(height * scale)}" ',
+                1,
+            )
+            return svg_str.encode("utf-8")
+    except (AttributeError, concurrent.futures.TimeoutError):
         pass
     except Exception:
         _log.warning(
@@ -530,6 +556,11 @@ class PlotlyChartWidget(QFrame):
         min_height: int = 0,
     ):
         super().__init__(parent)
+        # Prevent Qt from creating a hidden native window ancestor for
+        # this widget during layout transitions / effect application.
+        # This eliminates a class of transient ghost windows on Windows
+        # where the DWM briefly renders an offscreen buffer at (0,0).
+        self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
         self._fig: go.Figure | None = None
         self._fig_id: int = 0  # last ``id()`` of the figure we rendered
         self._width: int = 420

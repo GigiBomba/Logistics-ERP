@@ -18,6 +18,21 @@ DEFAULT_FORMAT_KEY = "rct_year_seq"
 
 class ReceiptRepository(BaseRepository):
     TABLE = "receipts"
+    COLUMNS = [
+        "id", "receipt_number", "receipt_type", "issue_date", "payment_date",
+        "currency", "company_name", "company_address", "company_vat", "company_reg",
+        "company_phone", "company_email", "received_from_name", "received_from_address",
+        "received_from_vat", "received_from_reg", "received_from_contact",
+        "received_by_name", "received_by_address", "received_by_vat", "received_by_reg",
+        "received_by_contact", "payment_method", "reference_number", "transaction_id",
+        "bank_reference", "invoice_reference", "related_trip_id", "driver_id",
+        "vehicle_id", "trailer_id", "purpose", "amount", "vat_rate", "vat_amount",
+        "total", "amount_words", "notes", "status", "logo_path", "signature_path",
+        "stamp_path", "attachments_json", "employee_name", "department",
+        "expense_category", "mileage", "fuel", "accommodation", "meals", "parking",
+        "tolls", "other_expense", "pickup_location", "delivery_location", "route",
+        "dispatcher", "language", "created_at", "updated_at", "company_id",
+    ]
 
     def create(
         self,
@@ -82,55 +97,74 @@ class ReceiptRepository(BaseRepository):
     ) -> Optional[int]:
         now = datetime.now().isoformat()
         try:
+            data = {
+                "receipt_number": receipt_number,
+                "receipt_type": receipt_type,
+                "issue_date": issue_date,
+                "payment_date": payment_date,
+                "currency": currency,
+                "company_name": company_name,
+                "company_address": company_address,
+                "company_vat": company_vat,
+                "company_reg": company_reg,
+                "company_phone": company_phone,
+                "company_email": company_email,
+                "received_from_name": received_from_name,
+                "received_from_address": received_from_address,
+                "received_from_vat": received_from_vat,
+                "received_from_reg": received_from_reg,
+                "received_from_contact": received_from_contact,
+                "received_by_name": received_by_name,
+                "received_by_address": received_by_address,
+                "received_by_vat": received_by_vat,
+                "received_by_reg": received_by_reg,
+                "received_by_contact": received_by_contact,
+                "payment_method": payment_method,
+                "reference_number": reference_number,
+                "transaction_id": transaction_id,
+                "bank_reference": bank_reference,
+                "invoice_reference": invoice_reference,
+                "related_trip_id": related_trip_id,
+                "driver_id": driver_id,
+                "vehicle_id": vehicle_id,
+                "trailer_id": trailer_id,
+                "purpose": purpose,
+                "amount": amount,
+                "vat_rate": vat_rate,
+                "vat_amount": vat_amount,
+                "total": total,
+                "amount_words": amount_words,
+                "notes": notes,
+                "status": status,
+                "logo_path": logo_path,
+                "signature_path": signature_path,
+                "stamp_path": stamp_path,
+                "attachments_json": attachments_json,
+                "employee_name": employee_name,
+                "department": department,
+                "expense_category": expense_category,
+                "mileage": mileage,
+                "fuel": fuel,
+                "accommodation": accommodation,
+                "meals": meals,
+                "parking": parking,
+                "tolls": tolls,
+                "other_expense": other_expense,
+                "pickup_location": pickup_location,
+                "delivery_location": delivery_location,
+                "route": route,
+                "dispatcher": dispatcher,
+                "language": language,
+                "created_at": now,
+                "updated_at": now,
+            }
+            self._validate_columns(data, extra_allowed={"company_id"})
+            data = self._set_company_from_context(data)
+            cols = ", ".join(data.keys())
+            vals = ", ".join("?" for _ in data)
             return self._execute_insert(
-                f"""INSERT INTO {self.TABLE}
-                    (receipt_number, receipt_type,
-                     issue_date, payment_date, currency,
-                     company_name, company_address, company_vat,
-                     company_reg, company_phone, company_email,
-                     received_from_name, received_from_address,
-                     received_from_vat, received_from_reg, received_from_contact,
-                     received_by_name, received_by_address,
-                     received_by_vat, received_by_reg, received_by_contact,
-                     payment_method,
-                     reference_number, transaction_id,
-                     bank_reference, invoice_reference,
-                     related_trip_id, driver_id, vehicle_id, trailer_id,
-                     purpose,
-                     amount, vat_rate, vat_amount, total, amount_words,
-                     notes, status,
-                     logo_path, signature_path, stamp_path,
-                     attachments_json,
-                     employee_name, department, expense_category,
-                     mileage, fuel, accommodation, meals, parking, tolls, other_expense,
-                     pickup_location, delivery_location, route, dispatcher,
-                     language,
-                     created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    receipt_number, receipt_type,
-                    issue_date, payment_date, currency,
-                    company_name, company_address, company_vat,
-                    company_reg, company_phone, company_email,
-                    received_from_name, received_from_address,
-                    received_from_vat, received_from_reg, received_from_contact,
-                    received_by_name, received_by_address,
-                    received_by_vat, received_by_reg, received_by_contact,
-                    payment_method,
-                    reference_number, transaction_id,
-                    bank_reference, invoice_reference,
-                    related_trip_id, driver_id, vehicle_id, trailer_id,
-                    purpose,
-                    amount, vat_rate, vat_amount, total, amount_words,
-                    notes, status,
-                    logo_path, signature_path, stamp_path,
-                    attachments_json,
-                    employee_name, department, expense_category,
-                    mileage, fuel, accommodation, meals, parking, tolls, other_expense,
-                    pickup_location, delivery_location, route, dispatcher,
-                    language,
-                    now, now,
-                ),
+                f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
+                tuple(data.values()),
                 commit=commit,
             )
         except Exception as exc:
@@ -139,7 +173,8 @@ class ReceiptRepository(BaseRepository):
 
     def get_by_id(self, receipt_id: int) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ?", (receipt_id,)
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (receipt_id,) + self._company_params(),
         )
         if row and row.get("attachments_json"):
             try:
@@ -150,7 +185,8 @@ class ReceiptRepository(BaseRepository):
 
     def get_by_number(self, receipt_number: str) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE receipt_number = ?", (receipt_number,)
+            f"SELECT * FROM {self.TABLE} WHERE receipt_number = ? {self._company_filter()}",
+            (receipt_number,) + self._company_params(),
         )
         if row and row.get("attachments_json"):
             try:
@@ -161,14 +197,14 @@ class ReceiptRepository(BaseRepository):
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            self._company_params() + (limit, offset),
         )
 
     def get_by_status(self, status: str, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-            (status, limit),
+            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            (status,) + self._company_params() + (limit,),
         )
 
     def update(
@@ -176,6 +212,7 @@ class ReceiptRepository(BaseRepository):
         receipt_id: int,
         **kwargs,
     ) -> bool:
+        self._validate_columns(kwargs, extra_allowed={"company_id"})
         allowed = {
             "receipt_type", "issue_date", "payment_date", "currency",
             "company_name", "company_address", "company_vat",
@@ -206,8 +243,8 @@ class ReceiptRepository(BaseRepository):
         values = list(updates.values()) + [receipt_id]
         try:
             self._execute(
-                f"UPDATE {self.TABLE} SET {set_clause} WHERE id = ?",
-                tuple(values),
+                f"UPDATE {self.TABLE} SET {set_clause} WHERE id = ? {self._company_filter()}",
+                tuple(values) + self._company_params(),
             )
             return True
         except Exception as exc:
@@ -220,7 +257,9 @@ class ReceiptRepository(BaseRepository):
     def delete(self, receipt_id: int, commit: bool = True) -> bool:
         try:
             self._execute(
-                f"DELETE FROM {self.TABLE} WHERE id = ?", (receipt_id,), commit=commit
+                f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+                (receipt_id,) + self._company_params(),
+                commit=commit,
             )
             return True
         except Exception as exc:
@@ -229,20 +268,21 @@ class ReceiptRepository(BaseRepository):
 
     def count_by_status(self, status: str) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ?", (status,)
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ? {self._company_filter()}",
+            (status,) + self._company_params(),
         )
         return int(row["cnt"]) if row else 0
 
     def search_by_trip(self, trip_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE related_trip_id = ? ORDER BY created_at DESC LIMIT ?",
-            (trip_id, limit),
+            f"SELECT * FROM {self.TABLE} WHERE related_trip_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            (trip_id,) + self._company_params() + (limit,),
         )
 
     def search_by_driver(self, driver_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? ORDER BY created_at DESC LIMIT ?",
-            (driver_id, limit),
+            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            (driver_id,) + self._company_params() + (limit,),
         )
 
     def get_next_number(self, format_key: Optional[str] = None) -> str:
@@ -258,7 +298,8 @@ class ReceiptRepository(BaseRepository):
         fmt_key = format_key or DEFAULT_FORMAT_KEY
         template = RECEIPT_NUMBER_FORMATS.get(fmt_key, RECEIPT_NUMBER_FORMATS[DEFAULT_FORMAT_KEY])[0]
         row = self._fetchone(
-            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE}",
+            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
         )
         nxt = int(row["nxt"]) if row else 1
         return template.format(year=year, seq=nxt)

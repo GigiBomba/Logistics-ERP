@@ -192,7 +192,7 @@ class QtOverviewView(QScrollArea):
         self.setFrameShape(QFrame.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
 
-        self._container = QWidget()
+        self._container = QWidget(self)
         self._container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.setWidget(self._container)
 
@@ -292,11 +292,11 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(main)
 
     def _build_profit_chart(self, layout):
-        card_widget = Card(None)
+        card_widget = Card(self)
         card_layout = card_widget.layout()
         card_layout.setSpacing(SP["3"])
 
-        header = QFrame()
+        header = QFrame(self)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
 
@@ -306,35 +306,35 @@ class QtOverviewView(QScrollArea):
             title = t(self._selected_chart.get("title", ""))
             chart_title = f"{cat.upper()} \u2014 {title}"
 
-        title = Label(None, chart_title, role="section-title")
+        title = Label(card_widget, chart_title, role="section-title")
         header_layout.addWidget(title)
         header_layout.addStretch(1)
-        month = Label(None, t("home.profit_30_days", default="Past 30 Days"), role="muted")
+        month = Label(card_widget, t("home.profit_30_days", default="Past 30 Days"), role="muted")
         header_layout.addWidget(month)
         card_layout.addWidget(header)
 
-        self._chart_container = QFrame()
+        self._chart_container = QFrame(card_widget)
         self._chart_container.setMinimumHeight(200)
         self._chart_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         QVBoxLayout(self._chart_container)
         card_layout.addWidget(self._chart_container, 1)
 
-        footer = Label(None, t("home.profit_data_source", default="Based on analytics data"), role="muted")
+        footer = Label(card_widget, t("home.profit_data_source", default="Based on analytics data"), role="muted")
         card_layout.addWidget(footer)
 
         layout.addWidget(card_widget)
 
     def _build_active_trips(self, layout):
-        card_widget = Card(None)
+        card_widget = Card(self)
         card_layout = card_widget.layout()
         card_layout.setSpacing(SP["3"])
 
-        header = QFrame()
+        header = QFrame(self)
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        title = Label(None, t("home.active_trips", default="Active Trips"), role="section-title")
+        title = Label(card_widget, t("home.active_trips", default="Active Trips"), role="section-title")
         header_layout.addWidget(title)
-        self._trips_count = Label(None, "0", role="muted")
+        self._trips_count = Label(card_widget, "0", role="muted")
         header_layout.addWidget(self._trips_count)
         card_layout.addWidget(header)
 
@@ -345,11 +345,11 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(card_widget)
 
     def _build_alert_strip(self, layout):
-        card_widget = Card(None)
+        card_widget = Card(self)
         card_layout = card_widget.layout()
         card_layout.setSpacing(SP["3"])
 
-        title = Label(None, t("home.active_alerts", default="Active Alerts"), role="section-title")
+        title = Label(card_widget, t("home.active_alerts", default="Active Alerts"), role="section-title")
         card_layout.addWidget(title)
 
         self._alerts_layout = QVBoxLayout()
@@ -359,11 +359,11 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(card_widget)
 
     def _build_top_trucks(self, layout):
-        card_widget = Card(None)
+        card_widget = Card(self)
         card_layout = card_widget.layout()
         card_layout.setSpacing(SP["3"])
 
-        title = Label(None, t("home.top_trucks", default="Top Trucks"), role="section-title")
+        title = Label(card_widget, t("home.top_trucks", default="Top Trucks"), role="section-title")
         card_layout.addWidget(title)
 
         self._top_trucks_layout = QVBoxLayout()
@@ -373,11 +373,11 @@ class QtOverviewView(QScrollArea):
         layout.addWidget(card_widget)
 
     def _build_recent_activity(self, layout):
-        card_widget = Card(None)
+        card_widget = Card(self)
         card_layout = card_widget.layout()
         card_layout.setSpacing(SP["3"])
 
-        title = Label(None, t("home.recent_activity", default="Recent Activity"), role="section-title")
+        title = Label(card_widget, t("home.recent_activity", default="Recent Activity"), role="section-title")
         card_layout.addWidget(title)
 
         self._activity_layout = QVBoxLayout()
@@ -532,8 +532,8 @@ class QtOverviewView(QScrollArea):
                 countries = svc.get_profit_per_km_by_country() or []
                 top = max(countries, key=lambda c: c.get("profit_per_km", 0) or 0) if countries else {}
                 return (top.get("country", "\u2014"), "")
-        except Exception:
-            logger.exception("KPI compute failed for key=%s", key)
+        except Exception as exc:
+            logger.warning("KPI compute failed for key=%s: %s", key, exc)
         return ("\u2014", "")
 
     def _refresh_active_trips(self):
@@ -778,7 +778,7 @@ class QtOverviewView(QScrollArea):
             self._do_render_chart()
             self._chart_render_ts = now
         except Exception as exc:
-            logger.exception("Chart render failed: %s", exc)
+            logger.warning("Chart render failed: %s", exc)
             self._clear_layout(self._chart_container.layout())
             msg = t("home.profit_no_data", default="Chart unavailable.\nComplete trips to see analytics.")
             lbl = QLabel(msg)
@@ -815,8 +815,8 @@ class QtOverviewView(QScrollArea):
 
         try:
             fig = self._build_analytics_chart(key)
-        except Exception:
-            logger.exception("Analytics chart build failed")
+        except Exception as exc:
+            logger.warning("Analytics chart build failed: %s", exc)
             self._show_chart_no_data()
             return
 

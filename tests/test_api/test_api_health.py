@@ -30,11 +30,11 @@ class TestHealthEndpoint:
         assert "database" in data
 
     def test_swagger_docs_available(self, client):
-        response = client.get("/api/docs")
+        response = client.get("/docs")
         assert response.status_code == 200
 
     def test_redoc_available(self, client):
-        response = client.get("/api/redoc")
+        response = client.get("/redoc")
         assert response.status_code == 200
 
     def test_openapi_json(self, client):

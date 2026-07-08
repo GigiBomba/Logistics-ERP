@@ -468,6 +468,9 @@ class DatabaseManager:
             logger.warning("Migration step failed: %s", e)
 
         # ── Multi-tenant: add company_id to all business tables ──────────
+        # NOTE: SQLite cannot ADD COLUMN with NOT NULL + REFERENCES constraint
+        # on an existing table. We add a nullable column, backfill, and enforce
+        # NOT NULL at the application level (see _set_company_from_context).
         _tenant_tables = [
             ("trips", "ALTER TABLE trips ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("clients", "ALTER TABLE clients ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
@@ -481,12 +484,19 @@ class DatabaseManager:
         ]
         for table, alter_sql in _tenant_tables:
             self._ensure_column(table, "company_id", alter_sql)
+            # Backfill any rows that still have NULL company_id (legacy data)
+            try:
+                self.conn.execute(
+                    f"UPDATE {table} SET company_id = 1 WHERE company_id IS NULL"
+                )
+            except Exception as e:
+                logger.warning("Backfill failed for %s: %s", table, e)
             try:
                 self.conn.execute(
                     f"CREATE INDEX IF NOT EXISTS idx_{table}_company ON {table}(company_id)"
                 )
             except Exception as e:
-                logger.warning("Migration step failed: %s", e)
+                logger.warning("Index creation failed for %s: %s", table, e)
 
         try:
             self.conn.commit()

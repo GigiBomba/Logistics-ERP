@@ -7,6 +7,20 @@ from repositories import BaseRepository
 class TripRepository(BaseRepository):
     TABLE = "trips"
     TABLE_CMR_COUNTER = "cmr_counter"
+    COLUMNS = [
+        "id", "created_at", "updated_at", "truck_number", "driver_name", "client_name",
+        "distance_km", "total_price_eur", "rate_per_km", "gross_per_km", "net_profit",
+        "start_date", "end_date", "payment_date", "extra_costs", "fuel_cost", "toll_cost",
+        "salary_cost", "currency", "status", "loading_country", "delivery_country",
+        "driver_id", "route_history_v2_id", "truck_consumption_l_per_100km", "context_json",
+        "client_id", "truck_id", "price_pre_vat", "vat_percent", "cmr_number", "cmr_sequence",
+        "cargo_description", "cargo_marks", "package_count", "package_type", "gross_weight_kg",
+        "volume_m3", "hs_code", "carrier_instructions", "carrier_reservations",
+        "special_agreements", "carriage_payer", "documents_attached", "place_of_loading",
+        "place_of_loading_date", "adr_info_json", "cmr_status", "cmr_remarks", "month",
+        "company_id",
+    ]
+    COLUMNS_CMR_COUNTER = ["id", "year", "sequence_number"]
 
     # ── Base CRUD ─────────────────────────────────────────────────────
 
@@ -14,7 +28,8 @@ class TripRepository(BaseRepository):
         import json
         try:
             row = self._fetchone(
-                f"SELECT documents_attached FROM {self.TABLE} WHERE id = ?", (trip_id,)
+                f"SELECT documents_attached FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+                (trip_id,) + self._company_params(),
             )
         except Exception:
             return []
@@ -39,16 +54,19 @@ class TripRepository(BaseRepository):
 
     def get_by_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ?", (trip_id,)
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (trip_id,) + self._company_params(),
         )
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            self._company_params() + (limit, offset),
         )
 
     def create(self, data: Dict[str, Any]) -> int:
+        self._validate_columns(data)
+        data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
@@ -57,10 +75,11 @@ class TripRepository(BaseRepository):
         )
 
     def update(self, trip_id: int, data: Dict[str, Any]) -> None:
+        self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
-            tuple(data.values()) + (trip_id,),
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (trip_id,) + self._company_params(),
         )
 
     def get_next_cmr_sequence(self, year: int) -> tuple[str, int]:
@@ -105,38 +124,41 @@ class TripRepository(BaseRepository):
             return []
         placeholders = ",".join("?" for _ in trip_ids)
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders})",
-            tuple(trip_ids),
+            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()}",
+            tuple(trip_ids) + self._company_params(),
         )
 
     def get_last_activity_by_truck_id(self, truck_id: int) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT MAX(created_at) AS last_activity FROM {self.TABLE} WHERE truck_id = ?",
-            (truck_id,),
+            f"SELECT MAX(created_at) AS last_activity FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()}",
+            (truck_id,) + self._company_params(),
         )
         return row["last_activity"] if row else None
 
     def update_cmr_fields(self, trip_id: int, cmr_number: str, cmr_seq: int) -> None:
         self._execute(
-            f"UPDATE {self.TABLE} SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ?",
-            (cmr_number, cmr_seq, trip_id),
+            f"UPDATE {self.TABLE} SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ? {self._company_filter()}",
+            (cmr_number, cmr_seq, trip_id) + self._company_params(),
         )
 
     def delete(self, trip_id: int) -> None:
-        self._execute(f"DELETE FROM {self.TABLE} WHERE id = ?", (trip_id,))
+        self._execute(
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (trip_id,) + self._company_params(),
+        )
 
     # ── Domain-specific queries ───────────────────────────────────────
 
     def get_by_driver_id(self, driver_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? ORDER BY created_at DESC",
-            (driver_id,),
+            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC",
+            (driver_id,) + self._company_params(),
         )
 
     def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
         """Dynamic filter for trip history with pagination."""
-        query = f"SELECT * FROM {self.TABLE} WHERE 1=1"
-        params: list = []
+        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()}"
+        params: list = list(self._company_params())
         if search:
             query += " AND (client_name LIKE ? OR driver_name LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%"])
@@ -156,33 +178,33 @@ class TripRepository(BaseRepository):
     def get_by_statuses(self, statuses: List[str]) -> List[Dict[str, Any]]:
         placeholders = ", ".join("?" for _ in statuses)
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status IN ({placeholders}) ORDER BY created_at DESC",
-            tuple(statuses),
+            f"SELECT * FROM {self.TABLE} WHERE status IN ({placeholders}) {self._company_filter()} ORDER BY created_at DESC",
+            tuple(statuses) + self._company_params(),
         )
 
     def get_by_date_range(self, start: str, end: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE created_at >= ? AND created_at <= ? ORDER BY created_at DESC",
-            (start, end),
+            f"SELECT * FROM {self.TABLE} WHERE created_at >= ? AND created_at <= ? {self._company_filter()} ORDER BY created_at DESC",
+            (start, end) + self._company_params(),
         )
 
     def get_by_truck_number(self, truck_number: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE truck_number = ? ORDER BY created_at DESC",
-            (truck_number,),
+            f"SELECT * FROM {self.TABLE} WHERE truck_number = ? {self._company_filter()} ORDER BY created_at DESC",
+            (truck_number,) + self._company_params(),
         )
 
     def get_by_truck_id(self, truck_id: int) -> List[Dict[str, Any]]:
         """Return trips for a given truck by canonical FK."""
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? ORDER BY created_at DESC",
-            (truck_id,),
+            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} ORDER BY created_at DESC",
+            (truck_id,) + self._company_params(),
         )
 
     def get_last_activity(self, truck_number: str) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT MAX(created_at) AS last_date FROM {self.TABLE} WHERE truck_number = ?",
-            (truck_number,),
+            f"SELECT MAX(created_at) AS last_date FROM {self.TABLE} WHERE truck_number = ? {self._company_filter()}",
+            (truck_number,) + self._company_params(),
         )
         return row["last_date"] if row else None
 
@@ -201,9 +223,10 @@ class TripRepository(BaseRepository):
                   AND start_date >= ?
                   AND start_date <= ?
                   AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
+                  {self._company_filter()}
                 GROUP BY start_date
                 ORDER BY start_date""",
-            (start, end),
+            (start, end) + self._company_params(),
         )
         return [(r["day"], float(r["profit"] or 0)) for r in rows]
 
@@ -220,10 +243,11 @@ class TripRepository(BaseRepository):
                    AND tr.start_date >= ?
                    AND tr.start_date <= ?
                    AND LOWER(tr.status) IN ('delivered', 'completed', 'done', 'paid')
+                   {self._company_filter("tr")}
                  GROUP BY COALESCE(tr.truck_id, tr.truck_number)
                  ORDER BY revenue DESC
                  LIMIT ?""",
-            (month_start, month_end, limit),
+            (month_start, month_end, limit) + self._company_params(),
         )
 
     # ── Document Automation matchers ─────────────────────────────────────
@@ -234,8 +258,9 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             "WHERE cmr_number IS NOT NULL AND TRIM(cmr_number) != '' "
             "AND LOWER(TRIM(cmr_number)) = LOWER(TRIM(?)) "
+            f"{self._company_filter()} "
             "ORDER BY id DESC",
-            (cmr_number,),
+            (cmr_number,) + self._company_params(),
         )
 
     def get_by_invoice_via_trip_invoice(self, invoice_number: str) -> List[Dict[str, Any]]:
@@ -244,8 +269,9 @@ class TripRepository(BaseRepository):
             f"""SELECT t.* FROM {self.TABLE} t
                  JOIN invoices i ON i.trip_id = t.id
                  WHERE LOWER(TRIM(i.invoice_number)) = LOWER(TRIM(?))
+                 {self._company_filter("t")}
                  ORDER BY t.id DESC""",
-            (invoice_number,),
+            (invoice_number,) + self._company_params(),
         )
 
     def get_by_truck_plate(self, plate: str) -> List[Dict[str, Any]]:
@@ -253,11 +279,12 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"""SELECT tr.* FROM {self.TABLE} tr
                  LEFT JOIN trucks t ON tr.truck_id = t.id
-                 WHERE LOWER(TRIM(COALESCE(tr.truck_number, ''))) = LOWER(TRIM(?))
-                    OR LOWER(TRIM(COALESCE(t.plate_number, ''))) = LOWER(TRIM(?))
+                 WHERE (LOWER(TRIM(COALESCE(tr.truck_number, ''))) = LOWER(TRIM(?))
+                     OR LOWER(TRIM(COALESCE(t.plate_number, ''))) = LOWER(TRIM(?)))
+                 {self._company_filter("tr")}
                  ORDER BY tr.id DESC
                  LIMIT 20""",
-            (plate, plate),
+            (plate, plate) + self._company_params(),
         )
 
     def get_by_driver_name(self, driver_name: str) -> List[Dict[str, Any]]:
@@ -266,8 +293,9 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             "WHERE driver_name IS NOT NULL AND TRIM(driver_name) != '' "
             "AND LOWER(driver_name) LIKE LOWER(?) "
+            f"{self._company_filter()} "
             "ORDER BY id DESC LIMIT 20",
-            (f"%{driver_name.strip()}%",),
+            (f"%{driver_name.strip()}%",) + self._company_params(),
         )
 
     def get_active_excluding_statuses(
@@ -277,10 +305,11 @@ class TripRepository(BaseRepository):
         placeholders = ", ".join("?" for _ in exclude_statuses)
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
-            f"WHERE status NOT IN ({placeholders}) "
-            f"OR status IS NULL OR status = '' "
+            f"WHERE (status NOT IN ({placeholders}) "
+            f"OR status IS NULL OR status = '') "
+            f"{self._company_filter()} "
             f"ORDER BY created_at DESC LIMIT ?",
-            tuple(exclude_statuses) + (limit,),
+            tuple(exclude_statuses) + (limit,) + self._company_params(),
         )
 
     def get_active_for_truck(
@@ -304,8 +333,9 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             f"WHERE {where} AND (status NOT IN ({placeholders}) OR status IS NULL OR status = '') "
+            f"{self._company_filter()} "
             f"ORDER BY created_at DESC LIMIT ?",
-            tuple(params) + tuple(statuses) + (limit,),
+            tuple(params) + tuple(statuses) + self._company_params() + (limit,),
         )
 
     def get_active_for_driver(
@@ -318,8 +348,9 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             f"WHERE driver_id = ? AND (status NOT IN ({placeholders}) OR status IS NULL OR status = '') "
+            f"{self._company_filter()} "
             f"ORDER BY created_at DESC LIMIT ?",
-            (driver_id,) + tuple(statuses) + (limit,),
+            (driver_id,) + tuple(statuses) + self._company_params() + (limit,),
         )
 
     def get_latest_eta_for_truck(
@@ -339,10 +370,11 @@ class TripRepository(BaseRepository):
         where_truck = f"({' OR '.join(conditions)})"
         row = self._fetchone(
             f"SELECT MAX(end_date) AS latest_end FROM {self.TABLE} "
-            f"WHERE {where_truck} AND "
+            f"WHERE ({where_truck}) AND "
             f"(status NOT IN ('Delivered','Completed','Done','Cancelled','Paid') "
-            f"OR status IS NULL OR status = '')",
-            tuple(params),
+            f"OR status IS NULL OR status = '') "
+            f"{self._company_filter()}",
+            tuple(params) + self._company_params(),
         )
         return row["latest_end"] if row and row["latest_end"] else None
 
@@ -354,8 +386,9 @@ class TripRepository(BaseRepository):
             f"SELECT MAX(end_date) AS latest_end FROM {self.TABLE} "
             f"WHERE driver_id = ? AND "
             f"(status NOT IN ('Delivered','Completed','Done','Cancelled','Paid') "
-            f"OR status IS NULL OR status = '')",
-            (driver_id,),
+            f"OR status IS NULL OR status = '') "
+            f"{self._company_filter()}",
+            (driver_id,) + self._company_params(),
         )
         return row["latest_end"] if row and row["latest_end"] else None
 
@@ -371,8 +404,9 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
+            f"{self._company_filter()} "
             "ORDER BY id DESC LIMIT ?",
-            (start, end, limit),
+            (start, end) + self._company_params() + (limit,),
         )
 
     def get_trips_by_date_proximity(
@@ -392,8 +426,9 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
+            f"{self._company_filter()} "
             "ORDER BY ABS(JULIANDAY(start_date) - JULIANDAY(?)) ASC LIMIT ?",
-            (start, end, target_date, limit),
+            (start, end) + self._company_params() + (target_date, limit),
         )
 
     def get_by_client_name_fuzzy(
@@ -409,6 +444,7 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             "WHERE client_name IS NOT NULL AND TRIM(client_name) != '' "
             "AND LOWER(client_name) LIKE LOWER(?) "
+            f"{self._company_filter()} "
             "ORDER BY id DESC LIMIT ?",
-            (f"%{q}%", limit),
+            (f"%{q}%",) + self._company_params() + (limit,),
         )

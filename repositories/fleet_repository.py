@@ -15,21 +15,37 @@ class FleetRepository(BaseRepository):
         "tachograph_expiry", "active_status", "tracking_device_id",
         "trailer_plate", "max_payload_kg", "cmr_insurance_number", "cmr_insurance_expiry",
     ]
+    COLUMNS_MAINT_RECORDS = [
+        "id", "truck_id", "maintenance_type", "date", "km", "cost", "notes",
+        "service_provider", "attachment_path", "created_at", "company_id",
+    ]
+    COLUMNS_MAINT_SCHEDULES = [
+        "id", "truck_id", "maintenance_type", "interval_km", "interval_months",
+        "fixed_expiry_date", "last_done_km", "last_done_date", "active",
+        "created_at", "company_id",
+    ]
+    COLUMNS_HEALTH_SCORES = [
+        "id", "truck_id", "score", "compliance_pct", "overdue_count",
+        "recurring_issues", "downtime_days", "last_updated", "company_id",
+    ]
 
     # ── Truck CRUD ───────────────────────────────────────────────────
 
     def get_by_id(self, truck_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ?", (truck_id,)
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (truck_id,) + self._company_params(),
         )
 
     def get_all(self, limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} ORDER BY plate_number ASC LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY plate_number ASC LIMIT ? OFFSET ?",
+            self._company_params() + (limit, offset),
         )
 
     def create(self, data: Dict[str, Any]) -> int:
+        self._validate_columns(data)
+        data = self._set_company_from_context(data)
         filtered = {k: v for k, v in data.items() if k != "id"}
         cols = ", ".join(filtered.keys())
         vals = ", ".join("?" for _ in filtered)
@@ -39,89 +55,103 @@ class FleetRepository(BaseRepository):
         )
 
     def update(self, truck_id: int, data: Dict[str, Any]) -> None:
+        self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
-            tuple(data.values()) + (truck_id,),
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (truck_id,) + self._company_params(),
         )
 
     def delete(self, truck_id: int) -> None:
-        self._execute(f"DELETE FROM {self.TABLE} WHERE id = ?", (truck_id,))
+        self._execute(
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (truck_id,) + self._company_params(),
+        )
 
     # ── Truck domain queries ─────────────────────────────────────────
 
     def get_by_status(self, status: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status = ? ORDER BY plate_number ASC",
-            (status,),
+            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} ORDER BY plate_number ASC",
+            (status,) + self._company_params(),
         )
 
     def get_maintenance_records_with_attachments(self) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT id, truck_id, maintenance_type, date, attachment_path "
             f"FROM {self.TABLE_MAINT_RECORDS} "
-            f"WHERE attachment_path IS NOT NULL AND attachment_path != ''"
+            f"WHERE attachment_path IS NOT NULL AND attachment_path != '' {self._company_filter()}",
+            self._company_params(),
         )
 
     def get_active_trucks(self) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE active_status = 1 ORDER BY plate_number ASC"
+            f"SELECT * FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()} ORDER BY plate_number ASC",
+            self._company_params(),
         )
 
     def get_by_plate(self, plate: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE plate_number = ?", (plate,)
+            f"SELECT * FROM {self.TABLE} WHERE plate_number = ? {self._company_filter()}",
+            (plate,) + self._company_params(),
         )
 
     def get_by_vin(self, vin: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE vin = ?", (vin,)
+            f"SELECT * FROM {self.TABLE} WHERE vin = ? {self._company_filter()}",
+            (vin,) + self._company_params(),
         )
 
     def get_by_tracking_device_id(self, device_id: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE tracking_device_id = ?", (device_id,)
+            f"SELECT * FROM {self.TABLE} WHERE tracking_device_id = ? {self._company_filter()}",
+            (device_id,) + self._company_params(),
         )
 
     def update_fields(self, truck_id: int, fields: Dict[str, Any]) -> None:
+        self._validate_columns(fields)
         sets = ", ".join(f"{k} = ?" for k in fields)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
-            tuple(fields.values()) + (truck_id,),
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(fields.values()) + (truck_id,) + self._company_params(),
         )
 
     def get_by_driver_id(self, driver_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT DISTINCT t.* FROM {self.TABLE} t
                 JOIN trips tr ON tr.truck_id = t.id
-                WHERE tr.driver_id = ?
+                WHERE tr.driver_id = ? {self._company_filter("t")}
                 ORDER BY t.plate_number ASC""",
-            (driver_id,),
+            (driver_id,) + self._company_params(),
         )
 
     def count_active(self) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE active_status = 1"
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()}",
+            self._company_params(),
         )
         return row["cnt"] if row else 0
 
     def get_truck_mileage(self, truck_id: int) -> Optional[float]:
         row = self._fetchone(
-            f"SELECT mileage FROM {self.TABLE} WHERE id = ?", (truck_id,)
+            f"SELECT mileage FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (truck_id,) + self._company_params(),
         )
         return float(row["mileage"]) if row and row.get("mileage") is not None else None
 
     def get_active_truck_ids(self) -> List[int]:
         rows = self._fetchall(
-            f"SELECT id FROM {self.TABLE} WHERE active_status = 1"
+            f"SELECT id FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()}",
+            self._company_params(),
         )
         return [r["id"] for r in rows]
 
     def get_expiring_insurance(self, days_ahead: int = 30) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE insurance_expiry IS NOT NULL AND insurance_expiry != ''"
-            " AND insurance_expiry <= date('now', '+' || ? || ' days')",
-            (days_ahead,),
+            " AND insurance_expiry <= date('now', '+' || ? || ' days')"
+            f" {self._company_filter()}",
+            (days_ahead,) + self._company_params(),
         )
 
     # ── Maintenance Records CRUD ─────────────────────────────────────
@@ -132,11 +162,24 @@ class FleetRepository(BaseRepository):
         notes: str = "", provider: str = "", attachment: str = "",
         created_at: str = "",
     ) -> int:
+        data = {
+            "truck_id": truck_id,
+            "maintenance_type": maint_type,
+            "date": date,
+            "km": km,
+            "cost": cost,
+            "notes": notes,
+            "service_provider": provider,
+            "attachment_path": attachment,
+            "created_at": created_at,
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_MAINT_RECORDS))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         return self._execute_insert(
-            f"INSERT INTO {self.TABLE_MAINT_RECORDS} "
-            f"(truck_id, maintenance_type, date, km, cost, notes, service_provider, attachment_path, created_at) "
-            f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-            (truck_id, maint_type, date, km, cost, notes, provider, attachment, created_at),
+            f"INSERT INTO {self.TABLE_MAINT_RECORDS} ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def get_maintenance_records(
@@ -151,10 +194,10 @@ class FleetRepository(BaseRepository):
         if maint_type:
             conditions.append("maintenance_type = ?")
             params.append(maint_type)
-        where = f"WHERE {' AND '.join(conditions)} " if conditions else ""
+        where = f"WHERE {' AND '.join(conditions)} " if conditions else "WHERE 1=1 "
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE_MAINT_RECORDS} {where}ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
-            tuple(params) + (limit, offset),
+            f"SELECT * FROM {self.TABLE_MAINT_RECORDS} {where}{self._company_filter()} ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            tuple(params) + self._company_params() + (limit, offset),
         )
 
     def count_maintenance_records(
@@ -172,17 +215,17 @@ class FleetRepository(BaseRepository):
         if since_date:
             conditions.append("date >= ?")
             params.append(since_date)
-        where = f"WHERE {' AND '.join(conditions)} " if conditions else ""
+        where = f"WHERE {' AND '.join(conditions)} " if conditions else "WHERE 1=1 "
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_RECORDS} {where}",
-            tuple(params),
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_RECORDS} {where}{self._company_filter()}",
+            tuple(params) + self._company_params(),
         )
         return row["cnt"] if row else 0
 
     def get_maintenance_record_truck_id(self, record_id: int) -> Optional[int]:
         row = self._fetchone(
-            f"SELECT truck_id FROM {self.TABLE_MAINT_RECORDS} WHERE id = ?",
-            (record_id,),
+            f"SELECT truck_id FROM {self.TABLE_MAINT_RECORDS} WHERE id = ? {self._company_filter()}",
+            (record_id,) + self._company_params(),
         )
         return row["truck_id"] if row else None
 
@@ -191,53 +234,65 @@ class FleetRepository(BaseRepository):
         km: Optional[float] = None, cost: Optional[float] = None,
         provider: str = "", notes: str = "",
     ) -> None:
+        data = {
+            "maintenance_type": maint_type,
+            "date": date,
+            "km": km,
+            "cost": cost,
+            "service_provider": provider,
+            "notes": notes,
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_MAINT_RECORDS))
         self._execute(
-            f"UPDATE {self.TABLE_MAINT_RECORDS} SET maintenance_type=?, date=?, km=?, cost=?, service_provider=?, notes=? WHERE id=?",
-            (maint_type, date, km, cost, provider, notes, record_id),
+            f"UPDATE {self.TABLE_MAINT_RECORDS} SET maintenance_type=?, date=?, km=?, cost=?, service_provider=?, notes=? WHERE id=? {self._company_filter()}",
+            (maint_type, date, km, cost, provider, notes, record_id) + self._company_params(),
         )
 
     def delete_maintenance_record(self, record_id: int) -> None:
         self._execute(
-            f"DELETE FROM {self.TABLE_MAINT_RECORDS} WHERE id = ?", (record_id,)
+            f"DELETE FROM {self.TABLE_MAINT_RECORDS} WHERE id = ? {self._company_filter()}",
+            (record_id,) + self._company_params(),
         )
 
     def get_maintenance_type_counts(self, truck_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT maintenance_type, COUNT(*) as cnt FROM {self.TABLE_MAINT_RECORDS} "
-            f"WHERE truck_id = ? GROUP BY maintenance_type HAVING cnt >= 3",
-            (truck_id,),
+            f"WHERE truck_id = ? {self._company_filter()} GROUP BY maintenance_type HAVING cnt >= 3",
+            (truck_id,) + self._company_params(),
         )
 
     def get_maintenance_last_date(self, truck_id: int) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT date FROM {self.TABLE_MAINT_RECORDS} WHERE truck_id = ? ORDER BY date DESC LIMIT 1",
-            (truck_id,),
+            f"SELECT date FROM {self.TABLE_MAINT_RECORDS} WHERE truck_id = ? {self._company_filter()} ORDER BY date DESC LIMIT 1",
+            (truck_id,) + self._company_params(),
         )
         return row["date"] if row else None
 
     def sum_maintenance_cost(self, since_date: Optional[str] = None) -> float:
-        query = f"SELECT COALESCE(SUM(cost), 0) AS total FROM {self.TABLE_MAINT_RECORDS}"
-        params = ()
+        query = f"SELECT COALESCE(SUM(cost), 0) AS total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()}"
+        params = list(self._company_params())
         if since_date:
-            query += " WHERE date >= ?"
-            params = (since_date,)
-        row = self._fetchone(query, params)
+            query += " AND date >= ?"
+            params.append(since_date)
+        row = self._fetchone(query, tuple(params))
         return float(row["total"]) if row else 0.0
 
     def get_maintenance_cost_by_type(self) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT maintenance_type, SUM(cost) as total FROM {self.TABLE_MAINT_RECORDS} GROUP BY maintenance_type ORDER BY total DESC"
+            f"SELECT maintenance_type, SUM(cost) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY maintenance_type ORDER BY total DESC",
+            self._company_params(),
         )
 
     def get_maintenance_count_by_type(self) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT maintenance_type, COUNT(*) as cnt FROM {self.TABLE_MAINT_RECORDS} GROUP BY maintenance_type ORDER BY cnt DESC"
+            f"SELECT maintenance_type, COUNT(*) as cnt FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY maintenance_type ORDER BY cnt DESC",
+            self._company_params(),
         )
 
     def get_top_maintained_trucks(self, limit: int = 5) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT truck_id, COALESCE(SUM(cost), 0) as total FROM {self.TABLE_MAINT_RECORDS} GROUP BY truck_id ORDER BY total LIMIT ?",
-            (limit,),
+            f"SELECT truck_id, COALESCE(SUM(cost), 0) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY truck_id ORDER BY total LIMIT ?",
+            self._company_params() + (limit,),
         )
 
     # ── Maintenance Schedules CRUD ───────────────────────────────────
@@ -248,51 +303,68 @@ class FleetRepository(BaseRepository):
         fixed_expiry_date: str = "", last_done_km: Optional[float] = None,
         last_done_date: str = "", created_at: str = "",
     ) -> int:
+        data = {
+            "truck_id": truck_id,
+            "maintenance_type": maint_type,
+            "interval_km": interval_km,
+            "interval_months": interval_months,
+            "fixed_expiry_date": fixed_expiry_date,
+            "last_done_km": last_done_km,
+            "last_done_date": last_done_date,
+            "active": 1,
+            "created_at": created_at,
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_MAINT_SCHEDULES))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         return self._execute_insert(
-            f"INSERT INTO {self.TABLE_MAINT_SCHEDULES} "
-            f"(truck_id, maintenance_type, interval_km, interval_months, fixed_expiry_date, last_done_km, last_done_date, active, created_at) "
-            f"VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)",
-            (truck_id, maint_type, interval_km, interval_months, fixed_expiry_date, last_done_km, last_done_date, created_at),
+            f"INSERT INTO {self.TABLE_MAINT_SCHEDULES} ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def get_maintenance_schedules(self, truck_id: Optional[int] = None) -> List[Dict[str, Any]]:
         if truck_id is not None:
             return self._fetchall(
-                f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND active = 1 ORDER BY id",
-                (truck_id,),
+                f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND active = 1 {self._company_filter()} ORDER BY id",
+                (truck_id,) + self._company_params(),
             )
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1 ORDER BY truck_id, id"
+            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1 {self._company_filter()} ORDER BY truck_id, id",
+            self._company_params(),
         )
 
     def get_maintenance_schedule(self, truck_id: int, maint_type: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND maintenance_type = ? AND active = 1",
-            (truck_id, maint_type),
+            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND maintenance_type = ? AND active = 1 {self._company_filter()}",
+            (truck_id, maint_type) + self._company_params(),
         )
 
     def get_schedule_truck_id(self, schedule_id: int) -> Optional[int]:
         row = self._fetchone(
-            f"SELECT truck_id FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ?",
-            (schedule_id,),
+            f"SELECT truck_id FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ? {self._company_filter()}",
+            (schedule_id,) + self._company_params(),
         )
         return row["truck_id"] if row else None
 
     def update_maintenance_schedule(self, schedule_id: int, **fields: Any) -> None:
+        self._validate_columns(fields, extra_allowed=set(self.COLUMNS_MAINT_SCHEDULES))
         sets = ", ".join(f"{k} = ?" for k in fields)
         self._execute(
-            f"UPDATE {self.TABLE_MAINT_SCHEDULES} SET {sets} WHERE id = ?",
-            tuple(fields.values()) + (schedule_id,),
+            f"UPDATE {self.TABLE_MAINT_SCHEDULES} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(fields.values()) + (schedule_id,) + self._company_params(),
         )
 
     def delete_maintenance_schedule(self, schedule_id: int) -> None:
         self._execute(
-            f"DELETE FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ?", (schedule_id,)
+            f"DELETE FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ? {self._company_filter()}",
+            (schedule_id,) + self._company_params(),
         )
 
     def count_active_maintenance_schedules(self) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1"
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1 {self._company_filter()}",
+            self._company_params(),
         )
         return row["cnt"] if row else 0
 
@@ -302,8 +374,9 @@ class FleetRepository(BaseRepository):
             f"""SELECT s.*, t.plate_number, t.mileage AS current_km
                 FROM {self.TABLE_MAINT_SCHEDULES} s
                 LEFT JOIN trucks t ON t.id = s.truck_id
-                WHERE s.active = 1
-                ORDER BY s.truck_id, s.maintenance_type"""
+                WHERE s.active = 1 {self._company_filter("s")}
+                ORDER BY s.truck_id, s.maintenance_type""",
+            self._company_params(),
         )
 
     # ── Analytics Queries ────────────────────────────────────────────
@@ -314,10 +387,10 @@ class FleetRepository(BaseRepository):
                        substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY truck_id, ym
                 ORDER BY ym, truck_id""",
-            (since,),
+            (since,) + self._company_params(),
         )
 
     def get_maintenance_cost_monthly(self, since: str) -> List[Dict[str, Any]]:
@@ -325,10 +398,10 @@ class FleetRepository(BaseRepository):
             f"""SELECT substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY ym
                 ORDER BY ym""",
-            (since,),
+            (since,) + self._company_params(),
         )
 
     def get_maintenance_truck_summary(self, since: str) -> List[Dict[str, Any]]:
@@ -338,20 +411,20 @@ class FleetRepository(BaseRepository):
                        COALESCE(AVG(cost), 0) AS avg_cost,
                        COUNT(*) AS service_count
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY truck_id
                 ORDER BY total_ytd DESC""",
-            (since,),
+            (since,) + self._company_params(),
         )
 
     def get_maintenance_most_expensive_category(self, since: str) -> List[Dict[str, Any]]:
         rows = self._fetchall(
             f"""SELECT truck_id, maintenance_type, COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY truck_id, maintenance_type
                 ORDER BY truck_id, total DESC""",
-            (since,),
+            (since,) + self._company_params(),
         )
         seen = set()
         result = []
@@ -368,18 +441,32 @@ class FleetRepository(BaseRepository):
         overdue_count: int, recurring_issues: int,
         downtime_days: int, last_updated: str,
     ) -> None:
+        data = {
+            "truck_id": truck_id,
+            "score": score,
+            "compliance_pct": compliance_pct,
+            "overdue_count": overdue_count,
+            "recurring_issues": recurring_issues,
+            "downtime_days": downtime_days,
+            "last_updated": last_updated,
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_HEALTH_SCORES))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            f"INSERT OR REPLACE INTO {self.TABLE_HEALTH_SCORES} "
-            f"(truck_id, score, compliance_pct, overdue_count, recurring_issues, downtime_days, last_updated) "
-            f"VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (truck_id, score, compliance_pct, overdue_count, recurring_issues, downtime_days, last_updated),
+            f"INSERT OR REPLACE INTO {self.TABLE_HEALTH_SCORES} ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def get_truck_health(self, truck_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE_HEALTH_SCORES} WHERE truck_id = ?",
-            (truck_id,),
+            f"SELECT * FROM {self.TABLE_HEALTH_SCORES} WHERE truck_id = ? {self._company_filter()}",
+            (truck_id,) + self._company_params(),
         )
 
     def get_all_truck_health(self) -> List[Dict[str, Any]]:
-        return self._fetchall(f"SELECT * FROM {self.TABLE_HEALTH_SCORES}")
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE_HEALTH_SCORES} WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
+        )

@@ -11,12 +11,16 @@ import contextlib
 import logging
 import threading
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import QTimer, Qt, Signal
+from PySide6.QtGui import QDragEnterEvent, QDropEvent, QColor
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
+    QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -27,16 +31,28 @@ from ui.components import (
     Btn,
     Card,
     CardHeader,
+    EmptyState,
     Label,
     PageTitle,
+    StatusBadge,
 )
 from ui.design_tokens import (
+    COLOR_BG_ELEVATED,
+    COLOR_BORDER_MEDIUM,
+    COLOR_BORDER_SUBTLE,
+    COLOR_INFO_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY,
     DANGER_TEXT,
+    FONT_SIZE_BASE,
+    FONT_WEIGHT_MEDIUM,
     SP,
     SUCCESS_TEXT,
     WARNING_DIM,
     WARNING_TEXT,
 )
+
 from ui.widgets import StyledTableWidget
 
 logger = logging.getLogger(__name__)
@@ -123,22 +139,55 @@ class QtTachoImportView(QWidget):
 
         CardHeader(card_layout, t("tacho.import_card_title"))
 
-        # How-it-works info box
-        info = QFrame()
-        info.setProperty("role", "info-box")
-        info.setFrameShape(QFrame.StyledPanel)
-        info_layout = QVBoxLayout(info)
-        info_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
-        info_layout.setSpacing(SP["1"])
+        # Drop zone
+        self._drop_zone = QFrame()
+        self._drop_zone.setAcceptDrops(True)
+        self._drop_zone.setMinimumHeight(140)
+        self._drop_zone.setStyleSheet(
+            f"QFrame{{"
+            f"  background: {COLOR_BG_ELEVATED};"
+            f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
+            f"  border-radius: 8px;"
+            f"}}"
+            f"QFrame:hover{{"
+            f"  border-color: {COLOR_INFO_DEFAULT};"
+            f"}}"
+        )
+        drop_layout = QVBoxLayout(self._drop_zone)
+        drop_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        drop_layout.setSpacing(SP["2"])
+        drop_layout.setAlignment(Qt.AlignCenter)
 
-        info_title = Label(None, t("tacho.how_it_works"), role="section-title")
-        info_layout.addWidget(info_title)
+        drop_icon = QLabel("\u2B06")  # up arrow
+        drop_icon.setAlignment(Qt.AlignCenter)
+        drop_icon.setStyleSheet(f"font-size: 28px; color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;")
+        drop_layout.addWidget(drop_icon)
 
+        drop_hint = QLabel(t("tacho.drop_hint", "Trage\u021Bi fi\u0219ierele aici sau ap\u0103sa\u021Bi pentru a selecta"))
+        drop_hint.setAlignment(Qt.AlignCenter)
+        drop_hint.setStyleSheet(
+            f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
+            f"color: {COLOR_TEXT_SECONDARY}; background: transparent; border: none;"
+        )
+        drop_layout.addWidget(drop_hint)
+
+        drop_sub = QLabel(t("tacho.drop_supported", "DDD / TGD / alte fi\u0219iere tahograf"))
+        drop_sub.setAlignment(Qt.AlignCenter)
+        drop_sub.setStyleSheet(
+            f"font-size: 11px; color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;"
+        )
+        drop_layout.addWidget(drop_sub)
+
+        # Click to select
+        self._drop_zone.mousePressEvent = lambda e: self._browse_and_import()
+
+        card_layout.addWidget(self._drop_zone)
+
+        # How-it-works steps (compact)
         steps = Label(None, t("tacho.import_steps"), role="muted")
         steps.setWordWrap(True)
-        info_layout.addWidget(steps)
-
-        card_layout.addWidget(info)
+        steps.setStyleSheet(f"padding: {SP['2']}px; color: {COLOR_TEXT_TERTIARY};")
+        card_layout.addWidget(steps)
 
         # Import buttons
         self._btn_driver = Btn(
@@ -155,6 +204,14 @@ class QtTachoImportView(QWidget):
             variant="secondary",
             command=self._import_vehicle_unit,
         )
+        self._btn_vehicle.setStyleSheet(
+            f"QPushButton{{"
+            f"  border: 1px solid {COLOR_BORDER_SUBTLE};"
+            f"}}"
+            f"QPushButton:hover{{"
+            f"  border-color: {COLOR_INFO_DEFAULT};"
+            f"}}"
+        )
         card_layout.addWidget(self._btn_vehicle)
 
         # Progress label (hidden initially)
@@ -163,6 +220,55 @@ class QtTachoImportView(QWidget):
         card_layout.addWidget(self._progress_lbl)
 
         layout.addWidget(card)
+
+    def _browse_and_import(self):
+        file_path, _ = QFileDialog.getOpenFileName(
+            self,
+            t("tacho.select_file", "Selecteaz\u0103 fi\u0219ier tahograf"),
+            "",
+            "Tachograph files (*.ddd *.DDD *.tgd *.TGD);;All files (*.*)",
+        )
+        if file_path:
+            self._run_import(file_path)
+
+    def dragEnterEvent(self, event: QDragEnterEvent):
+        if event.mimeData().hasUrls():
+            event.acceptProposedAction()
+            self._drop_zone.setStyleSheet(
+                f"QFrame{{"
+                f"  background: {COLOR_BG_ELEVATED};"
+                f"  border: 1px dashed {COLOR_INFO_DEFAULT};"
+                f"  border-radius: 8px;"
+                f"}}"
+            )
+
+    def dragLeaveEvent(self, event):
+        self._drop_zone.setStyleSheet(
+            f"QFrame{{"
+            f"  background: {COLOR_BG_ELEVATED};"
+            f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
+            f"  border-radius: 8px;"
+            f"}}"
+            f"QFrame:hover{{"
+            f"  border-color: {COLOR_INFO_DEFAULT};"
+            f"}}"
+        )
+
+    def dropEvent(self, event: QDropEvent):
+        self._drop_zone.setStyleSheet(
+            f"QFrame{{"
+            f"  background: {COLOR_BG_ELEVATED};"
+            f"  border: 1px dashed {COLOR_BORDER_MEDIUM};"
+            f"  border-radius: 8px;"
+            f"}}"
+            f"QFrame:hover{{"
+            f"  border-color: {COLOR_INFO_DEFAULT};"
+            f"}}"
+        )
+        for url in event.mimeData().urls():
+            path = url.toLocalFile()
+            if path:
+                self._run_import(path)
 
     def _build_result_card(self, layout: QVBoxLayout):
         self._result_card = Card(None)
@@ -204,8 +310,8 @@ class QtTachoImportView(QWidget):
     # ── Right panel ──────────────────────────────────────────────────────────
 
     def _build_history_table(self, parent: QWidget, layout: QVBoxLayout):
-        card = Card(None)
-        CardHeader(card.layout(), t("tacho.import_history"))
+        self._history_card = Card(None)
+        CardHeader(self._history_card.layout(), t("tacho.import_history"))
 
         self._history_table = StyledTableWidget(
             parent,
@@ -217,8 +323,26 @@ class QtTachoImportView(QWidget):
                 ("parse_status", t("tacho.hdr_status"), 70),
             ],
         )
-        card.layout().addWidget(self._history_table, 1)
-        layout.addWidget(card, 1)
+        self._history_table.setMinimumHeight(120)
+        self._history_table.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Preferred
+        )
+        # Formatter for status: raw key → colored display text
+        self._history_table._formatters["parse_status"] = self._format_status
+        self._history_table.set_data([])
+
+        self._history_table_container = QStackedWidget()
+        self._history_table_container.addWidget(self._history_table)
+
+        self._history_empty = EmptyState(
+            icon_name="mdi6.file-import-outline",
+            title=t("tacho.history_empty_title", "Niciun import"),
+            subtitle=t("tacho.history_empty_subtitle", "Importa\u021Bi un fi\u0219ier tahograf pentru a vedea istoricul"),
+        )
+        self._history_table_container.addWidget(self._history_empty)
+
+        self._history_card.layout().addWidget(self._history_table_container, 1)
+        layout.addWidget(self._history_card, 1)
 
     # ── History ──────────────────────────────────────────────────────────────
 
@@ -235,6 +359,46 @@ class QtTachoImportView(QWidget):
 
         rows = [self._format_history_row(imp) for imp in imports]
         self._history_table.set_data(rows)
+
+        if not rows:
+            self._history_table_container.setCurrentWidget(self._history_empty)
+        else:
+            self._history_table_container.setCurrentWidget(self._history_table)
+            self._add_table_tooltips()
+            self._color_status_column()
+
+    def _add_table_tooltips(self):
+        for r in range(self._history_table.rowCount()):
+            for c in range(self._history_table.columnCount()):
+                item = self._history_table.item(r, c)
+                if item is None:
+                    continue
+                cid = self._history_table._column_ids[c]
+                raw = self._history_table._data[r].get(cid, "")
+                full = self._history_table._data[r].get(f"{cid}_raw", item.text())
+                if len(str(item.text())) >= 15 or cid in ("file_name", "file_type"):
+                    item.setToolTip(str(full))
+                if cid == "file_name" and len(str(full)) > 12:
+                    text = str(full)
+                    mid = len(text) // 2
+                    item.setText(text[:mid] + "..." + text[-mid:])
+
+    def _color_status_column(self):
+        status_col = self._history_table._column_ids.index("parse_status")
+        for r, row_data in enumerate(self._history_table._data):
+            raw = row_data.get("parse_status_raw", "ok")
+            color_map = {
+                "ok": SUCCESS_TEXT,
+                "error": DANGER_TEXT,
+                "partial": WARNING_TEXT,
+            }
+            color = color_map.get(raw, COLOR_TEXT_PRIMARY)
+            item = self._history_table.item(r, status_col)
+            if item:
+                item.setForeground(QColor(color))
+
+    def _format_status(self, value: str) -> str:
+        return value
 
     @staticmethod
     def _format_history_row(imp: dict) -> dict:
@@ -254,7 +418,7 @@ class QtTachoImportView(QWidget):
         else:
             type_label = ftype
 
-        # Translate status
+        # Translate status — preserve raw key for badge coloring
         status = imp.get("parse_status", "ok")
         status_map = {
             "ok": t("tacho.status_ok"),
@@ -264,12 +428,16 @@ class QtTachoImportView(QWidget):
         status_label = status_map.get(status, status)
 
         records = imp.get("records_imported", "")
+        file_name = imp.get("file_name", "—")
         return {
             "imported_at": date_str,
             "file_type": type_label,
-            "file_name": imp.get("file_name", "—"),
+            "file_type_raw": ftype,
+            "file_name": file_name,
+            "file_name_raw": file_name,
             "records_imported": str(records) if records else "",
             "parse_status": status_label,
+            "parse_status_raw": status,
         }
 
     # ── Import actions ───────────────────────────────────────────────────────

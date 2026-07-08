@@ -28,56 +28,41 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.design_tokens import (
     COLOR_BG_ELEVATED,
+    COLOR_BG_OVERLAY,
     COLOR_BORDER_SUBTLE,
     COLOR_TEXT_TERTIARY,
-    SPACE_10,
-    SPACE_4,
-    SPACE_5,
 )
 from ui.components import PageTitle
 
 logger = logging.getLogger(__name__)
 
-# Lazy panel imports — panels may not exist yet during scaffold phase
-_CONFIG_PANEL = None
-_TIMELINE_PANEL = None
-_EDITOR_PANEL = None
-
-
+# Lazy panel imports — retry on every call so transient import errors
+# (e.g. during scaffold phase) don't permanently kill the panel.
 def _import_config_panel():
-    global _CONFIG_PANEL
-    if _CONFIG_PANEL is None:
-        try:
-            from ui.views.automail.config_panel import ConfigPanel
-            _CONFIG_PANEL = ConfigPanel
-        except Exception:
-            logger.debug("ConfigPanel not available yet")
-            _CONFIG_PANEL = False
-    return _CONFIG_PANEL if _CONFIG_PANEL is not False else None
+    try:
+        from ui.views.automail.config_panel import ConfigPanel
+        return ConfigPanel
+    except Exception:
+        logger.debug("ConfigPanel not available yet, will retry")
+        return None
 
 
 def _import_timeline_panel():
-    global _TIMELINE_PANEL
-    if _TIMELINE_PANEL is None:
-        try:
-            from ui.views.automail.timeline_panel import TimelinePanel
-            _TIMELINE_PANEL = TimelinePanel
-        except Exception:
-            logger.debug("TimelinePanel not available yet")
-            _TIMELINE_PANEL = False
-    return _TIMELINE_PANEL if _TIMELINE_PANEL is not False else None
+    try:
+        from ui.views.automail.timeline_panel import TimelinePanel
+        return TimelinePanel
+    except Exception:
+        logger.debug("TimelinePanel not available yet, will retry")
+        return None
 
 
 def _import_editor_panel():
-    global _EDITOR_PANEL
-    if _EDITOR_PANEL is None:
-        try:
-            from ui.views.automail.editor_panel import EditorPanel
-            _EDITOR_PANEL = EditorPanel
-        except Exception:
-            logger.debug("EditorPanel not available yet")
-            _EDITOR_PANEL = False
-    return _EDITOR_PANEL if _EDITOR_PANEL is not False else None
+    try:
+        from ui.views.automail.editor_panel import EditorPanel
+        return EditorPanel
+    except Exception:
+        logger.debug("EditorPanel not available yet, will retry")
+        return None
 
 
 class _PlaceholderPanel(QFrame):
@@ -87,15 +72,15 @@ class _PlaceholderPanel(QFrame):
         super().__init__(parent)
         self.setProperty("role", "automail-placeholder")
         self.setStyleSheet(
-            f"background: {COLOR_BG_ELEVATED}; "
-            f"border: 1px dashed {COLOR_BORDER_SUBTLE}; "
+            f"background: {COLOR_BG_OVERLAY}; "
+            f"border: 1px solid {COLOR_BORDER_SUBTLE}; "
             f"border-radius: 8px;"
         )
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
         lbl = QLabel(label, self)
         lbl.setAlignment(Qt.AlignCenter)
-        lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 13px;")
+        lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 12px;")
         layout.addWidget(lbl)
 
 
@@ -141,33 +126,43 @@ class QtAutoMailView(QWidget):
         timeline_cls = _import_timeline_panel()
         editor_cls = _import_editor_panel()
 
-        built = 0
         if config_cls and self._config_panel is None:
-            self._config_placeholder.deleteLater()
             self._config_panel = config_cls(self._splitter, self.db, self.prefs, self.ops)
-            self._splitter.insertWidget(0, self._config_panel)
-            built += 1
+            if self._config_placeholder:
+                idx = self._splitter.indexOf(self._config_placeholder)
+                if idx >= 0:
+                    self._splitter.insertWidget(idx, self._config_panel)
+                self._config_placeholder.deleteLater()
+                self._config_placeholder = None
 
         if timeline_cls and self._timeline_panel is None:
-            self._timeline_placeholder.deleteLater()
             self._timeline_panel = timeline_cls(self._splitter, self.db, self.prefs, self.ops)
-            self._splitter.insertWidget(1, self._timeline_panel)
-            built += 1
+            if self._timeline_placeholder:
+                idx = self._splitter.indexOf(self._timeline_placeholder)
+                if idx >= 0:
+                    self._splitter.insertWidget(idx, self._timeline_panel)
+                self._timeline_placeholder.deleteLater()
+                self._timeline_placeholder = None
 
         if editor_cls and self._editor_panel is None:
-            self._editor_placeholder.deleteLater()
             self._editor_panel = editor_cls(self._splitter, self.db, self.prefs, self.ops)
-            self._splitter.insertWidget(2, self._editor_panel)
-            built += 1
+            if self._editor_placeholder:
+                idx = self._splitter.indexOf(self._editor_placeholder)
+                if idx >= 0:
+                    self._splitter.insertWidget(idx, self._editor_panel)
+                self._editor_placeholder.deleteLater()
+                self._editor_placeholder = None
 
-        if built == 3:
+        if (
+            self._config_panel is not None
+            and self._timeline_panel is not None
+            and self._editor_panel is not None
+        ):
             self._splitter.setStretchFactor(0, 1)
             self._splitter.setStretchFactor(1, 2)
             self._splitter.setStretchFactor(2, 2)
             self._wired = True
             logger.info("QtAutoMailView: all 3 panels wired")
-        elif built > 0:
-            logger.info("QtAutoMailView: %d/3 panels wired (partial)", built)
 
     # ── UI ──────────────────────────────────────────────────────────
 

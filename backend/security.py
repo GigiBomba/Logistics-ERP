@@ -79,12 +79,12 @@ def create_access_token(
         )
 
     to_encode.update({"exp": expire})
-    encoded_jwt: bytes = jwt.encode(
+    encoded_jwt: str = jwt.encode(
         to_encode,
         settings.jwt_secret_key,
         algorithm=settings.jwt_algorithm,
     )
-    return encoded_jwt.decode("utf-8")
+    return encoded_jwt
 
 
 def decode_access_token(token: str) -> Dict[str, Any]:

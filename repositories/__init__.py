@@ -12,29 +12,79 @@ class BaseRepository:
     PostgreSQL: ``%s`` placeholders, ``RETURNING id`` for inserts.
     """
 
+    # Subclasses MUST define COLUMNS as a list of valid column names.
+    # This is the allowlist used to prevent SQL injection via column names.
+    COLUMNS: list = []
+
     def __init__(self, db):
         self.db = db
 
-    def _company_filter(self, alias: str = "") -> str:
-        """Return an SQL fragment to filter by the current user's company.
+    def _validate_columns(self, data: dict, extra_allowed: set = None) -> None:
+        """Reject any key in *data* that is not in self.COLUMNS.
 
-        If the user is an admin (role="admin" or no company set), no filter
-        is applied so admins can see all tenants.  Otherwise, the filter
-        restricts queries to rows belonging to the user's company.
+        Raises ``ValueError`` with a clear message listing the invalid keys.
+        This prevents SQL injection via malicious column names in
+        ``create()`` and ``update()`` methods.
+        """
+        allowed = set(self.COLUMNS)
+        if extra_allowed:
+            allowed |= extra_allowed
+        invalid = set(data.keys()) - allowed
+        if invalid:
+            raise ValueError(
+                f"Invalid column(s) for {self.__class__.__name__}: "
+                f"{', '.join(sorted(invalid))}. "
+                f"Allowed columns: {', '.join(sorted(allowed))}"
+            )
+
+    @property
+    def _user_company_id(self):
+        return getattr(self.db, "user_company_id", None)
+
+    @property
+    def _user_role(self):
+        return getattr(self.db, "user_role", "")
+
+    @property
+    def _scoped(self) -> bool:
+        """True if the current request is scoped to a non-admin company."""
+        cid = self._user_company_id
+        return cid is not None and self._user_role != "admin"
+
+    def _company_filter(self, alias: str = "") -> str:
+        """Return an SQL fragment ``AND alias.company_id = ?`` (with ``?`` placeholder).
+
+        Returns empty string for admins (who see all tenants).
 
         Usage::
 
-            rows = self._fetchall(
-                f"SELECT * FROM trips WHERE 1=1 {self._company_filter('t')}",
-                params,
-            )
+            clause = self._company_filter("t")
+            params = self._company_params()
+            self._fetchall(f"SELECT * FROM trips t WHERE t.id = ? {clause}", (tid,) + params)
         """
-        cid = getattr(self.db, "user_company_id", None)
-        role = getattr(self.db, "user_role", "")
-        if cid is not None and role != "admin":
+        if self._scoped:
             prefix = f"{alias}." if alias else ""
-            return f"AND {prefix}company_id = {cid}"
+            return f"AND {prefix}company_id = ?"
         return ""
+
+    def _company_params(self) -> tuple:
+        """Return the parameter tuple for the company filter clause.
+
+        Returns ``(company_id,)`` for scoped users, ``()`` for admins.
+        """
+        if self._scoped:
+            return (self._user_company_id,)
+        return ()
+
+    def _set_company_from_context(self, data: dict) -> dict:
+        """Inject the current user's company_id into *data* for INSERT.
+
+        For admin users (no company scope), ``company_id`` is not injected
+        — the caller must provide it explicitly.
+        """
+        if self._scoped:
+            data["company_id"] = self._user_company_id
+        return data
 
     def _adapt_query(self, query: str) -> str:
         if getattr(self.db, "_engine", "sqlite") == "postgresql":

@@ -21,7 +21,9 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
+from ui.components import EmptyState
 from ui.theme import COLORS, S
+from ui.widgets import ActionButton
 from utils.dates import parse_date
 
 # Status values that are considered terminal/finalised and should be hidden.
@@ -150,12 +152,20 @@ class QtDispatchTimeline(QWidget):
                 widget.deleteLater()
 
     def _show_empty_state(self) -> None:
-        """Display a centred 'No data' message."""
-        msg = QLabel(t("dispatch_board.timeline_no_data"))
-        msg.setProperty("fontRole", "muted")
-        msg.setAlignment(Qt.AlignCenter)
-        msg.setContentsMargins(0, S["10"], 0, S["10"])
-        self._layout.addWidget(msg)
+        cta = ActionButton(
+            None,
+            text=t("dispatch_board.timeline_plan_trip", default="Planifică o cursă"),
+            variant="primary",
+        )
+        empty = EmptyState(
+            parent=self._content,
+            icon_name="mdi6.calendar-month-outline",
+            title=t("dispatch_board.timeline_no_data"),
+            subtitle=t("dispatch_board.timeline_no_data_hint",
+                      default="No trips scheduled for the selected period"),
+            cta_button=cta,
+        )
+        self._layout.addWidget(empty)
 
     @staticmethod
     def _filter_active(cards_data: list[dict]) -> list[dict]:

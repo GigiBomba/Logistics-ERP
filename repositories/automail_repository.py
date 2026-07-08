@@ -19,30 +19,59 @@ logger = logging.getLogger(__name__)
 class AutoMailRepository(BaseRepository):
     """Data access for AutoMail / Dunner configuration tables."""
 
+    COLUMNS_AUTOMAIL_TEMPLATES = [
+        "id", "name", "subject", "body_text", "body_html", "variables_json",
+        "is_default", "created_at", "updated_at", "company_id",
+    ]
+    COLUMNS_AUTOMAIL_SCHEDULES = [
+        "id", "name", "trigger_type", "days_offset", "template_id",
+        "is_active", "sort_order", "attach_invoice", "attach_cmr",
+        "attach_all_docs", "created_at", "updated_at", "company_id",
+    ]
+    COLUMNS_AUTOMAIL_OVERRIDES = [
+        "id", "client_id", "template_id", "is_active", "override_json",
+        "created_at", "updated_at", "company_id",
+    ]
+    COLUMNS_AUTOMAIL_SETTINGS = [
+        "key", "value", "company_id",
+    ]
+    COLUMNS_EMAIL_LOGS = [
+        "id", "trip_id", "recipient", "subject", "timestamp", "status", "company_id",
+    ]
+    COLUMNS_INVOICE_REMINDERS = [
+        "id", "invoice_id", "trip_id", "reminder_type", "days_offset",
+        "sent_at", "recipient_email", "status", "company_id",
+    ]
+
     # ── Templates ──────────────────────────────────────────────────────────
 
     def get_all_templates(self) -> list[dict[str, Any]]:
         return self._fetchall(
-            "SELECT * FROM automail_templates ORDER BY is_default DESC, name ASC"
+            "SELECT * FROM automail_templates WHERE 1=1 " + self._company_filter() + " ORDER BY is_default DESC, name ASC",
+            self._company_params(),
         )
 
     def get_template_by_id(self, template_id: int) -> Optional[dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM automail_templates WHERE id = ?", (template_id,)
+            "SELECT * FROM automail_templates WHERE id = ? " + self._company_filter(),
+            (template_id,) + self._company_params(),
         )
 
     def get_default_template(self) -> Optional[dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM automail_templates WHERE is_default = 1 LIMIT 1"
+            "SELECT * FROM automail_templates WHERE is_default = 1 " + self._company_filter() + " LIMIT 1",
+            self._company_params(),
         )
 
     _TEMPLATE_COLS = {"name", "subject", "body_text", "body_html", "variables_json", "is_default"}
 
     def create_template(self, data: dict[str, Any]) -> int:
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_TEMPLATES))
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         data = {k: v for k, v in data.items() if k in self._TEMPLATE_COLS}
         data["created_at"] = now
         data["updated_at"] = now
+        data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
@@ -51,17 +80,19 @@ class AutoMailRepository(BaseRepository):
         )
 
     def update_template(self, template_id: int, data: dict[str, Any]) -> None:
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_TEMPLATES))
         data = dict(data)
         data["updated_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE automail_templates SET {sets} WHERE id = ?",
-            tuple(data.values()) + (template_id,),
+            f"UPDATE automail_templates SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (template_id,) + self._company_params(),
         )
 
     def delete_template(self, template_id: int) -> None:
         self._execute(
-            "DELETE FROM automail_templates WHERE id = ?", (template_id,)
+            "DELETE FROM automail_templates WHERE id = ? " + self._company_filter(),
+            (template_id,) + self._company_params(),
         )
 
     # ── Schedules ──────────────────────────────────────────────────────────
@@ -71,7 +102,9 @@ class AutoMailRepository(BaseRepository):
             "SELECT s.*, t.name AS template_name "
             "FROM automail_schedules s "
             "LEFT JOIN automail_templates t ON t.id = s.template_id "
-            "ORDER BY s.sort_order ASC"
+            "WHERE 1=1 " + self._company_filter("s") + " "
+            "ORDER BY s.sort_order ASC",
+            self._company_params(),
         )
 
     def get_active_schedules(self) -> list[dict[str, Any]]:
@@ -79,13 +112,15 @@ class AutoMailRepository(BaseRepository):
             "SELECT s.*, t.name AS template_name, t.subject, t.body_text, t.body_html "
             "FROM automail_schedules s "
             "LEFT JOIN automail_templates t ON t.id = s.template_id "
-            "WHERE s.is_active = 1 "
-            "ORDER BY s.sort_order ASC"
+            "WHERE s.is_active = 1 " + self._company_filter("s") + " "
+            "ORDER BY s.sort_order ASC",
+            self._company_params(),
         )
 
     def get_schedule_by_id(self, schedule_id: int) -> Optional[dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM automail_schedules WHERE id = ?", (schedule_id,)
+            "SELECT * FROM automail_schedules WHERE id = ? " + self._company_filter(),
+            (schedule_id,) + self._company_params(),
         )
 
     _SCHEDULE_COLS = {
@@ -94,15 +129,19 @@ class AutoMailRepository(BaseRepository):
     }
 
     def create_schedule(self, data: dict[str, Any]) -> int:
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_SCHEDULES))
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         data = {k: v for k, v in data.items() if k in self._SCHEDULE_COLS}
         if "sort_order" not in data:
             max_row = self._fetchone(
-                "SELECT COALESCE(MAX(sort_order), -1) + 1 AS nxt FROM automail_schedules"
+                "SELECT COALESCE(MAX(sort_order), -1) + 1 AS nxt FROM automail_schedules "
+                + self._company_filter(),
+                self._company_params(),
             )
             data["sort_order"] = max_row["nxt"] if max_row else 0
         data["created_at"] = now
         data["updated_at"] = now
+        data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
@@ -111,6 +150,7 @@ class AutoMailRepository(BaseRepository):
         )
 
     def update_schedule(self, schedule_id: int, data: dict[str, Any]) -> None:
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_SCHEDULES))
         data = {k: v for k, v in data.items() if k in self._SCHEDULE_COLS}
         if not data:
             logger.warning("update_schedule called with no valid columns for schedule #%d", schedule_id)
@@ -118,21 +158,24 @@ class AutoMailRepository(BaseRepository):
         data["updated_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE automail_schedules SET {sets} WHERE id = ?",
-            tuple(data.values()) + (schedule_id,),
+            f"UPDATE automail_schedules SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (schedule_id,) + self._company_params(),
         )
 
     def delete_schedule(self, schedule_id: int) -> None:
         self._execute(
-            "DELETE FROM automail_schedules WHERE id = ?", (schedule_id,)
+            "DELETE FROM automail_schedules WHERE id = ? " + self._company_filter(),
+            (schedule_id,) + self._company_params(),
         )
 
     def reorder_schedules(self, ordered_ids: list[int]) -> None:
         """Update ``sort_order`` for all given IDs in the order provided."""
+        company_filter = self._company_filter()
+        company_params = self._company_params()
         for idx, sid in enumerate(ordered_ids):
             self._execute(
-                "UPDATE automail_schedules SET sort_order = ? WHERE id = ?",
-                (idx, sid),
+                f"UPDATE automail_schedules SET sort_order = ? WHERE id = ? {company_filter}",
+                (idx, sid) + company_params,
                 commit=False,
             )
         self.commit_transaction()
@@ -141,30 +184,34 @@ class AutoMailRepository(BaseRepository):
 
     def get_override(self, client_id: int) -> Optional[dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM automail_client_overrides WHERE client_id = ?",
-            (client_id,),
+            "SELECT * FROM automail_client_overrides WHERE client_id = ? "
+            + self._company_filter(),
+            (client_id,) + self._company_params(),
         )
 
     def get_all_overrides(self) -> list[dict[str, Any]]:
         return self._fetchall(
-            "SELECT * FROM automail_client_overrides"
+            "SELECT * FROM automail_client_overrides WHERE 1=1 " + self._company_filter(),
+            self._company_params(),
         )
 
     def upsert_override(self, client_id: int, data: dict[str, Any]) -> None:
         """Insert or update a client override."""
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_OVERRIDES))
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         existing = self.get_override(client_id)
         if existing:
             data["updated_at"] = now
             sets = ", ".join(f"{k} = ?" for k in data)
             self._execute(
-                f"UPDATE automail_client_overrides SET {sets} WHERE client_id = ?",
-                tuple(data.values()) + (client_id,),
+                f"UPDATE automail_client_overrides SET {sets} WHERE client_id = ? {self._company_filter()}",
+                tuple(data.values()) + (client_id,) + self._company_params(),
             )
         else:
             data["client_id"] = client_id
             data["created_at"] = now
             data["updated_at"] = now
+            data = self._set_company_from_context(data)
             cols = ", ".join(data.keys())
             vals = ", ".join("?" for _ in data)
             self._execute_insert(
@@ -174,76 +221,120 @@ class AutoMailRepository(BaseRepository):
 
     def delete_override(self, client_id: int) -> None:
         self._execute(
-            "DELETE FROM automail_client_overrides WHERE client_id = ?",
-            (client_id,),
+            "DELETE FROM automail_client_overrides WHERE client_id = ? "
+            + self._company_filter(),
+            (client_id,) + self._company_params(),
         )
 
     # ── Settings ───────────────────────────────────────────────────────────
 
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
         row = self._fetchone(
-            "SELECT value FROM automail_settings WHERE key = ?", (key,)
+            "SELECT value FROM automail_settings WHERE key = ? " + self._company_filter(),
+            (key,) + self._company_params(),
         )
         return row["value"] if row else default
 
     def set_setting(self, key: str, value: str) -> None:
+        data = {"key": key, "value": value}
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_SETTINGS))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            "INSERT OR REPLACE INTO automail_settings (key, value) VALUES (?, ?)",
-            (key, value),
+            f"INSERT OR REPLACE INTO automail_settings ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def get_all_settings(self) -> dict[str, str]:
-        rows = self._fetchall("SELECT key, value FROM automail_settings")
+        rows = self._fetchall(
+            "SELECT key, value FROM automail_settings WHERE 1=1 " + self._company_filter(),
+            self._company_params(),
+        )
         return {r["key"]: r["value"] for r in rows}
 
     def log_manual_send(self, invoice_id: int, trip_id: int, recipient: str) -> None:
         from datetime import datetime
+        data = {
+            "invoice_id": invoice_id, "trip_id": trip_id,
+            "reminder_type": "manual_send", "days_offset": 0,
+            "sent_at": datetime.now().isoformat(), "recipient_email": recipient,
+            "status": "sent",
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_INVOICE_REMINDERS))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            "INSERT INTO invoice_reminders "
-            "(invoice_id, trip_id, reminder_type, days_offset, sent_at, recipient_email, status) "
-            "VALUES (?, ?, 'manual_send', 0, ?, ?, 'sent')",
-            (invoice_id, trip_id, datetime.now().isoformat(), recipient),
+            f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def log_email(self, trip_id: Optional[int], recipient: str, subject: str, status: str = "sent") -> None:
         from datetime import datetime
+        data = {
+            "trip_id": trip_id, "recipient": recipient, "subject": subject,
+            "timestamp": datetime.now().isoformat(), "status": status,
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_EMAIL_LOGS))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            "INSERT INTO email_logs (trip_id, recipient, subject, timestamp, status) "
-            "VALUES (?, ?, ?, ?, ?)",
-            (trip_id, recipient, subject, datetime.now().isoformat(), status),
+            f"INSERT INTO email_logs ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def skip_reminder(self, invoice_id: int, trip_id: int) -> None:
         from datetime import datetime
+        data = {
+            "invoice_id": invoice_id, "trip_id": trip_id,
+            "reminder_type": "manual_skip", "days_offset": 0,
+            "sent_at": datetime.now().isoformat(), "recipient_email": "",
+            "status": "skipped",
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_INVOICE_REMINDERS))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            "INSERT INTO invoice_reminders "
-            "(invoice_id, trip_id, reminder_type, days_offset, sent_at, recipient_email, status) "
-            "VALUES (?, ?, 'manual_skip', 0, ?, '', 'skipped')",
-            (invoice_id, trip_id, datetime.now().isoformat()),
+            f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def cancel_all_reminders(self, invoice_id: int, trip_id: int) -> None:
         from datetime import datetime
+        data = {
+            "invoice_id": invoice_id, "trip_id": trip_id,
+            "reminder_type": "manual_cancel_all", "days_offset": 0,
+            "sent_at": datetime.now().isoformat(), "recipient_email": "",
+            "status": "cancelled",
+        }
+        self._validate_columns(data, extra_allowed=set(self.COLUMNS_INVOICE_REMINDERS))
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
         self._execute(
-            "INSERT INTO invoice_reminders "
-            "(invoice_id, trip_id, reminder_type, days_offset, sent_at, recipient_email, status) "
-            "VALUES (?, ?, 'manual_cancel_all', 0, ?, '', 'cancelled')",
-            (invoice_id, trip_id, datetime.now().isoformat()),
+            f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
+            tuple(data.values()),
         )
 
     def get_sent_reminder_count(self, invoice_id: int) -> int:
         row = self._fetchone(
             "SELECT COUNT(*) AS cnt FROM invoice_reminders "
-            "WHERE invoice_id = ? AND status IN ('sent', 'scheduled')",
-            (invoice_id,),
+            "WHERE invoice_id = ? AND status IN ('sent', 'scheduled') "
+            + self._company_filter(),
+            (invoice_id,) + self._company_params(),
         )
         return row["cnt"] if row else 0
 
     def get_email_history(self, search: str = "", status_filter: str = "",
                           page: int = 0, page_size: int = 20) -> tuple[list[dict[str, Any]], int]:
         offset = page * page_size
-        conditions = ["1=1"]
-        params: list = []
+        company_filter = self._company_filter("e")
+        company_params = list(self._company_params())
+        conditions = [f"1=1 {company_filter}".strip()] if company_filter else ["1=1"]
+        params: list = company_params if company_filter else []
         if search:
             conditions.append(
                 "(e.subject LIKE ? OR e.recipient LIKE ? "
@@ -283,14 +374,16 @@ class AutoMailRepository(BaseRepository):
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         sent_row = self._fetchone(
             "SELECT COUNT(*) AS cnt FROM email_logs "
-            "WHERE timestamp >= ? AND status = 'sent'",
-            (cutoff,),
+            "WHERE timestamp >= ? AND status = 'sent' "
+            + self._company_filter(),
+            (cutoff,) + self._company_params(),
         )
         emails_sent = sent_row["cnt"] if sent_row else 0
         failed_row = self._fetchone(
             "SELECT COUNT(*) AS cnt FROM email_logs "
-            "WHERE timestamp >= ? AND status IN ('failed', 'error')",
-            (cutoff,),
+            "WHERE timestamp >= ? AND status IN ('failed', 'error') "
+            + self._company_filter(),
+            (cutoff,) + self._company_params(),
         )
         emails_failed = failed_row["cnt"] if failed_row else 0
         return {"emails_sent": emails_sent, "emails_failed": emails_failed}
@@ -303,10 +396,11 @@ class AutoMailRepository(BaseRepository):
             "FROM email_logs e "
             "LEFT JOIN invoices i ON e.trip_id = i.trip_id "
             "LEFT JOIN trips t ON e.trip_id = t.id "
-            "WHERE e.subject LIKE ? OR e.recipient LIKE ? "
-            "OR i.invoice_number LIKE ? OR t.client_name LIKE ? "
+            "WHERE (e.subject LIKE ? OR e.recipient LIKE ? "
+            "OR i.invoice_number LIKE ? OR t.client_name LIKE ?) "
+            + self._company_filter("e") + " "
             "ORDER BY e.timestamp DESC LIMIT 50",
-            (like, like, like, like),
+            (like, like, like, like) + self._company_params(),
         )
 
     def get_reminder_status(self, invoice_id: int, trip_id: int,
@@ -314,19 +408,21 @@ class AutoMailRepository(BaseRepository):
         return self._fetchall(
             "SELECT * FROM invoice_reminders "
             "WHERE invoice_id = ? AND trip_id = ? AND reminder_type = ? "
+            + self._company_filter() + " "
             "ORDER BY id DESC LIMIT 1",
-            (invoice_id, trip_id, reminder_type),
+            (invoice_id, trip_id, reminder_type) + self._company_params(),
         )
 
     def get_reminder_counts(self, status: str) -> int:
         row = self._fetchone(
-            "SELECT COUNT(*) AS cnt FROM invoice_reminders WHERE status = ?",
-            (status,),
+            "SELECT COUNT(*) AS cnt FROM invoice_reminders WHERE status = ? "
+            + self._company_filter(),
+            (status,) + self._company_params(),
         )
         return row["cnt"] if row else 0
 
     def get_unpaid_invoices_for_reminders(self, search: str = "") -> list[dict[str, Any]]:
-        query = """
+        query = f"""
             SELECT
                 i.id          AS invoice_id,
                 i.invoice_number,
@@ -345,8 +441,9 @@ class AutoMailRepository(BaseRepository):
             WHERE i.status = 'Unpaid'
               AND i.due_date IS NOT NULL
               AND i.due_date != ''
+              {self._company_filter('t')}
         """
-        params: list[Any] = []
+        params: list[Any] = list(self._company_params())
         if search:
             query += " AND (i.invoice_number LIKE ? OR t.client_name LIKE ? OR c.email LIKE ?)"
             like = f"%{search}%"
@@ -357,7 +454,8 @@ class AutoMailRepository(BaseRepository):
     def get_recent_email_logs(self, limit: int = 200) -> list[dict[str, Any]]:
         rows = self._fetchall(
             "SELECT id, recipient, subject, timestamp, status "
-            "FROM email_logs ORDER BY id DESC LIMIT ?",
-            (limit,),
+            "FROM email_logs WHERE 1=1 " + self._company_filter() + " "
+            "ORDER BY id DESC LIMIT ?",
+            self._company_params() + (limit,),
         )
         return rows

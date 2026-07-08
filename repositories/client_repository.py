@@ -5,22 +5,30 @@ from repositories import BaseRepository
 
 class ClientRepository(BaseRepository):
     TABLE = "clients"
+    COLUMNS = [
+        "id", "name", "contact_person", "phone", "email", "address", "vat_number",
+        "currency_preference", "notes", "is_active", "created_at", "updated_at",
+        "client_type", "payment_terms_days", "credit_limit_eur", "default_rate_per_km",
+        "rating", "eori_number", "country", "consignee_contact_name",
+        "consignee_contact_phone", "company_id",
+    ]
 
     def get_by_id(self, client_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ?", (client_id,)
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (client_id,) + self._company_params(),
         )
 
     def get_client_email_by_name(self, name: str) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT email FROM {self.TABLE} WHERE name = ? AND email IS NOT NULL AND email != '' LIMIT 1",
-            (name,),
+            f"SELECT email FROM {self.TABLE} WHERE name = ? AND email IS NOT NULL AND email != '' {self._company_filter()} LIMIT 1",
+            (name,) + self._company_params(),
         )
         return row["email"] if row else None
 
     def get_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE name = ?", (name,)
+            f"SELECT * FROM {self.TABLE} WHERE name = ? {self._company_filter()}", (name,) + self._company_params()
         )
 
     def search_by_name(self, name: str, fuzzy: bool = True, limit: int = 5) -> List[Dict[str, Any]]:
@@ -34,8 +42,8 @@ class ClientRepository(BaseRepository):
             return []
         # Exact match wins.
         exact = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND LOWER(TRIM(name)) = LOWER(TRIM(?))",
-            (name,),
+            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND LOWER(TRIM(name)) = LOWER(TRIM(?)) {self._company_filter()}",
+            (name,) + self._company_params(),
         )
         results: List[Dict[str, Any]] = []
         if exact:
@@ -44,8 +52,9 @@ class ClientRepository(BaseRepository):
             like_results = self._fetchall(
                 f"SELECT * FROM {self.TABLE} "
                 "WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' "
+                f"{self._company_filter()} "
                 "ORDER BY name ASC LIMIT ?",
-                (f"%{self._escape_like(name)}%", limit),
+                (f"%{self._escape_like(name)}%",) + self._company_params() + (limit,),
             )
             for r in like_results:
                 if r["id"] not in {x["id"] for x in results}:
@@ -54,9 +63,11 @@ class ClientRepository(BaseRepository):
 
     def get_all(self, include_inactive: bool = False, limit: int = 500) -> List[Dict[str, Any]]:
         where = "" if include_inactive else "WHERE is_active = 1"
+        if not where:
+            where = "WHERE 1=1"
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} {where} ORDER BY name ASC LIMIT ?",
-            (limit,),
+            f"SELECT * FROM {self.TABLE} {where} {self._company_filter()} ORDER BY name ASC LIMIT ?",
+            self._company_params() + (limit,),
         )
 
     @staticmethod
@@ -65,13 +76,15 @@ class ClientRepository(BaseRepository):
 
     def search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' ORDER BY name ASC LIMIT ?",
-            (f"%{self._escape_like(query)}%", limit),
+            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' {self._company_filter()} ORDER BY name ASC LIMIT ?",
+            (f"%{self._escape_like(query)}%",) + self._company_params() + (limit,),
         )
 
     def create(self, data: Dict[str, Any]) -> int:
+        self._validate_columns(data)
         from datetime import datetime
         data = dict(data)
+        data = self._set_company_from_context(data)
         data.setdefault("created_at", datetime.utcnow().isoformat(timespec="seconds") + "Z")
         data.setdefault("is_active", 1)
         cols = ", ".join(data.keys())
@@ -82,18 +95,20 @@ class ClientRepository(BaseRepository):
         )
 
     def update(self, client_id: int, data: Dict[str, Any]) -> None:
+        self._validate_columns(data)
         from datetime import datetime
         data = dict(data)
         data["updated_at"] = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
-            tuple(data.values()) + (client_id,),
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (client_id,) + self._company_params(),
         )
 
     def deactivate(self, client_id: int) -> None:
         self._execute(
-            f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ?", (client_id,)
+            f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ? {self._company_filter()}",
+            (client_id,) + self._company_params(),
         )
 
     def merge_client_data(self, from_id: int, to_id: int) -> dict[str, int]:
@@ -124,8 +139,8 @@ class ClientRepository(BaseRepository):
                 commit=False,
             )
             self._execute(
-                f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ?",
-                (from_id,),
+                f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ? {self._company_filter()}",
+                (from_id,) + self._company_params(),
                 commit=False,
             )
             self.commit_transaction()
@@ -136,8 +151,8 @@ class ClientRepository(BaseRepository):
 
     def get_trip_count(self, client_id: int) -> int:
         row = self._fetchone(
-            "SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ?",
-            (client_id,),
+            f"SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? {self._company_filter()}",
+            (client_id,) + self._company_params(),
         )
         return row["cnt"] if row else 0
 
@@ -147,93 +162,99 @@ class ClientRepository(BaseRepository):
                 FROM {self.TABLE} c
                 JOIN trips t ON t.client_id = c.id
                 WHERE t.status NOT IN ('Cancelled')
+                  {self._company_filter("c")}
                 GROUP BY c.id
                 ORDER BY total_revenue DESC
                 LIMIT ?""",
-            (limit,),
+            self._company_params() + (limit,),
         )
 
     def get_trips(self, client_id: int, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            "SELECT * FROM trips WHERE client_id = ? ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (client_id, limit, offset),
+            f"SELECT * FROM trips WHERE client_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (client_id,) + self._company_params() + (limit, offset),
         )
 
     def get_trips_status_counts(self, client_id: int) -> Dict[str, int]:
         rows = self._fetchall(
-            "SELECT LOWER(status) AS status, COUNT(*) AS cnt FROM trips WHERE client_id = ? GROUP BY LOWER(status)",
-            (client_id,),
+            f"SELECT LOWER(status) AS status, COUNT(*) AS cnt FROM trips WHERE client_id = ? {self._company_filter()} GROUP BY LOWER(status)",
+            (client_id,) + self._company_params(),
         )
         return {r["status"]: r["cnt"] for r in rows}
 
     def get_revenue_summary(self, client_id: int) -> Dict[str, Any]:
         row = self._fetchone(
-            """SELECT COUNT(*) AS total_trips,
+            f"""SELECT COUNT(*) AS total_trips,
                       COALESCE(SUM(total_price_eur), 0) AS total_revenue,
                       COALESCE(SUM(net_profit), 0) AS total_profit,
                       COALESCE(AVG(net_profit), 0) AS avg_profit,
                       COALESCE(SUM(distance_km), 0) AS total_km,
                       COALESCE(MAX(created_at), '') AS last_trip_date
-               FROM trips WHERE client_id = ? AND status NOT IN ('Cancelled')""",
-            (client_id,),
+               FROM trips WHERE client_id = ? AND status NOT IN ('Cancelled')
+               {self._company_filter()}""",
+            (client_id,) + self._company_params(),
         )
         return row or {}
 
     def get_revenue_history(self, client_id: int, months: int = 12) -> List[Dict[str, Any]]:
         return self._fetchall(
-            """SELECT SUBSTR(start_date, 1, 7) AS month,
+            f"""SELECT SUBSTR(start_date, 1, 7) AS month,
                       COUNT(*) AS trip_count,
                       COALESCE(SUM(total_price_eur), 0) AS revenue,
                       COALESCE(SUM(net_profit), 0) AS profit,
                       COALESCE(SUM(distance_km), 0) AS km
                FROM trips
                WHERE client_id = ? AND status NOT IN ('Cancelled')
+               {self._company_filter()}
                GROUP BY month
                ORDER BY month DESC
                LIMIT ?""",
-            (client_id, months),
+            (client_id,) + self._company_params() + (months,),
         )
 
     def get_outstanding_invoices(self, client_id: int, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
-            """SELECT i.*, t.client_name, t.truck_number, t.distance_km,
+            f"""SELECT i.*, t.client_name, t.truck_number, t.distance_km,
                       t.total_price_eur AS trip_revenue, t.start_date
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
                WHERE t.client_id = ?
+               {self._company_filter("t")}
                ORDER BY i.due_date ASC
                LIMIT ?""",
-            (client_id, limit),
+            (client_id,) + self._company_params() + (limit,),
         )
 
     def get_outstanding_balance(self, client_id: int) -> float:
         row = self._fetchone(
-            """SELECT COALESCE(SUM(i.total_amount), 0) AS balance
+            f"""SELECT COALESCE(SUM(i.total_amount), 0) AS balance
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? AND i.status = 'Unpaid'""",
-            (client_id,),
+               WHERE t.client_id = ? AND i.status = 'Unpaid'
+               {self._company_filter("t")}""",
+            (client_id,) + self._company_params(),
         )
         return float(row["balance"]) if row else 0.0
 
     def get_invoices(self, client_id: int, limit: int = 100) -> List[Dict[str, Any]]:
         return self._fetchall(
-            """SELECT i.*, t.client_name, t.truck_number, t.distance_km,
+            f"""SELECT i.*, t.client_name, t.truck_number, t.distance_km,
                       t.total_price_eur AS trip_revenue, t.start_date, t.status AS trip_status
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
                WHERE t.client_id = ?
+               {self._company_filter("t")}
                ORDER BY i.issue_date DESC
                LIMIT ?""",
-            (client_id, limit),
+            (client_id,) + self._company_params() + (limit,),
         )
 
     def get_trip_count_in_range(self, client_id: int, days: int = 30) -> int:
         from datetime import datetime, timedelta
         since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
         row = self._fetchone(
-            "SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? AND start_date >= ?",
-            (client_id, since),
+            f"SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? AND start_date >= ? {self._company_filter()}",
+            (client_id, since) + self._company_params(),
         )
         return row["cnt"] if row else 0
 
@@ -246,13 +267,16 @@ class ClientRepository(BaseRepository):
                 WHERE (c.name LIKE ? ESCAPE '\\' OR c.contact_person LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\'
                        OR c.email LIKE ? ESCAPE '\\' OR c.address LIKE ? ESCAPE '\\' OR c.notes LIKE ? ESCAPE '\\')
                       {active_clause}
+                      {self._company_filter("c")}
                 ORDER BY c.name ASC
                 LIMIT ?""",
-            (q, q, q, q, q, q, limit),
+            (q, q, q, q, q, q) + self._company_params() + (limit,),
         )
 
     def get_all_with_revenue(self, include_inactive: bool = False, limit: int = 500) -> List[Dict[str, Any]]:
         active_clause = "" if include_inactive else "WHERE c.is_active = 1"
+        if not active_clause:
+            active_clause = "WHERE 1=1"
         return self._fetchall(
             f"""SELECT c.*,
                       COALESCE(SUM(CASE WHEN t.status NOT IN ('Cancelled') THEN t.total_price_eur ELSE 0 END), 0) AS total_revenue,
@@ -262,8 +286,9 @@ class ClientRepository(BaseRepository):
                LEFT JOIN trips t ON t.client_id = c.id
                LEFT JOIN invoices i ON i.trip_id = t.id
                {active_clause}
+               {self._company_filter("c")}
                GROUP BY c.id
                ORDER BY c.name ASC
                LIMIT ?""",
-            (limit,),
+            self._company_params() + (limit,),
         )

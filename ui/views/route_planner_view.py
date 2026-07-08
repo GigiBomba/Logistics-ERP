@@ -18,7 +18,6 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QFileDialog,
     QFrame,
-    QGraphicsOpacityEffect,
     QGridLayout,
     QHBoxLayout,
     QLabel,
@@ -237,84 +236,7 @@ class WaypointConnector(QWidget):
         painter.end()
 
 
-class FlowLayout(QLayout):
-    def __init__(self, parent=None, margin=0, spacing=-1):
-        super().__init__(parent)
-        if parent is not None:
-            self.setContentsMargins(margin, margin, margin, margin)
-        self.setSpacing(spacing if spacing >= 0 else 4)
-        self._items = []
-
-    def __del__(self):
-        while self._items:
-            item = self._items.pop()
-
-    def addItem(self, item):
-        self._items.append(item)
-
-    def count(self):
-        return len(self._items)
-
-    def itemAt(self, index):
-        if 0 <= index < len(self._items):
-            return self._items[index]
-        return None
-
-    def takeAt(self, index):
-        if 0 <= index < len(self._items):
-            return self._items.pop(index)
-        return None
-
-    def expandingDirections(self):
-        return Qt.Orientations(Qt.Orientation(0))
-
-    def hasHeightForWidth(self):
-        return True
-
-    def heightForWidth(self, width):
-        return self._do_layout(QRect(0, 0, width, 0), True)
-
-    def setGeometry(self, rect):
-        super().setGeometry(rect)
-        self._do_layout(rect, False)
-
-    def sizeHint(self):
-        return self.minimumSize()
-
-    def minimumSize(self):
-        size = QSize()
-        for item in self._items:
-            size = size.expandedTo(item.minimumSize())
-        margins = self.contentsMargins()
-        size += QSize(margins.left() + margins.right(), margins.top() + margins.bottom())
-        return size
-
-    def _do_layout(self, rect, test_only):
-        x = rect.x() + self.contentsMargins().left()
-        y = rect.y() + self.contentsMargins().top()
-        line_height = 0
-        spacing = self.spacing()
-
-        for item in self._items:
-            widget = item.widget()
-            if widget is None:
-                continue
-            space_x = spacing
-            space_y = spacing
-            next_x = x + widget.sizeHint().width() + space_x
-            if next_x - space_x > rect.right() + 1 and line_height > 0:
-                x = rect.x() + self.contentsMargins().left()
-                y += line_height + space_y
-                next_x = x + widget.sizeHint().width() + space_x
-                line_height = 0
-            if not test_only:
-                widget.setGeometry(QRect(QPoint(x, y), widget.sizeHint()))
-            x = next_x
-            line_height = max(line_height, widget.sizeHint().height())
-
-        return y + line_height - rect.y() + self.contentsMargins().bottom()
-
-
+from ui.widgets.flow_layout import FlowLayout  # noqa: F401
 def make_country_chip(country_code: str) -> QWidget:
     chip = QWidget()
     chip.setFixedHeight(22)
@@ -847,9 +769,6 @@ class QtRoutePlannerView(QWidget):
         self.calc_btn.setObjectName("calc_route_btn")
         self.calc_btn.setCursor(Qt.PointingHandCursor)
         self.calc_btn.setEnabled(False)
-        self.calc_opacity = QGraphicsOpacityEffect()
-        self.calc_opacity.setOpacity(0.4)
-        self.calc_btn.setGraphicsEffect(self.calc_opacity)
         self.calc_btn.setStyleSheet(f"""
             QPushButton#calc_route_btn {{
                 background: {COLOR_ACCENT_PRIMARY};
@@ -866,8 +785,8 @@ class QtRoutePlannerView(QWidget):
                 background: #4547B0;
             }}
             QPushButton#calc_route_btn:disabled {{
-                background: {COLOR_ACCENT_PRIMARY};
-                color: #FFFFFF;
+                background: rgba(99, 102, 241, 0.4);
+                color: rgba(255, 255, 255, 0.4);
             }}
         """)
         self.calc_btn.clicked.connect(self._on_calculate_click)
@@ -1076,6 +995,8 @@ class QtRoutePlannerView(QWidget):
             if w is not None:
                 w.deleteLater()
 
+        if self._core is None:
+            return
         codes = self._core.get_excluded_countries()
         chips_per_row = 5
         for i in range(0, len(codes), chips_per_row):
@@ -1117,7 +1038,6 @@ class QtRoutePlannerView(QWidget):
         dest_filled = bool(dest_val.strip())
         enabled = start_filled and dest_filled
         self.calc_btn.setEnabled(enabled)
-        self.calc_opacity.setOpacity(1.0 if enabled else 0.4)
 
     def _inject_map_styles(self, ok: bool) -> None:
         if not ok or getattr(QtRoutePlannerView, "LEAFLET_CSS_INJECTED", False):
@@ -1210,7 +1130,6 @@ class QtRoutePlannerView(QWidget):
 
         # TASK 11: Show loading state
         self.calc_btn.setEnabled(False)
-        self.calc_opacity.setOpacity(0.4)
         self._result_stack.setCurrentIndex(1)  # loading page
         self._dispatch_container.hide()
 
@@ -1224,7 +1143,6 @@ class QtRoutePlannerView(QWidget):
             return
 
         self.calc_btn.setEnabled(True)
-        self.calc_opacity.setOpacity(1.0)
 
         processed, err = self._core.process_calculation_result(
             result,

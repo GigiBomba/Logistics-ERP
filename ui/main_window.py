@@ -228,8 +228,11 @@ class MainWindow(QMainWindow):
             prev_effect.deleteLater()
 
         effect = QGraphicsOpacityEffect(frame)
-        frame.setGraphicsEffect(effect)
+        # Set opacity to 0.0 BEFORE applying the effect so the DWM never
+        # renders a one-frame flash at full opacity (the default) during
+        # the first paint, which would appear as a ghost box at (0,0).
         effect.setOpacity(0.0)
+        frame.setGraphicsEffect(effect)
         self.app_shell.view_container.setCurrentWidget(frame)
 
         self._page_anim = QPropertyAnimation(effect, b"opacity")

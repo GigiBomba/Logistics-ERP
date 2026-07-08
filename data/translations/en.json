@@ -1002,8 +1002,10 @@
     "resource_next_free": "Next free",
     "alerts_panel_title": "Operational Alerts",
     "alerts_panel_no_alerts": "No active alerts",
+    "alerts_no_alerts_hint": "All alerts have been resolved",
     "alerts_panel_unassigned_title": "Unassigned Trips",
     "alerts_panel_no_unassigned": "All trips assigned",
+    "alerts_no_unassigned_hint": "All trips are fully assigned",
     "alerts_panel_no_truck": "No Truck",
     "alerts_panel_no_driver": "No Driver",
     "alerts_panel_neither": "No Truck or Driver",
@@ -1041,6 +1043,8 @@
     "status_bar_trucks_free": "Trucks Free",
     "timeline_title": "Schedule Timeline",
     "timeline_no_data": "No scheduled trips to display",
+    "timeline_no_data_hint": "No trips scheduled for the selected period",
+    "timeline_plan_trip": "Plan a Trip",
     "timeline_now": "NOW",
     "assign_both": "Assign Truck + Driver",
     "assign_both_title": "Quick Assign Truck & Driver",
@@ -1079,7 +1083,9 @@
     "undo_nothing": "Nothing to undo",
     "redo_nothing": "Nothing to redo",
     "showing_trips": "Showing {} of {} trips",
-    "count_trips": "{} trips"
+    "count_trips": "{} trips",
+    "no_results_title": "No trips found",
+    "no_results_subtitle": "Try adjusting your search or filter criteria"
   },
   "driver_manager": {
     "documents_button": "Documents",
@@ -1354,7 +1360,12 @@
     "hdr_type": "Type",
     "status_error": "Error",
     "status_ok": "OK",
-    "status_partial": "Partial"
+    "status_partial": "Partial",
+    "drop_hint": "Drop files here or click to select",
+    "drop_supported": "DDD / TGD / other tachograph files",
+    "select_file": "Select tachograph file",
+    "history_empty_title": "No imports yet",
+    "history_empty_subtitle": "Import a tachograph file to see the history"
   },
   "time": {
     "days_ago": "{n} days ago",
@@ -1878,7 +1889,10 @@
     "tel": "Tel:",
     "contact": "Contact:",
     "email": "Email:",
-    "reg_no": "Reg No:"
+    "reg_no": "Reg No:",
+    "consignor_placeholder": "Name, address, country",
+    "consignee_placeholder": "Name, address, country",
+    "documents_placeholder": "List attached documents"
   },
   "text_danger": "Danger",
   "text_success": "Success",
@@ -1993,6 +2007,7 @@
     "editor.save_draft": "Save Draft",
     "editor.load_draft": "Load Draft",
     "editor.duplicate": "Duplicate",
+    "editor.export_json": "Export JSON",
     "editor.email": "Email",
     "editor.browse": "Browse",
     "editor.attach_files": "Attach Files",
@@ -2114,7 +2129,9 @@
     "attach_type_pod": "POD",
     "attach_type_document": "Document",
     "attach_type_image": "Image",
-    "attach_type_other": "Other"
+    "attach_type_other": "Other",
+    "received_from_placeholder": "Will be completed",
+    "amount_hint": "Enter an amount above"
   },
   "admin": {
     "tab_title": "Admin Panel",

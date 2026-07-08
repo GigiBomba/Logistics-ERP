@@ -1,6 +1,6 @@
 @echo off
 cd /d "%~dp0"
-netstat -ano | findstr ":8000 " >nul 2>&1
+netstat -ano | findstr ":8000 " | findstr "LISTENING" >nul 2>&1
 if %errorlevel% equ 0 (
     echo Backend already running on port 8000.
 ) else (

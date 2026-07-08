@@ -14,11 +14,6 @@ logged.
 
 import sys
 import traceback
-import warnings
-
-# Suppress noisy passlib/bcrypt compatibility warning
-warnings.filterwarnings("ignore", message="error reading bcrypt version")
-warnings.filterwarnings("ignore", category=UserWarning, module="passlib")
 
 from backend.security import hash_password
 from config import Config

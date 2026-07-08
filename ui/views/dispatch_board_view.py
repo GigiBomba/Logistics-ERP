@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QScrollArea,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -53,7 +54,7 @@ from services.operations.event_bus import (
 )
 from services.operations.trip_status_engine import TripStatusEngine
 from services.trip_service import TripService
-from ui.components import Btn, Label, PageTitle
+from ui.components import Btn, EmptyState, Label, PageTitle
 from ui.design_tokens import (
     BORDER_DEFAULT,
     COLOR_NEUTRAL_DEFAULT,
@@ -68,6 +69,8 @@ from ui.widgets.assignment_dropdown import QtAssignmentDropdown
 from ui.widgets.dispatch_alerts_panel import QtDispatchAlertsPanel
 from ui.widgets.dispatch_search_bar import STATUS_OPTIONS, QtDispatchSearchBar
 from ui.widgets.dispatch_tabs import QtDispatchTabs
+from ui.widgets.stat_card import StatCard
+from ui.widgets.stat_card_row import StatCardRowContainer
 from ui.widgets.dispatch_timeline import QtDispatchTimeline
 from ui.widgets.kanban_column import QtKanbanColumn
 from ui.widgets.toast import Toast
@@ -278,7 +281,7 @@ class QtDispatchBoardView(QWidget):
         self._board_tab = QWidget()
         board_layout = QVBoxLayout(self._board_tab)
         board_layout.setContentsMargins(0, 0, 0, 0)
-        board_layout.setSpacing(0)
+        board_layout.setSpacing(SP["2"])
 
         # Search / filter bar
         self._search_bar = QtDispatchSearchBar(
@@ -287,7 +290,36 @@ class QtDispatchBoardView(QWidget):
         )
         board_layout.addWidget(self._search_bar)
 
-        # Bulk toolbar (hidden by default)
+        # ── Status card row (Planificat / Incarcare / In Tranzit / Livrat / Anulat) ──
+        self._status_container = QFrame()
+        self._status_container.setObjectName("stat-card")
+        status_layout = QVBoxLayout(self._status_container)
+        status_layout.setContentsMargins(SP["5"], SP["5"], SP["5"], SP["5"])
+        status_layout.setSpacing(0)
+
+        self._status_row = StatCardRowContainer(self._status_container)
+        self._status_cards: dict[str, StatCard] = {}
+        _STATUS_DOT_COLORS = {
+            "Planned": "#6B7280",
+            "Loading": "#F59E0B",
+            "In Transit": "#3B82F6",
+            "Delivered": "#22C55E",
+            "Cancelled": "#6B7280",
+        }
+        for status_key, title_key, _accent in COLUMN_DEFS:
+            card = StatCard(
+                parent=None,
+                label=t(title_key).upper(),
+                value="0",
+                status_dot_color=_STATUS_DOT_COLORS[status_key],
+            )
+            self._status_row.add_card(card)
+            self._status_cards[status_key] = card
+
+        status_layout.addWidget(self._status_row)
+        board_layout.addWidget(self._status_container)
+
+        # ── Bulk toolbar (hidden by default) ──────────────────────────────
         self._bulk_toolbar = QFrame()
         self._bulk_toolbar.setProperty("role", "bulk-toolbar")
         self._bulk_toolbar.setFixedHeight(36)
@@ -328,7 +360,10 @@ class QtDispatchBoardView(QWidget):
         self._bulk_toolbar.hide()
         board_layout.addWidget(self._bulk_toolbar)
 
-        # Kanban columns in a horizontal scroll area
+        # ── Kanban columns + EmptyState (stacked) ─────────────────────────
+        self._board_stack = QStackedWidget()
+
+        # Page 0: Kanban columns
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.NoFrame)
@@ -361,16 +396,21 @@ class QtDispatchBoardView(QWidget):
             )
             columns_layout.addWidget(col)
             self._columns[status_key] = col
-            # The column emits ``tripDropped(trip_id)`` whenever a
-            # trip card is dropped onto it.  We route that into the
-            # board's existing transition handler.  This replaces the
-            # old ``childAt``-based heuristic which broke when the
-            # board was scrolled or the cursor landed outside any
-            # column body.
             col.tripDropped.connect(self._on_card_dropped_on_column)
 
         scroll_area.setWidget(columns_container)
-        board_layout.addWidget(scroll_area, 1)
+        self._board_stack.addWidget(scroll_area)  # index 0
+
+        # Page 1: Empty state (shown when filter yields no results)
+        self._board_empty = EmptyState(
+            parent=self._board_tab,
+            icon_name="mdi6.truck",
+            title=t("dispatch_board.no_results_title", default="No trips found"),
+            subtitle=t("dispatch_board.no_results_subtitle", default="Try adjusting your search or filter criteria"),
+        )
+        self._board_stack.addWidget(self._board_empty)  # index 1
+
+        board_layout.addWidget(self._board_stack, 1)
 
         # ── Tab: Alerts ──────────────────────────────────────────────────────
         self._alerts_tab = QWidget()
@@ -426,7 +466,9 @@ class QtDispatchBoardView(QWidget):
             self._preload_alerts()
 
             all_statuses = list(STATUS_TO_COLUMN.keys())
-            all_trips = self._trip_repo.get_by_statuses(all_statuses)
+            all_trips = []
+            if self._trip_repo is not None:
+                all_trips = self._trip_repo.get_by_statuses(all_statuses)
 
             column_trips: dict[str, list[dict[str, Any]]] = {
                 col: [] for col, _, _ in COLUMN_DEFS
@@ -452,7 +494,7 @@ class QtDispatchBoardView(QWidget):
             self._dispatch(lambda ct=column_trips: self._populate_columns(ct))
 
         except Exception as e:
-            logger.exception("Dispatch board data load failed")
+            logger.warning("Dispatch board data load failed: %s", e)
             self._dispatch(lambda err=str(e): self._show_error_all(err))
 
     def _preload_alerts(self) -> None:
@@ -585,6 +627,7 @@ class QtDispatchBoardView(QWidget):
             col.set_trips(trips)
             all_cards.extend(trips)
         self._all_card_data = all_cards
+        self._update_status_counts(column_trips)
 
         # Defer post-load operations
         QTimer.singleShot(100, self._evaluate_all_delays)
@@ -592,6 +635,11 @@ class QtDispatchBoardView(QWidget):
         QTimer.singleShot(500, self._run_conflict_scan)
         QTimer.singleShot(600, self._refresh_side_panels)
         QTimer.singleShot(700, self._apply_filters)
+
+    def _update_status_counts(self, column_trips: dict[str, list[dict[str, Any]]]) -> None:
+        for status_key, card in self._status_cards.items():
+            count = len(column_trips.get(status_key, []))
+            card.set_value(str(count))
 
     def _show_error_all(self, error_msg: str) -> None:
         self._loading = False
@@ -701,6 +749,12 @@ class QtDispatchBoardView(QWidget):
                     card.hide()
 
         self._search_bar.set_result_count(visible, total)
+
+        has_data = total > 0
+        if has_data and visible == 0:
+            self._board_stack.setCurrentIndex(1)
+        else:
+            self._board_stack.setCurrentIndex(0)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Detail panel

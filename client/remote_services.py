@@ -71,9 +71,16 @@ class RemoteTripService:
         return self.get_filtered(limit=limit)
 
     def get_by_statuses(self, statuses: list) -> list:
-        all_trips = self.get_filtered(limit=2000)
         status_set = set(statuses)
-        return [t for t in all_trips if t.get("status") in status_set]
+        result: list = []
+        seen: set = set()
+        for st in statuses:
+            for t in self.get_filtered(status=st, limit=1000):
+                tid = t.get("id")
+                if tid is not None and tid not in seen and t.get("status") in status_set:
+                    seen.add(tid)
+                    result.append(t)
+        return result
 
 
 class RemoteClientService:

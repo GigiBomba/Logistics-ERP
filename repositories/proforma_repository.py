@@ -17,6 +17,15 @@ DEFAULT_PROFORMA_FORMAT_KEY = "prof_year_seq"
 
 class ProformaRepository(BaseRepository):
     TABLE = "proforma_invoices"
+    COLUMNS = [
+        "id", "proforma_number", "issue_date", "valid_until",
+        "client_name", "client_address", "client_vat", "client_phone", "client_email",
+        "description", "notes", "line_items_json", "subtotal",
+        "discount_type", "discount_value", "discount_amount",
+        "tax_rate", "tax_amount", "grand_total", "currency", "mode", "status",
+        "logo_path", "signature_path", "stamp_path", "company_color",
+        "created_at", "updated_at", "company_id",
+    ]
 
     def create(
         self,
@@ -49,29 +58,29 @@ class ProformaRepository(BaseRepository):
     ) -> Optional[int]:
         now = datetime.now().isoformat()
         try:
+            data = {
+                "proforma_number": proforma_number, "issue_date": issue_date,
+                "valid_until": valid_until,
+                "client_name": client_name, "client_address": client_address,
+                "client_vat": client_vat, "client_phone": client_phone,
+                "client_email": client_email,
+                "description": description, "notes": notes,
+                "line_items_json": json.dumps(line_items or []), "subtotal": subtotal,
+                "discount_type": discount_type, "discount_value": discount_value,
+                "discount_amount": discount_amount,
+                "tax_rate": tax_rate, "tax_amount": tax_amount, "grand_total": grand_total,
+                "currency": currency, "mode": mode, "status": status,
+                "logo_path": logo_path, "signature_path": signature_path,
+                "stamp_path": stamp_path, "company_color": company_color,
+                "created_at": now, "updated_at": now,
+            }
+            self._validate_columns(data, extra_allowed={"company_id"})
+            data = self._set_company_from_context(data)
+            cols = ", ".join(data.keys())
+            vals = ", ".join("?" for _ in data)
             return self._execute_insert(
-                f"""INSERT INTO {self.TABLE}
-                    (proforma_number, issue_date, valid_until,
-                     client_name, client_address, client_vat, client_phone, client_email,
-                     description, notes,
-                     line_items_json, subtotal,
-                     discount_type, discount_value, discount_amount,
-                     tax_rate, tax_amount, grand_total,
-                     currency, mode, status,
-                     logo_path, signature_path, stamp_path, company_color,
-                     created_at, updated_at)
-                    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    proforma_number, issue_date, valid_until,
-                    client_name, client_address, client_vat, client_phone, client_email,
-                    description, notes,
-                    json.dumps(line_items or []), subtotal,
-                    discount_type, discount_value, discount_amount,
-                    tax_rate, tax_amount, grand_total,
-                    currency, mode, status,
-                    logo_path, signature_path, stamp_path, company_color,
-                    now, now,
-                ),
+                f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
+                tuple(data.values()),
                 commit=commit,
             )
         except Exception as exc:
@@ -80,7 +89,8 @@ class ProformaRepository(BaseRepository):
 
     def get_by_id(self, proforma_id: int) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ?", (proforma_id,)
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (proforma_id,) + self._company_params(),
         )
         if row and row.get("line_items_json"):
             try:
@@ -91,7 +101,8 @@ class ProformaRepository(BaseRepository):
 
     def get_by_number(self, proforma_number: str) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE proforma_number = ?", (proforma_number,)
+            f"SELECT * FROM {self.TABLE} WHERE proforma_number = ? {self._company_filter()}",
+            (proforma_number,) + self._company_params(),
         )
         if row and row.get("line_items_json"):
             try:
@@ -102,14 +113,14 @@ class ProformaRepository(BaseRepository):
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            self._company_params() + (limit, offset),
         )
 
     def get_by_status(self, status: str, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status = ? ORDER BY created_at DESC LIMIT ?",
-            (status, limit),
+            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            (status,) + self._company_params() + (limit,),
         )
 
     def update(
@@ -117,6 +128,7 @@ class ProformaRepository(BaseRepository):
         proforma_id: int,
         **kwargs,
     ) -> bool:
+        self._validate_columns(kwargs, extra_allowed={"company_id"})
         allowed = {
             "issue_date", "valid_until",
             "client_name", "client_address", "client_vat", "client_phone", "client_email",
@@ -135,8 +147,8 @@ class ProformaRepository(BaseRepository):
         values = list(updates.values()) + [proforma_id]
         try:
             self._execute(
-                f"UPDATE {self.TABLE} SET {set_clause} WHERE id = ?",
-                tuple(values),
+                f"UPDATE {self.TABLE} SET {set_clause} WHERE id = ? {self._company_filter()}",
+                tuple(values) + self._company_params(),
             )
             return True
         except Exception as exc:
@@ -149,7 +161,9 @@ class ProformaRepository(BaseRepository):
     def delete(self, proforma_id: int, commit: bool = True) -> bool:
         try:
             self._execute(
-                f"DELETE FROM {self.TABLE} WHERE id = ?", (proforma_id,), commit=commit
+                f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+                (proforma_id,) + self._company_params(),
+                commit=commit,
             )
             return True
         except Exception as exc:
@@ -158,7 +172,8 @@ class ProformaRepository(BaseRepository):
 
     def count_by_status(self, status: str) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ?", (status,)
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ? {self._company_filter()}",
+            (status,) + self._company_params(),
         )
         return int(row["cnt"]) if row else 0
 
@@ -167,7 +182,8 @@ class ProformaRepository(BaseRepository):
         fmt_key = format_key or DEFAULT_PROFORMA_FORMAT_KEY
         template = PROFORMA_NUMBER_FORMATS.get(fmt_key, PROFORMA_NUMBER_FORMATS[DEFAULT_PROFORMA_FORMAT_KEY])[0]
         row = self._fetchone(
-            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE}",
+            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
         )
         nxt = int(row["nxt"]) if row else 1
         return template.format(year=year, seq=nxt)

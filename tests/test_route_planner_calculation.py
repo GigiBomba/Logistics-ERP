@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+from unittest.mock import patch
 
 from PySide6.QtWidgets import QApplication
 
@@ -36,6 +37,22 @@ def _insert_truck(db, plate: str, consumption: float = 25.0) -> None:
         (plate, consumption),
     )
     db.conn.commit()
+
+
+_FAKE_ROUTE_RESULT = [{
+    "stops": [[46.0, 25.0], [47.0, 26.0]],
+    "geometry": [(46.0, 25.0), (46.5, 25.5), (47.0, 26.0)],
+    "distance_km": 150.0,
+    "duration_min": 120.0,
+    "detected_countries": ["RO"],
+    "excluded_countries_requested": [],
+    "history_id": 1,
+    "reroute_reason": "chosen",
+    "geocoded_stops": [
+        {"lat": 46.0, "lng": 25.0, "address": "A"},
+        {"lat": 47.0, "lng": 26.0, "address": "B"},
+    ],
+}]
 
 
 class _RoutePlannerHarness:
@@ -107,30 +124,38 @@ class TestRoutePlannerSignalMarshaling(unittest.TestCase):
         _ensure_qapp()
         h = _RoutePlannerHarness()
         try:
-            v = h.view
-            v._on_calculate_click()
-            self.assertFalse(v.calculate_btn.isEnabled(),
-                             "Calculate button should be disabled while running")
-            # Pump events until the route arrives (graphhopper call may take
-            # 1-10s; allow 30s for a CI-friendly upper bound).
-            deadline = time.time() + 30.0
-            done = False
-            while time.time() < deadline:
-                QApplication.processEvents()
-                if v.calculate_btn.isEnabled():
-                    done = True
-                    break
-                time.sleep(0.2)
-            self.assertTrue(
-                done,
-                "Calculate button never re-enabled — the worker-thread "
-                "callback was never delivered to the GUI thread.",
-            )
-            self.assertTrue(v.calculate_btn.isEnabled())
-            self.assertTrue(v.lbl_info.text(),
-                            "lbl_info should have been updated with the result")
-            self.assertIsNotNone(v._last_route_history_id,
-                                 "History id should be set after a successful calc")
+            from PySide6.QtCore import QTimer
+            from services.route_runner import RouteRunner
+
+            def mock_run(self_obj, *, route_service, stops_state, truck,
+                         profile, callback, geocode_cache, avoid_countries):
+                # Defer the callback so the "Calculating…" state is visible
+                # to the test, simulating what the real worker thread does.
+                QTimer.singleShot(0, lambda: callback(_FAKE_ROUTE_RESULT))
+
+            with patch.object(RouteRunner, "run_route_async", mock_run):
+                v = h.view
+                v._on_calculate_click()
+                self.assertFalse(v.calculate_btn.isEnabled(),
+                                 "Calculate button should be disabled while running")
+                deadline = time.time() + 5.0
+                done = False
+                while time.time() < deadline:
+                    QApplication.processEvents()
+                    if v.calculate_btn.isEnabled():
+                        done = True
+                        break
+                    time.sleep(0.05)
+                self.assertTrue(
+                    done,
+                    "Calculate button never re-enabled — the worker-thread "
+                    "callback was never delivered to the GUI thread.",
+                )
+                self.assertTrue(v.calculate_btn.isEnabled())
+                self.assertTrue(v.lbl_info.text(),
+                                "lbl_info should have been updated with the result")
+                self.assertIsNotNone(v._last_route_history_id,
+                                     "History id should be set after a successful calc")
         finally:
             h.close()
 

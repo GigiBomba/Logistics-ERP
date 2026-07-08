@@ -34,6 +34,7 @@ from repositories.automail_repository import AutoMailRepository
 from services.i18n import t
 from ui.components import Btn
 from ui.widgets import SectionHeader
+from ui.widgets.toast import Toast
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
@@ -631,28 +632,56 @@ class ConfigPanel(QFrame):
 
     def _on_add_reminder(self) -> None:
         if self._repo is None:
+            Toast.show_error(self.parent(), t("automail.no_database", "No database connection"))
             return
-        templates = self._repo.get_all_templates()
-        default_tpl_id = None
-        if templates:
-            default_tpl_id = templates[0]["id"]
-        data = {
-            "name": t("automail.new_schedule_default", "New Reminder"),
-            "trigger_type": "days_before_due",
-            "days_offset": 3,
-            "template_id": default_tpl_id,
-            "is_active": 1,
-            "attach_invoice": 1,
-            "attach_cmr": 1,
-            "attach_all_docs": 0,
-        }
-        new_id = self._repo.create_schedule(data)
-        self._refresh_schedule_list()
-        self.schedules_changed.emit()
-        # Open the inline editor for the new schedule
-        if new_id in self._editor_containers:
-            for sid, container in self._editor_containers.items():
-                container.setVisible(sid == new_id)
+        try:
+            templates = self._repo.get_all_templates()
+            if templates:
+                tpl_id = templates[0]["id"]
+            else:
+                tpl_id = self._repo.create_template({
+                    "name": t("automail.default_template_name", "Default"),
+                    "subject": t("automail.default_template_subject",
+                                 "Payment Notice: Invoice {invoice_number}"),
+                    "body_text": t("automail.default_template_body",
+                                   "Dear Accounts Payable Team,\n\n"
+                                   "This is an automated notification regarding invoice "
+                                   "{invoice_number} ({total_amount} {currency}), "
+                                   "due on {due_date}.\n\n"
+                                   "Please find the relevant documents attached.\n\n"
+                                   "Best regards,\n{company_name}"),
+                    "body_html": "<p>Dear Accounts Payable Team,</p>"
+                                 "<p>This is an automated notification regarding invoice "
+                                 "<strong>{invoice_number}</strong> "
+                                 "({total_amount} {currency}), "
+                                 "due on <strong>{due_date}</strong>.</p>"
+                                 "<p>Please find the relevant documents attached.</p>"
+                                 "<p>Best regards,<br>{company_name}</p>",
+                    "is_default": 1,
+                })
+            data = {
+                "name": t("automail.new_schedule_default", "New Reminder"),
+                "trigger_type": "days_before_due",
+                "days_offset": 3,
+                "template_id": tpl_id,
+                "is_active": 1,
+                "attach_invoice": 1,
+                "attach_cmr": 1,
+                "attach_all_docs": 0,
+            }
+            new_id = self._repo.create_schedule(data)
+            self._refresh_schedule_list()
+            self.schedules_changed.emit()
+            # Open the inline editor for the new schedule
+            if new_id in self._editor_containers:
+                for sid, container in self._editor_containers.items():
+                    container.setVisible(sid == new_id)
+        except Exception as exc:
+            logger.exception("Failed to add reminder")
+            Toast.show_error(
+                self.parent(),
+                t("automail.add_reminder_error", "Failed to add reminder: {error}").format(error=str(exc)),
+            )
 
     def _on_toggle_editor(self, schedule_id: int) -> None:
         """Toggle the inline editor for a schedule card."""

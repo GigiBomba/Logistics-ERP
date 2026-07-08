@@ -23,6 +23,16 @@ with contextlib.suppress(Exception):
         load_dotenv(dotenv_path)
         logging.info("Loaded environment from .env file")
 
+# ── QWebEngine flags — must execute before any PySide6 import ──────
+# The ``from PySide6.QtWebEngineWidgets import QWebEngineView`` chain
+# transitively triggered by ``ui/main_window → ui/views → ui/map``
+# initialises Qt's child Chromium process BEFORE ``window.show()``.
+# Without these environment flags the GPU/compositor process creates
+# a transient top-level window that flashes in the corner of the
+# screen at startup.
+from utils.webengine_flags import apply_webengine_flags
+apply_webengine_flags()
+
 # ── Plotly guard — must execute before any module imports plotly.io ──
 # Register a dummy webbrowser so stray fig.show() calls never spawn
 # a browser window.  This precedes every other import that could
@@ -42,8 +52,7 @@ class _DummyBrowser:
 _webbrowser.register("dummy", None, _DummyBrowser(), preferred=True)
 import plotly.io as _pio
 _pio.renderers.default = "json"
-logger = logging.getLogger("app")  # re-bind after the guard line
-logger.debug("Plotly renderer pinned to 'json'; dummy browser registered")
+logging.getLogger("app").debug("Plotly renderer pinned to 'json'; dummy browser registered")
 
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
@@ -65,6 +74,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(levelname)s %(name)s: %(message)s",
     handlers=[logging.StreamHandler(sys.stdout), _handler],
+    force=True,
 )
 logger = logging.getLogger("app")
 
@@ -225,7 +235,29 @@ def run_app() -> int:
         except Exception:
             logger.debug("Auto-login hydration skipped (first boot or no storage).")
 
+        # 8b. Login gate — require authentication before showing the main window
+        from client.auth_manager import is_admin, require_admin_async
+        if not is_admin():
+            if not require_admin_async():
+                logger.info("Login cancelled or failed — exiting.")
+                return 0
+
         app.setStyleSheet(build_stylesheet())
+
+        # ── Pre-warm QWebEngine Chromium process ──────────────────
+        # Force-initialize the embedded Chromium engine NOW, while
+        # no visible window exists, so its transient GPU/compositor
+        # windows flash harmlessly in the background rather than
+        # appearing as ghost boxes after the main window is shown.
+        try:
+            from PySide6.QtWebEngineWidgets import QWebEngineView
+            _prewarm = QWebEngineView()
+            _prewarm.resize(1, 1)
+            app.processEvents()
+            _prewarm.deleteLater()
+            del _prewarm
+        except Exception:
+            pass
 
         from PySide6.QtCore import QTimer
 

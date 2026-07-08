@@ -13,11 +13,13 @@ class SuccessiveCarrierRepository(BaseRepository):
 
     def get_by_trip(self, trip_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE trip_id = ? ORDER BY sequence_order ASC",
-            (trip_id,),
+            f"SELECT * FROM {self.TABLE} WHERE trip_id = ? {self._company_filter()} ORDER BY sequence_order ASC",
+            (trip_id,) + self._company_params(),
         )
 
     def create(self, data: Dict[str, Any]) -> int:
+        self._validate_columns(data)
+        data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
@@ -26,30 +28,37 @@ class SuccessiveCarrierRepository(BaseRepository):
         )
 
     def update(self, carrier_id: int, data: Dict[str, Any]) -> None:
+        self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
-            tuple(data.values()) + (carrier_id,),
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (carrier_id,) + self._company_params(),
         )
 
     def delete(self, carrier_id: int) -> None:
-        self._execute(f"DELETE FROM {self.TABLE} WHERE id = ?", (carrier_id,))
+        self._execute(
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (carrier_id,) + self._company_params(),
+        )
 
     def delete_by_trip(self, trip_id: int) -> None:
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE trip_id = ?", (trip_id,)
+            f"DELETE FROM {self.TABLE} WHERE trip_id = ? {self._company_filter()}",
+            (trip_id,) + self._company_params(),
         )
 
     def replace_for_trip(self, trip_id: int, carriers: List[Dict[str, Any]]) -> None:
         self.begin_transaction()
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE trip_id = ?", (trip_id,),
+            f"DELETE FROM {self.TABLE} WHERE trip_id = ? {self._company_filter()}",
+            (trip_id,) + self._company_params(),
             commit=False,
         )
         for i, c in enumerate(carriers):
             c = dict(c)
             c["trip_id"] = trip_id
             c["sequence_order"] = i + 1
+            c = self._set_company_from_context(c)
             cols = ", ".join(c.keys())
             vals = ", ".join("?" for _ in c)
             self._execute(

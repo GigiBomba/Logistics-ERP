@@ -9,6 +9,7 @@ that the singleton pattern introduces.
 """
 
 import pytest
+from unittest.mock import MagicMock
 
 pytest_plugins = ["test_conftest"]
 
@@ -45,4 +46,30 @@ def reset_singletons():
     from services.trip_context import TripContextService
     TripContextService._instance = None
 
+    # ── Chart-export engine (Choreographer/Chrome) ────────────────
+    # Replace with a mock so that async QThreadPool render workers
+    # from any test never try to boot real Chrome during test runs.
+    import utils.chart_export as _ce
+    _mock_ce = MagicMock(spec=_ce._RenderEngine)
+    _mock_ce.submit.return_value = b"<svg>mock</svg>"
+    with _ce._ENGINE_LOCK:
+        _saved_ce = _ce._ENGINE
+        _ce._ENGINE = _mock_ce
+
     yield
+
+    # ── Teardown ─────────────────────────────────────────────────
+    # Drain any in-flight QThreadPool renders (from PlotlyChartWidget
+    # instances created during the test) so their workers don't
+    # outlive the fixture and create a real Chrome engine after we
+    # restore _ENGINE.
+    try:
+        from ui.plotly_renderer import get_render_manager
+        get_render_manager().wait_for_done(msec=5000)
+    except Exception:
+        pass
+
+    # Restore the chart_export engine singleton so subsequent tests
+    # start clean.
+    with _ce._ENGINE_LOCK:
+        _ce._ENGINE = _saved_ce

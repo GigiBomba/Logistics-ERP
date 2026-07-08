@@ -36,21 +36,24 @@ class RouteRepository(BaseRepository):
 
     def get_by_id(self, route_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ?", (route_id,)
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (route_id,) + self._company_params(),
         )
 
     def get_all(self, limit: int = 100, offset: int = 0, include_archived: bool = False) -> List[Dict[str, Any]]:
         if include_archived:
             return self._fetchall(
-                f"SELECT * FROM {self.TABLE} WHERE is_committed >= 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset),
+                f"SELECT * FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                (limit, offset) + self._company_params(),
             )
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL AND is_committed >= 0 ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset),
+            f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL AND is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (limit, offset) + self._company_params(),
         )
 
     def create(self, data: Dict[str, Any]) -> int:
+        self._validate_columns(data)
+        data = self._set_company_from_context(data)
         filtered = {k: v for k, v in data.items() if k != "id"}
         cols = ", ".join(filtered.keys())
         vals = ", ".join("?" for _ in filtered)
@@ -60,20 +63,25 @@ class RouteRepository(BaseRepository):
         )
 
     def update(self, route_id: int, data: Dict[str, Any]) -> None:
+        self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ?",
-            tuple(data.values()) + (route_id,),
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (route_id,) + self._company_params(),
         )
 
     def delete(self, route_id: int) -> None:
-        self._execute(f"DELETE FROM {self.TABLE} WHERE id = ?", (route_id,))
+        self._execute(
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (route_id,) + self._company_params(),
+        )
 
     # ── Domain-specific queries ───────────────────────────────────────
 
     def get_stops_json(self, route_id: int) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT stops_json FROM {self.TABLE} WHERE id = ?", (route_id,)
+            f"SELECT stops_json FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (route_id,) + self._company_params(),
         )
         return row["stops_json"] if row else None
 
@@ -82,55 +90,60 @@ class RouteRepository(BaseRepository):
         return self._fetchone(
             f"""SELECT r.* FROM {self.TABLE} r
                 JOIN trips t ON t.route_history_v2_id = r.id
-                WHERE t.id = ?""",
-            (trip_id,),
+                WHERE t.id = ? {self._company_filter('r')}""",
+            (trip_id,) + self._company_params(),
         )
 
     def get_by_truck(self, truck_id: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? ORDER BY created_at DESC",
-            (truck_id,),
+            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} ORDER BY created_at DESC",
+            (truck_id,) + self._company_params(),
         )
 
     def get_by_profile(self, profile: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE profile = ? ORDER BY created_at DESC",
-            (profile,),
+            f"SELECT * FROM {self.TABLE} WHERE profile = ? {self._company_filter()} ORDER BY created_at DESC",
+            (profile,) + self._company_params(),
         )
 
     def get_by_fingerprint(self, fingerprint: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE route_fingerprint = ?",
-            (fingerprint,),
+            f"SELECT * FROM {self.TABLE} WHERE route_fingerprint = ? {self._company_filter()}",
+            (fingerprint,) + self._company_params(),
         )
 
     def archive(self, route_id: int, archived_at: Optional[str] = None) -> None:
         from datetime import datetime
         ts = archived_at or datetime.utcnow().isoformat(timespec="seconds") + "Z"
         self._execute(
-            f"UPDATE {self.TABLE} SET archived_at = ? WHERE id = ?",
-            (ts, route_id),
+            f"UPDATE {self.TABLE} SET archived_at = ? WHERE id = ? {self._company_filter()}",
+            (ts, route_id,) + self._company_params(),
         )
 
     def commit(self, route_id: int) -> None:
         self._execute(
-            f"UPDATE {self.TABLE} SET is_committed = 1 WHERE id = ?",
-            (route_id,),
+            f"UPDATE {self.TABLE} SET is_committed = 1 WHERE id = ? {self._company_filter()}",
+            (route_id,) + self._company_params(),
         )
 
     def discard(self, route_id: int) -> None:
         self._execute(
-            f"UPDATE {self.TABLE} SET is_committed = -1 WHERE id = ?",
-            (route_id,),
+            f"UPDATE {self.TABLE} SET is_committed = -1 WHERE id = ? {self._company_filter()}",
+            (route_id,) + self._company_params(),
         )
 
     def count(self) -> int:
-        row = self._fetchone(f"SELECT COUNT(*) AS cnt FROM {self.TABLE}")
+        row = self._fetchone(
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
+        )
         return row["cnt"] if row else 0
 
     # ── Upsert (fingerprint-based dedup) ───────────────────────────────
 
     def upsert(self, data: Dict[str, Any], fingerprint: str) -> int:
+        self._validate_columns(data)
+        data = self._set_company_from_context(data)
         filtered = {k: v for k, v in data.items() if k != "id"}
         cols = ", ".join(filtered.keys())
         vals = ", ".join("?" for _ in filtered)
@@ -151,8 +164,8 @@ class RouteRepository(BaseRepository):
 
     def get_id_by_fingerprint(self, fingerprint: str) -> Optional[int]:
         row = self._fetchone(
-            f"SELECT id FROM {self.TABLE} WHERE route_fingerprint = ?",
-            (fingerprint,),
+            f"SELECT id FROM {self.TABLE} WHERE route_fingerprint = ? {self._company_filter()}",
+            (fingerprint,) + self._company_params(),
         )
         return int(row["id"]) if row else None
 
@@ -181,8 +194,8 @@ class RouteRepository(BaseRepository):
                            truck_label, profile, excluded_countries_json,
                            countries_traversed_json, metadata_version, stops_json,
                            archived_at, is_committed
-                    FROM {self.TABLE} WHERE is_committed >= 0"""
-        params: List[Any] = []
+                    FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()}"""
+        params: List[Any] = list(self._company_params())
         if not include_archived:
             query += " AND archived_at IS NULL"
         if search:
@@ -206,8 +219,8 @@ class RouteRepository(BaseRepository):
         profile: str = "",
         include_archived: bool = False,
     ) -> int:
-        query = f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_committed >= 0"
-        params: List[Any] = []
+        query = f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()}"
+        params: List[Any] = list(self._company_params())
         if not include_archived:
             query += " AND archived_at IS NULL"
         if search:
@@ -226,10 +239,13 @@ class RouteRepository(BaseRepository):
     # ── Maintenance / housekeeping ─────────────────────────────────────
 
     def clear_all(self) -> int:
-        return self._execute_with_count(f"DELETE FROM {self.TABLE}")
+        return self._execute_with_count(
+            f"DELETE FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
+        )
 
     def prune_before(self, cutoff_iso: str) -> int:
         return self._execute_with_count(
-            f"DELETE FROM {self.TABLE} WHERE last_calculated_at < ?",
-            (cutoff_iso,),
+            f"DELETE FROM {self.TABLE} WHERE last_calculated_at < ? {self._company_filter()}",
+            (cutoff_iso,) + self._company_params(),
         )

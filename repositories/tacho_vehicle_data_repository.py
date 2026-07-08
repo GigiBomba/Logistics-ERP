@@ -5,8 +5,15 @@ from repositories import BaseRepository
 
 class TachoVehicleDataRepository(BaseRepository):
     TABLE = "tacho_vehicle_data"
+    COLUMNS = [
+        "id", "import_id", "truck_id", "vu_serial_number", "calibration_date",
+        "calibration_expiry", "odometer_km", "k_factor", "w_factor",
+        "speed_violations", "recorded_from", "recorded_to", "company_id",
+    ]
 
     def create(self, data: Dict[str, Any]) -> int:
+        self._validate_columns(data)
+        data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
@@ -16,13 +23,14 @@ class TachoVehicleDataRepository(BaseRepository):
 
     def get_by_truck(self, truck_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? ORDER BY id DESC",
-            (truck_id,),
+            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} ORDER BY id DESC",
+            (truck_id,) + self._company_params(),
         )
 
     def get_by_import(self, import_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE import_id = ?", (import_id,)
+            f"SELECT * FROM {self.TABLE} WHERE import_id = ? {self._company_filter()}",
+            (import_id,) + self._company_params(),
         )
 
     def get_latest_by_truck(self, truck_id: int) -> Optional[Dict[str, Any]]:
@@ -30,9 +38,9 @@ class TachoVehicleDataRepository(BaseRepository):
         return self._fetchone(
             f"""SELECT tvd.* FROM {self.TABLE} tvd
                 JOIN tacho_imports ti ON ti.id = tvd.import_id
-                WHERE tvd.truck_id = ?
+                WHERE tvd.truck_id = ? {self._company_filter('tvd')}
                 ORDER BY ti.imported_at DESC LIMIT 1""",
-            (truck_id,),
+            (truck_id,) + self._company_params(),
         )
 
     def get_tacho_status_data(self) -> List[Dict[str, Any]]:
