@@ -7,12 +7,14 @@ class TripBase(BaseModel):
 
     client_name: str = ""
     loading_city: str = ""
-    loading_country: str = ""
+    loading_country: Optional[str] = None
     delivery_city: str = ""
-    delivery_country: str = ""
+    delivery_country: Optional[str] = None
 
 
 class TripResponse(TripBase):
+    model_config = ConfigDict(extra="ignore")
+
     id: int
     status: str
     created_at: str

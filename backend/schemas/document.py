@@ -29,6 +29,8 @@ class DocumentCreate(DocumentBase):
 
 
 class DocumentResponse(DocumentBase):
+    model_config = ConfigDict(extra="ignore")
+
     id: int
     doc_number: str
     file_name: str

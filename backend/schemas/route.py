@@ -8,6 +8,8 @@ class RouteBase(BaseModel):
 
 
 class RouteResponse(RouteBase):
+    model_config = ConfigDict(extra="ignore")
+
     id: int
     profile: str = ""
     created_at: str = ""
