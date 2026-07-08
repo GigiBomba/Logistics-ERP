@@ -189,7 +189,7 @@ async def login_for_access_token(
             logger.warning("Admin login attempted but no password hash configured [%s]", client_ip)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Admin authentication is not configured.",
+                detail="Invalid credentials.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -202,7 +202,7 @@ async def login_for_access_token(
             logger.warning("Failed admin login attempt for %s from %s", email, client_ip)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect admin email or password.",
+                detail="Invalid credentials.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -224,7 +224,7 @@ async def login_for_access_token(
                 logger.warning("Failed login attempt (unknown user) for %s from %s", email, client_ip)
                 raise HTTPException(
                     status_code=status.HTTP_401_UNAUTHORIZED,
-                    detail="Incorrect email or password.",
+                    detail="Invalid credentials.",
                     headers={"WWW-Authenticate": "Bearer"},
                 )
             user = dict(row)
@@ -234,7 +234,7 @@ async def login_for_access_token(
             logger.debug("Users table query failed for %s from %s: %s", email, client_ip, exc)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password.",
+                detail="Invalid credentials.",
                 headers={"WWW-Authenticate": "Bearer"},
             ) from exc
 
@@ -247,7 +247,7 @@ async def login_for_access_token(
             logger.warning("Failed login attempt (bad password) for %s from %s", email, client_ip)
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Incorrect email or password.",
+                detail="Invalid credentials.",
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
