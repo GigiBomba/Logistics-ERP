@@ -467,6 +467,27 @@ class DatabaseManager:
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
 
+        # ── Multi-tenant: add company_id to all business tables ──────────
+        _tenant_tables = [
+            ("trips", "ALTER TABLE trips ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("clients", "ALTER TABLE clients ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("trucks", "ALTER TABLE trucks ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("drivers", "ALTER TABLE drivers ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("invoices", "ALTER TABLE invoices ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("documents", "ALTER TABLE documents ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("route_history_v2", "ALTER TABLE route_history_v2 ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("receipts", "ALTER TABLE receipts ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("proforma_invoices", "ALTER TABLE proforma_invoices ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+        ]
+        for table, alter_sql in _tenant_tables:
+            self._ensure_column(table, "company_id", alter_sql)
+            try:
+                self.conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{table}_company ON {table}(company_id)"
+                )
+            except Exception as e:
+                logger.warning("Migration step failed: %s", e)
+
         try:
             self.conn.commit()
         except Exception as e:
