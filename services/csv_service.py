@@ -42,7 +42,7 @@ class CsvService:
 
         fieldnames = fieldnames or list(rows[0].keys())
         with open(path, "w", newline="", encoding=encoding) as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
             writer.writeheader()
             writer.writerows(rows)
         logger.info("CSV exported: %s (%d rows)", path, len(rows))

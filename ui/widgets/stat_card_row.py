@@ -50,6 +50,7 @@ class StatCardRow(QWidget):
 
     def clear(self) -> None:
         for card in self._cards:
+            self._layout.removeWidget(card)
             card.deleteLater()
         self._cards.clear()
 

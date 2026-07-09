@@ -63,5 +63,8 @@ async def get_tacho_status(
     db: DatabaseManager = Depends(get_db),
 ):
     from services.tacho_service import TachoService
-    svc = TachoService(db)
+    try:
+        svc = TachoService(db)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
     return {"status": "ok", "data": str(svc)}

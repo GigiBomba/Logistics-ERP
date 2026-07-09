@@ -153,6 +153,86 @@ class TestDocumentsRouter:
         with pytest.raises(RuntimeError, match="DB error"):
             client.get(f"{BASE}/")
 
+    # ── upload ─────────────────────────────────────────────────────────────
+
+    def test_upload_document_success(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        fake_result = {**self.FAKE_DOC, "id": 10}
+        mocks["document_service"].upload.return_value = fake_result
+
+        resp = client.post(
+            f"{BASE}/upload",
+            files={"file": ("test.pdf", b"%PDF-1.4 sample content", "application/pdf")},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["id"] == 10
+        assert body["title"] == "Invoice 2024-001"
+        mocks["document_service"].upload.assert_called_once()
+
+    def test_upload_document_wrong_mime_type(self, client_with_mocks):
+        client, mocks = client_with_mocks
+
+        resp = client.post(
+            f"{BASE}/upload",
+            files={"file": ("test.html", b"<html></html>", "text/html")},
+        )
+        assert resp.status_code == 400
+        assert "not allowed" in resp.json()["detail"].lower()
+        mocks["document_service"].upload.assert_not_called()
+
+    def test_upload_document_too_large(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        oversized = b"x" * (60 * 1024 * 1024)  # 60 MB
+
+        resp = client.post(
+            f"{BASE}/upload",
+            files={"file": ("big.pdf", oversized, "application/pdf")},
+        )
+        assert resp.status_code == 400
+        assert "too large" in resp.json()["detail"].lower()
+        mocks["document_service"].upload.assert_not_called()
+
+    def test_upload_document_service_failure(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["document_service"].upload.return_value = None
+
+        resp = client.post(
+            f"{BASE}/upload",
+            files={"file": ("test.pdf", b"%PDF-1.4 content", "application/pdf")},
+        )
+        assert resp.status_code == 500
+        assert resp.json()["detail"] == "Upload failed"
+
+    def test_upload_document_no_file(self, client_with_mocks):
+        client, mocks = client_with_mocks
+
+        resp = client.post(f"{BASE}/upload")
+        assert resp.status_code == 422
+
+    def test_upload_document_with_metadata(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        fake_result = {**self.FAKE_DOC, "id": 20, "category": "invoices"}
+        mocks["document_service"].upload.return_value = fake_result
+
+        resp = client.post(
+            f"{BASE}/upload",
+            files={"file": ("inv.pdf", b"%PDF-1.4 invoice", "application/pdf")},
+            data={
+                "category": "invoices",
+                "entity_type": "trip",
+                "entity_id": "42",
+                "uploaded_by": "alice",
+            },
+        )
+        assert resp.status_code == 200
+        mocks["document_service"].upload.assert_called_once()
+        call_kwargs = mocks["document_service"].upload.call_args[1]
+        assert call_kwargs["category"] == "invoices"
+        assert call_kwargs["entity_type"] == "trip"
+        assert call_kwargs["entity_id"] == 42
+        assert call_kwargs["uploaded_by"] == "alice"
+
     # ── auth ───────────────────────────────────────────────────────────────
 
     def test_unauthorized_without_token(self, app):

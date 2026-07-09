@@ -23,7 +23,10 @@ async def generate_receipt(
 
     from services.invoicing.receipt_generator import ReceiptGenerator
     gen = ReceiptGenerator()
-    path = gen.generate(receipt_data)
+    try:
+        path = gen.generate(receipt_data)
+    except Exception:
+        raise HTTPException(status_code=500, detail="Receipt generation failed")
     if not os.path.isfile(path):
         raise HTTPException(status_code=500, detail="Receipt generation failed")
     return FileResponse(path, filename=os.path.basename(path), media_type="application/pdf")

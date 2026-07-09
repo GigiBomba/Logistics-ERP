@@ -144,7 +144,7 @@ class QtTripPickerDialog(QDialog):
         for trow in trips:
             label, sub = _format_trip(trow)
             item = QListWidgetItem(f"{label}\n  {sub}")
-            item.setData(Qt.UserRole, int(trow.get("id") or 0))
+            item.setData(Qt.UserRole, int(str(trow.get("id", 0) or 0)))
             self._list.addItem(item)
 
         self._empty_lbl.setVisible(self._list.count() == 0)

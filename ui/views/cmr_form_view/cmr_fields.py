@@ -251,6 +251,7 @@ class CmrFieldsMixin:
         self._adr_content_wrapper.setVisible(checked)
         if checked and not self._adr_rows:
             self._add_adr_row()
+        self._update_box_navigator()
 
     def _add_adr_row(self):
         row = QFrame()

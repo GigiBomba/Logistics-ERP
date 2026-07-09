@@ -185,6 +185,10 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
                     widget.textChanged.connect(self._update_box_navigator)
                 elif hasattr(widget, "dateChanged"):
                     widget.dateChanged.connect(self._update_box_navigator)
+                elif hasattr(widget, "currentIndexChanged"):
+                    widget.currentIndexChanged.connect(self._update_box_navigator)
+                elif hasattr(widget, "valueChanged"):
+                    widget.valueChanged.connect(self._update_box_navigator)
 
     # ── Helpers ─────────────────────────────────────────────────────────────
 

@@ -331,9 +331,9 @@ class QtLoginDialog(QDialog):
         self._thread = QThread(self)
         self._worker.moveToThread(self._thread)
         self._thread.started.connect(self._worker.run)
-        self._worker.finished.connect(self._on_login_result)
-        self._worker.finished.connect(self._thread.quit)
-        self._worker.finished.connect(self._worker.deleteLater)
+        self._worker.finished.connect(self._on_login_result, Qt.QueuedConnection)
+        self._worker.finished.connect(self._thread.quit, Qt.QueuedConnection)
+        self._worker.finished.connect(self._worker.deleteLater, Qt.QueuedConnection)
         self._thread.finished.connect(self._thread.deleteLater)
         self._thread.start()
 

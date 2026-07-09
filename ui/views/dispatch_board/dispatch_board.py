@@ -536,7 +536,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                 card.trip_data["truck_plate"] = trip.get("truck_number", "")
                 card.trip_data["driver_name"] = trip.get("driver_name", "")
                 card.trip_data["driver_id"] = trip.get("driver_id")
-                card.update_truck(trip.get("truck_number", ""))
+                card.update_truck(trip.get("truck_number", ""), trip.get("truck_id"))
                 card.update_driver(trip.get("driver_name", ""), trip.get("driver_id"))
         except Exception:
             logger.debug("Failed to refresh assignment for trip %d", trip_id, exc_info=True)
@@ -641,7 +641,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             card.trip_data["driver_id"] = trip.get("driver_id")
             card.trip_data["eta"] = trip.get("end_date", "")
             card.trip_data["departure_date"] = trip.get("start_date", "")
-            card.update_truck(trip.get("truck_number", ""))
+            card.update_truck(trip.get("truck_number", ""), trip.get("truck_id"))
             card.update_driver(trip.get("driver_name", ""), trip.get("driver_id"))
             card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
             self._evaluate_single_delay(card)

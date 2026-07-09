@@ -84,6 +84,8 @@ class Toast(QFrame):
         self._dismiss_timer.start(self._duration_ms)
 
     def _start_fade_out(self):
+        if self._fade_out.state() == QPropertyAnimation.Running:
+            return
         self._fade_out.start()
 
     @classmethod

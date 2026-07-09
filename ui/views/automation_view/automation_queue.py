@@ -131,9 +131,9 @@ class QueueManagementMixin:
         self._detail.link_requested.connect(self._on_link_requested)
         # Hold a reference so the worker is not GC'd before ``worker_ready`` fires.
         self._pending_workers.append(worker)
+        worker.worker_ready.connect(self._on_worker_ready)
         worker.start()
         self._refresh_from_db()
-        worker.worker_ready.connect(self._on_worker_ready)
 
     # ------------------------------------------------------------------
     # Worker signal handlers

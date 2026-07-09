@@ -120,6 +120,10 @@ class MapWidget(QWebEngineView):
 
         self.setHtml(inner_html, QUrl("about:blank"))
         self._map_ready = False
+        try:
+            self.loadFinished.disconnect(self._on_load_finished)
+        except (TypeError, RuntimeError):
+            pass
         self.loadFinished.connect(self._on_load_finished)
 
     def _on_load_finished(self, ok: bool) -> None:

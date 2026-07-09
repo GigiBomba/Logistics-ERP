@@ -1674,10 +1674,9 @@ class QtRoutePlannerView(QWidget):
         # get duplicate events from a dead instance.
         if getattr(self, "_event_subscribed", False):
             try:
-                bus = EventBus()
-                bus.unsubscribe(TRUCK_CREATED, self._on_truck_event)
-                bus.unsubscribe(TRUCK_UPDATED, self._on_truck_event)
-                bus.unsubscribe(TRUCK_DELETED, self._on_truck_event)
+                self._event_bus.unsubscribe(TRUCK_CREATED, self._on_truck_event)
+                self._event_bus.unsubscribe(TRUCK_UPDATED, self._on_truck_event)
+                self._event_bus.unsubscribe(TRUCK_DELETED, self._on_truck_event)
             except Exception:
                 pass
             self._event_subscribed = False
