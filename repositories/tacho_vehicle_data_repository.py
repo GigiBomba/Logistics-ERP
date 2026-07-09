@@ -70,11 +70,11 @@ class TachoVehicleDataRepository(BaseRepository):
         return self._fetchall(
             f"""SELECT tvd.* FROM {self.TABLE} tvd
                 JOIN (
-                    SELECT truck_id, MAX(ti.imported_at) AS latest_at
-                    FROM {self.TABLE}
-                    JOIN tacho_imports ti ON ti.id = import_id
-                    WHERE truck_id IS NOT NULL
-                    GROUP BY truck_id
+                    SELECT tvd_inner.truck_id, MAX(ti.imported_at) AS latest_at
+                    FROM {self.TABLE} tvd_inner
+                    JOIN tacho_imports ti ON ti.id = tvd_inner.import_id
+                    WHERE tvd_inner.truck_id IS NOT NULL
+                    GROUP BY tvd_inner.truck_id
                 ) latest ON latest.truck_id = tvd.truck_id
                 JOIN tacho_imports ti2 ON ti2.id = tvd.import_id AND ti2.imported_at = latest.latest_at"""
         )
