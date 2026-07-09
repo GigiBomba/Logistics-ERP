@@ -95,15 +95,18 @@ class TestStartStop:
         assert w.is_running() is False
 
     def test_start_starts_polling(self, watcher):
-        watcher.start()
+        with patch.object(watcher, "_try_watchdog", return_value=False):
+            watcher.start()
         assert watcher.is_running() is True
         watcher.stop()
         assert watcher.is_running() is False
 
     def test_start_idempotent(self, watcher):
-        watcher.start()
+        with patch.object(watcher, "_try_watchdog", return_value=False):
+            watcher.start()
         thread_id = id(watcher._thread)
-        watcher.start()  # second call should no-op
+        with patch.object(watcher, "_try_watchdog", return_value=False):
+            watcher.start()  # second call should no-op
         assert id(watcher._thread) == thread_id
         watcher.stop()
 
@@ -208,8 +211,16 @@ class TestDeleteAfter:
 
 class TestWatchdog:
     def test_try_watchdog_returns_false_when_not_installed(self, watcher):
-        with patch.dict("sys.modules", {"watchdog": None}):
-            # When watchdog is not importable, returns False
+        # Simulate watchdog not being installed by mocking the import
+        import builtins
+        real_import = builtins.__import__
+
+        def mock_import(name, *args, **kwargs):
+            if name == "watchdog" or name.startswith("watchdog."):
+                raise ImportError(f"No module named {name}")
+            return real_import(name, *args, **kwargs)
+
+        with patch("builtins.__import__", side_effect=mock_import):
             result = watcher._try_watchdog()
             assert result is False
 

@@ -5,6 +5,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from backend.dependencies import get_document_service
+from backend.dependencies_security import get_current_user, require_admin, require_dispatcher
 from backend.main import create_app
 
 SAMPLE_DOC = {
@@ -74,6 +75,10 @@ class MockDocumentService:
 @pytest.fixture
 def client():
     app = create_app()
+    mock_user = {"id": 1, "email": "test@test.com", "role": "admin", "is_admin": True, "company_id": 1}
+    app.dependency_overrides[get_current_user] = lambda: mock_user
+    app.dependency_overrides[require_dispatcher] = lambda: mock_user
+    app.dependency_overrides[require_admin] = lambda: mock_user
     app.dependency_overrides[get_document_service] = lambda: MockDocumentService()
     return TestClient(app)
 

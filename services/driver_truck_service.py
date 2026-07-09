@@ -19,35 +19,44 @@ class DriverTruckService:
         self._event_bus = EventBus()
 
     def assign_driver_to_truck(self, driver_id: int, truck_id: int) -> dict[str, Any]:
-        existing_driver = self._repo.get_by_driver(driver_id)
-        existing_truck = self._repo.get_by_truck(truck_id)
+        try:
+            self._db.conn.execute("BEGIN IMMEDIATE")
+        except Exception:
+            pass  # not all backends support IMMEDIATE; fall through to atomicity below
 
-        action = "assigned"
-        swapped_driver = None
+        try:
+            existing_driver = self._repo.get_by_driver(driver_id)
+            existing_truck = self._repo.get_by_truck(truck_id)
 
-        if existing_driver and existing_driver["truck_id"] != truck_id:
-            existing_driver["truck_id"]
-            self._repo.unassign_driver(driver_id)
-            action = "reassigned"
+            action = "assigned"
+            swapped_driver = None
 
-        if existing_truck and existing_truck["driver_id"] != driver_id:
-            other_driver_id = existing_truck["driver_id"]
-            if existing_driver and existing_driver["truck_id"] == truck_id and existing_driver["driver_id"] == other_driver_id:
-                pass
-            else:
-                self._repo.unassign_truck(truck_id)
-                swapped_driver = other_driver_id
-                action = "swapped"
+            if existing_driver and existing_driver["truck_id"] != truck_id:
+                self._repo.unassign_driver(driver_id)
+                action = "reassigned"
 
-        self._repo.assign(driver_id, truck_id)
+            if existing_truck and existing_truck["driver_id"] != driver_id:
+                other_driver_id = existing_truck["driver_id"]
+                if existing_driver and existing_driver["truck_id"] == truck_id and existing_driver["driver_id"] == other_driver_id:
+                    pass
+                else:
+                    self._repo.unassign_truck(truck_id)
+                    swapped_driver = other_driver_id
+                    action = "swapped"
 
-        self._event_bus.publish(TRUCK_UPDATED, {
-            "truck_id": truck_id,
-            "driver_id": driver_id,
-            "action": action,
-        })
+            self._repo.assign(driver_id, truck_id)
+            self._db.conn.commit()
 
-        return {"action": action, "swapped_driver": swapped_driver}
+            self._event_bus.publish(TRUCK_UPDATED, {
+                "truck_id": truck_id,
+                "driver_id": driver_id,
+                "action": action,
+            })
+
+            return {"action": action, "swapped_driver": swapped_driver}
+        except Exception:
+            self._db.conn.rollback()
+            raise
 
     def unassign_driver(self, driver_id: int) -> Optional[int]:
         existing = self._repo.get_by_driver(driver_id)

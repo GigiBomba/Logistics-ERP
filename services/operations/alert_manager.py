@@ -110,8 +110,10 @@ class AlertManager:
     # ── CRUD ───────────────────────────────────────────────────────
 
     def _find_duplicate(self, alert_type: AlertType, truck_id: Optional[str],
-                        trip_id: Optional[str], message: str) -> Optional[Alert]:
-        """Find an existing active alert that would be a duplicate of a new one."""
+                        trip_id: Optional[str]) -> Optional[Alert]:
+        """Find an existing active alert that would be a duplicate of a new one.
+        Matches on (alert_type, truck_id, trip_id) only, ignoring message text.
+        """
         for a in self._alerts.values():
             if a.resolved:
                 continue
@@ -120,8 +122,6 @@ class AlertManager:
             if a.truck_id != truck_id:
                 continue
             if a.trip_id != trip_id:
-                continue
-            if a.message != message:
                 continue
             return a
         return None
@@ -159,10 +159,11 @@ class AlertManager:
         message: str,
         truck_id: Optional[str] = None,
         trip_id: Optional[str] = None,
+        driver_id: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
     ) -> Alert:
         with self._alerts_lock:
-            dup = self._find_duplicate(alert_type, truck_id, trip_id, message)
+            dup = self._find_duplicate(alert_type, truck_id, trip_id)
             if dup is not None:
                 logger.debug("Duplicate alert found, resolving old one: %s", dup.id)
                 dup.resolved = True
@@ -176,6 +177,7 @@ class AlertManager:
                 message=message,
                 truck_id=truck_id,
                 trip_id=trip_id,
+                driver_id=driver_id,
                 metadata=metadata or {},
             )
             self._alerts[alert.id] = alert
@@ -222,7 +224,8 @@ class AlertManager:
         resolved: Optional[bool] = None,
         limit: int = 100,
     ) -> list[Alert]:
-        results = list(self._alerts.values())
+        with self._alerts_lock:
+            results = list(self._alerts.values())
         if alert_type:
             results = [a for a in results if a.type == alert_type]
         if severity:
@@ -238,27 +241,31 @@ class AlertManager:
         return self.get_alerts(resolved=False, limit=limit)
 
     def get_active_count(self) -> int:
-        return sum(1 for a in self._alerts.values() if not a.resolved)
+        with self._alerts_lock:
+            return sum(1 for a in self._alerts.values() if not a.resolved)
 
     def resolve_by_truck(self, truck_id: str, alert_type: Optional[AlertType] = None) -> int:
-        count = 0
-        for a in list(self._alerts.values()):
-            if a.truck_id == truck_id and not a.resolved:
-                if alert_type is None or a.type == alert_type:
-                    self.resolve_alert(a.id)
-                    count += 1
-        return count
+        with self._alerts_lock:
+            ids = [
+                a.id for a in self._alerts.values()
+                if a.truck_id == truck_id and not a.resolved
+                and (alert_type is None or a.type == alert_type)
+            ]
+        for aid in ids:
+            self.resolve_alert(aid)
+        return len(ids)
 
     def get_active_by_type_and_entity(
         self, alert_type: AlertType, entity_id: str, entity_field: str = "truck_id"
     ) -> Optional[Alert]:
         """Return the most recent active alert of a given type for an entity."""
-        matches = [
-            a for a in self._alerts.values()
-            if not a.resolved
-            and a.type == alert_type
-            and getattr(a, entity_field, None) == str(entity_id)
-        ]
+        with self._alerts_lock:
+            matches = [
+                a for a in self._alerts.values()
+                if not a.resolved
+                and a.type == alert_type
+                and getattr(a, entity_field, None) == str(entity_id)
+            ]
         if not matches:
             return None
         return max(matches, key=lambda a: a.created_at or "")

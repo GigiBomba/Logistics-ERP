@@ -10,15 +10,15 @@ import logging
 from typing import Any, Callable
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QWidget
+from PySide6.QtWidgets import QScrollArea, QWidget
 
 from services.i18n import register_listener, unregister_listener
-from services.operations.event_bus import EventBus
+from services.operations.event_bus import EventBus, shared_event_bus as _shared_event_bus
 
 logger = logging.getLogger(__name__)
 
 
-class BaseView(QWidget):
+class BaseView(QScrollArea):
     """Base class for all Operion ERP view modules.
 
     Lifecycle hooks:
@@ -39,7 +39,7 @@ class BaseView(QWidget):
 
     def __init__(self, parent: QWidget | None = None):
         super().__init__(parent)
-        self._event_bus: EventBus = EventBus()
+        self._event_bus: EventBus = _shared_event_bus
         self._subs: list[tuple[EventBus, str, Callable]] = []
         self._timers: list[QTimer] = []
         self._i18n_id: str | None = None

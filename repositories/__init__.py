@@ -1,6 +1,6 @@
 """Base repository providing shared database access patterns."""
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger("repositories")
 
@@ -19,14 +19,14 @@ class BaseRepository:
     def __init__(self, db):
         self.db = db
 
-    def _validate_columns(self, data: dict, extra_allowed: set = None) -> None:
-        """Reject any key in *data* that is not in self.COLUMNS.
+    def _validate_columns(self, data: dict, extra_allowed: Optional[Set[str]] = None, columns: Optional[List[str]] = None) -> None:
+        """Reject any key in *data* that is not in *columns* (or ``self.COLUMNS``).
 
         Raises ``ValueError`` with a clear message listing the invalid keys.
         This prevents SQL injection via malicious column names in
         ``create()`` and ``update()`` methods.
         """
-        allowed = set(self.COLUMNS)
+        allowed = set(columns if columns is not None else self.COLUMNS)
         if extra_allowed:
             allowed |= extra_allowed
         invalid = set(data.keys()) - allowed

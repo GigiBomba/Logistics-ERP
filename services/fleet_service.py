@@ -41,7 +41,7 @@ class FleetService:
         self.db.ensure_expenses_table()
 
     def get_expenses(self, truck_id):
-        return self.db.get_expenses(truck_id)
+        return self.db.get_expenses(truck_id, company_id=getattr(self.db, 'user_company_id', None))
 
     def add_expense(self, truck_id, date, category, description, amount):
         return self.db.add_expense(truck_id, date, category, description, amount)

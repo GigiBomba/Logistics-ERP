@@ -246,9 +246,9 @@ class TestGetTruckValue:
 class TestValidateTruckEdgeCases:
     """Additional edge-case tests for validate_truck."""
 
-    def test_height_exactly_at_max_is_clearance(self, engine: TruckConstraintEngine):
-        """Height exactly at MAX_HEIGHT_M triggers route clearance note."""
-        truck = {"height_m": engine.MAX_HEIGHT_M}
+    def test_height_above_min_clearance_is_clearance(self, engine: TruckConstraintEngine):
+        """Height above MIN_CLEARANCE_M triggers clearance note (not a hard error)."""
+        truck = {"height_m": engine.MIN_CLEARANCE_M + 0.5}
         valid, msg = engine.validate_truck(truck)
         assert valid is True
         assert "clearance" in msg.lower()
@@ -274,10 +274,10 @@ class TestValidateTruckEdgeCases:
         assert valid is True
         assert msg == "OK"
 
-    def test_all_excessive_values(self, engine: TruckConstraintEngine):
-        """All dimensions exceeding limits — weight check fires first."""
+    def test_excessive_weight_and_width(self, engine: TruckConstraintEngine):
+        """Weight and width exceeding limits — weight check fires first."""
         truck = {
-            "height_m": 5.0,   # > MAX_HEIGHT → clearance (true)
+            "height_m": 3.0,   # below MIN_CLEARANCE, so no early return
             "max_weight_kg": 50000,  # > MAX_WEIGHT → false
             "width_m": 3.0,   # > MAX_WIDTH → false
         }

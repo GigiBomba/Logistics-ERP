@@ -568,12 +568,18 @@ class QtTachoImportView(QWidget):
 
     def _rebuild_ui(self) -> None:
         """Refresh translations on language change by rebuilding the UI."""
-        # Clear all widgets
-        while self.layout().count():
-            item = self.layout().takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
+        # Delete the entire old layout (including its item references) so
+        # that ``_build_ui`` does not create a second layout on the same
+        # widget (which would orphan the first one).
+        old_layout = self.layout()
+        if old_layout is not None:
+            # Remove and delete all child widgets first
+            while old_layout.count():
+                item = old_layout.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    w.deleteLater()
+            old_layout.deleteLater()
         self._build_ui()
         self._refresh_history()
 

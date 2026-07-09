@@ -223,13 +223,12 @@ class RouteRunner:
 
                 elapsed = time.time() - start_time
 
-                if result and len(result) > 0:
-                    route = result[0]
-                    distance = route.get("distance_km", 0)
+                if result:
+                    distance = result.get("distance_km", 0)
                     self._log(
                         "info",
                         f"Route calculated successfully: {distance:.1f} km, "
-                        f"{route.get('duration_min', 0):.1f} min in {elapsed:.2f}s",
+                        f"{result.get('duration_min', 0):.1f} min in {elapsed:.2f}s",
                     )
                     if callback:
                         self._safe_invoke(callback, result)
@@ -260,9 +259,12 @@ class RouteRunner:
             if self._current_thread and self._current_thread.is_alive():
                 self._log("warning", "Previous route calculation still running, cancelling...")
                 self._cancel_flag.set()
-                self._current_thread.join(timeout=5.0)
+                self._current_thread.join(timeout=30.0)
                 if self._current_thread.is_alive():
-                    self._log("warning", "Previous thread did not stop in time, starting new calculation anyway")
+                    raise RuntimeError(
+                        "Previous route calculation thread did not terminate within 30s timeout — "
+                        "refusing to start a new thread to avoid concurrent HTTP sessions"
+                    )
 
             self._reset_cancel_flag()
             self._current_thread = threading.Thread(

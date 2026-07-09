@@ -11,21 +11,43 @@ class AnalyticsService:
         self.db = db
         from repositories.analytics_repository import AnalyticsRepository
         self._repo = AnalyticsRepository(db)
-        self._caches: dict[str, tuple[Any, float, tuple]] = {}
+        self._caches: dict[tuple, tuple[Any, float, tuple]] = {}
         self._cache_lock = threading.Lock()
+        # Per-key locks to prevent cache stampede (only one compute per key at a time)
+        self._key_locks: dict[tuple, threading.Lock] = {}
+        self._key_locks_lock = threading.Lock()
+
+    def _get_key_lock(self, key: tuple) -> threading.Lock:
+        with self._key_locks_lock:
+            if key not in self._key_locks:
+                self._key_locks[key] = threading.Lock()
+            return self._key_locks[key]
 
     def _cached(self, cache_key: str, func, *args):
         now = time.time()
+        key = (cache_key, args)
+        # Fast check under main cache lock
         with self._cache_lock:
-            cache_entry = self._caches.get(cache_key)
+            cache_entry = self._caches.get(key)
             if cache_entry:
                 data, ts, ck = cache_entry
                 if ck == args and (now - ts) < self.CACHE_TTL:
                     return data
-        result = func(*args)
-        with self._cache_lock:
-            self._caches[cache_key] = (result, now, args)
-        return result
+        # Per-key lock prevents concurrent computation of the same key
+        per_key_lock = self._get_key_lock(key)
+        with per_key_lock:
+            # Double-check under per-key lock (another thread may have stored while we waited)
+            with self._cache_lock:
+                cache_entry = self._caches.get(key)
+                if cache_entry:
+                    data, ts, ck = cache_entry
+                    if ck == args and (now - ts) < self.CACHE_TTL:
+                        return data
+            # Compute — only this thread runs for this key
+            result = func(*args)
+            with self._cache_lock:
+                self._caches[key] = (result, time.time(), args)
+            return result
 
     def invalidate(self):
         with self._cache_lock:

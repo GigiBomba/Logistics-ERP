@@ -29,11 +29,12 @@ def process_document_ocr(self, document_id: int, engine: str = "auto") -> Dict[s
         result_fields: Dict[str, Any] = {}
 
         try:
-            from services.document_automation.ocr_extractor import extract_ocr_data
-            result = extract_ocr_data(file_path, engine=engine)
-            if result:
-                result_text = result.get("text", "")
-                result_fields = result.get("fields", {})
+            from services.document_automation.ocr_extractor import OcrExtractor
+            extractor = OcrExtractor(db=db)
+            extraction = extractor.extract(file_path)
+            if extraction:
+                result_text = extraction.full_text or ""
+                result_fields = extraction.extracted or {}
         except Exception as e:
             return {"error": str(e), "document_id": document_id}
 

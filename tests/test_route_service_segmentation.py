@@ -58,7 +58,7 @@ class TestRouteServiceSegmentation(unittest.TestCase):
 
         service.client.route.side_effect = route_side_effect
 
-        result = service.calculate_route(stops=[a, b], use_cache=False)[0]
+        result = service.calculate_route(stops=[a, b], use_cache=False)
 
         self.assertEqual(service.client.route.call_count, 4)
         self.assertEqual(result["distance_km"], 2.0)

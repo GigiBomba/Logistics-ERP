@@ -93,6 +93,12 @@ filterwarnings = [
 markers = [
     "slow: marks tests as slow (deselect with '-m \"not slow\"')",
     "qt: Qt widget tests",
+    "e2e: end-to-end integration tests",
+    "mutation: mutation-killing boundary tests",
+    "loadtest: load and performance tests",
+    "stresstest: system stress tests",
+    "chaos: chaos and resilience tests",
+    "concurrency: thread-safety and race-condition tests",
 ]
 
 # ──────────────────────────────────────────────────────────────

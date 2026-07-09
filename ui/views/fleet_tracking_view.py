@@ -98,6 +98,7 @@ class QtFleetTrackingView(QWidget):
         self._selected_truck_id: int | None = None
         self._fetching = False
         self._force_refreshing = False
+        self._lock = threading.Lock()
 
         # ── Signal: thread-safe UI updates ─────────────────────────────
         self._positionsFetched.connect(self._apply_update)
@@ -120,7 +121,8 @@ class QtFleetTrackingView(QWidget):
     def shutdown(self) -> None:
         """Stop polling and clean up resources."""
         self._stop_polling()
-        self._fetching = False
+        with self._lock:
+            self._fetching = False
         if hasattr(self, "_map") and self._map:
             with contextlib.suppress(Exception):
                 self._map.destroy()
@@ -509,28 +511,31 @@ class QtFleetTrackingView(QWidget):
 
     def _poll_and_update(self) -> None:
         """Start a background thread to fetch positions."""
-        if self._fetching:
-            return
+        with self._lock:
+            if self._fetching:
+                return
         thread = threading.Thread(target=self._fetch_positions, daemon=True)
         thread.start()
 
     def _fetch_positions(self) -> None:
         """Fetch positions in background — emits signal to update UI."""
-        if self._fetching:
-            return
-        self._fetching = True
-        try:
-            if not self._map:
+        with self._lock:
+            if self._fetching:
                 return
+            self._fetching = True
+        try:
+            # Do NOT access QWidget (self._map) from background thread;
+            # just fetch data and emit the signal so the main-thread slot
+            # handles map updates.
             positions = fleet_tracking_service.get_positions(
                 force_refresh=True,
             )
-            if self._map:
-                self._positionsFetched.emit(positions)
+            self._positionsFetched.emit(positions)
         except Exception as e:
             logger.error("Tracking poll error: %s", e)
         finally:
-            self._fetching = False
+            with self._lock:
+                self._fetching = False
 
     def _apply_update(self, positions: list[VehiclePosition]) -> None:
         """Main-thread slot: update map markers and vehicle list."""
@@ -549,9 +554,10 @@ class QtFleetTrackingView(QWidget):
     # ── Refresh button ────────────────────────────────────────────────
 
     def _force_refresh(self) -> None:
-        if self._force_refreshing:
-            return
-        self._force_refreshing = True
+        with self._lock:
+            if self._force_refreshing:
+                return
+            self._force_refreshing = True
         if self._refresh_btn:
             self._refresh_btn.setEnabled(False)
 
@@ -560,6 +566,8 @@ class QtFleetTrackingView(QWidget):
                 positions = fleet_tracking_service.get_positions(
                     force_refresh=True,
                 )
+                # Emit signals from background thread is safe (queued
+                # connection marshals them to the GUI thread).
                 self._refreshFinished.emit()
                 self._positionsFetched.emit(positions)
             except Exception as e:
@@ -570,7 +578,8 @@ class QtFleetTrackingView(QWidget):
         thread.start()
 
     def _enable_refresh_btn(self) -> None:
-        self._force_refreshing = False
+        with self._lock:
+            self._force_refreshing = False
         if self._refresh_btn:
             self._refresh_btn.setEnabled(True)
 

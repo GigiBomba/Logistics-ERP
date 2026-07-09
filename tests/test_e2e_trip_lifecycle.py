@@ -160,13 +160,8 @@ class TestTripLifecycle:
         assert driver["license_category"] == "CE"
 
         # ── Step 4: Assign driver to truck ───────────────────────────
-        assignment_id = assignment_repo.create({
-            "driver_id": driver_id,
-            "truck_id": truck_id,
-            "assigned_at": now,
-        })
-        assert assignment_id > 0
-        assignment = assignment_repo.get_by_driver_id(driver_id)
+        assignment_repo.assign(driver_id=driver_id, truck_id=truck_id)
+        assignment = assignment_repo.get_by_driver(driver_id)
         assert assignment is not None
         assert assignment["truck_id"] == truck_id
 
@@ -361,24 +356,33 @@ class TestTripLifecycle:
         from datetime import datetime, timedelta
         from services.operations.alert_manager import AlertManager
 
-        now = datetime.now().isoformat()
-        old_date = (datetime.now() - timedelta(days=14)).isoformat()
+        old_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
 
         # Create a trip stuck in "pending" for 14 days
-        trip_id = TripService(db).add({
+        trip_service = TripService(db)
+        trip_id = trip_service.add({
             "client_name": "Delayed Client",
             "truck_number": "TR-001",
             "status": "pending",
             "created_at": old_date,
         })
+        assert trip_id > 0
+
+        # Verify trip was stored correctly
+        trip = trip_service.get_by_id(trip_id)
+        assert trip is not None
+        assert trip["status"] == "pending"
+        assert trip["created_at"] == old_date
 
         engine = TripStatusEngine(db)
-        alert_count = engine.evaluate_all()
-        assert alert_count >= 1
+        # Directly evaluate the specific trip
+        alert_count = engine.evaluate_trip(str(trip_id))
+        assert alert_count >= 1, f"Expected alerts for trip {trip_id}, got {alert_count}"
 
         # Verify the alert was created (alerts are stored in-memory in AlertManager._alerts)
         alert_mgr = AlertManager(db)
         alerts = alert_mgr.get_active_alerts(limit=50)
-        trip_alerts = [a for a in alerts if a.trip_id == trip_id]
+        trip_alerts = [a for a in alerts if a.trip_id == str(trip_id)]
         assert len(trip_alerts) >= 1
-        assert "delayed" in trip_alerts[0].message.lower()
+        # "delayed" is in the alert title, not message
+        assert "delayed" in trip_alerts[0].title.lower()

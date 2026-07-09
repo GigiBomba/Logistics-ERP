@@ -62,7 +62,7 @@ class ExchangeRateService(GracefulWorker):
         self._initialized = True
         GracefulWorker.__init__(self)
         self._rates: dict[str, float] = dict(_DEFAULT_RATES)
-        self._rates_lock = threading.Lock()
+        self._rates_lock = threading.RLock()
         self._last_updated: Optional[float] = None
         self._last_fetch_ok: bool = False
         self._refresh_in_progress = False
@@ -96,23 +96,29 @@ class ExchangeRateService(GracefulWorker):
             logger.error("Zero rate encountered: from=%s(%f) to=%s(%f)",
                          from_currency, rate_from, to_currency, rate_to)
             return amount
+        age = self.age_seconds()
+        if age is not None and age > CACHE_TTL_SECONDS * 24:
+            logger.warning("Using exchange rates that are %.0f hours old (%.0f days)",
+                           age / 3600, age / 86400)
         eur_amount = amount / rate_from
         return eur_amount * rate_to
 
     def refresh_if_stale(self) -> bool:
-        if self._last_updated is None:
-            return self.refresh()
-        age = time.time() - self._last_updated
-        if age > CACHE_TTL_SECONDS:
-            logger.info("Exchange rates stale (age=%.0fs > TTL=%ds), refreshing", age, CACHE_TTL_SECONDS)
-            return self.refresh()
+        with self._rates_lock:
+            if self._last_updated is None:
+                return self.refresh(background=False)
+            age = time.time() - self._last_updated
+            if age > CACHE_TTL_SECONDS:
+                logger.info("Exchange rates stale (age=%.0fs > TTL=%ds), refreshing", age, CACHE_TTL_SECONDS)
+                return self.refresh(background=False)
         return True
 
     def refresh(self, background: bool = True) -> bool:
-        if self._refresh_in_progress:
-            logger.debug("Exchange rate refresh already in progress, skipping")
-            return True
-        self._refresh_in_progress = True
+        with self._rates_lock:
+            if self._refresh_in_progress:
+                logger.debug("Exchange rate refresh already in progress, skipping")
+                return True
+            self._refresh_in_progress = True
         if background:
             self._spawn("exchange-rate-refresh", self._do_refresh)
             return True
@@ -133,9 +139,9 @@ class ExchangeRateService(GracefulWorker):
                         for code, rate in raw.items():
                             self._rates[code] = float(rate)
                         self._rates[BASE_CURRENCY] = 1.0
-                    self._last_updated = time.time()
-                    self._last_fetch_ok = True
-                    self._refresh_in_progress = False
+                        self._last_updated = time.time()
+                        self._last_fetch_ok = True
+                        self._refresh_in_progress = False
                     self._save_cache()
                     logger.info("Exchange rates refreshed OK (%s): %d currencies", url, len(raw))
                     return True
@@ -148,12 +154,20 @@ class ExchangeRateService(GracefulWorker):
             except Exception as e:
                 logger.error("Exchange rate API %s unexpected error: %s", url, e)
 
-        self._last_fetch_ok = False
-        self._refresh_in_progress = False
+        with self._rates_lock:
+            self._last_fetch_ok = False
+            self._refresh_in_progress = False
         return False
 
     def is_available(self) -> bool:
-        return self._last_fetch_ok or self._last_updated is not None
+        if not self._last_fetch_ok:
+            return False
+        age = self.age_seconds()
+        if age is None:
+            return False
+        if age > CACHE_TTL_SECONDS * 24:
+            return False
+        return True
 
     def last_updated_str(self) -> str:
         if self._last_updated is None:

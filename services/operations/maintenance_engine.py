@@ -111,16 +111,9 @@ class MaintenanceEngine:
         plate = truck.get("plate_number", "?")
         today = datetime.now()
 
-        # Resolve old alerts for this truck — but only for the types we are
-        # about to re-evaluate, so resolved alerts for OTHER categories
-        # (e.g. overdue invoice, trip delay) are not accidentally cleared.
-        for atype in self._ALERT_TYPES_EVALUATED:
-            try:
-                existing = self._alert_mgr.get_active_by_type_and_entity(atype, truck_id)
-                if existing:
-                    self._alert_mgr.resolve_alert(existing.id)
-            except Exception as exc:
-                self._log_eval_failure(f"resolve_old_{atype.value}", exc, truck_id, plate)
+        # Track which single-alert types still have an active condition,
+        # so we can resolve stale alerts after evaluation completes.
+        active_conditions: set[AlertType] = set()
 
         # ── Inspection expiry ──────────────────────────────────────
         insp_val = truck.get("inspection_expiry")
@@ -129,22 +122,27 @@ class MaintenanceEngine:
                 expiry = datetime.strptime(insp_val, "%Y-%m-%d")
                 diff = (expiry - today).days
                 warning_days = self._rules.get("inspection_warning_days", 10)
+                existing = self._alert_mgr.get_active_by_type_and_entity(AlertType.INSPECTION, truck_id)
                 if diff < 0:
-                    self._alert_mgr.create_alert(
-                        AlertType.INSPECTION, Severity.CRITICAL,
-                        f"Inspection expired for {plate}",
-                        f"ITP expired {abs(diff)} days ago on {insp_val}",
-                        truck_id=truck_id,
-                    )
-                    count += 1
+                    active_conditions.add(AlertType.INSPECTION)
+                    if not existing:
+                        self._alert_mgr.create_alert(
+                            AlertType.INSPECTION, Severity.CRITICAL,
+                            f"Inspection expired for {plate}",
+                            f"ITP expired {abs(diff)} days ago on {insp_val}",
+                            truck_id=truck_id,
+                        )
+                        count += 1
                 elif diff <= warning_days:
-                    self._alert_mgr.create_alert(
-                        AlertType.INSPECTION, Severity.WARNING,
-                        f"Inspection due for {plate}",
-                        f"ITP expires in {diff} days on {insp_val}",
-                        truck_id=truck_id,
-                    )
-                    count += 1
+                    active_conditions.add(AlertType.INSPECTION)
+                    if not existing:
+                        self._alert_mgr.create_alert(
+                            AlertType.INSPECTION, Severity.WARNING,
+                            f"Inspection due for {plate}",
+                            f"ITP expires in {diff} days on {insp_val}",
+                            truck_id=truck_id,
+                        )
+                        count += 1
             except Exception as exc:
                 self._log_eval_failure("inspection", exc, truck_id, plate)
 
@@ -155,22 +153,27 @@ class MaintenanceEngine:
                 expiry = datetime.strptime(ins_val, "%Y-%m-%d")
                 diff = (expiry - today).days
                 warning_days = self._rules.get("insurance_warning_days", 10)
+                existing = self._alert_mgr.get_active_by_type_and_entity(AlertType.INSURANCE, truck_id)
                 if diff < 0:
-                    self._alert_mgr.create_alert(
-                        AlertType.INSURANCE, Severity.CRITICAL,
-                        f"Insurance expired for {plate}",
-                        f"Insurance expired {abs(diff)} days ago on {ins_val}",
-                        truck_id=truck_id,
-                    )
-                    count += 1
+                    active_conditions.add(AlertType.INSURANCE)
+                    if not existing:
+                        self._alert_mgr.create_alert(
+                            AlertType.INSURANCE, Severity.CRITICAL,
+                            f"Insurance expired for {plate}",
+                            f"Insurance expired {abs(diff)} days ago on {ins_val}",
+                            truck_id=truck_id,
+                        )
+                        count += 1
                 elif diff <= warning_days:
-                    self._alert_mgr.create_alert(
-                        AlertType.INSURANCE, Severity.WARNING,
-                        f"Insurance due for {plate}",
-                        f"Insurance expires in {diff} days on {ins_val}",
-                        truck_id=truck_id,
-                    )
-                    count += 1
+                    active_conditions.add(AlertType.INSURANCE)
+                    if not existing:
+                        self._alert_mgr.create_alert(
+                            AlertType.INSURANCE, Severity.WARNING,
+                            f"Insurance due for {plate}",
+                            f"Insurance expires in {diff} days on {ins_val}",
+                            truck_id=truck_id,
+                        )
+                        count += 1
             except Exception as exc:
                 self._log_eval_failure("insurance", exc, truck_id, plate)
 
@@ -198,21 +201,30 @@ class MaintenanceEngine:
                         reason = "past due date"
                     else:
                         reason = "overdue"
-                    self._alert_mgr.create_alert(
-                        AlertType.MAINTENANCE, Severity.CRITICAL,
-                        f"{display_name} overdue for {plate}",
-                        f"{display_name} — {reason}",
-                        truck_id=truck_id,
+                    # Check if a matching maintenance alert already exists
+                    existing = self._alert_mgr.get_active_by_type_and_entity(
+                        AlertType.MAINTENANCE, truck_id
                     )
-                    count += 1
+                    if not existing:
+                        self._alert_mgr.create_alert(
+                            AlertType.MAINTENANCE, Severity.CRITICAL,
+                            f"{display_name} overdue for {plate}",
+                            f"{display_name} — {reason}",
+                            truck_id=truck_id,
+                        )
+                        count += 1
                 elif pred.get("remaining_km") is not None and pred["remaining_km"] < km_buffer:
-                    self._alert_mgr.create_alert(
-                        AlertType.MAINTENANCE, Severity.WARNING,
-                        f"{display_name} due soon for {plate}",
-                        f"{pred['remaining_km']:,.0f} km remaining until next service",
-                        truck_id=truck_id,
+                    existing = self._alert_mgr.get_active_by_type_and_entity(
+                        AlertType.MAINTENANCE, truck_id
                     )
-                    count += 1
+                    if not existing:
+                        self._alert_mgr.create_alert(
+                            AlertType.MAINTENANCE, Severity.WARNING,
+                            f"{display_name} due soon for {plate}",
+                            f"{pred['remaining_km']:,.0f} km remaining until next service",
+                            truck_id=truck_id,
+                        )
+                        count += 1
         except Exception as exc:
             self._log_eval_failure("schedules", exc, truck_id, plate)
 
@@ -223,19 +235,34 @@ class MaintenanceEngine:
             if last_activity:
                 last_date = datetime.strptime(last_activity[:10], "%Y-%m-%d")
                 idle = (today - last_date).days
+                existing = self._alert_mgr.get_active_by_type_and_entity(AlertType.INACTIVE_TRUCK, truck_id)
                 if idle > inactive_days:
-                    self._alert_mgr.create_alert(
-                        AlertType.INACTIVE_TRUCK, Severity.INFO,
-                        f"Truck {plate} inactive",
-                        f"No trips for {idle} days (last: {last_activity[:10]})",
-                        truck_id=truck_id,
-                    )
-                    count += 1
+                    active_conditions.add(AlertType.INACTIVE_TRUCK)
+                    if not existing:
+                        self._alert_mgr.create_alert(
+                            AlertType.INACTIVE_TRUCK, Severity.INFO,
+                            f"Truck {plate} inactive",
+                            f"No trips for {idle} days (last: {last_activity[:10]})",
+                            truck_id=truck_id,
+                        )
+                        count += 1
         except Exception as exc:
             self._log_eval_failure("inactive_truck", exc, truck_id, plate)
 
         # ── Tachograph calibration expiry ──────────────────────────
         count += self.evaluate_tachograph_calibration_for_truck(truck)
+
+        # ── Resolve stale single-alert types ─────────────────────────
+        for atype in self._ALERT_TYPES_EVALUATED:
+            if atype in (AlertType.MAINTENANCE, AlertType.TACHOGRAPH_EXPIRY):
+                continue
+            if atype not in active_conditions:
+                try:
+                    stale = self._alert_mgr.get_active_by_type_and_entity(atype, truck_id)
+                    if stale:
+                        self._alert_mgr.resolve_alert(stale.id)
+                except Exception as exc:
+                    self._log_eval_failure(f"resolve_stale_{atype.value}", exc, truck_id, plate)
 
         return count
 

@@ -41,13 +41,21 @@ _OLLAMA_TEMPERATURE = 0.0         # Greedy decoding for deterministic transcript
 # Cap on accumulated streaming text to prevent unbounded memory growth.
 _MAX_STREAM_CHARS = 100_000
 
-# Reusable HTTP session for connection keep-alive.
-_session = requests.Session()
+# Thread-local HTTP sessions for connection keep-alive.
+_session_local = threading.local()
+
+def _get_session() -> requests.Session:
+    """Return the current thread's session, creating one if needed."""
+    if not hasattr(_session_local, "session") or _session_local.session is None:
+        _session_local.session = requests.Session()
+    return _session_local.session
 
 def close_session() -> None:
-    """Close the shared HTTP session and release connection pool resources."""
+    """Close the current thread's HTTP session and release connection pool resources."""
     try:
-        _session.close()
+        sess = _get_session()
+        sess.close()
+        _session_local.session = None
     except Exception:
         pass
 
@@ -72,7 +80,7 @@ def _call_with_retry(url: str, json_payload: dict, timeout_s: int, retries: int 
     """
     for attempt in range(retries):
         try:
-            resp = _session.post(url, json=json_payload, timeout=timeout_s)
+            resp = _get_session().post(url, json=json_payload, timeout=timeout_s)
             if resp.status_code in (408, 429, 502, 503, 504) and attempt < retries - 1:
                 time.sleep(2 ** attempt)
                 continue
@@ -255,7 +263,7 @@ def _call_ollama(images_b64: list[str], endpoint: str, model: str,
         resp = None
         try:
             chunk_timeout = max(60, timeout_s // 2)  # generous first-token window
-            resp = _session.post(
+            resp = _get_session().post(
                 url, json=payload,
                 timeout=(timeout_s, chunk_timeout),
                 stream=True,
@@ -299,8 +307,10 @@ def _call_ollama(images_b64: list[str], endpoint: str, model: str,
             resp.close()
             text = "".join(parts)
             if not text:
-                logger.warning("Ollama returned empty streaming response")
-                return None
+                logger.warning("Ollama returned empty streaming response, retrying")
+                resp.close()
+                time.sleep(2 ** attempt)
+                continue
             logger.debug("Ollama streaming finished: %d chars, %d eval tokens", len(text), eval_count)
             return text
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
@@ -353,7 +363,7 @@ def _call_openai_compat(images_b64: list[str], endpoint: str, model: str,
         resp = None
         try:
             chunk_timeout = max(60, timeout_s // 2)
-            resp = _session.post(
+            resp = _get_session().post(
                 url, json=payload,
                 timeout=(timeout_s, chunk_timeout),
                 stream=True,
@@ -397,8 +407,9 @@ def _call_openai_compat(images_b64: list[str], endpoint: str, model: str,
             resp.close()
             text = "".join(parts)
             if not text:
-                logger.warning("OpenAI-compat returned empty streaming response")
-                return None
+                logger.warning("OpenAI-compat returned empty streaming response, retrying")
+                time.sleep(2 ** attempt)
+                continue
             logger.debug("OpenAI-compat streaming finished: %d chars", len(text))
             return text
         except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as exc:
@@ -454,9 +465,18 @@ def ai_extract(
     endpoint = _setting("qwen_endpoint", DEFAULT_ENDPOINT)
     model = _setting("qwen_model", DEFAULT_MODEL)
     api_mode = _setting("qwen_api_mode", DEFAULT_API_MODE)
-    rpm_limit = int(_setting("qwen_rpm_limit", str(DEFAULT_RPM_LIMIT)))
-    max_pages = int(_setting("qwen_max_pages", str(DEFAULT_MAX_PAGES)))
-    timeout_s = int(_setting("qwen_timeout_s", str(DEFAULT_TIMEOUT_S)))
+    try:
+        rpm_limit = int(_setting("qwen_rpm_limit", str(DEFAULT_RPM_LIMIT)))
+    except ValueError:
+        rpm_limit = DEFAULT_RPM_LIMIT
+    try:
+        max_pages = int(_setting("qwen_max_pages", str(DEFAULT_MAX_PAGES)))
+    except ValueError:
+        max_pages = DEFAULT_MAX_PAGES
+    try:
+        timeout_s = int(_setting("qwen_timeout_s", str(DEFAULT_TIMEOUT_S)))
+    except ValueError:
+        timeout_s = DEFAULT_TIMEOUT_S
 
     pages = list(_render_pages(pdf_path, max_pages, dpi=150))
     if not pages:

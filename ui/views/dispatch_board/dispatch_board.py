@@ -60,8 +60,7 @@ from ui.widgets.dispatch_search_bar import STATUS_OPTIONS, QtDispatchSearchBar
 from ui.widgets.dispatch_tabs import QtDispatchTabs
 from ui.widgets.dispatch_timeline import QtDispatchTimeline
 from ui.widgets.kanban_column import QtKanbanColumn
-from ui.widgets.stat_card import StatCard
-from ui.widgets.stat_card_row import StatCardRowContainer
+
 from ui.widgets.trip_card import QtTripCard
 
 from .board_actions import BoardActionsMixin
@@ -248,28 +247,6 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         )
         board_layout.addWidget(self._search_bar)
 
-        # ── Status card row ──────────────────────────────────────────────────
-        self._status_container = QFrame()
-        self._status_container.setObjectName("stat-card")
-        status_layout = QVBoxLayout(self._status_container)
-        status_layout.setContentsMargins(SP["5"], SP["5"], SP["5"], SP["5"])
-        status_layout.setSpacing(0)
-
-        self._status_row = StatCardRowContainer(self._status_container)
-        self._status_cards: dict[str, StatCard] = {}
-        for status_key, title_key, _accent in COLUMN_DEFS:
-            card = StatCard(
-                parent=None,
-                label=t(title_key).upper(),
-                value="0",
-                status_dot_color=_STATUS_DOT_COLORS[status_key],
-            )
-            self._status_row.add_card(card)
-            self._status_cards[status_key] = card
-
-        status_layout.addWidget(self._status_row)
-        board_layout.addWidget(self._status_container)
-
         # ── Bulk toolbar (hidden by default) ──────────────────────────────
         self._bulk_toolbar = QFrame()
         self._bulk_toolbar.setProperty("role", "bulk-toolbar")
@@ -372,6 +349,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             self._alerts_tab, self.db, ops=self.ops,
             on_assign_truck=self._on_quick_assign_truck,
             on_assign_driver=self._on_quick_assign_driver,
+            on_assign_both=self._on_quick_assign_both,
             on_resolve_alert=self._on_resolve_alert_refresh,
         )
         alerts_layout.addWidget(self._alerts_panel)
@@ -471,10 +449,11 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             if not trip:
                 return
             card_data = self._build_card_data(trip)
-            planned_col = self._columns.get("Planned")
-            if planned_col:
+            target_column_key = STATUS_TO_COLUMN.get(card_data["status"], "Planned")
+            target_col = self._columns.get(target_column_key)
+            if target_col:
                 card = QtTripCard(
-                    planned_col,
+                    target_col,
                     card_data,
                     on_click=self._on_card_click,
                     on_drag_start=self._on_drag_start,
@@ -483,8 +462,8 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                     on_select_changed=self._on_card_select_changed,
                     on_assign_both=self._on_assign_both,
                 )
-                planned_col.add_card(card, index=0)
-            logger.debug("Trip %d card added to Planned column", trip_id)
+                target_col.add_card(card, index=0)
+            logger.debug("Trip %d card added to %s column", trip_id, target_column_key)
         except Exception:
             logger.debug("Failed to handle trip.created for %s", trip_id, exc_info=True)
 
@@ -507,6 +486,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             source = self._find_column_for_card(card)
             if source == target:
                 card.trip_data["status"] = new_status
+                card._set_status(new_status)
                 card.set_delayed(False, 0)
                 return
 

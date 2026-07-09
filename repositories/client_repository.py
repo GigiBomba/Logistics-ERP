@@ -258,6 +258,60 @@ class ClientRepository(BaseRepository):
         )
         return row["cnt"] if row else 0
 
+    def get_dashboard_data(self, client_id: int) -> dict:
+        """Consolidated dashboard query — replaces 4 separate trip queries with 1-2."""
+        from datetime import datetime, timedelta
+
+        since = (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d")
+
+        row = self._fetchone(
+            f"""SELECT
+                  COUNT(*) AS total_trips,
+                  COALESCE(SUM(CASE WHEN LOWER(status) != 'cancelled' THEN total_price_eur END), 0) AS total_revenue,
+                  COALESCE(SUM(CASE WHEN LOWER(status) != 'cancelled' THEN net_profit END), 0) AS total_profit,
+                  COALESCE(AVG(CASE WHEN LOWER(status) != 'cancelled' THEN net_profit END), 0) AS avg_profit,
+                  COALESCE(SUM(CASE WHEN LOWER(status) != 'cancelled' THEN distance_km END), 0) AS total_km,
+                  COALESCE(MAX(CASE WHEN LOWER(status) != 'cancelled' THEN created_at END), '') AS last_trip_date,
+                  COALESCE(SUM(CASE WHEN start_date >= ? THEN 1 ELSE 0 END), 0) AS trips_last_30d,
+                  COALESCE(SUM(CASE WHEN LOWER(status) = 'planned' THEN 1 ELSE 0 END), 0) AS cnt_planned,
+                  COALESCE(SUM(CASE WHEN LOWER(status) = 'in transit' THEN 1 ELSE 0 END), 0) AS cnt_in_transit,
+                  COALESCE(SUM(CASE WHEN LOWER(status) = 'delivered' THEN 1 ELSE 0 END), 0) AS cnt_delivered,
+                  COALESCE(SUM(CASE WHEN LOWER(status) = 'invoiced' THEN 1 ELSE 0 END), 0) AS cnt_invoiced,
+                  COALESCE(SUM(CASE WHEN LOWER(status) = 'paid' THEN 1 ELSE 0 END), 0) AS cnt_paid
+                FROM trips
+                WHERE client_id = ? {self._company_filter()}""",
+            (since, client_id) + self._company_params(),
+        )
+
+        bal_row = self._fetchone(
+            f"""SELECT COALESCE(SUM(i.total_amount), 0) AS balance
+                FROM invoices i
+                JOIN trips t ON t.id = i.trip_id
+                WHERE t.client_id = ? AND i.status = 'Unpaid'
+                {self._company_filter("t")}""",
+            (client_id,) + self._company_params(),
+        )
+
+        status_counts = {}
+        if row:
+            for status_key in ['planned', 'in transit', 'delivered', 'invoiced', 'paid']:
+                col = "cnt_" + status_key.replace(" ", "_")
+                val = row.get(col, 0) or 0
+                if val:
+                    status_counts[status_key] = val
+
+        return {
+            "total_revenue": float(row["total_revenue"] or 0) if row else 0.0,
+            "total_profit": float(row["total_profit"] or 0) if row else 0.0,
+            "avg_profit": float(row["avg_profit"] or 0) if row else 0.0,
+            "total_trips": row["total_trips"] if row else 0,
+            "total_km": float(row["total_km"] or 0) if row else 0.0,
+            "last_trip_date": row["last_trip_date"] if row else "",
+            "trips_last_30_days": row["trips_last_30d"] if row else 0,
+            "outstanding_balance": float(bal_row["balance"] or 0) if bal_row else 0.0,
+            "status_counts": status_counts,
+        }
+
     def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200) -> List[Dict[str, Any]]:
         q = f"%{self._escape_like(query)}%"
         active_clause = "" if include_inactive else "AND c.is_active = 1"

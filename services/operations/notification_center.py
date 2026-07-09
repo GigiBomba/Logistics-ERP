@@ -174,7 +174,8 @@ class NotificationCenter:
 
     def send_email(self, to_address: str, subject: str, body: str,
                    attachments: Optional[list[str]] = None,
-                   html: bool = False) -> bool:
+                   html: bool = False,
+                   trip_id: Optional[int] = None) -> bool:
         if not self._smtp_config:
             logger.warning("SMTP not configured, cannot send email")
             return False
@@ -213,7 +214,7 @@ class NotificationCenter:
             if self._db:
                 try:
                     from repositories.automail_repository import AutoMailRepository
-                    AutoMailRepository(self._db).log_email(trip_id, recipient, subject, "sent")
+                    AutoMailRepository(self._db).log_email(trip_id, to_address, subject, "sent")
                 except Exception:
                     pass
             return True

@@ -41,8 +41,11 @@ async def list_documents(
         page=page,
         page_size=page_size,
     )
-    result["items"] = [DocumentResponse(**doc) for doc in result["items"]]
-    return PaginatedResponse(**result)
+    return PaginatedResponse(
+        items=[DocumentResponse(**doc) for doc in result["items"]],
+        total=result["total"],
+        total_pages=result["total_pages"],
+    )
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)

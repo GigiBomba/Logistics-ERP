@@ -182,8 +182,7 @@ class InvoiceGenerator:
 
         invoice_id = invoice_data.get("invoice_number", f"INV-{datetime.now().year}-0001")
         if invoice_id.startswith(("INV-", "PROF-")):
-            invoice_id = f"{invoice_id}_{datetime.now().strftime('%H%M%S')}"
-        mode = invoice_data.get("mode", "client")
+            invoice_id = f"{invoice_id}_{datetime.now().strftime('%H%M%S%f')}"
         filename = f"{invoice_id}_{mode}.pdf"
         full_path = os.path.join(self.reports_dir, filename)
 
@@ -477,6 +476,10 @@ class InvoiceGenerator:
                                             textColor=colors.HexColor("#555555"))
                 story.append(Paragraph(f"<b>Amount in words:</b> {words}", word_style))
                 story.append(Spacer(1, 0.6*cm))
+            except ValueError:
+                story.append(Paragraph(
+                    f"<b>Amount in words:</b> [amount too large to convert to words]",
+                    self.styles["Normal"]))
             except Exception:
                 pass
 

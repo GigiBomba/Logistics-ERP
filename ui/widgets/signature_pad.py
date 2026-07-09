@@ -19,7 +19,7 @@ import os
 import uuid
 
 from PIL import Image, ImageDraw
-from PySide6.QtCore import Qt
+from PySide6.QtCore import Qt, QEvent
 from PySide6.QtGui import (
     QColor,
     QMouseEvent,
@@ -104,11 +104,22 @@ class _CanvasWidget(QWidget):
     def mouseReleaseEvent(self, event: QMouseEvent) -> None:
         if event.button() != Qt.LeftButton:
             return
+        self._finalize_stroke()
+        self.update()
+
+    def leaveEvent(self, event: QEvent) -> None:
+        """Finalize in-progress stroke when mouse leaves the canvas."""
+        if self._active:
+            self._finalize_stroke()
+            self.update()
+        super().leaveEvent(event)
+
+    def _finalize_stroke(self) -> None:
+        """Save the current stroke if valid and reset."""
         self._active = False
         if len(self._current_stroke) > 1:
             self._strokes.append(list(self._current_stroke))
         self._current_stroke.clear()
-        self.update()
 
     # ── Paint ─────────────────────────────────────────────────────────────────
 
@@ -301,6 +312,8 @@ class QtSignaturePad(QWidget):
         self._saved_path = None
         self._upload_path_edit.clear()
         self._mode = "none"
+        self._canvas_frame.setVisible(False)
+        self._upload_frame.setVisible(False)
         self._status_lbl.setText(t("signature.no_signature", default="No signature"))
         self._status_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
 
@@ -322,7 +335,7 @@ class QtSignaturePad(QWidget):
             for i in range(len(stroke) - 1):
                 x1, y1 = stroke[i][0] * 2, stroke[i][1] * 2
                 x2, y2 = stroke[i + 1][0] * 2, stroke[i + 1][1] * 2
-                draw.line([x1, y1, x2, y2], fill=(250, 250, 250, 255), width=4)
+                draw.line([x1, y1, x2, y2], fill=(0, 0, 0, 255), width=4)
 
         buf = io.BytesIO()
         # Resize back down for anti-aliased look
@@ -354,7 +367,7 @@ class QtSignaturePad(QWidget):
                 self._saved_path = path
                 self._status_lbl.setText(t("signature.label_selected", default="Selected: {}").format(os.path.basename(path)))
                 self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
-        self._mode = "none"
+        self._mode = "signed"
 
     # ── Upload mode ───────────────────────────────────────────────────────────
 

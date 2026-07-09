@@ -152,7 +152,7 @@ def test_evaluate_all_skips_when_days_mismatch(mock_template, mock_reminder, moc
     mock_repo_instance.get_active_schedules.return_value = [
         {"id": 1, "name": "day_30", "template_id": 1}
     ]
-    mock_repo_instance.get_all_templates.return_value = {1: {"id": 1, "subject": "Test", "body": "Body"}}
+    mock_repo_instance.get_all_templates.return_value = [{"id": 1, "subject": "Test", "body": "Body"}]
     mock_repo_instance.get_all_overrides.return_value = {}
     mock_repo_instance.get_all_settings.return_value = {}
     mock_repo_instance.get_reminder_count.return_value = 0
@@ -190,8 +190,8 @@ def test_evaluate_all_client_override_disabled(mock_template, mock_repo, engine)
     mock_repo_instance.get_active_schedules.return_value = [
         {"id": 1, "name": "day_30", "template_id": 1}
     ]
-    mock_repo_instance.get_all_templates.return_value = {1: {"id": 1, "subject": "Test", "body": "Body"}}
-    mock_repo_instance.get_all_overrides.return_value = {1: {"is_disabled": True, "client_id": 1}}
+    mock_repo_instance.get_all_templates.return_value = [{"id": 1, "subject": "Test", "body": "Body"}]
+    mock_repo_instance.get_all_overrides.return_value = [{"is_disabled": True, "client_id": 1}]
     mock_repo_instance.get_all_settings.return_value = {}
     mock_repo_instance.has_reminder_been_sent.return_value = False
     mock_repo_instance.get_reminder_count.return_value = 0
@@ -224,7 +224,7 @@ def test_evaluate_all_max_reminders_reached(mock_template, mock_repo, engine):
     mock_repo_instance.get_active_schedules.return_value = [
         {"id": 1, "name": "day_30", "template_id": 1}
     ]
-    mock_repo_instance.get_all_templates.return_value = {1: {"id": 1, "subject": "Test", "body": "Body"}}
+    mock_repo_instance.get_all_templates.return_value = [{"id": 1, "subject": "Test", "body": "Body"}]
     mock_repo_instance.get_all_overrides.return_value = {}
     mock_repo_instance.get_all_settings.return_value = {"max_reminders_per_invoice": "5"}
     mock_repo_instance.get_reminder_count.return_value = 5  # already at max
@@ -259,7 +259,7 @@ def test_evaluate_all_no_client_email(mock_template, mock_repo, engine):
     mock_repo_instance.get_active_schedules.return_value = [
         {"id": 1, "name": "day_30", "template_id": 1}
     ]
-    mock_repo_instance.get_all_templates.return_value = {1: {"id": 1, "subject": "Test", "body": "Body"}}
+    mock_repo_instance.get_all_templates.return_value = [{"id": 1, "subject": "Test", "body": "Body"}]
     mock_repo_instance.get_all_overrides.return_value = {}
     mock_repo_instance.get_all_settings.return_value = {}
     mock_repo_instance.get_reminder_count.return_value = 0

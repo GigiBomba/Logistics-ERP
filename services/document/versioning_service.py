@@ -41,13 +41,14 @@ class VersioningService:
         while len(versions) >= MAX_VERSIONS_PER_DOC:
             oldest = versions[-1]
             try:
+                self._repo._execute("BEGIN", commit=False)
                 if os.path.isfile(oldest["file_path"]):
                     os.remove(oldest["file_path"])
-            except OSError:
-                pass
-            self._repo._execute(
-                "DELETE FROM document_versions WHERE id = ?", (oldest["id"],),
-            )
+                self._repo._execute(
+                    "DELETE FROM document_versions WHERE id = ?", (oldest["id"],),
+                )
+            except Exception:
+                self._repo._execute("ROLLBACK", commit=False)
             versions = self._repo.get_versions(doc_id)
 
         file_hash = self._compute_sha256(source_path)

@@ -79,27 +79,24 @@ class ClientService:
         client = self._repo.get_by_id(client_id)
         if not client:
             return {}
-        revenue = self._repo.get_revenue_summary(client_id)
-        outstanding = self._repo.get_outstanding_balance(client_id)
+        dashboard_data = self._repo.get_dashboard_data(client_id)
         recent_trips = self._repo.get_trips(client_id, limit=5)
         outstanding_invoices = self._repo.get_outstanding_invoices(client_id)
-        status_counts = self._repo.get_trips_status_counts(client_id)
-        last_30 = self._repo.get_trip_count_in_range(client_id, days=30)
         contacts = self._contact_repo.get_by_client(client_id)
         tags = self._tag_repo.get_by_client(client_id)
         return {
             "client": client,
-            "total_revenue": revenue.get("total_revenue", 0) or 0,
-            "total_profit": revenue.get("total_profit", 0) or 0,
-            "avg_profit": revenue.get("avg_profit", 0) or 0,
-            "total_trips": revenue.get("total_trips", 0) or 0,
-            "total_km": revenue.get("total_km", 0) or 0,
-            "last_trip_date": revenue.get("last_trip_date", ""),
-            "outstanding_balance": outstanding,
-            "trips_last_30_days": last_30,
+            "total_revenue": dashboard_data["total_revenue"],
+            "total_profit": dashboard_data["total_profit"],
+            "avg_profit": dashboard_data["avg_profit"],
+            "total_trips": dashboard_data["total_trips"],
+            "total_km": dashboard_data["total_km"],
+            "last_trip_date": dashboard_data["last_trip_date"],
+            "outstanding_balance": dashboard_data["outstanding_balance"],
+            "trips_last_30_days": dashboard_data["trips_last_30_days"],
             "recent_trips": recent_trips,
             "outstanding_invoices": outstanding_invoices,
-            "status_counts": status_counts,
+            "status_counts": dashboard_data["status_counts"],
             "contacts": contacts,
             "tags": tags,
         }

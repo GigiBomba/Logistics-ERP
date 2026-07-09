@@ -31,8 +31,15 @@ def check_database(db_path: str | None = None) -> dict[str, Any]:
         db = DatabaseManager(path)
         try:
             tables = SettingsRepository(db).get_table_names()
+            expected_tables = {"alerts", "trips", "trucks", "invoices", "settings"}
+            missing = expected_tables - set(tables)
         finally:
             db.close()
+        if missing:
+            result["status"] = "unhealthy"
+            result["error"] = f"Missing critical tables: {', '.join(sorted(missing))}"
+            result["table_count"] = len(tables)
+            return result
         result["status"] = "healthy"
         result["table_count"] = len(tables)
         return result

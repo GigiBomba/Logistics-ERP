@@ -112,13 +112,13 @@ class TachoStatusModel(QAbstractTableModel):
 
     def refresh(self, db) -> None:
         """Fetch all tacho status data through the repository."""
+        self.beginResetModel()
         try:
             repo = TachoVehicleDataRepository(db)
             rows = repo.get_tacho_status_data()
             self._rows = list(rows) if rows else []
         except Exception:
             self._rows = []
-        self.beginResetModel()
         self.endResetModel()
 
     def truck_id_at(self, row: int) -> int | None:

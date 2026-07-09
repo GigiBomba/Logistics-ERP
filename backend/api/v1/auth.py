@@ -184,7 +184,7 @@ async def login_for_access_token(
     _check_lockout(email)
 
     # ── Gate 1: Admin gateway (env-var driven, zero DB) ────────────────
-    if email == settings.admin_email:
+    if email == settings.admin_email.strip().lower():
         if not settings.admin_password_hash:
             logger.warning("Admin login attempted but no password hash configured [%s]", client_ip)
             raise HTTPException(

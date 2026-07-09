@@ -30,6 +30,8 @@ class AutoMailRepository(BaseRepository):
     ]
     COLUMNS_AUTOMAIL_OVERRIDES = [
         "id", "client_id", "template_id", "is_active", "override_json",
+        "is_disabled", "custom_template_id", "custom_days_offset",
+        "custom_trigger_type", "skip_attachments", "notes",
         "created_at", "updated_at", "company_id",
     ]
     COLUMNS_AUTOMAIL_SETTINGS = [

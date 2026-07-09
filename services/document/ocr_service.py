@@ -204,6 +204,7 @@ class OcrService:
             rows = repo._fetchall(
                 """SELECT id, file_path, mime_type FROM documents
                    WHERE (ocr_run_at IS NULL OR ocr_run_at = '')
+                     AND (ocr_text IS NULL OR ocr_text = '')
                      AND (text_content IS NULL OR text_content = '')
                      AND file_path IS NOT NULL
                      AND file_path != ''

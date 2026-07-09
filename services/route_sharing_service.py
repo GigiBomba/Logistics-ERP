@@ -269,6 +269,12 @@ def decode_route_file(data: bytes) -> dict[str, Any]:
         raise ValueError("Invalid .operionroute file: bad magic or version")
 
     payload_len = int.from_bytes(data[13:17], byteorder="big")
+    if payload_len <= 0 or payload_len > 100 * 1024 * 1024:
+        raise ValueError(f"Invalid .operionroute file: payload length {payload_len} out of range")
+    if len(data) < 17 + payload_len:
+        raise ValueError(
+            f"Truncated .operionroute file: expected {17 + payload_len} bytes, got {len(data)}"
+        )
     compressed = data[17:17 + payload_len]
 
     try:
@@ -349,7 +355,7 @@ def _extract_coordinate_pairs(stops: list[dict[str, Any]]) -> list[tuple[float, 
     coords: list[tuple[float, float]] = []
     for s in stops:
         lat = s.get("lat")
-        lon = s.get("lon") or s.get("lng")
+        lon = s.get("lon") if s.get("lon") is not None else s.get("lng")
         if lat is not None and lon is not None:
             try:
                 coords.append((float(lat), float(lon)))

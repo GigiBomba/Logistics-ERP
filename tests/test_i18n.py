@@ -164,7 +164,8 @@ class TestTranslate:
 
     def test_format_with_positional_args(self, en_translations):
         i18n._translations["en"]["pos"] = "First: {} Second: {}"
-        assert i18n.t("pos", "A", "B") == "First: A Second: B"
+        # t(key, default, *args, **kwargs) — pass None for default
+        assert i18n.t("pos", None, "A", "B") == "First: A Second: B"
 
     def test_format_failure_returns_unformatted(self, en_translations):
         """If format fails (e.g. missing kwarg), return the raw message."""
@@ -230,8 +231,10 @@ class TestSetLanguage:
 
     def test_set_language_persists_to_file(self, en_translations):
         """set_language writes to _LANG_FILE."""
+        # Set a different language first so the write path is triggered
+        i18n._translations["ro"] = {"greeting": "Salut"}
         with patch("builtins.open", mock_open()) as m_open:
-            i18n.set_language("en")
+            i18n.set_language("ro")
             m_open.assert_called_once()
 
     def test_set_language_file_write_failure_does_not_raise(self, en_ro_translations):

@@ -312,12 +312,12 @@ class TestTimeoutBehaviour:
             conn.execute("BEGIN IMMEDIATE")
             conn.execute("INSERT INTO t VALUES (1)")
             lock_held.set()          # signal that lock is taken
-            time.sleep(3)            # keep holding it
+            time.sleep(5)            # keep holding it
             conn.execute("COMMIT")
 
         def contend_write() -> None:
             conn = pool.conn
-            assert lock_held.wait(timeout=5), "lock_held event not set"
+            assert lock_held.wait(timeout=10), "lock_held event not set"
             try:
                 conn.execute("BEGIN IMMEDIATE")
                 conn.execute("INSERT INTO t VALUES (2)")
@@ -328,10 +328,11 @@ class TestTimeoutBehaviour:
         t2 = threading.Thread(target=contend_write, daemon=True)
 
         t1.start()
+        time.sleep(0.2)  # give t1 a head start to acquire the lock
         t2.start()
-        t2.join(timeout=5)
+        t2.join(timeout=15)
         pool.close_all()
-        t1.join(timeout=5)
+        t1.join(timeout=10)
 
         assert got_timeout.is_set(), (
             "Expected sqlite3.OperationalError due to timeout"

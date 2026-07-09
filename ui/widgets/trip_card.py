@@ -518,6 +518,29 @@ class QtTripCard(QFrame):
         new_alerts = new_data.get("alerts_count", 0)
         self.trip_data["alerts_count"] = new_alerts
 
+        # Update route label
+        if self._route_lbl is not None:
+            origin = new_data.get("origin", "?")
+            destination = new_data.get("destination", "?")
+            route_text = f"{origin} \u2192 {destination}"
+            self._route_lbl.setText(route_text)
+
+        # Update date label
+        if self._date_lbl is not None:
+            departure = new_data.get("departure_date", "")
+            eta = new_data.get("eta", "")
+            date_parts_local: list[str] = []
+            if departure:
+                date_parts_local.append(f"\u25b6 {departure}")
+            if eta:
+                date_parts_local.append(f"\u25c0 {eta}")
+            date_text = "  ".join(date_parts_local) if date_parts_local else ""
+            self._date_lbl.setText(date_text)
+            self._date_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+
+        # Reset delayed state (will be re-evaluated by caller)
+        self.set_delayed(False, 0)
+
     def set_selected(self, selected: bool) -> None:
         """Set the selected state and update the card border."""
         if self._selected != selected:

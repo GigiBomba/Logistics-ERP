@@ -694,7 +694,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             if text.startswith(key):
                 self._format_key = key
                 break
-        svc = self._get_invoice_service() if hasattr(self, "_get_invoice_service") else None
+        svc = self._get_invoice_service()
         if svc and hasattr(svc, "set_format_key"):
             svc.set_format_key(self._format_key)
         self._inv_num_edit.setText(self._gen_invoice_number())
@@ -1266,8 +1266,12 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             self._trip_price_pre_vat = str(pre_vat)
             self._trip_vat_percent = str(vat_pct)
 
-        # Clear existing addon items and add empty one
-        self._addon_items = [{"description": "", "amount": 0.0}]
+        # Only reset addon items if all are empty/default to avoid losing custom entries
+        if all(
+            not item.get("description", "").strip() and float(item.get("amount", 0) or 0) == 0
+            for item in self._addon_items
+        ):
+            self._addon_items = [{"description": "", "amount": 0.0}]
         self._sync_table_to_items()
 
         # Auto-select client — always update to match the current trip's client

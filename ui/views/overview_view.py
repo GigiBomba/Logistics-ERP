@@ -1084,10 +1084,10 @@ class QtOverviewView(BaseView):
                 self._handlers[ev_type] = handler
 
     def _on_data_changed(self, ev):
-        QTimer.singleShot(0, self.refresh)
+        QTimer.singleShot(0, self, self.refresh)
 
     def _on_language_changed(self, lang: str):
-        QTimer.singleShot(0, self.refresh)
+        QTimer.singleShot(0, self, self.refresh)
 
     # ── Lifecycle ──────────────────────────────────────────────────────────────
 

@@ -31,6 +31,8 @@ def decode_polyline(encoded: str, precision: int = 5) -> list[tuple[float, float
             result = 0
 
             while True:
+                if index >= len(encoded):
+                    raise ValueError(f"Truncated polyline at position {index} (while decoding latitude)")
                 byte = ord(encoded[index]) - 63
                 index += 1
                 result |= (byte & 0x1F) << shift
@@ -48,6 +50,8 @@ def decode_polyline(encoded: str, precision: int = 5) -> list[tuple[float, float
             result = 0
 
             while True:
+                if index >= len(encoded):
+                    raise ValueError(f"Truncated polyline at position {index} (while decoding longitude)")
                 byte = ord(encoded[index]) - 63
                 index += 1
                 result |= (byte & 0x1F) << shift

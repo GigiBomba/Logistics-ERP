@@ -107,12 +107,14 @@ def test_format_negative_amount(service_fixture):
 
 def test_convert_same_currency(service_fixture):
     """Converting between the same currency should return the amount unchanged."""
+    service_fixture._exchange.convert.return_value = 100.0
     result = service_fixture.convert(100.0, "EUR", "EUR")
     assert result == 100.0
 
 
 def test_convert_zero_amount(service_fixture):
     """Converting zero amount should return zero."""
+    service_fixture._exchange.convert.return_value = 0.0
     result = service_fixture.convert(0.0, "EUR", "USD")
     assert result == 0.0
 

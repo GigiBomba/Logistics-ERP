@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextlib
 import logging
 import os
@@ -78,9 +80,9 @@ class ExportService:
                 remove_accents(t["truck_number"]),
                 remove_accents(t["driver_name"]),
                 remove_accents(t["client_name"]),
-                f"{t['distance_km']:.0f}",
-                f"{t['gross_per_km']:.2f}",
-                f"{t['net_profit']:.2f}",
+                f"{(t.get('distance_km') or 0):.0f}",
+                f"{(t.get('gross_per_km') or 0):.2f}",
+                f"{(t.get('net_profit') or 0):.2f}",
                 remove_accents(t["status"])
             ])
 
@@ -156,46 +158,4 @@ class ExportService:
     # These methods delegate to the reportlab-based engine or the
     # dedicated document automation pipeline.
 
-    def generate_invoice_pdf(
-        self, invoice_data: dict[str, Any], output_path: str | None = None
-    ) -> str | None:
-        """Generate a PDF for an invoice. Returns the file path or None."""
-        try:
-            from utils.pdf_utils import generate_invoice_pdf as _gen
-            return _gen(invoice_data, output_path=output_path, reports_dir=self.reports_dir)
-        except Exception as e:
-            logger.error("Failed to generate invoice PDF: %s", e)
-            return None
 
-    def generate_receipt_pdf(
-        self, receipt_data: dict[str, Any], output_path: str | None = None
-    ) -> str | None:
-        """Generate a PDF for a receipt. Returns the file path or None."""
-        try:
-            from utils.pdf_utils import generate_receipt_pdf as _gen
-            return _gen(receipt_data, output_path=output_path, reports_dir=self.reports_dir)
-        except Exception as e:
-            logger.error("Failed to generate receipt PDF: %s", e)
-            return None
-
-    def generate_cmr_pdf(
-        self, cmr_data: dict[str, Any], output_path: str | None = None
-    ) -> str | None:
-        """Generate a CMR document PDF. Returns the file path or None."""
-        try:
-            from utils.pdf_utils import generate_cmr_pdf as _gen
-            return _gen(cmr_data, output_path=output_path, reports_dir=self.reports_dir)
-        except Exception as e:
-            logger.error("Failed to generate CMR PDF: %s", e)
-            return None
-
-    def generate_proforma_pdf(
-        self, proforma_data: dict[str, Any], output_path: str | None = None
-    ) -> str | None:
-        """Generate a proforma PDF. Returns the file path or None."""
-        try:
-            from utils.pdf_utils import generate_proforma_pdf as _gen
-            return _gen(proforma_data, output_path=output_path, reports_dir=self.reports_dir)
-        except Exception as e:
-            logger.error("Failed to generate proforma PDF: %s", e)
-            return None

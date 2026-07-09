@@ -1698,8 +1698,8 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         errors: list[str] = []
         invalid_fields: list[QWidget] = []
 
-        # Amount
-        if not self._amount or self._amount <= 0:
+        # Amount — check total as well when VAT is present
+        if (not self._amount or self._amount <= 0) and (not self._total or self._total <= 0):
             errors.append(t("receipt.validation.amount_required"))
             invalid_fields.append(self._amount_entry)
 

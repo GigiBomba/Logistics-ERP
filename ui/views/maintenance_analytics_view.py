@@ -92,7 +92,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
-        QTimer.singleShot(0, self._load_data)
+        QTimer.singleShot(0, self, self._load_data)
 
     # ── UI Build ─────────────────────────────────────────────────
 
@@ -301,7 +301,7 @@ class QtMaintenanceAnalyticsView(QWidget):
     # ── i18n ─────────────────────────────────────────────────────
 
     def _on_language_changed(self, lang: str):
-        QTimer.singleShot(0, self._load_data)
+        QTimer.singleShot(0, self, self._load_data)
 
     # ── Helpers ──────────────────────────────────────────────────
 

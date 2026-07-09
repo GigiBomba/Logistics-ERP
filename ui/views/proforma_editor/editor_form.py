@@ -115,18 +115,25 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         # Client info
         self._client_name: str = ""
         self._client_vat: str = ""
+        self._client_vat_raw: str = ""
         self._client_address: str = ""
         self._client_phone: str = ""
+        self._client_phone_raw: str = ""
         self._client_email: str = ""
+        self._client_email_raw: str = ""
         self._selected_client_id: int | None = None
 
         # Company info
         self._company_name: str = ""
         self._company_cui: str = ""
+        self._company_cui_raw: str = ""
         self._company_reg: str = ""
+        self._company_reg_raw: str = ""
         self._company_address: str = ""
         self._company_phone: str = ""
+        self._company_phone_raw: str = ""
         self._company_email: str = ""
+        self._company_email_raw: str = ""
 
         # Linked documents
         self._linked_docs: list[dict[str, Any]] = []
@@ -780,11 +787,15 @@ class QtProformaEditor(BaseView, LineItemsMixin):
     def _load_company_config(self) -> None:
         conf = load_company_config()
         self._company_name = conf.get("company_name", "")
-        self._company_cui = f"CUI: {conf.get('cui', '')}" if conf.get("cui") else ""
-        self._company_reg = f"Reg: {conf.get('reg_number', '')}" if conf.get("reg_number") else ""
+        self._company_cui_raw = conf.get("cui", "")
+        self._company_cui = f"CUI: {self._company_cui_raw}" if self._company_cui_raw else ""
+        self._company_reg_raw = conf.get("reg_number", "")
+        self._company_reg = f"Reg: {self._company_reg_raw}" if self._company_reg_raw else ""
         self._company_address = conf.get("address", "")
-        self._company_phone = f"Tel: {conf.get('phone', '')}" if conf.get("phone") else ""
-        self._company_email = f"Email: {conf.get('email', '')}" if conf.get("email") else ""
+        self._company_phone_raw = conf.get("phone", "")
+        self._company_phone = f"Tel: {self._company_phone_raw}" if self._company_phone_raw else ""
+        self._company_email_raw = conf.get("email", "")
+        self._company_email = f"Email: {self._company_email_raw}" if self._company_email_raw else ""
         self._logo_path = conf.get("logo_path", "")
         self._signature_path = conf.get("signature_path", "")
         self._stamp_path = conf.get("stamp_path", "")
@@ -820,10 +831,13 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         if client:
             self._selected_client_id = client.get("id")
             self._client_name = client.get("name", "")
-            self._client_vat = f"VAT: {client.get('vat_number', '')}" if client.get("vat_number") else ""
+            self._client_vat_raw = client.get("vat_number", "")
+            self._client_vat = f"VAT: {self._client_vat_raw}" if self._client_vat_raw else ""
             self._client_address = client.get("address", "")
-            self._client_phone = f"Tel: {client.get('phone', '')}" if client.get("phone") else ""
-            self._client_email = f"Email: {client.get('email', '')}" if client.get("email") else ""
+            self._client_phone_raw = client.get("phone", "")
+            self._client_phone = f"Tel: {self._client_phone_raw}" if self._client_phone_raw else ""
+            self._client_email_raw = client.get("email", "")
+            self._client_email = f"Email: {self._client_email_raw}" if self._client_email_raw else ""
             self._update_canvas_labels()
 
     def _on_mode_changed(self, mode: str, checked: bool) -> None:
@@ -1052,6 +1066,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
                 self._client_address = client_address
                 self._c_client_addr.setText(self._client_address)
             if client_vat:
+                self._client_vat_raw = client_vat
                 self._client_vat = f"VAT: {client_vat}"
                 self._c_client_vat.setText(self._client_vat)
             if total_amount:
@@ -1142,18 +1157,18 @@ class QtProformaEditor(BaseView, LineItemsMixin):
             "_format_key": self._format_key,
             "company": {
                 "company_name": self._company_name,
-                "cui": self._company_cui.replace("CUI: ", ""),
-                "reg_number": self._company_reg.replace("Reg: ", ""),
+                "cui": self._company_cui_raw,
+                "reg_number": self._company_reg_raw,
                 "address": self._company_address,
-                "phone": self._company_phone.replace("Tel: ", ""),
-                "email": self._company_email.replace("Email: ", ""),
+                "phone": self._company_phone_raw,
+                "email": self._company_email_raw,
             },
             "client": {
                 "name": self._client_name,
-                "vat_number": self._client_vat.replace("VAT: ", ""),
+                "vat_number": self._client_vat_raw,
                 "address": self._client_address,
-                "phone": self._client_phone.replace("Tel: ", ""),
-                "email": self._client_email.replace("Email: ", ""),
+                "phone": self._client_phone_raw,
+                "email": self._client_email_raw,
             },
             "addon_items": self._addon_items,
             "line_items": self._addon_items,
@@ -1368,17 +1383,24 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         client = draft.get("client") or {}
 
         self._company_name = str(company.get("company_name", ""))
-        self._company_cui = f"CUI: {company.get('cui', '')}" if company.get("cui") else ""
-        self._company_reg = f"Reg: {company.get('reg_number', '')}" if company.get("reg_number") else ""
+        self._company_cui_raw = company.get("cui", "")
+        self._company_cui = f"CUI: {self._company_cui_raw}" if self._company_cui_raw else ""
+        self._company_reg_raw = company.get("reg_number", "")
+        self._company_reg = f"Reg: {self._company_reg_raw}" if self._company_reg_raw else ""
         self._company_address = str(company.get("address", ""))
-        self._company_phone = f"Tel: {company.get('phone', '')}" if company.get("phone") else ""
-        self._company_email = f"Email: {company.get('email', '')}" if company.get("email") else ""
+        self._company_phone_raw = company.get("phone", "")
+        self._company_phone = f"Tel: {self._company_phone_raw}" if self._company_phone_raw else ""
+        self._company_email_raw = company.get("email", "")
+        self._company_email = f"Email: {self._company_email_raw}" if self._company_email_raw else ""
 
         self._client_name = str(client.get("name", ""))
-        self._client_vat = f"VAT: {client.get('vat_number', '')}" if client.get("vat_number") else ""
+        self._client_vat_raw = client.get("vat_number", "")
+        self._client_vat = f"VAT: {self._client_vat_raw}" if self._client_vat_raw else ""
         self._client_address = str(client.get("address", ""))
-        self._client_phone = f"Tel: {client.get('phone', '')}" if client.get("phone") else ""
-        self._client_email = f"Email: {client.get('email', '')}" if client.get("email") else ""
+        self._client_phone_raw = client.get("phone", "")
+        self._client_phone = f"Tel: {self._client_phone_raw}" if self._client_phone_raw else ""
+        self._client_email_raw = client.get("email", "")
+        self._client_email = f"Email: {self._client_email_raw}" if self._client_email_raw else ""
         self._issue_date = str(draft.get("issue_date", self._issue_date) or self._issue_date)
         self._valid_until = str(draft.get("valid_until", draft.get("due_date", self._valid_until)) or self._valid_until)
         self._payment_terms = str(draft.get("payment_terms", self._payment_terms) or self._payment_terms)
@@ -1388,6 +1410,10 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._description = str(draft.get("description", ""))
         self._tax_rate = str(draft.get("tax_rate", 19) or 19)
         self._discount_type = "percentage" if "Percentage" in (draft.get("discount_type") or "") else "fixed"
+        if self._discount_type == "percentage":
+            self._disc_type_combo.setCurrentIndex(0)
+        else:
+            self._disc_type_combo.setCurrentIndex(1)
         self._discount_value = str(draft.get("discount_value", 0) or 0)
         self._currency = str(draft.get("currency", "EUR") or "EUR")
         self._logo_path = str(draft.get("logo_path", "") or "")

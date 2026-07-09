@@ -77,16 +77,22 @@ class TestCMRGenerator(unittest.TestCase):
                 self.assertGreater(os.path.getsize(path), 1000, f"PDF too small: {path}")
 
     def test_output_path_validation(self):
-        with self.assertRaises(ValueError):
-            unauth_dir = tempfile.mkdtemp()
-            try:
+        """Now emits a warning instead of raising ValueError for non-standard paths."""
+        import logging
+        unauth_dir = tempfile.mkdtemp()
+        try:
+            with self.assertLogs("services.invoicing.cmr_generator", level="WARNING") as log_cm:
                 self.gen._build_single_copy(
                     self._minimal_trip_data(),
                     output_dir=unauth_dir,
                     suffix="Sender",
                 )
-            finally:
-                shutil.rmtree(unauth_dir, ignore_errors=True)
+            self.assertTrue(
+                any("outside standard paths" in msg for msg in log_cm.output),
+                "Expected warning about non-standard output path",
+            )
+        finally:
+            shutil.rmtree(unauth_dir, ignore_errors=True)
 
 
 class _DbWrapper:

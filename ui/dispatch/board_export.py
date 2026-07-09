@@ -110,7 +110,7 @@ def export_pdf(
             "Cell", textColor=rl_colors.HexColor("#a1a1aa"), fontSize=8,
         )
 
-        from ui.views.dispatch_board_view import STATUS_TO_COLUMN
+        from ui.views.dispatch_board.board_state import STATUS_TO_COLUMN
 
         for col_key in ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]:
             col_trips = [

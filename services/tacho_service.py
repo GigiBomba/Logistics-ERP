@@ -327,17 +327,17 @@ class TachoService:
                 # activityType (int enum) and duration (int minutes)
                 for slot in slots:
                     minutes = int(slot.get("duration", slot.get("activityDuration", 0)) or 0)
-                    activity_type_raw = (slot.get("activityType")
-                                         or slot.get("activity", "")
-                                         or slot.get("type", ""))
-                    atype = str(activity_type_raw).lower()
-                    if activity_type_raw == 0 or "drive" in atype:
+                    at_raw = slot.get("activityType")
+                    if at_raw is None:
+                        at_raw = slot.get("activity", slot.get("type", ""))
+                    atype = str(at_raw).lower()
+                    if at_raw == 0 or "drive" in atype:
                         driving += minutes
-                    elif activity_type_raw == 3 or "rest" in atype:
+                    elif at_raw == 3 or "rest" in atype:
                         rest += minutes
-                    elif activity_type_raw == 1 or "work" in atype:
+                    elif at_raw == 1 or "work" in atype:
                         work += minutes
-                    elif activity_type_raw == 2 or "avail" in atype:
+                    elif at_raw == 2 or "avail" in atype:
                         avail += minutes
 
                 distance = float(
@@ -551,15 +551,19 @@ class TachoService:
         return result
 
     def after_import_hooks(self, truck_id=None, driver_id=None):
-        """Run maintenance evaluation in background after successful import."""
+        """Run maintenance evaluation in background after successful import.
+
+        Uses the OperationsEngine singleton (not a new MaintenanceEngine per
+        import) to avoid accumulating duplicate EventBus subscriptions.
+        """
         def run():
             try:
-                from services.operations.maintenance_engine import MaintenanceEngine
-                engine = MaintenanceEngine(self.db)
+                from services.operations.operations_engine import OperationsEngine
+                engine = OperationsEngine(self.db)
                 if truck_id:
-                    engine.evaluate_truck(int(truck_id))
+                    engine.evaluate_truck(str(truck_id))
                 if driver_id:
-                    engine.evaluate_driver_hours()
+                    engine.evaluate_all()
                 logger.info("Post-import maintenance evaluation complete.")
             except Exception as e:
                 logger.error("Post-import evaluation failed: %s", e)

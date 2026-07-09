@@ -1,5 +1,6 @@
 import contextvars
-from typing import AsyncGenerator, Optional
+import threading
+from typing import Any, AsyncGenerator, Optional
 
 from fastapi import Depends
 
@@ -36,14 +37,40 @@ def get_request_user_role() -> str:
     return _current_user_role.get()
 
 
+# ── App-lifetime singleton ──────────────────────────────────────────
+_db_instance: Optional[DatabaseManager] = None
+_db_lock = threading.Lock()
+
+
+def init_db(app: Optional[Any] = None) -> DatabaseManager:
+    """Create the singleton DatabaseManager (call once at startup).
+
+    If *app* is provided, registers a shutdown handler that closes the
+    pool when the application stops.
+    """
+    global _db_instance
+    if _db_instance is None:
+        with _db_lock:
+            if _db_instance is None:  # double-checked locking
+                _db_instance = DatabaseManager(Config.DB_PATH)
+
+    if app is not None:
+        @app.on_event("shutdown")
+        def _shutdown_db() -> None:
+            global _db_instance
+            if _db_instance is not None:
+                _db_instance.close()
+                _db_instance = None
+
+    return _db_instance
+
+
 async def get_db() -> AsyncGenerator[DatabaseManager, None]:
-    db = DatabaseManager(Config.DB_PATH)
+    """Yield the singleton DatabaseManager — no create/close per request."""
+    db = init_db()
     db.user_company_id = get_request_company_id()
     db.user_role = get_request_user_role()
-    try:
-        yield db
-    finally:
-        db.close()
+    yield db
 
 
 async def get_document_repo(

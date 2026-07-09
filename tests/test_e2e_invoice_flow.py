@@ -22,7 +22,7 @@ from services.invoicing.cmr_generator import CMRGenerator
 from services.invoicing.proforma_service import ProformaService
 from services.invoicing.receipt_service import ReceiptService
 from services.invoicing.service import InvoiceService
-from services.operations.event_bus import INVOICE_CREATED, INVOICE_PAID, EventBus
+from services.operations.event_bus import EventBus
 from services.operations.trip_status_engine import TripStatusEngine
 from services.trip_service import TripService
 from tests.test_helpers import make_db
@@ -333,7 +333,8 @@ class TestInvoiceFlow:
         rcpt = dict(receipts[0])
         assert rcpt["received_from_name"] == "Paying Client Inc"
         assert rcpt["amount"] == 4800.0
-        assert rcpt["total"] == 4800.0  # No VAT separate in total when amount+vat=total
+        # total = amount + vat_amount = 4800 + (4800 * 0.19) = 5712
+        assert rcpt["total"] == 5712.0
         assert rcpt["status"] == "Generated"
         assert rcpt["currency"] == "EUR"
         assert rcpt["payment_method"] == "Bank Transfer"

@@ -14,6 +14,7 @@ class FleetRepository(BaseRepository):
         "insurance_expiry", "inspection_expiry", "maintenance_due",
         "tachograph_expiry", "active_status", "tracking_device_id",
         "trailer_plate", "max_payload_kg", "cmr_insurance_number", "cmr_insurance_expiry",
+        "odometer_km",
     ]
     COLUMNS_MAINT_RECORDS = [
         "id", "truck_id", "maintenance_type", "date", "km", "cost", "notes",
@@ -25,7 +26,7 @@ class FleetRepository(BaseRepository):
         "created_at", "company_id",
     ]
     COLUMNS_HEALTH_SCORES = [
-        "id", "truck_id", "score", "compliance_pct", "overdue_count",
+        "truck_id", "score", "compliance_pct", "overdue_count",
         "recurring_issues", "downtime_days", "last_updated", "company_id",
     ]
 
@@ -378,6 +379,28 @@ class FleetRepository(BaseRepository):
                 ORDER BY s.truck_id, s.maintenance_type""",
             self._company_params(),
         )
+
+    def count_overdue_schedules(self) -> int:
+        """Return count of active schedules that are overdue based on km, months, or fixed expiry."""
+        from datetime import datetime
+        today = datetime.now().strftime("%Y-%m-%d")
+        row = self._fetchone(
+            f"""SELECT COUNT(*) AS cnt
+                FROM {self.TABLE_MAINT_SCHEDULES} s
+                LEFT JOIN trucks t ON t.id = s.truck_id
+                WHERE s.active = 1
+                AND (
+                    (s.interval_km IS NOT NULL AND s.last_done_km IS NOT NULL
+                     AND COALESCE(t.mileage, 0) >= s.last_done_km + s.interval_km)
+                    OR (s.interval_months IS NOT NULL AND s.last_done_date IS NOT NULL
+                        AND DATE(s.last_done_date, '+' || s.interval_months || ' months') <= ?)
+                    OR (s.fixed_expiry_date IS NOT NULL AND s.fixed_expiry_date != ''
+                        AND s.fixed_expiry_date <= ?)
+                )
+                {self._company_filter("s")}""",
+            (today, today) + self._company_params(),
+        )
+        return row["cnt"] if row else 0
 
     # ── Analytics Queries ────────────────────────────────────────────
 

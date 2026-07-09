@@ -1,14 +1,53 @@
 """Shared test infrastructure: in-memory SQLite database with full schema."""
 import sqlite3
+import threading
 from typing import Any, Dict, Optional
 
 
+class _ThreadSafeConnection:
+    """A proxy around ``sqlite3.Connection`` that serialises all calls with an RLock.
+
+    This lets concurrency tests share a single in-memory database across
+    threads without SQLite's ``cannot start a transaction within a transaction``
+    or ``SQLite objects created in a thread can only be used in that same thread``
+    errors.  Each individual ``execute``, ``executemany``, and ``commit`` call
+    is serialised — this is sufficient to prevent SQLite-level thread safety
+    errors in test scenarios.
+    """
+
+    def __init__(self, conn: sqlite3.Connection):
+        self._conn = conn
+        self._lock = threading.RLock()
+
+    def __getattr__(self, name):
+        """Delegate attribute access to the underlying connection."""
+        return getattr(self._conn, name)
+
+    def execute(self, sql, parameters=()):
+        with self._lock:
+            return self._conn.execute(sql, parameters)
+
+    def commit(self):
+        with self._lock:
+            return self._conn.commit()
+
+    def executemany(self, sql, parameters):
+        with self._lock:
+            return self._conn.executemany(sql, parameters)
+
+
 class InMemoryDB:
-    """Lightweight in-memory database that mimics DatabaseManager's interface."""
+    """Lightweight in-memory database that mimics DatabaseManager's interface.
+
+    Thread-safe: uses a reentrant lock via ``_ThreadSafeConnection`` so that
+    tests can safely share a single ``InMemoryDB`` across threads.
+    """
 
     def __init__(self):
-        self.conn = sqlite3.connect(":memory:")
-        self.conn.row_factory = sqlite3.Row
+        raw_conn = sqlite3.connect(":memory:", check_same_thread=False)
+        raw_conn.row_factory = sqlite3.Row
+        raw_conn.execute("PRAGMA journal_mode=WAL")
+        self.conn = _ThreadSafeConnection(raw_conn)
         self._init_schema()
 
     def _init_schema(self):
@@ -168,6 +207,7 @@ class InMemoryDB:
             ALTER_DOCUMENTS_ADD_OCR_TEXT,
             ALTER_DOCUMENTS_ADD_OCR_RUN_AT,
             ALTER_DOCUMENTS_ADD_OCR_ENGINE,
+            "ALTER TABLE trucks ADD COLUMN odometer_km REAL",
         ]:
             try:
                 self.conn.execute(alter_sql)
@@ -210,6 +250,21 @@ class InMemoryDB:
         query += " ORDER BY id DESC LIMIT ?"
         params.append(limit)
         return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
+
+    def get_all_trucks(self, active_only=False):
+        """Mirror DatabaseManager.get_all_trucks for in-memory tests."""
+        query = "SELECT * FROM trucks"
+        params = []
+        if active_only:
+            query += " WHERE active_status = 1 OR active_status IS NULL"
+        query += " ORDER BY id"
+        return self.rows_to_dicts(self.conn.execute(query, params).fetchall())
+
+    def get_truck_by_id(self, truck_id: int):
+        """Mirror DatabaseManager.get_truck_by_id for in-memory tests."""
+        return self.row_to_dict(
+            self.conn.execute("SELECT * FROM trucks WHERE id = ?", (truck_id,)).fetchone()
+        )
 
     def create_invoice_record(self, trip_id, inv_number, amount, due_date):
         from datetime import datetime

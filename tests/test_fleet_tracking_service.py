@@ -245,7 +245,7 @@ class TestGetPositions:
 
     def test_adapter_exception_returns_cached(self, service, sample_position):
         adapter = MagicMock(spec=BaseTrackingAdapter)
-        adapter.get_positions.side_effect = [sample_position, RuntimeError("boom")]
+        adapter.get_positions.side_effect = [[sample_position], RuntimeError("boom")]
         service._adapter = adapter
 
         result1 = service.get_positions(force_refresh=True)

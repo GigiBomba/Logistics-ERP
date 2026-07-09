@@ -308,9 +308,14 @@ class SettingsFieldsMixin:
         self.prefs.set_currency(text)
 
     def _on_theme_combo_changed(self, text: str) -> None:
-        """Handle theme dropdown selection (stub — applies global QSS)."""
-        # Theme switching would call QtTheme.apply(mode) here
-        pass
+        """Handle theme dropdown selection — re-apply global QSS."""
+        from PySide6.QtWidgets import QApplication
+        from ui.theme_engine import QtTheme
+
+        app = QApplication.instance()
+        if app is not None:
+            QtTheme.refresh(app)
+        logger.debug("Theme refreshed (selected: %s)", text)
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Section: E-mail / SMTP

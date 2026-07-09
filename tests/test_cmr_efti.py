@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime
 from textwrap import dedent
 from xml.etree.ElementTree import Element, fromstring, tostring
@@ -1077,7 +1078,11 @@ class TestGenerateEftiXmlMiscBoxes:
 
 
 class TestGenerateEftiXmlSignatures:
-    """Tests for signature elements (Boxes 22, 23, 24)."""
+    """Tests for signature elements (Boxes 22, 23, 24).
+
+    Uses real temp files for signature paths because the XML generator
+    now requires ``os.path.isfile()`` to confirm signature presence.
+    """
 
     def _base(self) -> tuple:
         trip = {"consignor_name": "S", "client_name": "R",
@@ -1086,55 +1091,79 @@ class TestGenerateEftiXmlSignatures:
         cfg = {"company_name": "C", "address": "A", "cui": "V"}
         return trip, cfg
 
+    @staticmethod
+    def _touch_temp_file() -> str:
+        """Create a tiny temp file and return its path (used as sig indicator)."""
+        import tempfile
+        fd, path = tempfile.mkstemp(suffix=".sig")
+        os.close(fd)
+        return path
+
     def test_sender_signature(self):
         trip, cfg = self._base()
-        trip["sig_sender_path"] = "/path/to/sender/sig"
-        xml = generate_efti_xml("CMR-001", trip, cfg)
-        root = fromstring(xml)
-        doc = root.find(f"{{{NS_RSM}}}ExchangedDocument")
-        auths = doc.findall(f"{{{NS_RAM}}}SignatoryDocumentAuthentication")
-        # Should have at least one (sender)
-        assert len(auths) >= 1
-        auth_text = auths[0].find(f"{{{NS_RAM}}}SignatoryAuthentication")
-        assert auth_text.text == "presented"
-        assert auth_text.get("authenticationTypeCode") == "DigitalSignature"
+        sig_path = self._touch_temp_file()
+        try:
+            trip["sig_sender_path"] = sig_path
+            xml = generate_efti_xml("CMR-001", trip, cfg)
+            root = fromstring(xml)
+            doc = root.find(f"{{{NS_RSM}}}ExchangedDocument")
+            auths = doc.findall(f"{{{NS_RAM}}}SignatoryDocumentAuthentication")
+            # Should have at least one (sender)
+            assert len(auths) >= 1
+            auth_text = auths[0].find(f"{{{NS_RAM}}}SignatoryAuthentication")
+            assert auth_text.text == "presented"
+            assert auth_text.get("authenticationTypeCode") == "DigitalSignature"
+        finally:
+            os.unlink(sig_path)
 
     def test_sender_signature_sets_status(self):
         trip, cfg = self._base()
-        trip["sig_sender_path"] = "/path/sig"
-        xml = generate_efti_xml("CMR-001", trip, cfg)
-        root = fromstring(xml)
-        sigs = root.findall(f"{{{NS_RSM}}}SpecifiedSignature")
-        sender_sig = [s for s in sigs
-                      if s.find(f"{{{NS_RAM}}}TypeCode").text == "sender"][0]
-        assert sender_sig.find(f"{{{NS_RAM}}}StatusCode").text == "signed"
+        sig_path = self._touch_temp_file()
+        try:
+            trip["sig_sender_path"] = sig_path
+            xml = generate_efti_xml("CMR-001", trip, cfg)
+            root = fromstring(xml)
+            sigs = root.findall(f"{{{NS_RSM}}}SpecifiedSignature")
+            sender_sig = [s for s in sigs
+                          if s.find(f"{{{NS_RAM}}}TypeCode").text == "sender"][0]
+            assert sender_sig.find(f"{{{NS_RAM}}}StatusCode").text == "signed"
+        finally:
+            os.unlink(sig_path)
 
     def test_carrier_signature(self):
         trip, cfg = self._base()
-        trip["sig_carrier_path"] = "/path/carrier/sig"
-        xml = generate_efti_xml("CMR-001", trip, cfg)
-        root = fromstring(xml)
-        sigs = root.findall(f"{{{NS_RSM}}}SpecifiedSignature")
-        carrier_sig = [s for s in sigs
-                       if s.find(f"{{{NS_RAM}}}TypeCode").text == "carrier"][0]
-        assert carrier_sig.find(f"{{{NS_RAM}}}StatusCode").text == "signed"
+        sig_path = self._touch_temp_file()
+        try:
+            trip["sig_carrier_path"] = sig_path
+            xml = generate_efti_xml("CMR-001", trip, cfg)
+            root = fromstring(xml)
+            sigs = root.findall(f"{{{NS_RSM}}}SpecifiedSignature")
+            carrier_sig = [s for s in sigs
+                           if s.find(f"{{{NS_RAM}}}TypeCode").text == "carrier"][0]
+            assert carrier_sig.find(f"{{{NS_RAM}}}StatusCode").text == "signed"
+        finally:
+            os.unlink(sig_path)
 
     def test_consignee_signature(self):
         trip, cfg = self._base()
-        trip["sig_consignee_path"] = "/path/consignee/sig"
-        xml = generate_efti_xml("CMR-001", trip, cfg)
-        root = fromstring(xml)
-        # Check DeliveryNote element
-        cons = root.find(f"{{{NS_RAM}}}SpecifiedSupplyChainConsignment")
-        del_note = cons.find(f"{{{NS_RAM}}}DeliveryNote")
-        assert del_note is not None
-        sig_auth = del_note.find(f"{{{NS_RAM}}}SignatoryAuthentication")
-        assert sig_auth.get("authenticationTypeCode") == "DigitalSignature"
-        # Check SpecifiedSignature status
-        sigs = root.findall(f"{{{NS_RSM}}}SpecifiedSignature")
-        c_sig = [s for s in sigs
-                 if s.find(f"{{{NS_RAM}}}TypeCode").text == "consignee"][0]
-        assert c_sig.find(f"{{{NS_RAM}}}StatusCode").text == "signed"
+        sig_path = self._touch_temp_file()
+        try:
+            trip["sig_consignee_path"] = sig_path
+            xml = generate_efti_xml("CMR-001", trip, cfg)
+            root = fromstring(xml)
+            # Check DeliveryNote element
+            cons = root.find(f"{{{NS_RAM}}}SpecifiedSupplyChainConsignment")
+            del_note = cons.find(f"{{{NS_RAM}}}DeliveryNote")
+            assert del_note is not None
+            sig_auth = del_note.find(f"{{{NS_RAM}}}SignatoryAuthentication")
+            assert sig_auth.get("authenticationTypeCode") == "DigitalSignature"
+            # Check SpecifiedSignature status
+            sigs = root.findall(f"{{{NS_RSM}}}SpecifiedSignature")
+            c_sig = [s for s in sigs
+                     if s.find(f"{{{NS_RAM}}}TypeCode").text == "consignee"][0]
+            assert c_sig.find(f"{{{NS_RAM}}}StatusCode").text == "signed"
+        finally:
+            os.unlink(sig_path)
 
 
 # ==============================================================================
@@ -1346,6 +1375,12 @@ class TestGenerateEftiXmlEdgeCases:
 
     def test_all_data_provided_maximal(self):
         """Full data set — no part should cause an error."""
+        import tempfile
+        # Create real temp files for signature paths (isfile check now required)
+        sender_fd, sender_sig = tempfile.mkstemp(suffix=".sig")
+        os.close(sender_fd)
+        carrier_fd, carrier_sig = tempfile.mkstemp(suffix=".sig")
+        os.close(carrier_fd)
         trip = {
             "consignor_name": "Shipper SA", "consignor_address": "Addr 1",
             "consignor_id": "SHP-01", "consignor_vat": "RO111",
@@ -1372,8 +1407,8 @@ class TestGenerateEftiXmlEdgeCases:
             "special_agreements": "Insurance covers EUR 50k",
             "documents_attached": "INV-001, CMR-COPY",
             "adr_info_json": json.dumps([{"un_no": "1203", "adr_class": "3"}]),
-            "sig_sender_path": "/sig/sender",
-            "sig_carrier_path": "/sig/carrier",
+            "sig_sender_path": sender_sig,
+            "sig_carrier_path": carrier_sig,
         }
         cfg = {
             "company_name": "Trans SRL", "address": "Str. X 10",
@@ -1419,6 +1454,9 @@ class TestGenerateEftiXmlEdgeCases:
         assert statuses["sender"] == "signed"
         assert statuses["carrier"] == "signed"
         assert statuses["consignee"] == "unsigned"
+        # Cleanup temp sig files
+        os.unlink(sender_sig)
+        os.unlink(carrier_sig)
 
 
 # ==============================================================================

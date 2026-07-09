@@ -1,5 +1,5 @@
 """Tests for FleetService."""
-from unittest.mock import MagicMock, patch
+from unittest.mock import ANY, MagicMock, patch
 
 import pytest
 
@@ -69,7 +69,7 @@ def test_get_expenses(service):
     service.db.get_expenses.return_value = [{"id": 1, "amount": 100}]
     result = service.get_expenses(1)
     assert result == [{"id": 1, "amount": 100}]
-    service.db.get_expenses.assert_called_with(1)
+    service.db.get_expenses.assert_called_with(1, company_id=ANY)
 
 
 def test_add_expense(service):

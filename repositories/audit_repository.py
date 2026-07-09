@@ -28,20 +28,27 @@ class AuditRepository(BaseRepository):
             data = self._set_company_from_context(data)
             cols = ", ".join(data.keys())
             vals = ", ".join("?" for _ in data)
-            self._execute(
-                f"INSERT INTO operation_events ({cols}) VALUES ({vals})",
-                tuple(data.values()),
-                commit=False,
-            )
-            self._execute(
-                "DELETE FROM operation_events WHERE id NOT IN ("
-                "SELECT id FROM operation_events ORDER BY created_at DESC LIMIT ?"
-                f") {self._company_filter()}",
-                (self.MAX_EVENTS,) + self._company_params(),
-            )
+            self.begin_transaction()
+            try:
+                self._execute(
+                    f"INSERT INTO operation_events ({cols}) VALUES ({vals})",
+                    tuple(data.values()),
+                    commit=False,
+                )
+                self._execute(
+                    "DELETE FROM operation_events WHERE id NOT IN ("
+                    "SELECT id FROM operation_events ORDER BY created_at DESC LIMIT ?"
+                    f") {self._company_filter()}",
+                    (self.MAX_EVENTS,) + self._company_params(),
+                    commit=False,
+                )
+                self.commit_transaction()
+            except Exception:
+                self.rollback_transaction()
+                raise
         except Exception as e:
             import logging
-            logging.getLogger("audit_repo").debug("Audit log write failed: %s", e)
+            logging.getLogger("audit_repo").warning("Audit log write failed: %s", e)
 
     def log_event_with_details(self, event_id: str, event_type: str, data_json: str, created_at: str) -> None:
         try:

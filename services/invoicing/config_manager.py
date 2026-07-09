@@ -62,4 +62,5 @@ def save_company_config(data):
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
         raise
-    load_company_config.cache_clear()
+    finally:
+        load_company_config.cache_clear()

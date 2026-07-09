@@ -100,6 +100,22 @@ class Auth:
         return claims.get("role") == "admin"
 
     @property
+    def role(self) -> str:
+        """Return the role claim from the JWT payload."""
+        if not self._token:
+            return ""
+        try:
+            claims: Dict[str, Any] = _decode_jwt_payload(self._token)
+            return claims.get("role", "")
+        except Exception:
+            return ""
+
+    @property
+    def is_manager(self) -> bool:
+        """True if the JWT role is 'admin' or 'manager'."""
+        return self.is_admin or self.role == "manager"
+
+    @property
     def token_expired(self) -> bool:
         """Check the ``exp`` claim (Unix epoch) against the current time.
 

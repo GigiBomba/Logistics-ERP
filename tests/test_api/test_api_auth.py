@@ -70,7 +70,7 @@ class TestAuthTokenEndpoint:
         })
         assert response.status_code == 401
         data = response.json()
-        assert "Incorrect" in data["detail"]
+        assert "Invalid" in data["detail"]
 
     def test_admin_login_unknown_email(self, client):
         """Unknown email returns 401 with a generic message (anti-enumeration)."""
@@ -80,7 +80,7 @@ class TestAuthTokenEndpoint:
         })
         assert response.status_code == 401
         data = response.json()
-        assert "Incorrect" in data["detail"] or "Invalid" in data["detail"]
+        assert "Invalid" in data["detail"]
 
     def test_admin_login_empty_password(self, client):
         """Empty password returns 422 (validation error from OAuth2 form)."""

@@ -458,10 +458,11 @@ class TripMatcher:
             except (ValueError, TypeError):
                 trip_row = None
             if trip_row:
-                # Trip ID in filename is a strong signal — score high
-                # enough to reach the auto-attach threshold.
-                _bump(trip_row["id"], "filename", 0.95)
-                signals["filename"] = 0.95
+                # Trip ID in filename is a moderate signal; require
+                # corroboration from other signals to reach the
+                # auto-attach threshold.
+                _bump(trip_row["id"], "filename", 0.60)
+                signals["filename"] = 0.60
                 filename_auto_attach = True
         if not filename_auto_attach and "date_hint" in hints:
             try:

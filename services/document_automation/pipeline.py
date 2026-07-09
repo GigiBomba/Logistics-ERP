@@ -103,18 +103,19 @@ def run_for_existing_document(
     except Exception as exc:
         logger.exception("Unexpected error in image processing for document %d", doc_id)
         raise RuntimeError(f"Image processing failed: {exc}") from exc
-    finally:
-        try:
-            if os.path.isdir(temp_output_dir):
-                shutil.rmtree(temp_output_dir, ignore_errors=True)
-        except Exception:
-            logger.debug("Failed to clean up temp dir: %s", temp_output_dir)
 
     if progress_callback:
         progress_callback("ocr", 50)
 
     ocr = OcrExtractor(db=db)
     extraction = ocr.extract(result.pdf_path, stop_event=stop_event)
+
+    # Clean up temp dir after OCR has read the processed file.
+    try:
+        if os.path.isdir(temp_output_dir):
+            shutil.rmtree(temp_output_dir, ignore_errors=True)
+    except Exception:
+        logger.debug("Failed to clean up temp dir: %s", temp_output_dir)
 
     if progress_callback:
         progress_callback("persisting", 80)

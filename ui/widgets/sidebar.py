@@ -10,7 +10,7 @@ import logging
 from typing import Callable
 
 import qtawesome as qta
-from PySide6.QtCore import QEasingCurve, QParallelAnimationGroup, QPropertyAnimation, Qt
+from PySide6.QtCore import QEasingCurve, QEvent, QParallelAnimationGroup, QPropertyAnimation, Qt
 from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QFrame,
@@ -58,8 +58,10 @@ NAV_ICONS = {
     "tachograph":         "fa5s.hdd",
     "invoices":           "fa5s.file-invoice-dollar",
     "history":            "fa5s.clipboard-list",
-    "route_history":      "fa5s.archive",
-    "settings":           "fa5s.cog",
+    "route_history":       "fa5s.archive",
+    "migration_center":    "fa5s.exchange-alt",
+    "team":                "fa5s.user-cog",
+    "settings":            "fa5s.cog",
 }
 
 
@@ -320,7 +322,12 @@ class Sidebar(QFrame):
             text_lbl.hide()
 
         frame.setToolTip(label)
-        frame.mousePressEvent = lambda event, k=key: self.select(k)
+        # Store the nav key so the event filter can dispatch to
+        # ``self.select(key)`` without shadowing the virtual method.
+        frame.setProperty("nav-key", key)
+        # Install an event filter instead of shadowing mousePressEvent
+        # to avoid overriding the QFrame virtual method.
+        frame.installEventFilter(self)
 
         self._labels[key] = text_lbl
         return frame
@@ -356,6 +363,17 @@ class Sidebar(QFrame):
                     f"color: {TEXT_SECONDARY}; font-size: 13px; background: transparent;"
                 )
         frame.setStyleSheet("background: transparent; border: none;")
+
+    # ── Event filter — nav item clicks ──────────────────────────
+
+    def eventFilter(self, obj, event) -> bool:
+        """Handle mouse press on nav-item QFrame without shadowing the virtual."""
+        if event.type() == QEvent.MouseButtonPress:
+            key = obj.property("nav-key")
+            if key is not None:
+                self.select(key)
+                return True
+        return super().eventFilter(obj, event)
 
     # ── Expand / collapse ───────────────────────────────────────
 

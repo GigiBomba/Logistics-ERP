@@ -66,9 +66,9 @@ class TripStatusWorkflow:
                 )
                 return False
 
-            self._trip_service.update(trip_id, {"status": new_status})
+            self._trip_service.update(trip_id, {"status": normalized_new})
 
-            if new_status in ("Delivered", "Completed"):
+            if normalized_new in ("Delivered", "Completed"):
                 self._update_truck_odometer_on_completion(trip)
 
             self._event_bus.publish(TRIP_STATUS_CHANGED, {

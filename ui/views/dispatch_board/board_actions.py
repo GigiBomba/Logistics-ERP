@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
 from services.i18n import t
 from services.operations.alert_manager import AlertType, Severity
-from services.operations.event_bus import TRIP_ASSIGNED
+from services.operations.event_bus import TRIP_ASSIGNED, VALID_TRANSITIONS
 from ui.widgets.assignment_dropdown import QtAssignmentDropdown
 from ui.widgets.toast import Toast
 from ui.widgets.trip_card import QtTripCard
@@ -74,6 +74,15 @@ class BoardActionsMixin:
         if card:
             self._tabs.switch_to("board")
             self._on_assign_driver(card)
+
+    def _on_quick_assign_both(self, item: dict) -> None:
+        trip_id = item.get("trip_id_num") or item.get("trip_id")
+        if not trip_id:
+            return
+        card = self._find_card_by_trip_id(trip_id)
+        if card:
+            self._tabs.switch_to("board")
+            self._on_assign_both(card)
 
     def _on_resolve_alert_refresh(self) -> None:
         self._alerts_panel.refresh(self._all_card_data)
@@ -388,6 +397,15 @@ class BoardActionsMixin:
         old_idx = column_order.index(old_status) if old_status in column_order else -1
         new_idx = column_order.index(new_status) if new_status in column_order else -1
         is_backward = new_idx < old_idx
+
+        # Validate transition before showing any dialog
+        valid_targets = VALID_TRANSITIONS.get(old_status, [])
+        if new_status not in valid_targets:
+            self._show_toast(
+                f"Illegal transition: {old_status} \u2192 {new_status}",
+                "error",
+            )
+            return
 
         if is_backward:
             reply = QMessageBox.question(
@@ -723,20 +741,21 @@ class BoardActionsMixin:
             except Exception:
                 logger.debug("Could not compute next_free slot for truck", exc_info=True)
                 score += 40
-                try:
-                    truck = self._fleet_repo.get_by_id(int(truck_id)) if truck_id else None
-                    if truck:
-                        fuel = float(truck.get("fuel_consumption") or 34)
-                        score += max(0, 20 - (fuel - 20) * 1.5)
-                except Exception:
-                    logger.debug("Failed to fetch truck fuel consumption", exc_info=True)
-                try:
-                    health = self._fleet_repo.get_truck_health(int(truck_id)) if truck_id else None
-                    if health:
-                        score += (float(health.get("score", 0)) / 100) * 10
-                except Exception:
-                    logger.debug("Failed to fetch truck health score", exc_info=True)
-                item["score"] = round(score, 1)
+
+            try:
+                truck = self._fleet_repo.get_by_id(int(truck_id)) if truck_id else None
+                if truck:
+                    fuel = float(truck.get("fuel_consumption") or 34)
+                    score += max(0, 20 - (fuel - 20) * 1.5)
+            except Exception:
+                logger.debug("Failed to fetch truck fuel consumption", exc_info=True)
+            try:
+                health = self._fleet_repo.get_truck_health(int(truck_id)) if truck_id else None
+                if health:
+                    score += (float(health.get("score", 0)) / 100) * 10
+            except Exception:
+                logger.debug("Failed to fetch truck health score", exc_info=True)
+            item["score"] = round(score, 1)
 
         for item in driver_items:
             if not item["available"]:
