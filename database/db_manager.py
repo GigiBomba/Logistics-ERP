@@ -111,7 +111,9 @@ class DatabaseManager:
         S = _schema
         exec_stmts = [
             # Core tables
-            S.TABLE_TRIPS, S.TABLE_INVOICES, S.TABLE_TRUCKS,
+            S.TABLE_TRIPS, S.TABLE_INVOICES,
+            S.INDEX_INVOICES_ISSUE_DATE, S.INDEX_INVOICES_DUE_DATE,
+            S.TABLE_TRUCKS,
             S.TABLE_ROUTE_HISTORY_V2,
             S.INDEX_ROUTE_HISTORY_V2_CREATED, S.INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED,
             S.INDEX_ROUTE_HISTORY_V2_TRUCK, S.INDEX_ROUTE_HISTORY_V2_PROFILE,
@@ -124,6 +126,7 @@ class DatabaseManager:
             S.INDEX_TRIPS_DRIVER_NAME, S.INDEX_TRIPS_STATUS, S.INDEX_TRIPS_CLIENT_STATUS,
             S.INDEX_TRIPS_START_DATE, S.INDEX_TRIPS_DELIVERY_COUNTRY,
             S.INDEX_TRIPS_LOADING_COUNTRY, S.INDEX_TRIPS_DRIVER_ID,
+            S.INDEX_TRIPS_CLIENT_ID, S.INDEX_TRIPS_PAYMENT_DATE,
             S.TABLE_SETTINGS, S.TABLE_EMAIL_LOGS,
             # Dunner / Invoice Reminders
             S.TABLE_INVOICE_REMINDERS, S.INDEX_INVOICE_REMINDERS_LOOKUP,
@@ -467,6 +470,17 @@ class DatabaseManager:
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
 
+        # ── RBAC: driver FK link on users table ──────────────────────────
+        self._ensure_column(
+            "users", "driver_id",
+            "ALTER TABLE users ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"
+        )
+        # ── RBAC: human-readable display name ────────────────────────────
+        self._ensure_column(
+            "users", "display_name",
+            "ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT ''"
+        )
+
         # ── Multi-tenant: add company_id to all business tables ──────────
         # NOTE: SQLite cannot ADD COLUMN with NOT NULL + REFERENCES constraint
         # on an existing table. We add a nullable column, backfill, and enforce
@@ -497,6 +511,47 @@ class DatabaseManager:
                 )
             except Exception as e:
                 logger.warning("Index creation failed for %s: %s", table, e)
+
+        # ── Migration: settings table → composite PK (key, company_id) ──
+        try:
+            cols = [r[1] for r in self.conn.execute(
+                "PRAGMA table_info(settings)"
+            ).fetchall()]
+            pk_cols = [r[1] for r in self.conn.execute(
+                "PRAGMA table_info(settings)"
+            ).fetchall() if r[5] > 0]  # r[5] = pk flag
+            # Old schema: key TEXT PRIMARY KEY (pk_cols = ["key"])
+            # New schema: composite PRIMARY KEY (key, company_id)
+            if pk_cols == ["key"] and "company_id" not in pk_cols:
+                logger.info("Migrating settings table to composite PK (key, company_id)")
+                fk_was_on = self.conn.execute("PRAGMA foreign_keys").fetchone()[0]
+                if fk_was_on:
+                    self.conn.execute("PRAGMA foreign_keys=OFF")
+                self.conn.execute("BEGIN IMMEDIATE")
+                self.conn.execute("""
+                    CREATE TABLE settings_new (
+                        key TEXT NOT NULL,
+                        value TEXT,
+                        company_id INTEGER REFERENCES companies(id),
+                        PRIMARY KEY (key, company_id)
+                    )
+                """)
+                self.conn.execute("""
+                    INSERT INTO settings_new (key, value, company_id)
+                    SELECT key, value, COALESCE(company_id, 1) FROM settings
+                """)
+                self.conn.execute("DROP TABLE settings")
+                self.conn.execute("ALTER TABLE settings_new RENAME TO settings")
+                self.conn.commit()
+                if fk_was_on:
+                    self.conn.execute("PRAGMA foreign_keys=ON")
+                logger.info("Settings table migration to composite PK complete")
+        except Exception as e:
+            logger.warning("Settings table migration failed (may be already migrated): %s", e)
+            try:
+                self.conn.rollback()
+            except Exception:
+                pass
 
         try:
             self.conn.commit()
@@ -912,23 +967,32 @@ class DatabaseManager:
                 date TEXT,
                 category TEXT,
                 description TEXT,
-                amount REAL
+                amount REAL,
+                company_id INTEGER
             );
         """)
         self.conn.commit()
 
-    def get_expenses(self, truck_id):
+    def get_expenses(self, truck_id, company_id=None):
         _deprecated("DatabaseManager.get_expenses — query expenses table directly")
+        if company_id is not None:
+            return self.rows_to_dicts(self.conn.execute(
+                "SELECT id, date, category, amount, description FROM expenses "
+                "WHERE truck_id = ? AND company_id = ? ORDER BY date DESC",
+                (truck_id, company_id),
+            ).fetchall())
         return self.rows_to_dicts(self.conn.execute(
-            "SELECT id, date, category, amount, description FROM expenses WHERE truck_id = ? ORDER BY date DESC",
+            "SELECT id, date, category, amount, description FROM expenses "
+            "WHERE truck_id = ? ORDER BY date DESC",
             (truck_id,),
         ).fetchall())
 
-    def add_expense(self, truck_id, date, category, description, amount):
+    def add_expense(self, truck_id, date, category, description, amount, company_id=None):
         _deprecated("DatabaseManager.add_expense — insert into expenses table directly")
         cursor = self.conn.execute(
-            "INSERT INTO expenses (truck_id, date, category, description, amount) VALUES (?,?,?,?,?)",
-            (truck_id, date, category, description, amount),
+            "INSERT INTO expenses (truck_id, date, category, description, amount, company_id) "
+            "VALUES (?,?,?,?,?,?)",
+            (truck_id, date, category, description, amount, company_id),
         )
         self.conn.commit()
         return cursor.lastrowid

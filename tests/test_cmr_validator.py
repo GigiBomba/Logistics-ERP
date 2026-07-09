@@ -22,8 +22,8 @@ class TestMandatoryFields:
     def test_contains_expected_fields(self):
         field_keys = {k for k, _ in MANDATORY_FIELDS}
         expected = {
-            "consignor_name", "consignee_name", "place_of_loading",
-            "destination", "cargo_description", "carrier_name", "truck_plate",
+            "consignor_name", "client_name", "place_of_loading",
+            "place_of_delivery", "cargo_description", "carrier_name", "truck_plate",
         }
         assert field_keys == expected
 
@@ -48,9 +48,9 @@ class TestValidateCmr:
     def test_valid_data_returns_no_errors(self):
         data = {
             "consignor_name": "Sender Inc",
-            "consignee_name": "Receiver GmbH",
+            "client_name": "Receiver GmbH",
             "place_of_loading": "Paris",
-            "destination": "Berlin",
+            "place_of_delivery": "Berlin",
             "cargo_description": "Electronics",
             "carrier_name": "Carrier Ltd",
             "truck_plate": "B-123-ABC",
@@ -68,8 +68,8 @@ class TestValidateCmr:
 
     def test_negative_weight_returns_error(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "gross_weight_kg": -100,
         }
@@ -82,8 +82,8 @@ class TestValidateCmr:
     def test_zero_weight_not_validated(self):
         """Zero is falsy and skipped by the numeric validation check."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "gross_weight_kg": 0,
         }
@@ -95,8 +95,8 @@ class TestValidateCmr:
 
     def test_invalid_volume_returns_error(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "volume_m3": "not_a_number",
         }
@@ -108,8 +108,8 @@ class TestValidateCmr:
 
     def test_negative_volume_returns_error(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "volume_m3": -5,
         }
@@ -121,8 +121,8 @@ class TestValidateCmr:
 
     def test_invalid_payer_returns_warning(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "carriage_payer": "third_party",
         }
@@ -134,8 +134,8 @@ class TestValidateCmr:
 
     def test_valid_payer_sender(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "carriage_payer": "sender",
         }
@@ -144,8 +144,8 @@ class TestValidateCmr:
 
     def test_valid_payer_consignee(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "carriage_payer": "Consignee",
         }
@@ -154,8 +154,8 @@ class TestValidateCmr:
 
     def test_negative_cod_returns_error(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "cod_amount": -50,
         }
@@ -168,8 +168,8 @@ class TestValidateCmr:
     def test_zero_cod_not_validated(self):
         """Zero is falsy and skipped by the COD validation check."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "cod_amount": 0,
         }
@@ -181,8 +181,8 @@ class TestValidateCmr:
 
     def test_missing_hs_code_returns_warning(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
         }
         issues = validate_cmr(data)
@@ -194,8 +194,8 @@ class TestValidateCmr:
     def test_em_dash_skipped_numeric_check(self):
         """An em-dash '—' value should be skipped, not cause an error."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "gross_weight_kg": "—",
             "package_count": "—",
@@ -207,8 +207,8 @@ class TestValidateCmr:
     def test_distance_zero_skipped(self):
         """Zero is falsy, so distance_km == 0 is skipped entirely."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "distance_km": 0,
         }
@@ -218,8 +218,8 @@ class TestValidateCmr:
     def test_negative_distance_warning(self):
         """Negative distance should produce a warning."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "distance_km": -100,
         }
@@ -229,8 +229,8 @@ class TestValidateCmr:
 
     def test_non_string_payer_handled(self):
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "carriage_payer": 123,
         }
@@ -446,9 +446,9 @@ class TestValidateCmrCoverage:
         """Whitespace-only string is treated as empty."""
         data = {
             "consignor_name": "   ",
-            "consignee_name": "R",
+            "client_name": "R",
             "place_of_loading": "P",
-            "destination": "D",
+            "place_of_delivery": "D",
             "cargo_description": "G",
             "carrier_name": "C",
             "truck_plate": "P",
@@ -462,8 +462,8 @@ class TestValidateCmrCoverage:
     def test_invalid_package_count_string(self):
         """Non-numeric package_count produces an error."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "package_count": "not_a_number",
         }
@@ -476,8 +476,8 @@ class TestValidateCmrCoverage:
     def test_invalid_gross_weight_string(self):
         """Non-numeric gross_weight_kg produces an error."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "gross_weight_kg": "abc",
         }
@@ -490,8 +490,8 @@ class TestValidateCmrCoverage:
     def test_invalid_cod_amount_format(self):
         """Non-numeric cod_amount produces an error."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "cod_amount": "EUR500",
         }
@@ -504,8 +504,8 @@ class TestValidateCmrCoverage:
     def test_carriage_payer_empty_skipped(self):
         """Empty carriage_payer should not produce any issue."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "carriage_payer": "",
         }
@@ -515,8 +515,8 @@ class TestValidateCmrCoverage:
     def test_valid_data_no_warnings(self):
         """All valid data — zero issues."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "package_count": 10, "gross_weight_kg": 5000.0,
             "volume_m3": 20, "carriage_payer": "sender",
@@ -529,8 +529,8 @@ class TestValidateCmrCoverage:
     def test_distance_positive_no_warning(self):
         """Positive distance should produce no warning."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "distance_km": 500,
         }
@@ -540,8 +540,8 @@ class TestValidateCmrCoverage:
     def test_distance_string_ignored(self):
         """Non-numeric distance is skipped (no crash)."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "distance_km": "unknown",
         }
@@ -551,8 +551,8 @@ class TestValidateCmrCoverage:
     def test_payer_lowercase_mixed(self):
         """Carriage payer 'Sender' (capitalized) should be valid."""
         data = {
-            "consignor_name": "S", "consignee_name": "R",
-            "place_of_loading": "P", "destination": "D",
+            "consignor_name": "S", "client_name": "R",
+            "place_of_loading": "P", "place_of_delivery": "D",
             "cargo_description": "G", "carrier_name": "C", "truck_plate": "P",
             "carriage_payer": "Sender",
         }
@@ -563,16 +563,16 @@ class TestValidateCmrCoverage:
         """Multiple missing mandatory fields produce multiple errors."""
         data = {
             "consignor_name": "S",
-            "consignee_name": "",
-            "destination": "",
+            "client_name": "",
+            "place_of_delivery": "",
             "cargo_description": "",
             "carrier_name": "C",
             "truck_plate": "",
         }
         issues = validate_cmr(data)
         error_fields = {f for sev, f, _ in issues if sev == "error"}
-        assert "consignee_name" in error_fields
-        assert "destination" in error_fields
+        assert "client_name" in error_fields
+        assert "place_of_delivery" in error_fields
         assert "cargo_description" in error_fields
         assert "truck_plate" in error_fields
 

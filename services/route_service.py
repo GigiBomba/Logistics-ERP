@@ -49,12 +49,20 @@ class RouteCache:
         self._lock = threading.Lock()
         self.max_size = max_size
         self.ttl_seconds = ttl_seconds
+        # Per-key locks for cache-stampede prevention
+        self._compute_locks: dict[str, threading.Lock] = {}
 
     def _make_key(self, points: list[tuple[float, float]], profile: str, exclusions: Optional[list[str]] = None) -> str:
         points_str = ",".join(f"{lat:.6f},{lon:.6f}" for lat, lon in points)
         excl_str = "" if not exclusions else ",".join(sorted([c.upper() for c in exclusions]))
         key = f"{profile}:{points_str}:excl={excl_str}"
         return hashlib.md5(key.encode()).hexdigest()
+
+    def _get_compute_lock(self, key: str) -> threading.Lock:
+        with self._lock:
+            if key not in self._compute_locks:
+                self._compute_locks[key] = threading.Lock()
+            return self._compute_locks[key]
 
     def get(self, points: list[tuple[float, float]], profile: str, exclusions: Optional[list[str]] = None) -> Optional[dict[str, Any]]:
         key = self._make_key(points, profile, exclusions)
@@ -78,6 +86,38 @@ class RouteCache:
                     del self._timestamps[oldest_key]
             self._cache[key] = result
             self._timestamps[key] = time.time()
+
+    def get_or_compute(
+        self,
+        points: list[tuple[float, float]],
+        profile: str,
+        compute_fn,
+        exclusions: Optional[list[str]] = None,
+    ) -> dict[str, Any]:
+        """Atomically check cache and compute if missing — prevents cache stampede."""
+        key = self._make_key(points, profile, exclusions)
+        # Fast check under main lock
+        with self._lock:
+            if key in self._cache:
+                if time.time() - self._timestamps[key] < self.ttl_seconds:
+                    self._cache.move_to_end(key)
+                    return self._cache[key]
+                del self._cache[key]
+                del self._timestamps[key]
+        # Per-key lock prevents concurrent computation of the same route
+        per_key_lock = self._get_compute_lock(key)
+        with per_key_lock:
+            # Double-check — another thread may have stored while we waited
+            with self._lock:
+                if key in self._cache:
+                    if time.time() - self._timestamps[key] < self.ttl_seconds:
+                        self._cache.move_to_end(key)
+                        return self._cache[key]
+                    del self._cache[key]
+                    del self._timestamps[key]
+            result = compute_fn()
+            self.set(points, profile, result, exclusions)
+            return result
 
 
 class GeocodeCache:
@@ -706,7 +746,8 @@ class RouteService:
             left = self._route_pair_recursive(a, mid, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
             right = self._route_pair_recursive(mid, b, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
             merged = self._merge_segment_results([left, right], resolved_stops)
-            self._route_cache.set(pair, profile, merged, exclusions=exclusions)
+            # NOTE: not caching merged result here — individual segments are cached,
+            # and caching under the parent key without depth info would cause ambiguity
             return merged
 
         try:
@@ -741,11 +782,11 @@ class RouteService:
         left = self._route_pair_recursive(a, mid, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
         right = self._route_pair_recursive(mid, b, profile, gh_params, depth + 1, resolved_stops, segment_state=segment_state)
         merged = self._merge_segment_results([left, right], resolved_stops)
-        with contextlib.suppress(Exception):
-            self._route_cache.set(pair, profile, merged, exclusions=exclusions)
+        # NOTE: not caching merged result here — individual segments are cached,
+        # and caching under the parent key without depth info would cause ambiguity
         return merged
 
-    def calculate_route(self, stops: list[Any], profile: str = "truck", truck: Optional[dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[list[str]] = None, stops_are_coordinates: bool = False) -> list[dict[str, Any]]:
+    def calculate_route(self, stops: list[Any], profile: str = "truck", truck: Optional[dict[str, Any]] = None, use_cache: bool = True, avoid_countries: Optional[list[str]] = None, stops_are_coordinates: bool = False) -> dict[str, Any]:
         start = time.time()
         if stops_are_coordinates:
             resolved_stops = validate_route_points(stops)
@@ -755,7 +796,7 @@ class RouteService:
             cached = self._route_cache.get(resolved_stops, profile, exclusions=avoid_countries)
             if cached:
                 cached["cached"] = True
-                return [cached]
+                return cached
 
         gh_params: dict[str, Any] = {}
         if truck:
@@ -797,7 +838,7 @@ class RouteService:
             )
             parts: list[dict[str, Any]] = []
             pair_count = len(resolved_stops) - 1
-            for i in range(min(pair_count, self.max_segment_count)):
+            for i in range(pair_count):
                 a = resolved_stops[i]
                 b = resolved_stops[i + 1]
                 seg = self._route_pair_recursive(a, b, profile, gh_params, depth=0, resolved_stops=resolved_stops)
@@ -816,7 +857,7 @@ class RouteService:
                 self.debug_logger.info("[Segmentation] Direct route failed, splitting into pairs...")
                 parts: list[dict[str, Any]] = []
                 pair_count = len(resolved_stops) - 1
-                for i in range(min(pair_count, self.max_segment_count)):
+                for i in range(pair_count):
                     a = resolved_stops[i]
                     b = resolved_stops[i + 1]
                     seg = self._route_pair_recursive(a, b, profile, gh_params, depth=0, resolved_stops=resolved_stops)
@@ -892,6 +933,6 @@ class RouteService:
                 self.logger.warning("Failed to update route cache", exc_info=True)
 
         self.debug_logger.info(f"calculate_route_end total_s={time.time()-start:.2f} distance_km={res.get('distance_km')}")
-        return [res]
+        return res
 
 

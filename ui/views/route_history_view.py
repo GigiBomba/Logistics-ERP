@@ -304,7 +304,7 @@ class QtRouteHistoryView(QWidget):
     # ── Sorting ────────────────────────────────────────────────────────────────
 
     def _on_header_clicked(self, idx: int) -> None:
-        col_id = self.table._column_ids[idx] if idx < len(self.table._column_ids) else ""
+        col_id = self.table.column_id_at(idx)
         col = SORT_COLUMN_MAP.get(col_id, "last_calculated_at")
         if self.sort_by == col:
             self.sort_dir = "ASC" if self.sort_dir == "DESC" else "DESC"
@@ -349,9 +349,10 @@ class QtRouteHistoryView(QWidget):
 
     def _show_route_info(self, record: RouteHistoryRecord) -> None:
         dur = format_duration_minutes(getattr(record, "duration_min", 0) or 0)
+        truck_label = getattr(record, "truck_label", "") or f'ID: {getattr(record, "truck_id", "")}'
         info = (
             f"{t('route_history.label_date', default='Date:')} {getattr(record, 'last_calculated_at', '')}\n"
-            f"{t('route_history.label_truck', default='Truck:')} {getattr(record, 'truck', '')}\n"
+            f"{t('route_history.label_truck', default='Truck:')} {truck_label}\n"
             f"{t('route_history.label_distance', default='Distance:')} {getattr(record, 'distance_km', 0):,.0f} km\n"
             f"{t('route_history.label_duration', default='Duration:')} {dur}"
         )

@@ -464,7 +464,9 @@ class ReceiptGenerator:
         if not amount_words and total > 0:
             try:
                 amount_words = number_to_words(total, currency, lang)
-            except (ValueError, KeyError):
+            except ValueError:
+                amount_words = "[amount too large to convert to words]"
+            except (KeyError, Exception):
                 amount_words = ""
         if amount_words:
             words_style = ParagraphStyle(
@@ -629,22 +631,28 @@ class ReceiptGenerator:
         # ══════════════════════════════════════════════════════════════
 
         if not stamp_path or not os.path.isfile(stamp_path):
-            stamp_placeholder_style = ParagraphStyle(
-                "StampPlaceholder",
-                parent=self.styles["Normal"],
-                fontSize=8,
-                textColor=colors.HexColor("#aaaaaa"),
-                alignment=1,
-                borderWidth=1,
-                borderColor=colors.HexColor("#cccccc"),
-                borderPadding=8,
+            # Use a Table with BOX styling (ReportLab ignores border* on ParagraphStyle)
+            stamp_cell = Paragraph(
+                f"[ {self._tr('receipt.company_stamp_label', lang)} ]",
+                ParagraphStyle(
+                    "StampPlaceholder",
+                    parent=self.styles["Normal"],
+                    fontSize=8,
+                    textColor=colors.HexColor("#aaaaaa"),
+                    alignment=1,
+                ),
             )
-            story.append(
-                Paragraph(
-                    f"[ {self._tr('receipt.company_stamp_label', lang)} ]",
-                    stamp_placeholder_style,
-                )
-            )
+            stamp_table = Table([[stamp_cell]], colWidths=[6 * cm])
+            stamp_table.setStyle(TableStyle([
+                ('BOX', (0, 0), (-1, -1), 0.5, colors.HexColor("#cccccc")),
+                ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('TOPPADDING', (0, 0), (-1, -1), 6),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+                ('LEFTPADDING', (0, 0), (-1, -1), 8),
+                ('RIGHTPADDING', (0, 0), (-1, -1), 8),
+            ]))
+            story.append(stamp_table)
             story.append(Spacer(1, 0.5 * cm))
 
         # ══════════════════════════════════════════════════════════════
@@ -684,10 +692,15 @@ class ReceiptGenerator:
             )
             doc.build(story)
             os.close(tmp_fd)
+            tmp_fd = -1  # mark closed to avoid double-close in except block
             os.replace(tmp_path, full_path)
         except Exception:
+            if tmp_fd >= 0:
+                try:
+                    os.close(tmp_fd)
+                except OSError:
+                    pass
             if os.path.exists(tmp_path):
-                os.close(tmp_fd)
                 os.unlink(tmp_path)
             raise
 

@@ -276,12 +276,22 @@ class QtAdminPanelView(QWidget):
     def _on_diagnostics(self, data: Dict[str, Any]) -> None:
         latency = data.get("latency_ms", "—")
         color = _STATUS_COLORS["ok"] if isinstance(latency, (int, float)) and latency < 1000 else _STATUS_COLORS["warning"]
+        # Remove and delete the old latency card before creating a new one
+        # to prevent widgets accumulating in the grid layout.
+        old_card = self._diag_latency
+        if old_card is not None:
+            parent_widget = old_card.parentWidget() or self
+            self._diag_grid.removeWidget(old_card)
+            old_card.deleteLater()
+        else:
+            parent_widget = self
         self._diag_latency = _card(
-            self._diag_latency.parentWidget() if self._diag_latency.parentWidget() else self,
+            parent_widget,
             t("admin.latency", default="Latency"),
             f"{latency} ms" if isinstance(latency, (int, float)) else str(latency),
             color=color,
         )
+        self._diag_grid.addWidget(self._diag_latency, 0, 0)
 
         celery = data.get("celery")
         if celery:

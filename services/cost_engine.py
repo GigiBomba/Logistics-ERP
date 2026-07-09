@@ -54,7 +54,8 @@ class CostEngineService:
         country_factor = self.COUNTRY_FACTORS.get(country_code, self.COUNTRY_FACTORS['DEFAULT'])
         avg_road_factor = 0.5
         if route_details and 'road_class' in route_details:
-            avg_road_factor = route_details.get('road_class', 0.5)
+            road_class_str = route_details.get('road_class', 'default')
+            avg_road_factor = self.ROAD_CLASS_FACTOR.get(road_class_str, 0.5)
 
         toll_rate = Config.DEFAULT_TOLL_RATE
         toll_cost = distance_km * toll_rate * country_factor * avg_road_factor

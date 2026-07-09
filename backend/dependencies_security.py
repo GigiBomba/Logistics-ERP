@@ -2,7 +2,12 @@
 
 Usage in route definitions::
 
-    from backend.dependencies_security import get_current_user, require_admin
+    from backend.dependencies_security import (
+        get_current_user,
+        require_admin,
+        require_manager,
+        require_dispatcher,
+    )
 
     @router.get("/admin/something")
     async def admin_only_route(
@@ -133,6 +138,23 @@ async def require_admin(
     return current_user
 
 
+async def require_manager(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+) -> Dict[str, Any]:
+    """Require admin or manager role.
+
+    Raises:
+        HTTPException (403): If the user is neither an admin nor a manager.
+    """
+    role: str = current_user.get("role", "")
+    if role not in ("admin", "manager") and not current_user.get("is_admin"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Manager or admin privileges required.",
+        )
+    return current_user
+
+
 async def require_dispatcher(
     current_user: Dict[str, Any] = Depends(get_current_user),
 ) -> Dict[str, Any]:
@@ -142,7 +164,7 @@ async def require_dispatcher(
         HTTPException (403): If the user has neither role.
     """
     role: str = current_user.get("role", "")
-    if role not in ("admin", "dispatcher"):
+    if role not in ("admin", "manager", "dispatcher"):
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Dispatcher or admin privileges required.",

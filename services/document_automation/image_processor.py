@@ -222,7 +222,12 @@ def _detect_document_quad(
                 _save_debug_image(image_bgr, debug_dir, f"{image_name}_06_retry_canny.jpg")
             chosen = _canny_detect()
 
-    if chosen is not None and debug_dir:
+    if chosen is None:
+        logger.warning(
+            "_detect_document_quad: both bg_distance and canny detection "
+            "failed for %s", image_name or "unknown"
+        )
+    elif debug_dir:
         _save_debug_image(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR), debug_dir, f"{image_name}_07_selected_quad.jpg")
     return chosen
 
@@ -488,12 +493,12 @@ def _enhance_single_image(image_path: str, output_png_path: str) -> tuple[tuple[
             logger.debug("CLAHE skipped: %s", exc)
 
     # Always output full-color RGB image (no grayscale conversion).
-    out = Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB))
-    out_w, out_h = out.size
-    out_w2, out_h2 = _compute_output_size(out_w, out_h)
-    if (out_w2, out_h2) != (out_w, out_h):
-        out = out.resize((out_w2, out_h2), Image.LANCZOS)
-    out.save(output_png_path, "PNG", optimize=True)
+    with Image.fromarray(cv2.cvtColor(image_bgr, cv2.COLOR_BGR2RGB)) as out:
+        out_w, out_h = out.size
+        out_w2, out_h2 = _compute_output_size(out_w, out_h)
+        if (out_w2, out_h2) != (out_w, out_h):
+            out = out.resize((out_w2, out_h2), Image.LANCZOS)
+        out.save(output_png_path, "PNG", optimize=True)
 
     return orig_size, enhanced_flag, [output_png_path]
 

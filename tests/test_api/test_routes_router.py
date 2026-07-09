@@ -134,17 +134,11 @@ class TestRoutesRouter:
             assert data["route"]["distance_km"] == 500
 
     def test_calculate_route_invalid_point_format(self, client_with_mocks):
-        """Integer points hit the else-branch which raises HTTPException.
-
-        Because the router wraps the logic in ``except Exception``, an
-        ``HTTPException`` is accidentally caught and re-raised as 500
-        (a pre-existing router bug).  The test documents this behaviour.
-        """
+        """Integer points hit the else-branch which raises HTTPException(400)."""
         client, mocks = client_with_mocks
 
         resp = client.post(f"{BASE}/calculate", json={"points": [42, 43]})
-        # HTTPException(400) is swallowed by the generic except clause.
-        assert resp.status_code == 500
+        assert resp.status_code == 400
 
     # ── duplicate ─────────────────────────────────────────────────────────
 

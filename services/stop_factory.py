@@ -89,6 +89,11 @@ def create_stop_from_map_click(lat: float, lon: float, reverse_callback: Optiona
                 r.raise_for_status()
                 data = r.json()
                 addr = data.get('display_name')
+                # ⚠️ THREAD-SAFETY WARNING: reverse_callback runs in a daemon thread.
+                # If the callback touches Qt widgets (or any GUI primitives), this will
+                # violate thread affinity and may cause segfaults or undefined behaviour.
+                # Marshal to the GUI thread instead, e.g. via QMetaObject.invokeMethod,
+                # QTimer.singleShot(0, ...) from the main thread, or root.after(0, ...).
                 reverse_callback(sid, addr)
             except Exception:
                 reverse_callback(sid, None)

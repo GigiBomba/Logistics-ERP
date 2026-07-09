@@ -1,7 +1,9 @@
 """Route Planner controller — business logic without Tk widgets."""
 from __future__ import annotations
 
+import hashlib
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -248,7 +250,7 @@ class RoutePlannerController:
         for i, (lat, lng) in enumerate(stops):
             stop_type = "start" if i == 0 else ("destination" if i == len(stops) - 1 else "stop")
             stop_dicts.append({
-                "id": str(hash(f"{lat}{lng}{i}") & 0xFFFFFFFF),
+                "id": hashlib.md5(f"{lat}{lng}{i}".encode()).hexdigest()[:8],
                 "type": stop_type,
                 "lat": lat,
                 "lon": lng,
@@ -298,7 +300,7 @@ class RoutePlannerController:
         for i, (lat, lng) in enumerate(stops):
             stop_type = "start" if i == 0 else ("destination" if i == len(stops) - 1 else "stop")
             stop_dicts.append({
-                "id": str(hash(f"{lat}{lng}{i}") & 0xFFFFFFFF),
+                "id": hashlib.md5(f"{lat}{lng}{i}".encode()).hexdigest()[:8],
                 "type": stop_type,
                 "lat": lat,
                 "lon": lng,
@@ -341,11 +343,16 @@ class RoutePlannerController:
 
 
 _PREFERRED_CURRENCY: str | None = None
+_PREFERRED_CURRENCY_LOCK = threading.Lock()
 
 def _get_preferred_currency() -> str:
     global _PREFERRED_CURRENCY
     if _PREFERRED_CURRENCY is not None:
         return _PREFERRED_CURRENCY
+    with _PREFERRED_CURRENCY_LOCK:
+        # Double-checked locking: re-check after acquiring lock
+        if _PREFERRED_CURRENCY is not None:
+            return _PREFERRED_CURRENCY
     try:
         from services.app_state import AppState
         currency = AppState().get("currency")

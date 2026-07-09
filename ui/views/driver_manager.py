@@ -958,8 +958,16 @@ class QtDriverManager(BaseView):
         chart_label.setProperty("fontRole", "small")
         self._tacho_layout.addWidget(chart_label)
 
+        # Delete old scene and view before creating new ones to prevent
+        # memory leak (each driver selection previously leaked a scene).
+        if hasattr(self, "_tacho_scene") and self._tacho_scene is not None:
+            self._tacho_scene.deleteLater()
+        if hasattr(self, "_tacho_chart_view") and self._tacho_chart_view is not None:
+            self._tacho_chart_view.deleteLater()
+
         last_14 = records[:14] if len(records) >= 14 else records
         scene = QGraphicsScene(self)
+        self._tacho_scene = scene
         bar_width = 18
         spacing = 2
         chart_height = 60
@@ -987,6 +995,7 @@ class QtDriverManager(BaseView):
             text_item.setPos(x, chart_height + 2)
 
         view = QGraphicsView(scene)
+        self._tacho_chart_view = view
         view.setFixedHeight(chart_height + 24)
         view.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
         view.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)

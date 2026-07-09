@@ -441,13 +441,15 @@ class LineItemsMixin:
         # Update side panel totals
         self._subtotal_lbl.setText(f"{sym}{subtotal:,.2f}")
         self._tax_lbl.setText(f"{sym}{total_tax:,.2f}")
-        self._discount_lbl.setText(f"-{sym}{discount:,.2f}")
+        discount_sign = "-" if discount > 0 else ""
+        self._discount_lbl.setText(f"{discount_sign}{sym}{discount:,.2f}")
         self._grand_lbl.setText(f"{sym}{grand_total:,.2f}")
 
         # Update canvas totals
         self._canvas_subtotal.setText(f"{sym}{subtotal:,.2f}")
         self._canvas_tax.setText(f"{sym}{total_tax:,.2f}")
-        self._canvas_discount.setText(f"-{sym}{discount:,.2f}")
+        canvas_discount_sign = "-" if discount > 0 else ""
+        self._canvas_discount.setText(f"{canvas_discount_sign}{sym}{discount:,.2f}")
         self._canvas_grand.setText(f"{sym}{grand_total:,.2f}")
 
         # Update discount symbol

@@ -220,9 +220,9 @@ class ShareRouteDialog(QDialog):
         gmaps_btn.clicked.connect(self._on_open_gmaps)
         actions_layout.addWidget(gmaps_btn)
 
-        # OS Share (Windows Share contract)
+        # Export + open folder (Windows Share contract requires winrt)
         share_os_btn = QPushButton(
-            t("route.share_via_os", default="Share\u2026")
+            t("route.save_and_open", default="Save & Open Folder")
         )
         share_os_btn.setFixedHeight(32)
         share_os_btn.setCursor(Qt.PointingHandCursor)
@@ -279,10 +279,11 @@ class ShareRouteDialog(QDialog):
         clipboard = QGuiApplication.clipboard()
         if clipboard:
             clipboard.setText(self._share_url, QClipboard.Mode.Clipboard)
+            feedback = t("route.link_copied", default="Copied!")
+        else:
+            feedback = t("route.clipboard_unavailable", default="Clipboard unavailable")
         # Brief visual feedback — change button text temporarily
-        self._url_field.setText(
-            t("route.link_copied", default="Copied!")
-        )
+        self._url_field.setText(feedback)
         # Restore after 2 seconds
         from PySide6.QtCore import QTimer
 

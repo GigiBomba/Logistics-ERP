@@ -350,33 +350,33 @@ class PackageBuilder:
 
         import tempfile
         tmp = os.path.join(tempfile.gettempdir(), f"cover_{trip_id}.pdf")
-        c = rl_canvas.Canvas(tmp, pagesize=A4)
-        _w, h = A4
-
-        c.setFont("Helvetica-Bold", 20)
-        c.drawString(2 * cm, h - 2 * cm, f"Trip #{trip_id} — Document Package")
-
-        c.setFont("Helvetica", 11)
-        y = h - 4 * cm
-        c.drawString(2 * cm, y, f"Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
-        y -= 0.8 * cm
-        c.drawString(2 * cm, y, f"Documents: {len(docs)}")
-
-        y -= 1.5 * cm
-        c.setFont("Helvetica-Bold", 12)
-        c.drawString(2 * cm, y, "Contents:")
-        y -= 0.6 * cm
-        c.setFont("Helvetica", 10)
-        for doc in docs:
-            name = doc.get("file_name") or doc.get("title") or f"Doc #{doc.get('id')}"
-            c.drawString(2.5 * cm, y, f"- {name}")
-            y -= 0.5 * cm
-            if y < 2 * cm:
-                c.showPage()
-                y = h - 2 * cm
-
-        c.save()
         try:
+            c = rl_canvas.Canvas(tmp, pagesize=A4)
+            _w, h = A4
+
+            c.setFont("Helvetica-Bold", 20)
+            c.drawString(2 * cm, h - 2 * cm, f"Trip #{trip_id} — Document Package")
+
+            c.setFont("Helvetica", 11)
+            y = h - 4 * cm
+            c.drawString(2 * cm, y, f"Generated: {datetime.now().strftime('%d/%m/%Y %H:%M')}")
+            y -= 0.8 * cm
+            c.drawString(2 * cm, y, f"Documents: {len(docs)}")
+
+            y -= 1.5 * cm
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(2 * cm, y, "Contents:")
+            y -= 0.6 * cm
+            c.setFont("Helvetica", 10)
+            for doc in docs:
+                name = doc.get("file_name") or doc.get("title") or f"Doc #{doc.get('id')}"
+                c.drawString(2.5 * cm, y, f"- {name}")
+                y -= 0.5 * cm
+                if y < 2 * cm:
+                    c.showPage()
+                    y = h - 2 * cm
+
+            c.save()
             reader = PdfReader(tmp)
             return reader.pages[0]
         except Exception:

@@ -24,12 +24,15 @@ class RouteRepository(BaseRepository):
             RouteRepository._migrate_done = True
 
     def _run_migration(self):
-        # Check if column already exists to avoid running migration on every instantiation
+        # 1. Ensure is_committed column exists
         cols = self._fetchall(f"PRAGMA table_info({self.TABLE})")
-        if any(r["name"] == "is_committed" for r in cols):
-            return
+        if not any(r["name"] == "is_committed" for r in cols):
+            self._execute(
+                f"ALTER TABLE {self.TABLE} ADD COLUMN is_committed INTEGER NOT NULL DEFAULT 0"
+            )
+        # 2. Ensure unique index on route_fingerprint (required by ON CONFLICT in upsert)
         self._execute(
-            f"ALTER TABLE {self.TABLE} ADD COLUMN is_committed INTEGER NOT NULL DEFAULT 0"
+            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_route_fingerprint ON {self.TABLE}(route_fingerprint)"
         )
 
     # ── Base CRUD ─────────────────────────────────────────────────────
@@ -236,6 +239,42 @@ class RouteRepository(BaseRepository):
         row = self._fetchone(query, tuple(params))
         return row["cnt"] if row else 0
 
+    # ── Statistics / analytics (memory-efficient, no BLOBs) ────────────
+
+    def get_statistics_aggregate(self, include_archived: bool = False) -> Dict[str, Any]:
+        """Return aggregate route_count and total_distance in SQL (no BLOBs loaded)."""
+        archive_clause = "" if include_archived else "AND archived_at IS NULL"
+        row = self._fetchone(
+            f"""SELECT COUNT(*) AS route_count,
+                       COALESCE(SUM(total_distance_km), 0) AS total_distance
+                FROM {self.TABLE}
+                WHERE is_committed >= 0 {archive_clause} {self._company_filter()}""",
+            self._company_params(),
+        )
+        return row if row else {"route_count": 0, "total_distance": 0}
+
+    def get_stops_for_statistics(self, limit: int = 100000, include_archived: bool = False):
+        """Return only stops_json (no geometry BLOBs) for destination counting."""
+        archive_clause = "" if include_archived else "AND archived_at IS NULL"
+        return self._fetchall(
+            f"""SELECT stops_json
+                FROM {self.TABLE}
+                WHERE is_committed >= 0 {archive_clause} {self._company_filter()}
+                LIMIT ?""",
+            self._company_params() + (limit,),
+        )
+
+    def get_countries_and_durations(self, limit: int = 100000, include_archived: bool = False):
+        """Return only countries_traversed_json and duration_min (no geometry BLOBs) for analytics."""
+        archive_clause = "" if include_archived else "AND archived_at IS NULL"
+        return self._fetchall(
+            f"""SELECT countries_traversed_json, duration_min
+                FROM {self.TABLE}
+                WHERE is_committed >= 0 {archive_clause} {self._company_filter()}
+                LIMIT ?""",
+            self._company_params() + (limit,),
+        )
+
     # ── Maintenance / housekeeping ─────────────────────────────────────
 
     def clear_all(self) -> int:
@@ -246,6 +285,6 @@ class RouteRepository(BaseRepository):
 
     def prune_before(self, cutoff_iso: str) -> int:
         return self._execute_with_count(
-            f"DELETE FROM {self.TABLE} WHERE last_calculated_at < ? {self._company_filter()}",
+            f"DELETE FROM {self.TABLE} WHERE last_calculated_at < datetime(?) {self._company_filter()}",
             (cutoff_iso,) + self._company_params(),
         )

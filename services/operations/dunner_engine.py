@@ -168,7 +168,7 @@ class DunnerEngine:
                 # Try each schedule
                 for sched in schedules:
                     target = ReminderService._compute_target_days(sched)
-                    if days_past_due != target:
+                    if days_past_due < target:
                         continue
 
                     reminder_type = sched.get("name", f"schedule_{sched['id']}")
@@ -179,6 +179,25 @@ class DunnerEngine:
                             reminder_type, inv["invoice_id"],
                         )
                         continue
+
+                    # Re-check invoice payment status right before sending,
+                    # since the invoice may have been paid between fetch and send.
+                    try:
+                        cur = self._db.conn.execute(
+                            "SELECT status FROM invoices WHERE id = ?", (inv["invoice_id"],)
+                        )
+                        row = cur.fetchone()
+                        if row and row[0] != "Unpaid":
+                            logger.info(
+                                "Invoice #%d is no longer unpaid (status=%s), skipping reminder",
+                                inv["invoice_id"], row[0],
+                            )
+                            continue
+                    except Exception as exc:
+                        logger.debug(
+                            "Dunner: failed to re-check invoice #%d status: %s",
+                            inv["invoice_id"], exc,
+                        )
 
                     # Resolve template (respect client override)
                     template_id = sched["template_id"]
@@ -207,6 +226,7 @@ class DunnerEngine:
                         body=body_html if has_html else body_text,
                         attachments=attachments,
                         html=has_html,
+                        trip_id=inv["trip_id"],
                     )
 
                     if ok:

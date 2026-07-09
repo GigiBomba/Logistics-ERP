@@ -44,11 +44,13 @@ from ui.views import (
     QtHistoryView,
     QtMaintenanceAnalyticsView,
     QtMaintenanceControlPanel,
+    QtMigrationCenterView,
     QtOverviewView,
     QtRouteHistoryView,
     QtRoutePlannerView,
     QtSettingsView,
     QtTachoImportView,
+    QtTeamView,
 )
 
 logger = logging.getLogger(__name__)
@@ -80,6 +82,17 @@ class MainWindow(QMainWindow):
         self._page_anim: QPropertyAnimation | None = None
 
         self._init_services()
+
+        # Determine user role for conditional nav items
+        self._user_role = "dispatcher"  # fallback
+        try:
+            from client.auth_manager import get_auth
+            auth_mgr = get_auth()
+            if auth_mgr is not None:
+                self._user_role = auth_mgr.role or "dispatcher"
+        except Exception:
+            pass
+
         self._build_ui()
         self._setup_shortcuts()
         self._init_fuel_status()
@@ -89,7 +102,7 @@ class MainWindow(QMainWindow):
         self._sub_alert_resolved = self._event_bus.subscribe(ALERT_RESOLVED, self._on_alert_event)
 
         # Initial alert refresh
-        QTimer.singleShot(500, self._refresh_alerts)
+        QTimer.singleShot(500, self, self._refresh_alerts)
 
     def _init_services(self):
         if self.db is not None:
@@ -187,6 +200,14 @@ class MainWindow(QMainWindow):
         nav.add_item("invoices", t("nav.generators"), i18n_key="nav.generators")
         nav.add_item("history", t("nav.history"), i18n_key="nav.history")
         nav.add_item("route_history", t("nav.route_history"), i18n_key="nav.route_history")
+
+        nav.add_group(t("nav.group_tools"), "nav.group_tools")
+        nav.add_item("migration_center", t("nav.migration_center"), i18n_key="nav.migration_center")
+
+        # ── Administration (manager / admin only) ──
+        if self._user_role in ("admin", "manager"):
+            nav.add_group(t("nav.group_administration"), "nav.group_administration")
+            nav.add_item("team", t("nav.team"), i18n_key="nav.team")
 
         nav.add_settings_item("settings", t("nav.settings"))
         nav.select("overview")
@@ -340,7 +361,13 @@ class MainWindow(QMainWindow):
                     fleet_service=self.fleet_service,
                     trip_service=self.trip_service,
                 ),
+                "team": lambda: QtTeamView(
+                    parent, db=self.db, api_client=ac,
+                ),
                 "settings": lambda: QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "migration_center": lambda: QtMigrationCenterView(
+                    parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                ),
             }
 
         factory = MainWindow._VIEW_FACTORIES.get(key)
@@ -369,7 +396,7 @@ class MainWindow(QMainWindow):
 
     def _on_alert_event(self, ev):
         """Refresh alert count and data when alerts are created or resolved."""
-        QTimer.singleShot(0, self._refresh_alerts)
+        QTimer.singleShot(0, self, self._refresh_alerts)
 
     def _refresh_alerts(self):
         """Query OperationsEngine for active alerts and push to top bar."""

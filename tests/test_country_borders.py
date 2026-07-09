@@ -6,6 +6,8 @@ need the real JSON file on disk.
 
 from __future__ import annotations
 
+from unittest.mock import patch
+
 import pytest
 
 import services.country_borders as cb
@@ -259,19 +261,23 @@ class TestEdgeCases:
         """When _DATA is None, get_polygon returns []."""
         old = cb._DATA
         cb._DATA = None
-        try:
-            assert get_polygon("FR") == []
-        finally:
-            cb._DATA = old
+        cb._BBOX = {}
+        with patch.object(cb, "_load", return_value=None):
+            try:
+                assert get_polygon("FR") == []
+            finally:
+                cb._DATA = old
 
     def test_get_polygons_data_is_none(self):
         """When _DATA is None, get_polygons returns []."""
         old = cb._DATA
         cb._DATA = None
-        try:
-            assert get_polygons("FR") == []
-        finally:
-            cb._DATA = old
+        cb._BBOX = {}
+        with patch.object(cb, "_load", return_value=None):
+            try:
+                assert get_polygons("FR") == []
+            finally:
+                cb._DATA = old
 
     def test_bbox_contains_data_is_none(self):
         """When _DATA is None, bbox_contains returns False."""
@@ -279,24 +285,27 @@ class TestEdgeCases:
         old_bbox = cb._BBOX
         cb._DATA = None
         cb._BBOX = {}
-        try:
-            assert bbox_contains("FR", 48.5, 2.5) is False
-        finally:
-            cb._DATA = old_data
-            cb._BBOX = old_bbox
+        with patch.object(cb, "_load", return_value=None):
+            try:
+                assert bbox_contains("FR", 48.5, 2.5) is False
+            finally:
+                cb._DATA = old_data
+                cb._BBOX = old_bbox
 
     def test_get_bounds_data_is_none(self):
         """When _DATA is None, get_bounds returns None."""
         old_data = cb._DATA
         cb._DATA = None
-        try:
-            assert get_bounds("FR") is None
-        finally:
-            cb._DATA = old_data
+        cb._BBOX = {}
+        with patch.object(cb, "_load", return_value=None):
+            try:
+                assert get_bounds("FR") is None
+            finally:
+                cb._DATA = old_data
 
     def test_large_polygon_performance(self, mock_borders_data):
         """A large polygon should still yield correct results."""
-        # Build a large square polygon
-        polygon = [(i, j) for i in range(-90, 91, 10) for j in range(-180, 181, 10)]
+        # Build a large square polygon covering a wide area
+        polygon = [(-90, -180), (-90, 180), (90, 180), (90, -180), (-90, -180)]
         assert point_in_polygon(0, 0, polygon) is True
         assert point_in_polygon(100, 200, polygon) is False

@@ -319,29 +319,26 @@ class RouteHistoryService:
         return self._route_repo.create(data)
 
     def get_statistics(self, include_archived: bool = False) -> dict[str, Any]:
-        """Compute route history statistics (route-only)."""
-        rows = self._route_repo.get_all(limit=100000, include_archived=include_archived)
+        """Compute route history statistics (route-only) — memory-efficient, no BLOBs."""
+        agg = self._route_repo.get_statistics_aggregate(include_archived=include_archived)
 
         destinations: dict[str, int] = {}
-        total_distance = 0.0
-
-        for row in rows:
+        for row in self._route_repo.get_stops_for_statistics(include_archived=include_archived):
             stops = self._loads(row["stops_json"], [])
             if stops:
                 dest = self._stop_label(stops[-1])
                 destinations[dest] = destinations.get(dest, 0) + 1
-            total_distance += float(row.get("total_distance_km") or 0)
 
         common_destinations = sorted(destinations.items(), key=lambda kv: kv[1], reverse=True)[:5]
         return {
-            "route_count": len(rows),
-            "total_distance_km": round(total_distance, 2),
+            "route_count": agg["route_count"],
+            "total_distance_km": round(float(agg["total_distance"]), 2),
             "most_common_destinations": common_destinations,
         }
 
     def get_route_analytics(self, include_archived: bool = False) -> dict[str, Any]:
-        """Return route analytics (route-only)."""
-        rows = self._route_repo.get_all(limit=100000, include_archived=include_archived)
+        """Return route analytics (route-only) — memory-efficient, no BLOBs."""
+        rows = self._route_repo.get_countries_and_durations(include_archived=include_archived)
         country_frequency: dict[str, int] = {}
         durations = []
         for row in rows:

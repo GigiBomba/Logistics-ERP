@@ -55,11 +55,22 @@ class OperationsEngine:
         self._trip_workflow = TripStatusWorkflow(
             db, self._trip_service, self._event_bus, self._maintenance_engine, self._undo_stack,
         ) if db else None
-        self._running = False
+        self._stop_event = threading.Event()
+        self._stop_event.set()  # start as stopped
         logger.info("OperationsEngine initialized")
 
     def undo_last(self) -> bool:
-        cmd = self._undo_stack.undo()
+        cmd = self._undo_stack.last_undo_command()
+        if not cmd:
+            return False
+        current_status = None
+        try:
+            trip = self._trip_service.get_by_id(cmd.trip_id) if self._trip_service else None
+            if trip:
+                current_status = trip.get("status")
+        except Exception:
+            pass
+        cmd = self._undo_stack.undo(current_status=current_status)
         if not cmd:
             return False
         return self.force_trip_status(cmd.trip_id, cmd.old_status, skip_undo=True)
@@ -75,9 +86,9 @@ class OperationsEngine:
         return self._undo_stack
 
     def start(self):
-        if self._running:
-            return
-        self._running = True
+        if not self._stop_event.is_set():
+            return  # already running
+        self._stop_event.clear()
         self._event_bus.publish(SYSTEM_STARTUP, {})
         self._schedule_daily_check()
         if self._maintenance_engine:
@@ -94,11 +105,13 @@ class OperationsEngine:
         if hasattr(self, "_daily_timer"):
             self._daily_timer.cancel()
         def _publish_and_reschedule():
-            if not self._running:
+            if self._stop_event.is_set():
                 return
             self._event_bus.publish(DAILY_CHECK, {})
             if self._maintenance_engine:
                 self._maintenance_engine.evaluate_all()
+            if self._stop_event.is_set():
+                return
             self._daily_timer = threading.Timer(86400, _publish_and_reschedule)
             self._daily_timer.daemon = True
             self._daily_timer.start()
@@ -120,11 +133,13 @@ class OperationsEngine:
             logger.debug("Could not configure SMTP from settings: %s", e)
 
     def stop(self):
-        self._running = False
+        self._stop_event.set()
         if hasattr(self, "_daily_timer"):
             self._daily_timer.cancel()
         if self._dunner_engine:
             self._dunner_engine.shutdown()
+        if self._cmr_generator:
+            self._event_bus.unsubscribe(TRIP_STATUS_CHANGED, self._cmr_generator.on_trip_in_transit)
         logger.info("OperationsEngine stopped")
 
     def get_active_alerts(self, limit: int = 200) -> list[Alert]:

@@ -83,6 +83,8 @@ async def calculate_route(
 
         result = route_svc.calculate_route(stops=geocoded, profile=profile, stops_are_coordinates=True)
         return {"status": "ok", "route": result}
+    except HTTPException:
+        raise
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

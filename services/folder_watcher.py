@@ -20,6 +20,7 @@ import contextlib
 import logging
 import os
 import threading
+import time
 from typing import Callable
 
 from services.document_automation.image_processor import (
@@ -159,11 +160,23 @@ class FolderWatcher:
                 logger.warning("FolderWatcher poll failed: %s", exc)
             self._stop_event.wait(self._interval)
 
+    def _is_stable(self, file_path: str) -> bool:
+        """Return True if *file_path* has a stable mtime older than 2 seconds."""
+        try:
+            st = os.stat(file_path)
+            age = st.st_mtime
+            return (time.time() - age) >= 2.0
+        except OSError:
+            return False
+
     def _check_for_new_files(self) -> None:
         now = {os.path.abspath(p) for p in self._walk()}
         new = now - self._known_files
         if new:
-            new_list = sorted(new)
+            # Only process files whose mtime is older than 2 seconds (write-complete guard).
+            new_list = sorted(p for p in new if self._is_stable(p))
+            if not new_list:
+                return
             logger.info("FolderWatcher: %d new file(s)", len(new_list))
             try:
                 self._callback(new_list)
@@ -198,22 +211,49 @@ class FolderWatcher:
                 self._delete = delete
                 self._stop = stop
 
-            def on_created(self, event):
+            def _accept(self, event):
                 if self._stop.is_set():
-                    return
+                    return False
                 if event.is_directory:
-                    return
+                    return False
                 ext = os.path.splitext(event.src_path)[1].lower()
                 if ext not in _SUPPORTED_EXTS:
-                    return
+                    return False
                 abspath = os.path.abspath(event.src_path)
                 if abspath in self._known:
-                    return
+                    return False
+                return True
+
+            def _process(self, abspath: str) -> None:
                 self._callback([abspath])
                 self._known.add(abspath)
                 if self._delete:
                     with contextlib.suppress(OSError):
                         os.remove(abspath)
+
+            def on_created(self, event):
+                if not self._accept(event):
+                    return
+                self._process(os.path.abspath(event.src_path))
+
+            def on_modified(self, event):
+                if not self._accept(event):
+                    return
+                self._process(os.path.abspath(event.src_path))
+
+            def on_moved(self, event):
+                if self._stop.is_set():
+                    return
+                # Process the destination path after a move/rename.
+                dest = getattr(event, "dest_path", None)
+                if dest:
+                    ext = os.path.splitext(dest)[1].lower()
+                    if ext not in _SUPPORTED_EXTS:
+                        return
+                    abspath = os.path.abspath(dest)
+                    if abspath in self._known:
+                        return
+                    self._process(abspath)
 
         handler = _Handler(self._callback, self._known_files, self._delete, self._stop_event)
         self._observer = Observer()

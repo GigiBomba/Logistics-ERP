@@ -35,6 +35,8 @@ class SettingsRepository(BaseRepository):
         data = {"key": key, "value": value}
         self._validate_columns(data, extra_allowed={"company_id"})
         data = self._set_company_from_context(data)
+        # INSERT OR REPLACE with composite PK (key, company_id) ensures
+        # tenant isolation — one tenant's settings never overwrite another's.
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         self._execute(

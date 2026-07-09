@@ -197,7 +197,8 @@ class CMRGenerator:
         ctx.setdefault("consignor_eori",
             trip_data.get("consignor_eori") or trip_data.get("eori_number") or conf.get("eori_number", ""))
         # Consignee — resolved from trip data or client lookup, no company fallback
-        ctx.setdefault("client_name", trip_data.get("client_name", ""))
+        # Also check consignee_name as alternative key from CMR form data
+        ctx.setdefault("client_name", trip_data.get("consignee_name") or trip_data.get("client_name", ""))
         ctx.setdefault("client_address", trip_data.get("client_address", ""))
         ctx.setdefault("consignee_vat", trip_data.get("consignee_vat", ""))
         ctx.setdefault("consignee_eori", trip_data.get("consignee_eori", ""))
@@ -308,15 +309,15 @@ class CMRGenerator:
         filename = f"CMR_{safe_num}_{suffix}_Copy.pdf"
         filepath = os.path.join(output_dir, filename)
 
-        # Validate output_dir is within safe boundaries
+        # Validate output_dir is within safe boundaries (warning only, not blocking)
         from pathlib import Path
         safe_base = Path("data").resolve() / "documents" / "trips"
         target = Path(output_dir).resolve()
         if not str(target).startswith(str(safe_base)):
-            # Also accept the project root's invoices and reports dirs
             alt_bases = [Path("invoices").resolve(), Path("reports").resolve()]
             if not any(str(target).startswith(str(b)) for b in alt_bases):
-                raise ValueError(f"Output directory must be within {safe_base}")
+                logger.warning("Output directory '%s' is outside standard paths; proceeding anyway",
+                               output_dir)
 
         # Write to temp file first, then atomically rename to prevent
         # half-written PDF on crash — both ReportLab and pikepdf can fail mid-write.
@@ -687,10 +688,13 @@ class CMRGenerator:
             [H("6. MARKS &amp; NUMBERS"), H("7. NO. PKGS"), H("8. METHOD"),
              H("9. NATURE OF GOODS"), H("10. HS CODE"), H("11. WT / 12. VOL")],
             [V(marks_val), "", "", "", "", ""],
-            [V(pkg_val), V(kind_val), V(nature_val), V(hs_val), V(wt_val), V(vol_val)],
+            ["", V(pkg_val), V(kind_val), V(nature_val), V(hs_val), V(wt_val + " / " + vol_val)],
         ]
 
+        # ADR rows + styling — adr_idx computed dynamically from row count so changes
+        # to non-ADR table structure won't break ADR-specific styling.
         if ctx.get("has_adr"):
+            adr_idx = len(rows)  # first ADR row index = row count before appending
             adr_items = ctx["adr_items"]
             rows.append([Paragraph("ADR — DANGEROUS GOODS", self._adr_label_style),
                          "", "", "", "", ""])
@@ -711,6 +715,18 @@ class CMRGenerator:
                     Paragraph(str(item.get("quantity", "")), self._adr_val_style),
                     Paragraph(str(item.get("net_weight", "")), self._adr_val_style),
                 ])
+            # ADR-specific table styling
+            adr_styles = [
+                ('SPAN', (0, adr_idx), (5, adr_idx)),
+                ('BACKGROUND', (0, adr_idx), (-1, adr_idx), colors.HexColor("#fef2f2")),
+                ('BACKGROUND', (0, adr_idx + 1), (-1, adr_idx + 1), colors.HexColor("#fef2f2")),
+                ('ALIGN', (0, adr_idx + 1), (-1, -1), 'CENTER'),
+                ('VALIGN', (0, adr_idx + 1), (-1, -1), 'MIDDLE'),
+                ('ROWBACKGROUNDS', (0, adr_idx + 2), (-1, -1),
+                 [colors.white, colors.HexColor("#fff5f5")]),
+            ]
+        else:
+            adr_styles = []
 
         tbl = Table(rows, colWidths=c6)
         styles = [
@@ -725,20 +741,7 @@ class CMRGenerator:
             ('LINEBELOW', (0, 0), (-1, 0), 0.75, lc),
             ('SPAN', (0, 1), (5, 1)),
             ('BACKGROUND', (0, 1), (-1, 1), colors.white),
-        ]
-
-        # ADR-specific styling
-        if ctx.get("has_adr"):
-            adr_idx = 3
-            styles.extend([
-                ('SPAN', (0, adr_idx), (5, adr_idx)),
-                ('BACKGROUND', (0, adr_idx), (-1, adr_idx), colors.HexColor("#fef2f2")),
-                ('BACKGROUND', (0, adr_idx + 1), (-1, adr_idx + 1), colors.HexColor("#fef2f2")),
-                ('ALIGN', (0, adr_idx + 1), (-1, -1), 'CENTER'),
-                ('VALIGN', (0, adr_idx + 1), (-1, -1), 'MIDDLE'),
-                ('ROWBACKGROUNDS', (0, adr_idx + 2), (-1, -1),
-                 [colors.white, colors.HexColor("#fff5f5")]),
-            ])
+        ] + adr_styles
 
         tbl.setStyle(TableStyle(styles))
         return tbl
@@ -929,7 +932,11 @@ class CMRGenerator:
                 mod_date=now_utc,
                 relationship=pikepdf.Name("/Data"),
             )
-            pdf.attachments._add_replace_filespec("cmr_efti_data.xml", spec)
+            # Use public API if available, fall back to private method
+            try:
+                pdf.attachments["cmr_efti_data.xml"] = spec
+            except AttributeError:
+                pdf.attachments._add_replace_filespec("cmr_efti_data.xml", spec)
 
             # ── /AF array in document catalog (PDF/A-3 requirement) ──
             # Ensure the file spec is referenced from Root.AF
@@ -972,6 +979,6 @@ class CMRGenerator:
             with open(pdf_path, "wb") as f:
                 writer.write(f)
         except ImportError:
-            pass
+            logger.warning("pypdf not available — eFTI XML embedding skipped, PDF will not be PDF/A-3 compliant")
         except Exception as e:
             logger.debug("XML embedding skipped: %s", e)

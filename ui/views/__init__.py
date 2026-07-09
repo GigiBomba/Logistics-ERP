@@ -17,11 +17,13 @@ from ui.views.history_view import QtHistoryView
 from ui.views.invoice_editor import QtInvoiceEditor
 from ui.views.maintenance_analytics_view import QtMaintenanceAnalyticsView
 from ui.views.maintenance_control_panel import QtMaintenanceControlPanel
+from ui.views.migration_center import QtMigrationCenterView
 from ui.views.overview_view import QtOverviewView
 from ui.views.route_history_view import QtRouteHistoryView
 from ui.views.route_planner_view import QtRoutePlannerView
 from ui.views.settings_view import QtSettingsView
 from ui.views.tacho_import_view import QtTachoImportView
+from ui.views.team_view import QtTeamView
 
 __all__ = [
     "QtAnalyticsView",
@@ -41,9 +43,11 @@ __all__ = [
     "QtInvoiceEditor",
     "QtMaintenanceAnalyticsView",
     "QtMaintenanceControlPanel",
+    "QtMigrationCenterView",
     "QtOverviewView",
     "QtRouteHistoryView",
     "QtRoutePlannerView",
     "QtSettingsView",
     "QtTachoImportView",
+    "QtTeamView",
 ]

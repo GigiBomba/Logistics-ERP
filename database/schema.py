@@ -44,6 +44,8 @@ INDEX_TRIPS_START_DATE = "CREATE INDEX IF NOT EXISTS idx_trips_start_date ON tri
 INDEX_TRIPS_DELIVERY_COUNTRY = "CREATE INDEX IF NOT EXISTS idx_trips_delivery_country ON trips(delivery_country);"
 INDEX_TRIPS_LOADING_COUNTRY = "CREATE INDEX IF NOT EXISTS idx_trips_loading_country ON trips(loading_country);"
 INDEX_TRIPS_DRIVER_ID = "CREATE INDEX IF NOT EXISTS idx_trips_driver_id ON trips(driver_id);"
+INDEX_TRIPS_CLIENT_ID = "CREATE INDEX IF NOT EXISTS idx_trips_client_id ON trips(client_id);"
+INDEX_TRIPS_PAYMENT_DATE = "CREATE INDEX IF NOT EXISTS idx_trips_payment_date ON trips(payment_date);"
 
 
 
@@ -60,6 +62,9 @@ CREATE TABLE IF NOT EXISTS invoices (
     FOREIGN KEY (trip_id) REFERENCES trips (id) ON DELETE CASCADE
 );
 """
+
+INDEX_INVOICES_ISSUE_DATE = "CREATE INDEX IF NOT EXISTS idx_invoices_issue_date ON invoices(issue_date);"
+INDEX_INVOICES_DUE_DATE = "CREATE INDEX IF NOT EXISTS idx_invoices_due_date ON invoices(due_date);"
 
 # Proforma invoices — independent of trips (manual line items, no trip FK)
 TABLE_PROFORMA_INVOICES = """
@@ -107,8 +112,10 @@ INDEX_PROFORMA_STATUS = "CREATE INDEX IF NOT EXISTS idx_proforma_status ON profo
 
 TABLE_SETTINGS = """
 CREATE TABLE IF NOT EXISTS settings (
-    key TEXT PRIMARY KEY,
-    value TEXT
+    key TEXT NOT NULL,
+    value TEXT,
+    company_id INTEGER REFERENCES companies(id),
+    PRIMARY KEY (key, company_id)
 );
 """
 

@@ -13,12 +13,15 @@ Usage::
 """
 
 import hmac
+import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from config import Config
+
+logger = logging.getLogger(__name__)
 
 class AuthMiddleware(BaseHTTPMiddleware):
     """Validate ``X-API-Key`` header against ``Config.API_KEY``."""
@@ -27,6 +30,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
         super().__init__(app)
         self._api_key = Config.API_KEY
         self._enabled = bool(self._api_key)
+        if not self._api_key:
+            logger.critical(
+                "OPERION_API_KEY is not set — API key middleware is DISABLED. "
+                "All requests are accepted without API key validation."
+            )
 
     async def dispatch(self, request: Request, call_next):
         if not self._enabled:

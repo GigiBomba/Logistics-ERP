@@ -89,15 +89,33 @@ class ApiClient:
             clear_auth()
         return False
 
+    def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Make an HTTP request with exponential backoff retry (up to 3 attempts).
+
+        Catches ``httpx.ConnectError``, ``httpx.TimeoutException``,
+        ``httpx.RemoteProtocolError``, and ``httpx.ReadError``.
+        """
+        max_attempts = 3
+        last_exc: Optional[Exception] = None
+        for attempt in range(max_attempts):
+            try:
+                resp = self._client.request(method, url, **kwargs)
+                if self._check_response(resp):
+                    resp = self._client.request(method, url, **kwargs)
+                return resp
+            except (httpx.ConnectError, httpx.TimeoutException,
+                    httpx.RemoteProtocolError, httpx.ReadError) as exc:
+                last_exc = exc
+                if attempt < max_attempts - 1:
+                    import time
+                    time.sleep(2 ** attempt)  # 1s, 2s, 4s
+                continue
+        raise RuntimeError(
+            f"API server unreachable at {self._base_url}: {last_exc}"
+        ) from last_exc
+
     def _get(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
-        try:
-            resp = self._client.get(f"{self._base_url}{path}", params=params)
-            if self._check_response(resp):
-                resp = self._client.get(f"{self._base_url}{path}", params=params)
-        except httpx.ConnectError:
-            raise RuntimeError(
-                f"API server unreachable at {self._base_url}"
-            )
+        resp = self._request_with_retry("GET", f"{self._base_url}{path}", params=params)
         resp.raise_for_status()
         return resp.json()
 
@@ -105,68 +123,32 @@ class ApiClient:
         self, path: str, json_data: Optional[Dict] = None,
         files: Optional[Dict] = None, data: Optional[Dict] = None,
     ) -> Dict[str, Any]:
-        try:
-            resp = self._client.post(
-                f"{self._base_url}{path}", json=json_data, files=files, data=data
-            )
-            if self._check_response(resp):
-                resp = self._client.post(
-                    f"{self._base_url}{path}", json=json_data, files=files, data=data
-                )
-        except httpx.ConnectError:
-            raise RuntimeError(
-                f"API server unreachable at {self._base_url}"
-            )
+        resp = self._request_with_retry(
+            "POST", f"{self._base_url}{path}",
+            json=json_data, files=files, data=data,
+        )
         resp.raise_for_status()
         return resp.json()
 
     def _put(self, path: str, json_data: Dict) -> Dict[str, Any]:
-        try:
-            resp = self._client.put(f"{self._base_url}{path}", json=json_data)
-            if self._check_response(resp):
-                resp = self._client.put(f"{self._base_url}{path}", json=json_data)
-        except httpx.ConnectError:
-            raise RuntimeError(
-                f"API server unreachable at {self._base_url}"
-            )
+        resp = self._request_with_retry("PUT", f"{self._base_url}{path}", json=json_data)
         resp.raise_for_status()
         return resp.json()
 
     def _delete(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
-        try:
-            resp = self._client.delete(f"{self._base_url}{path}", params=params)
-            if self._check_response(resp):
-                resp = self._client.delete(f"{self._base_url}{path}", params=params)
-        except httpx.ConnectError:
-            raise RuntimeError(
-                f"API server unreachable at {self._base_url}"
-            )
+        resp = self._request_with_retry("DELETE", f"{self._base_url}{path}", params=params)
         resp.raise_for_status()
         return resp.json()
 
     def _download(self, path: str, params: Optional[Dict] = None) -> bytes:
         """GET a binary response (PDF, XLSX) and return raw bytes."""
-        try:
-            resp = self._client.get(f"{self._base_url}{path}", params=params)
-            if self._check_response(resp):
-                resp = self._client.get(f"{self._base_url}{path}", params=params)
-        except httpx.ConnectError:
-            raise RuntimeError(
-                f"API server unreachable at {self._base_url}"
-            )
+        resp = self._request_with_retry("GET", f"{self._base_url}{path}", params=params)
         resp.raise_for_status()
         return resp.content
 
     def _post_binary(self, path: str, json_data: Dict) -> bytes:
         """POST returning raw bytes (PDF/XLSX) with auth retry support."""
-        try:
-            resp = self._client.post(f"{self._base_url}{path}", json=json_data)
-            if self._check_response(resp):
-                resp = self._client.post(f"{self._base_url}{path}", json=json_data)
-        except httpx.ConnectError:
-            raise RuntimeError(
-                f"API server unreachable at {self._base_url}"
-            )
+        resp = self._request_with_retry("POST", f"{self._base_url}{path}", json=json_data)
         resp.raise_for_status()
         return resp.content
 
@@ -680,6 +662,34 @@ class ApiClient:
 
     def health_check(self) -> Dict[str, Any]:
         return self._get("/api/v1/health")
+
+    # ── User management endpoints ────────────────────────────────────────
+
+    def list_users(self, company_id: int | None = None) -> Dict[str, Any]:
+        """List users in the current company."""
+        params: dict = {}
+        if company_id is not None:
+            params["company_id"] = company_id
+        return self._get("/api/v1/users/", params=params)
+
+    def create_user(self, email: str, password: str, role: str,
+                    display_name: str = "", driver_id: int | None = None) -> Dict[str, Any]:
+        """Create a new user (manager-only)."""
+        body: dict = {
+            "email": email,
+            "password": password,
+            "role": role,
+            "display_name": display_name,
+        }
+        return self._post("/api/v1/users/", json_data=body)
+
+    def update_user(self, user_id: int, **fields: Any) -> Dict[str, Any]:
+        """Update a user (manager-only)."""
+        return self._put(f"/api/v1/users/{user_id}", json_data=fields)
+
+    def deactivate_user(self, user_id: int) -> Dict[str, Any]:
+        """Deactivate a user (manager-only)."""
+        return self._delete(f"/api/v1/users/{user_id}")
 
     def close(self) -> None:
         self._client.close()

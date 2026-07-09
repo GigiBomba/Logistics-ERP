@@ -531,6 +531,12 @@ class StyledTableWidget(QTableWidget):
         # No-op: ``sortIndicatorChanged`` does the re-order.
         return
 
+    def column_id_at(self, index: int) -> str:
+        """Return the column identifier at *index*, or an empty string."""
+        if 0 <= index < len(self._column_ids):
+            return self._column_ids[index]
+        return ""
+
     def set_data(self, rows: list[dict]) -> None:
         # ``setSortingEnabled(False)`` would also clear the sort
         # indicator, so we keep the current indicator and just suppress

@@ -11,9 +11,9 @@ from typing import Any, Optional
 
 MANDATORY_FIELDS = [
     ("consignor_name", "Consignor (Sender) name"),
-    ("consignee_name", "Consignee name"),
+    ("client_name", "Consignee name"),
     ("place_of_loading", "Place of loading"),
-    ("destination", "Place of delivery"),
+    ("place_of_delivery", "Place of delivery"),
     ("cargo_description", "Nature of goods"),
     ("carrier_name", "Carrier name"),
     ("truck_plate", "Vehicle plate"),
@@ -106,6 +106,9 @@ def validate_cmr(data: dict[str, Any]) -> list[tuple[str, str, str]]:
 
     for key, label in MANDATORY_FIELDS:
         value = data.get(key, "")
+        # Special case: place_of_delivery can also be stored as "destination"
+        if key == "place_of_delivery" and not value:
+            value = data.get("destination", "")
         if not value or (isinstance(value, str) and not value.strip()):
             issues.append(("error", key, f"{label} is mandatory"))
 

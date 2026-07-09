@@ -17,6 +17,7 @@ class DocumentRepository(BaseRepository):
         "tags", "description", "uploaded_by", "uploaded_at", "updated_at",
         "copy_type", "cmr_number", "cmr_metadata_json", "is_signed",
         "is_archived", "expiry_date", "extracted_data_json", "company_id",
+        "ocr_text", "ocr_run_at", "ocr_engine", "automation_tags", "text_content",
     ]
     COLUMNS_LINKS = [
         "id", "document_id", "linked_entity_type", "linked_entity_id",
@@ -125,7 +126,7 @@ class DocumentRepository(BaseRepository):
     def get_next_doc_number(self, commit: bool = True) -> str:
         year = datetime.datetime.now().year
         if commit:
-            self.begin_transaction()
+            self.db.conn.execute("BEGIN IMMEDIATE")
         try:
             row = self._fetchone(
                 f"SELECT MAX(doc_number) AS last_num FROM {self.TABLE} "
@@ -164,13 +165,8 @@ class DocumentRepository(BaseRepository):
         )
 
     def get_ids_by_ids(self, doc_ids: list) -> List[Dict[str, Any]]:
-        if not doc_ids:
-            return []
-        placeholders = ",".join("?" for _ in doc_ids)
-        return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()}",
-            tuple(doc_ids) + self._company_params(),
-        )
+        """Deprecated alias for get_by_ids_batch()."""
+        return self.get_by_ids_batch(doc_ids)
 
     # ── Advanced Search ────────────────────────────────────────────────
 
@@ -210,7 +206,7 @@ class DocumentRepository(BaseRepository):
 
         if date_to:
             conditions.append("d.uploaded_at <= ?")
-            params.append(date_to + "T23:59:59")
+            params.append(date_to + "T23:59:59" if len(date_to) == 10 else date_to)
 
         if mime_type:
             conditions.append("d.mime_type LIKE ?")
@@ -271,7 +267,7 @@ class DocumentRepository(BaseRepository):
 
         if date_to:
             conditions.append("d.uploaded_at <= ?")
-            params.append(date_to + "T23:59:59")
+            params.append(date_to + "T23:59:59" if len(date_to) == 10 else date_to)
 
         if mime_type:
             conditions.append("d.mime_type LIKE ?")
@@ -460,7 +456,7 @@ class DocumentRepository(BaseRepository):
             "relation_type": relation_type,
             "created_at": created_at,
         }
-        self._validate_columns(data, extra_allowed={"company_id"})
+        self._validate_columns(data, extra_allowed={"company_id"}, columns=self.COLUMNS_LINKS)
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
@@ -611,7 +607,9 @@ class DocumentRepository(BaseRepository):
     @staticmethod
     def _fts_query(user_query: str) -> str:
         terms = user_query.strip().split()
-        return " AND ".join(f'"{t}"' for t in terms) if terms else user_query
+        if not terms:
+            return ""
+        return " AND ".join(f'"{t}"' for t in terms)
 
     # ── Document Versions ───────────────────────────────────────────────
 
@@ -623,7 +621,7 @@ class DocumentRepository(BaseRepository):
             "file_path": file_path, "file_size": file_size, "file_hash": file_hash,
             "comment": comment, "uploaded_by": uploaded_by, "created_at": created_at,
         }
-        self._validate_columns(data, extra_allowed={"company_id"})
+        self._validate_columns(data, extra_allowed={"company_id"}, columns=self.COLUMNS_VERSIONS)
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
@@ -670,7 +668,7 @@ class DocumentRepository(BaseRepository):
             "renewal_notice_days": renewal_notice_days, "notes": notes,
             "status": "active", "created_at": created_at, "updated_at": updated_at,
         }
-        self._validate_columns(data, extra_allowed={"company_id"})
+        self._validate_columns(data, extra_allowed={"company_id"}, columns=self.COLUMNS_CONTRACTS)
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
@@ -710,7 +708,7 @@ class DocumentRepository(BaseRepository):
         )
 
     def update_contract(self, contract_id: int, **fields: Any) -> None:
-        self._validate_columns(fields, extra_allowed={"company_id"})
+        self._validate_columns(fields, extra_allowed={"company_id"}, columns=self.COLUMNS_CONTRACTS)
         if not fields:
             return
         sets = ", ".join(f"{k} = ?" for k in fields)
@@ -739,7 +737,7 @@ class DocumentRepository(BaseRepository):
             "template_type": template_type, "fields_json": fields_json,
             "created_at": created_at, "updated_at": updated_at,
         }
-        self._validate_columns(data, extra_allowed={"company_id"})
+        self._validate_columns(data, extra_allowed={"company_id"}, columns=self.COLUMNS_TEMPLATES)
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)

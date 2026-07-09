@@ -19,12 +19,25 @@ logger = logging.getLogger("operations.cmr_auto_generator")
 
 
 class AutoCMRGenerator:
-    """Generates 4 CMR copies per trip when status transitions to 'In Transit'."""
+    """Generates 4 CMR copies per trip when status transitions to 'In Transit'.
+
+    Uses a per-trip-id lock to prevent duplicate generation when rapid status-change
+    events arrive before the first generation finishes.
+    """
 
     def __init__(self, db, prefs, alert_mgr):
         self._db = db
         self._prefs = prefs
         self._alert_mgr = alert_mgr
+        self._generation_locks: dict[int, threading.Lock] = {}
+        self._gen_lock_guard = threading.Lock()
+
+    def _get_trip_lock(self, trip_id: int) -> threading.Lock:
+        """Return a per-trip Lock, creating one if needed (thread-safe)."""
+        with self._gen_lock_guard:
+            if trip_id not in self._generation_locks:
+                self._generation_locks[trip_id] = threading.Lock()
+            return self._generation_locks[trip_id]
 
     def on_trip_in_transit(self, ev: dict[str, Any]) -> None:
         """EventBus subscriber — spawns background CMR generation thread."""
@@ -40,8 +53,16 @@ class AutoCMRGenerator:
         t.start()
 
     def generate(self, trip_id: int) -> None:
-        """Generate 4 CMR copies for a trip."""
+        """Generate 4 CMR copies for a trip.
+
+        Protected by a per-trip-id Lock so that two rapid status-change events
+        do not both attempt generation for the same trip concurrently.
+        """
         if not self._db:
+            return
+        lock = self._get_trip_lock(trip_id)
+        if not lock.acquire(blocking=False):
+            logger.info("Auto-CMR generation already in progress for trip %d — skipping duplicate", trip_id)
             return
         try:
             from services.invoicing.cmr_generator import CMRGenerator
@@ -145,3 +166,5 @@ class AutoCMRGenerator:
             logger.info("Auto-generated 4 CMR copies for trip %d: %s", trip_id, output_dir)
         except Exception as e:
             logger.error("Auto-CMR generation failed for trip %d: %s", trip_id, e)
+        finally:
+            lock.release()

@@ -22,18 +22,18 @@ from services.health_check import (
 
 class TestCheckDatabase:
     def test_healthy_db(self):
-        """Database file exists and can be queried."""
+        """Database file exists and has all critical tables."""
         with patch("os.path.exists", return_value=True), \
              patch("database.db_manager.DatabaseManager"), \
              patch("services.health_check.SettingsRepository") as mock_settings_cls:
             mock_settings = MagicMock()
-            mock_settings.get_table_names.return_value = ["trips", "trucks"]
+            mock_settings.get_table_names.return_value = ["alerts", "trips", "trucks", "invoices", "settings"]
             mock_settings_cls.return_value = mock_settings
 
             result = check_database("/fake/path.db")
 
             assert result["status"] == "healthy"
-            assert result["table_count"] == 2
+            assert result["table_count"] == 5
             assert result["path"] == "/fake/path.db"
 
     def test_db_file_not_found(self):

@@ -22,6 +22,8 @@ def service(mock_repo):
     svc._repo = mock_repo
     svc._caches = {}
     svc._cache_lock = MagicMock()
+    svc._key_locks = {}
+    svc._key_locks_lock = MagicMock()
     return svc
 
 
@@ -104,10 +106,11 @@ class TestCache:
 
         service.get_financial()
 
-        service._caches["financial"] = (
-            service._caches["financial"][0],
+        key = ("financial", (None, None))
+        service._caches[key] = (
+            service._caches[key][0],
             time.time() - 600,  # expired
-            service._caches["financial"][2],
+            service._caches[key][2],
         )
 
         service.get_financial()

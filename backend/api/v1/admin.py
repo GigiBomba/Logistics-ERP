@@ -35,6 +35,21 @@ from backend.schemas.admin import (
 from config import Config
 from database.db_manager import DatabaseManager
 
+# Whitelist of tables accessible via admin endpoints
+_ADMIN_KNOWN_TABLES = {
+    "trips", "invoices", "proforma_invoices", "receipts", "clients", "client_contacts",
+    "client_tags", "drivers", "driver_truck_assignments", "trucks", "truck_health_scores",
+    "truck_route_assignments", "maintenance_records", "maintenance_schedules",
+    "documents", "document_links", "document_versions", "document_templates", "contracts",
+    "route_history", "route_history_v2", "route_events", "tacho_imports",
+    "tacho_driver_activity", "tacho_vehicle_data", "alerts", "operation_events",
+    "trip_status_history", "email_logs", "invoice_reminders", "settings",
+    "cmr_counter", "successive_carriers", "cmr_audit_log",
+    "document_pipeline_runs", "document_package", "document_package_items",
+    "automail_templates", "automail_schedules", "automail_client_overrides",
+    "automail_settings", "companies", "users", "gps_telemetry", "expenses",
+}
+
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -149,7 +164,7 @@ async def list_tables(
             "SELECT name FROM sqlite_master "
             "WHERE type='table' ORDER BY name"
         )
-        tables = [row[0] for row in cursor.fetchall()]
+        tables = [row[0] for row in cursor.fetchall() if row[0] in _ADMIN_KNOWN_TABLES]
 
         for table_name in tables:
             try:
@@ -190,6 +205,8 @@ async def get_table_schema(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> List[ColumnInfo]:
     """Return column names and types for *table_name*."""
+    if table_name not in _ADMIN_KNOWN_TABLES:
+        raise HTTPException(status_code=400, detail=f"Table '{table_name}' is not accessible.")
     async for db in get_db():
         try:
             cursor = db.conn.execute(
@@ -229,6 +246,8 @@ async def get_table_data(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> List[Dict[str, Any]]:
     """Return paginated rows from *table_name*."""
+    if table_name not in _ADMIN_KNOWN_TABLES:
+        raise HTTPException(status_code=400, detail=f"Table '{table_name}' is not accessible.")
     async for db in get_db():
         try:
             offset = page * page_size
@@ -285,6 +304,7 @@ async def execute_raw_query(
     ro_conn = None
     try:
         ro_conn = DatabaseManager.open_readonly_connection(Config.DB_PATH)
+        ro_conn.execute("PRAGMA query_timeout = 10000")  # 10-second timeout as advertised in docstring
         # Wrap in subquery to enforce row limit
         wrapped = f"SELECT * FROM ({query}) AS _admin_q LIMIT {limit}"
         cursor = ro_conn.execute(wrapped)

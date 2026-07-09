@@ -424,21 +424,20 @@ class TestRetention:
 
 class TestStatistics:
     def test_get_statistics(self, service):
-        rows = [
-            {"stops_json": json.dumps([{"lat": 48.85, "lon": 2.35, "address": "Paris"}, {"lat": 44.43, "lon": 26.10, "address": "Bucharest"}]), "total_distance_km": 100.0},
-            {"stops_json": json.dumps([{"lat": 51.50, "lon": -0.13, "address": "London"}]), "total_distance_km": 50.0},
+        service._route_repo.get_statistics_aggregate.return_value = {"route_count": 2, "total_distance": 150.0}
+        service._route_repo.get_stops_for_statistics.return_value = [
+            {"stops_json": json.dumps([{"lat": 48.85, "lon": 2.35, "address": "Paris"}, {"lat": 44.43, "lon": 26.10, "address": "Bucharest"}])},
+            {"stops_json": json.dumps([{"lat": 51.50, "lon": -0.13, "address": "London"}])},
         ]
-        service._route_repo.get_all.return_value = rows
         stats = service.get_statistics()
         assert stats["route_count"] == 2
         assert stats["total_distance_km"] == 150.0
 
     def test_get_route_analytics(self, service):
-        rows = [
+        service._route_repo.get_countries_and_durations.return_value = [
             {"countries_traversed_json": json.dumps(["FR", "DE"]), "duration_min": 120.0},
             {"countries_traversed_json": json.dumps(["FR", "BE"]), "duration_min": 60.0},
         ]
-        service._route_repo.get_all.return_value = rows
         analytics = service.get_route_analytics()
         assert analytics["average_trip_duration_min"] == 90.0
         assert analytics["country_frequency"]["FR"] == 2

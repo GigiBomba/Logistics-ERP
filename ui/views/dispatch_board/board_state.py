@@ -59,10 +59,7 @@ class BoardStateMixin:
         self._loading = True
         self._alert_counts.clear()
         if self.ops:
-            try:
-                self.ops.undo_stack.clear()
-            except Exception:
-                logger.warning("Failed to clear undo stack", exc_info=True)
+            pass  # Keep undo stack intact across refreshes
         for col in self._columns.values():
             col.show_loading()
         self._load_thread = threading.Thread(target=self._load_data_background, daemon=True)
@@ -90,8 +87,8 @@ class BoardStateMixin:
                     continue
 
                 if column in ("Delivered", "Cancelled"):
-                    created = trip.get("created_at", "")
-                    trip_date = created[:10] if len(created) >= 10 else created
+                    trip_date = trip.get("end_date", "") or trip.get("created_at", "")
+                    trip_date = trip_date[:10] if len(trip_date) >= 10 else trip_date
                     if trip_date and trip_date < cutoff:
                         continue
 

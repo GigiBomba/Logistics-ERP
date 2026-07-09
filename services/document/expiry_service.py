@@ -33,8 +33,8 @@ class ExpiryService:
         overdue = self.get_overdue()
         for doc in overdue:
             alert_mgr.create_alert(
-                alert_type=AlertType.DOCUMENT_EXPIRY.value if hasattr(AlertType, 'DOCUMENT_EXPIRY') else "document_expiry",
-                severity=Severity.CRITICAL.value,
+                alert_type=AlertType.DOCUMENT_EXPIRY,
+                severity=Severity.CRITICAL,
                 title=f"Document expired: {doc.get('title', doc.get('file_name', ''))}",
                 message=f"Document {doc.get('doc_number')} expired on {doc.get('expiry_date')}",
                 truck_id=None,
@@ -45,8 +45,8 @@ class ExpiryService:
         expiring = self.get_expiring(30)
         for doc in expiring:
             alert_mgr.create_alert(
-                alert_type=AlertType.DOCUMENT_EXPIRY.value if hasattr(AlertType, 'DOCUMENT_EXPIRY') else "document_expiry",
-                severity=Severity.WARNING.value,
+                alert_type=AlertType.DOCUMENT_EXPIRY,
+                severity=Severity.WARNING,
                 title=f"Document expiring: {doc.get('title', doc.get('file_name', ''))}",
                 message=f"Document {doc.get('doc_number')} expires on {doc.get('expiry_date')}",
                 truck_id=None, trip_id=None,

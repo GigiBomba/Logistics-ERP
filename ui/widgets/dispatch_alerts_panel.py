@@ -45,6 +45,7 @@ class QtDispatchAlertsPanel(QWidget):
         ops=None,
         on_assign_truck: Callable | None = None,
         on_assign_driver: Callable | None = None,
+        on_assign_both: Callable | None = None,
         on_resolve_alert: Callable | None = None,
     ):
         super().__init__(parent)
@@ -52,6 +53,7 @@ class QtDispatchAlertsPanel(QWidget):
         self._ops = ops
         self._on_assign_truck = on_assign_truck
         self._on_assign_driver = on_assign_driver
+        self._on_assign_both = on_assign_both
         self._on_resolve_alert = on_resolve_alert
 
         self._build_ui()
@@ -388,9 +390,18 @@ class QtDispatchAlertsPanel(QWidget):
         self._unassigned_content.addWidget(grp)
 
     def _quick_assign(self, item: dict[str, Any]) -> None:
-        if self._on_assign_truck and not item.get("truck_plate"):
+        has_truck = bool(item.get("truck_plate"))
+        has_driver = bool(item.get("driver_name"))
+
+        if not has_truck and not has_driver:
+            # Both missing — open paired assignment dialog directly
+            if self._on_assign_both is not None:
+                self._on_assign_both(item)
+            return
+
+        if self._on_assign_truck and not has_truck:
             self._on_assign_truck(item)
-        if self._on_assign_driver and not item.get("driver_name"):
+        if self._on_assign_driver and not has_driver:
             self._on_assign_driver(item)
 
     # ── Summary KPIs (Sumar Alocari) ─────────────────────────────────────────

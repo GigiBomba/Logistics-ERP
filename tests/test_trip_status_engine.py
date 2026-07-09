@@ -315,7 +315,7 @@ class TestDelayDetection:
     def test_no_delay_for_recent_trip(self, engine):
         """A trip created moments ago should NOT trigger a delay alert."""
         recent = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        _insert_trip(engine._trip_service.db, status="pending",
+        _insert_trip(engine._trip_service.db, status="Planned",
                      created_at=recent)
         count = engine.evaluate_trip(1)
         assert count == 0
@@ -323,7 +323,7 @@ class TestDelayDetection:
     def test_delay_alert_for_old_pending_trip(self, engine):
         """A pending trip older than threshold should trigger a delay alert."""
         old = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
-        _insert_trip(engine._trip_service.db, status="pending",
+        _insert_trip(engine._trip_service.db, status="Planned",
                      created_at=old, truck_number="TRUCK-001")
         count = engine.evaluate_trip(1)
         assert count == 1
@@ -331,15 +331,15 @@ class TestDelayDetection:
     def test_delay_alert_for_old_loading_trip(self, engine):
         """A loading trip older than threshold should trigger a delay alert."""
         old = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
-        _insert_trip(engine._trip_service.db, status="loading",
+        _insert_trip(engine._trip_service.db, status="Loading",
                      created_at=old, truck_number="TRUCK-001")
         count = engine.evaluate_trip(1)
         assert count == 1
 
     def test_no_delay_for_non_pending_or_loading_status(self):
-        """Only 'pending'/'loading' trips should be evaluated for delays."""
+        """Only 'Planned'/'Loading' trips should be evaluated for delays."""
         old = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
-        for status in ["Planned", "In Transit", "Delivered", "Invoiced", "Paid", "Cancelled"]:
+        for status in ["In Transit", "Delivered", "Invoiced", "Paid", "Cancelled"]:
             db = make_db()
             eng = TripStatusEngine(db)
             _insert_trip(db, trip_id=1, status=status, created_at=old)
@@ -350,28 +350,28 @@ class TestDelayDetection:
     def test_evaluate_all_checks_all_pending_loading_trips(self, engine):
         """evaluate_all should return total alerts created across pending/loading trips."""
         old = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
-        _insert_trip(engine._trip_service.db, trip_id=1, status="pending",
+        _insert_trip(engine._trip_service.db, trip_id=1, status="Planned",
                      created_at=old, truck_number="TRUCK-001")
-        _insert_trip(engine._trip_service.db, trip_id=2, status="loading",
+        _insert_trip(engine._trip_service.db, trip_id=2, status="Loading",
                      created_at=old, truck_number="TRUCK-002")
         count = engine.evaluate_all()
         assert count == 2
 
     def test_evaluate_all_skips_non_matching_trips(self, engine):
-        """evaluate_all should only process pending/loading trips."""
+        """evaluate_all should only process Planned/Loading trips."""
         old = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
-        _insert_trip(engine._trip_service.db, trip_id=1, status="pending",
+        _insert_trip(engine._trip_service.db, trip_id=1, status="Planned",
                      created_at=old, truck_number="TRUCK-001")
         _insert_trip(engine._trip_service.db, trip_id=2, status="Delivered",
                      created_at=old, truck_number="TRUCK-002")
-        _insert_trip(engine._trip_service.db, trip_id=3, status="loading",
+        _insert_trip(engine._trip_service.db, trip_id=3, status="Loading",
                      created_at=old, truck_number="TRUCK-003")
         count = engine.evaluate_all()
         assert count == 2
 
     def test_no_alert_for_old_trip_with_no_created_at(self, engine):
         """A trip with null created_at should return 0 (no alert)."""
-        _insert_trip(engine._trip_service.db, status="pending", created_at=None)
+        _insert_trip(engine._trip_service.db, status="Planned", created_at=None)
         db = engine._trip_service.db
         # Patch the inserted trip to have NULL created_at
         db.conn.execute("UPDATE trips SET created_at = NULL WHERE id = 1")
@@ -382,7 +382,7 @@ class TestDelayDetection:
     def test_alert_created_has_correct_type_and_severity(self, engine):
         """The alert created by evaluate_trip should be TRIP_DELAY / WARNING."""
         old = (datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S")
-        _insert_trip(engine._trip_service.db, status="pending",
+        _insert_trip(engine._trip_service.db, status="Planned",
                      created_at=old, truck_number="TRUCK-001", truck_id=42)
         engine.evaluate_trip(1)
         rows = engine._trip_service.db.conn.execute(
@@ -465,7 +465,7 @@ class TestLifecycle:
         db = make_db()
         eng = TripStatusEngine(db)
         bus = EventBus()
-        _insert_trip(db, trip_id=100, status="pending",
+        _insert_trip(db, trip_id=100, status="Planned",
                      created_at=(datetime.now() - timedelta(days=5)).strftime("%Y-%m-%d %H:%M:%S"),
                      truck_number="TRUCK-EVT")
         # TripService.publish format: {"trip_id": ..., "data": ...}
@@ -486,13 +486,13 @@ class TestRulesIntegration:
         """Changing trip_delay_hours in Rules should affect alert creation."""
         from services.operations.rules import Rules
         rules = Rules()
-        old_date = (datetime.now() - timedelta(hours=10)).strftime("%Y-%m-%d %H:%M:%S")
-        _insert_trip(engine._trip_service.db, status="pending",
+        old_date = (datetime.now() - timedelta(hours=1)).strftime("%Y-%m-%d %H:%M:%S")
+        _insert_trip(engine._trip_service.db, status="Planned",
                      created_at=old_date)
-        # Default delay_hours=2 means 2*24=48h threshold. Trip is 10h old, no alert.
+        # Default delay_hours=2 hours. Trip is 1h old, no alert.
         count = engine.evaluate_trip(1)
         assert count == 0
-        # Set delay_hours to 0.1 so that 10h > 0.1*24=2.4h → triggers alert
+        # Set delay_hours to 0.1 so that 1h > 0.1h → triggers alert
         rules.set("trip_delay_hours", 0.1)
         count = engine.evaluate_trip(1)
         assert count == 1

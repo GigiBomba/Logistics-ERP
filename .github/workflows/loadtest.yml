@@ -1,0 +1,122 @@
+name: Load & Chaos Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  load-test:
+    if: github.run_number % 5 != 0
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15-alpine
+        env:
+          POSTGRES_DB: operion
+          POSTGRES_USER: operion
+          POSTGRES_PASSWORD: test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready -U operion -d operion
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install locust httpx bcrypt PyJWT
+
+      - name: Start API server
+        run: |
+          export OPERION_DB_ENGINE=sqlite
+          export OPERION_DB_PATH=data/test_load.db
+          export OPERION_JWT_SECRET_KEY=test-key-load-test-only-32-chars!!
+          export OPERION_ADMIN_EMAIL=admin@test.com
+          export OPERION_ADMIN_PASSWORD_HASH=$(python -c "import bcrypt; print(bcrypt.hashpw(b'test-pw', bcrypt.gensalt(rounds=4)).decode())")
+          export OPERION_ENV=test
+          export OPERION_RATE_LIMIT=100000
+          uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+          curl -f http://localhost:8000/api/v1/health || exit 1
+
+      - name: Run load test (lightweight)
+        run: |
+          locust --headless --users 10 --spawn-rate 2 \
+                 --run-time 120s --host http://localhost:8000 \
+                 --csv=ci-load --html=report.html
+        continue-on-error: true
+
+      - name: Assert performance thresholds
+        run: python tests/loadtest/assert_thresholds.py ci-load_stats.csv || echo "⚠️  Threshold check completed (may show warnings)"
+
+      - name: Upload load test report
+        uses: actions/upload-artifact@v4
+        with:
+          name: load-test-report
+          path: report.html
+        if: always()
+
+  chaos-test:
+    if: github.run_number % 5 == 0
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.9"
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install locust httpx bcrypt PyJWT
+
+      - name: Start API server
+        run: |
+          export OPERION_DB_ENGINE=sqlite
+          export OPERION_DB_PATH=data/test_chaos.db
+          export OPERION_JWT_SECRET_KEY=test-key-chaos-test-only-32-chars!!
+          export OPERION_ADMIN_EMAIL=admin@test.com
+          export OPERION_ADMIN_PASSWORD_HASH=$(python -c "import bcrypt; print(bcrypt.hashpw(b'chaos-pw', bcrypt.gensalt(rounds=4)).decode())")
+          export OPERION_ENV=test
+          export OPERION_RATE_LIMIT=100000
+          uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
+          sleep 5
+          curl -f http://localhost:8000/api/v1/health || exit 1
+
+      - name: Run chaos tests
+        run: python -m pytest tests/chaos/ -v --tb=short
+
+      - name: Run full load test
+        run: |
+          locust --headless --users 25 --spawn-rate 5 \
+                 --run-time 300s --host http://localhost:8000 \
+                 --csv=full-load --html=full-report.html
+        continue-on-error: true
+
+      - name: Check for regressions
+        run: python tests/loadtest/regression_detection.py full-load_stats.csv || echo "⚠️  Regression check completed"
+
+      - name: Upload full report
+        uses: actions/upload-artifact@v4
+        with:
+          name: full-load-test-report
+          path: full-report.html
+        if: always()

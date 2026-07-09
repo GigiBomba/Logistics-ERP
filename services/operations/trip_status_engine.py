@@ -46,7 +46,9 @@ class TripStatusEngine:
 
     def _on_trip_status_change(self, ev: dict[str, Any]) -> None:
         trip_id = ev["data"].get("trip_id")
-        if trip_id:
+        new_status = ev["data"].get("new_status", "")
+        # Only evaluate if the new status is one we monitor for delays
+        if trip_id and new_status in ("Planned", "Loading"):
             self.evaluate_trip(trip_id)
 
     def evaluate_trip(self, trip_id: Any) -> int:
@@ -62,7 +64,7 @@ class TripStatusEngine:
                 plate = row.get("truck_number") or "?"
                 status = row.get("status") or ""
                 created_raw = row.get("created_at")
-                if created_raw and status in ("pending", "loading"):
+                if created_raw and status in ("Planned", "Loading"):
                     created = None
                     raw_str = str(created_raw)
                     for fmt in ("%Y-%m-%d", "%Y-%m-%d %H:%M:%S", "%d/%m/%Y"):
@@ -74,7 +76,7 @@ class TripStatusEngine:
                     if created is None:
                         return 0
                     hours_idle = (datetime.now() - created).total_seconds() / 3600
-                    if hours_idle > delay_hours * 24:
+                    if hours_idle > delay_hours:
                         alert_truck_id = str(row.get("truck_id")) if row.get("truck_id") else plate
                         self._alert_mgr.create_alert(
                             AlertType.TRIP_DELAY, Severity.WARNING,
@@ -91,7 +93,7 @@ class TripStatusEngine:
     def evaluate_all(self) -> int:
         count = 0
         try:
-            trips = self._trip_service.get_by_statuses(["pending", "loading"])
+            trips = self._trip_service.get_by_statuses(["Planned", "Loading"])
             for t in trips:
                 count += self.evaluate_trip(str(t["id"]))
         except Exception as e:

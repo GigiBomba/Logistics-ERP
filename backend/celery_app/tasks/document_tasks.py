@@ -43,7 +43,14 @@ def generate_document_pdf(
         except ImportError:
             from services.document_automation.package_builder import PackageBuilder
             builder = PackageBuilder(db)
-            builder.export_as_pdf(document_id, output_path)
+            # Fallback: build a combined PDF from the document's trip
+            from repositories.document_repository import DocumentRepository
+            doc_record = DocumentRepository(db).get_by_id(document_id)
+            trip_id = doc_record.get("entity_id") if doc_record else None
+            if trip_id:
+                builder.build_combined_pdf(trip_id, output_dir)
+            else:
+                builder.build_zip(0, output_dir)
 
         return {
             "status": "ok",

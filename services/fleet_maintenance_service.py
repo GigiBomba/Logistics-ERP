@@ -443,37 +443,7 @@ class FleetMaintenanceService:
 
         result["trucks_needing_service"] = self._fleet_repo.count_active_maintenance_schedules()
 
-        # Single-pass overdue detection: fetch all schedules with current mileage
-        overdue_schedules = 0
-        now = datetime.now()
-        for s in self._fleet_repo.get_all_schedules_flat():
-            current_km = float(s.get("current_km") or 0)
-            last_km = s.get("last_done_km")
-            interval_km = s.get("interval_km")
-            if interval_km and last_km is not None:
-                next_km = float(last_km) + interval_km
-                if current_km >= next_km:
-                    overdue_schedules += 1
-                    continue
-            last_date = s.get("last_done_date")
-            interval_months = s.get("interval_months")
-            if interval_months and last_date:
-                try:
-                    last_dt = datetime.strptime(last_date, "%Y-%m-%d")
-                    due_dt = self._add_months(last_dt, interval_months)
-                    if due_dt <= now:
-                        overdue_schedules += 1
-                        continue
-                except Exception:
-                    pass
-            fixed_expiry = s.get("fixed_expiry_date")
-            if fixed_expiry:
-                try:
-                    if datetime.strptime(fixed_expiry, "%Y-%m-%d") <= now:
-                        overdue_schedules += 1
-                except Exception:
-                    pass
-        result["overdue_schedules"] = overdue_schedules
+        result["overdue_schedules"] = self._fleet_repo.count_overdue_schedules()
 
         type_cost = self._fleet_repo.get_maintenance_cost_by_type()
         result["cost_by_type"] = {r["maintenance_type"]: float(r["total"]) for r in type_cost}

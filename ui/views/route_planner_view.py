@@ -317,6 +317,7 @@ class QtRoutePlannerView(QWidget):
     # never ran, so the result was never delivered to the GUI and the
     # "Calculating…" state hung forever.)
     route_result_received = Signal(object, object, int)   # result, ctx, token
+    reverse_geocode_done = Signal(str, float, float)      # address, lat, lng
 
     def __init__(
         self,
@@ -372,6 +373,7 @@ class QtRoutePlannerView(QWidget):
         # GUI thread.  Queued connection is the default for cross-thread
         # signal/slot — exactly what we want.
         self.route_result_received.connect(self._on_route_result)
+        self.reverse_geocode_done.connect(self._on_reverse_geocode_result)
 
         self.stops_state = [
             normalize_existing_stop({"type": "start"}),
@@ -901,6 +903,10 @@ class QtRoutePlannerView(QWidget):
             item = self._stops_container_layout.takeAt(0)
             w = item.widget()
             if w is not None:
+                # Block signals on the field to prevent stale lambda callbacks
+                # from firing after the widget is removed from the layout
+                if hasattr(w, "field"):
+                    w.field.blockSignals(True)
                 w.deleteLater()
 
         self._stop_rows.clear()
@@ -1078,9 +1084,33 @@ class QtRoutePlannerView(QWidget):
     def _on_map_click(self, lat: float, lng: float) -> None:
         if not self._click_to_add_enabled:
             return
+        self._reverse_geocode_async(lat, lng)
 
-        address = self._reverse_geocode(lat, lng)
+    def _reverse_geocode_async(self, lat: float, lng: float) -> None:
+        """Fire a daemon thread to reverse-geocode and emit result via signal."""
+        import threading
 
+        def _work():
+            try:
+                import requests
+                url = "https://nominatim.openstreetmap.org/reverse"
+                params = {"lat": lat, "lon": lng, "format": "json", "zoom": 14}
+                headers = {"User-Agent": "OperionERP/1.0"}
+                resp = requests.get(url, params=params, headers=headers, timeout=5)
+                if resp.ok:
+                    data = resp.json()
+                    address = data.get("display_name", "") or f"{lat:.5f}, {lng:.5f}"
+                else:
+                    address = f"{lat:.5f}, {lng:.5f}"
+            except Exception:
+                address = f"{lat:.5f}, {lng:.5f}"
+            self.reverse_geocode_done.emit(address, lat, lng)
+
+        t = threading.Thread(target=_work, daemon=True, name="ReverseGeocode")
+        t.start()
+
+    def _on_reverse_geocode_result(self, address: str, lat: float, lng: float) -> None:
+        """Slot — called on GUI thread when reverse geocode completes."""
         new_stop = normalize_existing_stop({
             "type": "stop",
             "lat": lat,
@@ -1090,21 +1120,6 @@ class QtRoutePlannerView(QWidget):
         })
         self.stops_state.insert(len(self.stops_state) - 1, new_stop)
         self._render_stops_list()
-
-    @staticmethod
-    def _reverse_geocode(lat: float, lng: float) -> str:
-        try:
-            import requests
-            url = "https://nominatim.openstreetmap.org/reverse"
-            params = {"lat": lat, "lon": lng, "format": "json", "zoom": 14}
-            headers = {"User-Agent": "OperionERP/1.0"}
-            resp = requests.get(url, params=params, headers=headers, timeout=5)
-            if resp.ok:
-                data = resp.json()
-                return data.get("display_name", "") or f"{lat:.5f}, {lng:.5f}"
-        except Exception:
-            pass
-        return f"{lat:.5f}, {lng:.5f}"
 
     # ── Calculation ────────────────────────────────────────────────────────────
 
@@ -1298,6 +1313,13 @@ class QtRoutePlannerView(QWidget):
                     stop["resolved"] = True
                 except Exception:
                     pass
+            # Populate address from coordinates if the stop has no address
+            sid = stop.get("id", "")
+            if sid and not stop.get("address") and stop.get("lat") is not None and stop.get("lon") is not None:
+                fallback = f"{stop['lat']:.5f}, {stop['lon']:.5f}"
+                stop["address"] = fallback
+                if sid in self.stop_vars and not self.stop_vars[sid]:
+                    self.stop_vars[sid] = fallback
 
     def _apply_compliance(self, compliance) -> None:
         if not compliance:
@@ -1489,13 +1511,10 @@ class QtRoutePlannerView(QWidget):
             return None
 
     def _on_share_via_os(self) -> None:
-        """Open the OS share sheet with the route file."""
+        """Export route file and open its containing folder in Explorer."""
         path = self._on_share_export_file()
         if not path:
             return
-        # Use QDesktopServices to open the file's containing folder as a
-        # rudimentary share.  A full Windows Share contract integration
-        # would require winrt, which is not currently a dependency.
         QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(path)))
 
     def _on_open_in_gmaps(self) -> None:
@@ -1662,6 +1681,15 @@ class QtRoutePlannerView(QWidget):
             except Exception:
                 pass
             self._event_subscribed = False
+        # Cancel any in-flight route calculation and wait for completion
+        with contextlib.suppress(Exception):
+            if self._core is not None:
+                self._core.cancel_calculation()
+                runner = getattr(self._core, "_runner", None)
+                if runner is not None:
+                    thread = getattr(runner, "_current_thread", None)
+                    if thread is not None and thread.is_alive():
+                        thread.join(timeout=2.0)
         with contextlib.suppress(Exception):
             self.map_widget.destroy()
         self._map_renderer = None

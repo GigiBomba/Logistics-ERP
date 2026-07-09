@@ -933,10 +933,10 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
                 adr_entries.append({
                     'un_no': entries[0].text().strip(),
                     'adr_class': entries[1].text().strip(),
-                    'classification_code': entries[2].text().strip(),
-                    'packaging_group': entries[3].text().strip(),
-                    'hazard_label': entries[4].text().strip(),
-                    'package_count': entries[5].text().strip(),
+                    'packing_group': entries[2].text().strip(),
+                    'tunnel_code': entries[3].text().strip(),
+                    'quantity': entries[4].text().strip(),
+                    'net_weight': entries[5].text().strip(),
                 })
         if adr_entries:
             data['adr_info_json'] = json.dumps(adr_entries)

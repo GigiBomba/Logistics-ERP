@@ -19,6 +19,7 @@ from backend.api.v1 import (
     settings,
     tacho,
     trips,
+    users,
 )
 
 api_v1_router = APIRouter(prefix="/api/v1")
@@ -40,3 +41,4 @@ api_v1_router.include_router(tacho.router)
 api_v1_router.include_router(invoices.router)
 api_v1_router.include_router(cmr.router)
 api_v1_router.include_router(receipts.router)
+api_v1_router.include_router(users.router)

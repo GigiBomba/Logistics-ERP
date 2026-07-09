@@ -18,6 +18,7 @@ from fastapi.responses import JSONResponse
 from backend.api.v1.router import api_v1_router
 from backend.config import BackendSettings
 from backend.middleware.auth_middleware import AuthMiddleware
+from backend.middleware.logging_middleware import LoggingMiddleware
 from backend.middleware.rate_limit_middleware import RateLimitMiddleware
 
 logger = logging.getLogger(__name__)
@@ -51,6 +52,7 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "X-API-Key"],
     )
 
+    app.add_middleware(LoggingMiddleware)
     app.add_middleware(AuthMiddleware)
     app.add_middleware(RateLimitMiddleware)
 

@@ -131,9 +131,7 @@ class TestRunRouteAsync:
     def test_run_route_async_calls_callback_with_result(self, runner):
         callback = MagicMock()
         route_service = MagicMock()
-        route_service.calculate_route.return_value = [
-            {"distance_km": 150.0, "duration_min": 120.0},
-        ]
+        route_service.calculate_route.return_value = {"distance_km": 150.0, "duration_min": 120.0}
 
         stops_state = [
             {"resolved": True, "lat": "45.0", "lon": "24.0"},
@@ -154,8 +152,8 @@ class TestRunRouteAsync:
 
         callback.assert_called_once()
         args = callback.call_args[0][0]
-        assert isinstance(args, list)
-        assert args[0]["distance_km"] == 150.0
+        assert isinstance(args, dict)
+        assert args["distance_km"] == 150.0
 
     def test_run_route_async_error_returns_error_dict(self, runner):
         callback = MagicMock()
@@ -207,17 +205,21 @@ class TestRunRouteAsync:
             {"resolved": True, "lat": "46.0", "lon": "25.0"},
         ]
         route_service = MagicMock()
-        route_service.calculate_route.return_value = [{"distance_km": 100.0}]
+        route_service.calculate_route.return_value = {"distance_km": 100.0}
 
-        # Start first run
-        runner.run_route_async(
-            route_service=route_service,
-            stops_state=stops_state,
-            truck={}, profile="fastest",
-            callback=callback1,
-        )
+        # The first run starts a long-lived thread that blocks on route_service.
+        # We patch _resolve_stops to simulate cancellation quickly.
+        with patch.object(runner, "_resolve_stops", side_effect=InterruptedError("cancelled")):
+            runner.run_route_async(
+                route_service=route_service,
+                stops_state=stops_state,
+                truck={}, profile="fastest",
+                callback=callback1,
+            )
 
-        # Start second immediately (should cancel first)
+        runner._current_thread.join(timeout=5.0)
+
+        # Start second run (first should have terminated)
         callback2 = MagicMock()
         runner.run_route_async(
             route_service=route_service,
@@ -236,7 +238,7 @@ class TestLegacyFunction:
     def test_run_route_async_function(self):
         callback = MagicMock()
         route_service = MagicMock()
-        route_service.calculate_route.return_value = [{"distance_km": 100.0}]
+        route_service.calculate_route.return_value = {"distance_km": 100.0}
 
         stops_state = [
             {"resolved": True, "lat": "45.0", "lon": "24.0"},

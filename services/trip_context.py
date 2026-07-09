@@ -471,15 +471,15 @@ def load_trip_from_db(db_manager, trip_db_id) -> Optional[TripContext]:
                 'total_cost': None
             },
             'calculator_sync': True,
-            'status': row.get('status', 'saved')
+            'status': row.get('status', 'draft')
         }
         tc = TripContext.from_dict(data)
 
     # mark loaded as saved
     try:
-        tc.status = row['status'] if row.get('status') else 'saved'
+        tc.status = row['status'] if row.get('status') else 'draft'
     except Exception:
-        tc.status = 'saved'
+        tc.status = 'draft'
 
     # Notify listeners so UI and calculator refresh from TripContext
     try:

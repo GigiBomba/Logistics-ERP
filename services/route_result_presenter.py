@@ -6,6 +6,15 @@ from typing import Any
 from services.currency_service import CURRENCY_SYMBOLS
 from services.i18n import t
 
+# Module-level singleton to avoid creating a new ExchangeRateService instance per call
+_exchange_rate_service: Any = None
+def _get_exchange_rate_service():
+    global _exchange_rate_service
+    if _exchange_rate_service is None:
+        from services.exchange_rate_service import ExchangeRateService
+        _exchange_rate_service = ExchangeRateService()
+    return _exchange_rate_service
+
 def _fmt_unit(value: int, singular_key: str, plural_key: str) -> str:
     """Return '1 day' or '2 days' using the correct i18n key."""
     return f"{value} {t(singular_key if value == 1 else plural_key)}"
@@ -58,8 +67,7 @@ def format_success_info(
     if cost_info.get("fuel_cost"):
         fuel_cost = float(cost_info.get("fuel_cost") or 0)
         if preferred_currency.upper() != "EUR":
-            from services.exchange_rate_service import ExchangeRateService
-            fuel_cost = ExchangeRateService().convert(fuel_cost, "EUR", preferred_currency.upper())
+            fuel_cost = _get_exchange_rate_service().convert(fuel_cost, "EUR", preferred_currency.upper())
         symbol = CURRENCY_SYMBOLS.get(preferred_currency.upper(), preferred_currency.upper())
         lines.append(f"💰 {t('result.fuel_cost').format(f'{fuel_cost:.2f} {symbol}')}")
     return "\n".join(lines)
@@ -88,7 +96,7 @@ def parse_error_message(result: dict[str, Any]) -> tuple[str, str] | None:
     elif "actively refused" in lower or "connection refused" in lower or "can't connect" in lower:
         user_msg = t("result.routing_server_off")
     elif "connection" in lower:
-        user_msg = t("result.connection_error").format("192.168.0.93:8989")
+        user_msg = t("result.connection_error").format("routing server")
     elif "invalid" in lower or "coordinates" in lower:
         user_msg = f"📍 {t('result.invalid_coords')}:\n{error_msg}"
     elif "too far" in lower or "not found" in lower:
@@ -103,6 +111,8 @@ def parse_error_message(result: dict[str, Any]) -> tuple[str, str] | None:
 
 
 def extract_route_from_result(result: Any) -> dict[str, Any] | None:
+    if isinstance(result, dict):
+        return result if result.get("distance_km") is not None else None
     if isinstance(result, list) and result:
         first = result[0]
         return first if isinstance(first, dict) else None

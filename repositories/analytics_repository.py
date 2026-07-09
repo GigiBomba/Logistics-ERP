@@ -177,7 +177,7 @@ class AnalyticsRepository(BaseRepository):
             WHERE i.status = 'Unpaid' {self._company_filter('t')}
         """
         try:
-            rows = self._fetchall(query)
+            rows = self._fetchall(query, self._company_params())
             for r in rows:
                 due_str = r.get("due_date")
                 if not due_str:
@@ -348,7 +348,15 @@ class AnalyticsRepository(BaseRepository):
         Returns: driver, trip_count, total_km, revenue, profit, profit_per_km.
         Excludes Unassigned drivers.
         """
-        clause, params = self._date_clause(from_date, to_date)
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
+        date_clause = ""
+        date_params: list = []
+        if from_date and to_date:
+            date_clause = "WHERE created_at >= ? AND created_at <= ?"
+            date_params = [from_date, to_date]
+        full_where = f"{date_clause} {company_filter}" if date_clause else f"WHERE 1=1 {company_filter}"
+        full_params = tuple(date_params + company_params)
         return self._fetchall(f"""
             SELECT COALESCE(NULLIF(driver_name, ''), 'Driver') AS driver,
                    COUNT(*) AS trip_count,
@@ -358,12 +366,12 @@ class AnalyticsRepository(BaseRepository):
                    CASE WHEN SUM(distance_km) > 0
                         THEN ROUND(SUM(net_profit) * 1.0 / SUM(distance_km), 4)
                         ELSE 0 END AS profit_per_km
-            FROM trips WHERE 1=1 {clause.replace('WHERE', 'AND')}
+            FROM trips {full_where}
               AND driver_name IS NOT NULL AND driver_name != ''
               AND driver_name != 'Unassigned'
             GROUP BY driver_name
             ORDER BY profit DESC LIMIT 15
-        """, tuple(params))
+        """, full_params)
 
     def get_document_analytics(self):
         inv_row = self._fetchone(

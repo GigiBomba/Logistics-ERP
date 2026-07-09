@@ -12,7 +12,7 @@ class TripService:
         self._route_repo = RouteRepository(db)
 
     def get_filtered(self, search: str = "", status: str = "", limit: int = 200) -> list[dict[str, Any]]:
-        return self.db.get_filtered_trips(search, status=status, limit=limit)
+        return self._trip_repo.get_filtered(search=search, truck="", status=status, limit=limit)
 
     def get_by_id(self, trip_id: int) -> Optional[dict[str, Any]]:
         return self._trip_repo.get_by_id(trip_id)

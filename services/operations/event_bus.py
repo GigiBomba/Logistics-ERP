@@ -1,6 +1,7 @@
 import logging
 import threading
 import uuid
+from collections import deque
 from datetime import datetime
 from typing import Any, Callable, Optional
 
@@ -113,8 +114,7 @@ class EventBus:
         self._initialized = True
         self._subscribers: dict[str, list[Callable]] = {ev: [] for ev in ALL_EVENTS}
         self._subscribers_lock = threading.Lock()
-        self._history: list[dict[str, Any]] = []
-        self._history_max = 100
+        self._history: deque[dict[str, Any]] = deque(maxlen=100)
         logger.info("EventBus initialized with %d event types", len(ALL_EVENTS))
 
     # ── Public API ─────────────────────────────────────────────────
@@ -126,11 +126,8 @@ class EventBus:
             "data": data or {},
             "timestamp": datetime.now().isoformat(),
         }
-        self._history.append(ev)
-        if len(self._history) > self._history_max:
-            self._history.pop(0)
-
         with self._subscribers_lock:
+            self._history.append(ev)
             callbacks = list(self._subscribers.get(event_type, []))
         if not callbacks:
             logger.debug("Event %s published (no subscribers)", event_type)
@@ -146,7 +143,8 @@ class EventBus:
         with self._subscribers_lock:
             if event_type not in self._subscribers:
                 self._subscribers[event_type] = []
-            self._subscribers[event_type].append(callback)
+            if callback not in self._subscribers[event_type]:
+                self._subscribers[event_type].append(callback)
         logger.debug("Subscriber registered for %s", event_type)
 
     def unsubscribe(self, event_type: str, callback: Callable) -> None:
@@ -157,9 +155,11 @@ class EventBus:
         logger.debug("Subscriber unregistered for %s", event_type)
 
     def get_history(self, event_type: Optional[str] = None, limit: int = 50) -> list[dict]:
+        with self._subscribers_lock:
+            items = list(self._history)
         if event_type:
-            return [e for e in self._history[-limit:] if e["type"] == event_type]
-        return list(self._history[-limit:])
+            return [e for e in items[-limit:] if e["type"] == event_type]
+        return items[-limit:]
 
     def inject_db(self, db) -> None:
         """Inject a shared DatabaseManager reference so no new connection is created."""
@@ -176,4 +176,10 @@ class EventBus:
             return trip.get("archived") == 1 if trip else False
         except Exception:
             return False
+
+
+# ── Module-level shared singleton ────────────────────────────────────
+# Use this import in views so all subscribe/publish calls go through the
+# same EventBus instance.  ``EventBus()`` also returns this singleton.
+shared_event_bus = EventBus()
 

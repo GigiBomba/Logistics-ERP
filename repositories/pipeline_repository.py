@@ -39,7 +39,7 @@ def _now_iso() -> str:
         # Re-check after acquiring lock (another thread may have refreshed)
         if _NOW_CACHE and now - _NOW_CACHE_TS < 1.0:
             return _NOW_CACHE
-        _NOW_CACHE = datetime.now().isoformat(sep=" ")
+        _NOW_CACHE = datetime.now().isoformat()
         _NOW_CACHE_TS = now
         return _NOW_CACHE
 
@@ -108,7 +108,7 @@ class PipelineRepository(BaseRepository):
             "created_at": now,
             "updated_at": now,
         }
-        self._validate_columns(data, extra_allowed={"company_id"})
+        self._validate_columns(data, extra_allowed={"company_id"}, columns=self.COLUMNS_PIPELINE_RUNS)
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
@@ -470,7 +470,7 @@ class PipelineRepository(BaseRepository):
             "created_at": now,
             "updated_at": now,
         }
-        self._validate_columns(data, extra_allowed={"company_id"})
+        self._validate_columns(data, extra_allowed={"company_id"}, columns=self.COLUMNS_PACKAGE)
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
@@ -491,7 +491,7 @@ class PipelineRepository(BaseRepository):
     ) -> None:
         fields = {k: v for k, v in locals().items()
                   if k != "self" and k != "package_id" and v is not None}
-        self._validate_columns(fields, extra_allowed={"company_id"})
+        self._validate_columns(fields, extra_allowed={"company_id"}, columns=self.COLUMNS_PACKAGE)
         sets: List[str] = []
         params: List[Any] = list(self._company_params())
         if status is not None:
@@ -536,7 +536,7 @@ class PipelineRepository(BaseRepository):
             "document_id": document_id,
             "sort_order": sort_order,
         }
-        self._validate_columns(data, extra_allowed={"company_id"})
+        self._validate_columns(data, extra_allowed={"company_id"}, columns=self.COLUMNS_PACKAGE_ITEMS)
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)

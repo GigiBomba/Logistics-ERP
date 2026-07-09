@@ -145,7 +145,6 @@ class QtRouteMapRenderer:
                 geometry.append(geometry_raw[-1])
 
         try:
-            self.clear_stop_markers()
             self.clear_route_overlays()
 
             # Alternative route (comparison)

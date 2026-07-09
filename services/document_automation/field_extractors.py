@@ -256,5 +256,12 @@ def normalize_date(date_str: str) -> str:
             return datetime.strptime(s, fmt).strftime("%Y-%m-%d")
         except ValueError:
             continue
+    # Fuzzy-fallback via dateutil parser for non-standard formats.
+    try:
+        from dateutil import parser as dateutil_parser
+        dt = dateutil_parser.parse(s, fuzzy=True)
+        return dt.strftime("%Y-%m-%d")
+    except Exception:
+        pass
     logger.warning("normalize_date: unable to parse '%s'", date_str)
     return ""

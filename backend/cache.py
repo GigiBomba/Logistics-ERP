@@ -1,4 +1,5 @@
 import json
+import threading
 from typing import Any, Optional
 
 import redis
@@ -90,11 +91,14 @@ class RedisCache:
 
 
 _cache_instance: Optional[RedisCache] = None
+_cache_lock = threading.Lock()
 
 
 def get_cache() -> RedisCache:
     global _cache_instance
     if _cache_instance is None:
-        _cache_instance = RedisCache(BackendSettings())
-        _cache_instance.connect()
+        with _cache_lock:
+            if _cache_instance is None:  # double-checked locking
+                _cache_instance = RedisCache(BackendSettings())
+                _cache_instance.connect()
     return _cache_instance

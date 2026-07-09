@@ -502,14 +502,13 @@ class TestRouteServiceFullFlow(unittest.TestCase):
         resp = self._make_gh_response()
         self.svc.client.session.get.return_value = resp
         self.svc.client.session.post.return_value = resp
-        results = self.svc.calculate_route(
+        result = self.svc.calculate_route(
             self.short_stops,
             profile="truck",
             stops_are_coordinates=True,
         )
-        self.assertEqual(len(results), 1)
-        self.assertIn("distance_km", results[0])
-        self.assertFalse(results[0].get("cached", False))
+        self.assertIn("distance_km", result)
+        self.assertFalse(result.get("cached", False))
 
     def test_calculate_route_uses_cache(self):
         """When route cache has an entry, it should be returned."""
@@ -518,13 +517,13 @@ class TestRouteServiceFullFlow(unittest.TestCase):
             "truck",
             {"distance_km": 100.0, "cached": False},
         )
-        results = self.svc.calculate_route(
+        result = self.svc.calculate_route(
             self.short_stops,
             profile="truck",
             stops_are_coordinates=True,
             use_cache=True,
         )
-        self.assertTrue(results[0].get("cached", False))
+        self.assertTrue(result.get("cached", False))
 
     def test_calculate_route_with_truck_params(self):
         """Truck constraint engine params should be passed to GH client."""
@@ -532,13 +531,13 @@ class TestRouteServiceFullFlow(unittest.TestCase):
         self.svc.client.session.get.return_value = resp
         self.svc.client.session.post.return_value = resp
         self.svc.constraint_engine.build_params.return_value = {"weight": "40000"}
-        results = self.svc.calculate_route(
+        result = self.svc.calculate_route(
             self.short_stops,
             profile="truck",
             truck={"id": "T1", "weight": 40000},
             stops_are_coordinates=True,
         )
-        self.assertEqual(len(results), 1)
+        self.assertIsNotNone(result)
 
 
 if __name__ == "__main__":

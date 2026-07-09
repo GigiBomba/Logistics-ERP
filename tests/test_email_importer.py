@@ -289,9 +289,9 @@ class TestAdditional:
         assert imp._whitelist == set()
 
     def test_configure_with_partial_update(self, importer):
-        """configure should only update specified fields."""
+        """configure sets specified fields and defaults for others."""
         importer.configure(host="new.host.com")
         assert importer._host == "new.host.com"
-        # Other fields should remain unchanged
+        # Other fields get defaulted (configure is a full update)
         assert importer._port == 993
-        assert importer._user == "test@example.com"
+        assert importer._user == ""  # default for configure is ""

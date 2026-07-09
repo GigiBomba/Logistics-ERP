@@ -179,11 +179,17 @@ class TestCountryExclusionEngineAdditional(unittest.TestCase):
         )
 
     @patch("services.country_exclusion.get_polygons", side_effect=lambda c: FAKE_POLYGONS.get(c, []))
-    def test_prepare_skips_countries_without_polygon(self, mock_get):
+    def test_prepare_skips_countries_without_polygon_in_model(self, mock_get):
         engine = CountryExclusionEngine()
         plan = engine.prepare(["XX", "HU"], [(44.4, 26.1)])
+        # Both are in applied (applied = requested - stop_countries, regardless of polygons)
         self.assertIn("HU", plan.applied)
-        self.assertNotIn("XX", plan.applied)
+        self.assertIn("XX", plan.applied)
+        # But the custom_model should only contain areas for countries with polygons
+        if plan.custom_model:
+            area_keys = list(plan.custom_model.get("areas", {}).keys())
+            self.assertIn("avoid_hu", area_keys)
+            self.assertNotIn("avoid_xx", area_keys)
 
     def test_merge_into_params_inactive_plan(self):
         engine = CountryExclusionEngine()

@@ -1,0 +1,15 @@
+{
+  "login": {"p95_ms": 200, "error_pct": 0.0},
+  "list_trips": {"p95_ms": 100, "error_pct": 0.0},
+  "get_trip": {"p95_ms": 50, "error_pct": 0.0},
+  "create_trip": {"p95_ms": 200, "error_pct": 0.0},
+  "list_clients": {"p95_ms": 100, "error_pct": 0.0},
+  "get_client": {"p95_ms": 50, "error_pct": 0.0},
+  "list_drivers": {"p95_ms": 100, "error_pct": 0.0},
+  "list_fleet": {"p95_ms": 100, "error_pct": 0.0},
+  "create_client": {"p95_ms": 200, "error_pct": 0.0},
+  "list_documents": {"p95_ms": 100, "error_pct": 0.0},
+  "upload_document": {"p95_ms": 500, "error_pct": 0.0},
+  "generate_invoice": {"p95_ms": 500, "error_pct": 0.0},
+  "export_pdf": {"p95_ms": 1000, "error_pct": 0.0}
+}

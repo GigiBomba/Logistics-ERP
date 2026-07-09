@@ -8,7 +8,7 @@ class TripRepository(BaseRepository):
     TABLE = "trips"
     TABLE_CMR_COUNTER = "cmr_counter"
     COLUMNS = [
-        "id", "created_at", "updated_at", "truck_number", "driver_name", "client_name",
+        "id", "created_at", "truck_number", "driver_name", "client_name",
         "distance_km", "total_price_eur", "rate_per_km", "gross_per_km", "net_profit",
         "start_date", "end_date", "payment_date", "extra_costs", "fuel_cost", "toll_cost",
         "salary_cost", "currency", "status", "loading_country", "delivery_country",
@@ -17,7 +17,7 @@ class TripRepository(BaseRepository):
         "cargo_description", "cargo_marks", "package_count", "package_type", "gross_weight_kg",
         "volume_m3", "hs_code", "carrier_instructions", "carrier_reservations",
         "special_agreements", "carriage_payer", "documents_attached", "place_of_loading",
-        "place_of_loading_date", "adr_info_json", "cmr_status", "cmr_remarks", "month",
+        "place_of_loading_date", "adr_info_json", "cmr_status", "cmr_remarks",
         "company_id",
     ]
     COLUMNS_CMR_COUNTER = ["id", "year", "sequence_number"]

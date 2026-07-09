@@ -25,7 +25,6 @@ Usage::
 
 from __future__ import annotations
 
-import concurrent.futures
 import itertools
 import logging
 
@@ -65,25 +64,6 @@ from ui.plotly_theme import (
 
 _log = logging.getLogger(__name__)
 
-# ── Thread-pool for running blocking calls with a timeout ───────────
-_THREAD_POOL: concurrent.futures.ThreadPoolExecutor | None = None
-
-
-def _get_thread_pool() -> concurrent.futures.ThreadPoolExecutor:
-    global _THREAD_POOL
-    if _THREAD_POOL is None:
-        _THREAD_POOL = concurrent.futures.ThreadPoolExecutor(max_workers=2)
-    return _THREAD_POOL
-
-
-def _run_with_timeout(fn, timeout: float = 5.0):
-    """Run *fn* in a worker thread and return its result.
-
-    Raises ``concurrent.futures.TimeoutError`` if *fn* does not
-    complete within *timeout* seconds.
-    """
-    return _get_thread_pool().submit(fn).result(timeout=timeout)
-
 # ── Rendering helpers ──────────────────────────────────────────────
 
 def figure_to_svg_bytes(
@@ -115,20 +95,18 @@ def figure_to_svg_bytes(
     """
     try:
         # Plotly 5.x path — pure Python, no engine needed.
-        # Run in a thread with a short timeout so a hung ``to_svg``
-        # (e.g. a stray browser-open attempt) doesn't block the caller.
-        # Skip entirely on Plotly 6.x where ``to_svg`` was removed.
+        # This function is always called from a QThreadPool worker
+        # (``_RenderJob.run``) so blocking here is safe — the GUI
+        # thread is never blocked.
         if hasattr(pio, "to_svg"):
-            svg_str: str = _run_with_timeout(
-                lambda: pio.to_svg(fig), timeout=5.0,
-            )
+            svg_str: str = pio.to_svg(fig)
             svg_str = svg_str.replace(
                 "<svg ",
                 f'<svg width="{int(width * scale)}" height="{int(height * scale)}" ',
                 1,
             )
             return svg_str.encode("utf-8")
-    except (AttributeError, concurrent.futures.TimeoutError):
+    except AttributeError:
         pass
     except Exception:
         _log.warning(
@@ -321,11 +299,15 @@ class _RenderJob(QRunnable):
     """A single Plotly SVG render that runs in a worker thread.
 
     The job is submitted to ``QThreadPool``.  When the render finishes
-    (or fails) the result is delivered back to the main thread via the
-    ``RenderManager._signals.delivered`` queued signal.  Callbacks are
-    identified by a unique ``tag`` token so multiple consumers (e.g.
-    several ``PlotlyChartWidget`` instances) can each receive their
-    own pixmap.
+    (or fails) the raw SVG bytes are delivered back to the main thread
+    via the ``RenderManager._signals.delivered`` queued signal.
+    Rasterization to ``QPixmap`` happens on the main thread (see
+    ``PlotlyChartWidget._on_render_delivered``) because ``QSvgRenderer``
+    and ``QPixmap`` are not thread-safe per Qt docs.
+
+    Callbacks are identified by a unique ``tag`` token so multiple
+    consumers (e.g. several ``PlotlyChartWidget`` instances) can each
+    receive their own result.
 
     Lifecycle: ``setAutoDelete(True)`` lets Qt reclaim the C++ object
     after ``run()`` returns.  We deliberately keep a *Python* reference
@@ -356,22 +338,26 @@ class _RenderJob(QRunnable):
 
     @Slot()
     def run(self) -> None:
-        """Render the figure to a ``QPixmap`` and emit it to the main thread."""
+        """Render the figure to raw SVG bytes and emit them to the main thread.
+
+        ``QSvgRenderer`` / ``QPixmap`` creation stays on the main thread
+        (see ``PlotlyChartWidget._on_render_delivered``).
+        """
         try:
-            svg_bytes = figure_to_svg_bytes(
+            svg_bytes: bytes = figure_to_svg_bytes(
                 self.fig, self.width, self.height, self.scale
             )
-            pixmap = _svg_bytes_to_pixmap(
-                svg_bytes, self.width, self.height, self.scale
-            )
+            # Deliver SVG bytes (thread-safe) — rasterization happens on
+            # the GUI thread where QPixmap is allowed.
+            payload = QByteArray(svg_bytes)
         except BaseException:
             _log.exception("Async SVG render failed")
-            pixmap = _error_pixmap(self.width, self.height, self.scale)
+            payload = QByteArray()
         # The signals object is a process-wide singleton owned by
         # ``RenderManager``.  Guard against the case where the manager
         # has already been torn down (e.g. during interpreter exit).
         try:
-            self.signals.delivered.emit(self.tag, pixmap)
+            self.signals.delivered.emit(self.tag, payload)
         except RuntimeError:
             _log.debug("Render delivered after manager teardown; dropping pixmap")
 
@@ -617,6 +603,10 @@ class PlotlyChartWidget(QFrame):
         # actually paints the label.
         manager = get_render_manager()
         manager.signals.delivered.connect(self._on_render_delivered, Qt.QueuedConnection)
+        # If the widget is destroyed before a queued signal arrives,
+        # disconnect and cancel any in-flight render to avoid accessing
+        # a dangling C++ widget.
+        self.destroyed.connect(self._on_destroyed_cleanup)
 
     # ── public API ─────────────────────────────────────────────
 
@@ -812,8 +802,11 @@ class PlotlyChartWidget(QFrame):
         self._pixmap_cache[(fig_id, w, h)] = pixmap
 
     @Slot(object, object)
-    def _on_render_delivered(self, tag: object, pixmap: QPixmap) -> None:
-        """Apply the delivered pixmap to the label, ignoring stale tags.
+    def _on_render_delivered(self, tag: object, payload: QByteArray) -> None:
+        """Rasterize delivered SVG bytes on the GUI thread and apply to label.
+
+        ``QSvgRenderer`` / ``QPixmap`` are not thread-safe, so the worker
+        thread emits raw SVG bytes and we rasterize here on the main thread.
 
         Also stores the pixmap in the per-widget LRU cache so the
         same figure at the same size is a free hit on the next
@@ -824,6 +817,13 @@ class PlotlyChartWidget(QFrame):
             return
         self._accepted_tag = tag
         self._pending_tag = None
+        if payload is None or payload.isEmpty():
+            self._render_empty()
+            return
+        # Rasterize SVG → QPixmap on the GUI thread (thread-safe here).
+        pixmap = _svg_bytes_to_pixmap(
+            bytes(payload), self._width, self._height, self._scale
+        )
         if pixmap is None or pixmap.isNull():
             self._render_empty()
             return
@@ -845,6 +845,25 @@ class PlotlyChartWidget(QFrame):
         pixmap = _svg_bytes_to_pixmap(svg_bytes, w, h, self._scale)
         if pixmap is not None and not pixmap.isNull():
             self._label.setPixmap(pixmap)
+
+    def _on_destroyed_cleanup(self) -> None:
+        """Clean up render manager connections when the widget is destroyed.
+
+        Prevents access to a dangling C++ widget if a queued
+        ``delivered`` signal arrives after the widget is gone.
+        """
+        if self._pending_tag is not None:
+            try:
+                get_render_manager().cancel(self._pending_tag)
+            except Exception:
+                pass
+            self._pending_tag = None
+        try:
+            get_render_manager().signals.delivered.disconnect(
+                self._on_render_delivered
+            )
+        except (TypeError, RuntimeError):
+            pass
 
     # ── Qt overrides ───────────────────────────────────────────
 

@@ -18,7 +18,7 @@ logger = logging.getLogger("fuel_price")
 FALLBACK_FILE = resource_path("data/fallback_fuel_prices.json")
 CACHE_FILE = data_path("data/fuel_prices_cache.json")
 CACHE_TTL_SECONDS = 86400  # 24 hours
-REQUEST_TIMEOUT = 10
+REQUEST_TIMEOUT = 8
 USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
 SCRAPE_URL = "https://www.globalpetrolprices.com/{country}/diesel_prices/"
 
@@ -166,25 +166,39 @@ class FuelPriceService(GracefulWorker):
         failed_countries = []
         countries = list(_COUNTRY_URL_NAMES.keys())
 
-        from concurrent.futures import ThreadPoolExecutor, as_completed
+        from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
 
-        with ThreadPoolExecutor(max_workers=8) as executor:
-            future_map = {executor.submit(self._fetch_single_country, code): code for code in countries}
-            for future in as_completed(future_map):
-                code = future_map[future]
-                try:
-                    price = future.result()
-                    if price is not None:
-                        with self._prices_lock:
-                            self._prices[code] = price
-                        success_count += 1
-                    else:
+        executor = ThreadPoolExecutor(max_workers=8)
+        future_map = {executor.submit(self._fetch_single_country, code): code for code in countries}
+        pending = set(future_map.keys())
+        try:
+            while pending and not self.stop_requested:
+                done_set, pending = wait(pending, timeout=1.0, return_when=FIRST_COMPLETED)
+                if not done_set:
+                    continue  # timeout – loop back and check stop_requested
+                for future in done_set:
+                    code = future_map[future]
+                    try:
+                        price = future.result()
+                        if price is not None:
+                            with self._prices_lock:
+                                self._prices[code] = price
+                            success_count += 1
+                        else:
+                            fail_count += 1
+                            failed_countries.append(code)
+                    except Exception as e:
+                        logger.warning("Failed to fetch fuel price for %s: %s", code, e)
                         fail_count += 1
                         failed_countries.append(code)
-                except Exception as e:
-                    logger.warning("Failed to fetch fuel price for %s: %s", code, e)
-                    fail_count += 1
-                    failed_countries.append(code)
+        finally:
+            for future in pending:
+                future.cancel()
+            executor.shutdown(wait=False)
+
+        if self.stop_requested:
+            logger.info("Fuel price refresh aborted by shutdown request")
+            return success_count > 0
 
         if success_count > 0:
             self._last_updated = time.time()
@@ -288,12 +302,12 @@ class FuelPriceService(GracefulWorker):
                 logger.warning("Fallback fuel prices file not found: %s", FALLBACK_FILE)
                 self._fallback_prices = {"DEFAULT": 1.55}
                 with self._prices_lock:
-                    self._prices = {"DEFAULT": 1.55}
+                    self._prices.update({"DEFAULT": 1.55})
         except Exception as e:
             logger.error("Failed to load fallback fuel prices: %s", e)
             self._fallback_prices = {"DEFAULT": 1.55}
             with self._prices_lock:
-                self._prices = {"DEFAULT": 1.55}
+                self._prices.update({"DEFAULT": 1.55})
 
     # ── Cache persistence ──────────────────────────────────────────────
 
