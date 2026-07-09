@@ -1,0 +1,6 @@
+services:
+  calculatorlogistica:
+    image: calculatorlogistica
+    build:
+      context: .
+      dockerfile: ./Dockerfile

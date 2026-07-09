@@ -5,10 +5,12 @@ to be set in the environment.
 """
 
 import os
+import time
 
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.api.v1.auth import _failed_attempts
 from backend.main import create_app
 from backend.security import decode_access_token
 
@@ -40,6 +42,12 @@ def _set_env():
 def client():
     app = create_app()
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _clear_lockout():
+    """Clear brute-force lockout state between tests."""
+    _failed_attempts.clear()
 
 
 class TestAuthTokenEndpoint:
@@ -110,6 +118,98 @@ class TestAuthTokenEndpoint:
         """Existing public endpoints (e.g. health) must not require a token."""
         response = client.get("/api/v1/health")
         assert response.status_code == 200
+
+    # ── brute-force lockout ────────────────────────────────────────────────
+
+    def test_lockout_returns_429_after_threshold(self, client):
+        """5 consecutive bad passwords → 429 Too Many Requests."""
+        for _ in range(5):
+            client.post("/api/v1/auth/token", data={
+                "username": _TEST_ADMIN_EMAIL,
+                "password": "WRONG",
+            })
+        resp = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": "WRONG",
+        })
+        assert resp.status_code == 429
+        assert "Too many login attempts" in resp.json()["detail"]
+
+    def test_lockout_resets_after_success(self, client):
+        """4 failures then a successful login → 200 (lockout clears)."""
+        for _ in range(4):
+            client.post("/api/v1/auth/token", data={
+                "username": _TEST_ADMIN_EMAIL,
+                "password": "WRONG",
+            })
+        resp = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": _TEST_ADMIN_PASSWORD,
+        })
+        assert resp.status_code == 200
+        assert "access_token" in resp.json()
+        # Subsequent failures should be counted from zero
+        resp2 = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": "WRONG",
+        })
+        assert resp2.status_code == 401  # not locked out
+
+    def test_lockout_expires_after_duration(self, client, monkeypatch):
+        """After lockout, advancing time beyond LOCKOUT_DURATION clears it."""
+        # Reach threshold
+        for _ in range(5):
+            client.post("/api/v1/auth/token", data={
+                "username": _TEST_ADMIN_EMAIL,
+                "password": "WRONG",
+            })
+        resp = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": "WRONG",
+        })
+        assert resp.status_code == 429
+
+        # Advance time past LOCKOUT_DURATION (900s + buffer)
+        original_time = time.time
+        monkeypatch.setattr(time, "time", lambda: original_time() + 1000)
+
+        resp2 = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": _TEST_ADMIN_PASSWORD,
+        })
+        assert resp2.status_code == 200
+
+    def test_lockout_clears_on_admin_success(self, client):
+        """Failed attempts for an email are cleared when admin logs in."""
+        for _ in range(4):
+            client.post("/api/v1/auth/token", data={
+                "username": _TEST_ADMIN_EMAIL,
+                "password": "WRONG",
+            })
+        # Successful admin login clears the lockout counter
+        resp = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": _TEST_ADMIN_PASSWORD,
+        })
+        assert resp.status_code == 200
+
+        # The next failure should count as attempt #1, not trigger lockout
+        resp2 = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": "WRONG",
+        })
+        assert resp2.status_code == 401
+        # Reach threshold to confirm counter really reset
+        for _ in range(4):
+            client.post("/api/v1/auth/token", data={
+                "username": _TEST_ADMIN_EMAIL,
+                "password": "WRONG",
+            })
+        resp3 = client.post("/api/v1/auth/token", data={
+            "username": _TEST_ADMIN_EMAIL,
+            "password": "WRONG",
+        })
+        assert resp3.status_code == 429
 
 
 class TestAdminGatewayIndependence:

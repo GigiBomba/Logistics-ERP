@@ -229,7 +229,6 @@ class _QtClientDetailsTab(QWidget):
         profit_card = KPICard(self._content, t("client.kpi_total_profit"),
                                f"\u20ac {total_profit:,.0f}")
         profit_card.setProperty("role", "kpi-card")
-        cl.addWidget(row2)
 
         row2_layout.addWidget(profit_card)
         row2_layout.addWidget(KPICard(self._content, t("client.kpi_avg_profit"),

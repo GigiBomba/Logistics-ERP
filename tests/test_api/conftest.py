@@ -26,11 +26,12 @@ def app():
 def client(app):
     """TestClient with mocked authentication."""
     # Override the auth dependency to bypass JWT
-    from backend.dependencies_security import get_current_user, require_dispatcher, require_admin
+    from backend.dependencies_security import get_current_user, require_dispatcher, require_admin, require_manager
     mock_user = {"id": 1, "email": "test@test.com", "role": "admin", "is_admin": True, "company_id": 1}
     app.dependency_overrides[get_current_user] = lambda: mock_user
     app.dependency_overrides[require_dispatcher] = lambda: mock_user
     app.dependency_overrides[require_admin] = lambda: mock_user
+    app.dependency_overrides[require_manager] = lambda: mock_user
     yield TestClient(app)
     app.dependency_overrides.clear()
 
@@ -93,7 +94,7 @@ def client_with_mocks(app, mock_trip_service, mock_client_service, mock_fleet_se
         get_trip_service, get_client_service, get_fleet_service,
         get_driver_repo, get_document_service, get_analytics_service, get_db,
     )
-    from backend.dependencies_security import get_current_user, require_dispatcher, require_admin
+    from backend.dependencies_security import get_current_user, require_dispatcher, require_admin, require_manager
 
     mock_user = {"id": 1, "email": "test@test.com", "role": "admin", "is_admin": True, "company_id": 1}
 
@@ -107,6 +108,7 @@ def client_with_mocks(app, mock_trip_service, mock_client_service, mock_fleet_se
     app.dependency_overrides[get_current_user] = lambda: mock_user
     app.dependency_overrides[require_dispatcher] = lambda: mock_user
     app.dependency_overrides[require_admin] = lambda: mock_user
+    app.dependency_overrides[require_manager] = lambda: mock_user
 
     mocks = {
         "trip_service": mock_trip_service,

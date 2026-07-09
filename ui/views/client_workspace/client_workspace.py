@@ -471,7 +471,13 @@ class QtClientWorkspace(QWidget):
             service=self.service,
             client_id=self._selected_id,
         )
-        self._revenue_tab.layout().addWidget(self._revenue_chart)
+        tab_layout = self._revenue_tab.layout()
+        if tab_layout is not None:
+            tab_layout.addWidget(self._revenue_chart)
+        else:
+            from PySide6.QtWidgets import QVBoxLayout
+            tab_layout = QVBoxLayout(self._revenue_tab)
+            tab_layout.addWidget(self._revenue_chart)
 
     # ------------------------------------------------------------------
     # CRUD actions

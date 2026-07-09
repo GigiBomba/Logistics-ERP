@@ -144,9 +144,9 @@ class FinancialAnalyticsTab(BaseTab):
                  COLOR_SUCCESS_DEFAULT if dso_days <= 30 else COLOR_INFO_DEFAULT
              ),
              "subtitle": t("analytics.kpi_dso_subtitle", default="Avg collection period"),
-             "sparkline_values": spark_profit_vals,
+             "sparkline_values": [],
              "sparkline_color": CHART_INFO},
-        ])
+         ])
 
         # ── Visual margin progress bar (below KPI row) ──────────
         if last_margin > 0:

@@ -97,6 +97,7 @@ class _InvoiceTimelineCard(QFrame):
         self._data = data
         self._ops = ops
         self._db = db
+        self._automail_repo = None
         self.setProperty("role", "invoice-timeline-card")
         self.setStyleSheet(
             f"background: {COLOR_BG_OVERLAY}; border: 1px solid {COLOR_BORDER_SUBTLE}; "

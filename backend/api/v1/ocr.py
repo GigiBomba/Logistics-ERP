@@ -16,7 +16,10 @@ async def run_ocr(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    doc = service.get_by_id(request.document_id)
+    try:
+        doc = service.get_by_id(request.document_id)
+    except Exception:
+        raise HTTPException(status_code=500, detail="OCR service error")
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return OcrResult(
@@ -33,7 +36,10 @@ async def get_ocr_status(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    doc = service.get_by_id(doc_id)
+    try:
+        doc = service.get_by_id(doc_id)
+    except Exception:
+        raise HTTPException(status_code=500, detail="OCR service error")
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return OcrResult(

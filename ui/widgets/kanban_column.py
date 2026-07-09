@@ -383,6 +383,7 @@ class QtKanbanColumn(QFrame):
 
     def destroy(self) -> None:
         """Clear callbacks and schedule the widget for deletion."""
+        self._clear_cards()
         self._on_card_click = None
         self._on_drag_start = None
         self._on_assign_truck = None

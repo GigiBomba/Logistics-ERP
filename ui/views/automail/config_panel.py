@@ -111,7 +111,7 @@ class _InlineScheduleEditor(QFrame):
         templates: list[dict[str, Any]],
     ) -> None:
         super().__init__(parent)
-        self._schedule_id = schedule["id"]
+        self._schedule_id = schedule.get("id")
         self.setProperty("role", "inline-schedule-editor")
         self.setStyleSheet(
             f"background: {COLOR_BG_ELEVATED}; border: 1px solid {COLOR_BORDER_SUBTLE}; "
@@ -283,7 +283,7 @@ class _ScheduleCard(QFrame):
 
     def __init__(self, parent: QWidget, schedule: dict[str, Any], is_first: bool, is_last: bool) -> None:
         super().__init__(parent)
-        self._schedule_id = schedule["id"]
+        self._schedule_id = schedule.get("id")
         self.setProperty("role", "schedule-card")
         self.setStyleSheet(
             f"background: {COLOR_BG_OVERLAY}; border: 1px solid {COLOR_BORDER_SUBTLE}; "

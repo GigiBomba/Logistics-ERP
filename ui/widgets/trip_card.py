@@ -455,10 +455,10 @@ class QtTripCard(QFrame):
             if self._date_lbl is not None:
                 if minutes_overdue >= 60:
                     hours = minutes_overdue // 60
-                    overdue_text = t("dispatch_board.hours_overdue").format(hours)
+                    overdue_text = t("dispatch_board.hours_overdue").format(hours=hours)
                 else:
                     overdue_text = t("dispatch_board.minutes_overdue").format(
-                        minutes_overdue
+                        minutes=minutes_overdue
                     )
                 self._date_lbl.setText(overdue_text)
                 self._date_lbl.setStyleSheet(f"color: {self.DELAYED_COLOR};")
@@ -582,6 +582,7 @@ class QtTripCard(QFrame):
     def _dismiss_error(self) -> None:
         """Remove the error banner and stop the dismiss timer."""
         if self._error_lbl is not None:
+            self._content_widget.layout().removeWidget(self._error_lbl)
             self._error_lbl.deleteLater()
             self._error_lbl = None
         if self._error_timer is not None:

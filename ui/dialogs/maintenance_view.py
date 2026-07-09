@@ -184,7 +184,7 @@ class QtMaintenanceView(QDialog):
                 else:
                     rows.append({
                         "id": getattr(r, "id", ""),
-                        "type": getattr(r, "display_type", lambda: "")(),
+                        "type": getattr(r, "display_type", ""),
                         "date": str(getattr(r, "date", ""))[:10],
                         "description": getattr(r, "notes", ""),
                         "cost": getattr(r, "cost", ""),
@@ -217,7 +217,7 @@ class QtMaintenanceView(QDialog):
                     "id": s.get("id", ""),
                     "type": display,
                     "interval_km": f"{s.get('interval_km', ''):.0f}" if s.get("interval_km") else "",
-                    "interval_days": f"{s.get('interval_months', '')*30}" if s.get("interval_months") else "",
+                    "interval_days": f"{float(s.get('interval_months') or 0) * 30:.0f}" if s.get("interval_months") else "",
                     "last_done_date": (s.get("last_done_date") or "")[:10],
                     "next_service": next_svc,
                     "status": t("maint.active") if s.get("active") else t("maint.inactive"),
