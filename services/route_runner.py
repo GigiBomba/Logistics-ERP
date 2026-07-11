@@ -151,7 +151,7 @@ class RouteRunner:
         if len(deduplicated) < 2:
             raise ValueError("At least 2 unique stops required after deduplication")
 
-        # OPTIMIZED: Calculate total distance to determine if route needs optimization
+        # Calculate total distance to determine if route needs optimization
         total_distance = self._calculate_distance(deduplicated)
         self._log("info", f"Resolved {len(deduplicated)} stops, estimated distance: {total_distance:.0f}km")
 

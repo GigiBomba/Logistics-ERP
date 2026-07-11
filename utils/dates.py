@@ -17,7 +17,10 @@ def parse_date_safe(date_str: str) -> Optional[datetime]:
         return None
     for fmt in ("%Y-%m-%d %H:%M", "%d/%m/%Y %H:%M", "%Y-%m-%d", "%d/%m/%Y"):
         try:
-            return datetime.strptime(date_str.strip()[:len(fmt)], fmt)
+            # Each %X in the format string expands by a fixed delta at runtime.
+            # %Y is 2 format chars → 4 output chars (+2), all others keep length.
+            expected_len = len(fmt) + 2 * fmt.count("%Y")
+            return datetime.strptime(date_str.strip()[:expected_len], fmt)
         except (ValueError, IndexError):
             continue
     return None
