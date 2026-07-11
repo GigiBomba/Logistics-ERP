@@ -222,13 +222,21 @@ class TestParseDateSafe(unittest.TestCase):
     def test_empty_returns_none(self):
         self.assertIsNone(parse_date_safe(""))
 
-    def test_iso_date_without_time_returns_none(self):
-        # Bug: len(fmt) truncates the date string incorrectly
-        self.assertIsNone(parse_date_safe("2024-12-25"))
+    def test_iso_date_without_time_returns_datetime(self):
+        dt = parse_date_safe("2024-12-25")
+        self.assertIsNotNone(dt)
+        if dt:
+            self.assertEqual(dt.year, 2024)
+            self.assertEqual(dt.month, 12)
+            self.assertEqual(dt.day, 25)
 
-    def test_dd_mm_yyyy_without_time_returns_none(self):
-        # Bug: len(fmt) truncates the date string incorrectly
-        self.assertIsNone(parse_date_safe("25/12/2024"))
+    def test_dd_mm_yyyy_without_time_returns_datetime(self):
+        dt = parse_date_safe("25/12/2024")
+        self.assertIsNotNone(dt)
+        if dt:
+            self.assertEqual(dt.year, 2024)
+            self.assertEqual(dt.month, 12)
+            self.assertEqual(dt.day, 25)
 
     def test_garbage_returns_none(self):
         self.assertIsNone(parse_date_safe("abcdef"))
