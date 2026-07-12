@@ -6,20 +6,21 @@ from fastapi.responses import FileResponse
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
+from backend.schemas.receipt import ReceiptGenerateRequest
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 
 
 @router.post("/generate")
-async def generate_receipt(
-    data: Dict[str, Any],
+def generate_receipt(
+    data: ReceiptGenerateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    receipt_data = data.get("receipt_data", {})
+    receipt_data = data.receipt_data or data.model_dump(exclude={"receipt_data"}, exclude_none=True)
     if not receipt_data:
-        receipt_data = data
+        receipt_data = data.model_dump(exclude_none=True)
 
     from services.invoicing.receipt_generator import ReceiptGenerator
     gen = ReceiptGenerator()

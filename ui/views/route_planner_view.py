@@ -325,6 +325,15 @@ class QtRoutePlannerView(QWidget):
         db=None,
         controller=None,
         api_client=None,
+        # Injected service dependencies (optional — created from db if omitted)
+        route_controller=None,
+        route_history_service=None,
+        route_state=None,
+        fleet_service=None,
+        persistence=None,
+        geocode_service=None,
+        conflict_service=None,
+        export_service=None,
     ):
         super().__init__(parent)
         self.db = db
@@ -332,11 +341,12 @@ class QtRoutePlannerView(QWidget):
         self._api_client = api_client
 
         if db is not None:
-            self._core = RoutePlannerController(db)
-            self.route_history_service = RouteHistoryService(db)
-            self.route_state = RouteStateManager(db)
-            self.fleet_service = FleetService(db)
-            self._persistence = RoutePersistenceService(
+            # Use injected instances or create from db
+            self._core = route_controller or RoutePlannerController(db)
+            self.route_history_service = route_history_service or RouteHistoryService(db)
+            self.route_state = route_state or RouteStateManager(db)
+            self.fleet_service = fleet_service or FleetService(db)
+            self._persistence = persistence or RoutePersistenceService(
                 self.route_history_service,
                 self.route_state,
                 self._core.cost_engine,
@@ -348,6 +358,21 @@ class QtRoutePlannerView(QWidget):
             self.route_state = None
             self.fleet_service = None
             self._persistence = None
+
+        # Geocoding service for reverse geocode lookups (delegated to service)
+        self.geocode_service = geocode_service
+        if self.geocode_service is None:
+            from services import geocode_nominatim
+            self.geocode_service = geocode_nominatim
+
+        # Export service for file operations (delegated to service)
+        self.export_service = export_service
+        if self.export_service is None and db is not None:
+            from services.export_service import ExportService
+            self.export_service = ExportService(db=db)
+
+        # Conflict service for truck availability checks (lazy-loaded in _load_trucks)
+        self._conflict_service = conflict_service
 
         self.profile_map = GRAPHHOPPER_PROFILES
         self._profile_key_to_display: dict[str, str] = {}
@@ -505,7 +530,7 @@ class QtRoutePlannerView(QWidget):
 
     def _build_sidebar_content(self, sl: QVBoxLayout, bl: QVBoxLayout) -> None:
         # ── TASK 2: Section Header — ROUTE ──
-        sl.addWidget(make_section_header(t("route.section.smart_route", default="RUTĂ INTELIGENTĂ")))
+        sl.addWidget(make_section_header(t("route.section.smart_route")))
 
         # ── TASK 3: Waypoint Inputs ──
         self._stops_container = QWidget()
@@ -539,7 +564,7 @@ class QtRoutePlannerView(QWidget):
         # Remove "Elimină Stop" — removal is via × on each waypoint row
 
         # ── TASK 4: Options Section ──
-        sl.addWidget(make_section_header(t("route.section.options", default="OPȚIUNI")))
+        sl.addWidget(make_section_header(t("route.section.options")))
 
         # Truck selector: label + [combo + refresh button]
         truck_label = QLabel(t("route.select_truck"))
@@ -612,7 +637,7 @@ class QtRoutePlannerView(QWidget):
         sl.addWidget(self.profile_combo)
 
         # ── TASK 5: Excluded Countries as Chips ──
-        sl.addWidget(make_section_header(t("route.section.excluded_countries", default="ȚĂRI EXCLUSE")))
+        sl.addWidget(make_section_header(t("route.section.excluded_countries")))
 
         self._chips_container = QWidget()
         self._chips_container.setStyleSheet("background: transparent;")
@@ -621,7 +646,7 @@ class QtRoutePlannerView(QWidget):
         self._chips_container_layout.setSpacing(4)
         sl.addWidget(self._chips_container)
 
-        add_country_btn = QPushButton(f"+ {t('route.add_country', default='Adaugă țară')}")
+        add_country_btn = QPushButton(f"+ {t('route.add_country')}")
         add_country_btn.setCursor(Qt.PointingHandCursor)
         add_country_btn.setStyleSheet(f"""
             QPushButton {{
@@ -648,7 +673,7 @@ class QtRoutePlannerView(QWidget):
 
         # ── TASK 7: Route Result Panel ──
         sl.addSpacing(20)
-        sl.addWidget(make_section_header(t("route.section.result", default="REZULTAT RUTĂ")))
+        sl.addWidget(make_section_header(t("route.section.result")))
 
         self._result_stack = QStackedWidget()
 
@@ -663,11 +688,11 @@ class QtRoutePlannerView(QWidget):
         icon_lbl.setPixmap(get_icon("mdi6.map-marker-path", color=COLOR_TEXT_TERTIARY).pixmap(28, 28))
         icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
 
-        title_lbl = QLabel(t("route.info_placeholder", default="Info rută va apărea aici."))
+        title_lbl = QLabel(t("route.info_placeholder"))
         title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         title_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 12px; font-weight: {FONT_WEIGHT_MEDIUM};")
 
-        sub_lbl = QLabel(t("route.info_empty_subtitle", default="Calculați o rută pentru detalii."))
+        sub_lbl = QLabel(t("route.info_empty_subtitle"))
         sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         sub_lbl.setWordWrap(True)
         sub_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 11px;")
@@ -708,7 +733,7 @@ class QtRoutePlannerView(QWidget):
         """)
         loading_layout.addWidget(self._loading_bar)
 
-        loading_text = QLabel(t("route.calculating", default="Se calculează ruta..."))
+        loading_text = QLabel(t("route.calculating"))
         loading_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
         loading_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 12px;")
         loading_layout.addWidget(loading_text)
@@ -729,8 +754,8 @@ class QtRoutePlannerView(QWidget):
         pills_grid = QGridLayout()
         pills_grid.setSpacing(6)
 
-        self.pill_distance = make_result_pill("\u2014", t("route.result.distance", default="Distanță"))
-        self.pill_duration = make_result_pill("\u2014", t("route.result.duration", default="Durată"))
+        self.pill_distance = make_result_pill("\u2014", t("route.result.distance"))
+        self.pill_duration = make_result_pill("\u2014", t("route.result.duration"))
         self.pill_fuel_cost = make_result_pill("\u2014", t("route.result.fuel_cost", default="Cost combustibil"))
         self.pill_rate = make_result_pill("\u2014", t("route.result.cost_per_km", default="Cost/km"))
 
@@ -766,7 +791,7 @@ class QtRoutePlannerView(QWidget):
         sl.addStretch(1)
 
         # ── TASK 8: Pinned Bottom Button Bar ──
-        self.calc_btn = QPushButton(t("route.calculate", default="Calculează Ruta"))
+        self.calc_btn = QPushButton(t("route.calculate"))
         self.calc_btn.setFixedHeight(36)
         self.calc_btn.setObjectName("calc_route_btn")
         self.calc_btn.setCursor(Qt.PointingHandCursor)
@@ -852,8 +877,11 @@ class QtRoutePlannerView(QWidget):
 
     def _load_trucks(self) -> None:
         try:
-            from services.conflict_service import TripConflictService
-            conflict_svc = TripConflictService(self.fleet_service.db) if self.fleet_service is not None else None
+            # Lazy-init conflict service to avoid direct instantiation in view
+            if self._conflict_service is None and self.fleet_service is not None:
+                from services.conflict_service import TripConflictService
+                self._conflict_service = TripConflictService(self.fleet_service.db)
+            conflict_svc = self._conflict_service
             rows = self.fleet_service.get_trucks() if self.fleet_service is not None else []
             self._trucks_map = {}
             self._truck_label_to_id = {}
@@ -924,7 +952,7 @@ class QtRoutePlannerView(QWidget):
                 dot_color = COLOR_SUCCESS_DEFAULT
                 show_remove = False
             elif stop["type"] == "destination":
-                placeholder = t("route.stop_destination", default="🏁 Destinație...")
+                placeholder = t("route.stop_destination")
                 dot_color = COLOR_ERROR_DEFAULT
                 show_remove = False
             else:
@@ -1087,22 +1115,16 @@ class QtRoutePlannerView(QWidget):
         self._reverse_geocode_async(lat, lng)
 
     def _reverse_geocode_async(self, lat: float, lng: float) -> None:
-        """Fire a daemon thread to reverse-geocode and emit result via signal."""
+        """Fire a daemon thread to reverse-geocode via GeocodingService and emit result via signal."""
         import threading
 
         def _work():
             try:
-                import requests
-                url = "https://nominatim.openstreetmap.org/reverse"
-                params = {"lat": lat, "lon": lng, "format": "json", "zoom": 14}
-                headers = {"User-Agent": "OperionERP/1.0"}
-                resp = requests.get(url, params=params, headers=headers, timeout=5)
-                if resp.ok:
-                    data = resp.json()
-                    address = data.get("display_name", "") or f"{lat:.5f}, {lng:.5f}"
-                else:
-                    address = f"{lat:.5f}, {lng:.5f}"
+                # Delegated to GeocodingService (nominatim)
+                address = self.geocode_service.reverse_geocode(lat, lon=lng)
             except Exception:
+                address = None
+            if not address:
                 address = f"{lat:.5f}, {lng:.5f}"
             self.reverse_geocode_done.emit(address, lat, lng)
 
@@ -1124,6 +1146,7 @@ class QtRoutePlannerView(QWidget):
     # ── Calculation ────────────────────────────────────────────────────────────
 
     def _on_calculate_click(self) -> None:
+        # Delegated to RoutePlannerController (validate → RouteService internally)
         ctx, err = self._core.validate_calculation_input(
             truck_id=self._selected_truck_id or "",
             trucks_map=self._trucks_map,
@@ -1159,6 +1182,7 @@ class QtRoutePlannerView(QWidget):
 
         self.calc_btn.setEnabled(True)
 
+        # Delegated to RoutePlannerController (process → RouteService internally)
         processed, err = self._core.process_calculation_result(
             result,
             ctx,
@@ -1268,14 +1292,16 @@ class QtRoutePlannerView(QWidget):
     def _go_to_calculator(self) -> None:
         if self._last_route_history_id:
             truck_id = str(self._selected_truck_id) if self._selected_truck_id else None
-            self._core.commit_route(self._last_route_history_id, truck_id=truck_id)
+            # Delegated to RoutePersistenceService (commit + truck assignment)
+            self._persistence.commit_route(self._last_route_history_id, truck_id=truck_id)
             self._pending_clear = True
         if self.controller and hasattr(self.controller, "_switch_module"):
             self.controller._switch_module("calculator")
 
     def _discard_route(self) -> None:
         if self._last_route_history_id:
-            self._core.discard_route(self._last_route_history_id)
+            # Delegated to RouteHistoryService
+            self.route_history_service.discard_route(self._last_route_history_id)
         self._clear_route_state()
 
     def _clear_route_state(self) -> None:
@@ -1492,8 +1518,8 @@ class QtRoutePlannerView(QWidget):
         )
 
         try:
-            with open(path, "wb") as f:
-                f.write(data)
+            # Delegated to ExportService for file I/O
+            self.export_service.save_binary(path, data)
             self._summary_text.setText(
                 t("route.export_success_file", default="Route saved: {path}").format(path=path)
             )

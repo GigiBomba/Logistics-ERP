@@ -11,7 +11,6 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from datetime import datetime
 from typing import Any
 
 from PySide6.QtCore import QPoint, Qt, QTimer, Signal
@@ -26,18 +25,14 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from repositories.driver_repository import DriverRepository
-from repositories.fleet_repository import FleetRepository
-from repositories.route_repository import RouteRepository
-from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
-from repositories.trip_repository import TripRepository
 from services.client_service import ClientService
 from services.conflict_service import TripConflictService
+from services.dispatch_service.dispatch_service import DispatchService
 from services.driver_truck_service import DriverTruckService
 from services.fleet_service import FleetService
 from services.i18n import t
 from ui.base_view import BaseView
-from services.operations.alert_manager import AlertManager, AlertType
+from services.operations.alert_manager import AlertManager
 from services.operations.event_bus import (
     ALERT_CREATED,
     ALERT_RESOLVED,
@@ -51,7 +46,6 @@ from services.operations.event_bus import (
     TRUCK_DELETED,
     TRUCK_UPDATED,
 )
-from services.operations.trip_status_engine import TripStatusEngine
 from services.trip_service import TripService
 from ui.components import Btn, EmptyState, Label, PageTitle
 from ui.design_tokens import BORDER_DEFAULT, COLOR_NEUTRAL_DEFAULT, INFO, SP, SUCCESS, WARNING
@@ -113,29 +107,44 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._destroyed = False
         self._load_thread: threading.Thread | None = None
 
-        # Repositories / services
+        # ── Services (data access through service layer only) ────────
         if db is not None:
-            self._trip_repo = TripRepository(db)
-            self._fleet_repo = FleetRepository(db)
-            self._driver_repo = DriverRepository(db)
-            self._route_repo = RouteRepository(db)
-            self._status_engine = TripStatusEngine(db)
             self._trip_service = TripService(db)
             self._fleet_service = FleetService(db)
             self._client_service = ClientService(db)
             self._dta_service = DriverTruckService(db)
             self._conflict_service = TripConflictService(db)
+
+            # DispatchService orchestrates business operations
+            self._dispatch_service = DispatchService(
+                trip_service=self._trip_service,
+                fleet_repo=self._fleet_service._fleet_repo,   # via service internal
+                driver_repo=self._dta_service._driver_repo,     # via service internal
+                conflict_service=self._conflict_service,
+                dta_service=self._dta_service,
+                tacho_repo=self._tacho_repo,
+                event_bus=self._event_bus,
+                alert_manager=self._alert_mgr,
+                ops_engine=self.ops,
+            )
+
+            # Backward-compat aliases for mixins (board_state, board_actions)
+            # TODO: Migrate mixin code to services directly
+            self._trip_repo = self._trip_service  # TripService has get_by_statuses(), get_all()
+            self._fleet_repo = self._fleet_service._fleet_repo
+            self._driver_repo = self._dta_service._driver_repo
+            self._route_repo = self._trip_service._route_repo
         else:
-            self._trip_repo = None
-            self._fleet_repo = None
-            self._driver_repo = None
-            self._route_repo = None
-            self._status_engine = None
             self._trip_service = None
             self._fleet_service = None
             self._client_service = None
             self._dta_service = None
             self._conflict_service = None
+            self._dispatch_service = None
+            self._trip_repo = None
+            self._fleet_repo = None
+            self._driver_repo = None
+            self._route_repo = None
         self._alert_mgr = AlertManager()
 
         # Caches
@@ -445,7 +454,8 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         if not trip_id:
             return
         try:
-            trip = self._trip_repo.get_by_id(int(trip_id))
+            # Use TripService instead of direct repo access
+            trip = self._trip_service.get_by_id(int(trip_id))
             if not trip:
                 return
             card_data = self._build_card_data(trip)
@@ -508,9 +518,14 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             )
             target.add_card(new_card, index=0)
 
-            if new_status == "Delivered":
-                self._resolve_delay_alert(new_card)
-            self._evaluate_single_delay(new_card)
+            # Delegate to DispatchService for delay/alert logic
+            if new_status == "Delivered" and self._dispatch_service is not None:
+                self._dispatch_service.resolve_delay_alert(trip_id)
+            if self._dispatch_service is not None:
+                is_delayed, minutes = self._dispatch_service.evaluate_trip_delay(new_card.trip_data)
+                new_card.set_delayed(is_delayed, minutes)
+                if is_delayed:
+                    self._dispatch_service.create_delay_alert(new_card.trip_data, minutes)
             logger.debug("Trip %d moved to %s column via event", trip_id, column_key)
         except Exception:
             logger.exception("Failed to handle status change for trip %s", trip_id)
@@ -644,34 +659,25 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             card.update_truck(trip.get("truck_number", ""), trip.get("truck_id"))
             card.update_driver(trip.get("driver_name", ""), trip.get("driver_id"))
             card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
-            self._evaluate_single_delay(card)
+            self._evaluate_single_delay_from_data(card)
         except Exception:
             logger.debug("Failed to refresh card for trip %d", trip_id, exc_info=True)
 
-    def _evaluate_single_delay(self, card) -> None:
+    def _evaluate_single_delay_from_data(self, card) -> None:
+        """Evaluate delay and create alert — delegates to DispatchService.
+
+        Replaces ``_evaluate_single_delay`` which used mixin methods
+        ``_is_trip_delayed`` / ``_create_delay_alert`` directly.
+        """
+        if self._dispatch_service is None:
+            return
         try:
-            now = datetime.now()
-            is_delayed, minutes_overdue = self._is_trip_delayed(card.trip_data, now)
+            is_delayed, minutes_overdue = self._dispatch_service.evaluate_trip_delay(card.trip_data)
             card.set_delayed(is_delayed, minutes_overdue)
             if is_delayed:
-                self._create_delay_alert(card, minutes_overdue)
+                self._dispatch_service.create_delay_alert(card.trip_data, minutes_overdue)
         except Exception:
-            pass
-
-    def _resolve_delay_alert(self, card) -> None:
-        trip_id = card.trip_data.get("trip_id_num")
-        if not trip_id:
-            return
-        existing = self._alert_mgr.get_alerts(
-            alert_type=AlertType.TRIP_DELAY,
-            resolved=False,
-            limit=1000,
-        )
-        for alert in existing:
-            if alert.trip_id == str(trip_id):
-                self._alert_mgr.resolve_alert(alert.id)
-                logger.info("Resolved delay alert for trip %d", trip_id)
-                return
+            logger.debug("_evaluate_single_delay_from_data failed", exc_info=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # i18n
@@ -738,7 +744,6 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                 self._detail_panel.close()
             self._detail_panel = None
 
-        with contextlib.suppress(Exception):
-            self._status_engine.shutdown()
-
+        # TripStatusEngine no longer instantiated directly in the view;
+        # status transitions are handled via TripService / DispatchService.
         super().shutdown()

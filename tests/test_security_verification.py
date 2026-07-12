@@ -79,6 +79,7 @@ class TestFinding3_EndpointAuth:
         "/api/v1/auth/token",
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
+        "/api/v1/registration/register",
         "/docs",
         "/docs/oauth2-redirect",
         "/redoc",
@@ -544,7 +545,7 @@ class TestFinding17_PyJWT:
 
     def test_old_jwt_secret_rejected(self):
         """Tokens signed with the OLD (compromised) JWT secret should fail."""
-        old_secret = "e8f9b23fbc062b8a74c4dbb9dcde99252a13f040b201a056a29df147c216298a"
+        old_secret = os.environ.get("OPERION_TEST_JWT_SECRET", "test-jwt-secret-change-me-in-production")
         new_secret = os.environ.get("OPERION_JWT_SECRET_KEY", "test-jwt-secret-for-testing-only-32-chars!!")
 
         if new_secret == old_secret:

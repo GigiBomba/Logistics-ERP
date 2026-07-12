@@ -143,6 +143,49 @@ def geocode_place(
     return None
 
 
+def reverse_geocode(
+    lat: float,
+    lon: float,
+    zoom: int = 14,
+    timeout: int = 10,
+) -> Optional[str]:
+    """
+    Reverse geocode coordinates to an address using Nominatim.
+
+    Args:
+        lat: Latitude
+        lon: Longitude
+        zoom: Zoom level (higher = more detailed)
+        timeout: Request timeout in seconds
+
+    Returns:
+        Address string or None if not found/failed
+    """
+    if lat is None or lon is None:
+        logger.warning(f"Invalid reverse-geocode input: lat={lat}, lon={lon}")
+        return None
+
+    try:
+        _apply_rate_limit()
+        resp = requests.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={"lat": lat, "lon": lon, "format": "json", "zoom": zoom},
+            headers={"User-Agent": "logistics-app/1.0"},
+            timeout=timeout,
+        )
+        if resp.ok:
+            data = resp.json()
+            return data.get("display_name")
+        logger.warning(f"Reverse geocode HTTP {resp.status_code} for ({lat}, {lon})")
+    except requests.exceptions.Timeout:
+        logger.warning(f"Reverse geocode timeout for ({lat}, {lon})")
+    except requests.exceptions.RequestException as exc:
+        logger.warning(f"Reverse geocode request failed: {exc}")
+    except (KeyError, ValueError, TypeError) as exc:
+        logger.error(f"Failed to parse reverse geocode response: {exc}")
+    return None
+
+
 def geocode_batch(
     places: list[str],
     timeout: int = 10,

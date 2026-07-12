@@ -17,7 +17,7 @@ class TestAppShell:
         db = MagicMock()
         app_shell = AppShell(qt_main_window, db)
         app_shell.set_breadcrumb("Dashboard")
-        assert app_shell.top_bar._breadcrumb_label.text() == "Dashboard"
+        assert app_shell.top_bar._breadcrumb.text() == "Dashboard"
 
     def test_set_fuel_status(self, qt_main_window, qtbot):
         from ui.app_shell import AppShell

@@ -32,6 +32,7 @@ class ReceiptRepository(BaseRepository):
         "expense_category", "mileage", "fuel", "accommodation", "meals", "parking",
         "tolls", "other_expense", "pickup_location", "delivery_location", "route",
         "dispatcher", "language", "created_at", "updated_at", "company_id",
+        "client_id", "pdf_path",
     ]
 
     def create(
@@ -93,6 +94,8 @@ class ReceiptRepository(BaseRepository):
         route: str = "",
         dispatcher: str = "",
         language: str = "en",
+        client_id: Optional[int] = None,
+        pdf_path: str = "",
         commit: bool = True,
     ) -> Optional[int]:
         now = datetime.now().isoformat()
@@ -158,6 +161,10 @@ class ReceiptRepository(BaseRepository):
                 "created_at": now,
                 "updated_at": now,
             }
+            if client_id is not None:
+                data["client_id"] = client_id
+            if pdf_path:
+                data["pdf_path"] = pdf_path
             self._validate_columns(data, extra_allowed={"company_id"})
             data = self._set_company_from_context(data)
             cols = ", ".join(data.keys())
@@ -233,7 +240,7 @@ class ReceiptRepository(BaseRepository):
             "employee_name", "department", "expense_category",
             "mileage", "fuel", "accommodation", "meals", "parking", "tolls", "other_expense",
             "pickup_location", "delivery_location", "route", "dispatcher",
-            "language",
+            "language", "client_id", "pdf_path",
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:

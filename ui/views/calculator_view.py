@@ -23,6 +23,8 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from models.calculator_models import CalculationRequest, TripCalculationResult
+from models.trip_models import TripCreate
 from services.calculator import TripCalculator
 from services.conflict_service import TripConflictService
 from services.i18n import t
@@ -106,7 +108,10 @@ class QtCalculatorView(QWidget):
         self.api = api
         self._api_client = api_client
 
+        # ── Service dependencies ─────────────────────────────────────────
+        # Delegated: business calculations live in services/calculator.py
         self.calculator = TripCalculator()
+        # Delegated: conflict checking lives in services/conflict_service.py
         self.conflict_service = TripConflictService(self.db) if self.db else None
 
         self._trucks: list = []
@@ -261,7 +266,7 @@ class QtCalculatorView(QWidget):
         self._vat_check.stateChanged.connect(self._on_vat_toggled)
         vat_layout.addWidget(self._vat_check)
 
-        self._vat_percent = StyledLineEdit(vat_row, text="19", placeholder="VAT %")
+        self._vat_percent = StyledLineEdit(vat_row, text="19", placeholder=t("main.vat_percent_placeholder", default="VAT %"))
         self._vat_percent.setFixedWidth(70)
         self._vat_percent.setEnabled(False)
         vat_layout.addWidget(self._vat_percent)
@@ -344,8 +349,8 @@ class QtCalculatorView(QWidget):
         self._empty_state = EmptyState(
             self.results_card,
             icon_name="mdi6.calculator-variant",
-            title=t("main.empty_calc_title", default="Completați formularul pentru a calcula profitul"),
-            subtitle=t("main.empty_calc_subtitle", default="Introduceți datele cursei și apăsați Calculare."),
+            title=t("main.empty_calc_title"),
+            subtitle=t("main.empty_calc_subtitle"),
         )
         cl.addWidget(self._empty_state)
 
@@ -574,12 +579,25 @@ class QtCalculatorView(QWidget):
                 fuel_cost_from_route = self._route_fuel_liters * fuel_price
 
             extra_val = float(self.e_extra.text()) if self.e_extra.text().strip() else None
-            res = self.calculator.calculate(
-                km, pret_eur, fuel_price,
-                int(self.e_days.text() or 1), cons,
-                extra_in=extra_val, sal_in=float(self.e_sal.text() or 0), taxa_in=float(self._route_toll or 0),
+            # Delegated: use typed CalculationRequest via TripCalculator.calculate()
+            req = CalculationRequest(
+                km=km,
+                price_eur=pret_eur,
+                fuel_price=fuel_price,
+                days=int(self.e_days.text() or 1),
+                consum_litri=cons,
+                extra_in=extra_val,
+                sal_in=float(self.e_sal.text() or 0),
+                taxa_in=float(self._route_toll or 0),
                 fuel_cost_override=fuel_cost_from_route,
             )
+            calc_result = self.calculator.calculate(req)
+            if not calc_result.success:
+                errors = "; ".join(e.message for e in (calc_result.errors or []))
+                raise ValueError(errors or "Calculation failed")
+            res = calc_result.data  # TripCalculationResult
+            if res is None:
+                raise ValueError("Calculation returned no data")
 
             try:
                 dt_s = datetime.strptime(self.e_start.text(), "%d/%m/%Y")
@@ -594,21 +612,19 @@ class QtCalculatorView(QWidget):
             driver_id = self._selected_truck.get("driver_id") if self._selected_truck else None
             driver_name = self._selected_truck.get("driver_name") if self._selected_truck else None
 
-            conflicts = []
+            # Delegated: conflict checking lives in services/conflict_service.py
             if self.conflict_service:
-                conflicts = self.conflict_service.check_conflicts({
-                    "truck_plate": truck_plate or "",
-                    "driver_id": driver_id,
-                    "start_date": dt_s.strftime("%Y-%m-%d"),
-                    "end_date": dt_end.strftime("%Y-%m-%d"),
-                    "distance_km": km,
-                })
-
-            if conflicts and self.conflict_service:
-                conflict_msgs = [self.conflict_service.describe_conflict(c) for c in conflicts]
-                msg = t("dispatch_board.conflict_warning_title") + "\n\n" + "\n".join(conflict_msgs)
-                if QMessageBox.question(self, t("dispatch_board.conflict_warning_title"), msg) != QMessageBox.Yes:
-                    return
+                conflict_msgs = self.conflict_service.check_conflicts_for_trip(
+                    truck_plate=truck_plate or "",
+                    driver_id=driver_id,
+                    start_date=dt_s.strftime("%Y-%m-%d"),
+                    end_date=dt_end.strftime("%Y-%m-%d"),
+                    distance_km=km,
+                )
+                if conflict_msgs:
+                    msg = t("dispatch_board.conflict_warning_title") + "\n\n" + "\n".join(conflict_msgs)
+                    if QMessageBox.question(self, t("dispatch_board.conflict_warning_title"), msg) != QMessageBox.Yes:
+                        return
 
             client_name = self.e_client.currentText().strip()
             client_id = None
@@ -617,36 +633,34 @@ class QtCalculatorView(QWidget):
                 if cid is not None:
                     client_id = int(cid)
 
-            trip_data = {
-                "created_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-                "truck_number": truck_plate,
-                "driver_name": driver_name,
-                "driver_id": driver_id,
-                "client_name": client_name,
-                "client_id": client_id,
-                "distance_km": km,
-                "total_price_eur": round(pret_eur, 2),
-                "rate_per_km": res.rate_per_km,
-                "gross_per_km": res.gross_per_km,
-                "net_profit": res.net_profit,
-                "start_date": dt_s.strftime("%Y-%m-%d"),
-                "end_date": dt_end.strftime("%Y-%m-%d"),
-                "payment_date": dt_inc.strftime("%Y-%m-%d"),
-                "currency": currency,
-                "status": "Planned",
-                "fuel_cost": res.fuel_cost,
-                "toll_cost": res.toll_cost,
-                "salary_cost": res.salary_cost,
-                "extra_costs": res.extra_costs,
-                "route_history_v2_id": self._current_route_history_id,
-                "truck_consumption_l_per_100km": self._selected_truck_fuel,
-            }
-            if vat_enabled:
-                trip_data["price_pre_vat"] = round(pret_eur_pre_vat, 2)
-                trip_data["vat_percent"] = round(vat_pct, 2)
-
+            # Delegated: use typed TripCreate + TripService.create()
+            trip_create = TripCreate(
+                client_id=client_id or 0,
+                route_id=self._current_route_history_id,
+                truck_plate=truck_plate or "",
+                driver_name=driver_name or "",
+                driver_id=driver_id,
+                client_name=client_name or "",
+                start_date=dt_s.date(),
+                end_date=dt_end.date(),
+                payment_date=dt_inc.date(),
+                price_eur=round(pret_eur, 2),
+                currency=currency,
+                distance_km=km,
+                status="Planned",
+                net_profit=res.net_profit,
+                rate_per_km=res.profit_per_km,
+                gross_per_km=res.gross_per_km,
+                fuel_cost=res.fuel_cost,
+                toll_cost=res.toll_cost,
+                salary_cost=res.salary_cost,
+                extra_costs=res.extra_costs,
+                truck_consumption_l_per_100km=self._selected_truck_fuel,
+                price_pre_vat=round(pret_eur_pre_vat, 2) if vat_enabled else None,
+                vat_percent=round(vat_pct, 2) if vat_enabled else None,
+            )
             if self.trip_service:
-                self.trip_service.add(trip_data)
+                self.trip_service.create(trip_create, user_id=0)
             Toast.show_success(self, f"✅ {t('main.save_success')}")
 
         except Exception as e:
@@ -655,27 +669,33 @@ class QtCalculatorView(QWidget):
                 self, t("main.error_title"), f"{t('main.check_data').format(str(e))}"
             )
 
-    def _display_result(self, res, dt_inc: datetime):
+    def _display_result(self, res: TripCalculationResult, dt_inc: datetime):
+        """Display calculation results from the service.
+
+        All values come directly from the ``TripCalculationResult`` returned by
+        ``TripCalculator.calculate()`` — no business logic is duplicated here.
+        """
         color = COLOR_SUCCESS_TEXT if res.net_profit >= 0 else COLOR_ERROR_TEXT
 
         # Hide empty state, show results
         self._empty_state.hide()
         self._results_container.show()
 
-        total_costs = res.fuel_cost + res.toll_cost + res.salary_cost + res.extra_costs
-        self._res_revenue.setText(fmt_currency(res.net_profit + total_costs))
-        self._res_cost.setText(fmt_currency(total_costs))
+        # Delegated: revenue/cost/profit/margin come from service result
+        self._res_revenue.setText(fmt_currency(res.total_income))
+        self._res_cost.setText(fmt_currency(res.total_income - res.net_profit))
         self._res_profit.setText(fmt_currency(res.net_profit))
         self._res_profit.setStyleSheet(
             f"font-family: 'Consolas', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {color};"
         )
         self._res_profit_pct.setText(f"({fmt_percentage(res.margin_percent)})")
-        self._res_rate.setText(fmt_rate(res.rate_per_km))
+        self._res_rate.setText(fmt_rate(res.profit_per_km))
         self._margin_label_text = t("main.margin")
         self._res_margin.setText(
             f"{fmt_percentage(res.margin_percent)}  |  {dt_inc.strftime('%d/%m/%Y')}"
         )
 
+        # Delegated: cost breakdown comes from service result
         self._cost_breakdown_label.setText(
             f"⛽ {fmt_currency(res.fuel_cost)} Fuel  |  {fmt_currency(res.toll_cost)} Toll  |  {fmt_currency(res.salary_cost)} Salary"
         )

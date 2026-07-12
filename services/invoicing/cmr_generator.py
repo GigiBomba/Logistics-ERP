@@ -7,8 +7,14 @@ four-copy support, eFTI XML embedding, PDF/A-3 compliance, and signature pads.
 import json
 import logging
 import os
+import threading
 from datetime import datetime, timezone
 from typing import Any, Optional
+import warnings
+
+from models.cmr_models import CmrGenerateRequest, CmrResult, CmrGenerateResult
+from models.common import ServiceResult, ErrorDetail
+from services.permission_service import PermissionService
 
 from reportlab.lib import colors
 from reportlab.lib.enums import TA_CENTER, TA_LEFT, TA_RIGHT
@@ -274,15 +280,174 @@ class CMRGenerator:
         except (json.JSONDecodeError, TypeError):
             return []
 
-    def generate(self, trip_data: dict, output_dir: str) -> str:
+    def generate(self, *args, **kwargs):
+        """Generate CMR document.
+
+        New typed API:
+            generate(request: CmrGenerateRequest, user_id: int) -> CmrGenerateResult
+
+        Legacy API (deprecated):
+            generate(trip_data: dict, output_dir: str) -> str
+        """
+        if args and isinstance(args[0], CmrGenerateRequest):
+            return self._generate_typed(*args, **kwargs)
+        logger.warning(
+            "CMRGenerator.generate(trip_data, output_dir) is deprecated. "
+            "Use generate(CmrGenerateRequest, user_id) instead."
+        )
+        warnings.warn(
+            "Dict-based generate() is deprecated, use CmrGenerateRequest",
+            DeprecationWarning, stacklevel=2,
+        )
+        return self._generate_legacy(*args, **kwargs)
+
+    def validate(self, request: CmrGenerateRequest) -> ServiceResult[bool]:
+        """Validate that the trip has all required data for CMR generation.
+
+        Args:
+            request: The CMR generation request with trip_id.
+
+        Returns:
+            ServiceResult with data=True if all required fields are present,
+            or data=False with error details if validation fails.
+        """
+        errors: list[ErrorDetail] = []
+
+        if not self._trip_repo:
+            errors.append(ErrorDetail(
+                message="Trip repository not available", code="REPO_UNAVAILABLE",
+            ))
+            return ServiceResult(success=False, errors=errors)
+
+        trip_data = self._trip_repo.get_by_id(request.trip_id)
+        if not trip_data:
+            errors.append(ErrorDetail(
+                field="trip_id",
+                message=f"Trip {request.trip_id} not found",
+                code="NOT_FOUND",
+            ))
+            return ServiceResult(success=False, errors=errors)
+
+        required_fields = [
+            ("origin", "Place of loading"),
+            ("destination", "Place of delivery"),
+            ("client_name", "Client / Consignee name"),
+            ("truck_number", "Truck plate number"),
+            ("driver_name", "Driver name"),
+        ]
+        for field, label in required_fields:
+            if not trip_data.get(field):
+                errors.append(ErrorDetail(
+                    field=field, message=f"Missing required field: {label}",
+                    code="REQUIRED",
+                ))
+
+        if errors:
+            return ServiceResult(success=False, data=False, errors=errors)
+        return ServiceResult(success=True, data=True)
+
+    def _generate_legacy(self, trip_data: dict, output_dir: str) -> str:
+        """Legacy single-copy generation (kept for backward compatibility)."""
         ctx = self._gather_context(trip_data)
         role = ctx.get("generating_role", "consignor")
         suffix = "Sender" if role == "consignor" else "Consignee"
         filepath = self._build_single_copy(ctx, suffix, output_dir)
         return filepath
 
-    def generate_all_copies(self, trip_data: dict, output_dir: str,
-                            skip_db_update: bool = False) -> dict[str, str]:
+    def _generate_typed(self, request: CmrGenerateRequest, user_id: int) -> CmrGenerateResult:
+        """Typed CMR generation with permission check and ServiceResult envelope.
+
+        Args:
+            request: Typed request model with trip_id, language, copies, etc.
+            user_id: The user requesting generation (for permission check).
+
+        Returns:
+            CmrGenerateResult (ServiceResult[CmrResult]) with file path and cmr data.
+        """
+        # ── Permission check ────────────────────────────────────────
+        perm = PermissionService(self.db)
+        perm_result = perm.can_generate_cmr(user_id)
+        if not perm_result.allowed:
+            logger.error("User %d cannot generate CMR: %s", user_id, perm_result.reason)
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(message=perm_result.reason, code="PERMISSION_DENIED")],
+            )
+
+        # ── Trip lookup ─────────────────────────────────────────────
+        if not self._trip_repo:
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(message="Trip repository not available", code="REPO_UNAVAILABLE")],
+            )
+        trip_data = self._trip_repo.get_by_id(request.trip_id)
+        if not trip_data:
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(
+                    field="trip_id",
+                    message=f"Trip {request.trip_id} not found",
+                    code="TRIP_NOT_FOUND",
+                )],
+            )
+
+        # ── Generate ────────────────────────────────────────────────
+        try:
+            merged = dict(trip_data)
+            merged["language"] = request.language
+            merged["sender_name"] = request.sender_name
+            merged["sender_address"] = request.sender_address
+            merged["carrier_name"] = request.carrier_name
+            merged["carrier_license"] = request.carrier_license
+            merged["cmr_remarks"] = request.remarks
+
+            ctx = self._gather_context(merged)
+            output_dir = self._get_output_dir(request.trip_id)
+            file_path = self._generate_legacy(merged, output_dir)
+
+            cmr_result = CmrResult(
+                cmr_number=str(ctx.get("cmr_number", "")),
+                trip_id=request.trip_id,
+                file_path=file_path,
+                copies=request.copies,
+                generated_at=datetime.now(timezone.utc),
+                cmr_data=ctx,
+            )
+            logger.info("CMR generated: %s for trip %d", ctx.get("cmr_number"), request.trip_id)
+            return CmrGenerateResult(success=True, data=cmr_result)
+
+        except Exception as e:
+            logger.error("Failed to generate CMR for trip %d: %s", request.trip_id, e)
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(message=str(e), code="GENERATION_FAILED")],
+            )
+
+    def generate_all_copies(self, *args, **kwargs):
+        """Generate all CMR copies (4 standard copies).
+
+        New typed API:
+            generate_all_copies(request: CmrGenerateRequest, user_id: int) -> CmrGenerateResult
+
+        Legacy API (deprecated):
+            generate_all_copies(trip_data: dict, output_dir: str,
+                                skip_db_update: bool = False) -> dict[str, str]
+        """
+        if args and isinstance(args[0], CmrGenerateRequest):
+            return self._generate_all_copies_typed(*args, **kwargs)
+        logger.warning(
+            "CMRGenerator.generate_all_copies(trip_data, output_dir) is deprecated. "
+            "Use generate_all_copies(CmrGenerateRequest, user_id) instead."
+        )
+        warnings.warn(
+            "Dict-based generate_all_copies() is deprecated, use CmrGenerateRequest",
+            DeprecationWarning, stacklevel=2,
+        )
+        return self._generate_all_copies_legacy(*args, **kwargs)
+
+    def _generate_all_copies_legacy(self, trip_data: dict, output_dir: str,
+                                    skip_db_update: bool = False) -> dict[str, str]:
+        """Legacy multi-copy generation (kept for backward compatibility)."""
         ctx = self._gather_context(trip_data)
         cmr_number = ctx["cmr_number"]
         paths = {}
@@ -298,6 +463,150 @@ class CMRGenerator:
                 pass
 
         return paths
+
+    def _generate_all_copies_typed(self, request: CmrGenerateRequest, user_id: int) -> CmrGenerateResult:
+        """Typed multi-copy CMR generation with permission check and ServiceResult envelope.
+
+        Args:
+            request: Typed request model with trip_id, language, copies, etc.
+            user_id: The user requesting generation (for permission check).
+
+        Returns:
+            CmrGenerateResult with the Sender copy file_path and full cmr_data.
+        """
+        # ── Permission check ────────────────────────────────────────
+        perm = PermissionService(self.db)
+        perm_result = perm.can_generate_cmr(user_id)
+        if not perm_result.allowed:
+            logger.error("User %d cannot generate CMR copies: %s", user_id, perm_result.reason)
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(message=perm_result.reason, code="PERMISSION_DENIED")],
+            )
+
+        # ── Trip lookup ─────────────────────────────────────────────
+        if not self._trip_repo:
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(message="Trip repository not available", code="REPO_UNAVAILABLE")],
+            )
+        trip_data = self._trip_repo.get_by_id(request.trip_id)
+        if not trip_data:
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(
+                    field="trip_id",
+                    message=f"Trip {request.trip_id} not found",
+                    code="TRIP_NOT_FOUND",
+                )],
+            )
+
+        # ── Generate all copies ─────────────────────────────────────
+        try:
+            merged = dict(trip_data)
+            merged["language"] = request.language
+            merged["sender_name"] = request.sender_name
+            merged["sender_address"] = request.sender_address
+            merged["carrier_name"] = request.carrier_name
+            merged["carrier_license"] = request.carrier_license
+            merged["cmr_remarks"] = request.remarks
+
+            ctx = self._gather_context(merged)
+            output_dir = self._get_output_dir(request.trip_id)
+            paths = self._generate_all_copies_legacy(merged, output_dir, skip_db_update=False)
+
+            cmr_result = CmrResult(
+                cmr_number=str(ctx.get("cmr_number", "")),
+                trip_id=request.trip_id,
+                file_path=paths.get("Sender", ""),
+                copies=request.copies,
+                generated_at=datetime.now(timezone.utc),
+                cmr_data=ctx,
+            )
+            logger.info("CMR %d copies generated: %s for trip %d",
+                        request.copies, ctx.get("cmr_number"), request.trip_id)
+            return CmrGenerateResult(success=True, data=cmr_result)
+
+        except Exception as e:
+            logger.error("Failed to generate CMR copies for trip %d: %s", request.trip_id, e)
+            return CmrGenerateResult(
+                success=False,
+                errors=[ErrorDetail(message=str(e), code="GENERATION_FAILED")],
+            )
+
+    # ------------------------------------------------------------------
+    # Async execution
+    # ------------------------------------------------------------------
+
+    def generate_async(
+        self,
+        request: CmrGenerateRequest,
+        user_id: int,
+        callback,
+    ) -> threading.Thread:
+        """Generate a single CMR copy in a background thread.
+
+        Args:
+            request: Typed CMR generation request.
+            user_id: ID of the user requesting generation.
+            callback: Callable that receives the ``CmrGenerateResult``
+                      when generation completes.
+
+        Returns:
+            The background ``threading.Thread`` (daemon) for optional join.
+        """
+        def _run():
+            try:
+                result = self.generate(request, user_id)
+                callback(result)
+            except Exception as e:
+                logger.error("Async CMR generation failed: %s", e, exc_info=True)
+                callback(CmrGenerateResult(
+                    success=False,
+                    errors=[ErrorDetail(message=str(e), code="ASYNC_ERROR")],
+                ))
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return thread
+
+    def generate_all_copies_async(
+        self,
+        request: CmrGenerateRequest,
+        user_id: int,
+        callback,
+    ) -> threading.Thread:
+        """Generate all CMR copies in a background thread.
+
+        Args:
+            request: Typed CMR generation request.
+            user_id: ID of the user requesting generation.
+            callback: Callable that receives the ``CmrGenerateResult``
+                      when generation completes.
+
+        Returns:
+            The background ``threading.Thread`` (daemon) for optional join.
+        """
+        def _run():
+            try:
+                result = self.generate_all_copies(request, user_id)
+                callback(result)
+            except Exception as e:
+                logger.error("Async CMR all-copies generation failed: %s", e, exc_info=True)
+                callback(CmrGenerateResult(
+                    success=False,
+                    errors=[ErrorDetail(message=str(e), code="ASYNC_ERROR")],
+                ))
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return thread
+
+    def _get_output_dir(self, trip_id: int) -> str:
+        """Build and ensure the standard output directory for a trip's CMR documents."""
+        output_dir = os.path.join("data", "documents", "trips", str(trip_id))
+        os.makedirs(output_dir, exist_ok=True)
+        return output_dir
 
     def _build_single_copy(self, ctx: dict[str, Any], suffix: str,
                            output_dir: str, color_hex: str = "#D32F2F",

@@ -1,7 +1,7 @@
 import json
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 
 from backend.dependencies import get_document_service
 from backend.dependencies_security import require_dispatcher
@@ -17,7 +17,7 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 
 
 @router.get("/", response_model=PaginatedResponse[DocumentResponse])
-async def list_documents(
+def list_documents(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     query: str = Query("", description="Search query"),
     category: str = Query("", description="Document category filter"),
@@ -49,7 +49,7 @@ async def list_documents(
 
 
 @router.get("/{doc_id}", response_model=DocumentResponse)
-async def get_document(
+def get_document(
     doc_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
@@ -61,7 +61,7 @@ async def get_document(
 
 
 @router.get("/{doc_id}/read", response_model=DocumentReadResult)
-async def read_document_info(
+def read_document_info(
     doc_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
@@ -124,7 +124,7 @@ def _validate_upload(file: UploadFile) -> None:
 
 
 @router.post("/upload", response_model=DocumentResponse)
-async def upload_document(
+def upload_document(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     file: UploadFile = File(...),
     category: str = Form(""),
@@ -140,7 +140,7 @@ async def upload_document(
 
     temp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename or ".bin")[1])  # noqa: SIM115
     try:
-        content = await file.read()
+        content = file.file.read()
         if len(content) > MAX_UPLOAD_SIZE:
             raise HTTPException(
                 status_code=400,
@@ -163,13 +163,14 @@ async def upload_document(
         os.unlink(temp.name)
 
 
-@router.put("/{doc_id}", response_model=DocumentResponse)
-async def update_document(
+@router.patch("/{doc_id}", response_model=DocumentResponse)
+def update_document_partial(
     doc_id: int,
     update: DocumentUpdate,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
+    """Partially update a document (PATCH)."""
     service.update(doc_id, **update.model_dump(exclude_none=True))
     doc = service.get_by_id(doc_id)
     if not doc:
@@ -177,8 +178,26 @@ async def update_document(
     return DocumentResponse(**doc)
 
 
+@router.put("/{doc_id}", response_model=DocumentResponse, deprecated=True)
+def update_document(
+    doc_id: int,
+    update: DocumentUpdate,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service=Depends(get_document_service),
+    response: Response = None,
+):
+    """[DEPRECATED] Use PATCH /{doc_id} instead."""
+    service.update(doc_id, **update.model_dump(exclude_none=True))
+    doc = service.get_by_id(doc_id)
+    if not doc:
+        raise HTTPException(status_code=404, detail="Document not found")
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
+    return DocumentResponse(**doc)
+
+
 @router.delete("/{doc_id}")
-async def delete_document(
+def delete_document(
     doc_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),

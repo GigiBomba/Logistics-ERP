@@ -9,11 +9,19 @@ import contextlib
 import json
 import logging
 import os
+import warnings
 import zipfile
 from datetime import datetime
 from typing import Any, Optional
 
 from database.db_manager import DatabaseManager
+from models.common import ErrorDetail, ServiceResult
+from models.document_models import (
+    DocumentListResult,
+    DocumentResult,
+    DocumentUpload,
+    DocumentUploadResult,
+)
 from repositories.audit_repository import AuditRepository
 from repositories.document_repository import DocumentRepository
 from services.operations.event_bus import (
@@ -23,6 +31,7 @@ from services.operations.event_bus import (
     DOCUMENT_UNLINKED,
     EventBus,
 )
+from services.permission_service import PermissionService
 
 logger = logging.getLogger("document_service")
 
@@ -80,6 +89,7 @@ class DocumentService:
         self._audit_repo = AuditRepository(db)
         self._event_bus = EventBus()
         self._ocr_db = db
+        self._perm = PermissionService(db)
         self._services: dict = {}
         self._cache: Any = None
 
@@ -88,7 +98,8 @@ class DocumentService:
             try:
                 from backend.cache import get_cache
                 self._cache = get_cache()
-            except Exception:
+            except (ImportError, OSError, ValueError):
+                logger.debug("Cache backend unavailable, disabling cache")
                 self._cache = None  # type: ignore
         return self._cache
 
@@ -160,19 +171,277 @@ class DocumentService:
         """
         logger.debug("DocumentService.shutdown called")
 
-    # ── Upload ─────────────────────────────────────────────────────────
+    # ── Helpers ─────────────────────────────────────────────────────────
 
-    def validate_file(self, source_path: str) -> tuple[bool, Optional[str]]:
-        return self.upload_svc.validate_file(source_path)
+    @staticmethod
+    def _to_document_result(doc: dict[str, Any]) -> DocumentResult:
+        """Convert a repository dict to a typed DocumentResult."""
+        tags_raw = doc.get("tags", "[]")
+        if isinstance(tags_raw, str):
+            try:
+                tags = json.loads(tags_raw)
+            except (json.JSONDecodeError, TypeError):
+                tags = []
+        else:
+            tags = tags_raw or []
 
-    def check_duplicate(self, source_path: str) -> Optional[int]:
-        return self.upload_svc.check_duplicate(source_path)
+        return DocumentResult(
+            id=doc["id"],
+            title=doc.get("title", ""),
+            category=doc.get("category", ""),
+            entity_type=doc.get("entity_type", ""),
+            entity_id=doc.get("entity_id"),
+            filename=doc.get("file_name", ""),
+            file_size=doc.get("file_size", 0),
+            mime_type=doc.get("mime_type", ""),
+            tags=tags,
+            description=doc.get("description", ""),
+            ocr_processed=bool(doc.get("ocr_run_at")),
+            thumbnail_path=doc.get("thumbnail_path"),
+            created_at=doc.get("uploaded_at"),
+            updated_at=doc.get("updated_at"),
+        )
+
+    @staticmethod
+    def _result_error(msg: str, code: str = "ERROR") -> ServiceResult:
+        return ServiceResult(success=False, errors=[ErrorDetail(message=msg, code=code)])
+
+    @staticmethod
+    def _result_ok(data) -> ServiceResult:
+        return ServiceResult(success=True, data=data)
+
+    # ── Typed API ───────────────────────────────────────────────────────
+
+    def upload_document(self, request: DocumentUpload, user_id: int) -> DocumentUploadResult:
+        """Upload a document using a typed request model.
+
+        Args:
+            request: The document upload details.
+            user_id: The ID of the user performing the upload.
+
+        Returns:
+            A ``ServiceResult`` containing the uploaded document details,
+            or an error result if the upload fails.
+        """
+        perm = self._perm.can_upload_document(user_id)
+        if not perm.allowed:
+            return self._result_error(perm.reason, "FORBIDDEN")
+
+        try:
+            doc_id = self.upload_svc.upload(
+                source_path=request.source_path,
+                title=request.title,
+                category=request.category,
+                entity_type=request.entity_type,
+                entity_id=request.entity_id,
+                description=request.description,
+                tags=request.tags,
+                uploaded_by=str(user_id),
+            )
+        except (FileNotFoundError, ValueError, OSError) as exc:
+            logger.error("Upload failed for %s: %s", request.source_path, exc)
+            return self._result_error(str(exc), "UPLOAD_FAILED")
+
+        if doc_id:
+            doc = self._repo.get_by_id(doc_id)
+            if doc:
+                file_path = doc.get("file_path", "")
+                mime_type = doc.get("mime_type", "")
+                if file_path and (mime_type == "application/pdf" or mime_type.startswith("image/")):
+                    self.ocr.enqueue_ocr(doc_id, file_path, mime_type)
+                logger.info(
+                    "Document uploaded: id=%d title=%s category=%s by user=%d",
+                    doc_id, request.title, request.category, user_id,
+                )
+                return self._result_ok(self._to_document_result(doc))
+
+        return self._result_error("Upload returned no document ID", "UPLOAD_FAILED")
+
+    def get(self, document_id: int) -> DocumentUploadResult:
+        """Retrieve a single document by ID.
+
+        Args:
+            document_id: The document ID.
+
+        Returns:
+            A ``ServiceResult`` containing the document, or an error if not found.
+        """
+        doc = self.get_by_id(document_id)
+        if not doc:
+            return self._result_error(f"Document {document_id} not found", "NOT_FOUND")
+        return self._result_ok(self._to_document_result(doc))
+
+    def list_all(self, entity_type: str = "",
+                 entity_id: Optional[int] = None) -> DocumentListResult:
+        """List documents, optionally filtered by entity.
+
+        Args:
+            entity_type: Filter by entity type (e.g. "trip", "client").
+            entity_id: Filter by entity ID.
+
+        Returns:
+            A ``ServiceResult`` containing a list of documents.
+        """
+        if entity_type and entity_id is not None:
+            docs = self._repo.get_documents_for_entity(entity_type, entity_id)
+        else:
+            # Use the search service to fetch all non-archived documents
+            result = self.search_svc.search(
+                query="", category="", entity_type="",
+                entity_id=None, order="uploaded_at DESC",
+                page=0, page_size=10000,
+            )
+            docs = result.get("items", [])
+
+        results = [self._to_document_result(d) for d in docs]
+        return self._result_ok(results)
+
+    def delete_document(self, document_id: int, user_id: int) -> DocumentUploadResult:
+        """Delete a document by ID.
+
+        Args:
+            document_id: The document ID to delete.
+            user_id: The ID of the user requesting deletion.
+
+        Returns:
+            A ``ServiceResult`` containing the deleted document details,
+            or an error if deletion fails.
+        """
+        perm = self._perm.can_delete_document(user_id)
+        if not perm.allowed:
+            return self._result_error(perm.reason, "FORBIDDEN")
+
+        doc = self._repo.get_by_id(document_id)
+        if not doc:
+            return self._result_error(f"Document {document_id} not found", "NOT_FOUND")
+
+        result = self._to_document_result(doc)
+
+        # -- inline deletion logic (old delete implementation) --
+        if doc.get("file_path"):
+            try:
+                if os.path.isfile(doc["file_path"]):
+                    os.remove(doc["file_path"])
+            except OSError as e:
+                logger.warning("Failed to delete file %s: %s", doc["file_path"], e)
+        self._cleanup_thumbnails(document_id)
+        self._cleanup_versions(document_id)
+        self._repo.remove_all_links(document_id)
+        self._repo.delete(document_id)
+        cache = self._get_cache()
+        if cache:
+            cache.delete(self._cache_key(document_id))
+            cache.flush_pattern("doc:*")
+        self._event_bus.publish(DOCUMENT_DELETED, {"document_id": document_id})
+        self._log_audit("document.deleted", f"Deleted document {document_id}")
+
+        logger.info("Document deleted: id=%d by user=%d", document_id, user_id)
+        return self._result_ok(result)
+
+    def email_document(self, document_id: int, recipient: str,
+                       user_id: int) -> ServiceResult[bool]:
+        """Email a document to a recipient.
+
+        Args:
+            document_id: The document ID to email.
+            recipient: The email address of the recipient.
+            user_id: The ID of the user sending the email.
+
+        Returns:
+            A ``ServiceResult[bool]`` indicating success or failure.
+        """
+        perm = self._perm.can_email_document(user_id)
+        if not perm.allowed:
+            return ServiceResult(success=False, errors=[ErrorDetail(message=perm.reason, code="FORBIDDEN")])
+
+        doc = self._repo.get_by_id(document_id)
+        if not doc or not os.path.isfile(doc.get("file_path", "")):
+            return ServiceResult(success=False, errors=[ErrorDetail(
+                message="Document file not found", code="FILE_NOT_FOUND",
+            )])
+
+        from services.operations.notification_center import NotificationCenter
+        nc = NotificationCenter(self.db)
+        # Try loading SMTP config from prefs if available
+        try:
+            from services.preferences_service import PreferencesService
+            prefs = PreferencesService(self.db)
+            smtp_config = prefs.get_smtp_config()
+        except (ImportError, OSError, ValueError):
+            logger.debug("Failed to load SMTP config from preferences")
+            smtp_config = None
+
+        if not smtp_config or not smtp_config.get("smtp_server"):
+            return ServiceResult(success=False, errors=[ErrorDetail(
+                message="SMTP not configured", code="SMTP_NOT_CONFIGURED",
+            )])
+
+        nc.configure_smtp(
+            smtp_config.get("smtp_server", ""),
+            int(smtp_config.get("smtp_port", "587")),
+            smtp_config.get("smtp_user", ""),
+            smtp_config.get("smtp_password", ""),
+        )
+        subject = f"Document: {doc.get('title', doc.get('file_name', ''))}"
+        body = f"Please find attached: {doc.get('title', '')}\n\nDocument ID: {doc.get('doc_number', '')}"
+        ok = nc.send_email(recipient, subject, body, attachments=[doc["file_path"]])
+        if ok:
+            self._log_audit("document.emailed", f"Emailed {doc.get('doc_number')} to {recipient}")
+            logger.info("Document emailed: id=%d to=%s by user=%d", document_id, recipient, user_id)
+        return ServiceResult(success=ok, data=ok)
+
+    def link_to_entity(self, document_id: int, entity_type: str,
+                       entity_id: int) -> DocumentUploadResult:
+        """Link a document to an entity.
+
+        Args:
+            document_id: The document ID.
+            entity_type: The entity type (e.g. "trip", "client").
+            entity_id: The entity ID.
+
+        Returns:
+            A ``ServiceResult`` containing the linked document details.
+        """
+        ok = self.link_document(document_id, entity_type, entity_id)
+        if not ok:
+            return self._result_error(
+                f"Failed to link document {document_id} to {entity_type}:{entity_id}",
+                "LINK_FAILED",
+            )
+        return self.get(document_id)
+
+    # ── Backward-compatible wrappers (deprecated) ───────────────────────
 
     def upload(self, source_path: str, title: str = "",
                category: str = "", entity_type: str = "",
                entity_id: Optional[int] = None,
                description: str = "", tags: Optional[list[str]] = None,
                uploaded_by: str = "") -> Optional[int]:
+        """DEPRECATED: Use ``upload_document(DocumentUpload, user_id)`` instead."""
+        warnings.warn(
+            "upload(source_path, ...) is deprecated; use upload_document(DocumentUpload, user_id)",
+            DeprecationWarning, stacklevel=2,
+        )
+        return self.upload_legacy(
+            source_path, title=title, category=category,
+            entity_type=entity_type, entity_id=entity_id,
+            description=description, tags=tags, uploaded_by=uploaded_by,
+        )
+
+    def delete(self, doc_id: int) -> bool:
+        """DEPRECATED: Use ``delete_document(document_id, user_id)`` instead."""
+        warnings.warn(
+            "delete(doc_id) is deprecated; use delete_document(document_id, user_id)",
+            DeprecationWarning, stacklevel=2,
+        )
+        return self.delete_legacy(doc_id)
+
+    def upload_legacy(self, source_path: str, title: str = "",
+                      category: str = "", entity_type: str = "",
+                      entity_id: Optional[int] = None,
+                      description: str = "", tags: Optional[list[str]] = None,
+                      uploaded_by: str = "") -> Optional[int]:
+        """Legacy kwargs-based upload (called by deprecated ``upload()`` wrapper)."""
         doc_id = self.upload_svc.upload(
             source_path=source_path, title=title, category=category,
             entity_type=entity_type, entity_id=entity_id,
@@ -344,7 +613,8 @@ class DocumentService:
         self._repo.archive(doc_id)
         self._event_bus.publish(DOCUMENT_ARCHIVED, {"document_id": doc_id})
 
-    def delete(self, doc_id: int) -> bool:
+    def delete_legacy(self, doc_id: int) -> bool:
+        """Legacy delete (called by deprecated ``delete()`` wrapper)."""
         doc = self._repo.get_by_id(doc_id)
         if doc and doc.get("file_path"):
             try:
@@ -412,11 +682,17 @@ class DocumentService:
     def is_image(self, mime_type: str) -> bool:
         return mime_type in IMAGE_MIME
 
-    # ── Email ──────────────────────────────────────────────────────────
+    # ── Email (deprecated) ─────────────────────────────────────────────
 
-    def email_document(self, doc_id: int, recipient: str,
-                       smtp_config: Optional[dict[str, str]] = None,
-                       prefs=None) -> bool:
+    def email_document_legacy(self, doc_id: int, recipient: str,
+                              smtp_config: Optional[dict[str, str]] = None,
+                              prefs=None) -> bool:
+        """DEPRECATED: Use ``email_document(document_id, recipient, user_id)`` instead."""
+        warnings.warn(
+            "email_document(doc_id, recipient, smtp_config=, prefs=) is deprecated; "
+            "use email_document(document_id, recipient, user_id)",
+            DeprecationWarning, stacklevel=2,
+        )
         doc = self._repo.get_by_id(doc_id)
         if not doc or not os.path.isfile(doc.get("file_path", "")):
             return False
@@ -494,7 +770,7 @@ class DocumentService:
                 return thumb_path
             elif mime_type == "application/pdf":
                 return self._pdf_thumbnail(file_path, thumb_path)
-        except Exception as e:
+        except (OSError, ValueError, ImportError, RuntimeError) as e:
             logger.debug("Thumbnail generation failed for %s: %s", file_path, e)
         return None
 
@@ -519,7 +795,7 @@ class DocumentService:
                 img.thumbnail(THUMB_SIZE, Image.LANCZOS)
                 img.save(thumb_path, "PNG")
                 return thumb_path
-        except Exception:
+        except (ImportError, OSError, RuntimeError, ValueError):
             logger.debug("PyMuPDF thumbnail failed for %s, using placeholder", pdf_path)
 
         # Fallback: placeholder with page count
@@ -538,13 +814,20 @@ class DocumentService:
                        fill="#a1a1aa")
             img.save(thumb_path, "PNG")
             return thumb_path
-        except Exception:
+        except (OSError, ValueError, RuntimeError):
+            logger.debug("Fallback PDF thumbnail failed for %s", pdf_path)
             return None
 
     # ── Audit Log ──────────────────────────────────────────────────────
 
     def _log_audit(self, event_type: str, description: str) -> None:
-        self._audit_repo.log_event(event_type, description)
+        # Backward-compatible wrapper: extract entity_type from event_type prefix
+        entity_type = event_type.split(".")[0] if "." in event_type else ""
+        self._audit_repo.log_event(
+            event_type=event_type,
+            entity_type=entity_type,
+            data={"description": description},
+        )
 
     def get_audit_log(self, limit: int = 50) -> list[dict[str, Any]]:
         return self._audit_repo.get_events(event_type_prefix="document.", limit=limit)

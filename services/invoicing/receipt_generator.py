@@ -5,10 +5,16 @@ companies, transport services, customer payments, employee reimbursements,
 fuel expenses, toll expenses, and other business-related financial
 transactions.
 """
+import json
+import logging
 import os
 import tempfile
+from datetime import date, datetime
+from typing import Optional
 
 from reportlab.lib import colors
+
+logger = logging.getLogger(__name__)
 from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 from reportlab.lib.units import cm
@@ -22,6 +28,8 @@ from reportlab.platypus import (
     TableStyle,
 )
 
+from models.common import ErrorDetail, ServiceResult
+from models.receipt_models import ReceiptCreate, ReceiptCreateResult, ReceiptLineItem, ReceiptResult
 from services.i18n import _get_translations
 from services.invoicing.config_manager import load_company_config
 from utils.helpers import remove_accents
@@ -38,10 +46,19 @@ class ReceiptGenerator:
 
         gen = ReceiptGenerator()
         path = gen.generate(receipt_data)
+
+    Typed methods (preferred)::
+
+        gen = ReceiptGenerator(db)
+        result = gen.create(request, user_id)
+        result = gen.generate_pdf(receipt_id)
+        result = gen.get(receipt_id)
+        results = gen.list_all()
     """
 
-    def __init__(self):
+    def __init__(self, db=None):
         os.makedirs(_BASE_DIR, exist_ok=True)
+        self._db = db
         self.styles = getSampleStyleSheet()
 
     # ── Translation helper ─────────────────────────────────────────────
@@ -52,10 +69,285 @@ class ReceiptGenerator:
         result = _get_translations(lang).get(key, key)
         return str(result) if result is not None else key
 
+    # ── Repository / Permission helpers ─────────────────────────────
+
+    @property
+    def _repo(self):
+        """Lazy-init ReceiptRepository (requires db)."""
+        if self._db is None:
+            raise RuntimeError("ReceiptGenerator requires a db connection for repository access")
+        from repositories.receipt_repository import ReceiptRepository
+        return ReceiptRepository(self._db)
+
+    @property
+    def _perm(self):
+        """Lazy-init PermissionService (requires db)."""
+        if self._db is None:
+            raise RuntimeError("ReceiptGenerator requires a db connection for permission checks")
+        from services.permission_service import PermissionService
+        return PermissionService(self._db)
+
+    @property
+    def _client_repo(self):
+        """Lazy-init ClientRepository (requires db)."""
+        if self._db is None:
+            raise RuntimeError("ReceiptGenerator requires a db connection for client repository access")
+        from repositories.client_repository import ClientRepository
+        return ClientRepository(self._db)
+
+    # ── Typed public API ─────────────────────────────────────────────
+
+    def create(self, request: ReceiptCreate, user_id: int) -> ReceiptCreateResult:
+        """Create a receipt record from a typed request.
+
+        1. Permission check via ``PermissionService.can_create_receipt``
+        2. Compute ``total_amount`` from ``items`` if not provided
+        3. Generate receipt number
+        4. Look up client info and save to DB
+        5. Return ``ServiceResult[ReceiptResult]``
+        """
+        # ── 1. Permission check ──────────────────────────────────────
+        try:
+            perm = self._perm
+            check = perm.can_create_receipt(user_id)
+            if not check.allowed:
+                logger.warning("Permission denied for user %s to create receipt: %s", user_id, check.reason)
+                return ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(field="permission", message=check.reason, code="FORBIDDEN")],
+                )
+        except RuntimeError:
+            pass  # no db — skip permission check (backward compat)
+
+        # ── 2. Compute total_amount from items ───────────────────────
+        total_amount = request.total_amount
+        if total_amount is None and request.items:
+            total_amount = round(sum(item.amount * item.quantity for item in request.items), 2)
+        elif total_amount is None:
+            total_amount = 0.0
+
+        # ── 3. Generate receipt number + DB access ────────────────────
+        receipt_number = ""
+        receipt_id = None
+        client_name = ""
+        client_address = ""
+        client_vat = ""
+        issue_date_str = request.receipt_date.isoformat()
+        try:
+            repo = self._repo
+            receipt_number = repo.get_next_number()
+
+            # ── 4. Look up client info ───────────────────────────────
+            try:
+                client = self._client_repo.get_by_id(request.client_id)
+                if client:
+                    client_name = client.get("name", "")
+                    client_address = client.get("address", "")
+                    client_vat = client.get("vat_number", "")
+            except RuntimeError:
+                pass
+
+            # ── 5. Prepare items JSON ────────────────────────────────
+            items_json = json.dumps([item.model_dump() for item in request.items])
+
+            # ── 6. Save to DB ────────────────────────────────────────
+            receipt_id = repo.create(
+                receipt_number=receipt_number,
+                issue_date=issue_date_str,
+                payment_date=issue_date_str,
+                currency=request.currency,
+                amount=total_amount,
+                total=total_amount,
+                notes=request.notes,
+                attachments_json=items_json,
+                received_from_name=client_name,
+                received_from_address=client_address,
+                received_from_vat=client_vat,
+                related_trip_id=request.trip_id,
+                invoice_reference=str(request.invoice_id) if request.invoice_id else "",
+                vehicle_id=request.vehicle_id,
+                client_id=request.client_id,
+                status="Draft",
+            )
+
+            if receipt_id is None:
+                logger.error("Failed to create receipt for client_id=%s", request.client_id)
+                return ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(message="Failed to create receipt record", code="DB_ERROR")],
+                )
+        except RuntimeError:
+            logger.error("Cannot create receipt without database connection")
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message="Database connection required to create receipt", code="DB_ERROR")],
+            )
+
+        # ── 7. Build result ──────────────────────────────────────────
+        pdf_path = self._compute_pdf_path(receipt_number)
+        if pdf_path and not os.path.isfile(pdf_path):
+            pdf_path = None
+
+        result = ReceiptResult(
+            id=receipt_id,
+            receipt_number=receipt_number,
+            client_id=request.client_id,
+            client_name=client_name,
+            trip_id=request.trip_id,
+            invoice_id=request.invoice_id,
+            vehicle_id=request.vehicle_id,
+            vehicle_plate="",
+            receipt_date=request.receipt_date,
+            currency=request.currency,
+            items=request.items,
+            total_amount=total_amount,
+            notes=request.notes,
+            pdf_path=pdf_path,
+            created_at=datetime.now(),
+        )
+
+        logger.info("Receipt created: id=%s number=%s client_id=%s", receipt_id, receipt_number, request.client_id)
+        return ServiceResult(success=True, data=result)
+
+    def generate_pdf(self, receipt_id: int) -> ReceiptCreateResult:
+        """Generate a PDF for an existing receipt and update its ``pdf_path``."""
+        try:
+            repo = self._repo
+        except RuntimeError as exc:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="DB_ERROR")],
+            )
+
+        row = repo.get_by_id(receipt_id)
+        if not row:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=f"Receipt {receipt_id} not found", code="NOT_FOUND")],
+            )
+
+        try:
+            pdf_path = self.generate(row)  # reuse existing PDF generator
+            repo.update(receipt_id, pdf_path=pdf_path)
+            row["pdf_path"] = pdf_path
+            result = self._row_to_result(row)
+            logger.info("PDF generated for receipt id=%s path=%s", receipt_id, pdf_path)
+            return ServiceResult(success=True, data=result)
+        except Exception as exc:
+            logger.error("Failed to generate PDF for receipt %s: %s", receipt_id, exc)
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="PDF_ERROR")],
+            )
+
+    def get(self, receipt_id: int) -> ReceiptCreateResult:
+        """Fetch a single receipt by ID."""
+        try:
+            repo = self._repo
+        except RuntimeError as exc:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="DB_ERROR")],
+            )
+
+        row = repo.get_by_id(receipt_id)
+        if not row:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=f"Receipt {receipt_id} not found", code="NOT_FOUND")],
+            )
+        result = self._row_to_result(row)
+        return ServiceResult(success=True, data=result)
+
+    def list_all(self) -> ServiceResult[list[ReceiptResult]]:
+        """Return all receipts as typed results."""
+        try:
+            repo = self._repo
+        except RuntimeError as exc:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="DB_ERROR")],
+            )
+
+        rows = repo.get_all()
+        results = [self._row_to_result(row) for row in rows]
+        return ServiceResult(success=True, data=results)
+
+    # ── Helpers ──────────────────────────────────────────────────────
+
+    @staticmethod
+    def _compute_pdf_path(receipt_number: str) -> Optional[str]:
+        """Return the expected PDF file path for a receipt number."""
+        if not receipt_number:
+            return None
+        return os.path.join(_BASE_DIR, f"{receipt_number}.pdf")
+
+    @classmethod
+    def _row_to_result(cls, row: dict) -> ReceiptResult:
+        """Convert a repository dict row to a typed ``ReceiptResult``."""
+        # Parse items from attachments_json
+        items: list[ReceiptLineItem] = []
+        attachments_json = row.get("attachments_json", "[]")
+        if attachments_json:
+            try:
+                items_data = json.loads(attachments_json)
+                for item in items_data:
+                    if isinstance(item, dict):
+                        items.append(ReceiptLineItem(**item))
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # Parse dates
+        receipt_date_str = row.get("issue_date", "")
+        try:
+            receipt_date = date.fromisoformat(receipt_date_str) if receipt_date_str else date.today()
+        except (ValueError, TypeError):
+            receipt_date = date.today()
+
+        created_at_str = row.get("created_at", "")
+        created_at: Optional[datetime] = None
+        if created_at_str:
+            try:
+                created_at = datetime.fromisoformat(created_at_str)
+            except (ValueError, TypeError):
+                pass
+
+        # Try to parse invoice_id from invoice_reference string
+        invoice_id: Optional[int] = None
+        inv_ref = row.get("invoice_reference", "")
+        if inv_ref and inv_ref.isdigit():
+            invoice_id = int(inv_ref)
+
+        receipt_number = row.get("receipt_number", "")
+        pdf_path = cls._compute_pdf_path(receipt_number)
+        if pdf_path and not os.path.isfile(pdf_path):
+            pdf_path = None
+
+        return ReceiptResult(
+            id=row["id"],
+            receipt_number=receipt_number,
+            client_id=row.get("client_id", 0) or 0,
+            client_name=row.get("received_from_name", ""),
+            trip_id=row.get("related_trip_id"),
+            invoice_id=invoice_id,
+            vehicle_id=row.get("vehicle_id"),
+            vehicle_plate="",
+            receipt_date=receipt_date,
+            currency=row.get("currency", "EUR"),
+            items=items,
+            total_amount=float(row.get("total", 0) or 0),
+            notes=row.get("notes", ""),
+            pdf_path=pdf_path,
+            created_at=created_at,
+        )
+
     # ── Main generation entry point ────────────────────────────────────
 
     def generate(self, receipt_data: dict) -> str:
         """Generate a receipt PDF and return the file path.
+
+        .. deprecated::
+            Use :meth:`create` + :meth:`generate_pdf` instead.
 
         *receipt_data* keys:
             receipt_number, receipt_type, issue_date, payment_date, currency,
@@ -85,6 +377,12 @@ class ReceiptGenerator:
 
         filename = f"{receipt_number}.pdf"
         full_path = os.path.join(_BASE_DIR, filename)
+
+        logger.info("Generating receipt PDF: receipt_number=%s, type=%s, amount=%s, currency=%s",
+                    receipt_number,
+                    receipt_data.get("receipt_type", ""),
+                    receipt_data.get("total", receipt_data.get("amount", 0)),
+                    receipt_data.get("currency", "EUR"))
 
         story = []
 
@@ -702,6 +1000,9 @@ class ReceiptGenerator:
                     pass
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
+            logger.error("Failed to generate receipt PDF: receipt_number=%s, path=%s",
+                         receipt_number, full_path, exc_info=True)
             raise
 
+        logger.info("Receipt PDF generated successfully: path=%s, receipt_number=%s", full_path, receipt_number)
         return full_path

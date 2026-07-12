@@ -22,10 +22,10 @@ class TachoDriverActivityRepository(BaseRepository):
             tuple(data.values()),
         )
 
-    def get_by_driver(self, driver_id: int, from_date: date) -> List[Dict[str, Any]]:
+    def get_by_driver(self, driver_id: int, date_from: date) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE driver_id = ? AND activity_date >= ? {self._company_filter()} ORDER BY activity_date DESC",
-            (driver_id, from_date.isoformat()) + self._company_params(),
+            (driver_id, date_from.isoformat()) + self._company_params(),
         )
 
     def get_by_import(self, import_id: int) -> List[Dict[str, Any]]:

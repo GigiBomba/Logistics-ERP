@@ -9,7 +9,10 @@ from __future__ import annotations
 import csv
 import logging
 import os
+import warnings
 from typing import Any, Callable
+
+from models.common import ServiceResult
 
 logger = logging.getLogger(__name__)
 
@@ -48,12 +51,38 @@ class CsvService:
         logger.info("CSV exported: %s (%d rows)", path, len(rows))
 
     @staticmethod
-    def import_csv(
+    def import_csv(file_path: str, encoding: str = "utf-8-sig") -> ServiceResult[int]:
+        """Import a CSV file and return the row count as a typed result.
+
+        This is the new typed interface. For callback-based processing,
+        see ``import_csv_with_callback()``.
+
+        Args:
+            file_path: Path to the CSV file.
+            encoding: File encoding (default utf-8-sig for Excel compat).
+
+        Returns:
+            ServiceResult with the number of data rows processed.
+        """
+        count = 0
+        with open(file_path, encoding=encoding) as f:
+            reader = csv.DictReader(f)
+            for _ in reader:
+                count += 1
+        logger.info("CSV imported: %s (%d rows)", file_path, count)
+        return ServiceResult(success=True, data=count)
+
+    @staticmethod
+    def import_csv_with_callback(
         path: str,
         row_callback: Callable[[dict[str, str]], None],
         encoding: str = "utf-8-sig",
     ) -> int:
         """Read a CSV file and process each row through a callback.
+
+        .. deprecated::
+            Use ``import_csv(file_path)`` instead. This method is kept for
+            backward compatibility and will be removed in a future version.
 
         Args:
             path: Input file path.
@@ -63,13 +92,18 @@ class CsvService:
         Returns:
             Number of rows processed.
         """
+        warnings.warn(
+            "import_csv with callback is deprecated, use import_csv(file_path) instead",
+            DeprecationWarning,
+            stacklevel=2,
+        )
         count = 0
         with open(path, encoding=encoding) as f:
             reader = csv.DictReader(f)
             for row in reader:
                 row_callback(row)
                 count += 1
-        logger.info("CSV imported: %s (%d rows)", path, count)
+        logger.info("CSV imported (callback): %s (%d rows)", path, count)
         return count
 
     @staticmethod

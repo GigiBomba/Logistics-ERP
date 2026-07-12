@@ -97,11 +97,16 @@
     <Compile Include="repositories\trip_repository.py" />
     <Compile Include="repositories\truck_route_assignment_repository.py" />
     <Compile Include="repositories\__init__.py" />
+    <Compile Include="scripts\add_hardcoded_strings.py" />
     <Compile Include="scripts\alert_checker.py" />
     <Compile Include="scripts\backfill_clients.py" />
     <Compile Include="scripts\backfill_truck_id.py" />
     <Compile Include="scripts\build_client.py" />
+    <Compile Include="scripts\cleanup_translations.py" />
+    <Compile Include="scripts\fill_translations.py" />
+    <Compile Include="scripts\fix_placeholders.py" />
     <Compile Include="scripts\migrate_dates.py" />
+    <Compile Include="scripts\restore_data_from_backup.py" />
     <Compile Include="scripts\seed_production_company.py" />
     <Compile Include="scripts\validate_translations.py" />
     <Compile Include="scripts\verify_client_isolation.py" />
@@ -166,9 +171,6 @@
     <Compile Include="services\invoicing\cmr_efti.py" />
     <Compile Include="services\invoicing\cmr_generator.py" />
     <Compile Include="services\invoicing\cmr_validator.py" />
-    <Compile Include="services\invoicing\constants.py">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="services\invoicing\generator.py">
       <SubType>Code</SubType>
     </Compile>
@@ -180,9 +182,6 @@
     <Compile Include="services\invoicing\receipt_service.py" />
     <Compile Include="services\invoicing\service.py" />
     <Compile Include="services\invoicing\__init__.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="services\email_service.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="services\fleet_service.py">
@@ -361,23 +360,33 @@
     <Compile Include="ui\views\analytics\route_tab.py" />
     <Compile Include="ui\views\analytics\_tab_base.py" />
     <Compile Include="ui\views\analytics\__init__.py" />
-    <Compile Include="ui\views\automation_view.py" />
+    <Compile Include="ui\views\automation_view\__init__.py" />
+    <Compile Include="ui\views\automation_view\automation_queue.py" />
+    <Compile Include="ui\views\automation_view\automation_view.py" />
     <Compile Include="ui\views\automation_worker.py" />
     <Compile Include="ui\views\calculator_view.py" />
     <Compile Include="ui\views\client_manager.py" />
-    <Compile Include="ui\views\client_workspace.py" />
-    <Compile Include="ui\views\cmr_form_view.py" />
+    <Compile Include="ui\views\client_workspace\__init__.py" />
+    <Compile Include="ui\views\client_workspace\client_details.py" />
+    <Compile Include="ui\views\client_workspace\client_workspace.py" />
+    <Compile Include="ui\views\cmr_form_view\__init__.py" />
+    <Compile Include="ui\views\cmr_form_view\cmr_fields.py" />
+    <Compile Include="ui\views\cmr_form_view\cmr_form.py" />
     <Compile Include="ui\views\country_exclusions_panel.py" />
     <Compile Include="ui\views\dashboard.py" />
     <Compile Include="ui\views\dispatch_board_view.py" />
     <Compile Include="ui\views\document_center_view.py" />
     <Compile Include="ui\views\driver_manager.py" />
     <Compile Include="ui\views\email_composer_modal.py" />
-    <Compile Include="ui\views\fleet_tab.py" />
+    <Compile Include="ui\views\fleet_tab\__init__.py" />
+    <Compile Include="ui\views\fleet_tab\fleet_tab.py" />
+    <Compile Include="ui\views\fleet_tab\truck_form.py" />
     <Compile Include="ui\views\fleet_tracking_view.py" />
     <Compile Include="ui\views\generators_view.py" />
     <Compile Include="ui\views\history_view.py" />
-    <Compile Include="ui\views\invoice_editor.py" />
+    <Compile Include="ui\views\invoice_editor\__init__.py" />
+    <Compile Include="ui\views\invoice_editor\editor_form.py" />
+    <Compile Include="ui\views\invoice_editor\line_items.py" />
     <Compile Include="ui\views\maintenance_analytics_view.py" />
     <Compile Include="ui\views\maintenance_control_panel.py" />
     <Compile Include="ui\views\overview_view.py" />
@@ -385,7 +394,9 @@
     <Compile Include="ui\views\re_run_ocr_worker.py" />
     <Compile Include="ui\views\route_history_view.py" />
     <Compile Include="ui\views\route_planner_view.py" />
-    <Compile Include="ui\views\settings_view.py" />
+    <Compile Include="ui\views\settings_view\__init__.py" />
+    <Compile Include="ui\views\settings_view\settings_fields.py" />
+    <Compile Include="ui\views\settings_view\settings_view.py" />
     <Compile Include="ui\views\tacho_import_view.py" />
     <Compile Include="ui\views\__init__.py" />
     <Compile Include="ui\widgets\alert_panel.py" />
@@ -400,13 +411,11 @@
     <Compile Include="ui\widgets\dispatch_timeline.py" />
     <Compile Include="ui\widgets\fuel_panel.py" />
     <Compile Include="ui\widgets\kanban_column.py" />
-    <Compile Include="ui\widgets\nav_panel.py" />
     <Compile Include="ui\widgets\service_timeline_widget.py" />
     <Compile Include="ui\widgets\sidebar.py" />
     <Compile Include="ui\widgets\signature_pad.py" />
     <Compile Include="ui\widgets\toast.py" />
     <Compile Include="ui\widgets\topbar.py" />
-    <Compile Include="ui\widgets\top_bar.py" />
     <Compile Include="ui\widgets\trip_card.py" />
     <Compile Include="ui\widgets\__init__.py" />
     <Compile Include="utils\dates.py" />
@@ -421,49 +430,7 @@
     <Compile Include="tests\test_route_history_stats.py" />
     <Compile Include="services\stop_factory.py" />
     <Compile Include="services\trip_context.py" />
-    <Compile Include="services\validation.py">
-      <SubType>Code</SubType>
-    </Compile>
     <Compile Include="ui\main_window.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\dashboard.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\history_view.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\edit_window.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\invoice_tab.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\analytics_view.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\fleet_tab.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\map_helpers.py" />
-    <Compile Include="ui\route_map_renderer.py" />
-    <Compile Include="ui\route_planner_exclusions.py" />
-    <Compile Include="ui\route_planner.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\route_history_view.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\history_map_preview.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\settings_view.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\settings_tab.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="ui\widgets.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="ui\styles.py">
@@ -473,9 +440,6 @@
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="utils\logger.py">
-      <SubType>Code</SubType>
-    </Compile>
-    <Compile Include="utils\data_safety.py">
       <SubType>Code</SubType>
     </Compile>
     <Compile Include="utils\resource_path.py" />
@@ -697,6 +661,12 @@
     <Folder Include="ui\views\" />
     <Folder Include="ui\views\analytics\" />
     <Folder Include="ui\views\analytics\__pycache__\" />
+    <Folder Include="ui\views\automation_view\" />
+    <Folder Include="ui\views\client_workspace\" />
+    <Folder Include="ui\views\cmr_form_view\" />
+    <Folder Include="ui\views\fleet_tab\" />
+    <Folder Include="ui\views\invoice_editor\" />
+    <Folder Include="ui\views\settings_view\" />
     <Folder Include="ui\views\__pycache__\" />
     <Folder Include="ui\widgets\" />
     <Folder Include="ui\widgets\__pycache__\" />

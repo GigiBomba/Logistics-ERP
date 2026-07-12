@@ -1,0 +1,271 @@
+Run started:2026-07-12 13:56:10.991480+00:00
+
+Test results:
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\admin.py:172:20
+171	                cnt = db.conn.execute(
+172	                    f"SELECT COUNT(*) FROM \"{table_name}\""
+173	                ).fetchone()[0]
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\admin.py:255:16
+254	            cursor = db.conn.execute(
+255	                f"SELECT * FROM \"{table_name}\" "
+256	                f"LIMIT ? OFFSET ?",
+257	                (page_size, offset),
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Low
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\admin.py:309:18
+308	        # Wrap in subquery to enforce row limit
+309	        wrapped = f"SELECT * FROM ({query}) AS _admin_q LIMIT {limit}"
+310	        cursor = ro_conn.execute(wrapped)
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\admin.py:422:20
+421	                exists = db.conn.execute(
+422	                    f"SELECT 1 FROM \"{table}\" WHERE id = ?", (eid,)
+423	                ).fetchone()
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\auth.py:100:8
+99	            raise
+100	        except Exception:
+101	            pass  # fall through to in-memory
+102	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\auth.py:130:8
+129	            return
+130	        except Exception:
+131	            pass  # fall through to in-memory
+132	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\auth.py:148:8
+147	            return
+148	        except Exception:
+149	            pass
+150	    _failed_attempts.pop(email, None)
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\auth.py:286:8
+285	        "refresh_token": refresh_token,
+286	        "token_type": "bearer",
+287	        "expires_in": settings.access_token_expire_minutes * 60,
+288	    }
+289	
+290	
+291	# ═════════════════════════════════════════════════════════════════════════════
+292	# Endpoints
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\cmr.py:44:8
+43	            shutil.rmtree(output_dir, ignore_errors=True)
+44	        except Exception:
+45	            pass
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\gdpr.py:59:20
+58	                rows = db.conn.execute(
+59	                    f"SELECT * FROM {table} WHERE company_id = ?", (company_id,)
+60	                ).fetchall()
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\gdpr.py:144:24
+143	                    result = db.conn.execute(
+144	                        f"UPDATE {table} SET is_active = 0 WHERE company_id = ?",
+145	                        (company_id,)
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\gdpr.py:149:24
+148	                    result = db.conn.execute(
+149	                        f"DELETE FROM {table} WHERE company_id = ?",
+150	                        (company_id,)
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\gdpr.py:175:4
+174	        )
+175	    except Exception:
+176	        pass
+177	
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\users.py:148:20
+147	    values = list(update_fields.values()) + [user_id]
+148	    db.conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+149	    db.conn.commit()
+
+--------------------------------------------------
+>> Issue: [B608:hardcoded_sql_expressions] Possible SQL injection vector through string-based query construction.
+   Severity: Medium   Confidence: Medium
+   CWE: CWE-89 (https://cwe.mitre.org/data/definitions/89.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b608_hardcoded_sql_expressions.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\api\v1\users.py:201:20
+200	    values = list(update_fields.values()) + [user_id]
+201	    db.conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+202	    db.conn.commit()
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\celery_app\tasks\ocr_tasks.py:34:8
+33	                return {"error": "File not on disk", "document_id": document_id, "path": file_path}
+34	        except Exception:
+35	            pass
+36	
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'auth/token-expired'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\errors.py:24:20
+23	    INVALID_CREDENTIALS = "auth/invalid-credentials"
+24	    TOKEN_EXPIRED = "auth/token-expired"
+25	    TOKEN_INVALID = "auth/token-invalid"
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'auth/token-invalid'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\errors.py:25:20
+24	    TOKEN_EXPIRED = "auth/token-expired"
+25	    TOKEN_INVALID = "auth/token-invalid"
+26	    ACCOUNT_LOCKED = "auth/account-locked"
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\main.py:11:0
+10	        load_dotenv(env_path)
+11	except Exception:
+12	    pass
+13	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\middleware\idempotency_middleware.py:55:8
+54	                return tuple(json.loads(data))
+55	        except Exception:
+56	            pass
+57	        return None
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\middleware\idempotency_middleware.py:66:8
+65	            self._redis.setex(f"idem:{key_hash}", self._ttl, value)
+66	        except Exception:
+67	            pass
+68	
+
+--------------------------------------------------
+>> Issue: [B110:try_except_pass] Try, Except, Pass detected.
+   Severity: Low   Confidence: High
+   CWE: CWE-703 (https://cwe.mitre.org/data/definitions/703.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b110_try_except_pass.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\middleware\idempotency_middleware.py:90:8
+89	                        break
+90	        except Exception:
+91	            pass
+92	        return result
+
+--------------------------------------------------
+>> Issue: [B105:hardcoded_password_string] Possible hardcoded password: 'bearer'
+   Severity: Low   Confidence: Medium
+   CWE: CWE-259 (https://cwe.mitre.org/data/definitions/259.html)
+   More Info: https://bandit.readthedocs.io/en/1.9.4/plugins/b105_hardcoded_password_string.html
+   Location: C:\Users\Bonjo\source\repos\Calculator logistica\backend\oauth2.py:126:12
+125	            "access_token": access_token,
+126	            "token_type": "bearer",
+127	            "expires_in": 3600,
+128	            "scope": " ".join(requested_scopes),
+129	        }
+130	
+131	    def revoke_client(self, client_id: str) -> None:
+132	        """Revoke an OAuth2 client."""
+
+--------------------------------------------------
+
+Code scanned:
+	Total lines of code: 6945
+	Total lines skipped (#nosec): 0
+	Total potential issues skipped due to specifically being disabled (e.g., #nosec BXXX): 0
+
+Run metrics:
+	Total issues (by severity):
+		Undefined: 0
+		Low: 14
+		Medium: 9
+		High: 0
+	Total issues (by confidence):
+		Undefined: 0
+		Low: 1
+		Medium: 12
+		High: 10
+Files skipped (0):

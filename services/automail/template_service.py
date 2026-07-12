@@ -11,7 +11,10 @@ import logging
 import re
 from typing import Any, Optional
 
+from models.automail_models import EmailTemplateCreate
+from models.common import ServiceResult, ErrorDetail
 from repositories.automail_repository import AutoMailRepository
+from services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
 
@@ -101,8 +104,89 @@ class TemplateService:
     def get_default_template(self) -> Optional[dict[str, Any]]:
         return self._repo.get_default_template()
 
-    def create_template(self, data: dict[str, Any]) -> int:
-        return self._repo.create_template(data)
+    def create_template(
+        self,
+        request: EmailTemplateCreate | dict[str, Any],
+        user_id: int | None = None,
+    ) -> ServiceResult[dict]:
+        """Create a new email template.
+
+        The preferred calling convention uses a typed :class:`EmailTemplateCreate`
+        and an explicit *user_id*.  For backward compatibility a plain *dict*
+        is still accepted (but deprecated).
+
+        Args:
+            request: Either an :class:`EmailTemplateCreate` (preferred) or a
+                     plain dict (deprecated).
+            user_id: Required when *request* is an ``EmailTemplateCreate``.
+
+        Returns:
+            ServiceResult containing the created template dict.
+        """
+        # Backward compat: accept plain dict (deprecated)
+        if isinstance(request, dict):
+            logger.warning(
+                "Deprecated: create_template(data=dict) is deprecated. "
+                "Use create_template(request=EmailTemplateCreate, user_id=int)."
+            )
+            try:
+                template_id = self._repo.create_template(request)
+                template = self._repo.get_template_by_id(template_id)
+                logger.info("Template #%d created (dict path)", template_id)
+                return ServiceResult(success=True, data=template)
+            except Exception as exc:
+                logger.error("Failed to create template: %s", exc)
+                return ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(message=str(exc), code="create_failed")],
+                )
+
+        # New typed path
+        if user_id is None:
+            raise ValueError("user_id is required when using EmailTemplateCreate")
+        logger.info("Creating template '%s' by user #%d", request.name, user_id)
+
+        perm = PermissionService(self._repo.db)
+        perm_result = perm.can_send_email(user_id)
+        if not perm_result.allowed:
+            logger.warning(
+                "Permission denied for user #%d to create template: %s",
+                user_id, perm_result.reason,
+            )
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=perm_result.reason, code="permission_denied")],
+            )
+
+        try:
+            data = request.model_dump()
+            template_id = self._repo.create_template(data)
+            template = self._repo.get_template_by_id(template_id)
+            logger.info("Template #%d created successfully by user #%d", template_id, user_id)
+            return ServiceResult(success=True, data=template)
+        except Exception as exc:
+            logger.error("Failed to create template: %s", exc)
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="create_failed")],
+            )
+
+    def list_templates(self) -> ServiceResult[list[dict]]:
+        """Return all email templates.
+
+        Returns:
+            ServiceResult containing the list of template dicts.
+        """
+        try:
+            templates = self._repo.get_all_templates()
+            logger.info("Listed %d templates", len(templates))
+            return ServiceResult(success=True, data=templates)
+        except Exception as exc:
+            logger.error("Failed to list templates: %s", exc)
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="list_failed")],
+            )
 
     def update_template(self, template_id: int, data: dict[str, Any]) -> None:
         self._repo.update_template(template_id, data)

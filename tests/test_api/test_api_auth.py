@@ -13,6 +13,7 @@ from fastapi.testclient import TestClient
 from backend.api.v1.auth import _failed_attempts
 from backend.main import create_app
 from backend.security import decode_access_token
+from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
 
 # ── Test admin credentials (must match admin.env) ──────────────────────
 _TEST_ADMIN_EMAIL = "bonjourlol444@gmail.com"
@@ -21,7 +22,6 @@ _TEST_ADMIN_PASSWORD = (
     "?w9tg*]N@sg]tN)Fy0k.q843}!d2_xZpW?MkCKPUC4qA7"
 )
 _TEST_ADMIN_HASH = "$2b$12$HWGCueEet/0YiXml7OvbpevITMJdjgs9FCFLmfYuwcgKwYvtpeOCG"
-_TEST_JWT_SECRET = "e8f9b23fbc062b8a74c4dbb9dcde99252a13f040b201a056a29df147c216298a"
 
 
 @pytest.fixture(scope="module", autouse=True)

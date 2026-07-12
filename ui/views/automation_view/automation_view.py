@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from repositories.pipeline_repository import PipelineRepository
+from services.document_service import DocumentService
 from services.i18n import t
 from ui.components import Btn, PageTitle
 from ui.design_tokens import (
@@ -247,12 +247,14 @@ class _RunDetailPanel(QFrame):
     skip_and_package_clicked = Signal(int)  # run_id
     delete_requested = Signal(int)      # run_id
 
-    def __init__(self, parent: QWidget | None = None, db=None, pipeline_repo=None, document_repo=None) -> None:
+    def __init__(self, parent: QWidget | None = None, db=None, pipeline_repo=None, doc_service=None) -> None:
         super().__init__(parent)
         self.setObjectName("automationDetailPanel")
         self._db = db
+        # Injected pipeline repository (caller provides it).
         self._pipeline_repo = pipeline_repo
-        self._document_repo = document_repo
+        # Document service layer (wraps repository + events + audit).
+        self._doc_service = doc_service
         self._current_trip_id: int | None = None
         self._current_run_id: int | None = None
         self._current_mode: str = "advanced"
@@ -653,7 +655,12 @@ class _RunDetailPanel(QFrame):
             self.send_clicked.emit(self._current_trip_id)
 
     def _on_delete_run(self) -> None:
-        """Delete the current pipeline run and its processed files."""
+        """Delete the current pipeline run and its processed files.
+
+        Delegates to the injected pipeline repository for run data and
+        to the document service for document cleanup — no direct repo
+        instantiation in the view layer.
+        """
         if self._current_run_id is not None and self._db is not None:
             confirm = QMessageBox.question(
                 self,
@@ -667,34 +674,36 @@ class _RunDetailPanel(QFrame):
             )
             if confirm != QMessageBox.Yes:
                 return
-            from repositories.pipeline_repository import PipelineRepository
-
-            repo = self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)
-            run = repo.get_run_by_id(self._current_run_id)
+            if self._pipeline_repo is None:
+                # No injected repo available — cannot proceed.
+                logger.error("_on_delete_run: pipeline_repo not available")
+                return
+            run = self._pipeline_repo.get_run_by_id(self._current_run_id)
             if run:
                 pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
                 output_dir = os.path.dirname(pdf) if pdf and os.path.isfile(pdf) else ""
-                repo.delete_run(self._current_run_id)
+                self._pipeline_repo.delete_run(self._current_run_id)
                 if output_dir:
                     import shutil
                     with contextlib.suppress(Exception):
                         shutil.rmtree(output_dir, ignore_errors=True)
                 doc_id = run.get("document_id")
-                if doc_id:
+                if doc_id and self._doc_service is not None:
                     try:
-                        from repositories.document_repository import DocumentRepository
-                        (self._document_repo if self._document_repo is not None else DocumentRepository(self._db)).delete(doc_id)
+                        # Service layer handles file, links, audit, and events.
+                        self._doc_service.delete_legacy(doc_id)
                     except Exception:
                         pass
             self.delete_requested.emit(self._current_run_id)
 
     def _on_copy_run(self) -> None:
-        """Copy the processed file path to the clipboard."""
-        if self._current_run_id is None or self._db is None:
-            return
-        from repositories.pipeline_repository import PipelineRepository
+        """Copy the processed file path to the clipboard.
 
-        run = (self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)).get_run_by_id(self._current_run_id)
+        Uses the injected pipeline repository — no direct instantiation.
+        """
+        if self._current_run_id is None or self._db is None or self._pipeline_repo is None:
+            return
+        run = self._pipeline_repo.get_run_by_id(self._current_run_id)
         if run:
             pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
             if pdf and os.path.isfile(pdf):
@@ -704,12 +713,13 @@ class _RunDetailPanel(QFrame):
                 cb.setText(os.path.abspath(pdf))
 
     def _on_download_run(self) -> None:
-        """Save the processed PDF to a user-chosen location."""
-        if self._current_run_id is None or self._db is None:
-            return
-        from repositories.pipeline_repository import PipelineRepository
+        """Save the processed PDF to a user-chosen location.
 
-        run = (self._pipeline_repo if self._pipeline_repo is not None else PipelineRepository(self._db)).get_run_by_id(self._current_run_id)
+        Uses the injected pipeline repository — no direct instantiation.
+        """
+        if self._current_run_id is None or self._db is None or self._pipeline_repo is None:
+            return
+        run = self._pipeline_repo.get_run_by_id(self._current_run_id)
         if run:
             pdf = run.get("processed_pdf_path") or run.get("processed_file_path") or ""
             if pdf and os.path.isfile(pdf):
@@ -774,10 +784,12 @@ class QtAutomationView(QueueManagementMixin, QWidget):
         self.prefs = prefs
         self.ops = ops
         self._api_client = api_client
-        self._pipeline_repo = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
-        from repositories.document_repository import DocumentRepository
+        # Injected pipeline repository (caller provides the instance;
+        # no fallback — keeps the view decoupled from repository layer).
+        self._pipeline_repo = pipeline_repo
 
-        self._doc_repo = doc_repo if doc_repo is not None else DocumentRepository(db)
+        # Document service — wraps DocumentRepository + audit + events.
+        self._doc_service = DocumentService(db) if db is not None else None
 
         # Queue management state (initialised by the mixin)
         self._init_queue_management()
@@ -861,8 +873,13 @@ class QtAutomationView(QueueManagementMixin, QWidget):
         left.addWidget(scroll, 1)
         body.addLayout(left, 4)
 
-        # Right: detail panel
-        self._detail = _RunDetailPanel(db=self.db)
+        # Right: detail panel — inject pipeline repo & document service
+        # so the panel never instantiates repositories directly.
+        self._detail = _RunDetailPanel(
+            db=self.db,
+            pipeline_repo=self._pipeline_repo,
+            doc_service=self._doc_service,
+        )
         self._detail.prepare_clicked.connect(self._on_prepare_package)
         self._detail.send_clicked.connect(self._on_send_documents)
         self._detail.skip_and_package_clicked.connect(self._on_skip_and_package)
@@ -1030,10 +1047,13 @@ class QtAutomationView(QueueManagementMixin, QWidget):
         self._open_email_composer(trip_id, None)
 
     def _on_skip_and_package(self, run_id: int) -> None:
-        """Simple mode: skip trip association, create a standalone package."""
+        """Simple mode: skip trip association, create a standalone package.
+
+        Document lookups go through the document service layer rather
+        than directly instantiating DocumentRepository.
+        """
         if not self.db:
             return
-        from repositories.document_repository import DocumentRepository
         from services.document_automation.package_builder import PackageBuilder
 
         batch_id = self._batch_for_run.get(run_id, 0)
@@ -1052,7 +1072,8 @@ class QtAutomationView(QueueManagementMixin, QWidget):
         for rid in ordered_run_ids:
             did = register_standalone_document(self.db, rid)
             if did:
-                doc = self._doc_repo.get_by_id(did)
+                # Use document service instead of direct repository access.
+                doc = self._doc_service.get_by_id(did) if self._doc_service else None
                 if doc:
                     docs.append(doc)
 

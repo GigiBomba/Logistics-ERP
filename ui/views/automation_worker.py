@@ -59,42 +59,84 @@ def link_document_to_trip(db, run_id: int, trip_id: int) -> int | None:
     Standalone function (no Qt dependency) — safe to call after the
     worker thread has finished and its C++ object has been deleted.
     Returns the new (or existing) document id, or ``None`` on failure.
-    """
-    from repositories.pipeline_repository import PipelineRepository
-    from services.document_automation import DocumentGrouper
-    from services.document_automation.package_builder import PackageBuilder
-    from services.document_automation.types import PipelineStage
 
-    pipeline = PipelineRepository(db)
-    run = pipeline.get_run_by_id(run_id)
+    Delegates document creation + linking to :class:`DocumentGrouper`
+    (for the rich OCR-metadata / trip-update logic) and pipeline state
+    updates to the pipeline service in ``services.document_automation``.
+    """
+    # ── Use the pipeline service instead of PipelineRepository directly ──
+    from services.document_automation import DocumentGrouper
+    from services.document_automation.pipeline import (
+        get_run, set_match_result, set_related_documents, update_stage,
+    )
+    from services.document_automation.types import PipelineStage
+    from services.document_service import DocumentService
+
+    run = get_run(db, run_id)
     if not run:
         logger.error("link_document_to_trip: run %s not found", run_id)
         return None
     logger.info("link_document_to_trip: run %s -> trip %s", run_id, trip_id)
 
     ocr_text = run.get("ocr_text") or ""
+    doc_svc = DocumentService(db)
+
+    # ── Create the document and link it to the trip ──────────────────
+    # DocumentGrouper.group_and_link handles: document registration
+    # (via UploadService), title / tag building, CMR metadata persistence,
+    # extraction update, trip metadata (documents_attached, cmr_number),
+    # and runs everything inside a single DB transaction.
     grouper = DocumentGrouper(db)
     try:
         doc_id = grouper.group_and_link(run_id, trip_id, ocr_text=ocr_text)
     except Exception:
         logger.exception("link_document_to_trip: group_and_link failed")
         return None
+
     if doc_id:
+        # ── Verify through DocumentService.link_to_entity() (typed) ──
+        # This returns a DocumentUploadResult (ServiceResult[DocumentResult])
+        # and fires the DOCUMENT_LINKED event.  If the link already
+        # exists the INSERT OR IGNORE is a no-op, so the call is safe.
+        # link_to_entity() is the typed method returning DocumentUploadResult.
         try:
-            pipeline.set_match_result(
-                run_id, trip_id, 0.0, {"manual_selection": 1.0},
-            )
-            pipeline.update_stage(
-                run_id, PipelineStage.COMPLETE.value, "complete",
-            )
+            result = doc_svc.link_to_entity(doc_id, "trip", trip_id)
+            if not result.success:
+                logger.warning(
+                    "link_document_to_trip: link_to_entity verification "
+                    "returned failure for doc %s — continuing anyway",
+                    doc_id,
+                )
         except Exception:
-            logger.exception("link_document_to_trip: failed to persist match result")
+            logger.exception(
+                "link_document_to_trip: link_to_entity failed for doc %s",
+                doc_id,
+            )
+
+        # ── Persist match result and mark the run complete ───────────
         try:
-            builder = PackageBuilder(db)
-            related = builder.list_trip_documents(trip_id)
-            pipeline.set_related_documents(run_id, [d["id"] for d in related])
+            set_match_result(
+                db, run_id, trip_id, 0.0, {"manual_selection": 1.0},
+            )
+            update_stage(db, run_id, PipelineStage.COMPLETE.value, "complete")
         except Exception:
-            logger.exception("link_document_to_trip: related docs discovery failed")
+            logger.exception(
+                "link_document_to_trip: failed to persist match result",
+            )
+
+        # ── Discover related documents via DocumentService ───────────
+        # (replaces the previous PackageBuilder + raw pipeline call)
+        try:
+            related = doc_svc.get_documents_for_entity("trip", trip_id)
+            if related:
+                set_related_documents(
+                    db, run_id, [d["id"] for d in related],
+                )
+        except Exception:
+            logger.exception(
+                "link_document_to_trip: related docs discovery failed",
+            )
+
     return doc_id
 
 
@@ -104,15 +146,20 @@ def register_standalone_document(db, run_id: int) -> int | None:
 
     Used by Simple mode when the user chooses not to link the document
     to any trip.  Returns the new document id, or ``None`` on failure.
+
+    Delegates document creation to :class:`DocumentService` (with a
+    :class:`DocumentUpload` model) and pipeline state updates to the
+    pipeline service in ``services.document_automation``.
     """
-    from datetime import datetime
-
-    from repositories.document_repository import DocumentRepository
-    from repositories.pipeline_repository import PipelineRepository
+    # ── Pipeline service instead of PipelineRepository directly ──────
+    from services.document_automation.pipeline import (
+        get_run, set_document_id, update_stage,
+    )
     from services.document_automation.types import PipelineStage
+    from services.document_service import DocumentService
+    from models.document_models import DocumentUpload
 
-    pipeline = PipelineRepository(db)
-    run = pipeline.get_run_by_id(run_id)
+    run = get_run(db, run_id)
     if not run:
         logger.error("register_standalone_document: run %s not found", run_id)
         return None
@@ -127,26 +174,34 @@ def register_standalone_document(db, run_id: int) -> int | None:
     # Use the original file name as the document title
     source_name = run.get("source_file_name") or f"run_{run_id}"
     title = os.path.splitext(source_name)[0]
-    now = datetime.now().isoformat(timespec="seconds")
 
-    docs = DocumentRepository(db)
+    # ── Build a typed DocumentUpload model ───────────────────────────
+    upload_request = DocumentUpload(
+        source_path=pdf_path,
+        title=title,
+        category="documents",
+        entity_type="document",
+        entity_id=None,
+        description="",
+        tags=["automation", "standalone"],
+    )
+
+    # ── Upload via DocumentService (legacy path to bypass UI perms) ──
+    # We use upload_legacy() (the implementation behind the deprecated
+    # DocumentService.upload()) because this is a background automation
+    # call that must not be blocked by UI permission checks.  The typed
+    # DocumentUpload model provides compile-time safety for the fields.
+    doc_svc = DocumentService(db)
     try:
-        doc_id = docs.create(
-            doc_number=docs.get_next_doc_number(),
-            title=title,
-            category="documents",
-            entity_type="document",
-            entity_id=None,
-            file_path=pdf_path,
-            file_name=os.path.basename(pdf_path),
-            file_size=os.path.getsize(pdf_path),
-            mime_type="application/pdf",
-            file_hash="",
-            tags="automation, standalone",
-            description="",
+        doc_id = doc_svc.upload_legacy(
+            source_path=upload_request.source_path,
+            title=upload_request.title,
+            category=upload_request.category,
+            entity_type=upload_request.entity_type,
+            entity_id=upload_request.entity_id,
+            description=upload_request.description,
+            tags=upload_request.tags,
             uploaded_by="automation",
-            uploaded_at=now,
-            updated_at=now,
         )
     except Exception:
         logger.exception(
@@ -154,12 +209,12 @@ def register_standalone_document(db, run_id: int) -> int | None:
             run_id,
         )
         return None
+
     if doc_id:
+        # ── Finalise pipeline run via pipeline service ───────────────
         try:
-            pipeline.set_document_id(run_id, doc_id)
-            pipeline.update_stage(
-                run_id, PipelineStage.COMPLETE.value, "complete",
-            )
+            set_document_id(db, run_id, doc_id)
+            update_stage(db, run_id, PipelineStage.COMPLETE.value, "complete")
         except Exception:
             logger.exception(
                 "register_standalone_document: failed to finalize run %d",
@@ -206,31 +261,17 @@ class PipelineWorker(QThread):
         self.input_paths = list(input_paths)
         self.prefs = prefs
         self._mode = mode
-        from repositories.pipeline_repository import PipelineRepository
-        self._pipeline_repo = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
-        from services.document_automation.ocr_extractor import (
-            set_paddle_config,
-            set_paddle_gpu,
+        # ── Pipeline repository via the document automation service ──
+        # (instead of importing PipelineRepository directly)
+        from services.document_automation.pipeline import get_pipeline_repo
+        self._pipeline_repo = (
+            pipeline_repo
+            if pipeline_repo is not None
+            else get_pipeline_repo(db)
         )
-        # Initialise AI Vision credentials from DB.
-        try:
-            from services.document_automation.ai_fallback import init_from_db as ai_init
-            ai_init(self.db)
-        except Exception:
-            pass
-        # Read GPU preference from settings and propagate to PaddleOCR.
-        if prefs is not None:
-            try:
-                gpu_val = prefs.get_setting("ocr_use_gpu", "0")
-                set_paddle_gpu(gpu_val in ("1", "true", "yes"))
-                det_len = prefs.get_setting("ocr_det_limit_side_len", "960")
-                rec_batch = prefs.get_setting("ocr_rec_batch_num", "6")
-                set_paddle_config(
-                    det_limit_side_len=int(det_len),
-                    rec_batch_num=int(rec_batch),
-                )
-            except Exception:
-                pass
+        # ── Initialise AI Vision + PaddleOCR through the service ─────
+        from services.document_automation.pipeline import init_pipeline
+        init_pipeline(self.db, prefs=prefs)
         self._run_id: int | None = None
         self._matched_trip_id: int | None = None
         self._overridden_trip_id: int | None = None

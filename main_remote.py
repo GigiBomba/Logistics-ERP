@@ -21,6 +21,7 @@ import contextlib
 import logging
 import os
 import sys
+import threading
 import time
 import traceback
 
@@ -108,6 +109,30 @@ def run_remote() -> int:
         from client.remote_ops_stub import RemoteOpsStub
         ops = RemoteOpsStub(api_client=api_client)
 
+        # ── Pre-load heavy imports on a background thread ──────────
+        # The ``from ui.main_window import MainWindow`` import triggers a
+        # cascade of imports (all view modules, their dependencies) that can
+        # take several seconds.  We start this on a daemon thread NOW so the
+        # imports resolve concurrently with the login dialog.  Python imports
+        # are GIL-protected and safe to run on any thread as long as they
+        # don't create Qt widgets (which only happens inside constructors,
+        # not at module level).
+        _main_window_class: list = [None]
+        _imports_ready = threading.Event()
+
+        def _preload_imports() -> None:
+            try:
+                from ui.main_window import MainWindow
+                _main_window_class[0] = MainWindow
+            except Exception:
+                logger.exception("Background preload of MainWindow failed")
+            finally:
+                _imports_ready.set()
+
+        _preload_thread = threading.Thread(target=_preload_imports, daemon=True)
+        _preload_thread.start()
+        logger.info("Pre-loading MainWindow imports on background thread…")
+
         QApplication.setHighDpiScaleFactorRoundingPolicy(
             Qt.HighDpiScaleFactorRoundingPolicy.Round
         )
@@ -116,7 +141,7 @@ def run_remote() -> int:
         app.setApplicationDisplayName(Config.APP_NAME)
 
         # Auto-login hydration — restore persisted token if still valid
-        from client.auth_manager import get_auth, hydrate_from_storage, require_admin_async
+        from client.auth_manager import get_auth, hydrate_from_storage, require_auth_async
         try:
             hydrated = hydrate_from_storage()
         except Exception:
@@ -141,18 +166,32 @@ def run_remote() -> int:
             pass
 
         # If no stored session was restored, prompt the user to log in now.
-        # The login dialog is modal so the main window is not visible until
-        # the dialog is dismissed.
+        # The login dialog is modal so the main thread blocks here — but the
+        # background import thread keeps running, resolving all view modules
+        # while the user types their credentials.
         if not hydrated:
-            if not require_admin_async():
+            if not require_auth_async():
                 logger.info("Login cancelled or failed — exiting.")
                 return 0
-            auth = get_auth()
-            if auth is not None:
-                api_client.update_auth(auth)
-                logger.info("Remote app — admin session established at startup.")
 
-        from ui.main_window import MainWindow
+        # After login (or token restore), push the current auth onto the
+        # ApiClient so all subsequent HTTP requests carry the Bearer token.
+        auth = get_auth()
+        if auth is not None:
+            api_client.update_auth(auth)
+            logger.info("Remote app — auth token set on API client.")
+
+        # Wait for background imports to finish (should already be done
+        # if the user spent more than a couple of seconds logging in).
+        _imports_ready.wait()
+        logger.info("MainWindow imports ready (waited %.1fs after login)",
+                     time.perf_counter() - startup_start)
+
+        MainWindow = _main_window_class[0]
+        if MainWindow is None:
+            # Fallback: import synchronously if the background thread failed
+            from ui.main_window import MainWindow
+
         window = MainWindow(db=None, api=None, prefs=prefs, ops=ops,
                            api_client=api_client)
         window.show()

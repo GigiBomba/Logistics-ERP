@@ -7,18 +7,19 @@ from fastapi.responses import FileResponse
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
+from backend.schemas.cmr import CmrGenerateRequest
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/cmr", tags=["cmr"])
 
 
 @router.post("/generate")
-async def generate_cmr(
-    data: Dict[str, Any],
+def generate_cmr(
+    data: CmrGenerateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    trip_data = data.get("trip_data", {})
+    trip_data = data.trip_data
     if not trip_data:
         raise HTTPException(status_code=400, detail="trip_data is required")
 

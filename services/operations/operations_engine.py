@@ -22,6 +22,15 @@ logger = logging.getLogger("operations.operations_engine")
 
 
 class OperationsEngine:
+    """Orchestrates all operations-layer services.
+
+    Singleton for backward compatibility. For AI/headless use, call
+    ``OperationsEngine.get_instance(db, prefs)`` or the factory
+    ``OperationsEngine.create(...)`` which accepts every dependency
+    explicitly — no hidden global state.
+
+    All dependencies should be injected, not created internally.
+    """
     _instance = None
     _lock = threading.Lock()
 
@@ -33,28 +42,89 @@ class OperationsEngine:
                     cls._instance._initialized = False
         return cls._instance
 
+    # ── Factory / lifecycle (AI/headless support) ──────────────────
+
+    @classmethod
+    def get_instance(cls, db=None, prefs=None):
+        """Get or create the singleton. Accepts dependencies for injection.
+
+        For AI/headless use: pass all dependencies explicitly to avoid
+        hidden global state.
+        """
+        if cls._instance is None:
+            cls._instance = cls(db, prefs)
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton. Use before headless/test execution."""
+        cls._instance = None
+
+    @classmethod
+    def create(cls, db, prefs=None, event_bus=None, alert_mgr=None, rules=None,
+               trip_service=None, maintenance_engine=None, notification_center=None,
+               dunner_engine=None, undo_stack=None, cmr_generator=None, trip_workflow=None):
+        """Factory constructor — accept all service dependencies explicitly.
+
+        Bypasses the singleton to return a fresh instance. Use for testing
+        and AI/headless scenarios where deterministic state is needed.
+
+        All dependencies should be injected, not created internally.
+        """
+        instance = object.__new__(cls)
+        instance._initialized = False
+        instance._initialize(
+            db=db, prefs=prefs, event_bus=event_bus, alert_mgr=alert_mgr,
+            rules=rules, trip_service=trip_service,
+            maintenance_engine=maintenance_engine,
+            notification_center=notification_center,
+            dunner_engine=dunner_engine, undo_stack=undo_stack,
+            cmr_generator=cmr_generator, trip_workflow=trip_workflow,
+        )
+        return instance
+
     def __init__(self, db=None, prefs=None):
         if self._initialized:
             if db is not None and self._db is None:
                 self._db = db
             return
         self._initialized = True
+        self._initialize(db=db, prefs=prefs)
+
+    def _initialize(self, db=None, prefs=None, event_bus=None, alert_mgr=None, rules=None,
+                    trip_service=None, maintenance_engine=None, notification_center=None,
+                    dunner_engine=None, undo_stack=None, cmr_generator=None, trip_workflow=None):
+        """Shared initializer — accepts explicit dependencies or creates defaults."""
         self._db = db
         self._prefs = prefs
-        self._event_bus = EventBus()
+        self._event_bus = event_bus if event_bus is not None else EventBus()
         self._event_bus.inject_db(db)
-        self._alert_mgr = AlertManager(db)
-        self._rules = Rules()
-        from services.trip_service import TripService
-        self._trip_service = TripService(db) if db else None
-        self._maintenance_engine = MaintenanceEngine(db) if db else None
-        self._notification_center = NotificationCenter(db) if db else None
-        self._dunner_engine = DunnerEngine(db, self._notification_center, prefs) if db else None
-        self._undo_stack = UndoStack()
-        self._cmr_generator = AutoCMRGenerator(db, prefs, self._alert_mgr) if db else None
-        self._trip_workflow = TripStatusWorkflow(
-            db, self._trip_service, self._event_bus, self._maintenance_engine, self._undo_stack,
-        ) if db else None
+        self._alert_mgr = alert_mgr if alert_mgr is not None else AlertManager(db)
+        self._rules = rules if rules is not None else Rules()
+        self._trip_service = trip_service
+        self._maintenance_engine = maintenance_engine
+        self._notification_center = notification_center
+        self._dunner_engine = dunner_engine
+        self._undo_stack = undo_stack if undo_stack is not None else UndoStack()
+        self._cmr_generator = cmr_generator
+        self._trip_workflow = trip_workflow
+        # Create default service instances if db is available and none provided
+        if db is not None:
+            if self._trip_service is None:
+                from services.trip_service import TripService
+                self._trip_service = TripService(db)
+            if self._maintenance_engine is None:
+                self._maintenance_engine = MaintenanceEngine(db)
+            if self._notification_center is None:
+                self._notification_center = NotificationCenter(db)
+            if self._dunner_engine is None:
+                self._dunner_engine = DunnerEngine(db, self._notification_center, prefs)
+            if self._cmr_generator is None:
+                self._cmr_generator = AutoCMRGenerator(db, prefs, self._alert_mgr)
+            if self._trip_workflow is None:
+                self._trip_workflow = TripStatusWorkflow(
+                    db, self._trip_service, self._event_bus, self._maintenance_engine, self._undo_stack,
+                )
         self._stop_event = threading.Event()
         self._stop_event.set()  # start as stopped
         logger.info("OperationsEngine initialized")

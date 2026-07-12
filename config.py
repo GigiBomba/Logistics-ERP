@@ -13,6 +13,8 @@ class Config:
     # Database engine selection
     DB_ENGINE = os.environ.get("OPERION_DB_ENGINE", "sqlite")
     POSTGRES_DSN = os.environ.get("OPERION_POSTGRES_DSN", "")
+    DB_POOL_MIN = int(os.environ.get("OPERION_DB_POOL_MIN", "2"))
+    DB_POOL_MAX = int(os.environ.get("OPERION_DB_POOL_MAX", "20"))
 
     # Redis
     REDIS_URL = os.environ.get("OPERION_REDIS_URL", "redis://localhost:6379/0")

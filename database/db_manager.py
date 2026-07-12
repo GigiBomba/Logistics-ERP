@@ -1,9 +1,11 @@
 import logging
 import os
 import sqlite3
+import threading
 import warnings
+from contextlib import contextmanager
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Generator, List, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -17,12 +19,21 @@ def _deprecated(msg: str) -> None:
 
 
 from database import schema as _schema
-from database.connection_pool import ConnectionPool
+from database.connection_pool import ConnectionPool, PostgresConnectionPool
 
 class DatabaseManager:
-    def __init__(self, db_path: str, engine: str = ""):
+    def __init__(
+        self,
+        db_path: str,
+        engine: str = "",
+        pool_min: int = 2,
+        pool_max: int = 20,
+    ):
         self._engine = engine or os.environ.get("OPERION_DB_ENGINE", "sqlite")
-        self._pg_conn: Any = None
+        self._pg_pool: Optional[PostgresConnectionPool] = None
+        self._pg_pool_min = pool_min
+        self._pg_pool_max = pool_max
+        self._local = threading.local()
         if self._engine == "postgresql":
             self._init_pg(db_path)
         else:
@@ -32,24 +43,91 @@ class DatabaseManager:
         self.user_role: str = ""
 
     def _init_pg(self, dsn: str) -> None:
-        import psycopg2
-        import psycopg2.extras
-        self._pg_conn = psycopg2.connect(dsn)
-        self._pg_conn.autocommit = True
-        self._pg_conn.cursor_factory = psycopg2.extras.RealDictCursor
+        """Initialise the PostgreSQL connection pool."""
+        self._pg_pool = PostgresConnectionPool(
+            dsn,
+            min_connections=self._pg_pool_min,
+            max_connections=self._pg_pool_max,
+        )
+        logger.info(
+            "PostgreSQL pool initialised: min=%d max=%d",
+            self._pg_pool_min, self._pg_pool_max,
+        )
+
+    @contextmanager
+    def _get_connection(self) -> Generator[Any, None, None]:
+        """Get a DB connection from the pool, with automatic return.
+
+        For PostgreSQL: yields the current thread's cached connection
+        (same as the ``conn`` property).  No explicit return is needed
+        — it stays cached for the thread and is reclaimed on :meth:`close`.
+
+        For SQLite: yields the current thread's dedicated connection
+        via the existing ``ConnectionPool``.
+        """
+        if self._engine == "postgresql" and self._pg_pool:
+            yield self._pg_pool.get_cached_connection()
+        else:
+            yield self._pool.conn
+
+    @contextmanager
+    def _borrow_connection(self) -> Generator[Any, None, None]:
+        """Borrow a dedicated connection from the pool (not cached).
+
+        Unlike ``_get_connection`` / the ``conn`` property, each call
+        to this context manager obtains a *fresh* connection from the
+        pool and returns it immediately on exit.  Use this in
+        long-running or high-concurrency code paths where holding a
+        connection for the lifetime of the thread is undesirable.
+
+        For SQLite: falls back to the thread-local connection.
+        """
+        if self._engine == "postgresql" and self._pg_pool:
+            conn = self._pg_pool.get_connection()
+            try:
+                yield conn
+            finally:
+                self._pg_pool.return_connection(conn)
+        else:
+            yield self._pool.conn
 
     @property
     def conn(self):
+        """Return the current thread's database connection.
+
+        For PostgreSQL: returns a thread-local cached connection from
+        the pool.  The connection is kept for the thread's lifetime
+        and returned to the pool on :meth:`close`.
+
+        For SQLite: returns the thread-local connection managed by
+        the existing ``ConnectionPool``.
+        """
         if self._engine == "postgresql":
-            return self._pg_conn
+            if not self._pg_pool:
+                raise RuntimeError("PostgreSQL pool not initialised")
+            return self._pg_pool.get_cached_connection()
         return self._pool.conn
 
     def close(self):
+        """Close the connection pool and release all resources."""
         if self._engine == "postgresql":
-            if self._pg_conn:
-                self._pg_conn.close()
+            if self._pg_pool:
+                self._pg_pool.close_all()
+                logger.info("PostgreSQL pool closed")
         else:
             self._pool.close_all()
+
+    @property
+    def health_stats(self) -> dict:
+        """Return database connection health information."""
+        if self._engine == "postgresql":
+            if self._pg_pool:
+                return {
+                    "engine": "postgresql",
+                    "pool": self._pg_pool.stats,
+                }
+            return {"engine": "postgresql", "pool": {"status": "uninitialised"}}
+        return {"engine": "sqlite", "pool": {"status": "active"}}
 
     @staticmethod
     def row_to_dict(row):
@@ -95,14 +173,13 @@ class DatabaseManager:
         return conn
 
     def _init_db(self):
-        """Creează tabelele și indecșii necesari."""
-        self.conn.execute("BEGIN")
-        try:
-            self._create_tables_and_indices()
-            self.conn.commit()
-        except Exception:
-            self.conn.execute("ROLLBACK")
-            raise
+        """Creează tabelele și indecșii necesari.
+
+        Each migration method manages its own transactions internally;
+        we do NOT wrap everything in a single BEGIN/COMMIT here to
+        avoid nested transaction errors (SQLite does not support them).
+        """
+        self._create_tables_and_indices()
         self._run_column_migrations()
         self._migrate_legacy_data()
 
@@ -110,6 +187,8 @@ class DatabaseManager:
         """Execute all CREATE TABLE and CREATE INDEX statements."""
         S = _schema
         exec_stmts = [
+            # Schema version tracking
+            S.TABLE_SCHEMA_MIGRATIONS,
             # Core tables
             S.TABLE_TRIPS, S.TABLE_INVOICES,
             S.INDEX_INVOICES_ISSUE_DATE, S.INDEX_INVOICES_DUE_DATE,
@@ -197,6 +276,37 @@ class DatabaseManager:
             S.INDEX_AUTOMAIL_SCHEDULES_ACTIVE_SORT,
             S.INDEX_AUTOMAIL_CLIENT_OVERRIDES_CLIENT,
             S.INDEX_GPS_TRUCK, S.INDEX_GPS_RECORDED,
+            # Multi-tenant company_id indexes
+            S.INDEX_TRIPS_COMPANY, S.INDEX_INVOICES_COMPANY,
+            S.INDEX_TRUCKS_COMPANY, S.INDEX_DRIVERS_COMPANY,
+            S.INDEX_ROUTES_COMPANY, S.INDEX_ROUTE_HISTORY_COMPANY,
+            S.INDEX_ROUTE_HISTORY_V2_COMPANY, S.INDEX_ALERTS_COMPANY,
+            S.INDEX_OPERATION_EVENTS_COMPANY, S.INDEX_TRIP_STATUS_HISTORY_COMPANY,
+            S.INDEX_MAINTENANCE_RECORDS_COMPANY, S.INDEX_MAINTENANCE_SCHEDULES_COMPANY,
+            S.INDEX_TRUCK_HEALTH_SCORES_COMPANY, S.INDEX_RECEIPTS_COMPANY,
+            S.INDEX_GPS_TELEMETRY_COMPANY, S.INDEX_PIPELINE_RUNS_COMPANY,
+            S.INDEX_DOCUMENT_PACKAGE_COMPANY, S.INDEX_PROFORMA_COMPANY,
+            S.INDEX_CONTRACTS_COMPANY, S.INDEX_TACHO_IMPORTS_COMPANY,
+            # Additional performance indexes
+            S.INDEX_INVOICES_STATUS, S.INDEX_GPS_TRUCK_TIME,
+            S.INDEX_CMR_AUDIT_EVENT_TYPE, S.INDEX_CMR_AUDIT_CREATED,
+            S.INDEX_EMAIL_LOGS_TRIP, S.INDEX_EMAIL_LOGS_STATUS,
+            # API Keys (per-partner authentication)
+            S.TABLE_API_KEYS,
+            S.INDEX_API_KEYS_PARTNER, S.INDEX_API_KEYS_ACTIVE,
+            # OAuth2 Clients (client credentials grant)
+            S.TABLE_OAUTH2_CLIENTS,
+            S.INDEX_OAUTH2_CLIENTS_ID, S.INDEX_OAUTH2_CLIENTS_PARTNER,
+            # Webhook Events (external partner integrations)
+            S.TABLE_WEBHOOK_EVENTS,
+            S.INDEX_WEBHOOK_EVENTS_PARTNER,
+            S.INDEX_WEBHOOK_EVENTS_RECEIVED,
+            S.INDEX_WEBHOOK_EVENTS_COMPANY,
+            # Waitlist — pre-launch marketing capture
+            S.TABLE_WAITLIST_ENTRIES,
+            S.INDEX_WAITLIST_EMAIL, S.INDEX_WAITLIST_STATUS,
+            S.INDEX_WAITLIST_JOINED, S.INDEX_WAITLIST_SOURCE,
+            S.INDEX_WAITLIST_REFERRAL,
         ]
         for stmt in exec_stmts:
             try:
@@ -243,6 +353,11 @@ class DatabaseManager:
                 self.conn.execute(stmt)
             except Exception as e:
                 logger.warning("Migration step failed: %s", e)
+        # Seed initial schema migration version
+        try:
+            self.conn.execute(S.SCHEMA_MIGRATIONS_SEED)
+        except Exception as e:
+            logger.warning("Schema migration seed failed: %s", e)
 
     def _ensure_column(self, table: str, column: str, alter_sql: str) -> None:
         """Add a column if it doesn't already exist in the table."""
@@ -265,6 +380,29 @@ class DatabaseManager:
                         logger.warning("Migration step failed for %s.%s: %s", table, column, e)
         except Exception as e:
             logger.warning("Migration step failed for table %s: %s", table, e)
+
+    def _ensure_foreign_key(self, table: str, column: str, ref_table: str, ref_column: str = "id", on_delete: str = "SET NULL") -> None:
+        """Ensure a foreign key exists, creating it if possible.
+
+        For PostgreSQL: executes ALTER TABLE ADD CONSTRAINT.
+        For SQLite: enables the foreign_keys pragma and logs the relationship
+        (SQLite does not support ALTER TABLE ADD CONSTRAINT after table creation).
+        """
+        if self._engine == "postgresql":
+            fk_name = f"fk_{table}_{column}"
+            try:
+                self.conn.execute(f"""
+                    ALTER TABLE {table} ADD CONSTRAINT {fk_name}
+                    FOREIGN KEY ({column}) REFERENCES {ref_table}({ref_column})
+                    ON DELETE {on_delete}
+                """)
+                logger.info("Added FK %s on %s.%s → %s.%s (CASCADE=%s)", fk_name, table, column, ref_table, ref_column, on_delete)
+            except Exception as e:
+                if "already exists" not in str(e).lower():
+                    raise
+        else:
+            self.conn.execute("PRAGMA foreign_keys = ON")
+            logger.info("FK %s.%s → %s.%s enforced at app level (SQLite, ON DELETE %s)", table, column, ref_table, ref_column, on_delete)
 
     def _run_column_migrations(self):
         """Apply all schema migrations — add columns, indices that may be missing."""
@@ -495,6 +633,20 @@ class DatabaseManager:
             ("route_history_v2", "ALTER TABLE route_history_v2 ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("receipts", "ALTER TABLE receipts ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("proforma_invoices", "ALTER TABLE proforma_invoices ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            # Additional tables that need company_id for multi-tenant support
+            ("routes", "ALTER TABLE routes ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("route_history", "ALTER TABLE route_history ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("alerts", "ALTER TABLE alerts ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("operation_events", "ALTER TABLE operation_events ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("trip_status_history", "ALTER TABLE trip_status_history ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("maintenance_records", "ALTER TABLE maintenance_records ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("maintenance_schedules", "ALTER TABLE maintenance_schedules ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("truck_health_scores", "ALTER TABLE truck_health_scores ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("gps_telemetry", "ALTER TABLE gps_telemetry ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("document_pipeline_runs", "ALTER TABLE document_pipeline_runs ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("document_package", "ALTER TABLE document_package ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("contracts", "ALTER TABLE contracts ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("tacho_imports", "ALTER TABLE tacho_imports ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
         ]
         for table, alter_sql in _tenant_tables:
             self._ensure_column(table, "company_id", alter_sql)
@@ -511,6 +663,46 @@ class DatabaseManager:
                 )
             except Exception as e:
                 logger.warning("Index creation failed for %s: %s", table, e)
+
+        # ── Audit log: add entity tracking columns to operation_events ───
+        _audit_columns = [
+            ("entity_type", "ALTER TABLE operation_events ADD COLUMN entity_type TEXT"),
+            ("entity_id", "ALTER TABLE operation_events ADD COLUMN entity_id TEXT"),
+            ("user_id", "ALTER TABLE operation_events ADD COLUMN user_id INTEGER DEFAULT 0"),
+        ]
+        for col_name, alter_sql in _audit_columns:
+            try:
+                cols = [r[1] for r in self.conn.execute("PRAGMA table_info(operation_events)").fetchall()]
+                if col_name not in cols:
+                    self.conn.execute(alter_sql)
+            except Exception as e:
+                logger.warning("Migration step failed for operation_events.%s: %s", col_name, e)
+
+        # ── Additional performance indexes ───────────────────────────────
+        for idx_stmt in (
+            S.INDEX_INVOICES_STATUS,
+            S.INDEX_GPS_TRUCK_TIME,
+            S.INDEX_CMR_AUDIT_EVENT_TYPE,
+            S.INDEX_CMR_AUDIT_CREATED,
+            S.INDEX_EMAIL_LOGS_TRIP,
+            S.INDEX_EMAIL_LOGS_STATUS,
+        ):
+            try:
+                self.conn.execute(idx_stmt)
+            except Exception as e:
+                logger.warning("Index creation failed: %s", e)
+
+        # ── Record schema migration version ──────────────────────────────
+        self.conn.execute(S.TABLE_SCHEMA_MIGRATIONS)
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V2)
+        except Exception as e:
+            logger.warning("Schema migration record failed: %s", e)
+
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V3)
+        except Exception as e:
+            logger.warning("Schema migration V3 record failed: %s", e)
 
         # ── Migration: settings table → composite PK (key, company_id) ──
         try:
@@ -552,6 +744,22 @@ class DatabaseManager:
                 self.conn.rollback()
             except Exception:
                 pass
+
+        # ── Ensure foreign key constraints (PostgreSQL ALTER, SQLite app-level) ──
+        # Trips → core entities (SET NULL to preserve trip data when ref is deleted)
+        self._ensure_foreign_key("trips", "client_id", "clients", on_delete="SET NULL")
+        self._ensure_foreign_key("trips", "driver_id", "drivers", on_delete="SET NULL")
+        self._ensure_foreign_key("trips", "truck_id", "trucks", on_delete="SET NULL")
+        # Maintenance → cascade with truck
+        self._ensure_foreign_key("maintenance_records", "truck_id", "trucks", on_delete="CASCADE")
+        self._ensure_foreign_key("maintenance_schedules", "truck_id", "trucks", on_delete="CASCADE")
+        self._ensure_foreign_key("truck_health_scores", "truck_id", "trucks", on_delete="CASCADE")
+        # Driver-truck assignments → cascade with both sides
+        self._ensure_foreign_key("driver_truck_assignments", "truck_id", "trucks", on_delete="CASCADE")
+        self._ensure_foreign_key("driver_truck_assignments", "driver_id", "drivers", on_delete="CASCADE")
+        # Alerts and status history → cascade with trip
+        self._ensure_foreign_key("alerts", "trip_id", "trips", on_delete="CASCADE")
+        self._ensure_foreign_key("trip_status_history", "trip_id", "trips", on_delete="CASCADE")
 
         try:
             self.conn.commit()
@@ -763,6 +971,17 @@ class DatabaseManager:
     def get_setting(self, key: str) -> Optional[str]:
         res = self.get_settings([key])
         return res.get(key) if res else None
+
+    # ── Schema version ────────────────────────────────────────────────
+
+    def get_schema_version(self) -> int:
+        """Return the latest applied schema migration version, or 0 if none."""
+        try:
+            row = self.conn.execute("SELECT MAX(version) FROM schema_migrations").fetchone()
+            version = row[0] if row and row[0] else 0
+            return version
+        except Exception:
+            return 0
 
     # ── DEPRECATED DELEGATION METHODS ─────────────────────────────────
     # These exist only for backward compatibility.

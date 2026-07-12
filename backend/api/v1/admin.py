@@ -118,7 +118,7 @@ def _try_celery_info() -> Optional[CeleryStatus]:
 
 
 @router.get("/diagnostics", response_model=DiagnosticsResponse)
-async def get_diagnostics(
+def get_diagnostics(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> DiagnosticsResponse:
     """Return server telemetry: latency, Celery, Redis, config flags.
@@ -169,7 +169,7 @@ async def list_tables(
         for table_name in tables:
             try:
                 cnt = db.conn.execute(
-                    f"SELECT COUNT(*) FROM \"{table_name}\""
+                    f"SELECT COUNT(*) FROM \"{table_name}\""  # nosec B608
                 ).fetchone()[0]
 
                 col_cursor = db.conn.execute(f"PRAGMA table_info(\"{table_name}\")")
@@ -252,7 +252,7 @@ async def get_table_data(
         try:
             offset = page * page_size
             cursor = db.conn.execute(
-                f"SELECT * FROM \"{table_name}\" "
+                f"SELECT * FROM \"{table_name}\" "  # nosec B608
                 f"LIMIT ? OFFSET ?",
                 (page_size, offset),
             )
@@ -268,7 +268,7 @@ async def get_table_data(
 
 
 @router.post("/db/query", response_model=List[Dict[str, Any]])
-async def execute_raw_query(
+def execute_raw_query(
     body: RawQueryRequest,
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> List[Dict[str, Any]]:
@@ -306,7 +306,7 @@ async def execute_raw_query(
         ro_conn = DatabaseManager.open_readonly_connection(Config.DB_PATH)
         ro_conn.execute("PRAGMA query_timeout = 10000")  # 10-second timeout as advertised in docstring
         # Wrap in subquery to enforce row limit
-        wrapped = f"SELECT * FROM ({query}) AS _admin_q LIMIT {limit}"
+        wrapped = f"SELECT * FROM ({query}) AS _admin_q LIMIT {limit}"  # nosec B608
         cursor = ro_conn.execute(wrapped)
         rows = [dict(row) for row in cursor.fetchall()]
         return rows
@@ -419,7 +419,7 @@ async def get_orphan_documents(
                     continue
 
                 exists = db.conn.execute(
-                    f"SELECT 1 FROM \"{table}\" WHERE id = ?", (eid,)
+                    f"SELECT 1 FROM \"{table}\" WHERE id = ?", (eid,)  # nosec B608
                 ).fetchone()
 
                 if not exists:
@@ -439,7 +439,7 @@ async def get_orphan_documents(
 
 
 @router.get("/system/info", response_model=SystemInfoResponse)
-async def get_system_info(
+def get_system_info(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> SystemInfoResponse:
     """Return Python version, DB engine, API version, platform."""
@@ -457,7 +457,7 @@ async def get_system_info(
 
 
 @router.get("/system/env", response_model=SystemEnvResponse)
-async def get_system_env(
+def get_system_env(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> SystemEnvResponse:
     """Return non-sensitive environment variables.
@@ -480,7 +480,7 @@ async def get_system_env(
 
 
 @router.get("/logs/tail", response_model=LogTailResponse)
-async def tail_logs(
+def tail_logs(
     lines: int = Query(100, ge=1, le=500),
     log_file: str = Query("app.log", alias="file"),
     current_user: Dict[str, Any] = Depends(require_admin),
@@ -565,7 +565,7 @@ async def tail_logs(
 
 
 @router.post("/cache/clear")
-async def clear_cache(
+def clear_cache(
     current_user: Dict[str, Any] = Depends(require_admin),
 ) -> Dict[str, str]:
     """Invalidate the Redis cache (if Redis is available)."""

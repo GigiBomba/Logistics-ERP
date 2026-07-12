@@ -37,6 +37,9 @@ from utils.editor_toolkit import DebouncedTask, export_editor_data, mark_field_i
 from services.invoicing.config_manager import load_company_config
 from repositories.receipt_repository import RECEIPT_NUMBER_FORMATS, DEFAULT_FORMAT_KEY
 from services.invoicing.receipt_service import ReceiptService
+from services.client_service import ClientService
+from services.fleet_service import FleetService
+from services.invoicing.service import InvoiceService
 from services.operations.event_bus import SETTINGS_UPDATED
 from services.preferences import PreferencesManager
 from ui.components import Btn, Card, CardHeader, Divider, Label, PageTitle, SectionTitle
@@ -100,18 +103,16 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         parent: QWidget | None = None,
         db=None,
         prefs: PreferencesManager | None = None,
-        client_repo=None,
-        fleet_repo=None,
-        invoice_repo=None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs or (PreferencesManager(db) if db else None)
+        # Lazy service instances — instantiated on first access via properties
         self._receipt_service: ReceiptService | None = None
         self._trip_svc_instance: Any | None = None
-        self._client_repo_instance = client_repo
-        self._fleet_repo_instance = fleet_repo
-        self._invoice_repo_instance = invoice_repo
+        self._client_svc_instance: ClientService | None = None
+        self._fleet_svc_instance: FleetService | None = None
+        self._invoice_svc_instance: InvoiceService | None = None
 
 
         # ── State ────────────────────────────────────────────────────
@@ -234,31 +235,42 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         if data.get("key") == "company_config":
             QTimer.singleShot(0, self._load_company_config)
 
-    # ── Service ─────────────────────────────────────────────────────
+    # ── Service layer access (lazy) ────────────────────────────────
 
     def _get_receipt_service(self) -> ReceiptService:
+        """Lazy ReceiptService accessor."""
         if self._receipt_service is None:
             self._receipt_service = ReceiptService(self.db, prefs=self.prefs)
         return self._receipt_service
 
     @property
     def _trip_svc(self):
+        """Lazy TripService accessor."""
         if self._trip_svc_instance is None and self.db is not None:
             from services.trip_service import TripService
             self._trip_svc_instance = TripService(self.db)
         return self._trip_svc_instance
 
     @property
-    def _client_repo(self):
-        return self._client_repo_instance
+    def _client_service(self) -> ClientService | None:
+        """Lazy ClientService accessor."""
+        if self._client_svc_instance is None and self.db is not None:
+            self._client_svc_instance = ClientService(self.db)
+        return self._client_svc_instance
 
     @property
-    def _fleet_repo(self):
-        return self._fleet_repo_instance
+    def _fleet_service(self) -> FleetService | None:
+        """Lazy FleetService accessor."""
+        if self._fleet_svc_instance is None and self.db is not None:
+            self._fleet_svc_instance = FleetService(self.db)
+        return self._fleet_svc_instance
 
     @property
-    def _invoice_repo(self):
-        return self._invoice_repo_instance
+    def _invoice_service(self) -> InvoiceService | None:
+        """Lazy InvoiceService accessor."""
+        if self._invoice_svc_instance is None and self.db is not None:
+            self._invoice_svc_instance = InvoiceService(self.db, prefs=self.prefs)
+        return self._invoice_svc_instance
 
     # ── DB combo data loading ────────────────────────────────────────
 
@@ -292,11 +304,11 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._related_trip_combo.blockSignals(False)
 
     def _load_client_combo(self) -> None:
-        """Populate the Customer combo from ClientRepository."""
-        if not self._client_repo or not hasattr(self, "_customer_combo"):
+        """Populate the Customer combo via ClientService."""
+        if not self._client_service or not hasattr(self, "_customer_combo"):
             return
         try:
-            clients = self._client_repo.get_all()
+            clients = self._client_service.get_all()
         except Exception:
             clients = []
         self._client_map = {}
@@ -314,11 +326,12 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._customer_combo.blockSignals(False)
 
     def _load_vehicle_combo(self) -> None:
-        """Populate the Vehicle combo from FleetRepository."""
-        if not self._fleet_repo or not hasattr(self, "_vehicle_combo"):
+        """Populate the Vehicle combo via FleetService."""
+        if not self._fleet_service or not hasattr(self, "_vehicle_combo"):
             return
         try:
-            trucks = self._fleet_repo.get_active_trucks()
+            # Use get_trucks() (dict-based, backward-compat) to access plate_number/trailer_plate
+            trucks = self._fleet_service.get_trucks()
         except Exception:
             trucks = []
         self._vehicle_map = {}
@@ -337,11 +350,12 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._vehicle_combo.blockSignals(False)
 
     def _load_trailer_combo(self) -> None:
-        """Populate the Trailer combo from trucks with trailers."""
-        if not self._fleet_repo or not hasattr(self, "_trailer_combo"):
+        """Populate the Trailer combo via FleetService."""
+        if not self._fleet_service or not hasattr(self, "_trailer_combo"):
             return
         try:
-            trucks = self._fleet_repo.get_active_trucks()
+            # Use get_trucks() (dict-based, backward-compat) to access trailer_plate
+            trucks = self._fleet_service.get_trucks()
         except Exception:
             trucks = []
         self._trailer_map = {}
@@ -360,11 +374,12 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._trailer_combo.blockSignals(False)
 
     def _load_invoice_combo(self) -> None:
-        """Populate the Invoice auto-fill combo from InvoiceRepository."""
-        if not self._invoice_repo or not hasattr(self, "_invoice_combo"):
+        """Populate the Invoice auto-fill combo via InvoiceService."""
+        if not self._invoice_service or not hasattr(self, "_invoice_combo"):
             return
         try:
-            invoices = self._invoice_repo.get_all(limit=200)
+            result = self._invoice_service.list_all(limit=200)
+            invoices = result.data if result and result.success else []
         except Exception:
             invoices = []
         self._invoice_map = {}
@@ -373,9 +388,9 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._invoice_combo.clear()
         self._invoice_combo.addItem("")
         for inv in invoices:
-            label = f"{inv.get('invoice_number', '')} — {inv.get('total_amount', 0):.2f} {inv.get('currency', 'EUR')}"
+            label = f"{inv.invoice_number} — {inv.total_gross:.2f} {inv.currency}"
             self._invoice_combo.addItem(label)
-            self._invoice_map[label] = inv["id"]
+            self._invoice_map[label] = inv.id
         idx = self._invoice_combo.findText(current)
         if idx >= 0:
             self._invoice_combo.setCurrentIndex(idx)
@@ -1165,25 +1180,22 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
     # ── Combo change handlers ─────────────────────────────────────────
 
     def _on_trip_combo_changed(self, text: str) -> None:
-        """Auto-fill pickup/delivery from selected trip's route stops."""
+        """Auto-fill pickup/delivery from selected trip's route stops.
+
+        Route stop extraction is delegated to TripService.extract_route_pickup_delivery().
+        """
         if not text or text not in self._trip_combo_map:
             return
         trip_id = self._trip_combo_map[text]
         if self._trip_svc:
             trip = self._trip_svc.get_by_id(trip_id)
             if trip:
-                # Fill pickup/delivery from route stops
-                if trip.get("route_history_v2_id") and self._trip_svc:
-                    try:
-                        stops_json = self._trip_svc.get_route_stops_json(trip["route_history_v2_id"])
-                        if stops_json:
-                            import json as _json
-                            stops = _json.loads(stops_json)
-                            if isinstance(stops, list) and len(stops) >= 2:
-                                self._pickup_location_entry.setText(stops[0].get("address", ""))
-                                self._delivery_location_entry.setText(stops[-1].get("address", ""))
-                    except Exception:
-                        pass
+                # Delegate route stop extraction to TripService
+                pickup, delivery = self._trip_svc.extract_route_pickup_delivery(trip)
+                if pickup:
+                    self._pickup_location_entry.setText(pickup)
+                if delivery:
+                    self._delivery_location_entry.setText(delivery)
                 # Try to match customer in client combo
                 client_name = trip.get("client_name", "")
                 if client_name:
@@ -1218,32 +1230,33 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._schedule_preview_refresh()
 
     def _on_invoice_selected(self, text: str) -> None:
-        """Auto-fill receipt fields from the selected invoice."""
-        if not text or text not in self._invoice_map or not self._invoice_repo:
+        """Auto-fill receipt fields from the selected invoice via InvoiceService."""
+        if not text or text not in self._invoice_map or not self._invoice_service:
             return
-        invoice = self._invoice_repo.get_by_id(self._invoice_map[text])
-        if not invoice:
+        result = self._invoice_service.get(self._invoice_map[text])
+        if not result.success or not result.data:
             return
+        invoice = result.data  # InvoiceResult pydantic model
         # Look up the associated trip for client info
         trip_data = {}
-        if invoice.get("trip_id") and self._trip_svc:
-            trip_data = self._trip_svc.get_by_id(invoice["trip_id"]) or {}
+        if invoice.trip_id and self._trip_svc:
+            trip_data = self._trip_svc.get_by_id(invoice.trip_id) or {}
         # Fill customer from trip's client
         client_name = trip_data.get("client_name", "")
         if client_name and hasattr(self, "_customer_combo"):
             idx = self._customer_combo.findText(client_name)
             if idx >= 0:
                 self._customer_combo.setCurrentIndex(idx)
-        # Fill amount
-        total_amt = invoice.get("total_amount", 0)
+        # Fill amount (total_gross is the InvoiceResult field)
+        total_amt = invoice.total_gross or 0
         if total_amt:
             self._amount_entry.setText(str(total_amt))
         # Fill currency
-        inv_currency = invoice.get("currency", "") or trip_data.get("currency", "")
+        inv_currency = invoice.currency or trip_data.get("currency", "")
         if inv_currency:
             self._currency_combo.setCurrentText(inv_currency)
         # Fill invoice reference
-        self._invoice_reference_entry.setText(invoice.get("invoice_number", ""))
+        self._invoice_reference_entry.setText(invoice.invoice_number)
         # Fill related trip
         if trip_data.get("id"):
             trip_label = ""
@@ -1370,11 +1383,25 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
             return 0
 
     def _recalculate(self) -> None:
-        """Calculate VAT amount, total, and amount-in-words."""
+        """Calculate VAT amount, total, and amount-in-words.
+
+        Delegates financial calculation logic to ReceiptService._calculate_financials.
+        """
         amount = self._safe_float(self._amount_entry.text())
         vat_rate = self._safe_float(self._vat_rate_entry.text())
-        vat_amount = round(amount * vat_rate / 100, 2)
-        total = amount + vat_amount
+
+        # Build a minimal data dict and delegate calculation to the service layer
+        data = {
+            "amount": amount,
+            "vat_rate": vat_rate,
+            "currency": self._currency,
+            "language": self._language,
+        }
+        ReceiptService._calculate_financials(data)
+
+        vat_amount = data.get("vat_amount", 0)
+        total = data.get("total", 0)
+        words = data.get("amount_words", "")
 
         self._vat_amount_entry.setText(f"{vat_amount:.2f}")
         self._total_entry.setText(f"{total:.2f}")
@@ -1383,20 +1410,8 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._vat_rate = vat_rate
         self._vat_amount = vat_amount
         self._total = total
-
-        # Amount in words
-        if total > 0:
-            try:
-                from utils.number_to_words import number_to_words
-                words = number_to_words(total, self._currency, self._language)
-                self._amount_words_entry.setText(words)
-                self._amount_words = words
-            except Exception:
-                self._amount_words_entry.setText("")
-                self._amount_words = ""
-        else:
-            self._amount_words_entry.setText("")
-            self._amount_words = ""
+        self._amount_words = words
+        self._amount_words_entry.setText(words)
 
     # ══════════════════════════════════════════════════════════════════
     # LIVE PREVIEW (QWebEngineView HTML)
@@ -1670,11 +1685,11 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
             logger.warning("Failed to load company config: %s", exc)
 
     def _update_receipt_number(self) -> None:
-        """Auto-generate and display the next receipt number."""
+        """Auto-generate and display the next receipt number via ReceiptService."""
         try:
             svc = self._get_receipt_service()
-            if svc and svc._receipt_repo:
-                num = svc._receipt_repo.get_next_number(format_key=self._format_key)
+            if svc:
+                num = svc.get_next_number(format_key=self._format_key)
                 self._receipt_number_entry.setText(num)
                 self._receipt_number = num
         except Exception as exc:
@@ -1801,8 +1816,8 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         data.pop("receipt_number", None)
         data["_record_id"] = None
         svc = self._get_receipt_service()
-        if svc and svc._receipt_repo:
-            new_num = svc._receipt_repo.get_next_number()
+        if svc:
+            new_num = svc.get_next_number()
             data["receipt_number"] = new_num
             self._receipt_number_entry.setText(new_num)
             self._restore_from_draft(data)

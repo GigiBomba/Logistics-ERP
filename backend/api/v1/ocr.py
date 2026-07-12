@@ -10,7 +10,7 @@ router = APIRouter(prefix="/ocr", tags=["ocr"])
 
 
 @router.post("/run", response_model=OcrResult)
-async def run_ocr(
+def run_ocr(
     request: OcrRequest,
     background_tasks: BackgroundTasks,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
@@ -31,7 +31,7 @@ async def run_ocr(
 
 
 @router.get("/status/{doc_id}", response_model=OcrResult)
-async def get_ocr_status(
+def get_ocr_status(
     doc_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
@@ -51,7 +51,7 @@ async def get_ocr_status(
 
 
 @router.post("/batch", response_model=List[OcrResult])
-async def run_ocr_batch(
+def run_ocr_batch(
     doc_ids: List[int],
     background_tasks: BackgroundTasks,
     current_user: Dict[str, Any] = Depends(require_dispatcher),

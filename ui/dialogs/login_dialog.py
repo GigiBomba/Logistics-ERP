@@ -168,7 +168,7 @@ class QtLoginDialog(QDialog):
         layout.addWidget(email_label)
 
         self._email_input = QLineEdit(page)
-        self._email_input.setPlaceholderText("admin@example.com")
+        self._email_input.setPlaceholderText(t("admin.email_placeholder", default="admin@example.com"))
         self._email_input.setStyleSheet(
             f"QLineEdit {{ padding: 8px; border: 1px solid {COLORS['border']}; "
             f"border-radius: 4px; background: {COLORS['bg_input']}; "
@@ -215,7 +215,7 @@ class QtLoginDialog(QDialog):
 
         self._password_input = QLineEdit(page)
         self._password_input.setEchoMode(QLineEdit.EchoMode.Password)
-        self._password_input.setPlaceholderText("············")
+        self._password_input.setPlaceholderText(t("admin.password_placeholder", default="············"))
         self._password_input.setStyleSheet(
             f"QLineEdit {{ padding: 8px; border: 1px solid {COLORS['border']}; "
             f"border-radius: 4px; background: {COLORS['bg_input']}; "

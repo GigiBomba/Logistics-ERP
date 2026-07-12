@@ -39,6 +39,7 @@ from services.operations.event_bus import (
     DRIVER_CREATED,
     DRIVER_DELETED,
     DRIVER_UPDATED,
+    EventBus,
     TRUCK_UPDATED,
 )
 from ui.base_view import BaseView

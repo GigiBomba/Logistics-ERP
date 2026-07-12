@@ -2,7 +2,10 @@
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 from services.constraint_engine import TruckConstraintEngine
 from services.cost_engine import CostEngineService
@@ -60,8 +63,8 @@ class RoutePersistenceService:
                 try:
                     item["lat"] = route_points[idx][0]
                     item["lon"] = route_points[idx][1]
-                except Exception:
-                    pass
+                except (IndexError, ValueError, TypeError):
+                    logger.debug("Failed to extract route point %d from route_points", idx)
             stops_snapshot.append(item)
 
         return RouteHistoryRecord(
@@ -110,7 +113,7 @@ class RoutePersistenceService:
         """Mark a draft route as committed and sync truck assignment."""
         self.history.commit_route(route_id)
         if truck_id:
-            with contextlib.suppress(Exception):
+            with contextlib.suppress(ValueError, RuntimeError, TypeError):
                 self.history.assign_route_to_truck(route_id, truck_id)
 
     @staticmethod

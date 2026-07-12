@@ -56,7 +56,9 @@ def safe_number(value: Any, decimals: int = 2, default: float = 0.0, label: str 
 import contextlib
 
 from services.app_state import AppState
+from services.audit_service import AuditService
 from services.currency_service import CURRENCY_SYMBOLS
+from services.encryption_service import decrypt_value, encrypt_value
 from services.i18n import LANGUAGE_NAMES, get_language, t
 from services.i18n import register_listener as i18n_register_listener
 from services.i18n import set_language as i18n_set_language
@@ -72,6 +74,9 @@ _CURRENCY_FORMAT_LOCALES: dict[str, str] = {
     "USD": "en_US",
     "GBP": "en_GB",
 }
+
+# Settings whose values are encrypted at rest (key names).
+_SENSITIVE_KEYS: set[str] = {"smtp_password"}
 
 class PreferencesManager:
     """Centralized app preferences backed by the DB settings table.
@@ -113,7 +118,10 @@ class PreferencesManager:
             return {}
 
     def _get_setting(self, key: str) -> str | None:
-        """Read a single setting from the DB (batched into cache)."""
+        """Read a single setting from the DB (batched into cache).
+
+        Sensitive keys (e.g. ``smtp_password``) are transparently decrypted.
+        """
         if self._db is None:
             return None
         if self._cache_dirty:
@@ -121,15 +129,32 @@ class PreferencesManager:
             self._cache_dirty = False
         if key not in self._settings_cache:
             self._settings_cache[key] = self._db.get_setting(key)
-        return self._settings_cache.get(key)
+        value = self._settings_cache.get(key)
+        if value is not None and key in _SENSITIVE_KEYS:
+            value = decrypt_value(value)
+        return value
 
     def _set_setting(self, key: str, value: str) -> None:
-        """Write a single setting to the DB and invalidate cache."""
+        """Write a single setting to the DB and update cache.
+
+        Sensitive keys (e.g. ``smtp_password``) are transparently encrypted
+        before being persisted.
+        """
         if self._db is None:
             logger.warning("Cannot save setting %s: no database", key)
             return
-        self._db.save_setting(key, value)
-        self._settings_cache[key] = value
+        encrypted = encrypt_value(value) if key in _SENSITIVE_KEYS else value
+        self._db.save_setting(key, encrypted)
+        self._settings_cache[key] = encrypted
+        try:
+            AuditService(self._db).log(
+                event_type="settings.updated",
+                entity_type="setting",
+                entity_id=key,
+                data={"key": key, "sensitive": key in _SENSITIVE_KEYS},
+            )
+        except Exception:
+            logger.debug("Audit log skipped for setting %s", key)
 
     # --- Public settings API (canonical access layer) --------------------
 
@@ -182,6 +207,15 @@ class PreferencesManager:
         i18n_set_language(code)
         self._set_setting(_PREF_LANG_KEY, code)
         AppState().set("language", code)
+        try:
+            AuditService(self._db).log(
+                event_type="settings.language_changed",
+                entity_type="setting",
+                entity_id=_PREF_LANG_KEY,
+                data={"language": code},
+            )
+        except Exception:
+            logger.debug("Audit log skipped for language change")
 
     def register_language_listener(self, cb: Callable[[str], None]) -> None:
         i18n_register_listener(cb)
@@ -203,6 +237,15 @@ class PreferencesManager:
         self._currency = code
         self._set_setting(_PREF_CURRENCY_KEY, code)
         AppState().set("currency", code)
+        try:
+            AuditService(self._db).log(
+                event_type="settings.currency_changed",
+                entity_type="setting",
+                entity_id=_PREF_CURRENCY_KEY,
+                data={"currency": code},
+            )
+        except Exception:
+            logger.debug("Audit log skipped for currency change")
         for cb in self._currency_listeners:
             with contextlib.suppress(Exception):
                 cb(code)

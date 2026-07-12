@@ -37,7 +37,7 @@ class TestInitFromDb:
         mock_db = MagicMock()
         with patch("services.document_automation.cloud_ocr.SettingsRepository") as mock_settings_cls:
             mock_settings = MagicMock()
-            mock_settings.get_settings_by_keys.side_effect = Exception("DB error")
+            mock_settings.get_settings_by_keys.side_effect = ValueError("DB error")
             mock_settings_cls.return_value = mock_settings
 
             init_from_db(mock_db)

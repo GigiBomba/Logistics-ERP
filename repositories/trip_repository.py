@@ -147,6 +147,17 @@ class TripRepository(BaseRepository):
             (trip_id,) + self._company_params(),
         )
 
+    # ── Status history ──────────────────────────────────────────────
+
+    def record_status_history(self, trip_id: int, old_status: str, new_status: str, trigger: str) -> Optional[int]:
+        """Insert a row into trip_status_history and return the new row id."""
+        from datetime import datetime
+        return self._execute_insert(
+            "INSERT INTO trip_status_history (trip_id, old_status, new_status, trigger, created_at) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (trip_id, old_status, new_status, trigger, datetime.now().isoformat()),
+        )
+
     # ── Domain-specific queries ───────────────────────────────────────
 
     def get_by_driver_id(self, driver_id: int) -> List[Dict[str, Any]]:

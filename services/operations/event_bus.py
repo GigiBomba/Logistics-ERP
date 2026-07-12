@@ -97,6 +97,14 @@ ALL_EVENTS = [
 
 
 class EventBus:
+    """Central event bus for the operations layer.
+
+    Singleton for backward compatibility. For AI/headless use, call
+    ``EventBus.get_instance()`` to obtain the singleton, or use
+    ``EventBus.reset_instance()`` + ``EventBus()`` to start with
+    a clean slate. All dependencies should be injected explicitly
+    via ``get_instance(db=...)`` to avoid hidden global state.
+    """
     _instance = None
     _lock = threading.Lock()
 
@@ -117,14 +125,40 @@ class EventBus:
         self._history: deque[dict[str, Any]] = deque(maxlen=100)
         logger.info("EventBus initialized with %d event types", len(ALL_EVENTS))
 
+    # ── Factory / lifecycle (AI/headless support) ──────────────────
+
+    @classmethod
+    def get_instance(cls, db=None):
+        """Get or create the singleton. Accepts dependencies for injection.
+
+        For AI/headless use: pass all dependencies explicitly to avoid
+        hidden global state.
+        """
+        if cls._instance is None:
+            cls._instance = cls()
+        if db is not None:
+            cls._instance.inject_db(db)
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton. Use before headless/test execution."""
+        cls._instance = None
+
+    def reset(self):
+        """Clear all subscribers and history — use for a clean state."""
+        with self._subscribers_lock:
+            self._subscribers = {ev: [] for ev in ALL_EVENTS}
+            self._history.clear()
+
     # ── Public API ─────────────────────────────────────────────────
 
-    def publish(self, event_type: str, data: Optional[dict[str, Any]] = None) -> None:
+    def publish(self, event_type: str, data: Optional[dict[str, Any]] = None, timestamp: Optional[str] = None) -> None:
         ev = {
             "id": uuid.uuid4().hex[:12],
             "type": event_type,
             "data": data or {},
-            "timestamp": datetime.now().isoformat(),
+            "timestamp": timestamp or datetime.now().isoformat(),
         }
         with self._subscribers_lock:
             self._history.append(ev)

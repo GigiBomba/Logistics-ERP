@@ -4,40 +4,52 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
-from backend.schemas.route import RouteResponse
+from backend.schemas.common import PaginatedResponse
+from backend.schemas.route import RouteCalculateRequest, RouteResponse
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 
 
-@router.get("/history", response_model=Dict[str, Any])
-async def list_route_history(
+class RouteHistoryListResponse(PaginatedResponse[RouteResponse]):
+    """Paginated list of route history."""
+
+
+@router.get("/history", response_model=RouteHistoryListResponse)
+def list_route_history(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    limit: int = Query(50, ge=1, le=500),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=500, description="Items per page"),
     db: DatabaseManager = Depends(get_db),
 ):
+    """Return paginated list of route history."""
     try:
         from repositories.route_repository import RouteRepository
         repo = RouteRepository(db)
-        rows = repo.get_all(limit=limit)
-        return {"items": rows, "total": len(rows)}
+        rows = repo.get_all(limit=page_size)
+        return PaginatedResponse.from_items(
+            items=[RouteResponse(**r) for r in rows],
+            total=len(rows),
+            page=page,
+            page_size=page_size,
+        )
     except Exception as exc:
-        return {"items": [], "total": 0, "error": str(exc)}
+        return PaginatedResponse.from_items(items=[], total=0, page=page, page_size=page_size)
 
 
 @router.get("/history/statistics")
-async def get_route_statistics(
+def get_route_statistics(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
+    """Return route statistics."""
     from services.route_history_service import RouteHistoryService
     svc = RouteHistoryService(db)
-    stats = svc.get_statistics()
-    return {"data": stats}
+    return svc.get_statistics()
 
 
 @router.get("/history/{route_id}", response_model=RouteResponse)
-async def get_route(
+def get_route(
     route_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
@@ -51,18 +63,18 @@ async def get_route(
 
 
 @router.post("/calculate")
-async def calculate_route(
-    data: Dict[str, Any],
+def calculate_route(
+    data: RouteCalculateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.route_service import RouteService
 
-    points = data.get("points", [])
+    points = data.points
     if not points or len(points) < 2:
         raise HTTPException(status_code=400, detail="At least 2 points (start + end) are required")
 
-    profile = data.get("profile", "truck")
+    profile = data.profile
     route_svc = RouteService()
 
     try:
@@ -90,7 +102,7 @@ async def calculate_route(
 
 
 @router.post("/history/{route_id}/duplicate")
-async def duplicate_route(
+def duplicate_route(
     route_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
@@ -102,7 +114,7 @@ async def duplicate_route(
 
 
 @router.post("/history/{route_id}/archive")
-async def archive_route(
+def archive_route(
     route_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
@@ -117,7 +129,7 @@ async def archive_route(
 
 
 @router.delete("/history/{route_id}")
-async def delete_route(
+def delete_route(
     route_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
@@ -132,7 +144,7 @@ async def delete_route(
 
 
 @router.get("/history/{route_id}/export")
-async def export_route(
+def export_route(
     route_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     fmt: str = Query("json", pattern="^(json|csv)$"),

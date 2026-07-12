@@ -12,7 +12,7 @@ import logging
 
 from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
-from services.i18n import t
+from services.i18n import register_listener, t, unregister_listener
 from ui.components import Label, PageTitle
 from ui.design_tokens import COLOR_TEXT_SECONDARY, SP
 from ui.views.migration_center.emigrate_tab import EmigrateTab
@@ -33,6 +33,7 @@ class QtMigrationCenterView(QWidget):
         self.ops = ops
 
         self._build_ui()
+        self._i18n_id = register_listener(self._on_language_changed)
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -43,15 +44,15 @@ class QtMigrationCenterView(QWidget):
         header_row = QHBoxLayout()
         header_row.setSpacing(SP["3"])
 
-        title = PageTitle(self, t("migration.title", "Migration Center"))
-        header_row.addWidget(title)
+        self._title = PageTitle(self, t("migration.title", "Migration Center"))
+        header_row.addWidget(self._title)
 
-        subtitle = Label(
+        self._subtitle = Label(
             self,
             t("migration.subtitle", "Import and export your data"),
             role="secondary",
         )
-        header_row.addWidget(subtitle)
+        header_row.addWidget(self._subtitle)
         header_row.addStretch()
         layout.addLayout(header_row)
 
@@ -81,11 +82,25 @@ class QtMigrationCenterView(QWidget):
             self._tab_emigrate,
         )
 
+    # ── i18n ──────────────────────────────────────────────────────────
+
+    def _on_language_changed(self, lang: str) -> None:
+        """Update all displayed text when the UI language changes."""
+        self._title.setText(t("migration.title", "Migration Center"))
+        self._subtitle.setText(t("migration.subtitle", "Import and export your data"))
+        self._tabs.refresh_translations({
+            "software": t("migration.tab_software", "Import from Software"),
+            "physical": t("migration.tab_physical", "Physical Archive"),
+            "emigrate": t("migration.tab_emigrate", "Export Data"),
+        })
+
     # ── Lifecycle hooks ───────────────────────────────────────────────
 
     def wakeup(self):
         pass
 
     def shutdown(self):
-        """Cleanup is handled per-tab during destruction."""
-        pass
+        """Clean up i18n listener and per-tab resources."""
+        if self._i18n_id is not None:
+            unregister_listener(self._i18n_id)
+            self._i18n_id = None

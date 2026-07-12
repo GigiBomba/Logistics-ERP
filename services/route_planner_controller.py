@@ -168,7 +168,7 @@ class RoutePlannerController:
                         excluded_countries=ctx.excluded_countries,
                         cost_info=cost_info,
                     )
-                except Exception:
+                except (ValueError, TypeError, RuntimeError):
                     logger.exception("Failed to save calculated route")
 
             return ProcessedRouteResult(
@@ -183,7 +183,7 @@ class RoutePlannerController:
         try:
             payload = self._truck_cost_payload(truck)
             return self.cost_engine.estimate(distance_km, payload)
-        except Exception:
+        except (ValueError, TypeError, RuntimeError):
             logger.warning("Cost estimation failed for truck %s at %.0f km", truck, distance_km, exc_info=True)
             return {}
 
@@ -338,7 +338,7 @@ class RoutePlannerController:
             with open(path, "w", encoding="utf-8") as fh:
                 json.dump(route, fh, ensure_ascii=False, indent=2)
             return path, None
-        except Exception as exc:
+        except (OSError, ValueError, TypeError) as exc:
             return None, f"❌ {t('result.generic_error').format('Export', str(exc))}"
 
 
@@ -359,7 +359,7 @@ def _get_preferred_currency() -> str:
         if currency:
             _PREFERRED_CURRENCY = currency
             return currency
-    except Exception:
+    except (ValueError, RuntimeError, AttributeError):
         pass
     try:
         import os
@@ -376,7 +376,7 @@ def _get_preferred_currency() -> str:
             if value:
                 _PREFERRED_CURRENCY = value
                 return value
-    except Exception:
+    except (ValueError, RuntimeError, OSError, TypeError):
         pass
     _PREFERRED_CURRENCY = "EUR"
     return "EUR"

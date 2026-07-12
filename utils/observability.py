@@ -26,6 +26,8 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
+from backend.middleware.correlation_middleware import get_correlation_id
+
 
 class _StructuredLogger:
     """Wraps a standard logger to emit JSON lines with structured fields."""
@@ -47,6 +49,7 @@ class _StructuredLogger:
             "message": message,
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "pid": os.getpid(),
+            "correlation_id": get_correlation_id(),
             **fields,
         }
         level_num = self._LEVEL_MAP.get(level, logging.INFO)
@@ -82,6 +85,18 @@ class _Metrics:
     def increment(self, name: str, delta: int = 1) -> None:
         with self._lock:
             self._counters[name] = self._counters.get(name, 0) + delta
+        # Also push to Prometheus if available
+        try:
+            from backend.metrics import trips_created_total, invoices_generated_total, routes_calculated_total
+            metric_map = {
+                "trips_created": trips_created_total,
+                "invoices_generated": invoices_generated_total,
+                "routes_calculated": routes_calculated_total,
+            }
+            if name in metric_map:
+                metric_map[name].inc(delta)
+        except ImportError:
+            pass
 
     def gauge(self, name: str, value: float) -> None:
         with self._lock:

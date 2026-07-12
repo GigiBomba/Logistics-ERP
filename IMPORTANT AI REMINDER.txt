@@ -1,0 +1,1 @@
+All design decisions should be made with the idea that the app WILL be a published SaaS with hundreds of concurrent users.

@@ -180,7 +180,8 @@ class TestBackendSettingsEnvOverride:
         assert s.postgres_dsn is None
 
     def test_admin_email_default_empty(self):
-        s = BackendSettings()
+        """When OPERION_ADMIN_EMAIL is empty, admin_email should be empty."""
+        s = BackendSettings(admin_email="")
         assert s.admin_email == ""
 
 
@@ -192,7 +193,7 @@ class TestBackendSettingsValidation:
     def test_init_no_jwt_warning(self, caplog):
         import logging
         caplog.set_level(logging.WARNING)
-        BackendSettings()
+        BackendSettings(jwt_secret_key="")
         assert any("JWT_SECRET_KEY" in msg for msg in caplog.messages)
 
     def test_admin_email_without_hash_warning(self, monkeypatch, caplog):

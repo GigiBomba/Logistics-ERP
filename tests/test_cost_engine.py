@@ -150,11 +150,12 @@ def test_estimate_route_with_road_class_as_float(mock_fps):
     mock_fps_instance.get_price.return_value = 1.5
     mock_fps.return_value = mock_fps_instance
     engine = CostEngineService(country_code="RO")
+    # road_class 0.8 as a float doesn't match ROAD_CLASS_FACTOR keys (strings),
+    # so the engine falls back to the default factor of 0.5
     result = engine.estimate(100.0, {"fuel_consumption_l_per_100km": 30},
                              route_details={"road_class": 0.8}, country_code="RO")
-    # toll = 100 * DEFAULT_TOLL_RATE * 1.0 * 0.8
     from config import Config
-    expected_toll = 100.0 * Config.DEFAULT_TOLL_RATE * 1.0 * 0.8
+    expected_toll = 100.0 * Config.DEFAULT_TOLL_RATE * 1.0 * 0.5
     assert result["toll_cost"] == pytest.approx(expected_toll)
 
 

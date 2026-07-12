@@ -163,7 +163,7 @@ class _DocRow(QFrame):
             meta_parts.append(upload)
         # Show the linked trip ID if the document is associated with one.
         if doc.get("entity_type") == "trip" and doc.get("entity_id"):
-            meta_parts.append(f"Trip #{doc['entity_id']}")
+            meta_parts.append(t("history.trip_title").format(doc['entity_id']))
         meta_lbl = QLabel("  ".join(meta_parts), info_col)
         meta_lbl.setProperty("fontRole", "small")
         meta_lbl.setProperty("role", "doc-meta")
@@ -230,7 +230,13 @@ class _DocRow(QFrame):
         meta_lbl.mousePressEvent = lambda e: on_show_detail(doc)
 
     def _get_thumbnail(self) -> str | None:
-        """Resolve the thumbnail path from the document service."""
+        """Resolve the thumbnail path via the DocumentService.
+
+        Delegates entirely to ``DocumentService.get_thumbnail_path()``,
+        which handles file-existence checks, cached-thumbnail lookup,
+        and on-demand thumbnail generation — the view never touches
+        the filesystem or the repository directly.
+        """
         if self._doc_service is not None:
             try:
                 return self._doc_service.get_thumbnail_path(self._doc_id)
@@ -280,6 +286,9 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self.prefs = prefs
         self.ops = ops
         self._api_client = api_client
+        # Delegate all data access to DocumentService — the view never
+        # touches repositories or the DB connection directly.  If no
+        # service was injected, create one from the given DB handle.
         self._service = document_service if document_service is not None else (DocumentService(db) if db is not None else None)
         self._page = 0
         self._total = 0
@@ -290,7 +299,6 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._filters_visible = False
         self._selected_ids: set = set()
         self._current_detail_doc: dict[str, Any] | None = None
-        self._thumbnail_service = self._service  # for resolving thumbnails
         self._automation_view: QWidget | None = None
 
         # ── Admin panel (Dual-Gate — injected at runtime, never at boot) ──
@@ -460,23 +468,29 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
             self._automation_layout.addWidget(self._automation_view, 1)
         self._tab_widget.addTab(self._automation_page, "")
 
-        # ── Tab 3: API Dashboard ─────────────────────────────────────────
+        # ── Tab 3: API Dashboard (admin only) ────────────────────────────
         self._api_dashboard_page = QWidget()
         self._api_dashboard_layout = QVBoxLayout(self._api_dashboard_page)
         self._api_dashboard_layout.setContentsMargins(0, 0, 0, 0)
         self._api_dashboard_layout.setSpacing(0)
         self._api_dashboard_view = None
+        self._admin_api_dashboard_tab = False
         try:
-            from ui.views.api_dashboard_view import QtApiDashboardView
-            self._api_dashboard_view = QtApiDashboardView(
-                self._api_dashboard_page,
-                db=self.db,
-                api_client=getattr(self, '_api_client', None),
-            )
-            self._api_dashboard_layout.addWidget(self._api_dashboard_view, 1)
+            from client.auth_manager import get_auth
+            _auth = get_auth()
+            if _auth is not None and _auth.is_admin:
+                self._admin_api_dashboard_tab = True
+                from ui.views.api_dashboard_view import QtApiDashboardView
+                self._api_dashboard_view = QtApiDashboardView(
+                    self._api_dashboard_page,
+                    db=self.db,
+                    api_client=getattr(self, '_api_client', None),
+                )
+                self._api_dashboard_layout.addWidget(self._api_dashboard_view, 1)
         except Exception:
             logger.exception("Failed to construct QtApiDashboardView")
-        self._tab_widget.addTab(self._api_dashboard_page, "")
+        if self._admin_api_dashboard_tab:
+            self._tab_widget.addTab(self._api_dashboard_page, "")
 
         self._refresh_tab_titles()
         self.refresh()
@@ -613,10 +627,12 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._tab_widget.setTabText(
             1, t("automation.tab_title", default="Automation")
         )
-        self._tab_widget.setTabText(
-            2, t("api.tab_title", default="API Dashboard")
-        )
-        # Admin tab (index 3) — only update if injected
+        # API Dashboard tab (index 2) — only if admin
+        if self._admin_api_dashboard_tab:
+            self._tab_widget.setTabText(
+                2, t("api.tab_title", default="API Dashboard")
+            )
+        # Admin tab — only update if injected
         if self._admin_tab_injected and self._admin_tab_index >= 0:
             self._tab_widget.setTabText(
                 self._admin_tab_index,

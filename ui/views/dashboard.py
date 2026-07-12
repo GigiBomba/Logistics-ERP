@@ -41,7 +41,6 @@ from PySide6.QtWidgets import (
 
 from services.app_state import AppState
 from services.i18n import register_listener, t, unregister_listener
-from services.preferences import safe_float
 from ui.components import (
     Btn,
     EmptyState,
@@ -75,7 +74,6 @@ class QtFleetDashboard(QWidget):
         db=None,
         prefs=None,
         ops=None,
-        analytics_repo=None,
     ):
         super().__init__(parent)
         self.db = db
@@ -83,8 +81,6 @@ class QtFleetDashboard(QWidget):
 
         self.prefs = prefs or (PreferencesManager(db) if db else None)
         self.ops = ops
-        from repositories.analytics_repository import AnalyticsRepository
-        self._analytics_repo = analytics_repo if analytics_repo is not None else (AnalyticsRepository(db) if db else None)
 
         # ── Period state ────────────────────────────────────────────────────────
         self._period = "today"
@@ -121,23 +117,113 @@ class QtFleetDashboard(QWidget):
     # ------------------------------------------------------------------
 
     def refresh_all(self) -> None:
-        """Re-fetch data and rebuild all cards, charts and the activity feed."""
+        """Re-fetch data and rebuild all cards, charts and the activity feed.
+
+        Business logic delegated to services:
+        - ``AnalyticsService.get_financial()`` for revenue/profit aggregation
+        - ``AnalyticsService.get_fleet()`` for per-truck stats
+        - ``AnalyticsService.get_driver()`` for per-driver stats
+        - ``AnalyticsService.get_overdue_data()`` for overdue alerts
+        """
         self._last_refresh = datetime.now()
         self._update_last_refresh_label()
 
         try:
+            from services.analytics_service import AnalyticsService
             from services.fleet_service import FleetService
             from services.trip_service import TripService
-            analytics = self._analytics_repo
+
+            analytics_svc = AnalyticsService(self.db) if self.db else None
             fleet_svc = FleetService(self.db) if self.db else None
             trip_svc = TripService(self.db) if self.db else None
+
             trucks = fleet_svc.get_trucks() if fleet_svc else []
             trips = trip_svc.get_all() if trip_svc else []
-            alerts, _ = analytics.get_overdue_data() if analytics else ([], None)
-            kpi = analytics.get_kpi_stats() if analytics else {}
-            _best_truck, best_driver, _ = (
-                analytics.get_advanced_analytics() if analytics else (None, None, None)
+
+            # ── Delegate analytics calculations to AnalyticsService ────────────
+            alerts, _ = analytics_svc.get_overdue_data() if analytics_svc else ([], None)
+
+            if analytics_svc:
+                financial_data = analytics_svc.get_financial(self._start_date, self._end_date)
+                fleet_data = analytics_svc.get_fleet(self._start_date, self._end_date)
+                driver_data = analytics_svc.get_driver(self._start_date, self._end_date)
+            else:
+                financial_data = []
+                fleet_data = []
+                driver_data = []
+
+            # ── Derive display values from service results ────────────────────
+            today_str = datetime.now().strftime("%Y-%m-%d")
+
+            # Revenue: sum of monthly revenue from financial aggregate
+            revenue = sum((r.get("revenue", 0) or 0) for r in financial_data)
+
+            # Active trucks: count from FleetService (active_status == 1)
+            active_trucks = sum(
+                1 for t in trucks
+                if t.get("active_status") == 1 or t.get("status") == "Active"
             )
+
+            # Trips today: count of trips starting today or in-progress today
+            trips_today = sum(
+                1 for trip in trips
+                if trip.get("start_date") == today_str
+                or (
+                    trip.get("status") in ("In Transit", "Loading")
+                    and str(trip.get("created_at", ""))[:10] == today_str
+                )
+            )
+
+            # Fuel stats from fleet data (per-truck aggregation)
+            fuel_costs = [f["total_fuel_cost"] for f in fleet_data if f.get("total_fuel_cost")]
+            total_fuel = sum(fuel_costs)
+            fuel_count = len(fuel_costs)
+            avg_fuel = total_fuel / fuel_count if fuel_count else 0
+
+            # Per-truck trip/fuel dicts from fleet analytics
+            truck_trips: dict[str, int] = {
+                row["truck"]: row["trip_count"]
+                for row in fleet_data
+            }
+            truck_fuel: dict[str, float] = {
+                row["truck"]: (row.get("total_fuel_cost", 0) or 0)
+                for row in fleet_data
+            }
+
+            # Top truck by profit (first row from fleet_data, sorted DESC)
+            top_truck = (
+                (fleet_data[0]["truck"], fleet_data[0]["profit"])
+                if fleet_data
+                else None
+            )
+
+            # Top fuel truck: truck with highest total_fuel_cost
+            top_fuel_row = (
+                max(fleet_data, key=lambda r: r.get("total_fuel_cost", 0) or 0)
+                if fleet_data
+                else None
+            )
+            top_fuel_truck = (
+                (top_fuel_row["truck"], top_fuel_row["total_fuel_cost"])
+                if top_fuel_row
+                else None
+            )
+
+            # Best driver from driver analytics (first row = highest profit)
+            best_driver = driver_data[0] if driver_data else None
+            driver_trip_count = best_driver.get("trip_count", 0) if best_driver else 0
+            avg_profit = (
+                (best_driver.get("profit", 0) or 0) / driver_trip_count
+                if best_driver and driver_trip_count
+                else 0
+            )
+
+            # Unpaid/overdue invoice count from overdue alerts
+            unpaid_count = sum(
+                1 for a in alerts
+                if a.get("type") == "RED" and "Factura" in a.get("msg", "")
+            )
+
         except Exception as exc:
             logger.exception("FleetDashboard refresh_all failed")
             QMessageBox.warning(
@@ -146,69 +232,6 @@ class QtFleetDashboard(QWidget):
                 t("fleet_dashboard.error_msg").format(str(exc)),
             )
             return
-
-        # ── One-pass aggregation ───────────────────────────────────────────────
-        filtered_trips = self._filter_trips_by_period(trips)
-        today_str = datetime.now().strftime("%Y-%m-%d")
-
-        active_trucks = 0
-        trips_today = 0
-        revenue = 0.0
-        total_fuel = 0.0
-        fuel_count = 0
-        truck_revenue: dict[str, float] = {}
-        truck_trips: dict[str, int] = {}
-        truck_fuel: dict[str, float] = {}
-        driver_trip_map: dict[str, int] = {}
-
-        for trip in trips:
-            if trip.get("status") == "Active" or trip.get("active_status") == 1:
-                active_trucks += 1
-            if trip.get("start_date") == today_str or (
-                trip.get("status") in ("In Transit", "Loading")
-                and str(trip.get("created_at", ""))[:10] == today_str
-            ):
-                trips_today += 1
-
-        for trip in filtered_trips:
-            plate = trip.get("truck_number", "")
-            driver = trip.get("driver_name", "")
-            price = safe_float(trip.get("total_price_eur"))
-            fuel_val = safe_float(trip.get("fuel_cost"))
-
-            revenue += price
-            if fuel_val > 0:
-                total_fuel += fuel_val
-                fuel_count += 1
-            if plate:
-                truck_revenue[plate] = truck_revenue.get(plate, 0) + price
-                truck_trips[plate] = truck_trips.get(plate, 0) + 1
-                truck_fuel[plate] = truck_fuel.get(plate, 0) + fuel_val
-            if driver:
-                driver_trip_map[driver] = driver_trip_map.get(driver, 0) + 1
-
-        avg_fuel = total_fuel / fuel_count if fuel_count else 0
-
-        top_truck = (
-            max(truck_revenue.items(), key=lambda x: x[1])
-            if truck_revenue
-            else None
-        )
-        top_fuel_truck = (
-            max(truck_fuel.items(), key=lambda x: x[1]) if truck_fuel else None
-        )
-
-        driver_trip_count = 0
-        avg_profit = 0.0
-        if best_driver:
-            driver_name = best_driver.get("driver_name", "")
-            driver_trip_count = driver_trip_map.get(driver_name, 0)
-            avg_profit = (
-                safe_float(best_driver.get("p"))
-                / driver_trip_count
-                if driver_trip_count
-                else 0
-            )
 
         # ── Clear and rebuild content area ─────────────────────────────────────
         self._clear_content_area()
@@ -219,7 +242,7 @@ class QtFleetDashboard(QWidget):
             revenue,
             avg_fuel,
             len(alerts),
-            kpi.get("unpaid", 0),
+            unpaid_count,
         )
         self._build_charts_row(trucks, trips)
         self._build_info_cards(
@@ -621,7 +644,7 @@ class QtFleetDashboard(QWidget):
         driver_card_layout.setSpacing(SP["1"])
 
         if best_driver:
-            driver_name = best_driver.get("driver_name", t("common.na"))
+            driver_name = best_driver.get("driver", t("common.na"))
             name_lbl = QLabel(driver_name)
             name_lbl.setProperty("fontRole", "body_bold")
             driver_card_layout.addWidget(name_lbl)

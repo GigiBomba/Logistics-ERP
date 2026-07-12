@@ -119,6 +119,21 @@ class ValidationResult:
 
 
 @dataclass
+class FieldValidationResult:
+    """Per-field validation result for extracted OCR fields.
+
+    Returned by :func:`field_extractors.validate_extracted_fields` to
+    indicate which fields passed format checks and at what confidence.
+    """
+
+    passed: bool                          # True if overall validation passed
+    score: float                          # 0.0–1.0 overall field quality score
+    errors: list[str]                     # Validation error messages
+    warnings: list[str]                   # Non-blocking warnings
+    field_scores: dict[str, float]        # Per-field confidence score (0.0–1.0)
+
+
+@dataclass
 class MatchCandidate:
     """One possible trip match for a single import."""
 

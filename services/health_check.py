@@ -17,32 +17,60 @@ logger = logging.getLogger("health_check")
 
 
 def check_database(db_path: str | None = None) -> dict[str, Any]:
-    """Verify the SQLite database is accessible and has expected tables."""
+    """Verify the database is accessible and has expected tables.
+
+    Supports both SQLite (file-based) and PostgreSQL (connection-pool)
+    engines.  Pool statistics are included in the result when available.
+    """
     from config import Config
 
+    engine = Config.DB_ENGINE
     path = db_path or Config.DB_PATH
-    result: dict[str, Any] = {"component": "database", "path": path}
+    result: dict[str, Any] = {"component": "database", "path": path, "engine": engine}
+
     try:
-        if not os.path.exists(path):
-            result["status"] = "unhealthy"
-            result["error"] = f"Database file not found: {path}"
-            return result
-        from database.db_manager import DatabaseManager
-        db = DatabaseManager(path)
-        try:
-            tables = SettingsRepository(db).get_table_names()
-            expected_tables = {"alerts", "trips", "trucks", "invoices", "settings"}
-            missing = expected_tables - set(tables)
-        finally:
-            db.close()
-        if missing:
-            result["status"] = "unhealthy"
-            result["error"] = f"Missing critical tables: {', '.join(sorted(missing))}"
+        if engine == "postgresql":
+            dsn = Config.POSTGRES_DSN or path
+            from database.db_manager import DatabaseManager
+            db = DatabaseManager(dsn, engine="postgresql")
+            try:
+                # Quick connectivity check
+                db.conn.execute("SELECT 1").fetchone()
+                tables = SettingsRepository(db).get_table_names()
+                expected_tables = {"alerts", "trips", "trucks", "invoices", "settings"}
+                missing = expected_tables - set(tables)
+                result["pool"] = db.health_stats
+            finally:
+                db.close()
+            if missing:
+                result["status"] = "unhealthy"
+                result["error"] = f"Missing critical tables: {', '.join(sorted(missing))}"
+                result["table_count"] = len(tables)
+                return result
+            result["status"] = "healthy"
             result["table_count"] = len(tables)
             return result
-        result["status"] = "healthy"
-        result["table_count"] = len(tables)
-        return result
+        else:
+            if not os.path.exists(path):
+                result["status"] = "unhealthy"
+                result["error"] = f"Database file not found: {path}"
+                return result
+            from database.db_manager import DatabaseManager
+            db = DatabaseManager(path)
+            try:
+                tables = SettingsRepository(db).get_table_names()
+                expected_tables = {"alerts", "trips", "trucks", "invoices", "settings"}
+                missing = expected_tables - set(tables)
+            finally:
+                db.close()
+            if missing:
+                result["status"] = "unhealthy"
+                result["error"] = f"Missing critical tables: {', '.join(sorted(missing))}"
+                result["table_count"] = len(tables)
+                return result
+            result["status"] = "healthy"
+            result["table_count"] = len(tables)
+            return result
     except Exception as e:
         result["status"] = "unhealthy"
         result["error"] = str(e)

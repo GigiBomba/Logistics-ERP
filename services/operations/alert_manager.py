@@ -79,6 +79,13 @@ class Alert:
 
 
 class AlertManager:
+    """Manages alerts (creation, resolution, persistence, notification).
+
+    Singleton for backward compatibility. For AI/headless use, call
+    ``AlertManager.get_instance(db=...)`` to obtain the singleton with
+    explicit dependency injection, or ``AlertManager.reset_instance()``
+    followed by ``AlertManager(db=...)`` for a clean slate.
+    """
     _instance = None
     _lock = threading.Lock()
 
@@ -106,6 +113,29 @@ class AlertManager:
         if self._db is not None:
             self._load_from_db()
         logger.info("AlertManager initialized (db=%s)", self._db is not None)
+
+    # ── Factory / lifecycle (AI/headless support) ──────────────────
+
+    @classmethod
+    def get_instance(cls, db=None):
+        """Get or create the singleton. Accepts dependencies for injection.
+
+        For AI/headless use: pass all dependencies explicitly to avoid
+        hidden global state.
+        """
+        if cls._instance is None:
+            cls._instance = cls(db)
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton. Use before headless/test execution."""
+        cls._instance = None
+
+    def reset(self):
+        """Clear all alerts for a clean state."""
+        with self._alerts_lock:
+            self._alerts.clear()
 
     # ── CRUD ───────────────────────────────────────────────────────
 
@@ -160,6 +190,9 @@ class AlertManager:
         truck_id: Optional[str] = None,
         trip_id: Optional[str] = None,
         driver_id: Optional[str] = None,
+        entity_type: Optional[str] = None,
+        entity_id: Optional[str] = None,
+        timestamp: Optional[str] = None,
         metadata: Optional[dict[str, Any]] = None,
     ) -> Alert:
         with self._alerts_lock:
@@ -178,6 +211,7 @@ class AlertManager:
                 truck_id=truck_id,
                 trip_id=trip_id,
                 driver_id=driver_id,
+                created_at=timestamp if timestamp is not None else datetime.now().isoformat(),
                 metadata=metadata or {},
             )
             self._alerts[alert.id] = alert

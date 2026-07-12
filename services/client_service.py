@@ -1,5 +1,6 @@
 """Client service — business logic for client management."""
 import logging
+import warnings
 from typing import Any, Optional
 
 from repositories.client_repository import ClientRepository
@@ -8,10 +9,22 @@ from repositories.invoice_repository import InvoiceRepository
 from repositories.tag_repository import TagRepository
 from services.operations.event_bus import EventBus
 
+from models.client_models import (
+    ClientContact,
+    ClientCreate,
+    ClientCreateResult,
+    ClientListResult,
+    ClientResult,
+    ClientUpdate,
+)
+from models.common import ErrorDetail, ServiceResult
+from services.permission_service import PermissionService
+
 logger = logging.getLogger(__name__)
 
-
 CLIENT_MERGED = "CLIENT_MERGED"
+
+ClientUpdateResult = ServiceResult[ClientResult]
 
 
 class ClientService:
@@ -23,12 +36,209 @@ class ClientService:
         self._tag_repo = TagRepository(db)
         self._event_bus = EventBus()
 
-    # ── Existing methods ─────────────────────────────────────────────────
+    # ── Helpers ─────────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _dict_to_client_result(d: Optional[dict]) -> Optional[ClientResult]:
+        """Convert a raw repo dict to a typed ClientResult (or None)."""
+        if d is None:
+            return None
+        return ClientResult(**d)
+
+    def _check_permission(self, perm_check: str, user_id: int) -> None:
+        """Resolve a PermissionService method by name and raise on denial."""
+        perm = PermissionService(self.db)
+        method = getattr(perm, perm_check, None)
+        if method is None:
+            raise ValueError(f"Unknown permission check: {perm_check}")
+        result = method(user_id)
+        if not result.allowed:
+            raise PermissionError(result.reason)
+
+    # ── New typed CRUD methods ──────────────────────────────────────────────
+
+    def create(self, request, user_id=None, **kwargs):
+        """Create a new client.
+
+        New API (preferred)::
+
+            svc.create(ClientCreate(name="…"), user_id=42) -> ClientCreateResult
+
+        Legacy API (deprecated)::
+
+            svc.create(name, **fields) -> int
+        """
+        if isinstance(request, ClientCreate):
+            # ── New typed path ──────────────────────────────────────────
+            if user_id is None:
+                raise ValueError("user_id is required for the typed create() API")
+            self._check_permission("can_create_client", user_id)
+
+            data = request.model_dump()  # includes defaults for all optional fields
+            client_id = self._repo.create(data)
+            client_dict = self._repo.get_by_id(client_id)
+            return ClientCreateResult(
+                success=True,
+                data=self._dict_to_client_result(client_dict),
+            )
+
+        # ── Legacy backward-compat path ─────────────────────────────────
+        warnings.warn(
+            "create(name, **kwargs) is deprecated — "
+            "use create(ClientCreate(...), user_id=...)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        name = request
+        data: dict[str, Any] = {"name": name}
+        data.update(kwargs)
+        return self._repo.create(data)
+
+    def update(self, client_id, request=None, user_id=None, **kwargs):
+        """Update an existing client.
+
+        New API (preferred)::
+
+            svc.update(1, ClientUpdate(phone="…"), user_id=42) -> ClientUpdateResult
+
+        Legacy API (deprecated)::
+
+            svc.update(client_id, **fields) -> None
+        """
+        if isinstance(request, ClientUpdate):
+            # ── New typed path ──────────────────────────────────────────
+            if user_id is None:
+                raise ValueError("user_id is required for the typed update() API")
+            self._check_permission("can_update_client", user_id)
+
+            data = request.model_dump(exclude_unset=True, exclude_none=True)
+            if not data:
+                return ClientUpdateResult(
+                    success=False,
+                    errors=[ErrorDetail(message="No fields to update", code="EMPTY_UPDATE")],
+                )
+            self._repo.update(client_id, data)
+            client_dict = self._repo.get_by_id(client_id)
+            return ClientUpdateResult(
+                success=True,
+                data=self._dict_to_client_result(client_dict),
+            )
+
+        # ── Legacy backward-compat path ─────────────────────────────────
+        warnings.warn(
+            "update(client_id, **kwargs) is deprecated — "
+            "use update(client_id, ClientUpdate(...), user_id=...)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        all_kwargs: dict[str, Any] = {}
+        if request is not None:
+            all_kwargs.update(request.__dict__ if hasattr(request, "__dict__") else request)
+        all_kwargs.update(kwargs)
+        self._repo.update(client_id, all_kwargs)
+
+    def get(self, client_id: int) -> ClientCreateResult:
+        """Get a single client by ID, returning a typed result.
+
+        For the raw dict variant use :meth:`get_by_id` (legacy).
+        """
+        client_dict = self._repo.get_by_id(client_id)
+        if client_dict is None:
+            return ClientCreateResult(
+                success=False,
+                errors=[ErrorDetail(message="Client not found", code="NOT_FOUND")],
+            )
+        return ClientCreateResult(
+            success=True,
+            data=self._dict_to_client_result(client_dict),
+        )
+
+    def list_all(self, include_inactive: bool = False) -> ClientListResult:
+        """List all clients as a typed result.
+
+        For the raw list-of-dicts variant use :meth:`get_all` (legacy).
+        """
+        clients = self._repo.get_all(include_inactive=include_inactive)
+        return ClientListResult(
+            success=True,
+            data=[self._dict_to_client_result(c) for c in clients],
+        )
+
+    def delete(self, client_id: int, user_id: int) -> ClientCreateResult:
+        """Deactivate a client (soft-delete). Admin only."""
+        self._check_permission("can_delete_client", user_id)
+
+        client_dict = self._repo.get_by_id(client_id)
+        if client_dict is None:
+            return ClientCreateResult(
+                success=False,
+                errors=[ErrorDetail(message="Client not found", code="NOT_FOUND")],
+            )
+        self._repo.deactivate(client_id)
+        client_dict["is_active"] = 0
+        return ClientCreateResult(
+            success=True,
+            data=self._dict_to_client_result(client_dict),
+        )
+
+    # ── Contact management ─────────────────────────────────────────────────
+
+    def add_contact(self, client_id, contact=None, user_id=None, **kwargs):
+        """Add a contact to a client.
+
+        New API (preferred)::
+
+            svc.add_contact(1, ClientContact(name="…"), user_id=42) -> ClientCreateResult
+
+        Legacy API (deprecated)::
+
+            svc.add_contact(client_id, **fields) -> int
+        """
+        if isinstance(contact, ClientContact):
+            # ── New typed path ──────────────────────────────────────────
+            if user_id is None:
+                raise ValueError("user_id is required for the typed add_contact() API")
+            self._check_permission("can_update_client", user_id)
+
+            # Verify the client exists
+            client_dict = self._repo.get_by_id(client_id)
+            if client_dict is None:
+                return ClientCreateResult(
+                    success=False,
+                    errors=[ErrorDetail(message="Client not found", code="NOT_FOUND")],
+                )
+
+            contact_data = contact.model_dump()
+            contact_data["client_id"] = client_id
+            self._contact_repo.create(contact_data)
+
+            # Return the updated client
+            client_dict = self._repo.get_by_id(client_id)
+            return ClientCreateResult(
+                success=True,
+                data=self._dict_to_client_result(client_dict),
+            )
+
+        # ── Legacy backward-compat path ─────────────────────────────────
+        warnings.warn(
+            "add_contact(client_id, **kwargs) is deprecated — "
+            "use add_contact(client_id, ClientContact(...), user_id=...)",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        data: dict[str, Any] = dict(contact) if contact else {}
+        data.update(kwargs)
+        data["client_id"] = client_id
+        return self._contact_repo.create(data)
+
+    # ── Existing methods (kept as-is) ───────────────────────────────────────
 
     def get_by_id(self, client_id: int) -> Optional[dict[str, Any]]:
+        """Legacy: returns a raw dict. Prefer :meth:`get` for typed results."""
         return self._repo.get_by_id(client_id)
 
     def get_all(self, include_inactive: bool = False) -> list[dict[str, Any]]:
+        """Legacy: returns raw dicts. Prefer :meth:`list_all` for typed results."""
         return self._repo.get_all(include_inactive=include_inactive)
 
     def get_all_with_revenue(self, include_inactive: bool = False) -> list[dict[str, Any]]:
@@ -40,14 +250,6 @@ class ClientService:
     def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200) -> list[dict[str, Any]]:
         return self._repo.search_advanced(query, include_inactive=include_inactive, limit=limit)
 
-    def create(self, name: str, **kwargs) -> int:
-        data = {"name": name}
-        data.update(kwargs)
-        return self._repo.create(data)
-
-    def update(self, client_id: int, **kwargs) -> None:
-        self._repo.update(client_id, kwargs)
-
     def deactivate(self, client_id: int) -> None:
         self._repo.deactivate(client_id)
 
@@ -57,14 +259,14 @@ class ClientService:
     def get_top_clients(self, limit: int = 5) -> list[dict[str, Any]]:
         return self._repo.get_top_by_revenue(limit=limit)
 
-    def get_or_create(self, name: str) -> int:
+    def get_or_create(self, name: str) -> Optional[int]:
         name = name.strip()
         if not name:
             return None
         existing = self._repo.get_by_name(name)
         if existing:
             return existing["id"]
-        return self.create(name=name)
+        return self.create(name)
 
     def resolve_client_id(self, name: str) -> Optional[int]:
         name = name.strip()
@@ -116,15 +318,10 @@ class ClientService:
     def get_outstanding_balance(self, client_id: int) -> float:
         return self._inv_repo.get_outstanding_balance(client_id)
 
-    # ── Contact management ──────────────────────────────────────────────
+    # ── Contact management (legacy) ─────────────────────────────────────
 
     def get_contacts(self, client_id: int) -> list[dict[str, Any]]:
         return self._contact_repo.get_by_client(client_id)
-
-    def add_contact(self, client_id: int, **kwargs) -> int:
-        data = dict(kwargs)
-        data["client_id"] = client_id
-        return self._contact_repo.create(data)
 
     def update_contact(self, contact_id: int, **kwargs) -> None:
         self._contact_repo.update(contact_id, kwargs)
@@ -170,20 +367,69 @@ class ClientService:
 
     # ── Merge ───────────────────────────────────────────────────────────
 
-    def merge_clients(self, from_id: int, to_id: int) -> dict[str, int]:
+    def merge_clients(self, from_id: int, to_id: int, user_id: Optional[int] = None) -> dict[str, int]:
+        """Merge source client into target client.
+
+        Orchestrates the business logic of merging (reassign all related
+        entities, deactivate source) using primitive repository operations
+        inside a single transaction.
+
+        New API (preferred)::
+
+            svc.merge_clients(from_id, to_id, user_id=42) -> dict
+
+        Legacy API (deprecated)::
+
+            svc.merge_clients(from_id, to_id)  # no permission check
+        """
+        if user_id is not None:
+            self._check_permission("can_merge_clients", user_id)
+        else:
+            warnings.warn(
+                "merge_clients(from_id, to_id) without user_id is deprecated — "
+                "add user_id for permission checking",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+
+        logger.info("Merging client %s into %s — reassigning trips, invoices, contacts, tags", from_id, to_id)
         if not self.db:
             logger.error("ClientService: no database, cannot merge")
             return {"trips": 0, "invoices": 0, "contacts": 0}
 
         try:
-            result = self._repo.merge_client_data(from_id, to_id)
+            self._repo.begin_transaction()
+
+            moved_trips = self._repo.reassign_trips(from_id, to_id)
+            logger.debug("Reassigned %d trip(s) from client %s to %s", moved_trips, from_id, to_id)
+
+            moved_invoices = self._repo.reassign_invoices(from_id, to_id)
+            logger.debug("Reassigned %d invoice(s)", moved_invoices)
+
+            moved_contacts = self._repo.reassign_contacts(from_id, to_id)
+            logger.debug("Reassigned %d contact(s)", moved_contacts)
+
+            self._repo.reassign_tags(from_id, to_id)
+            logger.debug("Reassigned tags")
+
+            # Deactivate source client (no commit — part of the transaction)
+            self._repo.deactivate(from_id, commit=False)
+            logger.debug("Deactivated source client %s", from_id)
+
+            self._repo.commit_transaction()
+
+            result = {"trips": moved_trips, "invoices": moved_invoices, "contacts": moved_contacts}
+            logger.info("Merge complete: %s", result)
+
             self._event_bus.publish(CLIENT_MERGED, {
-                "from_id": from_id, "to_id": to_id,
-                "trips": result["trips"],
+                "from_id": from_id,
+                "to_id": to_id,
+                "trips": moved_trips,
             })
             return result
-        except Exception:
-            logger.exception("merge_clients failed")
+        except (ValueError, LookupError):
+            self._repo.rollback_transaction()
+            logger.exception("merge_clients failed for client %s → %s", from_id, to_id)
             return {"trips": 0, "invoices": 0, "contacts": 0}
 
     # ── Export ──────────────────────────────────────────────────────────

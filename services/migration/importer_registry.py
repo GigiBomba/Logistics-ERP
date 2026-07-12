@@ -80,7 +80,7 @@ class CsvImporter:
             def _collect(row: dict[str, str]) -> None:
                 rows.append(dict(row))
 
-            CsvService.import_csv(path, row_callback=_collect)
+            CsvService.import_csv_with_callback(path, row_callback=_collect)
         except Exception as exc:
             logger.exception("CSV import failed for %s", path)
             raise ValueError(f"Failed to read CSV: {exc}") from exc

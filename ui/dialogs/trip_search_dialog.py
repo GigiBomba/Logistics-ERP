@@ -13,7 +13,6 @@ Usage::
 
 from __future__ import annotations
 
-import contextlib
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -33,6 +32,7 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
+from services.trip_service import TripService
 from ui.theme import S
 
 logger = logging.getLogger(__name__)
@@ -61,6 +61,8 @@ class QtTripSearchDialog(QDialog):
         self._db = db
         self._limit = limit
         self._selected: int | None = None
+        # Delegate data access to the service layer.
+        self._trip_service = TripService(self._db)
 
         self.setWindowTitle(t("docs.pick_trip_title", default="Search trips"))
         self.setMinimumSize(600, 480)
@@ -151,32 +153,40 @@ class QtTripSearchDialog(QDialog):
     # ── Data ──────────────────────────────────────────────────────────
 
     def _load_trips(self) -> None:
-        from repositories.trip_repository import TripRepository
-        repo = TripRepository(self._db)
+        """Fetch trips via TripService and apply client-side filters.
 
+        Uses the service layer for data access (which applies company
+        context, error handling, etc.) rather than calling the repository
+        directly.  Text and date-range filtering are applied client-side
+        so the broader multi-field search (client, plate, driver, CMR,
+        origin, destination, …) can still be used.
+        """
         query = self._search_edit.text().strip().lower()
         from_date = self._from_date.date().toString("yyyy-MM-dd")
         to_date = self._to_date.date().toString("yyyy-MM-dd")
 
+        # Fetch via service layer — delegates to TripRepository internally
+        # but goes through TripService so company filters, logging, and
+        # any future business rules are consistently applied.
         try:
-            if query:
-                trips = repo.get_all(limit=self._limit)
-            else:
-                trips = repo.get_by_date_range(from_date, to_date) if hasattr(repo, 'get_by_date_range') else repo.get_all(limit=self._limit)
+            trips = self._trip_service.get_all(limit=self._limit)
         except Exception:
             logger.exception("Failed to load trips")
             trips = []
 
+        # Client-side text search across many fields (not just DB columns).
         if query:
-            trips = [t for t in trips if _trip_search_blob(t).lower().find(query) >= 0]
+            trips = [
+                t for t in trips
+                if query in _trip_search_blob(t).lower()
+            ]
 
-        # Filter by date range client-side for broader search.
-        if query and from_date and to_date:
-            with contextlib.suppress(Exception):
-                trips = [
-                    t for t in trips
-                    if _trip_date_in_range(t, from_date, to_date)
-                ]
+        # Client-side date range filter.
+        if from_date and to_date:
+            trips = [
+                t for t in trips
+                if _trip_date_in_range(t, from_date, to_date)
+            ]
 
         self._list.clear()
         for trow in trips[:self._limit]:

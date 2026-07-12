@@ -406,9 +406,9 @@ class TimelinePanel(QFrame):
         self._stats_layout = QHBoxLayout(self._stats_bar)
         self._stats_layout.setContentsMargins(SPACE_4, SPACE_3, SPACE_4, SPACE_2)
         self._stats_layout.setSpacing(SPACE_3)
-        self._stats_sent = QLabel("0 sent", self)
-        self._stats_failed = QLabel("0 failed", self)
-        self._stats_recovered = QLabel("€0 outstanding", self)
+        self._stats_sent = QLabel(t("automail.sent_count", default="0 sent"), self)
+        self._stats_failed = QLabel(t("automail.failed_count", default="0 failed"), self)
+        self._stats_recovered = QLabel(t("automail.outstanding_count", default="€0 outstanding"), self)
         for lbl in (self._stats_sent, self._stats_failed, self._stats_recovered):
             lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
             lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)

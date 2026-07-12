@@ -154,7 +154,7 @@ class QtDispatchTimeline(QWidget):
     def _show_empty_state(self) -> None:
         cta = ActionButton(
             None,
-            text=t("dispatch_board.timeline_plan_trip", default="Planifică o cursă"),
+            text=t("dispatch_board.timeline_plan_trip"),
             variant="primary",
         )
         empty = EmptyState(

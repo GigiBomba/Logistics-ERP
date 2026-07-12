@@ -516,6 +516,32 @@ class GraphHopperClient:
 
 
 class RouteService:
+    # ── Static helpers (no instance required) ─────────────────────────────
+
+    @staticmethod
+    def parse_route_stops(stops_json: str) -> tuple[str, str]:
+        """Parse route stops JSON and return (origin, destination) address strings.
+
+        Args:
+            stops_json: Raw JSON string from the route repository.
+
+        Returns:
+            A 2-tuple ``(origin_address, destination_address)``. Either may be
+            an empty string if the data cannot be parsed or has fewer than 2 stops.
+        """
+        import json
+        if not stops_json:
+            return ("", "")
+        try:
+            stops = json.loads(stops_json)
+            if not isinstance(stops, list) or len(stops) < 2:
+                return ("", "")
+            origin = stops[0].get("address", "")
+            destination = stops[-1].get("address", "")
+            return origin, destination
+        except (json.JSONDecodeError, TypeError, IndexError):
+            return ("", "")
+
     def __init__(self, db: Any = None, graphhopper_url: Optional[str] = None, timeout: int = 300) -> None:
         self.db = db
         self.logger = get_logger("RouteService")
@@ -934,5 +960,55 @@ class RouteService:
 
         self.debug_logger.info(f"calculate_route_end total_s={time.time()-start:.2f} distance_km={res.get('distance_km')}")
         return res
+
+    def calculate_route_async(
+        self,
+        stops: list[Any],
+        callback,
+        profile: str = "truck",
+        truck: Optional[dict[str, Any]] = None,
+        use_cache: bool = True,
+        avoid_countries: Optional[list[str]] = None,
+        stops_are_coordinates: bool = False,
+    ) -> threading.Thread:
+        """Calculate a route in a background thread.
+
+        Args:
+            stops: Address strings or coordinate tuples.
+            callback: Callable that receives the route result dict when
+                      calculation completes.
+            profile: Routing profile (default ``"truck"``).
+            truck: Optional truck data for constraint-engine params.
+            use_cache: Whether to check / update the route cache.
+            avoid_countries: Optional list of country codes to exclude.
+            stops_are_coordinates: If True, *stops* are (lat, lon) tuples.
+
+        Returns:
+            The background ``threading.Thread`` (daemon) for optional join.
+        """
+        def _run():
+            try:
+                result = self.calculate_route(
+                    stops=stops,
+                    profile=profile,
+                    truck=truck,
+                    use_cache=use_cache,
+                    avoid_countries=avoid_countries,
+                    stops_are_coordinates=stops_are_coordinates,
+                )
+                callback(result)
+            except Exception as e:
+                self.logger.error("Async route calculation failed: %s", e, exc_info=True)
+                callback({
+                    "success": False,
+                    "error": str(e),
+                    "distance_km": 0.0,
+                    "duration_min": 0.0,
+                    "geometry": [],
+                })
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return thread
 
 

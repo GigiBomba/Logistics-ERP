@@ -20,7 +20,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from services.user_service import UserService
 from ui.base_view import BaseView
+from services.i18n import t
 from ui.components import Btn
 from ui.design_tokens import SP
 from ui.widgets import (
@@ -50,8 +52,10 @@ class QtTeamView(BaseView):
         super().__init__(parent)
         self.db = db
         self._api_client = api_client
+        self._user_service = UserService(self.db) if db else None
 
         self._build_ui()
+        self._register_i18n(self._on_language_changed)
 
     # ── UI construction ───────────────────────────────────────────────────────
 
@@ -85,29 +89,29 @@ class QtTeamView(BaseView):
         cl.setSpacing(SP["3"])
 
         # Title
-        title = QLabel("Add User")
+        title = QLabel(t("team.add_user"))
         title.setProperty("fontRole", "h2")
         cl.addWidget(title)
 
         # Subtitle
-        subtitle = QLabel("Invite a new team member")
+        subtitle = QLabel(t("team.invite_subtitle"))
         subtitle.setProperty("fontRole", "muted")
         cl.addWidget(subtitle)
 
         # Form fields
         self._email_input = StyledLineEdit(placeholder="email@example.com")
-        cl.addWidget(field(card, "EMAIL", self._email_input))
+        cl.addWidget(field(card, t("team.email_label"), self._email_input))
 
         self._password_input = StyledLineEdit(placeholder="\u2022" * 8)
         self._password_input.setEchoMode(StyledLineEdit.EchoMode.Password)
-        cl.addWidget(field(card, "PASSWORD", self._password_input))
+        cl.addWidget(field(card, t("team.password_label"), self._password_input))
 
-        self._role_combo = StyledComboBox(values=["Dispatcher", "Driver"])
+        self._role_combo = StyledComboBox(values=[t("team.role_dispatcher"), t("team.role_driver")])
         self._role_combo.currentTextChanged.connect(self._on_role_changed)
-        cl.addWidget(field(card, "ROLE", self._role_combo))
+        cl.addWidget(field(card, t("team.role_label"), self._role_combo))
 
         self._driver_combo = StyledComboBox(values=[])
-        self._driver_combo_label = field(card, "LINK DRIVER", self._driver_combo)
+        self._driver_combo_label = field(card, t("team.link_driver_label"), self._driver_combo)
         self._driver_combo_label.setVisible(False)
         cl.addWidget(self._driver_combo_label)
 
@@ -118,7 +122,7 @@ class QtTeamView(BaseView):
         btn_row_layout.addStretch()
         self._add_btn = Btn(
             btn_row,
-            "Add User",
+            t("team.add_user"),
             variant="primary",
             command=self._on_add_user,
         )
@@ -138,33 +142,59 @@ class QtTeamView(BaseView):
         cl.setSpacing(SP["3"])
 
         # Title
-        title = QLabel("Team Members")
+        title = QLabel(t("team.members_title"))
         title.setProperty("fontRole", "h2")
         cl.addWidget(title)
 
         # Subtitle
-        subtitle = QLabel("Manage existing users")
+        subtitle = QLabel(t("team.members_subtitle"))
         subtitle.setProperty("fontRole", "muted")
         cl.addWidget(subtitle)
 
         # Table — last column (Actions) stretches
         columns: list[tuple] = [
-            ("email",   "Email",    200),
-            ("role",    "Role",     100),
-            ("status",  "Status",   100),
-            ("created", "Created",  140),
-            ("actions", "Actions",   80),
+            ("email",   t("team.col_email"),    200),
+            ("role",    t("team.col_role"),     100),
+            ("status",  t("team.col_status"),   100),
+            ("created", t("team.col_created"),  140),
+            ("actions", t("team.col_actions"),   80),
         ]
         self._table = StyledTableWidget(card, columns=columns)
         cl.addWidget(self._table)
 
         parent_layout.addWidget(card)
 
+    # ── i18n ──────────────────────────────────────────────────────────────────
+
+    def _on_language_changed(self, lang: str) -> None:
+        """Rebuild UI text when language changes, preserving form state."""
+        # Save form state
+        email = self._email_input.text()
+        password = self._password_input.text()
+        role_index = self._role_combo.currentIndex()
+
+        # Remove old container so rebuild is clean
+        old = self.widget()
+        if old is not None:
+            old.setParent(None)
+            old.deleteLater()
+
+        # Rebuild UI with new translations
+        self._build_ui()
+
+        # Restore form state
+        self._email_input.setText(email)
+        self._password_input.setText(password)
+        self._role_combo.setCurrentIndex(role_index)
+
+        # Reload users to refresh table headers and deactivate buttons
+        self._load_users()
+
     # ── Event handlers ────────────────────────────────────────────────────────
 
     def _on_role_changed(self, role: str) -> None:
         """Show or hide the Link Driver field based on the selected role."""
-        visible = role == "Driver"
+        visible = role == t("team.role_driver")
         self._driver_combo_label.setVisible(visible)
 
     def _on_add_user(self) -> None:
@@ -174,14 +204,14 @@ class QtTeamView(BaseView):
         role = self._role_combo.currentText()
 
         if not email:
-            QMessageBox.warning(self, "Validation", "Email is required.")
+            QMessageBox.warning(self, t("team.validation_title"), t("team.validation_email_required"))
             return
         if not password:
-            QMessageBox.warning(self, "Validation", "Password is required.")
+            QMessageBox.warning(self, t("team.validation_title"), t("team.validation_password_required"))
             return
 
         driver_plate: str | None = None
-        if role == "Driver":
+        if role == t("team.role_driver"):
             plate = self._driver_combo.currentText().strip()
             if plate:
                 driver_plate = plate
@@ -195,8 +225,8 @@ class QtTeamView(BaseView):
         email = row_data.get("email", "")
         reply = QMessageBox.question(
             self,
-            "Deactivate User",
-            f"Are you sure you want to deactivate {email}?",
+            t("team.deactivate_title"),
+            t("team.deactivate_confirm", email=email),
             QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
             QMessageBox.StandardButton.No,
         )
@@ -215,13 +245,8 @@ class QtTeamView(BaseView):
             if self._api_client is not None:
                 result = self._api_client.list_users()
                 rows = result.get("items", [])
-            elif self.db is not None:
-                from database.db_manager import DatabaseManager
-                if isinstance(self.db, DatabaseManager):
-                    db_rows = self.db.conn.execute(
-                        "SELECT id, email, role, display_name, is_active, created_at FROM users ORDER BY role, email"
-                    ).fetchall()
-                    rows = [dict(r) for r in db_rows]
+            elif self._user_service is not None:
+                rows = self._user_service.list_users()
         except Exception as exc:
             logger.error("Failed to load users: %s", exc)
 
@@ -233,7 +258,7 @@ class QtTeamView(BaseView):
             row_data: dict[str, Any] = {}
             if hasattr(self._table, '_data') and r < len(self._table._data):
                 row_data = self._table._data[r]
-            deactivate_btn = Btn(self._table, "Deactivate", variant="ghost", size="sm")
+            deactivate_btn = Btn(self._table, t("team.deactivate"), variant="ghost", size="sm")
             deactivate_btn.clicked.connect(
                 lambda checked=False, rd=row_data: self._on_deactivate_user(rd)
             )
@@ -256,20 +281,15 @@ class QtTeamView(BaseView):
                     role=role.lower(),
                     display_name=display_name,
                 )
-            elif self.db is not None:
-                from backend.security import hash_password
-                from database.db_manager import DatabaseManager
-                if isinstance(self.db, DatabaseManager):
-                    pwhash = hash_password(password)
-                    self.db.conn.execute(
-                        "INSERT INTO users (email, password_hash, role, is_active) VALUES (?, ?, ?, 1)",
-                        (email.strip().lower(), pwhash, role.lower()),
-                    )
-                    self.db.conn.commit()
-            QMessageBox.information(self, "Success", "User added successfully.")
+            elif self._user_service is not None:
+                display_name = email.split("@")[0]
+                self._user_service.create_user(
+                    email.strip().lower(), password, role.lower(), display_name,
+                )
+            QMessageBox.information(self, t("team.success_title", "Success"), t("team.success_user_added"))
         except Exception as exc:
             logger.error("Failed to add user: %s", exc)
-            QMessageBox.warning(self, "Error", f"Failed to add user: {exc}")
+            QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_add", "Failed to add user: {}", exc))
 
     def _deactivate_user(self, row_data: dict[str, Any]) -> None:
         """Deactivate a user via the API or local database."""
@@ -279,14 +299,11 @@ class QtTeamView(BaseView):
         try:
             if self._api_client is not None:
                 self._api_client.deactivate_user(user_id)
-            elif self.db is not None:
-                from database.db_manager import DatabaseManager
-                if isinstance(self.db, DatabaseManager):
-                    self.db.conn.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
-                    self.db.conn.commit()
+            elif self._user_service is not None:
+                self._user_service.deactivate_user(user_id)
         except Exception as exc:
             logger.error("Failed to deactivate user: %s", exc)
-            QMessageBox.warning(self, "Error", f"Failed to deactivate user: {exc}")
+            QMessageBox.warning(self, t("common.error", "Error"), t("team.error_failed_deactivate", "Failed to deactivate user: {}", exc))
 
     # ── Form helpers ──────────────────────────────────────────────────────────
 

@@ -3,6 +3,9 @@
 These wrap Google Cloud Vision and Azure Document Intelligence behind a
 single :func:`cloud_extract` function.  Either library is optional —
 import failures are caught and the caller falls back to Tesseract.
+
+Validation helpers are provided for document pre-checks and result
+confidence thresholds.
 """
 
 from __future__ import annotations
@@ -10,13 +13,21 @@ from __future__ import annotations
 import logging
 import os
 import threading
+from pathlib import Path
 from typing import Any
 
 from repositories.settings_repository import SettingsRepository
+from models.common import ErrorDetail, ServiceResult
 
 from .types import ExtractionResult
 
 logger = logging.getLogger("document_automation.cloud_ocr")
+
+# ── Validation constants ──────────────────────────────────────────────
+
+SUPPORTED_FILE_EXTENSIONS: set[str] = {".pdf", ".png", ".jpg", ".jpeg", ".tiff", ".tif"}
+MAX_FILE_SIZE_BYTES: int = 50 * 1024 * 1024  # 50 MB
+DEFAULT_CONFIDENCE_THRESHOLD: float = 0.7
 
 # Override values read from the settings DB (set by ``init_from_db``).
 # When non-empty they take precedence over environment variables so the
@@ -38,7 +49,7 @@ def init_from_db(db) -> None:
                  "ocr_azure_endpoint", "ocr_azure_key",
                  "ocr_language_hints"]
             )
-    except Exception:
+    except (ValueError, OSError, TypeError):
         logger.warning("init_from_db failed to load cloud OCR settings", exc_info=True)
         with _db_overrides_lock:
             _db_overrides = {}
@@ -81,6 +92,198 @@ def _resolve_language_hints() -> list[str]:
         else:
             logger.debug("Discarding invalid language hint %r", token)
     return hints or list(DEFAULT_LANGUAGE_HINTS)
+
+
+# ── Document pre-validation ───────────────────────────────────────────
+
+
+def validate_document_file(file_path: str) -> ServiceResult[bool]:
+    """Check that the document exists, is a supported type, and is under
+    the size limit.
+
+    Returns:
+        ``ServiceResult`` with ``data=True`` if the file passes all
+        checks, or ``data=False`` with one or more ``ErrorDetail`` items.
+    """
+    errors: list[ErrorDetail] = []
+
+    path = Path(file_path)
+    if not path.exists():
+        errors.append(ErrorDetail(
+            field="file_path",
+            message=f"Document file not found: {file_path}",
+            code="FILE_NOT_FOUND",
+        ))
+        return ServiceResult(success=False, data=False, errors=errors)
+
+    if not path.is_file():
+        errors.append(ErrorDetail(
+            field="file_path",
+            message=f"Path is not a file: {file_path}",
+            code="NOT_A_FILE",
+        ))
+        return ServiceResult(success=False, data=False, errors=errors)
+
+    ext = path.suffix.lower()
+    if ext not in SUPPORTED_FILE_EXTENSIONS:
+        errors.append(ErrorDetail(
+            field="file_path",
+            message=(
+                f"Unsupported file type '{ext}'. "
+                f"Supported: {', '.join(sorted(SUPPORTED_FILE_EXTENSIONS))}"
+            ),
+            code="UNSUPPORTED_FILE_TYPE",
+        ))
+
+    file_size = path.stat().st_size
+    if file_size > MAX_FILE_SIZE_BYTES:
+        errors.append(ErrorDetail(
+            field="file_path",
+            message=(
+                f"File size {file_size / (1024 * 1024):.1f} MB exceeds "
+                f"maximum of {MAX_FILE_SIZE_BYTES / (1024 * 1024):.0f} MB"
+            ),
+            code="FILE_TOO_LARGE",
+        ))
+
+    if errors:
+        return ServiceResult(success=False, data=False, errors=errors)
+    logger.info("Document file validated: %s (%s, %d bytes)", file_path, ext, file_size)
+    return ServiceResult(success=True, data=True, errors=[])
+
+
+def validate_api_key_configured() -> ServiceResult[bool]:
+    """Check that at least one cloud OCR API key is configured.
+
+    Returns ``ServiceResult(success=True)`` when a key is available,
+    otherwise an error result.
+    """
+    if _is_enabled():
+        return ServiceResult(success=True, data=True, errors=[])
+    return ServiceResult(
+        success=False,
+        data=False,
+        errors=[ErrorDetail(
+            field="api_key",
+            message=(
+                "No cloud OCR API key configured. "
+                "Set OPERION_GOOGLE_VISION_KEY or OPERION_AZURE_DOC_KEY "
+                "environment variable, or configure via Settings UI."
+            ),
+            code="API_KEY_MISSING",
+        )],
+    )
+
+
+def validate_result_confidence(
+    result: ExtractionResult | None,
+    min_confidence: float = DEFAULT_CONFIDENCE_THRESHOLD,
+) -> ServiceResult[ExtractionResult]:
+    """Check that the OCR result meets the minimum confidence threshold.
+
+    When *result* is ``None`` or below threshold, an error is returned.
+    """
+    if result is None:
+        return ServiceResult(
+            success=False,
+            data=None,
+            errors=[ErrorDetail(
+                field="ocr_result",
+                message="Cloud OCR returned no result",
+                code="OCR_RESULT_NONE",
+            )],
+        )
+    if not result.full_text:
+        return ServiceResult(
+            success=False,
+            data=result,
+            errors=[ErrorDetail(
+                field="full_text",
+                message="Cloud OCR returned empty text",
+                code="OCR_RESULT_EMPTY",
+            )],
+        )
+    confidence = result.confidence / 100.0  # stored as 0-100, compare as 0-1
+    if confidence < min_confidence:
+        return ServiceResult(
+            success=False,
+            data=result,
+            errors=[ErrorDetail(
+                field="confidence",
+                message=(
+                    f"Cloud OCR confidence {result.confidence:.1f}% "
+                    f"below minimum {min_confidence * 100:.0f}%"
+                ),
+                code="LOW_CONFIDENCE",
+            )],
+        )
+    return ServiceResult(success=True, data=result, errors=[])
+
+
+def cloud_extract_safe(
+    pdf_path: str,
+    max_pages: int = 10,
+    min_confidence: float = DEFAULT_CONFIDENCE_THRESHOLD,
+) -> ServiceResult[ExtractionResult]:
+    """Run cloud OCR with full validation envelope.
+
+    Validates the document file, API credentials, runs the OCR, and
+    checks the resulting confidence — all in one call.  Returns a
+    ``ServiceResult`` so the caller can inspect errors at any stage.
+
+    Args:
+        pdf_path: Path to the PDF to process.
+        max_pages: Maximum number of pages to process.
+        min_confidence: Minimum acceptable confidence (0.0–1.0).
+
+    Returns:
+        ``ServiceResult`` with ``data`` containing the ``ExtractionResult``
+        on success, or with ``errors`` describing what failed.
+    """
+    # 1. Validate document file
+    file_check = validate_document_file(pdf_path)
+    if not file_check.success:
+        return ServiceResult(
+            success=False, data=None,
+            errors=file_check.errors,
+        )
+
+    # 2. Validate API key configured
+    key_check = validate_api_key_configured()
+    if not key_check.success:
+        return ServiceResult(
+            success=False, data=None,
+            errors=key_check.errors,
+        )
+
+    # 3. Run cloud OCR
+    try:
+        result = cloud_extract(pdf_path, max_pages=max_pages)
+    except Exception as exc:
+        logger.exception("Cloud OCR raised unexpected exception")
+        return ServiceResult(
+            success=False, data=None,
+            errors=[ErrorDetail(
+                field="cloud_ocr",
+                message=f"Cloud OCR exception: {exc}",
+                code="OCR_EXCEPTION",
+            )],
+        )
+
+    # 4. Validate result confidence
+    confidence_check = validate_result_confidence(result, min_confidence)
+    if not confidence_check.success:
+        return ServiceResult(
+            success=False, data=confidence_check.data,
+            errors=confidence_check.errors,
+        )
+
+    assert result is not None  # guaranteed by validate_result_confidence success
+    logger.info(
+        "Cloud OCR safe extract succeeded: engine=%s confidence=%.1f%% pages=%d",
+        result.engine, result.confidence, result.pages_processed,
+    )
+    return ServiceResult(success=True, data=result, errors=[])
 
 
 def _is_enabled() -> bool:
@@ -145,7 +348,7 @@ def _google_vision_extract(
         client = vision.ImageAnnotatorClient(
             client_options=ClientOptions(api_key=api_key or None, quota_project_id=project_id or None)
         )
-    except Exception:
+    except (ValueError, TypeError, RuntimeError):
         logger.exception("Failed to construct Google Vision client")
         return None
     images = _render_pdf_pages(pdf_path, max_pages)
@@ -178,7 +381,7 @@ def _google_vision_extract(
                     for blk in p.blocks:
                         if blk.confidence is not None:
                             confidences.append(blk.confidence)
-        except Exception:
+        except (ValueError, KeyError, TypeError, RuntimeError):
             logger.exception("Google Vision page failed")
             continue
     if not full_text_parts:
@@ -212,7 +415,7 @@ def _azure_extract(
         return None
     try:
         client = DocumentIntelligenceClient(endpoint, AzureKeyCredential(key))
-    except Exception:
+    except (ValueError, TypeError, RuntimeError):
         logger.exception("Failed to construct Azure Document Intelligence client")
         return None
     # Pass the file path directly to avoid the "stream closed" bug
@@ -222,7 +425,7 @@ def _azure_extract(
             "prebuilt-read", pdf_path, pages=f"1-{max_pages}",
         )
         result = poller.result()
-    except Exception:
+    except (ValueError, RuntimeError, TypeError):
         logger.exception("Azure OCR failed")
         return None
     content = (result.content or "").strip()

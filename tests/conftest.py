@@ -11,7 +11,7 @@ that the singleton pattern introduces.
 import pytest
 from unittest.mock import MagicMock
 
-pytest_plugins = ["test_conftest"]
+pytest_plugins = ["tests.test_conftest"]
 
 
 @pytest.fixture(autouse=True)
@@ -102,3 +102,11 @@ def reset_singletons():
     # start clean.
     with _ce._ENGINE_LOCK:
         _ce._ENGINE = _saved_ce
+
+
+# ── Shared test JWT secret ────────────────────────────────────────────
+# All API tests use this secret so they agree on signed tokens.
+# Tests that intentionally test wrong-secret rejection override via
+# os.environ / monkeypatch.setenv locally.
+import os
+OPERION_TEST_JWT_SECRET = os.environ.get("OPERION_TEST_JWT_SECRET", "test-jwt-secret-change-me-in-production")

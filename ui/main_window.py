@@ -371,7 +371,11 @@ class MainWindow(QMainWindow):
             }
 
         factory = MainWindow._VIEW_FACTORIES.get(key)
-        widget = factory() if factory else PlaceholderView(parent, key)
+        try:
+            widget = factory() if factory else PlaceholderView(parent, key)
+        except Exception as exc:
+            logger.exception("Failed to create module '%s'", key)
+            widget = ErrorPlaceholderView(parent, key, str(exc))
         self.app_shell.view_container.addWidget(widget)
         return {"frame": widget, "obj": widget}
 
@@ -456,6 +460,26 @@ class PlaceholderView(QWidget):
         label.setProperty("role", "muted")
         label.setAlignment(Qt.AlignCenter)
         layout.addWidget(label)
+
+
+class ErrorPlaceholderView(QWidget):
+    """Shown when a view module raises an exception during construction."""
+
+    def __init__(self, parent: QWidget | None, key: str, error: str):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+
+        title = QLabel(f"⚠ {key}")
+        title.setProperty("role", "heading")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        msg = QLabel(f"Failed to load module.\n{error}")
+        msg.setProperty("role", "muted")
+        msg.setAlignment(Qt.AlignCenter)
+        msg.setWordWrap(True)
+        layout.addWidget(msg)
 
 
 class QWidgetShortcut(QObject):

@@ -87,6 +87,8 @@ _KEY_ICONS = {
     "fuel.section_title":       "\u26FD",   # ⛽
 }
 
+ICONS = _KEY_ICONS
+
 
 def iconed(key, *args, **kwargs):
     """Return localized string with prepended icon.

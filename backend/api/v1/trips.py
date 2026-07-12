@@ -1,11 +1,17 @@
 import os
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from fastapi.responses import FileResponse
 
 from backend.dependencies import get_db, get_trip_service
-from backend.schemas.trip import TripResponse
+from backend.schemas.common import PaginatedResponse
+from backend.schemas.trip import (
+    TripConflictCheckRequest,
+    TripCreateRequest,
+    TripResponse,
+    TripUpdateRequest,
+)
 from config import Config
 from database.db_manager import DatabaseManager
 from services.trip_service import TripService
@@ -15,20 +21,31 @@ from backend.dependencies_security import require_dispatcher
 router = APIRouter(prefix="/trips", tags=["trips"])
 
 
-@router.get("/", response_model=Dict[str, Any])
-async def list_trips(
+class TripListResponse(PaginatedResponse[TripResponse]):
+    """Paginated list of trips."""
+
+
+@router.get("/", response_model=TripListResponse)
+def list_trips(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     search: str = Query("", description="Search query"),
     status: str = Query("", description="Status filter"),
-    limit: int = Query(200, ge=1, le=1000),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=200, description="Items per page"),
     service: TripService = Depends(get_trip_service),
 ):
-    items = service.get_filtered(search=search, status=status, limit=limit)
-    return {"items": items, "total": len(items)}
+    """Return paginated list of trips."""
+    items = service.get_filtered(search=search, status=status, limit=page_size)
+    return PaginatedResponse.from_items(
+        items=[TripResponse(**t) for t in items],
+        total=len(items),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/{trip_id}", response_model=TripResponse)
-async def get_trip(
+def get_trip(
     trip_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
@@ -40,28 +57,44 @@ async def get_trip(
 
 
 @router.post("/", response_model=Dict[str, int])
-async def create_trip(
-    data: Dict[str, Any],
+def create_trip(
+    data: TripCreateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
 ):
-    trip_id = service.add(data)
+    trip_id = service.add(data.model_dump(exclude_unset=True))
     return {"id": trip_id}
 
 
-@router.put("/{trip_id}")
-async def update_trip(
+@router.patch("/{trip_id}")
+def update_trip_partial(
     trip_id: int,
-    data: Dict[str, Any],
+    data: TripUpdateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
 ):
-    service.update(trip_id, data)
+    """Partially update a trip (PATCH)."""
+    service.update(trip_id, data.model_dump(exclude_unset=True))
+    return {"status": "updated"}
+
+
+@router.put("/{trip_id}", deprecated=True)
+def update_trip(
+    trip_id: int,
+    data: TripUpdateRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service: TripService = Depends(get_trip_service),
+    response: Response = None,
+):
+    """[DEPRECATED] Use PATCH /{trip_id} instead."""
+    service.update(trip_id, data.model_dump(exclude_unset=True))
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
     return {"status": "updated"}
 
 
 @router.delete("/{trip_id}")
-async def delete_trip(
+def delete_trip(
     trip_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
@@ -71,19 +104,19 @@ async def delete_trip(
 
 
 @router.post("/conflicts/check")
-async def check_trip_conflicts(
-    data: Dict[str, Any],
+def check_trip_conflicts(
+    data: TripConflictCheckRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.conflict_service import TripConflictService
     svc = TripConflictService(db)
-    conflicts = svc.check_conflicts(data)
+    conflicts = svc.check_conflicts(data.model_dump(exclude_unset=True))
     return {"conflicts": conflicts}
 
 
 @router.get("/{trip_id}/export/pdf", response_class=FileResponse)
-async def export_trip_pdf(
+def export_trip_pdf(
     trip_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
@@ -101,7 +134,7 @@ async def export_trip_pdf(
 
 
 @router.get("/{trip_id}/export/xlsx", response_class=FileResponse)
-async def export_trip_excel(
+def export_trip_excel(
     trip_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),

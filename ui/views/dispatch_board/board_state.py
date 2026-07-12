@@ -71,8 +71,8 @@ class BoardStateMixin:
 
             all_statuses = list(STATUS_TO_COLUMN.keys())
             all_trips = []
-            if self._trip_repo is not None:
-                all_trips = self._trip_repo.get_by_statuses(all_statuses)
+            if self._trip_service is not None:
+                all_trips = self._trip_service.get_by_statuses(all_statuses)
 
             column_trips: dict[str, list[dict[str, Any]]] = {
                 col: [] for col, _, _ in COLUMN_DEFS
@@ -240,6 +240,8 @@ class BoardStateMixin:
         QTimer.singleShot(700, self._apply_filters)
 
     def _update_status_counts(self, column_trips: dict[str, list[dict[str, Any]]]) -> None:
+        if not hasattr(self, "_status_cards") or self._status_cards is None:
+            return
         for status_key, card in self._status_cards.items():
             count = len(column_trips.get(status_key, []))
             card.set_value(str(count))
@@ -359,7 +361,7 @@ class BoardStateMixin:
 
     def _run_conflict_scan(self) -> None:
         try:
-            all_trips = self._trip_repo.get_all(limit=2000)
+            all_trips = self._trip_service.get_all(limit=2000)
             active_trips = [
                 t for t in all_trips
                 if t.get("status", "") not in (

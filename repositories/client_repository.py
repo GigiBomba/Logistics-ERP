@@ -105,46 +105,64 @@ class ClientRepository(BaseRepository):
             tuple(data.values()) + (client_id,) + self._company_params(),
         )
 
-    def deactivate(self, client_id: int) -> None:
+    def deactivate(self, client_id: int, commit: bool = True) -> None:
         self._execute(
             f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ? {self._company_filter()}",
             (client_id,) + self._company_params(),
+            commit=commit,
         )
 
+    # ── Primitive merge operations (single-entity SQL updates, no business logic) ──
+
+    def reassign_trips(self, source_id: int, target_id: int) -> int:
+        """Reassign all trips from source client to target client."""
+        return self._execute_with_count(
+            "UPDATE trips SET client_id = ? WHERE client_id = ?",
+            (target_id, source_id),
+            commit=False,
+        )
+
+    def reassign_invoices(self, source_id: int, target_id: int) -> int:
+        """No-op: invoices reference trips via ``trip_id``, not ``client_id``.
+
+        After :meth:`reassign_trips` moves the trips to the target client,
+        the invoice → trip linkage is already correct.
+        """
+        return 0
+
+    def reassign_contacts(self, source_id: int, target_id: int) -> int:
+        """Reassign all contacts from source client to target client."""
+        from repositories.contact_repository import ContactRepository
+        contacts = ContactRepository(self.db).get_by_client(source_id)
+        for c in contacts:
+            self._execute(
+                "UPDATE client_contacts SET client_id = ? WHERE id = ?",
+                (target_id, c["id"]),
+                commit=False,
+            )
+        return len(contacts)
+
+    def reassign_tags(self, source_id: int, target_id: int) -> int:
+        """Reassign all tags from source client to target client."""
+        return self._execute_with_count(
+            "UPDATE client_tags SET client_id = ? WHERE client_id = ?",
+            (target_id, source_id),
+            commit=False,
+        )
+
+    # ── Legacy merge entrypoint (backward compat) ────────────────────────────
+
     def merge_client_data(self, from_id: int, to_id: int) -> dict[str, int]:
+        """Backward-compatible wrapper — delegates to primitive operations."""
         self.begin_transaction()
         try:
-            moved_trips = self._execute_with_count(
-                "UPDATE trips SET client_id = ? WHERE client_id = ?",
-                (to_id, from_id),
-                commit=False,
-            )
-            moved_invoices = self._execute_with_count(
-                "UPDATE invoices SET trip_id = ? "
-                "WHERE trip_id IN (SELECT id FROM trips WHERE client_id = ?)",
-                (to_id, to_id),
-                commit=False,
-            )
-            from repositories.contact_repository import ContactRepository
-            contacts = ContactRepository(self.db).get_by_client(from_id)
-            for c in contacts:
-                self._execute(
-                    "UPDATE client_contacts SET client_id = ? WHERE id = ?",
-                    (to_id, c["id"]),
-                    commit=False,
-                )
-            self._execute(
-                "UPDATE client_tags SET client_id = ? WHERE client_id = ?",
-                (to_id, from_id),
-                commit=False,
-            )
-            self._execute(
-                f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ? {self._company_filter()}",
-                (from_id,) + self._company_params(),
-                commit=False,
-            )
+            moved_trips = self.reassign_trips(from_id, to_id)
+            moved_invoices = self.reassign_invoices(from_id, to_id)
+            moved_contacts = self.reassign_contacts(from_id, to_id)
+            self.reassign_tags(from_id, to_id)
+            self.deactivate(from_id, commit=False)
             self.commit_transaction()
-            return {"trips": moved_trips, "invoices": moved_invoices, "contacts": len(contacts)}
+            return {"trips": moved_trips, "invoices": moved_invoices, "contacts": moved_contacts}
         except Exception:
             self.rollback_transaction()
             raise

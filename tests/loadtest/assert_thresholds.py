@@ -27,6 +27,19 @@ THRESHOLDS = {
     "upload_document":     {"p95_ms": 3000, "error_pct": 5.0},
     "generate_invoice":    {"p95_ms": 3000, "error_pct": 5.0},
     "export_pdf":          {"p95_ms": 5000, "error_pct": 5.0},
+
+    # Dispatch endpoints
+    "assign_truck":        {"p95_ms": 500,  "error_pct": 2.0},
+    "assign_driver":       {"p95_ms": 500,  "error_pct": 2.0},
+    "transition_trip":     {"p95_ms": 500,  "error_pct": 2.0},
+    "dispatch_board":      {"p95_ms": 1000, "error_pct": 2.0},
+    "complete_trip":       {"p95_ms": 500,  "error_pct": 2.0},
+    "workflow_create_trip": {"p95_ms": 1000, "error_pct": 3.0},
+    "workflow_assign_truck": {"p95_ms": 500, "error_pct": 2.0},
+    "workflow_transition":  {"p95_ms": 500, "error_pct": 2.0},
+    "workflow_complete":    {"p95_ms": 500, "error_pct": 2.0},
+    "workflow_board_load":  {"p95_ms": 1000, "error_pct": 2.0},
+    "workflow_board_filter": {"p95_ms": 500, "error_pct": 2.0},
 }
 
 

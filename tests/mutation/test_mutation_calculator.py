@@ -8,11 +8,11 @@ pytestmark = pytest.mark.mutation
 
 
 class TestKillMutationCalculator:
-    """Mutation-killing tests for TripCalculator.calculate()."""
+    """Mutation-killing tests for TripCalculator.calculate_raw()."""
 
     def test_sal_in_zero_uses_default_salary(self):
         """Kill: sal_in > 0 -> >= 0 mutation (sal_in=0 should use default, not 0)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=3000, fuel_price=1.50,
             days=3, consum_litri=30, sal_in=0,
         )
@@ -22,7 +22,7 @@ class TestKillMutationCalculator:
 
     def test_taxa_in_zero_uses_default_toll(self):
         """Kill: taxa_in > 0 -> >= 0 mutation (taxa_in=0 should use default, not 0)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=1500, fuel_price=1.50,
             days=1, consum_litri=30, taxa_in=0,
         )
@@ -32,7 +32,7 @@ class TestKillMutationCalculator:
 
     def test_extra_in_zero_used_as_is(self):
         """Kill: extra_in is not None -> is None mutation (extra_in=0 should be used as-is)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=3000, fuel_price=1.50,
             days=3, consum_litri=30, extra_in=0,
         )
@@ -42,7 +42,7 @@ class TestKillMutationCalculator:
 
     def test_extra_in_none_uses_default_formula(self):
         """Kill: extra_in=None branch verification (default formula used)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=3000, fuel_price=1.50,
             days=3, consum_litri=30, extra_in=None,
         )
@@ -51,7 +51,7 @@ class TestKillMutationCalculator:
 
     def test_fuel_override_zero_does_not_override(self):
         """Kill: fuel_cost_override > 0 -> >= 0 mutation (0 should NOT override)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=3000, fuel_price=1.50,
             days=1, consum_litri=30, fuel_cost_override=0,
         )
@@ -62,7 +62,7 @@ class TestKillMutationCalculator:
 
     def test_km_zero_does_not_divide_by_zero(self):
         """Kill: km > 0 -> >= 0 mutation (km=0 should give rate_per_km=0, not ZeroDivisionError)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=0, price_eur=1000, fuel_price=1.50,
             days=1, consum_litri=30,
         )
@@ -73,7 +73,7 @@ class TestKillMutationCalculator:
 
     def test_price_zero_does_not_divide_by_zero(self):
         """Kill: price_eur > 0 -> >= 0 mutation (price=0 should give margin=0, not ZeroDivisionError)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=0, fuel_price=1.50,
             days=1, consum_litri=30,
         )
@@ -88,7 +88,7 @@ class TestKillMutationCalculator:
         test fails, alerting to unintended constant drift.
         """
         km, days = 1000, 3
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=3000, fuel_price=1.50,
             days=days, consum_litri=30,
         )

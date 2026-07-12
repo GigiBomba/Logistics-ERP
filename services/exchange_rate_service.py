@@ -74,6 +74,10 @@ class ExchangeRateService(GracefulWorker):
     # ── Public API ─────────────────────────────────────────────────────
 
     def get_rate(self, currency_code: str) -> float:
+        """Get the exchange rate for a currency relative to EUR.
+
+        Returns cached rates; does NOT fetch live data.
+        """
         if currency_code == BASE_CURRENCY:
             return 1.0
         with self._rates_lock:
@@ -84,10 +88,24 @@ class ExchangeRateService(GracefulWorker):
         return rate
 
     def get_all_rates(self) -> dict[str, float]:
+        """Return all cached exchange rates (does NOT fetch live data).
+
+        AI Co-Pilot: This method is deterministic — it returns the in-memory cached rates.
+        Use :meth:`refresh` to fetch fresh rates.
+        """
         with self._rates_lock:
             return dict(self._rates)
 
     def convert(self, amount: float, from_currency: str, to_currency: str) -> float:
+        """NON-DETERMINISTIC: Converts using rates that may be live or cached.
+
+        If rates are stale (older than 24× TTL), a warning is logged but the stale
+        rates are still used. Call :meth:`refresh` explicitly to force an update.
+
+        AI Co-Pilot: Use ``CurrencyService.convert_with_cache()`` for deterministic
+        replay with explicit cache control.
+        Cache TTL: 3600 seconds.
+        """
         if from_currency == to_currency:
             return amount
         rate_from = self.get_rate(from_currency)
@@ -104,6 +122,12 @@ class ExchangeRateService(GracefulWorker):
         return eur_amount * rate_to
 
     def refresh_if_stale(self) -> bool:
+        """Refresh exchange rates if the cache is older than TTL (3600s).
+
+        AI Co-Pilot: This is conditionally non-deterministic — it only fetches live
+        data when the cache is stale. Use :meth:`get_rate` / :meth:`get_all_rates`
+        for deterministic reads.
+        """
         with self._rates_lock:
             if self._last_updated is None:
                 return self.refresh(background=False)
@@ -114,6 +138,11 @@ class ExchangeRateService(GracefulWorker):
         return True
 
     def refresh(self, background: bool = True) -> bool:
+        """NON-DETERMINISTIC: Fetches live exchange rates from external API.
+
+        AI Co-Pilot: Use :meth:`get_rate` / :meth:`get_all_rates` for deterministic replay.
+        Cache TTL: 3600 seconds.
+        """
         with self._rates_lock:
             if self._refresh_in_progress:
                 logger.debug("Exchange rate refresh already in progress, skipping")
@@ -160,6 +189,11 @@ class ExchangeRateService(GracefulWorker):
         return False
 
     def is_available(self) -> bool:
+        """Check whether the service has fresh exchange rate data available.
+
+        Returns ``True`` if a fetch was ever successful and the cache is younger
+        than 24× TTL (i.e. 24 hours). Deterministic — does not trigger a fetch.
+        """
         if not self._last_fetch_ok:
             return False
         age = self.age_seconds()
@@ -170,6 +204,10 @@ class ExchangeRateService(GracefulWorker):
         return True
 
     def last_updated_str(self) -> str:
+        """Return a human-readable string of when rates were last fetched.
+
+        Deterministic — returns the cached timestamp.
+        """
         if self._last_updated is None:
             return "never"
         return datetime.fromtimestamp(self._last_updated).strftime("%d/%m/%Y %H:%M")

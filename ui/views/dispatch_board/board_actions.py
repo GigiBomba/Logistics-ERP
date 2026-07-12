@@ -450,7 +450,14 @@ class BoardActionsMixin:
                 if not ok:
                     raise RuntimeError(f"Status transition failed for trip {trip_id}")
             else:
-                self._status_engine.transition(trip_id, new_status)
+                # Fallback: use TripService directly when no OperationsEngine.
+                # Previously this used TripStatusEngine.transition() directly.
+                self._trip_service.update(trip_id, {"status": new_status})
+                self._event_bus.publish(TRIP_STATUS_CHANGED, {
+                    "trip_id": trip_id,
+                    "old_status": old_status,
+                    "new_status": new_status,
+                })
             self._show_toast(
                 t("dispatch_board.transition_success").format(new_status=new_status),
                 "success",

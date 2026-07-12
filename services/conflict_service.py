@@ -131,6 +131,28 @@ class TripConflictService:
         })
         return len(conflicts) == 0
 
+    def check_conflicts_for_trip(
+        self,
+        truck_plate: str = "",
+        driver_id: Optional[int] = None,
+        start_date: str = "",
+        end_date: str = "",
+        distance_km: float = 0,
+    ) -> list[str]:
+        """Convenience method that checks conflicts and returns human-readable descriptions.
+
+        Delegates to :meth:`check_conflicts` and :meth:`describe_conflict` internally.
+        The caller (view) only needs to display the returned messages.
+        """
+        conflicts = self.check_conflicts({
+            "truck_plate": truck_plate,
+            "driver_id": driver_id,
+            "start_date": start_date,
+            "end_date": end_date,
+            "distance_km": distance_km,
+        })
+        return [self.describe_conflict(c) for c in conflicts]
+
     def is_driver_available(self, driver_id: int,
                             from_date: Optional[str] = None,
                             to_date: Optional[str] = None) -> bool:

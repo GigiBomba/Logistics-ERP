@@ -226,7 +226,7 @@ class QtAdminPanelView(QWidget):
         redis_box = QGroupBox(t("admin.redis_status", default="Redis Status"), content)
         redis_layout = QVBoxLayout(redis_box)
         self._redis_connected = QLabel("—")
-        redis_layout.addWidget(QLabel("Connected:"))
+        redis_layout.addWidget(QLabel(t("admin.connected_label", default="Connected:")))
         redis_layout.addWidget(self._redis_connected)
         redis_layout.addWidget(QLabel(t("admin.memory_used", default="Memory Used:")))
         self._redis_memory = QLabel("—")
@@ -243,16 +243,16 @@ class QtAdminPanelView(QWidget):
         cfg_box = QGroupBox(t("admin.config_flags", default="Configuration"), content)
         cfg_layout = QVBoxLayout(cfg_box)
         self._cfg_db_engine = QLabel("—")
-        cfg_layout.addWidget(QLabel("DB Engine:"))
+        cfg_layout.addWidget(QLabel(t("admin.db_engine_label", default="DB Engine:")))
         cfg_layout.addWidget(self._cfg_db_engine)
         self._cfg_env_mode = QLabel("—")
-        cfg_layout.addWidget(QLabel("Environment:"))
+        cfg_layout.addWidget(QLabel(t("admin.environment_label", default="Environment:")))
         cfg_layout.addWidget(self._cfg_env_mode)
         self._cfg_api_version = QLabel("—")
-        cfg_layout.addWidget(QLabel("API Version:"))
+        cfg_layout.addWidget(QLabel(t("admin.api_version_label", default="API Version:")))
         cfg_layout.addWidget(self._cfg_api_version)
         self._cfg_debug = QLabel("—")
-        cfg_layout.addWidget(QLabel("Debug Mode:"))
+        cfg_layout.addWidget(QLabel(t("admin.debug_mode_label", default="Debug Mode:")))
         cfg_layout.addWidget(self._cfg_debug)
         self._diag_grid.addWidget(cfg_box, 0, 3)
 
@@ -354,7 +354,7 @@ class QtAdminPanelView(QWidget):
         layout.addLayout(selector_row)
 
         # Schema table
-        schema_header = QLabel("Schema:")
+        schema_header = QLabel(t("admin.schema_label", default="Schema:"))
         schema_header.setProperty("fontRole", "label")
         layout.addWidget(schema_header)
 
@@ -479,7 +479,7 @@ class QtAdminPanelView(QWidget):
         self._doc_grid.addWidget(self._doc_orphans, 0, 3)
 
         # Category breakdown
-        self._doc_cat_header = QLabel("Category Breakdown")
+        self._doc_cat_header = QLabel(t("admin.category_breakdown", default="Category Breakdown"))
         self._doc_cat_header.setProperty("fontRole", "label")
         layout.addWidget(self._doc_cat_header)
         self._doc_cat_table = QTableWidget(0, 2)
@@ -562,7 +562,7 @@ class QtAdminPanelView(QWidget):
         layout.addWidget(self._env_table)
 
         # Log tail
-        log_header = QLabel("Log Tail (last 100 lines)")
+        log_header = QLabel(t("admin.log_tail", default="Log Tail (last 100 lines)"))
         log_header.setProperty("fontRole", "label")
         layout.addWidget(log_header)
 
@@ -601,11 +601,11 @@ class QtAdminPanelView(QWidget):
 
     def _on_system_info(self, data: Dict[str, Any]) -> None:
         info = [
-            ("Python Version", data.get("python_version", "—")),
-            ("DB Engine", data.get("db_engine", "—")),
-            ("DB Path", data.get("db_path", "—")),
-            ("API Version", data.get("api_version", "—")),
-            ("Platform", data.get("platform", "—")),
+            (t("admin.python_version_label", default="Python Version"), data.get("python_version", "—")),
+            (t("admin.db_engine_label", default="DB Engine"), data.get("db_engine", "—")),
+            (t("admin.db_path_label", default="DB Path"), data.get("db_path", "—")),
+            (t("admin.api_version_label", default="API Version"), data.get("api_version", "—")),
+            (t("admin.platform_label", default="Platform"), data.get("platform", "—")),
         ]
         self._sys_table.setRowCount(len(info))
         for i, (key, val) in enumerate(info):

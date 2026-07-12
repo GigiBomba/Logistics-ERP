@@ -1,11 +1,12 @@
 """Configurable thresholds and business rules for the Operations Engine."""
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import os
 import threading
-from typing import Any
+from typing import Any, Optional
 
 from utils.resource_path import data_path
 
@@ -49,6 +50,15 @@ _DEFAULT_RULES: dict[str, Any] = {
 _RULES_LOCK = threading.Lock()
 
 class Rules:
+    """Configurable business rules and thresholds.
+
+    Singleton for backward compatibility. For AI/headless use, call
+    ``Rules.get_instance()`` to obtain the singleton, or use
+    ``Rules.reload_rules(rules_dict=...)`` to pass rules explicitly
+    instead of reading from file (non-deterministic if file changes).
+
+    Internally ``_load()`` reads from the JSON file on first access.
+    """
     _instance = None
 
     def __new__(cls):
@@ -63,6 +73,48 @@ class Rules:
     def __init__(self):
         if not hasattr(self, '_rules'):
             self._rules = dict(_DEFAULT_RULES)
+
+    # ── Factory / lifecycle (AI/headless support) ──────────────────
+
+    @classmethod
+    def get_instance(cls):
+        """Get or create the singleton.
+
+        For AI/headless use: call ``Rules.reset_instance()`` first to
+        start with a clean slate, then pass rules via
+        ``reload_rules(rules_dict=...)``.
+        """
+        if cls._instance is None:
+            cls._instance = cls()
+        return cls._instance
+
+    @classmethod
+    def reset_instance(cls):
+        """Reset the singleton. Use before headless/test execution."""
+        cls._instance = None
+
+    def reload_rules(self, rules_dict: Optional[dict[str, Any]] = None) -> None:
+        """Replace current rules with an explicit dict, or reload from file.
+
+        Args:
+            rules_dict: Complete rules dict to use. If None, reloads from
+                the JSON file (non-deterministic if the file has changed
+                between runs).
+
+        For AI/headless use: pass ``rules_dict`` explicitly to avoid
+        file-system coupling.
+        """
+        with _RULES_LOCK:
+            if rules_dict is not None:
+                self._rules = dict(rules_dict)
+            else:
+                self._rules = dict(_DEFAULT_RULES)
+                self._load()
+
+    def get_rules_snapshot(self) -> dict[str, Any]:
+        """Return a deep copy of the current rules for deterministic access."""
+        with _RULES_LOCK:
+            return copy.deepcopy(self._rules)
 
     # ── Access ─────────────────────────────────────────────────────
 
