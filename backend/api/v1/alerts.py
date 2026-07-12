@@ -4,22 +4,25 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
+from backend.schemas.common import PaginatedResponse
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
 
-@router.get("/", response_model=Dict[str, Any])
-async def list_alerts(
+@router.get("/", response_model=PaginatedResponse[dict])
+def list_alerts(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    limit: int = Query(50, ge=1, le=2000),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=2000, description="Items per page"),
     db: DatabaseManager = Depends(get_db),
 ):
+    """Return paginated list of active alerts."""
     from services.operations.operations_engine import OperationsEngine
     from services.preferences import PreferencesManager
     prefs = PreferencesManager(db)
     ops = OperationsEngine(db, prefs=prefs)
-    alerts = ops.get_active_alerts(limit=limit)
+    alerts = ops.get_active_alerts(limit=page_size)
     items = []
     for a in alerts:
         items.append({
@@ -28,11 +31,11 @@ async def list_alerts(
             "message": getattr(a, 'message', str(a)),
             "status": getattr(a, 'status', 'active'),
         })
-    return {"items": items, "total": len(items)}
+    return PaginatedResponse.from_items(items=items, total=len(items), page=page, page_size=page_size)
 
 
 @router.get("/count")
-async def get_alert_count(
+def get_alert_count(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
@@ -44,7 +47,7 @@ async def get_alert_count(
 
 
 @router.post("/{alert_id}/resolve")
-async def resolve_alert(
+def resolve_alert(
     alert_id: str,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),

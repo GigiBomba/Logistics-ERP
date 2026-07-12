@@ -1,10 +1,11 @@
 from typing import Any, Dict, List
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from backend.cache import get_cache
 from backend.dependencies import get_db, get_fleet_service
 from backend.dependencies_security import require_dispatcher
+from backend.schemas.common import PaginatedResponse
 from backend.schemas.fleet import GpsPing, GpsPosition, TruckResponse
 from database.db_manager import DatabaseManager
 from services.fleet_service import FleetService
@@ -12,17 +13,29 @@ from services.fleet_service import FleetService
 router = APIRouter(prefix="/fleet", tags=["fleet"])
 
 
-@router.get("/trucks", response_model=Dict[str, Any])
-async def list_trucks(
+class TruckListResponse(PaginatedResponse[TruckResponse]):
+    """Paginated list of trucks."""
+
+
+@router.get("/trucks", response_model=TruckListResponse)
+def list_trucks(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=200, description="Items per page"),
     service: FleetService = Depends(get_fleet_service),
 ):
+    """Return paginated list of trucks."""
     trucks = service.get_trucks()
-    return {"items": trucks, "total": len(trucks)}
+    return PaginatedResponse.from_items(
+        items=[TruckResponse(**t) for t in trucks],
+        total=len(trucks),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/trucks/{truck_id}", response_model=TruckResponse)
-async def get_truck(
+def get_truck(
     truck_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
@@ -34,7 +47,7 @@ async def get_truck(
 
 
 @router.post("/trucks", response_model=Dict[str, int])
-async def create_truck(
+def create_truck(
     data: dict,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
@@ -43,19 +56,35 @@ async def create_truck(
     return {"id": truck_id}
 
 
-@router.put("/trucks/{truck_id}")
-async def update_truck(
+@router.patch("/trucks/{truck_id}")
+def update_truck_partial(
     truck_id: int,
     data: dict,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
+    """Partially update a truck (PATCH)."""
     service.update_truck(truck_id, data)
     return {"status": "updated"}
 
 
+@router.put("/trucks/{truck_id}", deprecated=True)
+def update_truck(
+    truck_id: int,
+    data: dict,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service: FleetService = Depends(get_fleet_service),
+    response: Response = None,
+):
+    """[DEPRECATED] Use PATCH /trucks/{truck_id} instead."""
+    service.update_truck(truck_id, data)
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
+    return {"status": "updated"}
+
+
 @router.delete("/trucks/{truck_id}")
-async def delete_truck(
+def delete_truck(
     truck_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
@@ -65,7 +94,7 @@ async def delete_truck(
 
 
 @router.post("/gps/ingest", status_code=202)
-async def ingest_gps_ping(
+def ingest_gps_ping(
     ping: GpsPing,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
 ):
@@ -77,7 +106,7 @@ async def ingest_gps_ping(
 
 
 @router.get("/gps/live/{truck_id}", response_model=GpsPosition)
-async def get_live_position(
+def get_live_position(
     truck_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
 ):
@@ -97,7 +126,7 @@ async def get_live_position(
 
 
 @router.post("/gps/batch", status_code=202)
-async def ingest_gps_batch(
+def ingest_gps_batch(
     pings: List[GpsPing],
     current_user: Dict[str, Any] = Depends(require_dispatcher),
 ):
@@ -109,18 +138,22 @@ async def ingest_gps_batch(
     return {"status": "accepted", "count": len(pings)}
 
 
-@router.get("/gps/history/{truck_id}")
-async def get_gps_history(
+@router.get("/gps/history/{truck_id}", response_model=PaginatedResponse[dict])
+def get_gps_history(
     truck_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    limit: int = 100,
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(100, ge=1, le=500, description="Items per page"),
     db: DatabaseManager = Depends(get_db),
 ):
+    """Return paginated GPS history for a truck."""
+    company_id = current_user.get("company_id", 0)
     rows = db.rows_to_dicts(
         db.conn.execute(
             "SELECT * FROM gps_telemetry WHERE truck_id = ? "
+            "AND company_id = ? "
             "ORDER BY recorded_at DESC LIMIT ?",
-            (truck_id, limit),
+            (truck_id, company_id, page_size),
         ).fetchall()
     )
-    return {"items": rows, "total": len(rows)}
+    return PaginatedResponse.from_items(items=rows, total=len(rows), page=page, page_size=page_size)

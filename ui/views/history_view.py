@@ -137,7 +137,8 @@ class QtHistoryView(BaseView):
         self.c_status = StyledComboBox(bar)
         self.c_status.addItem("")
         self.c_status.addItems([
-            "Planned", "In Transit", "Loading", "Delivered", "Invoiced", "Paid", "Archived",
+            t("status.Planned"), t("status.In Transit"), t("status.Loading"),
+            t("status.Delivered"), t("status.Invoiced"), t("status.Paid"), t("status.Archived"),
         ])
         self.c_status.currentTextChanged.connect(self._on_status_filter_changed)
         bar_layout.addWidget(self.c_status)
@@ -223,7 +224,11 @@ class QtHistoryView(BaseView):
             return
         search = self.e_search.text().strip()
         status = self.c_status.currentText()
-        trips = self.trip_service.get_filtered(search=search, status=status, limit=self._limit)
+        try:
+            trips = self.trip_service.get_filtered(search=search, status=status, limit=self._limit)
+        except Exception:
+            logger.warning("Failed to fetch trips (API error)", exc_info=True)
+            trips = []
 
         data = []
         for trip in trips:
@@ -291,7 +296,13 @@ class QtHistoryView(BaseView):
         if not data:
             return None
         trip_id = int(data.get("id", 0))
-        raw = data.get("_raw") or self.trip_service.get_by_id(trip_id)
+        raw = data.get("_raw")
+        if raw is None and self.trip_service is not None:
+            try:
+                raw = self.trip_service.get_by_id(trip_id)
+            except Exception:
+                logger.warning("Failed to fetch trip by id %s (API error)", trip_id, exc_info=True)
+                return None
         return (trip_id, raw, data)
 
     # ── Filters ────────────────────────────────────────────────────────────────
@@ -381,7 +392,12 @@ class QtHistoryView(BaseView):
         if QMessageBox.question(
             self, t("history.confirm_delete_title"), t("history.confirm_delete_msg"),
         ) == QMessageBox.Yes:
-            self.trip_service.delete(trip_id)
+            try:
+                self.trip_service.delete(trip_id)
+            except Exception:
+                logger.warning("Failed to delete trip %s (API error)", trip_id, exc_info=True)
+                QMessageBox.critical(self, t("history.error"), t("history.delete_error", default="Failed to delete trip"))
+                return
             self.refresh()
 
     def _open_trip_documents(self) -> None:

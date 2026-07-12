@@ -271,7 +271,7 @@ class ImmigratePhysicalTab(QWidget):
         # ── Empty state (no service) ─────────────────────────────────
         self._empty_state = EmptyState(
             None,
-            icon_name="mdi6.scan",
+            icon_name="fa5s.file-import",
             title=t("migration.physical_empty_title", "Physical Archive"),
             subtitle=t(
                 "migration.physical_empty_subtitle",

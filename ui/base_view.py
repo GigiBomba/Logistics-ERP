@@ -42,7 +42,7 @@ class BaseView(QScrollArea):
         self._event_bus: EventBus = _shared_event_bus
         self._subs: list[tuple[EventBus, str, Callable]] = []
         self._timers: list[QTimer] = []
-        self._i18n_id: str | None = None
+        self._i18n_id: Callable[[str], None] | None = None
         self._shutdown_flag: bool = False
 
     # ── Lifecycle ──────────────────────────────────────────────

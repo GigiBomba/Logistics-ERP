@@ -43,10 +43,12 @@ class DunnerEngine:
         db,
         notification_center: Optional[NotificationCenter] = None,
         prefs=None,
+        invoice_repository: Optional[InvoiceRepository] = None,
     ) -> None:
         self._db = db
         self._notification_center = notification_center
         self._prefs = prefs
+        self._invoice_repo = invoice_repository or InvoiceRepository(self._db)
         self._event_bus = EventBus()
         self._rules = Rules()
         self._subscribe()
@@ -183,14 +185,11 @@ class DunnerEngine:
                     # Re-check invoice payment status right before sending,
                     # since the invoice may have been paid between fetch and send.
                     try:
-                        cur = self._db.conn.execute(
-                            "SELECT status FROM invoices WHERE id = ?", (inv["invoice_id"],)
-                        )
-                        row = cur.fetchone()
-                        if row and row[0] != "Unpaid":
+                        row = self._invoice_repo.get_by_id(inv["invoice_id"])
+                        if row and row["status"] != "Unpaid":
                             logger.info(
                                 "Invoice #%d is no longer unpaid (status=%s), skipping reminder",
-                                inv["invoice_id"], row[0],
+                                inv["invoice_id"], row["status"],
                             )
                             continue
                     except Exception as exc:

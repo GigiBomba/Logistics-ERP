@@ -52,6 +52,7 @@ class QueueManagementMixin:
         self._batch_counter: int = 0
         self._batch_for_run: dict[int, int] = {}  # run_id -> batch_id
         self._current_batch_id: int = 0
+        self._refresh_pending: bool = False
 
     # ------------------------------------------------------------------
     # File drop handling  (queue management)

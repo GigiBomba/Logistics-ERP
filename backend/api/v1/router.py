@@ -4,28 +4,38 @@ from backend.api.v1 import (
     admin,
     alerts,
     analytics,
+    api_keys,
     auth,
     clients,
     cmr,
     documents,
     drivers,
+    feature_flags,
     fleet,
+    gdpr,
     health,
     invoices,
     maintenance,
+    oauth2,
     ocr,
     receipts,
+    registration,
+    route_demo,
     routes,
     settings,
+    slo,
     tacho,
     trips,
     users,
+    waitlist,
+    webhooks,
 )
 
 api_v1_router = APIRouter(prefix="/api/v1")
 api_v1_router.include_router(health.router)
 api_v1_router.include_router(auth.router)
 api_v1_router.include_router(admin.router)
+api_v1_router.include_router(api_keys.router)
 api_v1_router.include_router(documents.router)
 api_v1_router.include_router(ocr.router)
 api_v1_router.include_router(trips.router)
@@ -41,4 +51,12 @@ api_v1_router.include_router(tacho.router)
 api_v1_router.include_router(invoices.router)
 api_v1_router.include_router(cmr.router)
 api_v1_router.include_router(receipts.router)
+api_v1_router.include_router(registration.router)
+api_v1_router.include_router(route_demo.router)
 api_v1_router.include_router(users.router)
+api_v1_router.include_router(oauth2.router)
+api_v1_router.include_router(feature_flags.router)
+api_v1_router.include_router(gdpr.router)
+api_v1_router.include_router(slo.router)
+api_v1_router.include_router(webhooks.router)
+api_v1_router.include_router(waitlist.router)

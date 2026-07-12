@@ -6,6 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Optional
 
+from services.encryption_service import decrypt_value
 from services.operations.alert_manager import AlertManager, Severity
 from services.operations.event_bus import ALERT_CREATED, ALERT_RESOLVED, EventBus
 
@@ -73,6 +74,8 @@ class NotificationCenter:
                 self._subscribers.remove(callback)
 
     def configure_smtp(self, server: str, port: int, user: str, password: str, use_tls: bool = True) -> None:
+        # Decrypt in case the caller passes an encrypted password (defence in depth).
+        password = decrypt_value(password)
         self._smtp_config = {
             "server": server,
             "port": port,

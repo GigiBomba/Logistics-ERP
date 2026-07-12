@@ -20,6 +20,7 @@ import os
 import threading
 from typing import Callable, Dict, List, Optional
 
+from services.encryption_service import decrypt_value, encrypt_value
 from services.i18n import set_language as i18n_set_language
 
 logger = logging.getLogger("remote_prefs")
@@ -76,17 +77,27 @@ class RemotePreferences:
             except OSError as exc:
                 logger.warning("Failed to save preferences: %s", exc)
 
+    _SENSITIVE_KEYS: set[str] = {"smtp_password"}
+
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
-        return self._data.get(key, default)
+        value = self._data.get(key, default)
+        if value is not None and key in self._SENSITIVE_KEYS:
+            value = decrypt_value(value)
+        return value
 
     def get_settings(self, keys: List[str]) -> Dict[str, str]:
-        return {k: self._data.get(k, "") for k in keys}
+        return {k: (self.get_setting(k) or "") for k in keys}
 
     def save_setting(self, key: str, value: str) -> None:
+        if key in self._SENSITIVE_KEYS:
+            value = encrypt_value(value)
         self._data[key] = value
         self.save()
 
     def save_settings(self, data: Dict[str, str]) -> None:
+        for k, v in data.items():
+            if k in self._SENSITIVE_KEYS:
+                data[k] = encrypt_value(v)
         self._data.update(data)
         self.save()
 
@@ -101,10 +112,9 @@ class RemotePreferences:
     def save_smtp_config(self, config: Dict[str, str]) -> None:
         for key in self._SMTP_KEYS:
             if key in config:
-                self._data[key] = config[key]
+                self.save_setting(key, config[key])
         if "alert_email_recipients" in config:
-            self._data["alert_email_recipients"] = config["alert_email_recipients"]
-        self.save()
+            self.save_setting("alert_email_recipients", config["alert_email_recipients"])
 
     def get_available_languages(self) -> List[str]:
         try:
@@ -116,6 +126,30 @@ class RemotePreferences:
     def get_language_display_name(self, code: str) -> str:
         from services.i18n import LANGUAGE_NAMES
         return LANGUAGE_NAMES.get(code, code)
+
+    def get_language(self) -> str:
+        """Return the currently active language code."""
+        from services.i18n import get_language
+        return get_language()
+
+    def get_language_display(self) -> str:
+        """Return the display name of the current language."""
+        return self.get_language_display_name(self.get_language())
+
+    def set_language(self, code: str) -> None:
+        """Persist and activate a new language."""
+        from services.i18n import set_language
+        set_language(code)
+        self.save_setting(_PREF_LANG_KEY, code)
+
+    def get_supported_currencies(self) -> list[str]:
+        """Return the list of supported currency codes."""
+        from services.currency_service import SUPPORTED_CURRENCIES
+        return list(SUPPORTED_CURRENCIES)
+
+    def set_currency(self, code: str) -> None:
+        """Persist a new default currency."""
+        self.save_setting(_PREF_CURRENCY_KEY, code)
 
     def get_currency(self) -> str:
         return self._data.get(_PREF_CURRENCY_KEY, _DEFAULT_CURRENCY)

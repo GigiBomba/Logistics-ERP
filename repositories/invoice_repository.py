@@ -17,11 +17,38 @@ class InvoiceRepository(BaseRepository):
     COLUMNS = [
         "id", "trip_id", "invoice_number", "issue_date", "due_date",
         "total_amount", "status", "company_id",
+        "client_id", "currency", "notes", "line_items_json",
+        "subtotal_net", "total_vat", "total_gross",
+        "pdf_path", "created_at", "updated_at",
     ]
     COLUMNS_INVOICE_REMINDERS = [
         "id", "invoice_id", "trip_id", "reminder_type", "days_offset",
         "sent_at", "recipient_email", "status", "company_id",
     ]
+
+    def create(self, data: Dict[str, Any]) -> int:
+        self._validate_columns(data)
+        data = self._set_company_from_context(data)
+        cols = ", ".join(data.keys())
+        vals = ", ".join("?" for _ in data)
+        return self._execute_insert(
+            f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
+            tuple(data.values()),
+        )
+
+    def update(self, invoice_id: int, data: Dict[str, Any]) -> None:
+        self._validate_columns(data)
+        sets = ", ".join(f"{k} = ?" for k in data)
+        self._execute(
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (invoice_id,) + self._company_params(),
+        )
+
+    def delete(self, invoice_id: int) -> None:
+        self._execute(
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (invoice_id,) + self._company_params(),
+        )
 
     def get_by_id(self, invoice_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(

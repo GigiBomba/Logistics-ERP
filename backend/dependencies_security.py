@@ -25,6 +25,7 @@ from jwt.exceptions import PyJWTError as JWTError
 
 from backend.config import BackendSettings
 from backend.dependencies import get_db, set_request_user_context
+from backend.errors import ErrorCode
 from backend.security import decode_access_token
 
 logger = logging.getLogger(__name__)
@@ -57,7 +58,10 @@ async def get_current_user(
         logger.debug("JWT decode failed: %s", exc)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid or expired access token.",
+            detail={
+                "error_code": ErrorCode.TOKEN_INVALID.value,
+                "detail": "Invalid or expired access token.",
+            },
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
 
@@ -67,7 +71,10 @@ async def get_current_user(
     if not email or not role:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Token payload missing required claims.",
+            detail={
+                "error_code": ErrorCode.TOKEN_INVALID.value,
+                "detail": "Token payload missing required claims.",
+            },
             headers={"WWW-Authenticate": "Bearer"},
         )
 
@@ -103,7 +110,10 @@ async def get_current_user(
         if row is None:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="User account not found or inactive.",
+                detail={
+                    "error_code": ErrorCode.USER_NOT_FOUND.value,
+                    "detail": "User account not found or inactive.",
+                },
                 headers={"WWW-Authenticate": "Bearer"},
             )
 
@@ -118,7 +128,10 @@ async def get_current_user(
     # Should never reach here
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        detail="Authentication service unavailable.",
+        detail={
+            "error_code": ErrorCode.INTERNAL_ERROR.value,
+            "detail": "Authentication service unavailable.",
+        },
     )
 
 
@@ -131,9 +144,19 @@ async def require_admin(
         HTTPException (403): If the user is not an admin.
     """
     if not current_user.get("is_admin") and current_user.get("role") != "admin":
+        logger.warning(
+            "Authorization denied: user=%s role=%s required=%s endpoint=%s",
+            current_user.get("email", "unknown"),
+            current_user.get("role", "unknown"),
+            "admin",
+            "unknown",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Admin privileges required.",
+            detail={
+                "error_code": ErrorCode.INSUFFICIENT_PERMISSIONS.value,
+                "detail": "Admin privileges required.",
+            },
         )
     return current_user
 
@@ -148,9 +171,19 @@ async def require_manager(
     """
     role: str = current_user.get("role", "")
     if role not in ("admin", "manager") and not current_user.get("is_admin"):
+        logger.warning(
+            "Authorization denied: user=%s role=%s required=%s endpoint=%s",
+            current_user.get("email", "unknown"),
+            current_user.get("role", "unknown"),
+            "manager",
+            "unknown",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Manager or admin privileges required.",
+            detail={
+                "error_code": ErrorCode.INSUFFICIENT_PERMISSIONS.value,
+                "detail": "Manager or admin privileges required.",
+            },
         )
     return current_user
 
@@ -165,8 +198,18 @@ async def require_dispatcher(
     """
     role: str = current_user.get("role", "")
     if role not in ("admin", "manager", "dispatcher"):
+        logger.warning(
+            "Authorization denied: user=%s role=%s required=%s endpoint=%s",
+            current_user.get("email", "unknown"),
+            current_user.get("role", "unknown"),
+            "dispatcher",
+            "unknown",
+        )
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
-            detail="Dispatcher or admin privileges required.",
+            detail={
+                "error_code": ErrorCode.INSUFFICIENT_PERMISSIONS.value,
+                "detail": "Dispatcher or admin privileges required.",
+            },
         )
     return current_user

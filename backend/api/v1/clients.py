@@ -1,9 +1,16 @@
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
 from backend.dependencies import get_client_service
-from backend.schemas.client import ClientResponse
+from backend.schemas.client import (
+    ClientContactAddRequest,
+    ClientCreateRequest,
+    ClientResponse,
+    ClientTagAddRequest,
+    ClientUpdateRequest,
+)
+from backend.schemas.common import PaginatedResponse
 from services.client_service import ClientService
 
 from backend.dependencies_security import require_dispatcher
@@ -11,23 +18,34 @@ from backend.dependencies_security import require_dispatcher
 router = APIRouter(prefix="/clients", tags=["clients"])
 
 
-@router.get("/", response_model=Dict[str, Any])
-async def list_clients(
+class ClientListResponse(PaginatedResponse[ClientResponse]):
+    """Paginated list of clients."""
+
+
+@router.get("/", response_model=ClientListResponse)
+def list_clients(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     query: str = Query("", description="Search query"),
     include_inactive: bool = Query(False),
-    limit: int = Query(200, ge=1, le=1000),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=200, description="Items per page"),
     service: ClientService = Depends(get_client_service),
 ):
+    """Return paginated list of clients."""
     if query:
-        items = service.search_advanced(query, include_inactive=include_inactive, limit=limit)
+        items = service.search_advanced(query, include_inactive=include_inactive, limit=page_size)
     else:
         items = service.get_all(include_inactive=include_inactive)
-    return {"items": items, "total": len(items)}
+    return PaginatedResponse.from_items(
+        items=[ClientResponse(**c) for c in items],
+        total=len(items),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.get("/{client_id}", response_model=ClientResponse)
-async def get_client(
+def get_client(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
@@ -39,29 +57,44 @@ async def get_client(
 
 
 @router.post("/", response_model=Dict[str, int])
-async def create_client(
-    name: str,
-    data: Dict[str, Any],
+def create_client(
+    data: ClientCreateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    client_id = service.create(name=name, **data)
+    client_id = service.create(name=data.name, **data.model_dump(exclude={"name"}))
     return {"id": client_id}
 
 
-@router.put("/{client_id}")
-async def update_client(
+@router.patch("/{client_id}")
+def update_client_partial(
     client_id: int,
-    data: Dict[str, Any],
+    data: ClientUpdateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    service.update(client_id, **data)
+    """Partially update a client (PATCH)."""
+    service.update(client_id, **data.model_dump(exclude_unset=True))
+    return {"status": "updated"}
+
+
+@router.put("/{client_id}", deprecated=True)
+def update_client(
+    client_id: int,
+    data: ClientUpdateRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service: ClientService = Depends(get_client_service),
+    response: Response = None,
+):
+    """[DEPRECATED] Use PATCH /{client_id} instead."""
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
+    service.update(client_id, **data.model_dump(exclude_unset=True))
     return {"status": "updated"}
 
 
 @router.get("/{client_id}/dashboard")
-async def get_client_dashboard(
+def get_client_dashboard(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
@@ -69,31 +102,34 @@ async def get_client_dashboard(
     return service.get_client_dashboard(client_id)
 
 
-@router.get("/{client_id}/trips")
-async def get_client_trips(
+@router.get("/{client_id}/trips", response_model=PaginatedResponse[dict])
+def get_client_trips(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    limit: int = Query(100, ge=1, le=500),
-    offset: int = Query(0, ge=0),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=500, description="Items per page"),
     service: ClientService = Depends(get_client_service),
 ):
-    items = service.get_client_trips(client_id, limit=limit, offset=offset)
-    return {"items": items, "total": len(items)}
+    """Return paginated trips for a client."""
+    items = service.get_client_trips(client_id, limit=page_size, offset=(page - 1) * page_size)
+    return PaginatedResponse.from_items(items=items, total=len(items), page=page, page_size=page_size)
 
 
-@router.get("/{client_id}/invoices")
-async def get_client_invoices(
+@router.get("/{client_id}/invoices", response_model=PaginatedResponse[dict])
+def get_client_invoices(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    limit: int = Query(100, ge=1, le=500),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(50, ge=1, le=500, description="Items per page"),
     service: ClientService = Depends(get_client_service),
 ):
-    items = service.get_client_invoices(client_id, limit=limit)
-    return {"items": items, "total": len(items)}
+    """Return paginated invoices for a client."""
+    items = service.get_client_invoices(client_id, limit=page_size)
+    return PaginatedResponse.from_items(items=items, total=len(items), page=page, page_size=page_size)
 
 
 @router.get("/{client_id}/trip-count")
-async def get_client_trip_count(
+def get_client_trip_count(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
@@ -102,7 +138,7 @@ async def get_client_trip_count(
 
 
 @router.post("/{client_id}/deactivate")
-async def deactivate_client(
+def deactivate_client(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
@@ -111,29 +147,30 @@ async def deactivate_client(
     return {"status": "deactivated"}
 
 
-@router.get("/{client_id}/contacts")
-async def get_client_contacts(
+@router.get("/{client_id}/contacts", response_model=PaginatedResponse[dict])
+def get_client_contacts(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
+    """Return contacts for a client."""
     items = service.get_contacts(client_id)
-    return {"items": items, "total": len(items)}
+    return PaginatedResponse.from_items(items=items, total=len(items), page=1, page_size=len(items) or 20)
 
 
 @router.post("/{client_id}/contacts", status_code=201)
-async def add_client_contact(
+def add_client_contact(
     client_id: int,
-    data: Dict[str, Any],
+    data: ClientContactAddRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    contact_id = service.add_contact(client_id, **data)
+    contact_id = service.add_contact(client_id, **data.model_dump())
     return {"id": contact_id}
 
 
 @router.get("/{client_id}/tags")
-async def get_client_tags(
+def get_client_tags(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
@@ -143,20 +180,19 @@ async def get_client_tags(
 
 
 @router.post("/{client_id}/tags")
-async def add_client_tag(
+def add_client_tag(
     client_id: int,
-    data: Dict[str, str],
+    data: ClientTagAddRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    tag = data.get("tag", "")
-    if tag:
-        service.add_tag(client_id, tag)
+    if data.tag:
+        service.add_tag(client_id, data.tag)
     return {"status": "tag_added"}
 
 
 @router.get("/{client_id}/payment-summary")
-async def get_payment_summary(
+def get_payment_summary(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
@@ -165,7 +201,7 @@ async def get_payment_summary(
 
 
 @router.get("/{client_id}/revenue-history")
-async def get_client_revenue_history(
+def get_client_revenue_history(
     client_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     months: int = Query(12, ge=1, le=60),

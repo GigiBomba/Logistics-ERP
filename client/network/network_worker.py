@@ -121,8 +121,12 @@ class NetworkWorker(QThread):
     def run(self) -> None:
         self.progress.emit("Connecting...", 0)
         try:
+            headers = {}
+            if self._config.api_key:
+                headers["X-API-Key"] = self._config.api_key
             client = httpx.Client(
                 base_url=self._base_url,
+                headers=headers,
                 timeout=httpx.Timeout(120.0, connect=10.0),
                 verify=self._verify_ssl,
             )

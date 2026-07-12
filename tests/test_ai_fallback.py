@@ -81,26 +81,32 @@ class TestCheckRpm(unittest.TestCase):
 
 
 class TestCallWithRetry(unittest.TestCase):
-    @patch("services.document_automation.ai_fallback._session")
-    def test_success_returns_response(self, mock_session):
+    @patch("services.document_automation.ai_fallback._get_session")
+    def test_success_returns_response(self, mock_get_session):
+        mock_session = MagicMock()
         mock_session.post.return_value = MagicMock(status_code=200)
+        mock_get_session.return_value = mock_session
         resp = _call_with_retry("http://test", {}, timeout_s=5, retries=3)
         self.assertIsNotNone(resp)
         if resp is not None:
             self.assertEqual(resp.status_code, 200)
 
-    @patch("services.document_automation.ai_fallback._session")
-    def test_server_error_retries(self, mock_session):
+    @patch("services.document_automation.ai_fallback._get_session")
+    def test_server_error_retries(self, mock_get_session):
+        mock_session = MagicMock()
         resp_502 = MagicMock(status_code=502)
         resp_ok = MagicMock(status_code=200)
         mock_session.post.side_effect = [resp_502, resp_502, resp_ok]
+        mock_get_session.return_value = mock_session
         resp = _call_with_retry("http://test", {}, timeout_s=5, retries=3)
         self.assertEqual(mock_session.post.call_count, 3)
         self.assertIsNotNone(resp)
 
-    @patch("services.document_automation.ai_fallback._session")
-    def test_all_retries_exhausted_returns_last_response(self, mock_session):
+    @patch("services.document_automation.ai_fallback._get_session")
+    def test_all_retries_exhausted_returns_last_response(self, mock_get_session):
+        mock_session = MagicMock()
         mock_session.post.return_value = MagicMock(status_code=503)
+        mock_get_session.return_value = mock_session
         resp = _call_with_retry("http://test", {}, timeout_s=5, retries=2)
         self.assertIsNotNone(resp)
         if resp is not None:

@@ -204,9 +204,10 @@ def get_language_display_name(lang: str) -> str:
     return LANGUAGE_NAMES.get(lang, lang)
 
 
-def register_listener(cb: Callable[[str], None]) -> None:
+def register_listener(cb: Callable[[str], None]) -> Callable[[str], None]:
     with _LOCK:
         _listeners.append(cb)
+    return cb
 
 
 def unregister_listener(cb: Callable[[str], None]) -> None:

@@ -166,52 +166,32 @@ class AnalyticsRepository(BaseRepository):
         }
 
     def get_overdue_data(self):
-        today = datetime.now()
-        alerts = []
-        total_overdue_amount = 0
+        """Return raw overdue invoice data and negative-margin trips.
 
-        query = f"""
-            SELECT t.id, t.client_name, i.invoice_number, i.due_date, i.total_amount
+        Returns:
+            tuple[list[dict], list[dict]]:
+                - overdue_rows: each with keys id, client_name, invoice_number,
+                  due_date, total_amount, days_late (computed via SQL).
+                - neg_margin_rows: each with keys id, truck_number.
+        """
+        overdue_query = f"""
+            SELECT t.id, t.client_name, i.invoice_number, i.due_date, i.total_amount,
+                   CAST(JULIANDAY('now') - JULIANDAY(i.due_date) AS INTEGER) AS days_late
             FROM trips t
             JOIN invoices i ON t.id = i.trip_id
             WHERE i.status = 'Unpaid' {self._company_filter('t')}
         """
         try:
-            rows = self._fetchall(query, self._company_params())
-            for r in rows:
-                due_str = r.get("due_date")
-                if not due_str:
-                    continue
-                try:
-                    due_dt = datetime.strptime(str(due_str)[:10], "%Y-%m-%d")
-                except (ValueError, TypeError):
-                    continue
-                if today > due_dt:
-                    days_late = (today - due_dt).days
-                    total_overdue_amount += r['total_amount']
-                    alerts.append({
-                        "type": "RED",
-                        "msg": f"Factura {r['invoice_number']} ({r['client_name']}) intarziata cu {days_late} zile!"
-                    })
-                elif (due_dt - today).days <= 3:
-                    alerts.append({
-                        "type": "YELLOW",
-                        "msg": f"Factura {r['invoice_number']} expira in {(due_dt - today).days} zile."
-                    })
+            overdue_rows = self._fetchall(overdue_query, self._company_params())
         except Exception as e:
             logger.error("SQL Overdue error: %s", e)
+            overdue_rows = []
 
-        neg_margin = self._fetchall(
+        neg_margin_rows = self._fetchall(
             f"SELECT id, truck_number FROM trips WHERE net_profit < 0 AND status != 'Paid' {self._company_filter()}",
             self._company_params(),
         )
-        for nm in neg_margin:
-            alerts.append({
-                "type": "RED",
-                "msg": f"ATENTIE: Cursa #{nm['id']} ({nm['truck_number']}) are profit NEGATIV!"
-            })
-
-        return alerts, total_overdue_amount
+        return overdue_rows, neg_margin_rows
 
     def get_analytics_data(self, from_date=None, to_date=None):
         """Date grupate pentru grafice — optional date range filtering."""

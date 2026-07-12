@@ -80,7 +80,7 @@ class DraftService:
                     "saved_at": data.get("_draft_saved_at", ""),
                     "size": os.path.getsize(path),
                 })
-            except Exception:
+            except (json.JSONDecodeError, OSError, KeyError):
                 continue
         return sorted(drafts, key=lambda d: d["saved_at"], reverse=True)
 

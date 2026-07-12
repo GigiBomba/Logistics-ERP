@@ -23,6 +23,8 @@ env/
 admin.env
 securityprompt.env
 securityreworkplan.env
+docker/.env*
+docker/*.env*
 
 # Ruff
 .ruff_cache/

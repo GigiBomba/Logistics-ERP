@@ -419,7 +419,13 @@ class CmrFieldsMixin:
         row_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
         row_layout.setSpacing(S["2"])
 
-        for lbl in ["Name", "Address", "Country", "Plate", "Trailer", "Driver", "From", "To"]:
+        _labels = [
+            t("cmr.label_name", default="Name"), t("cmr.label_address", default="Address"),
+            t("cmr.label_country", default="Country"), t("cmr.label_plate", default="Plate"),
+            t("cmr.label_trailer", default="Trailer"), t("cmr.label_driver", default="Driver"),
+            t("cmr.label_from", default="From"), t("cmr.label_to", default="To"),
+        ]
+        for lbl in _labels:
             e = StyledLineEdit(row, placeholder=lbl, height=28)
             row_layout.addWidget(e, 1)
 

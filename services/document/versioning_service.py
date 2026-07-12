@@ -148,4 +148,9 @@ class VersioningService:
         return candidate
 
     def _log_audit(self, event_type: str, description: str) -> None:
-        AuditRepository(self._repo.db).log_event(event_type, description)
+        entity_type = event_type.split(".")[0] if "." in event_type else ""
+        AuditRepository(self._repo.db).log_event(
+            event_type=event_type,
+            entity_type=entity_type,
+            data={"description": description},
+        )

@@ -22,7 +22,7 @@ class TestCalculatorService:
 
     def test_basic_calculation_returns_tripresult(self):
         """A standard calculation returns a properly typed TripResult."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=2000, fuel_price=1.50,
             days=3, consum_litri=30,
         )
@@ -44,7 +44,7 @@ class TestCalculatorService:
         """Fuel cost = (km / 100) * consumption * fuel_price."""
         km, consum, fuel_price = 1000, 30, 1.50
         expected_fuel = (km / 100) * consum * fuel_price  # 300 * 1.50 = 450.0
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=3000, fuel_price=fuel_price,
             days=1, consum_litri=consum,
         )
@@ -52,7 +52,7 @@ class TestCalculatorService:
 
     def test_fuel_cost_zero_consumption(self):
         """Zero fuel consumption yields zero fuel cost."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=1000, fuel_price=1.50,
             days=1, consum_litri=0,
         )
@@ -60,7 +60,7 @@ class TestCalculatorService:
 
     def test_fuel_cost_override(self):
         """fuel_cost_override takes precedence over calculated fuel."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=2000, fuel_price=1.50,
             days=1, consum_litri=30,
             fuel_cost_override=500.0,
@@ -69,7 +69,7 @@ class TestCalculatorService:
 
     def test_fuel_cost_override_zero_ignored(self):
         """fuel_cost_override = 0 is ignored; calculated value is used."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=2000, fuel_price=1.50,
             days=1, consum_litri=30,
             fuel_cost_override=0,
@@ -85,7 +85,7 @@ class TestCalculatorService:
         """Default toll = km * Config.DEFAULT_TOLL_RATE (0.22)."""
         km = 500
         expected_toll = km * 0.22  # 110.0
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=1500, fuel_price=1.50,
             days=1, consum_litri=30,
         )
@@ -93,7 +93,7 @@ class TestCalculatorService:
 
     def test_toll_cost_override(self):
         """Explicit toll overrides the auto-calculated toll."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=1500, fuel_price=1.50,
             days=1, consum_litri=30,
             taxa_in=200.0,
@@ -108,7 +108,7 @@ class TestCalculatorService:
         """Default salary = days * Config.DEFAULT_DRIVER_SALARY (100)."""
         days = 4
         expected_salary = days * 100.0  # 400.0
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=2000, fuel_price=1.50,
             days=days, consum_litri=30,
         )
@@ -116,7 +116,7 @@ class TestCalculatorService:
 
     def test_salary_cost_override(self):
         """Explicit salary overrides auto-calculated default."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=2000, fuel_price=1.50,
             days=4, consum_litri=30,
             sal_in=350.0,
@@ -125,7 +125,7 @@ class TestCalculatorService:
 
     def test_salary_cost_zero_days(self):
         """Zero days with default salary gives zero salary cost."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=2000, fuel_price=1.50,
             days=0, consum_litri=30,
         )
@@ -139,7 +139,7 @@ class TestCalculatorService:
         """Default extra = km*0.03 + days*12, rounded to 2dp."""
         km, days = 1000, 3
         expected = round(km * 0.03 + days * 12.0, 2)  # 30 + 36 = 66.0
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=3000, fuel_price=1.50,
             days=days, consum_litri=30,
         )
@@ -147,7 +147,7 @@ class TestCalculatorService:
 
     def test_extra_costs_override(self):
         """Explicit extra costs override the auto-calculated value."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=3000, fuel_price=1.50,
             days=3, consum_litri=30,
             extra_in=50.0,
@@ -156,7 +156,7 @@ class TestCalculatorService:
 
     def test_extra_costs_zero_override(self):
         """extra_in = 0 is accepted (zero extra costs)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=3000, fuel_price=1.50,
             days=3, consum_litri=30,
             extra_in=0.0,
@@ -178,7 +178,7 @@ class TestCalculatorService:
         total_costs = fuel + toll + salary + extra        # 924.0
         expected_profit = round(price - total_costs, 2)   # 2076.0
 
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=price, fuel_price=fuel_price,
             days=days, consum_litri=consum,
         )
@@ -186,7 +186,7 @@ class TestCalculatorService:
 
     def test_net_profit_negative(self):
         """When costs exceed revenue, net_profit is negative."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=100, fuel_price=2.0,
             days=5, consum_litri=40,
         )
@@ -203,7 +203,7 @@ class TestCalculatorService:
         net_profit = round(price - total_costs, 2)         # 1067.0
         expected_margin = round((net_profit / price) * 100, 1)  # 71.1
 
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=price, fuel_price=fuel_price,
             days=days, consum_litri=consum,
         )
@@ -220,7 +220,7 @@ class TestCalculatorService:
     ])
     def test_rate_per_km(self, km, price, fuel_price, days, consum):
         """rate_per_km = net_profit / km."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=price, fuel_price=fuel_price,
             days=days, consum_litri=consum,
         )
@@ -234,7 +234,7 @@ class TestCalculatorService:
     ])
     def test_gross_per_km(self, km, price):
         """gross_per_km = price_eur / km."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=price, fuel_price=1.50,
             days=1, consum_litri=30,
         )
@@ -247,7 +247,7 @@ class TestCalculatorService:
 
     def test_zero_distance(self):
         """Zero distance: rate_per_km and gross_per_km are 0 (no div-by-zero)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=0, price_eur=1000, fuel_price=1.50,
             days=1, consum_litri=30,
         )
@@ -257,7 +257,7 @@ class TestCalculatorService:
 
     def test_zero_price(self):
         """Zero revenue: margin_percent is 0 (no div-by-zero)."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=500, price_eur=0, fuel_price=1.50,
             days=1, consum_litri=30,
         )
@@ -270,7 +270,7 @@ class TestCalculatorService:
     ])
     def test_large_numbers(self, km, price, fuel_price, days, consum):
         """Large distances and prices should not overflow or produce NaN."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=price, fuel_price=fuel_price,
             days=days, consum_litri=consum,
         )
@@ -280,7 +280,7 @@ class TestCalculatorService:
 
     def test_very_large_inputs_produce_finite_values(self):
         """Stress test with very large values to ensure stability."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1_000_000, price_eur=5_000_000, fuel_price=9.99,
             days=365, consum_litri=50,
         )
@@ -300,7 +300,7 @@ class TestCalculatorService:
     ])
     def test_financial_fields_rounded_to_two_decimals(self, field):
         """Financial fields are always rounded to 2 decimal places."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=333, price_eur=1999.99, fuel_price=1.559,
             days=2, consum_litri=30,
         )
@@ -313,7 +313,7 @@ class TestCalculatorService:
 
     def test_margin_percent_rounded_to_one_decimal(self):
         """margin_percent is rounded to 1 decimal place."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=333, price_eur=1999.99, fuel_price=1.559,
             days=2, consum_litri=30,
         )
@@ -326,7 +326,7 @@ class TestCalculatorService:
 
     def test_all_overrides(self):
         """When all overrides are provided, defaults are skipped."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=1000, price_eur=5000, fuel_price=1.50,
             days=5, consum_litri=30,
             extra_in=100.0,
@@ -357,7 +357,7 @@ class TestCalculatorService:
     def test_varied_scenarios(self, km, price, fuel_price, days, consum,
                               exp_fuel, exp_toll, exp_salary, exp_extra):
         """Multiple plausible trip configurations produce correct costs."""
-        result = TripCalculator.calculate(
+        result = TripCalculator.calculate_raw(
             km=km, price_eur=price, fuel_price=fuel_price,
             days=days, consum_litri=consum,
         )
@@ -366,23 +366,58 @@ class TestCalculatorService:
         assert result.salary_cost == pytest.approx(exp_salary, abs=0.01)
         assert result.extra_costs == pytest.approx(exp_extra, abs=0.01)
 
-    # ──────────────────────────────────────────────────────────
-    # Smoke test: static method callable without instance
-    # ──────────────────────────────────────────────────────────
+    # ── Smoke tests: backward-compat raw API ──────────────────
 
-    def test_static_method_callable_directly(self):
-        """TripCalculator.calculate can be called as a static method."""
-        result = TripCalculator.calculate(
+    def test_calculate_raw_static_method(self):
+        """TripCalculator.calculate_raw can be called as a static method."""
+        result = TripCalculator.calculate_raw(
             km=1, price_eur=10, fuel_price=1.0,
             days=1, consum_litri=10,
         )
         assert isinstance(result, TripResult)
 
-    def test_static_method_callable_via_instance(self):
-        """TripCalculator().calculate also works."""
+    def test_calculate_raw_via_instance(self):
+        """TripCalculator().calculate_raw also works."""
         calc = TripCalculator()
-        result = calc.calculate(
+        result = calc.calculate_raw(
             km=1, price_eur=10, fuel_price=1.0,
             days=1, consum_litri=10,
         )
         assert isinstance(result, TripResult)
+
+    # ── Smoke tests: typed Pydantic API ─────────────────────
+
+    def test_calculate_typed_returns_operation_result(self):
+        """TripCalculator().calculate returns CalculationOperationResult."""
+        from models.calculator_models import CalculationRequest
+
+        calc = TripCalculator()
+        request = CalculationRequest(
+            km=100, price_eur=500, fuel_price=1.50,
+            days=1, consum_litri=30,
+        )
+        result = calc.calculate(request)
+        assert result.success is True
+        assert result.data is not None
+
+    def test_calculate_typed_result_fields(self):
+        """Typed calculate returns all expected fields."""
+        from models.calculator_models import CalculationRequest
+
+        calc = TripCalculator()
+        request = CalculationRequest(
+            km=1000, price_eur=3000, fuel_price=1.50,
+            days=2, consum_litri=30,
+        )
+        result = calc.calculate(request)
+        assert result.success is True
+        data = result.data
+        assert data.km == 1000.0
+        assert data.total_income == 3000.0
+        assert data.fuel_consumed_liters == pytest.approx(300.0, abs=0.01)
+        assert data.fuel_cost == pytest.approx(450.0, abs=0.01)
+        assert data.net_profit is not None
+        assert data.profit_per_km is not None
+        assert data.margin_percent is not None
+        assert data.cost_per_km is not None
+        assert data.currency == "EUR"

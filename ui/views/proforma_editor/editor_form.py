@@ -481,7 +481,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._proforma_number_label = QLabel(t("proforma_editor.proforma_number"))
         self._proforma_number_label.setProperty("fontRole", "label")
         pf_layout.addWidget(self._proforma_number_label)
-        self._pf_number_value = QLabel("(auto)")
+        self._pf_number_value = QLabel(t("proforma.auto_label", default="(auto)"))
         self._pf_number_value.setProperty("fontRole", "body")
         pf_layout.addWidget(self._pf_number_value)
         form_layout.addWidget(pf_col)

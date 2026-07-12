@@ -8,6 +8,7 @@ from locust import HttpUser, between
 
 from tests.loadtest.scenarios.auth_scenarios import AuthTasks
 from tests.loadtest.scenarios.crud_scenarios import CrudTasks
+from tests.loadtest.scenarios.dispatch_scenarios import DispatchTasks, DispatchWorkflowTasks
 from tests.loadtest.scenarios.document_scenarios import DocumentTasks
 from tests.loadtest.scenarios.invoice_scenarios import InvoiceTasks
 from tests.loadtest.scenarios.mixed_scenarios import MixedTasks
@@ -16,7 +17,8 @@ from tests.loadtest.scenarios.mixed_scenarios import MixedTasks
 class AuthenticatedUser(HttpUser):
     """Simulates a dispatcher doing daily tasks — mixed reads and writes."""
     wait_time = between(1, 5)
-    tasks = {AuthTasks: 10, CrudTasks: 30, DocumentTasks: 20, InvoiceTasks: 10, MixedTasks: 30}
+    tasks = {AuthTasks: 10, CrudTasks: 30, DocumentTasks: 20, InvoiceTasks: 10,
+             MixedTasks: 30, DispatchTasks: 20, DispatchWorkflowTasks: 10}
 
 
 class ReadOnlyUser(HttpUser):

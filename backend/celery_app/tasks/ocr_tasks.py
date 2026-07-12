@@ -1,12 +1,21 @@
+import logging
 from typing import Any, Dict
 
 from backend.celery_app.celery import celery_app
+from backend.dependencies import set_company_context
 from config import Config
 from database.db_manager import DatabaseManager
 from services.document_service import DocumentService
 
+logger = logging.getLogger(__name__)
+
+
 @celery_app.task(bind=True, max_retries=3, default_retry_delay=60)
-def process_document_ocr(self, document_id: int, engine: str = "auto") -> Dict[str, Any]:
+def process_document_ocr(
+    self, document_id: int, company_id: int, engine: str = "auto"
+) -> Dict[str, Any]:
+    logger.info("process_document_ocr: document_id=%d company_id=%d", document_id, company_id)
+    set_company_context(company_id)
     db = DatabaseManager(Config.DB_PATH)
     try:
         service = DocumentService(db)
@@ -69,16 +78,25 @@ def process_document_ocr(self, document_id: int, engine: str = "auto") -> Dict[s
 
 
 @celery_app.task(bind=True, max_retries=2)
-def batch_ocr_documents(self, document_ids: list, engine: str = "auto") -> Dict[str, Any]:
+def batch_ocr_documents(
+    self, document_ids: list, company_id: int, engine: str = "auto"
+) -> Dict[str, Any]:
+    logger.info(
+        "batch_ocr_documents: count=%d company_id=%d engine=%s",
+        len(document_ids), company_id, engine,
+    )
     results = []
     for doc_id in document_ids:
-        result = process_document_ocr.delay(doc_id, engine)
+        result = process_document_ocr.delay(doc_id, company_id, engine)
         results.append({"document_id": doc_id, "task_id": result.id})
     return {"status": "batch_enqueued", "tasks": results}
 
 
 @celery_app.task
-def flush_gps_batch_to_postgres() -> Dict[str, Any]:
+def flush_gps_batch_to_postgres(company_id: int = 0) -> Dict[str, Any]:
+    logger.info("flush_gps_batch_to_postgres: company_id=%d", company_id)
+    if company_id:
+        set_company_context(company_id)
     from backend.cache import get_cache
     from config import Config
     from database.db_manager import DatabaseManager

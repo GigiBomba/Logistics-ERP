@@ -5,6 +5,7 @@ from typing import Any, AsyncGenerator, Optional
 from fastapi import Depends
 
 from config import Config
+from backend.middleware.correlation_middleware import get_correlation_id, correlation_id_var
 from database.db_manager import DatabaseManager
 from repositories.document_repository import DocumentRepository
 from repositories.driver_repository import DriverRepository
@@ -13,11 +14,22 @@ from services.analytics_service import AnalyticsService
 from services.client_service import ClientService
 from services.document_service import DocumentService
 from services.fleet_service import FleetService
+from services.payment_batch_service import PaymentBatchService
+from services.payment_profile_service import PaymentProfileService
 from services.trip_service import TripService
 
 # Request-scoped context for multi-tenant isolation.
 _current_company_id: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar("company_id", default=None)
 _current_user_role: contextvars.ContextVar[str] = contextvars.ContextVar("user_role", default="")
+
+
+def set_company_context(company_id: int) -> None:
+    """Set the company context for background tasks that lack an HTTP request.
+
+    Celery tasks must call this before any database access so that
+    repositories see the correct ``company_id`` for tenant-scoped queries.
+    """
+    _current_company_id.set(company_id)
 
 
 def set_request_user_context(company_id: Optional[int], role: str) -> None:
@@ -52,7 +64,11 @@ def init_db(app: Optional[Any] = None) -> DatabaseManager:
     if _db_instance is None:
         with _db_lock:
             if _db_instance is None:  # double-checked locking
-                _db_instance = DatabaseManager(Config.DB_PATH)
+                _db_instance = DatabaseManager(
+                    Config.DB_PATH,
+                    pool_min=getattr(Config, "DB_POOL_MIN", 2),
+                    pool_max=getattr(Config, "DB_POOL_MAX", 20),
+                )
 
     if app is not None:
         @app.on_event("shutdown")
@@ -71,6 +87,18 @@ async def get_db() -> AsyncGenerator[DatabaseManager, None]:
     db.user_company_id = get_request_company_id()
     db.user_role = get_request_user_role()
     yield db
+
+
+def get_db_sync() -> DatabaseManager:
+    """Synchronous variant of ``get_db`` — use from ``def`` endpoints.
+
+    Returns the singleton DatabaseManager with the request-scoped user
+    context already set.
+    """
+    db = init_db()
+    db.user_company_id = get_request_company_id()
+    db.user_role = get_request_user_role()
+    return db
 
 
 async def get_document_repo(
@@ -119,3 +147,15 @@ async def get_analytics_service(
     db: DatabaseManager = Depends(get_db),
 ) -> AnalyticsService:
     return AnalyticsService(db)
+
+
+async def get_payment_batch_service(
+    db: DatabaseManager = Depends(get_db),
+) -> PaymentBatchService:
+    return PaymentBatchService(db)
+
+
+async def get_payment_profile_service(
+    db: DatabaseManager = Depends(get_db),
+) -> PaymentProfileService:
+    return PaymentProfileService(db)

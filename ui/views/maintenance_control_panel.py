@@ -251,7 +251,7 @@ class QtMaintenanceControlPanel(QWidget):
             card.layout().addWidget(self._tacho_table)
         else:
             empty = EmptyState(
-                icon_name="mdi6.tacho",
+                icon_name="fa5s.tachometer-alt",
                 title=t("tacho.no_data_title", default="No tachograph data"),
                 subtitle=t("tacho.no_data_subtitle", default="Import tachograph files to view status"),
             )
@@ -299,7 +299,7 @@ class QtMaintenanceControlPanel(QWidget):
         fbl.addWidget(truck_lbl)
         self._e_truck = QLineEdit()
         self._e_truck.setProperty("role", "filter")
-        self._e_truck.setPlaceholderText("Filter...")
+        self._e_truck.setPlaceholderText(t("maint.filter_placeholder", default="Filter..."))
         self._e_truck.textChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._e_truck)
 
@@ -307,7 +307,7 @@ class QtMaintenanceControlPanel(QWidget):
         fbl.addWidget(trip_lbl)
         self._e_trip = QLineEdit()
         self._e_trip.setProperty("role", "filter")
-        self._e_trip.setPlaceholderText("Filter...")
+        self._e_trip.setPlaceholderText(t("maint.filter_placeholder", default="Filter..."))
         self._e_trip.textChanged.connect(self._on_filter_changed)
         fbl.addWidget(self._e_trip)
 
@@ -419,6 +419,8 @@ class QtMaintenanceControlPanel(QWidget):
     # ── Filter ───────────────────────────────────────────────────
 
     def _on_filter_changed(self, *args):
+        if self._vm is None:
+            return
         # Determine which severities are enabled (None = all enabled)
         sevs = []
         if self._cb_critical and self._cb_critical.isChecked():

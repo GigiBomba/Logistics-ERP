@@ -66,6 +66,9 @@ class QtMaintenanceAnalyticsView(QWidget):
         super().__init__(parent)
         self.db = db
         self.repo = repo
+        if self.repo is None and self.db is not None:
+            from repositories.fleet_repository import FleetRepository
+            self.repo = FleetRepository(db=self.db)
 
         # Chart widgets (created once, re-used)
         self._chart_widget_a: PlotlyChartWidget | None = None
@@ -251,7 +254,7 @@ class QtMaintenanceAnalyticsView(QWidget):
     # ── Table rendering (setData on existing widget) ─────────────
 
     def _render_table(self):
-        if self._table_container is None or self.repo is None:
+        if self._table_container is None:
             return
 
         top_cat_map: dict[int, str] = {}

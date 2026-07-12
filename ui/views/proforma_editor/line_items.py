@@ -197,7 +197,7 @@ class LineItemsMixin:
             self._items_table.blockSignals(True)
             item = self._items_table.item(0, 0)
             if item:
-                item.setText("Transport services")
+                item.setText(t("proforma.default_description", default="Transport services"))
             self._items_table.blockSignals(False)
 
     def _add_row(self) -> None:

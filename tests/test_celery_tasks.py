@@ -103,20 +103,20 @@ def _real_file():
 class TestProcessDocumentOcr:
     def test_document_not_found(self, _mock_db, _mock_doc_service):
         _mock_doc_service.get_by_id.return_value = None
-        result = process_document_ocr(999)
+        result = process_document_ocr(999, company_id=1)
         assert result["error"] == "Document not found"
         assert result["document_id"] == 999
 
     def test_no_file_path(self, _mock_db, _mock_doc_service):
         _mock_doc_service.get_by_id.return_value = {"id": 1, "file_path": ""}
-        result = process_document_ocr(1)
+        result = process_document_ocr(1, company_id=1)
         assert result["error"] == "No file path"
 
     def test_file_not_on_disk(self, _mock_db, _mock_doc_service):
         _mock_doc_service.get_by_id.return_value = {
             "id": 1, "file_path": "/nonexistent/file.pdf"
         }
-        result = process_document_ocr(1)
+        result = process_document_ocr(1, company_id=1)
         assert result["error"] == "File not on disk"
 
     @patch(
@@ -130,7 +130,7 @@ class TestProcessDocumentOcr:
             "id": 1, "file_path": _real_file, "file_name": "test.pdf",
         }
         mock_extract.return_value = {"text": "hello world", "fields": {"amount": 100}}
-        result = process_document_ocr(1, engine="tesseract")
+        result = process_document_ocr(1, company_id=1, engine="tesseract")
         assert result["status"] == "ok"
         assert result["document_id"] == 1
         assert result["engine"] == "tesseract"
@@ -148,7 +148,7 @@ class TestProcessDocumentOcr:
             "id": 1, "file_path": _real_file, "file_name": "test.pdf",
         }
         mock_extract.return_value = None
-        result = process_document_ocr(1)
+        result = process_document_ocr(1, company_id=1)
         assert result["status"] == "ok"
 
     @patch(
@@ -162,7 +162,7 @@ class TestProcessDocumentOcr:
             "id": 1, "file_path": _real_file, "file_name": "test.pdf",
         }
         mock_extract.side_effect = Exception("OCR engine crashed")
-        result = process_document_ocr(1)
+        result = process_document_ocr(1, company_id=1)
         assert result["error"] == "OCR engine crashed"
 
     @patch(
@@ -177,7 +177,7 @@ class TestProcessDocumentOcr:
         }
         mock_extract.return_value = {"text": "test", "fields": {}}
         _mock_db.conn.execute.side_effect = Exception("DB locked")
-        result = process_document_ocr(1)
+        result = process_document_ocr(1, company_id=1)
         assert "DB update failed" in result["error"]
 
 
@@ -186,7 +186,7 @@ class TestProcessDocumentOcr:
 
 class TestBatchOcrDocuments:
     def test_batch_empty_list(self, _mock_db, _mock_doc_service):
-        result = batch_ocr_documents([])
+        result = batch_ocr_documents([], company_id=1)
         assert result["status"] == "batch_enqueued"
         assert result["tasks"] == []
 
@@ -194,7 +194,7 @@ class TestBatchOcrDocuments:
         """Enqueue three OCR tasks via .delay()."""
         with patch.object(process_document_ocr, "delay") as mock_delay:
             mock_delay.return_value = MagicMock(id="fake-task-id")
-            result = batch_ocr_documents([1, 2, 3])
+            result = batch_ocr_documents([1, 2, 3], company_id=1)
         assert result["status"] == "batch_enqueued"
         assert len(result["tasks"]) == 3
         assert mock_delay.call_count == 3
@@ -272,14 +272,14 @@ class TestFlushGpsBatch:
 class TestGenerateDocumentPdf:
     def test_document_not_found(self, _mock_db, _mock_doc_service):
         _mock_doc_service.get_by_id.return_value = None
-        result = generate_document_pdf(999, "default")
+        result = generate_document_pdf(999, 1, "default")
         assert result["error"] == "Document not found"
 
     def test_source_file_not_found(self, _mock_db, _mock_doc_service):
         _mock_doc_service.get_by_id.return_value = {
             "id": 1, "file_path": "/nonexistent.pdf"
         }
-        result = generate_document_pdf(1, "default")
+        result = generate_document_pdf(1, 1, "default")
         assert result["error"] == "Source file not found"
 
     @patch("services.invoicing.config_manager.load_company_config")
@@ -292,7 +292,7 @@ class TestGenerateDocumentPdf:
         }
         mock_gen = MagicMock()
         mock_gen_cls.return_value = mock_gen
-        result = generate_document_pdf(1, "default")
+        result = generate_document_pdf(1, 1, "default")
         assert result["status"] == "ok"
         assert result["document_id"] == 1
         assert result["template"] == "default"
@@ -304,7 +304,7 @@ class TestGenerateDocumentPdf:
         """When an exception occurs, the task raises to trigger Celery retry."""
         _mock_doc_service.get_by_id.side_effect = Exception("Unexpected error")
         with pytest.raises(Exception, match="Unexpected error"):
-            generate_document_pdf(1, "default")
+            generate_document_pdf(1, 1, "default")
 
 
 # ── build_email_package ─────────────────────────────────────────────────────
@@ -313,7 +313,7 @@ class TestGenerateDocumentPdf:
 class TestBuildEmailPackage:
     def test_no_documents(self, _mock_db, _mock_doc_service):
         _mock_doc_service.get_by_id.return_value = None
-        result = build_email_package([], "test@test.com")
+        result = build_email_package([], "test@test.com", company_id=1)
         assert result["status"] == "ok"
         assert result["document_count"] == 0
 
@@ -321,7 +321,7 @@ class TestBuildEmailPackage:
         _mock_doc_service.get_by_id.return_value = {
             "id": 1, "file_path": _real_file, "file_name": "test.txt",
         }
-        result = build_email_package([1], "test@test.com")
+        result = build_email_package([1], "test@test.com", company_id=1)
         assert result["status"] == "ok"
         assert result["document_count"] == 1
         assert result["recipient"] == "test@test.com"
@@ -330,4 +330,4 @@ class TestBuildEmailPackage:
     def test_package_exception_triggers_retry(self, _mock_db, _mock_doc_service):
         _mock_doc_service.get_by_id.side_effect = Exception("Build failed")
         with pytest.raises(Exception, match="Build failed"):
-            build_email_package([1], "test@test.com")
+            build_email_package([1], "test@test.com", company_id=1)

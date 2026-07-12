@@ -1,0 +1,322 @@
+﻿about.page_header	About Operion
+about.page_header_desc	We're building the future of enterprise logistics software.
+about.page_title	About - Operion ERP
+about.story_p1	Operion was founded in 2024 with a clear mission: make enterprise-grade logistics software accessible to fleets of all sizes.
+about.story_p2	Our team combines decades of experience in logistics, software engineering, and AI to build tools that solve real-world problems.
+about.story_p3	Today, Operion powers fleets across Europe, helping them plan smarter, dispatch faster, and grow bigger.
+about.story_title	Our Story
+about.team_desc	Our team combines decades of experience in logistics, software engineering, and AI.
+about.team_title	Our Team
+about.value_customer_desc	Every feature we build starts with real customer needs and feedback.
+about.value_customer_title	Customer First
+about.value_innovation_desc	We invest heavily in R&D to bring cutting-edge AI and optimization to logistics.
+about.value_innovation_title	Innovation
+about.value_partnership_desc	We don't just sell software. We partner with our customers for their success.
+about.value_partnership_title	Partnership
+about.value_reliability_desc	Your operations depend on our software. We take that responsibility seriously.
+about.value_reliability_title	Reliability
+about.value_security_desc	Enterprise-grade encryption, GDPR compliance, and regular security audits.
+about.value_security_title	Security
+about.value_transparency_desc	Clear pricing, honest communication, and no hidden fees.
+about.value_transparency_title	Transparency
+about.values_desc	The principles that guide every decision we make.
+about.values_title	Our Values
+admin.active_tasks	Active Tasks
+admin.api_version_label	API Version:
+admin.cache_cleared	Cache cleared
+admin.celery_status	Celery Status
+admin.clear_cache	Clear Cache
+admin.connected_label	Connected:
+admin.db_engine_label	DB Engine:
+admin.db_inspector	Database Inspector
+admin.db_path_label	DB Path
+admin.debug_mode_label	Debug Mode:
+admin.diagnostics	Diagnostics
+admin.doc_stats	Document Statistics
+admin.email_invalid	Please enter a valid email address.
+admin.email_placeholder	admin@example.com
+admin.email_prompt	Enter your email
+admin.email_required	Please enter your email address.
+admin.environment_label	Environment:
+admin.execute_query	Execute
+admin.forbidden	Access denied
+admin.health	Health
+admin.hit_rate	Hit Rate
+admin.invalid_query	Invalid query
+admin.keys_count	Keys
+admin.latency	Latency
+admin.latency_ms	{value} ms
+admin.login_failed	Invalid email or password.
+admin.login_required	Admin authentication required
+admin.login_title	Admin Login
+admin.memory_used	Memory Used
+admin.no_data	No data
+admin.ocr_coverage	OCR Coverage
+admin.offline	Server unreachable
+admin.orphan_docs	Orphan Documents
+admin.password_placeholder	╖╖╖╖╖╖╖╖╖╖╖╖
+admin.password_required	Please enter your password.
+admin.platform_label	Platform
+admin.python_version_label	Python Version
+admin.query_error	Query error
+admin.query_placeholder	SELECT * FROM table LIMIT 100
+admin.redis_status	Redis Status
+admin.required_fields	Email and password are required.
+admin.rows	{count} rows
+admin.storage_used	Storage Used
+admin.system_info	System Info
+admin.tab_title	Admin Panel
+admin.table_selector	Select table
+admin.total_docs	Total Documents
+admin.workers_online	Workers Online
+analytics.active_clients_trend	Active Clients Trend
+analytics.active_vs_inactive	Active vs Inactive
+analytics.aging_31_60	31-60 days
+analytics.aging_61_90	61-90 days
+analytics.aging_current	Current (0-30d)
+analytics.aging_overdue	90+ days
+analytics.all_countries	All Countries
+analytics.avg_profit_trend	Net Profit Trend
+analytics.category_distribution	Category Distribution
+analytics.client_concentration	Revenue Concentration
+analytics.client_growth	New Clients per Month
+analytics.client_insight	Insight: {client} generates {rev_pct}% of revenue but only {profit_pct}% of profit.
+analytics.client_payment_delay	Average Payment Delay (Days)
+analytics.client_payment_delay_full	Average Payment Delay (Days)
+analytics.client_profit	Profit by Client
+analytics.client_rest	Rest
+analytics.client_retention	Client Retention
+analytics.client_revenue	Revenue by Client
+analytics.client_revenue_per_client	Revenue per Client Trend
+analytics.client_subtitle	Client revenue, payment behavior, and growth
+analytics.col_km	KM
+analytics.col_profit_km	Profit/KM
+analytics.correlation_distribution	Correlation & Distribution
+analytics.cost_breakdown	Cost Breakdown
+analytics.cost_breakdown_route	Cost Breakdown
+analytics.cost_per_truck	Cost Per Truck
+analytics.country_corridors	Country Corridors
+analytics.country_revenue	Revenue by Country
+analytics.daily_activity	Daily Activity
+analytics.distance_distribution	Distance Distribution
+analytics.distance_km	Distance (km)
+analytics.distance_label	Distance (km)
+analytics.doc_actual_uploads	Actual Uploads
+analytics.doc_cmr_trend	CMR Generation Trend
+analytics.doc_cmrs	CMRs
+analytics.doc_distribution	Document Distribution
+analytics.doc_expected_uploads	Expected (Trips)
+analytics.doc_expiring_header	{count} documents expiring within 30 days:
+analytics.doc_no_expiring	No documents expiring within 30 days
+analytics.doc_other	Other
+analytics.doc_see_all	See all ({count})
+analytics.doc_type_breakdown	Document Type Breakdown
+analytics.doc_upload_trend	Monthly Uploads
+analytics.doc_upload_vs_expected	Document Uploads vs Expected
+analytics.document_aging	Document Aging
+analytics.document_growth	Document Growth
+analytics.document_subtitle	Document volume, trends, and expiration tracking
+analytics.driver_avg_profit_per_trip	Avg Profit per Trip
+analytics.driver_distance	Driver Distance
+analytics.driver_distance_distribution	Trip Distance Distribution
+analytics.driver_driving_hours	Driver Driving Hours
+analytics.driver_driving_rest_ratio	Driving vs Rest Hours
+analytics.driver_efficiency	Efficiency (Profit/km)
+analytics.driver_month_heatmap	Trips by Month x Driver
+analytics.driver_profit	Profit per Driver
+analytics.driver_profit_title	Driver Profit
+analytics.driver_profit_waterfall	Profit Breakdown (Top Driver)
+analytics.driver_ranking	Driver Ranking
+analytics.driver_rest_hours	Driver Rest Hours
+analytics.driver_subtitle	Driver performance, efficiency, and compliance
+analytics.driver_tacho	Tacho Violations (90 days)
+analytics.driver_trips	Trips Completed
+analytics.driver_unassigned_note	{count} trips without assigned driver (excluded)
+analytics.driver_utilization_score	Driver Utilization Score
+analytics.efficiency_trend	Efficiency Trend
+analytics.error	Chart Error
+analytics.expiring_by_type	Expiring by Type
+analytics.expiry_timeline	Expiry Timeline
+analytics.extra	Other
+analytics.extra_costs	Extra Costs
+analytics.financial_subtitle	Revenue, profit, margin, and cash flow trends
+analytics.fleet_fuel_efficiency	Fuel Efficiency (L/100km)
+analytics.fleet_profitability	Truck Profitability
+analytics.fleet_subtitle	Truck utilization, fuel efficiency, and maintenance alerts
+analytics.fleet_utilization	Truck Utilization (Trips)
+analytics.fuel_cost_trend	Fuel Cost Trend
+analytics.fuel_efficiency_trend	Fuel Efficiency Trend
+analytics.geographic_analysis	Geographic Analysis
+analytics.group_clients	Clients
+analytics.group_others	Others
+analytics.group_relevant	Relevant
+analytics.group_top3	Top 3
+analytics.group_total	Total
+analytics.idle	Idle
+analytics.idle_vs_active	Idle Vs Active
+analytics.insufficient_route_data	Insufficient data for chart ù add more trips
+analytics.invalid_date_format	Invalid Date Format
+analytics.invalid_date_order	Invalid date range
+analytics.invoice_aging	Outstanding Invoices by Age
+analytics.invoiced_vs_paid	Invoiced Vs Paid
+analytics.kpi_active_drivers	Active Drivers
+analytics.kpi_active_trucks	Active Trucks
+analytics.kpi_avg_consumption	Avg Consumption
+analytics.kpi_avg_margin	Current Margin
+analytics.kpi_avg_payment_delay	Avg Payment Delay
+analytics.kpi_avg_profit_km	Avg Profit/km
+analytics.kpi_avg_profit_per_driver	Avg Profit/Driver
+analytics.kpi_avg_route_profit	Avg Profit/Route
+analytics.kpi_avg_trips	Kpi Avg Trips
+analytics.kpi_avg_trips_per_driver	Avg Trips/Driver
+analytics.kpi_cmrs	CMRs
+analytics.kpi_cost_per_km	Avg Cost/km
+analytics.kpi_dso	DSO (Days)
+analytics.kpi_dso_subtitle	Avg collection period
+analytics.kpi_maint_alerts	Maint. Alerts
+analytics.kpi_most_frequent	Most Frequent
+analytics.kpi_new_clients	New Clients
+analytics.kpi_revenue_concentration	Concentration
+analytics.kpi_top_client	Top Client
+analytics.kpi_top_client_rev	Top Client
+analytics.kpi_top_country	Top Country
+analytics.kpi_top_country_route	Top Country
+analytics.kpi_top_driver	Kpi Top Driver
+analytics.kpi_top_route	Top Route
+analytics.kpi_total_clients	Total Clients
+analytics.kpi_total_docs	Total Docs
+analytics.kpi_total_drivers	Kpi Total Drivers
+analytics.kpi_total_km	Total KM
+analytics.kpi_total_profit	Total Profit
+analytics.kpi_total_revenue	Total Revenue
+analytics.kpi_total_routes	Total Routes
+analytics.kpi_total_violations	Kpi Total Violations
+analytics.kpi_unassigned_trips	Unassigned Trips
+analytics.kpi_unique_routes	Unique Routes
+analytics.last_quarter	Last quarter
+analytics.maintenance_cost	Maintenance Cost
+analytics.mileage_ranking	Mileage Ranking
+analytics.monthly_trip_volume	Monthly Trip Volume
+analytics.months	months
+analytics.net_profit	Net Profit (Ç)
+analytics.net_profit_label	Net Profit (Ç)
+analytics.no_data	No revenue data yet
+analytics.no_driver_data	No assigned driver data for this period.
+analytics.payment_target	Target 30d
+analytics.period_1y	Last year
+analytics.period_30d	Last 30 days
+analytics.period_6m	Last 6 months
+analytics.period_90d	Last 90 days
+analytics.period_all	All time
+analytics.period_label	Period
+analytics.profit_margin_per_client	Profit Margin per Client
+analytics.profit_ratio_title	Profit Margin
+analytics.profit_vs_distance	Profit Vs Distance
+analytics.quarterly_revenue	Quarterly Revenue
+analytics.refresh_tooltip	Refresh data
+analytics.revenue_expenses_title	Revenue vs Expenses
+analytics.revenue_per_client_trend	Revenue Per Client Trend
+analytics.revenue_profit_trend	Revenue vs Profit Trend
+analytics.revenue_vs_profit	Revenue vs Profit
+analytics.revenue_vs_profit_scatter	Revenue Vs Profit Scatter
+analytics.route_count_month	Monthly Trip Volume
+analytics.route_country_profit_km	Country Profit per KM
+analytics.route_country_treemap	Revenue by Country
+analytics.route_frequency	Route Frequency
+analytics.route_fuel_per_km	Fuel Cost per KM
+analytics.route_length_trend	Route Length Trend
+analytics.route_performance	Route Performance
+analytics.route_profit_per_km	Profit per KM
+analytics.route_profitability	Most Profitable Routes
+analytics.route_subtitle	Route profitability and country corridor analysis
+analytics.safety_score	Safety Score
+analytics.section_client_composition	Client Composition
+analytics.section_client_geographic	Client & Geographic
+analytics.section_client_insights	Client Insights
+analytics.section_client_performance	Client Performance
+analytics.section_client_trends	Client Trends
+analytics.section_cost_maintenance	Cost & Maintenance
+analytics.section_document_breakdown	Document Breakdown
+analytics.section_document_overview	Document Overview
+analytics.section_driver_activity	Driver Activity Timeline
+analytics.section_driver_compliance	Compliance & Safety
+analytics.section_driver_distribution	Distribution & Insights
+analytics.section_driver_metrics	Section Driver Metrics
+analytics.section_driver_performance	Section Driver Performance
+analytics.section_expiry_aging	Expiry & Aging
+analytics.section_financial_performance	Financial Performance
+analytics.section_financial_trends	Financial Trends
+analytics.section_fleet_composition	Fleet Composition
+analytics.section_fleet_performance	Fleet Performance
+analytics.section_growth_trends	Growth & Trends
+analytics.section_invoice_aging	Invoice Aging
+analytics.section_payment_timeline	Payment Behavior
+analytics.section_revenue_trend	Revenue & Profit Trend
+analytics.section_route_performance	Route Performance
+analytics.section_volume_cost	Volume & Cost
+analytics.section_volume_efficiency	Volume & Efficiency
+analytics.section_volume_safety	Section Volume Safety
+analytics.subtitle	Fleet performance analytics and KPIs
+analytics.tab_client	Clients
+analytics.tab_driver	Drivers
+analytics.tab_financial	Financial
+analytics.top_countries_profit	Top Countries by Profit
+analytics.top_countries_volume	Top Countries by Volume
+analytics.top_trucks_title	Top Trucks by Revenue
+analytics.total_costs	Total costs
+analytics.total_distance	Total Distance
+analytics.total_documents_trend	Total Documents Trend
+analytics.trip_count_trend	Trip Count Trend
+analytics.trip_status_distribution	Trip Status Distribution
+analytics.truck_age_distribution	Truck Age Distribution
+analytics.trucks	Trucks
+analytics.upload_by_quarter	Upload by Quarter
+analytics.volume_trends	Volume & Trends
+analytics.volume_vs_revenue	Volume vs Revenue
+analytics.waterfall_net	Net
+analytics.waterfall_other	Other
+app.subtitle	ERP
+auth.account_created	Account created successfully!
+auth.company_label	Company Name (optional)
+auth.company_placeholder	Acme Inc.
+auth.confirm_password_label	Confirm Password
+auth.confirm_password_placeholder	Repeat your password
+auth.create_account	Create account
+auth.create_account_failed	Failed to create account
+auth.creating_account	Creating accountà
+auth.email_placeholder	you@company.com
+auth.forgot_password	Forgot password?
+auth.has_account	Already have an account?
+auth.hide_password	Hide password
+auth.login_back	Back to home
+auth.login_brand	Operion
+auth.login_subtitle	Sign in to your Operion account
+auth.login_title	Sign In ù Operion ERP
+auth.login_welcome	Welcome back
+auth.name_label	Full Name
+auth.name_placeholder	John Doe
+auth.no_account	Don't have an account?
+auth.password_min_hint	At least 8 characters
+auth.password_placeholder	Enter your password
+auth.register_back	Back to home
+auth.register_brand	Operion
+auth.register_subtitle	Start your 14-day free trial
+auth.register_title	Create Account ù Operion ERP
+auth.register_welcome	Create your account
+auth.show_password	Show password
+auth.sign_in_failed	Failed to sign in
+auth.signed_in_success	Signed in successfully!
+auth.signing_in	Signing inà
+auth.validation_invalid_email	Please enter a valid email
+auth.validation_name_min	Name must be at least 2 characters
+auth.validation_password_max	Password must be at most 72 characters
+auth.validation_password_min	Password must be at least 8 characters
+auth.validation_password_required	Password is required
+auth.validation_passwords_match	Passwords don't match
+automation.attachments_empty	Attachments Empty
+automation.body_label	Body:
+automation.browse_title	Browse Title
+automation.cancelled	Cancelled
+automation.confirm_delete_title	Delete this pipeline run and its processed file?
+automation.continue_to_email	Continue to Email
+automation.copy_run	Copy path

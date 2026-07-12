@@ -9,8 +9,9 @@ from __future__ import annotations
 
 import logging
 from datetime import datetime
-from typing import Any
+from typing import Any, Optional
 
+from models.common import ServiceResult, ErrorDetail
 from repositories.automail_repository import AutoMailRepository
 
 logger = logging.getLogger(__name__)
@@ -24,6 +25,46 @@ class HistoryService:
             raise ValueError("HistoryService requires a valid db connection")
         self._db = db
         self._repo = AutoMailRepository(db)
+
+    def get_history(
+        self,
+        client_id: Optional[int] = None,
+        limit: int = 100,
+    ) -> ServiceResult[list[dict]]:
+        """Return email history, optionally filtered by client.
+
+        Args:
+            client_id: Optional client ID to filter by.
+            limit: Maximum number of records to return (default 100).
+
+        Returns:
+            ServiceResult containing a list of email log dicts.
+        """
+        try:
+            if client_id is not None:
+                rows = self._repo._fetchall(
+                    "SELECT e.id, e.trip_id, e.recipient, e.subject, "
+                    "e.timestamp, e.status, "
+                    "i.invoice_number, t.client_name "
+                    "FROM email_logs e "
+                    "LEFT JOIN invoices i ON e.trip_id = i.trip_id "
+                    "LEFT JOIN trips t ON e.trip_id = t.id "
+                    "WHERE t.client_id = ? "
+                    + self._repo._company_filter("e")
+                    + " "
+                    "ORDER BY e.timestamp DESC LIMIT ?",
+                    (client_id,) + self._repo._company_params() + (limit,),
+                )
+            else:
+                rows = self._repo.get_recent_email_logs(limit)
+            logger.info("Retrieved %d history entries", len(rows))
+            return ServiceResult(success=True, data=rows)
+        except Exception as exc:
+            logger.error("Failed to get email history: %s", exc)
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="history_failed")],
+            )
 
     def get_email_history(
         self,

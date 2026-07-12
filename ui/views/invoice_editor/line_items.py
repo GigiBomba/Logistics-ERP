@@ -404,8 +404,18 @@ class LineItemsMixin:
         """Debounced recalculation (called directly from 12+ signal handlers)."""
         self._recalc_task.schedule()
 
-    def _refresh_totals_display(self) -> None:
-        """Update all totals displays based on addon items and settings."""
+    def _calculate_totals(self) -> dict[str, float]:
+        """Compute invoice totals from current form state.
+
+        Delegates the arithmetic to a single shared helper so that both
+        the preview UI (``_refresh_totals_display``) and the PDF data
+        collector (``_collect_invoice_data``) use the same logic.
+
+        For DB-persisted invoices with typed line items,
+        ``InvoiceService.recalculate()`` provides the service-level equivalent.
+        For new invoices, ``InvoiceService.create(InvoiceCreate(...))`` auto-calculates
+        line-item totals from quantity/unit_price/vat_rate.
+        """
         try:
             tax_rate = float(self._tax_rate or 0)
             disc_val = float(self._discount_value or 0)
@@ -415,10 +425,7 @@ class LineItemsMixin:
             disc_val = 0
             trip_price = 0
 
-        disc_type = self._discount_type
-        currency = self._currency
-
-        # Trip base price + addon items
+        # Trip base price + addon items → subtotal
         subtotal = round(trip_price, 2)
         for item in self._addon_items:
             try:
@@ -430,30 +437,49 @@ class LineItemsMixin:
 
         total_tax = round(subtotal * (tax_rate / 100), 2)
 
-        # Discount
-        is_percent = disc_type == t("invoice_editor.discount_percentage")
+        # Discount (percentage or fixed)
+        is_percent = self._discount_type == t("invoice_editor.discount_percentage")
         discount = round(subtotal * (disc_val / 100), 2) if is_percent else round(disc_val, 2)
 
         grand_total = round(subtotal + total_tax - discount, 2)
 
+        return {
+            "subtotal": subtotal,
+            "total_tax": total_tax,
+            "discount": discount,
+            "grand_total": grand_total,
+            "is_percent": is_percent,
+            "tax_rate": tax_rate,
+            "disc_value": disc_val,
+            "trip_price": trip_price,
+        }
+
+    def _refresh_totals_display(self) -> None:
+        """Update all totals displays based on addon items and settings.
+
+        Calculation is delegated to ``_calculate_totals()`` so the same
+        arithmetic is shared with ``_collect_invoice_data()``.
+        """
+        calc = self._calculate_totals()
+        currency = self._currency
         sym = self._get_currency_symbol(currency)
 
         # Update side panel totals
-        self._subtotal_lbl.setText(f"{sym}{subtotal:,.2f}")
-        self._tax_lbl.setText(f"{sym}{total_tax:,.2f}")
-        discount_sign = "-" if discount > 0 else ""
-        self._discount_lbl.setText(f"{discount_sign}{sym}{discount:,.2f}")
-        self._grand_lbl.setText(f"{sym}{grand_total:,.2f}")
+        self._subtotal_lbl.setText(f"{sym}{calc['subtotal']:,.2f}")
+        self._tax_lbl.setText(f"{sym}{calc['total_tax']:,.2f}")
+        discount_sign = "-" if calc["discount"] > 0 else ""
+        self._discount_lbl.setText(f"{discount_sign}{sym}{calc['discount']:,.2f}")
+        self._grand_lbl.setText(f"{sym}{calc['grand_total']:,.2f}")
 
         # Update canvas totals
-        self._canvas_subtotal.setText(f"{sym}{subtotal:,.2f}")
-        self._canvas_tax.setText(f"{sym}{total_tax:,.2f}")
-        canvas_discount_sign = "-" if discount > 0 else ""
-        self._canvas_discount.setText(f"{canvas_discount_sign}{sym}{discount:,.2f}")
-        self._canvas_grand.setText(f"{sym}{grand_total:,.2f}")
+        self._canvas_subtotal.setText(f"{sym}{calc['subtotal']:,.2f}")
+        self._canvas_tax.setText(f"{sym}{calc['total_tax']:,.2f}")
+        canvas_discount_sign = "-" if calc["discount"] > 0 else ""
+        self._canvas_discount.setText(f"{canvas_discount_sign}{sym}{calc['discount']:,.2f}")
+        self._canvas_grand.setText(f"{sym}{calc['grand_total']:,.2f}")
 
         # Update discount symbol
-        if is_percent:
+        if calc["is_percent"]:
             self._disc_symbol_lbl.setText("%")
         else:
             self._disc_symbol_lbl.setText(sym)

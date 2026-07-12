@@ -131,7 +131,7 @@ class TestGetByDriver:
         _activity(db, driver_id=10, activity_date="2026-07-02", driving_minutes=450)
         _activity(db, driver_id=20, activity_date="2026-07-01", driving_minutes=300)
 
-        rows = repo.get_by_driver(10, from_date=date(2026, 1, 1))
+        rows = repo.get_by_driver(10, date_from=date(2026, 1, 1))
         assert len(rows) == 2
         assert all(r["driver_id"] == 10 for r in rows)
 
@@ -140,13 +140,13 @@ class TestGetByDriver:
         _activity(db, driver_id=10, activity_date="2026-07-01", driving_minutes=200)
         _activity(db, driver_id=10, activity_date="2026-08-01", driving_minutes=300)
 
-        rows = repo.get_by_driver(10, from_date=date(2026, 7, 1))
+        rows = repo.get_by_driver(10, date_from=date(2026, 7, 1))
         assert len(rows) == 2  # July and August
         dates = sorted(r["activity_date"] for r in rows)
         assert dates == ["2026-07-01", "2026-08-01"]
 
     def test_get_by_driver_returns_empty_when_no_match(self, repo):
-        rows = repo.get_by_driver(999, from_date=date(2020, 1, 1))
+        rows = repo.get_by_driver(999, date_from=date(2020, 1, 1))
         assert rows == []
 
 

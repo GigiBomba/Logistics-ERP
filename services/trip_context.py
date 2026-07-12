@@ -198,7 +198,7 @@ def update_trip_route(tc: TripContext, route: dict) -> TripContext:
     # Recompute costs when route changes
     try:
         _compute_costs_for_tc(tc)
-    except Exception as e:
+    except (ValueError, TypeError, ZeroDivisionError) as e:
         logger.warning("Failed to recompute costs for route change: %s", e)
     _notify_listeners(tc, ['route', 'costs', 'profit'])
     return tc
@@ -223,7 +223,7 @@ def update_trip_truck(tc: TripContext, truck: dict) -> TripContext:
     # Recompute costs when truck changes
     try:
         _compute_costs_for_tc(tc)
-    except Exception as e:
+    except (ValueError, TypeError, ZeroDivisionError) as e:
         logger.warning("Failed to recompute costs for truck change: %s", e)
     _notify_listeners(tc, ['truck', 'costs', 'profit'])
     return tc
@@ -270,7 +270,7 @@ def _notify_listeners(tc: TripContext, changed_fields: list):
     for cb in listeners:
         try:
             cb(tc, changed_fields)
-        except Exception:
+        except (TypeError, ValueError):
             name = getattr(cb, "__name__", str(cb)[:40])
             logger.warning("TripContext listener %s failed", name, exc_info=True)
 
@@ -310,12 +310,12 @@ def _compute_costs_for_tc(tc: TripContext) -> None:
             fuel_cost=round(fuel_cost, 2),
             toll_cost=round(toll_cost, 2)
         )
-    except Exception as e:
+    except (ValueError, TypeError, RuntimeError) as e:
         logger.warning("Cost computation failed: %s", e)
         return
     try:
         _compute_profit_for_tc(tc)
-    except Exception as e:
+    except (ValueError, TypeError, RuntimeError) as e:
         logger.warning("Profit computation after cost update failed: %s", e)
 
 
@@ -332,7 +332,7 @@ def _compute_profit_for_tc(tc: TripContext) -> None:
         rev = None
         try:
             rev = tc.profit.revenue_estimate
-        except Exception:
+        except (AttributeError, TypeError):
             rev = None
 
         fuel_cost = tc.costs.fuel_cost if tc.costs and tc.costs.fuel_cost is not None else None
@@ -357,7 +357,7 @@ def _compute_profit_for_tc(tc: TripContext) -> None:
         # both revenue and costs available -> compute net profit
         net = float(rev) - total_cost
         tc.profit = ProfitModel(revenue_estimate=float(rev), total_cost=round(total_cost, 2), net_profit=round(net, 2))
-    except Exception as e:
+    except (ValueError, TypeError, AttributeError) as e:
         logger.warning("Profit computation failed: %s", e)
         return
 
@@ -373,12 +373,12 @@ def update_trip_revenue(tc: TripContext, revenue: Optional[float]) -> TripContex
             tc.profit.revenue_estimate = None
         else:
             tc.profit.revenue_estimate = float(revenue)
-    except Exception:
+    except (TypeError, ValueError):
         tc.profit.revenue_estimate = None
 
     try:
         _compute_profit_for_tc(tc)
-    except Exception as e:
+    except (ValueError, TypeError, RuntimeError) as e:
         logger.warning("Failed to recompute profit for revenue change: %s", e)
     _notify_listeners(tc, ['profit'])
     return tc
@@ -423,7 +423,7 @@ def save_trip_to_db(db_manager, tc: TripContext, client_name: Optional[str] = No
     try:
         tc.status = 'saved'
         _notify_listeners(tc, ['saved'])
-    except Exception as e:
+    except (ValueError, TypeError, RuntimeError) as e:
         logger.warning("Failed to notify listeners after save: %s", e)
     return trip_db_id
 
@@ -443,7 +443,7 @@ def load_trip_from_db(db_manager, trip_db_id) -> Optional[TripContext]:
         try:
             data = json.loads(ctx_json)
             tc = TripContext.from_dict(data)
-        except Exception:
+        except (json.JSONDecodeError, ValueError, TypeError):
             tc = None
 
     if tc is None:
@@ -478,13 +478,13 @@ def load_trip_from_db(db_manager, trip_db_id) -> Optional[TripContext]:
     # mark loaded as saved
     try:
         tc.status = row['status'] if row.get('status') else 'draft'
-    except Exception:
+    except (KeyError, TypeError, ValueError):
         tc.status = 'draft'
 
     # Notify listeners so UI and calculator refresh from TripContext
     try:
         _notify_listeners(tc, ['load', 'route', 'truck', 'driver', 'costs', 'profit'])
-    except Exception as e:
+    except (TypeError, ValueError, RuntimeError) as e:
         logger.warning("Failed to notify listeners after load: %s", e)
 
     return tc
@@ -508,7 +508,7 @@ class TripContextService:
             # maintain an internal TripContext instance to integrate with module listeners
             try:
                 cls._instance._tc = TripContext.create()
-            except Exception:
+            except (TypeError, ValueError):
                 cls._instance._tc = None
         return cls._instance
 
@@ -551,7 +551,7 @@ class TripContextService:
             if truck_update:
                 self._tc.set_truck(truck_update)
             _notify_listeners(self._tc, ['route', 'costs', 'truck'])
-        except Exception as e:
+        except (ValueError, TypeError, RuntimeError) as e:
             logger.warning("Failed to notify listeners in set_active_trip_info: %s", e)
 
     def get_active_trip_info(self) -> dict:

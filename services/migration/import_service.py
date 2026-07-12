@@ -272,14 +272,7 @@ class ImportService:
             progress_cb(ImportStage.COMMITTING.value, 0, f"Committing {len(rows)} rows...")
 
         # Begin transaction
-        try:
-            repo.begin_transaction()
-        except AttributeError:
-            # Fallback: direct SQL BEGIN
-            try:
-                self.db.conn.execute("BEGIN")
-            except Exception:
-                pass
+        repo.begin_transaction()
 
         committed = 0
         skipped = 0
@@ -348,23 +341,11 @@ class ImportService:
                     )
 
             # Commit transaction
-            try:
-                repo.commit_transaction()
-            except AttributeError:
-                try:
-                    self.db.conn.commit()
-                except Exception:
-                    pass
+            repo.commit_transaction()
 
         except Exception as exc:
             logger.exception("Commit failed, rolling back transaction")
-            try:
-                repo.rollback_transaction()
-            except AttributeError:
-                try:
-                    self.db.conn.execute("ROLLBACK")
-                except Exception:
-                    pass
+            repo.rollback_transaction()
             if progress_cb:
                 progress_cb(ImportStage.FAILED.value, 0, f"Commit failed: {exc}")
             stats.valid_rows = 0

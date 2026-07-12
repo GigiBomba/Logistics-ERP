@@ -1,4 +1,8 @@
-version: "3.8"
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "10m"
+    max-file: "3"
 
 services:
   db:
@@ -8,8 +12,10 @@ services:
       POSTGRES_DB: operion
       POSTGRES_USER: operion
       POSTGRES_PASSWORD: ${OPERION_POSTGRES_PASSWORD:-operion_secret}
+      OPERION_CELERY_PASSWORD: ${OPERION_CELERY_PASSWORD:-CHANGE_ME_CELERY_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
+      - ./init-db.sh:/docker-entrypoint-initdb.d/10-init-celery-user.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U operion -d operion"]
       interval: 10s
@@ -17,34 +23,44 @@ services:
       retries: 5
     ports:
       - "127.0.0.1:5432:5432"
+    logging: *default-logging
 
   redis:
     image: redis:7-alpine
     restart: unless-stopped
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    command: >
+      redis-server --appendonly yes
+      --maxmemory 256mb --maxmemory-policy allkeys-lru
+      ${OPERION_REDIS_PASSWORD:+--requirepass "$OPERION_REDIS_PASSWORD"}
     volumes:
       - redisdata:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
+      test: ${OPERION_REDIS_PASSWORD:+["CMD", "redis-cli", "-a", "$OPERION_REDIS_PASSWORD", "ping"]}
+        ${OPERION_REDIS_PASSWORD:-["CMD", "redis-cli", "ping"]}
       interval: 10s
       timeout: 5s
       retries: 5
     ports:
       - "127.0.0.1:6379:6379"
+    logging: *default-logging
 
   api:
     build:
       context: ..
       dockerfile: docker/Dockerfile
     restart: unless-stopped
+    env_file:
+      - .env.production
     environment:
       OPERION_DB_ENGINE: postgresql
       OPERION_POSTGRES_DSN: postgresql://operion:${OPERION_POSTGRES_PASSWORD:-operion_secret}@db:5432/operion
-      OPERION_REDIS_URL: redis://redis:6379/0
-      OPERION_CELERY_BROKER: redis://redis:6379/1
-      OPERION_CELERY_RESULT: redis://redis:6379/2
+      OPERION_REDIS_URL: ${OPERION_REDIS_URL:-redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/0}
+      OPERION_REDIS_PASSWORD: ${OPERION_REDIS_PASSWORD:-}
+      OPERION_CELERY_BROKER: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/1
+      OPERION_CELERY_RESULT: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/2
       OPERION_API_HOST: 0.0.0.0
       OPERION_API_PORT: 8000
+      OPERION_ENV: production
     depends_on:
       db:
         condition: service_healthy
@@ -56,18 +72,24 @@ services:
       - app_data:/app/data
       - app_logs:/app/logs
       - app_reports:/app/reports
+    logging: *default-logging
 
   worker:
     build:
       context: ..
       dockerfile: docker/Dockerfile.worker
     restart: unless-stopped
+    env_file:
+      - .env.production
     environment:
       OPERION_DB_ENGINE: postgresql
-      OPERION_POSTGRES_DSN: postgresql://operion:${OPERION_POSTGRES_PASSWORD:-operion_secret}@db:5432/operion
-      OPERION_REDIS_URL: redis://redis:6379/0
-      OPERION_CELERY_BROKER: redis://redis:6379/1
-      OPERION_CELERY_RESULT: redis://redis:6379/2
+      # Celery worker uses a RESTRICTED database user with only SELECT/INSERT/UPDATE
+      OPERION_POSTGRES_DSN: postgresql://operion_celery:${OPERION_CELERY_PASSWORD:-CHANGE_ME_CELERY_PASSWORD}@db:5432/operion
+      OPERION_REDIS_URL: ${OPERION_REDIS_URL:-redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/0}
+      OPERION_REDIS_PASSWORD: ${OPERION_REDIS_PASSWORD:-}
+      OPERION_CELERY_BROKER: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/1
+      OPERION_CELERY_RESULT: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/2
+      OPERION_ENV: production
     depends_on:
       db:
         condition: service_healthy
@@ -77,6 +99,7 @@ services:
       - app_data:/app/data
       - app_logs:/app/logs
       - app_reports:/app/reports
+    logging: *default-logging
 
   celery-beat:
     build:
@@ -84,14 +107,49 @@ services:
       dockerfile: docker/Dockerfile.worker
     restart: unless-stopped
     command: celery -A backend.celery_app.celery beat --loglevel=info
+    env_file:
+      - .env.production
     environment:
       OPERION_DB_ENGINE: postgresql
-      OPERION_POSTGRES_DSN: postgresql://operion:${OPERION_POSTGRES_PASSWORD:-operion_secret}@db:5432/operion
-      OPERION_REDIS_URL: redis://redis:6379/0
-      OPERION_CELERY_BROKER: redis://redis:6379/1
-      OPERION_CELERY_RESULT: redis://redis:6379/2
+      OPERION_POSTGRES_DSN: postgresql://operion_celery:${OPERION_CELERY_PASSWORD:-CHANGE_ME_CELERY_PASSWORD}@db:5432/operion
+      OPERION_REDIS_URL: ${OPERION_REDIS_URL:-redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/0}
+      OPERION_CELERY_BROKER: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/1
+      OPERION_CELERY_RESULT: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/2
+      OPERION_ENV: production
     depends_on:
       - redis
+    logging: *default-logging
+
+  backup:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        echo "0 3 * * * /bin/sh /backup.sh >> /var/log/backup.log 2>&1" > /tmp/crontab
+        crontab /tmp/crontab
+        touch /var/log/backup.log
+        crond -f -l 2 &
+        echo "Backup service started. Scheduled daily at 3:00 AM."
+        tail -f /var/log/backup.log
+    environment:
+      OPERION_DB_HOST: db
+      OPERION_DB_PORT: 5432
+      OPERION_DB_NAME: operion
+      OPERION_DB_USER: operion
+      OPERION_DB_PASSWORD: ${OPERION_POSTGRES_PASSWORD:-operion_secret}
+      OPERION_BACKUP_DIR: /backups
+      OPERION_BACKUP_RETENTION_DAYS: 30
+      # R2 backup (uncomment when R2 bucket is created):
+      # AWS_ACCESS_KEY_ID: ${R2_ACCESS_KEY_ID:-}
+      # AWS_SECRET_ACCESS_KEY: ${R2_SECRET_ACCESS_KEY:-}
+      # AWS_ENDPOINT_URL: https://${R2_ACCOUNT_ID:-}.r2.cloudflarestorage.com
+    volumes:
+      - ../scripts/backup.sh:/backup.sh:ro
+      - db_backups:/backups
+    depends_on:
+      - db
+    logging: *default-logging
 
   nginx:
     image: nginx:1.25-alpine
@@ -104,6 +162,7 @@ services:
       - ../certs:/etc/nginx/certs:ro
     depends_on:
       - api
+    logging: *default-logging
 
 volumes:
   pgdata:
@@ -111,3 +170,4 @@ volumes:
   app_data:
   app_logs:
   app_reports:
+  db_backups:

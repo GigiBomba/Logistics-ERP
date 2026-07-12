@@ -9,6 +9,7 @@ from typing import Optional
 
 import requests
 
+from models.common import ServiceResult
 from services.base_worker import GracefulWorker
 from utils.formatting import format_age
 from utils.resource_path import data_path, resource_path
@@ -95,6 +96,18 @@ class FuelPriceService(GracefulWorker):
     # ── Public API ─────────────────────────────────────────────────────
 
     def get_price(self, country_code: str, currency: str = "EUR") -> float:
+        """Get fuel price for a country, optionally converted to another currency.
+
+        Uses cached prices; does NOT fetch live data. Falls back to bundled
+        defaults if cache is unavailable.
+
+        Args:
+            country_code: ISO 2-letter country code (e.g. "RO", "DE").
+            currency: Target currency code (default "EUR").
+
+        Returns:
+            Price in the requested currency per liter.
+        """
         with self._prices_lock:
             price_eur = self._prices.get(country_code.upper())
             if price_eur is None:
@@ -113,11 +126,20 @@ class FuelPriceService(GracefulWorker):
         return local_price
 
     def get_prices_all(self) -> dict[str, float]:
+        """Return all cached fuel prices (country_code -> EUR/L).
+
+        Deterministic — returns the in-memory cached / fallback prices.
+        """
         with self._prices_lock:
             prices = dict(self._prices) if self._prices else None
         return prices if prices else dict(self._fallback_prices)
 
     def refresh_if_stale(self) -> bool:
+        """Refresh fuel prices if the cache is older than TTL (86400s = 24h).
+
+        AI Co-Pilot: This is conditionally non-deterministic — it only scrapes
+        when the cache is stale. Use :meth:`get_price` for deterministic reads.
+        """
         if self._last_updated is None:
             return self.refresh()
         age = time.time() - self._last_updated
@@ -129,6 +151,12 @@ class FuelPriceService(GracefulWorker):
         return True
 
     def refresh(self, background: bool = True) -> bool:
+        """NON-DETERMINISTIC: Scrapes live fuel prices from globalpetrolprices.com.
+
+        AI Co-Pilot: Use :meth:`get_price_with_cache` with ``force_refresh=False``
+        for deterministic replay.
+        Cache TTL: 86400 seconds (24 hours).
+        """
         if self._refresh_in_progress:
             logger.debug("Fuel price refresh already in progress, skipping")
             return True
@@ -141,15 +169,88 @@ class FuelPriceService(GracefulWorker):
     def get_price_for_country(self, country_code: str) -> float:
         return self.get_price(country_code)
 
+    # ── Cache-aware methods (deterministic when using cache) ──────────
+
+    def get_cached_price(self, max_age_seconds: int = 86400) -> Optional[float]:
+        """Get cached fuel price as EUR/L if fresh enough.
+
+        Since fuel prices vary by country, this returns the price for the "DEFAULT"
+        country. Returns ``None`` if no fresh cached price is available.
+
+        Args:
+            max_age_seconds: Maximum allowed age of cached price in seconds
+                             (default 86400 = 24 hours).
+
+        Returns:
+            The cached price in EUR/L, or ``None`` if stale or missing.
+        """
+        with self._prices_lock:
+            ts = self._last_updated
+            if ts is None:
+                return None
+            age = time.time() - ts
+            if age > max_age_seconds:
+                return None
+            return self._prices.get("DEFAULT")
+
+    def get_price_with_cache(
+        self,
+        force_refresh: bool = False,
+        max_cache_age: int = 86400,
+    ) -> ServiceResult[float]:
+        """Get fuel price with cache control.
+
+        AI-friendly: pass ``force_refresh=False`` (default) for deterministic replay.
+
+        Args:
+            force_refresh: If ``True``, bypass cache and scrape live data.
+            max_cache_age: Maximum age of cache in seconds (default 86400).
+
+        Returns:
+            A ``ServiceResult`` containing the price in EUR/L for the default country.
+        """
+        if not force_refresh:
+            cached = self.get_cached_price(max_cache_age)
+            if cached is not None:
+                logger.debug("Fuel price cache hit: %.3f EUR/L", cached)
+                return ServiceResult(success=True, data=cached)
+
+        # Live fetch
+        success = self.refresh(background=False)
+        if success:
+            with self._prices_lock:
+                price = self._prices.get("DEFAULT")
+            if price is not None:
+                return ServiceResult(success=True, data=price)
+
+        return ServiceResult(
+            success=False,
+            data=1.55,
+            errors=[{"message": "Failed to fetch live fuel prices, using fallback", "code": "FETCH_FAILED"}],
+        )
+
     def is_available(self) -> bool:
+        """Check whether the service has fuel price data available.
+
+        Deterministic — does not trigger a fetch.
+        Returns ``True`` if at least one country has a cached or fallback price.
+        """
         return self._last_fetch_ok or bool(self._prices)
 
     def last_updated_str(self) -> str:
+        """Return a human-readable string of when prices were last scraped.
+
+        Deterministic — returns the cached timestamp.
+        """
         if self._last_updated is None:
             return "never"
         return datetime.fromtimestamp(self._last_updated).strftime("%d/%m/%Y %H:%M")
 
     def age_seconds(self) -> Optional[float]:
+        """Return seconds since the last successful fetch (or ``None`` if never fetched).
+
+        Deterministic — reads the cached timestamp.
+        """
         if self._last_updated is None:
             return None
         return time.time() - self._last_updated

@@ -119,12 +119,9 @@ class TripStatusEngine:
 
             # Record trip status history
             try:
-                self._trip_service.db.conn.execute(
-                    "INSERT INTO trip_status_history (trip_id, old_status, new_status, trigger, created_at) "
-                    "VALUES (?, ?, ?, ?, ?)",
-                    (trip_id, old_status, new_status, trigger, datetime.now().isoformat()),
+                self._trip_service._trip_repo.record_status_history(
+                    trip_id, old_status, new_status, trigger
                 )
-                self._trip_service.db.conn.commit()
             except Exception as hist_err:
                 logger.warning("Failed to record status history for trip %d: %s", trip_id, hist_err)
 

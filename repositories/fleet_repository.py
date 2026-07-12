@@ -404,7 +404,7 @@ class FleetRepository(BaseRepository):
 
     # ── Analytics Queries ────────────────────────────────────────────
 
-    def get_maintenance_cost_truck_monthly(self, since: str) -> List[Dict[str, Any]]:
+    def get_maintenance_cost_truck_monthly(self, date_from: str) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT truck_id,
                        substr(date, 1, 7) AS ym,
@@ -413,10 +413,10 @@ class FleetRepository(BaseRepository):
                 WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY truck_id, ym
                 ORDER BY ym, truck_id""",
-            (since,) + self._company_params(),
+            (date_from,) + self._company_params(),
         )
 
-    def get_maintenance_cost_monthly(self, since: str) -> List[Dict[str, Any]]:
+    def get_maintenance_cost_monthly(self, date_from: str) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
@@ -424,10 +424,10 @@ class FleetRepository(BaseRepository):
                 WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY ym
                 ORDER BY ym""",
-            (since,) + self._company_params(),
+            (date_from,) + self._company_params(),
         )
 
-    def get_maintenance_truck_summary(self, since: str) -> List[Dict[str, Any]]:
+    def get_maintenance_truck_summary(self, date_from: str) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT truck_id,
                        COALESCE(SUM(cost), 0) AS total_ytd,
@@ -437,17 +437,17 @@ class FleetRepository(BaseRepository):
                 WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY truck_id
                 ORDER BY total_ytd DESC""",
-            (since,) + self._company_params(),
+            (date_from,) + self._company_params(),
         )
 
-    def get_maintenance_most_expensive_category(self, since: str) -> List[Dict[str, Any]]:
+    def get_maintenance_most_expensive_category(self, date_from: str) -> List[Dict[str, Any]]:
         rows = self._fetchall(
             f"""SELECT truck_id, maintenance_type, COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
                 WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
                 GROUP BY truck_id, maintenance_type
                 ORDER BY truck_id, total DESC""",
-            (since,) + self._company_params(),
+            (date_from,) + self._company_params(),
         )
         seen = set()
         result = []

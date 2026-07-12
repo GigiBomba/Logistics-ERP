@@ -26,9 +26,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from models.cmr_models import CmrGenerateRequest
 from services.client_service import ClientService
 from services.fleet_service import FleetService
 from services.i18n import register_listener, t, unregister_listener
+from services.route_service import RouteService
 from services.trip_service import TripService
 from ui.components import (
     Btn,
@@ -134,31 +136,35 @@ class QtGeneratorsView(QWidget):
         self._listener_registered = True
 
     # ──────────────────────────────────────────────────────────────────────────
-    #  Properties / lazy services
+    #  Typed service properties (lazy singleton)
     # ──────────────────────────────────────────────────────────────────────────
 
     @property
     def _trip_svc(self) -> TripService:
+        """Lazily-initialised TripService singleton — @property for consistency."""
         if self._trip_svc_instance is None:
             self._trip_svc_instance = TripService(self.db)
         return self._trip_svc_instance
 
     @property
     def _client_svc(self) -> ClientService:
-        if not hasattr(self, "_client_svc_instance") or self._client_svc_instance is None:
+        """Lazily-initialised ClientService singleton — @property for consistency."""
+        if self._client_svc_instance is None:
             self._client_svc_instance = ClientService(self.db)
         return self._client_svc_instance
 
     @property
     def _fleet_svc(self) -> FleetService:
-        if not hasattr(self, "_fleet_svc_instance") or self._fleet_svc_instance is None:
+        """Lazily-initialised FleetService singleton — @property for consistency."""
+        if self._fleet_svc_instance is None:
             self._fleet_svc_instance = FleetService(self.db)
         return self._fleet_svc_instance
 
-    def _lazy_cmr_doc_service(self):
-        """Lazy import + singleton for document registration."""
+    @property
+    def _cmr_doc_svc(self) -> "DocumentService":
+        """Lazily-initialised DocumentService singleton (lazy import)."""
         if self._cmr_doc_service is None:
-            from services.document_service import DocumentService
+            from services.document_service import DocumentService  # noqa: late import
             self._cmr_doc_service = DocumentService(self.db)
         return self._cmr_doc_service
 
@@ -641,16 +647,18 @@ class QtGeneratorsView(QWidget):
             self._fill_stops_from_route(trip["route_history_v2_id"])
 
     def _fill_stops_from_route(self, route_id: int) -> None:
-        """Extract origin/destination from route stops and fill CMR fields."""
+        """Extract origin/destination from route stops and fill CMR fields.
+
+        Delegates JSON parsing and route data extraction to RouteService.
+        """
         try:
             stops_json = self._trip_svc.get_route_stops_json(route_id)
             if not stops_json:
                 return
-            stops = json.loads(stops_json)
-            if not isinstance(stops, list) or len(stops) < 2:
+            # Delegate JSON parsing / extraction to RouteService
+            origin, destination = RouteService.parse_route_stops(stops_json)
+            if not origin and not destination:
                 return
-            origin = stops[0].get("address", "")
-            destination = stops[-1].get("address", "")
             if hasattr(self, "_cmr_form_view") and self._cmr_form_view is not None:
                 entries = self._cmr_form_view._cmr_entries
                 if origin and "place_of_loading" in entries:
@@ -738,7 +746,11 @@ class QtGeneratorsView(QWidget):
         return trip_data
 
     def _generate_cmr(self) -> None:
-        """Generate a single CMR document for the selected trip."""
+        """Generate a single CMR document for the selected trip using the typed API.
+
+        Delegates PDF generation to ``CMRGenerator.generate(CmrGenerateRequest, user_id)``
+        and document registration to ``_cmr_doc_svc``.
+        """
         if self._cmr_status_lbl is None:
             return
         trip_data = self._collect_cmr_data()
@@ -753,9 +765,25 @@ class QtGeneratorsView(QWidget):
         try:
             from services.invoicing.cmr_generator import CMRGenerator
             gen = CMRGenerator(db=self.db, prefs=self.prefs)
-            output_dir = os.path.join("data", "documents", "trips", str(trip_id))
-            os.makedirs(output_dir, exist_ok=True)
-            filepath = gen.generate(trip_data, output_dir)
+
+            # Build typed request — the generator handles output dir and numbering internally
+            request = CmrGenerateRequest(
+                trip_id=trip_id,
+                language=trip_data.get("cmr_language", "ro"),
+                copies=1,
+                sender_name=trip_data.get("consignor_name", ""),
+                sender_address=trip_data.get("consignor_address", ""),
+                carrier_name=trip_data.get("carrier_name", ""),
+                carrier_license=trip_data.get("carrier_license", ""),
+                remarks=trip_data.get("carrier_instructions", ""),
+            )
+            # user_id=0 falls back gracefully when auth context is unavailable
+            result = gen.generate(request, user_id=0)
+            if not result.success:
+                err_msg = result.errors[0].message if result.errors else "Unknown error"
+                raise Exception(err_msg)
+            filepath = result.data.file_path
+
         except Exception as e:
             QMessageBox.critical(
                 self,
@@ -765,8 +793,7 @@ class QtGeneratorsView(QWidget):
             return
 
         try:
-            ds = self._lazy_cmr_doc_service()
-            ds.register_existing(
+            self._cmr_doc_svc.register_existing(
                 filepath,
                 title=t("generators.cmr_trip_title", default="CMR Trip #{}").format(trip_id),
                 category="trips",
@@ -788,7 +815,13 @@ class QtGeneratorsView(QWidget):
         logger.info("CMR generated for trip %d: %s", trip_id, filepath)
 
     def _generate_all_copies(self) -> None:
-        """Generate all CMR copies (Sender, Consignee, Carrier, Administrative)."""
+        """Generate all CMR copies (Sender, Consignee, Carrier, Administrative).
+
+        Uses the typed ``CMRGenerator.generate_all_copies(CmrGenerateRequest, user_id)``
+        API — numbering, DB updates, and output directory creation are handled inside
+        the generator. Background threading is kept here to keep the UI responsive;
+        the generator itself remains synchronous.
+        """
         if self._cmr_status_lbl is None:
             return
         trip_data = self._collect_cmr_data()
@@ -810,17 +843,41 @@ class QtGeneratorsView(QWidget):
 
         from services.invoicing.cmr_generator import CMRGenerator
         gen = CMRGenerator(db=self.db, prefs=self.prefs)
-        cmr_number, cmr_seq = gen._next_cmr_number()
-        trip_data["cmr_number"] = cmr_number
-        trip_data["cmr_sequence"] = cmr_seq
+
+        # Build typed request — numbering (cmr_number / cmr_seq) is handled
+        # internally by the generator; no more direct _next_cmr_number() call.
+        request = CmrGenerateRequest(
+            trip_id=trip_id,
+            language=trip_data.get("cmr_language", "ro"),
+            copies=4,
+            include_stamps=True,
+            sender_name=trip_data.get("consignor_name", ""),
+            sender_address=trip_data.get("consignor_address", ""),
+            carrier_name=trip_data.get("carrier_name", ""),
+            carrier_license=trip_data.get("carrier_license", ""),
+            remarks=trip_data.get("carrier_instructions", ""),
+        )
 
         def _run() -> None:
             registered_paths: dict[str, str] = {}
             try:
+                # Typed API — handles permission check, trip lookup,
+                # numbering, PDF generation, and DB update internally.
+                result = gen.generate_all_copies(request, user_id=0)
+                if not result.success:
+                    err_msg = result.errors[0].message if result.errors else "Unknown error"
+                    raise Exception(err_msg)
+
+                cmr_number = result.data.cmr_number
+                # Reconstruct per-copy paths from the known CMR naming convention
+                # (mirrors CMRGenerator._build_single_copy).
                 output_dir = os.path.join("data", "documents", "trips", str(trip_id))
-                os.makedirs(output_dir, exist_ok=True)
-                copies = gen.generate_all_copies(trip_data, output_dir, skip_db_update=True)
-                registered_paths = dict(copies)
+                safe_num = cmr_number.replace("/", "_").replace("\\", "_").replace(" ", "_")
+                for suffix in ["Sender", "Consignee", "Carrier", "Administrative"]:
+                    path = os.path.join(output_dir, f"CMR_{safe_num}_{suffix}_Copy.pdf")
+                    if os.path.isfile(path):
+                        registered_paths[suffix] = path
+
             except Exception as e:
                 err_msg = str(e)
                 def _err() -> None:
@@ -841,18 +898,18 @@ class QtGeneratorsView(QWidget):
                 if not self.db:
                     logger.warning("CMR: no database reference, skipping registration")
                     return
-                try:
-                    self._trip_svc.update_cmr_fields(trip_id, cmr_number, cmr_seq)
-                except Exception:
-                    pass
 
+                # DB update (cmr_number / cmr_seq) is done by the typed API
+                # with skip_db_update=False inside generate_all_copies.
+
+                # Register each copy with DocumentService
                 try:
-                    ds = self._lazy_cmr_doc_service()
                     for suffix, path in registered_paths.items():
                         with contextlib.suppress(Exception):
-                            ds.register_existing(
+                            self._cmr_doc_svc.register_existing(
                                 path,
-                                title=t("generators.cmr_copy_title", default="CMR Trip #{} - {} COPY").format(trip_id, suffix.upper()),
+                                title=t("generators.cmr_copy_title",
+                                        default="CMR Trip #{} - {} COPY").format(trip_id, suffix.upper()),
                                 category="trips",
                                 entity_type="trip",
                                 entity_id=trip_id,

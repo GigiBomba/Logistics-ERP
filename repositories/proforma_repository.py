@@ -24,7 +24,7 @@ class ProformaRepository(BaseRepository):
         "discount_type", "discount_value", "discount_amount",
         "tax_rate", "tax_amount", "grand_total", "currency", "mode", "status",
         "logo_path", "signature_path", "stamp_path", "company_color",
-        "created_at", "updated_at", "company_id",
+        "pdf_path", "created_at", "updated_at", "company_id",
     ]
 
     def create(
@@ -138,6 +138,7 @@ class ProformaRepository(BaseRepository):
             "tax_rate", "tax_amount", "grand_total",
             "currency", "mode", "status",
             "logo_path", "signature_path", "stamp_path", "company_color",
+            "pdf_path",
         }
         updates = {k: v for k, v in kwargs.items() if k in allowed}
         if not updates:

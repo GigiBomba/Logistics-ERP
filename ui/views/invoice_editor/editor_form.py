@@ -41,8 +41,9 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from repositories.client_repository import ClientRepository
 from services.app_state import AppState
+from services.client_service import ClientService
+from services.numbering_service import NumberingService
 from repositories.invoice_repository import INVOICE_NUMBER_FORMATS, DEFAULT_INVOICE_FORMAT_KEY as INV_DEFAULT_FMT
 from services.i18n import t
 from ui.base_view import BaseView
@@ -94,10 +95,14 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self.db = db
         self.prefs = prefs or (PreferencesManager(db) if db else None)
         self._trip_service = TripService(db) if db else None
-        self._client_repo = ClientRepository(db) if db else None
-        from repositories.invoice_repository import InvoiceRepository
-        self._invoice_repo = invoice_repo if invoice_repo is not None else InvoiceRepository(db)
+        # Use ClientService instead of direct ClientRepository access
+        self._client_service = ClientService(db) if db else None
+        # NumberingService handles invoice/proforma/receipt number generation
+        self._numbering_service = NumberingService(db) if db else None
+        # InvoiceService is lazy-init to avoid circular dependency at import time
         self._invoice_service: InvoiceService | None = None  # lazy
+        # invoice_repo parameter kept for backward compatibility
+        _ = invoice_repo  # no longer used directly
         self._app_state = AppState()
 
 
@@ -291,12 +296,13 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         return self._invoice_service
 
     def _gen_invoice_number(self) -> str:
-        """Generate an invoice number using the format system if available."""
-        try:
-            repo = self._invoice_repo
-            return repo.get_next_number(format_key=self._format_key)
-        except Exception:
-            pass
+        """Generate an invoice number via NumberingService."""
+        if self._numbering_service:
+            try:
+                return self._numbering_service.next_invoice_number(format_key=self._format_key)
+            except Exception:
+                pass
+        # Fallback if numbering service is unavailable
         year = datetime.now().year
         return f"INV-{year}-{datetime.now().strftime('%m%d')}-001"
 
@@ -1135,10 +1141,11 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._update_canvas_labels()
 
     def _load_clients(self) -> None:
-        if not self._client_repo:
+        """Load clients via ClientService (delegates to repository internally)."""
+        if not self._client_service:
             return
         try:
-            self._clients = self._client_repo.get_all()
+            self._clients = self._client_service.get_all()
             self._client_map = {c["name"]: c for c in self._clients}
             names = list(self._client_map.keys())
             self._client_combo.blockSignals(True)
@@ -1204,7 +1211,14 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._auto_fill_from_trip()
 
     def _auto_fill_from_trip(self) -> None:
-        """Fill invoice fields from selected trip data and route stops."""
+        """Fill invoice fields from selected trip data and route stops.
+
+        Trip data is already sourced through ``TripService`` (see ``_load_trips``)
+        so this method operates on service-retrieved data.  The price/VAT fields
+        (``total_price_eur``, ``price_pre_vat``, ``vat_percent``) are business
+        values managed by the trip domain; extracting them here is a UI-to-state
+        mapping rather than a computation.
+        """
         trip = self._selected_trip_data
         if not trip:
             return
@@ -1389,15 +1403,16 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
                 "amount": item.get("amount", 0),
             })
 
-        trip_price = round(float(self._trip_base_price or "0"), 2)
-        addon_total = round(sum(li["amount"] for li in addon_items), 2)
-        subtotal = round(trip_price + addon_total, 2)
-        tax_rate = float(self._tax_rate or 0)
-        total_tax = round(subtotal * (tax_rate / 100), 2)
-        disc_val = round(float(self._discount_value or "0"), 2)
-        is_percent = self._discount_type == t("invoice_editor.discount_percentage")
-        discount = round(subtotal * (disc_val / 100), 2) if is_percent else disc_val
-        grand_total = round(subtotal + total_tax - discount, 2)
+        # Delegate arithmetic to shared _calculate_totals()
+        calc = self._calculate_totals()
+        subtotal = calc["subtotal"]
+        total_tax = calc["total_tax"]
+        discount = calc["discount"]
+        grand_total = calc["grand_total"]
+        tax_rate = calc["tax_rate"]
+        disc_val = calc["disc_value"]
+        trip_price = calc["trip_price"]
+        addon_total = round(subtotal - trip_price, 2)  # reverse-compute for the data dict
 
         mode = "internal" if self._is_internal_invoice else "client"
 
@@ -1494,10 +1509,9 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
 
     def _generate_rich_pdf(self, data: dict[str, Any], open_after: bool = False,
                            record: bool = True) -> str | None:
-        """Generate a rich PDF using the enhanced InvoiceGenerator."""
-        from services.invoicing.generator import InvoiceGenerator
-        gen = InvoiceGenerator()
-        path = gen.generate_rich(data)
+        """Generate a rich PDF via InvoiceService (delegates to InvoiceGenerator internally)."""
+        svc = self._get_invoice_service()
+        path = svc.generator.generate_rich(data)
 
         if record and path and os.path.exists(path):
             trip_data = data.get("trip_data") or {}

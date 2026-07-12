@@ -5,23 +5,30 @@ Every route in this module requires manager or admin privileges.
 
 from typing import Any, Dict
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_manager
-from backend.schemas.user import UserCreateRequest, UserUpdateRequest
+from backend.schemas.common import PaginatedResponse
+from backend.schemas.user import UserCreateRequest, UserResponse, UserUpdateRequest
 from backend.security import hash_password
 from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/users", tags=["users"])
 
 
-@router.get("/", response_model=Dict[str, Any])
-async def list_users(
+class UserListResponse(PaginatedResponse[UserResponse]):
+    """Paginated list of users."""
+
+
+@router.get("/", response_model=UserListResponse)
+def list_users(
     current_user: Dict[str, Any] = Depends(require_manager),
+    page: int = Query(1, ge=1, description="Page number"),
+    page_size: int = Query(20, ge=1, le=200, description="Items per page"),
     db: DatabaseManager = Depends(get_db),
 ):
-    """Return all users belonging to the current user's company."""
+    """Return paginated list of users belonging to the current user's company."""
     company_id = current_user["company_id"]
 
     cursor = db.conn.execute(
@@ -34,11 +41,16 @@ async def list_users(
         (company_id,),
     )
     users = [dict(row) for row in cursor.fetchall()]
-    return {"items": users, "total": len(users)}
+    return PaginatedResponse.from_items(
+        items=[UserResponse(**u) for u in users],
+        total=len(users),
+        page=page,
+        page_size=page_size,
+    )
 
 
 @router.post("/", response_model=Dict[str, int], status_code=201)
-async def create_user(
+def create_user(
     data: UserCreateRequest,
     current_user: Dict[str, Any] = Depends(require_manager),
     db: DatabaseManager = Depends(get_db),
@@ -88,14 +100,14 @@ async def create_user(
     return {"id": user_id}
 
 
-@router.put("/{user_id}")
-async def update_user(
+@router.patch("/{user_id}")
+def update_user_partial(
     user_id: int,
     data: UserUpdateRequest,
     current_user: Dict[str, Any] = Depends(require_manager),
     db: DatabaseManager = Depends(get_db),
 ):
-    """Update a user's profile, email, password, or active status."""
+    """Partially update a user's profile, email, password, or active status (PATCH)."""
     company_id = current_user["company_id"]
     my_id = current_user["id"]
 
@@ -133,13 +145,68 @@ async def update_user(
 
     set_clause = ", ".join(f"{k} = ?" for k in update_fields)
     values = list(update_fields.values()) + [user_id]
-    db.conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)
+    db.conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)  # nosec B608
     db.conn.commit()
     return {"status": "updated"}
 
 
+@router.put("/{user_id}", deprecated=True)
+def update_user(
+    user_id: int,
+    data: UserUpdateRequest,
+    current_user: Dict[str, Any] = Depends(require_manager),
+    db: DatabaseManager = Depends(get_db),
+    response: Response = None,
+):
+    """[DEPRECATED] Use PATCH /{user_id} instead."""
+    company_id = current_user["company_id"]
+    my_id = current_user["id"]
+
+    # ── Verify user exists in same company ────────────────────────────
+    row = db.conn.execute(
+        "SELECT id FROM users WHERE id = ? AND company_id = ?",
+        (user_id, company_id),
+    ).fetchone()
+    if not row:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found.",
+        )
+
+    # ── Prevent self-deactivation ────────────────────────────────────
+    if data.is_active is not None and not data.is_active and user_id == my_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="You cannot deactivate yourself.",
+        )
+
+    # ── Build update fields ──────────────────────────────────────────
+    update_fields: Dict[str, Any] = {}
+    if data.display_name is not None:
+        update_fields["display_name"] = data.display_name
+    if data.is_active is not None:
+        update_fields["is_active"] = 1 if data.is_active else 0
+    if data.email is not None:
+        update_fields["email"] = data.email
+    if data.password is not None:
+        update_fields["password_hash"] = hash_password(data.password)
+
+    if not update_fields:
+        response.headers["Deprecation"] = "true"
+        response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
+        return {"status": "updated"}
+
+    set_clause = ", ".join(f"{k} = ?" for k in update_fields)
+    values = list(update_fields.values()) + [user_id]
+    db.conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)  # nosec B608
+    db.conn.commit()
+    response.headers["Deprecation"] = "true"
+    response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
+    return {"status": "updated"}
+
+
 @router.delete("/{user_id}")
-async def deactivate_user(
+def deactivate_user(
     user_id: int,
     current_user: Dict[str, Any] = Depends(require_manager),
     db: DatabaseManager = Depends(get_db),

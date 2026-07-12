@@ -1,8 +1,12 @@
-"""Thread-local SQLite connections to eliminate write contention.
+"""Thread-local SQLite connections and PostgreSQL connection pool.
 
-Each thread gets its own ``sqlite3.Connection`` so that writes on one
+SQLite — Each thread gets its own ``sqlite3.Connection`` so that writes on one
 thread never block reads or writes on another.  WAL journal mode is
 enabled so readers and writers can proceed concurrently.
+
+PostgreSQL — ``PostgresConnectionPool`` wraps
+``psycopg2.pool.ThreadedConnectionPool`` to provide a thread-safe
+pool of PostgreSQL connections for multi-worker deployments.
 
 Usage (via DatabaseManager)::
 
@@ -14,8 +18,15 @@ Usage (via DatabaseManager)::
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 import threading
+from typing import TYPE_CHECKING, Optional
+
+if TYPE_CHECKING:
+    from psycopg2.pool import ThreadedConnectionPool
+
+logger = logging.getLogger(__name__)
 
 class ConnectionPool:
     """Per-thread :class:`sqlite3.Connection` pool.
@@ -93,3 +104,136 @@ class ConnectionPool:
         except AttributeError:
             pass
         self._generation += 1
+
+
+class PostgresConnectionPool:
+    """Thread-safe PostgreSQL connection pool.
+
+    Wraps ``psycopg2.pool.ThreadedConnectionPool`` to provide
+    connection pooling for PostgreSQL in multi-worker deployments.
+
+    The pool maintains a set of reusable connections, reducing the
+    overhead of establishing a new connection for every request.
+    """
+
+    def __init__(
+        self,
+        dsn: str,
+        min_connections: int = 2,
+        max_connections: int = 20,
+    ) -> None:
+        self._dsn = dsn
+        self._pool: Optional["ThreadedConnectionPool"] = None
+        self._min = min_connections
+        self._max = max_connections
+        self._local = threading.local()
+        self._initialize()
+
+    def _initialize(self) -> None:
+        """Create the connection pool."""
+        import psycopg2
+        import psycopg2.pool
+
+        try:
+            self._pool = psycopg2.pool.ThreadedConnectionPool(
+                self._min, self._max, self._dsn,
+            )
+            logger.info(
+                "PostgreSQL pool created: min=%d max=%d dsn=%s",
+                self._min, self._max, self._dsn.replace("password=", "password=*** "),
+            )
+        except Exception as e:
+            logger.error("Failed to create PostgreSQL pool: %s", e)
+            raise
+
+    def get_connection(self):
+        """Get a connection from the pool (uncached, one-time borrow).
+
+        Each call obtains a *new* connection from the pool.  Callers
+        **must** return it via :meth:`return_connection` when done,
+        preferably using the :meth:`_borrow_connection` context manager
+        on ``DatabaseManager``.
+
+        For the common case where a thread reuses the same connection
+        (the ``conn`` property pattern), use :meth:`get_cached_connection`.
+        """
+        if not self._pool:
+            raise RuntimeError("Connection pool not initialized")
+        conn = self._pool.getconn()
+        conn.autocommit = True
+        import psycopg2.extras
+        conn.cursor_factory = psycopg2.extras.RealDictCursor
+        return conn
+
+    def get_cached_connection(self):
+        """Get the current thread's cached connection from the pool.
+
+        On first access, obtains a new connection and caches it in
+        thread-local storage.  Subsequent calls return the same
+        connection without touching the pool.
+        """
+        if not self._pool:
+            raise RuntimeError("Connection pool not initialized")
+        if (
+            not hasattr(self._local, "conn")
+            or self._local.conn is None
+        ):
+            conn = self._pool.getconn()
+            conn.autocommit = True
+            import psycopg2.extras
+            conn.cursor_factory = psycopg2.extras.RealDictCursor
+            self._local.conn = conn
+        return self._local.conn
+
+    def return_connection(self, conn) -> None:
+        """Return a borrowed connection to the pool.
+
+        Use this to return connections obtained via :meth:`get_connection`.
+        Connections obtained via :meth:`get_cached_connection` should
+        **not** be returned individually — they are returned when
+        :meth:`close_all` is called.
+        """
+        if self._pool and conn:
+            try:
+                self._pool.putconn(conn)
+            except Exception:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+
+    def close_all(self) -> None:
+        """Close all connections in the pool.
+
+        Safe to call multiple times.  Intended for app shutdown.
+        Returns all cached thread-local connections to the pool
+        before closing.
+        """
+        if self._pool:
+            # Return the current thread's cached connection first
+            if hasattr(self._local, "conn") and self._local.conn is not None:
+                try:
+                    self._pool.putconn(self._local.conn)
+                except Exception:
+                    try:
+                        self._local.conn.close()
+                    except Exception:
+                        pass
+                self._local.conn = None
+            try:
+                self._pool.closeall()
+                logger.info("PostgreSQL pool closed")
+            except Exception as e:
+                logger.warning("Error closing PostgreSQL pool: %s", e)
+
+    @property
+    def stats(self) -> dict:
+        """Return pool statistics."""
+        if not self._pool:
+            return {"min": 0, "max": 0, "used": 0, "status": "inactive"}
+        # ThreadedConnectionPool doesn't expose usage stats directly
+        return {
+            "min": self._min,
+            "max": self._max,
+            "status": "active",
+        }

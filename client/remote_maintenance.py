@@ -20,17 +20,17 @@ class RemoteMaintenanceService:
     def get_summary(self) -> dict:
         return self._api.get_maintenance_summary()
 
-    def get_cost_monthly(self, since: str = "") -> dict:
-        return self._api.get_maintenance_cost_monthly(since=since)
+    def get_cost_monthly(self, date_from: str = "") -> dict:
+        return self._api.get_maintenance_cost_monthly(date_from=date_from)
 
-    def get_cost_by_truck_monthly(self, since: str = "") -> dict:
-        return self._api.get_maintenance_cost_by_truck_monthly(since=since)
+    def get_cost_by_truck_monthly(self, date_from: str = "") -> dict:
+        return self._api.get_maintenance_cost_by_truck_monthly(date_from=date_from)
 
-    def get_truck_summary(self, since: str = "") -> dict:
-        return self._api.get_maintenance_truck_summary(since=since)
+    def get_truck_summary(self, date_from: str = "") -> dict:
+        return self._api.get_maintenance_truck_summary(date_from=date_from)
 
-    def get_top_categories(self, since: str = "") -> dict:
-        return self._api.get_maintenance_top_categories(since=since)
+    def get_top_categories(self, date_from: str = "") -> dict:
+        return self._api.get_maintenance_top_categories(date_from=date_from)
 
     def get_all(self) -> list:
         try:

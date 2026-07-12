@@ -1,0 +1,128 @@
+version: "3.8"
+
+services:
+  # PostgreSQL database
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: operion
+      POSTGRES_USER: operion
+      POSTGRES_PASSWORD: ${OPERION_DB_PASSWORD:-changeme}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U operion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # Redis cache + message broker
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${OPERION_REDIS_PASSWORD:-}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # FastAPI application
+  api:
+    build: .
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
+    ports:
+      - "8000:8000"
+    environment:
+      - OPERION_DB_ENGINE=postgresql
+      - OPERION_DB_HOST=postgres
+      - OPERION_DB_PORT=5432
+      - OPERION_DB_NAME=operion
+      - OPERION_DB_USER=operion
+      - OPERION_DB_PASSWORD=${OPERION_DB_PASSWORD:-changeme}
+      - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
+      - OPERION_JWT_SECRET_KEY=${OPERION_JWT_SECRET_KEY:-}
+      - OPERION_API_KEY=${OPERION_API_KEY:-}
+      - OPERION_ENCRYPTION_KEY=${OPERION_ENCRYPTION_KEY:-}
+      - OPERION_CORS_ORIGINS=${OPERION_CORS_ORIGINS:-https://app.operionerp.xyz}
+      - OPERION_RATE_LIMIT=${OPERION_RATE_LIMIT:-100}
+      - OPERION_ENVIRONMENT=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Celery worker
+  celery_worker:
+    build: .
+    command: celery -A backend.celery_app worker --loglevel=info --concurrency=4
+    environment:
+      - OPERION_DB_ENGINE=postgresql
+      - OPERION_DB_HOST=postgres
+      - OPERION_DB_PORT=5432
+      - OPERION_DB_NAME=operion
+      - OPERION_DB_USER=operion
+      - OPERION_DB_PASSWORD=${OPERION_DB_PASSWORD:-changeme}
+      - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
+      - OPERION_JWT_SECRET_KEY=${OPERION_JWT_SECRET_KEY:-}
+      - OPERION_ENCRYPTION_KEY=${OPERION_ENCRYPTION_KEY:-}
+      - OPERION_ENVIRONMENT=production
+      - CELERY_BROKER_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/2
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Celery beat (scheduler)
+  celery_beat:
+    build: .
+    command: celery -A backend.celery_app beat --loglevel=info
+    environment:
+      - OPERION_DB_ENGINE=postgresql
+      - OPERION_DB_HOST=postgres
+      - OPERION_DB_PORT=5432
+      - OPERION_DB_NAME=operion
+      - OPERION_DB_USER=operion
+      - OPERION_DB_PASSWORD=${OPERION_DB_PASSWORD:-changeme}
+      - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
+      - CELERY_BROKER_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/1
+      - CELERY_RESULT_BACKEND=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/2
+      - OPERION_ENVIRONMENT=production
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@operionerp.xyz}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
+    ports:
+      - "5050:80"
+    depends_on:
+      - postgres
+    restart: unless-stopped
+    profiles:
+      - management
+
+volumes:
+  postgres_data:
+  redis_data:

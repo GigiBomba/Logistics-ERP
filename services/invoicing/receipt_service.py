@@ -211,6 +211,15 @@ class ReceiptService:
         except Exception:
             return False
 
+    def get_next_number(self, format_key: Optional[str] = None) -> str:
+        """Generate the next receipt number using the configured format.
+
+        Delegates to the repository's sequence logic.
+        """
+        if self._receipt_repo:
+            return self._receipt_repo.get_next_number(format_key=format_key)
+        return ""
+
     # ── Internal helpers ─────────────────────────────────────────────
 
     @staticmethod

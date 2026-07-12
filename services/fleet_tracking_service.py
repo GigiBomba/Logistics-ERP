@@ -428,6 +428,8 @@ class FleetTrackingService:
         self._poll_interval = 30  # seconds
         self._polling = False
         self._poll_timer = None
+        self._poll_thread: Optional[threading.Thread] = None
+        self._stop_event = threading.Event()
         self._db = None
         self._fleet_repo = None
 
@@ -443,6 +445,53 @@ class FleetTrackingService:
             logger.info("Fleet tracking initialized: %s", platform)
         else:
             logger.debug("Fleet tracking not configured")
+
+    # ------------------------------------------------------------------
+    # Background polling
+    # ------------------------------------------------------------------
+
+    def start_polling(self, interval_seconds: int = 30) -> None:
+        """Start background GPS polling in a daemon thread.
+
+        Polls the configured tracking adapter every *interval_seconds*
+        and updates the internal position cache.  The polling loop
+        respects a ``threading.Event`` for clean shutdown via
+        :meth:`stop_polling`.
+
+        Args:
+            interval_seconds: Seconds between polls (default 30).
+        """
+        if self._polling:
+            logger.warning("Polling already running")
+            return
+        self._poll_interval = interval_seconds
+        self._polling = True
+        self._stop_event.clear()
+
+        def _poll_loop():
+            logger.info(
+                "Background polling started (interval=%ds)", self._poll_interval,
+            )
+            while not self._stop_event.is_set():
+                self.get_positions(force_refresh=True)
+                self._stop_event.wait(self._poll_interval)
+
+        self._poll_thread = threading.Thread(target=_poll_loop, daemon=True)
+        self._poll_thread.start()
+
+    def stop_polling(self, timeout: Optional[float] = None) -> None:
+        """Stop background GPS polling and wait for the thread to finish.
+
+        Args:
+            timeout: Optional seconds to wait for the poll thread to exit.
+                     ``None`` means wait indefinitely.
+        """
+        self._polling = False
+        self._stop_event.set()
+        if self._poll_thread and self._poll_thread.is_alive():
+            self._poll_thread.join(timeout=timeout)
+            self._poll_thread = None
+        logger.info("Background polling stopped")
 
     def _create_adapter(self, platform: str) -> Optional[BaseTrackingAdapter]:
         if not platform or platform.lower() == "not configured":

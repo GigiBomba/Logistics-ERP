@@ -5,6 +5,7 @@ import tempfile
 from typing import Any, Dict, List, Optional
 
 from backend.celery_app.celery import celery_app
+from backend.dependencies import set_company_context
 from config import Config
 from database.db_manager import DatabaseManager
 from services.document_service import DocumentService
@@ -14,9 +15,14 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
 def generate_document_pdf(
-    self, document_id: int, template_name: str
+    self, document_id: int, company_id: int, template_name: str
 ) -> Dict[str, Any]:
     """Generate a PDF for a document using its template."""
+    logger.info(
+        "generate_document_pdf: document_id=%d company_id=%d template=%s",
+        document_id, company_id, template_name,
+    )
+    set_company_context(company_id)
     db = DatabaseManager(Config.DB_PATH)
     try:
         service = DocumentService(db)
@@ -67,15 +73,22 @@ def generate_document_pdf(
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
 def build_email_package(
-    self, document_ids: List[int], recipient: str, prefs: Optional[Dict[str, Any]] = None
+    self, document_ids: List[int], recipient: str, company_id: int,
+    prefs: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Build and optionally email a ZIP package of documents."""
+    logger.info(
+        "build_email_package: document_count=%d recipient=%s company_id=%d",
+        len(document_ids), recipient, company_id,
+    )
+    set_company_context(company_id)
     if prefs is None:
         prefs = {}
     db = DatabaseManager(Config.DB_PATH)
     try:
         service = DocumentService(db)
-        zip_path = tempfile.mktemp(suffix=".zip")
+        fd, zip_path = tempfile.mkstemp(suffix=".zip")
+        os.close(fd)
         try:
             import zipfile
             with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:

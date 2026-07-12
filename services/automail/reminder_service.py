@@ -8,10 +8,14 @@ overrides, max reminders, payment received).
 from __future__ import annotations
 
 import logging
+import threading
 from datetime import date, datetime, timedelta
 from typing import Any, Optional
 
+from models.automail_models import SendReminderRequest, SendReminderResult, AutomailSendResult
+from models.common import ServiceResult, ErrorDetail
 from repositories.automail_repository import AutoMailRepository
+from services.permission_service import PermissionService
 
 logger = logging.getLogger(__name__)
 
@@ -182,6 +186,250 @@ class ReminderService:
             logger.error("Failed to cancel reminders for invoice #%d: %s", invoice_id, exc)
             return False
 
+    # ── Typed send methods ──────────────────────────────────────────────
+
+    def send_reminder(self, request: SendReminderRequest, user_id: int) -> AutomailSendResult:
+        """Send a reminder email using the specified template.
+
+        Args:
+            request: Typed send reminder request with template, recipient, and
+                     optional invoice/trip references.
+            user_id: ID of the user performing the action.
+
+        Returns:
+            AutomailSendResult (``ServiceResult[SendReminderResult]``).
+        """
+        logger.info(
+            "Sending reminder for client #%d, invoice #%s, template #%d by user #%d",
+            request.client_id, request.invoice_id, request.template_id, user_id,
+        )
+
+        perm = PermissionService(self._repo.db)
+        perm_result = perm.can_send_email(user_id)
+        if not perm_result.allowed:
+            logger.warning(
+                "Permission denied for user #%d to send reminder: %s",
+                user_id, perm_result.reason,
+            )
+            return AutomailSendResult(
+                success=False,
+                errors=[ErrorDetail(message=perm_result.reason, code="permission_denied")],
+            )
+
+        try:
+            template = self._repo.get_template_by_id(request.template_id)
+            if not template:
+                logger.warning("Template #%d not found for reminder", request.template_id)
+                return AutomailSendResult(
+                    success=False,
+                    errors=[
+                        ErrorDetail(
+                            message=f"Template #{request.template_id} not found",
+                            code="template_not_found",
+                        )
+                    ],
+                )
+
+            # Build minimal context from request data
+            context: dict[str, str] = {
+                "client_name": str(request.client_id),
+                "client_contact": "",
+                "invoice_number": str(request.invoice_id) if request.invoice_id else "",
+                "trip_id": str(request.trip_id) if request.trip_id else "",
+                "total_amount": "",
+                "currency": "",
+                "due_date": str(request.send_date) if request.send_date else "",
+                "days_overdue": "",
+                "company_name": "",
+                "truck_plate": "",
+                "driver_name": "",
+            }
+
+            # Render email via template_service helper
+            from services.automail.template_service import render_template
+
+            subject = render_template(template.get("subject", ""), context)
+            body_text = render_template(template.get("body_text", ""), context)
+            body_html = render_template(template.get("body_html", ""), context)
+
+            sent_at = datetime.utcnow()
+
+            # Log the email
+            self._repo.log_email(
+                trip_id=request.trip_id,
+                recipient=request.recipient_email,
+                subject=subject,
+                status="sent",
+            )
+
+            # Log the manual send record
+            if request.invoice_id:
+                self._repo.log_manual_send(
+                    invoice_id=request.invoice_id,
+                    trip_id=request.trip_id or 0,
+                    recipient=request.recipient_email,
+                )
+
+            result_data = SendReminderResult(
+                email_id=0,
+                sent_to=request.recipient_email,
+                template_name=template.get("name", ""),
+                sent_at=sent_at,
+                success=True,
+            )
+            logger.info(
+                "Reminder sent to %s for template #%d",
+                request.recipient_email, request.template_id,
+            )
+            return AutomailSendResult(success=True, data=result_data)
+
+        except Exception as exc:
+            logger.error("Failed to send reminder: %s", exc)
+            error_result = SendReminderResult(
+                email_id=0,
+                sent_to=request.recipient_email,
+                template_name="",
+                sent_at=datetime.utcnow(),
+                success=False,
+                error_message=str(exc),
+            )
+            return AutomailSendResult(
+                success=False,
+                data=error_result,
+                errors=[ErrorDetail(message=str(exc), code="send_failed")],
+            )
+
+    def send_overdue_reminders(self, user_id: int) -> ServiceResult[list[SendReminderResult]]:
+        """Send reminders for all overdue invoices.
+
+        Finds all unpaid invoices whose due date is in the past and sends
+        a reminder email using the default template.
+
+        Args:
+            user_id: ID of the user performing the action.
+
+        Returns:
+            ServiceResult containing a list of ``SendReminderResult``.
+        """
+        logger.info("Sending overdue reminders triggered by user #%d", user_id)
+
+        perm = PermissionService(self._repo.db)
+        perm_result = perm.can_send_email(user_id)
+        if not perm_result.allowed:
+            logger.warning(
+                "Permission denied for user #%d to send overdue reminders: %s",
+                user_id, perm_result.reason,
+            )
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=perm_result.reason, code="permission_denied")],
+            )
+
+        try:
+            unpaid = self._repo.get_unpaid_invoices_for_reminders()
+            today = date.today()
+            results: list[SendReminderResult] = []
+
+            default_template = self._repo.get_default_template()
+            if not default_template:
+                logger.warning("No default template configured for overdue reminders")
+                return ServiceResult(
+                    success=False,
+                    errors=[
+                        ErrorDetail(
+                            message="No default email template configured",
+                            code="no_default_template",
+                        )
+                    ],
+                )
+
+            for inv in unpaid:
+                due_date_str = inv.get("due_date", "")
+                if not due_date_str:
+                    continue
+                try:
+                    due = datetime.strptime(str(due_date_str)[:10], "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    continue
+
+                if due >= today:
+                    continue  # not overdue yet
+
+                # Build context from invoice data
+                days_overdue = (today - due).days
+                context: dict[str, str] = {
+                    "invoice_number": inv.get("invoice_number", ""),
+                    "total_amount": str(inv.get("total_amount", "")),
+                    "currency": inv.get("currency", "EUR"),
+                    "due_date": due_date_str,
+                    "days_overdue": str(days_overdue),
+                    "company_name": "",
+                    "client_name": inv.get("client_company_name", inv.get("client_name", "")),
+                    "client_contact": "",
+                    "trip_id": str(inv.get("trip_id", "")),
+                    "truck_plate": "",
+                    "driver_name": "",
+                }
+
+                recipient = inv.get("client_email", "")
+                if not recipient:
+                    logger.warning(
+                        "No email for invoice #%s, skipping",
+                        inv.get("invoice_number"),
+                    )
+                    continue
+
+                from services.automail.template_service import render_template
+
+                subject = render_template(default_template.get("subject", ""), context)
+
+                try:
+                    self._repo.log_email(
+                        trip_id=inv.get("trip_id"),
+                        recipient=recipient,
+                        subject=subject,
+                        status="sent",
+                    )
+                    self._repo.log_manual_send(
+                        invoice_id=inv["invoice_id"],
+                        trip_id=inv["trip_id"],
+                        recipient=recipient,
+                    )
+                    results.append(SendReminderResult(
+                        email_id=0,
+                        sent_to=recipient,
+                        template_name=default_template.get("name", ""),
+                        sent_at=datetime.utcnow(),
+                        success=True,
+                    ))
+                    logger.info(
+                        "Overdue reminder sent for invoice #%s to %s",
+                        inv.get("invoice_number"), recipient,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "Failed to send overdue reminder for invoice #%s: %s",
+                        inv.get("invoice_number"), exc,
+                    )
+                    results.append(SendReminderResult(
+                        email_id=0,
+                        sent_to=recipient,
+                        template_name=default_template.get("name", ""),
+                        sent_at=datetime.utcnow(),
+                        success=False,
+                        error_message=str(exc),
+                    ))
+
+            logger.info("Sent %d overdue reminders", len(results))
+            return ServiceResult(success=True, data=results)
+
+        except Exception as exc:
+            logger.error("Failed to process overdue reminders: %s", exc)
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="overdue_reminder_failed")],
+            )
+
     # ── Next reminder calculation ───────────────────────────────────────
 
     def calculate_next_reminder(
@@ -227,6 +475,73 @@ class ReminderService:
             return True
 
         return False
+
+    # ------------------------------------------------------------------
+    # Async execution
+    # ------------------------------------------------------------------
+
+    def send_reminder_async(
+        self,
+        request: SendReminderRequest,
+        user_id: int,
+        callback,
+    ) -> threading.Thread:
+        """Send a reminder email in a background thread.
+
+        Args:
+            request: Typed send reminder request.
+            user_id: ID of the user performing the action.
+            callback: Callable that receives the ``AutomailSendResult``
+                      when sending completes.
+
+        Returns:
+            The background ``threading.Thread`` (daemon) for optional join.
+        """
+        def _run():
+            try:
+                result = self.send_reminder(request, user_id)
+                callback(result)
+            except Exception as e:
+                logger.error("Async send reminder failed: %s", e, exc_info=True)
+                callback(AutomailSendResult(
+                    success=False,
+                    errors=[ErrorDetail(message=str(e), code="ASYNC_ERROR")],
+                ))
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return thread
+
+    def send_overdue_reminders_async(
+        self,
+        user_id: int,
+        callback,
+    ) -> threading.Thread:
+        """Send overdue reminders for all unpaid invoices in a background thread.
+
+        Args:
+            user_id: ID of the user performing the action.
+            callback: Callable that receives the
+                      ``ServiceResult[list[SendReminderResult]]`` when processing
+                      completes.
+
+        Returns:
+            The background ``threading.Thread`` (daemon) for optional join.
+        """
+        def _run():
+            try:
+                result = self.send_overdue_reminders(user_id)
+                callback(result)
+            except Exception as e:
+                logger.error("Async overdue reminders failed: %s", e, exc_info=True)
+                callback(ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(message=str(e), code="ASYNC_ERROR")],
+                ))
+
+        thread = threading.Thread(target=_run, daemon=True)
+        thread.start()
+        return thread
 
     # ── Helpers ─────────────────────────────────────────────────────────
 

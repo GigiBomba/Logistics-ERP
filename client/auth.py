@@ -149,9 +149,13 @@ class Auth:
         url = f"{config.api_url}/api/v1/auth/token"
 
         try:
+            headers = {}
+            if config.api_key:
+                headers["X-API-Key"] = config.api_key
             resp = httpx.post(
                 url,
                 data={"username": email, "password": password},
+                headers=headers,
                 timeout=30.0,
                 verify=config.verify_ssl,
             )
@@ -201,9 +205,13 @@ class Auth:
         url = f"{config.api_url}/api/v1/auth/refresh"
 
         try:
+            headers = {}
+            if config.api_key:
+                headers["X-API-Key"] = config.api_key
             resp = httpx.post(
                 url,
                 json={"refresh_token": self._refresh_token},
+                headers=headers,
                 timeout=30.0,
                 verify=config.verify_ssl,
             )

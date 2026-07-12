@@ -1,3 +1,13 @@
+# ── Schema version tracking ────────────────────────────────────────────
+TABLE_SCHEMA_MIGRATIONS = """
+CREATE TABLE IF NOT EXISTS schema_migrations (
+    version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    applied_at TEXT DEFAULT (datetime('now'))
+);
+"""
+SCHEMA_MIGRATIONS_SEED = "INSERT OR IGNORE INTO schema_migrations (version, name) VALUES (1, 'initial_schema');"
+
 # trips table — financial/business entity (Trip History).
 # Linked to route_history_v2 via route_history_v2_id FK when the trip
 # originates from a route calculation.
@@ -292,7 +302,7 @@ CREATE TABLE IF NOT EXISTS alerts (
     title TEXT,
     message TEXT,
     truck_id TEXT,
-    trip_id INTEGER,
+    trip_id INTEGER REFERENCES trips(id) ON DELETE CASCADE,
     created_at TEXT NOT NULL,
     resolved INTEGER DEFAULT 0,
     resolved_at TEXT,
@@ -304,7 +314,11 @@ TABLE_OPERATION_EVENTS = """
 CREATE TABLE IF NOT EXISTS operation_events (
     id TEXT PRIMARY KEY,
     event_type TEXT NOT NULL,
+    entity_type TEXT,
+    entity_id TEXT,
     data_json TEXT,
+    user_id INTEGER DEFAULT 0,
+    company_id INTEGER REFERENCES companies(id),
     created_at TEXT NOT NULL
 );
 """
@@ -317,7 +331,7 @@ CREATE TABLE IF NOT EXISTS trip_status_history (
     new_status TEXT NOT NULL,
     trigger TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY (trip_id) REFERENCES trips(id)
+    FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
 );
 """
 
@@ -334,7 +348,7 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     service_provider TEXT,
     attachment_path TEXT,
     created_at TEXT NOT NULL,
-    FOREIGN KEY (truck_id) REFERENCES trucks(id)
+    FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
 """
 
@@ -350,7 +364,7 @@ CREATE TABLE IF NOT EXISTS maintenance_schedules (
     last_done_date TEXT,
     active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL,
-    FOREIGN KEY (truck_id) REFERENCES trucks(id)
+    FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
 """
 
@@ -363,7 +377,7 @@ CREATE TABLE IF NOT EXISTS truck_health_scores (
     recurring_issues INTEGER DEFAULT 0,
     downtime_days INTEGER DEFAULT 0,
     last_updated TEXT NOT NULL,
-    FOREIGN KEY (truck_id) REFERENCES trucks(id)
+    FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
 """
 
@@ -408,8 +422,8 @@ CREATE TABLE IF NOT EXISTS driver_truck_assignments (
     driver_id INTEGER NOT NULL UNIQUE,
     truck_id INTEGER NOT NULL,
     assigned_at TEXT NOT NULL,
-    FOREIGN KEY (driver_id) REFERENCES drivers(id),
-    FOREIGN KEY (truck_id) REFERENCES trucks(id)
+    FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
+    FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
 """
 
@@ -1072,6 +1086,7 @@ CREATE TABLE IF NOT EXISTS gps_telemetry (
     speed_kmh REAL DEFAULT 0,
     heading INTEGER DEFAULT 0,
     driver_id INTEGER,
+    company_id INTEGER NOT NULL DEFAULT 0 REFERENCES companies(id),
     recorded_at TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
 );
@@ -1083,3 +1098,149 @@ INDEX_GPS_TRUCK = (
 INDEX_GPS_RECORDED = (
     "CREATE INDEX IF NOT EXISTS idx_gps_recorded ON gps_telemetry(recorded_at)"
 )
+
+# ── Schema migration version bump ───────────────────────────────────────
+
+INSERT_SCHEMA_MIGRATION_V2 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (2, 'add_company_id_indexes');"
+)
+
+INSERT_SCHEMA_MIGRATION_V3 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (3, 'add_gps_telemetry_company_id');"
+)
+
+# ── Multi-tenant company_id indexes ────────────────────────────────────
+# These ensure fast tenant-scoped queries on every business table.
+
+INDEX_TRIPS_COMPANY       = "CREATE INDEX IF NOT EXISTS idx_trips_company ON trips(company_id);"
+INDEX_INVOICES_COMPANY    = "CREATE INDEX IF NOT EXISTS idx_invoices_company ON invoices(company_id);"
+INDEX_TRUCKS_COMPANY      = "CREATE INDEX IF NOT EXISTS idx_trucks_company ON trucks(company_id);"
+INDEX_DRIVERS_COMPANY     = "CREATE INDEX IF NOT EXISTS idx_drivers_company ON drivers(company_id);"
+INDEX_ROUTES_COMPANY      = "CREATE INDEX IF NOT EXISTS idx_routes_company ON routes(company_id);"
+INDEX_ROUTE_HISTORY_COMPANY = "CREATE INDEX IF NOT EXISTS idx_route_history_company ON route_history(company_id);"
+INDEX_ROUTE_HISTORY_V2_COMPANY = "CREATE INDEX IF NOT EXISTS idx_route_history_v2_company ON route_history_v2(company_id);"
+INDEX_ALERTS_COMPANY      = "CREATE INDEX IF NOT EXISTS idx_alerts_company ON alerts(company_id);"
+INDEX_OPERATION_EVENTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_operation_events_company ON operation_events(company_id);"
+INDEX_TRIP_STATUS_HISTORY_COMPANY = "CREATE INDEX IF NOT EXISTS idx_trip_status_history_company ON trip_status_history(company_id);"
+INDEX_MAINTENANCE_RECORDS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_maintenance_records_company ON maintenance_records(company_id);"
+INDEX_MAINTENANCE_SCHEDULES_COMPANY = "CREATE INDEX IF NOT EXISTS idx_maintenance_schedules_company ON maintenance_schedules(company_id);"
+INDEX_TRUCK_HEALTH_SCORES_COMPANY = "CREATE INDEX IF NOT EXISTS idx_truck_health_scores_company ON truck_health_scores(company_id);"
+INDEX_RECEIPTS_COMPANY    = "CREATE INDEX IF NOT EXISTS idx_receipts_company ON receipts(company_id);"
+INDEX_GPS_TELEMETRY_COMPANY = "CREATE INDEX IF NOT EXISTS idx_gps_telemetry_company ON gps_telemetry(company_id);"
+INDEX_PIPELINE_RUNS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_pipeline_runs_company ON document_pipeline_runs(company_id);"
+INDEX_DOCUMENT_PACKAGE_COMPANY = "CREATE INDEX IF NOT EXISTS idx_document_package_company ON document_package(company_id);"
+INDEX_PROFORMA_COMPANY    = "CREATE INDEX IF NOT EXISTS idx_proforma_company ON proforma_invoices(company_id);"
+INDEX_CONTRACTS_COMPANY   = "CREATE INDEX IF NOT EXISTS idx_contracts_company ON contracts(company_id);"
+INDEX_TACHO_IMPORTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_tacho_imports_company ON tacho_imports(company_id);"
+
+# ── Additional performance indexes for commonly filtered columns ───────
+
+INDEX_INVOICES_STATUS   = "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);"
+INDEX_GPS_TRUCK_TIME    = "CREATE INDEX IF NOT EXISTS idx_gps_truck_time ON gps_telemetry(truck_id, recorded_at);"
+INDEX_CMR_AUDIT_EVENT_TYPE = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_event_type ON cmr_audit_log(event_type);"
+INDEX_CMR_AUDIT_CREATED = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_created ON cmr_audit_log(created_at);"
+INDEX_EMAIL_LOGS_TRIP   = "CREATE INDEX IF NOT EXISTS idx_email_logs_trip ON email_logs(trip_id);"
+INDEX_EMAIL_LOGS_STATUS = "CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);"
+
+# ── API Keys (per-partner authentication) ──────────────────────────────
+# ── Webhook Events (external partner integrations) ──────────────────
+TABLE_WEBHOOK_EVENTS = """
+CREATE TABLE IF NOT EXISTS webhook_events (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    partner TEXT NOT NULL,
+    event_type TEXT NOT NULL,
+    payload TEXT,
+    signature_valid INTEGER DEFAULT 1,
+    processing_status TEXT DEFAULT 'received',
+    received_at TEXT,
+    processed_at TEXT,
+    company_id INTEGER
+);
+"""
+
+INDEX_WEBHOOK_EVENTS_PARTNER = (
+    "CREATE INDEX IF NOT EXISTS idx_webhook_events_partner "
+    "ON webhook_events(partner)"
+)
+INDEX_WEBHOOK_EVENTS_RECEIVED = (
+    "CREATE INDEX IF NOT EXISTS idx_webhook_events_received "
+    "ON webhook_events(received_at)"
+)
+INDEX_WEBHOOK_EVENTS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_webhook_events_company "
+    "ON webhook_events(company_id)"
+)
+
+TABLE_API_KEYS = """
+CREATE TABLE IF NOT EXISTS api_keys (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    key_hash TEXT NOT NULL UNIQUE,
+    key_prefix TEXT NOT NULL,
+    name TEXT NOT NULL,
+    partner TEXT NOT NULL,
+    scopes TEXT DEFAULT '[]',
+    is_active INTEGER DEFAULT 1,
+    created_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    last_used_at TEXT,
+    expires_at TEXT,
+    revoked_at TEXT,
+    company_id INTEGER
+);
+"""
+
+INDEX_API_KEYS_PARTNER = "CREATE INDEX IF NOT EXISTS idx_api_keys_partner ON api_keys(partner);"
+INDEX_API_KEYS_ACTIVE = "CREATE INDEX IF NOT EXISTS idx_api_keys_active ON api_keys(is_active);"
+
+# ── OAuth2 Clients (client credentials grant) ─────────────────────────
+TABLE_OAUTH2_CLIENTS = """
+CREATE TABLE IF NOT EXISTS oauth2_clients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_id TEXT NOT NULL UNIQUE,
+    client_name TEXT NOT NULL,
+    partner TEXT NOT NULL,
+    scopes TEXT DEFAULT '[]',
+    secret_hash TEXT NOT NULL,
+    is_active INTEGER DEFAULT 1,
+    created_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    last_used_at TEXT,
+    company_id INTEGER
+);
+"""
+
+INDEX_OAUTH2_CLIENTS_ID = "CREATE INDEX IF NOT EXISTS idx_oauth2_clients_id ON oauth2_clients(client_id);"
+INDEX_OAUTH2_CLIENTS_PARTNER = "CREATE INDEX IF NOT EXISTS idx_oauth2_clients_partner ON oauth2_clients(partner);"
+
+# Waitlist — pre-launch marketing capture (own module, NOT multi-tenant scoped)
+TABLE_WAITLIST_ENTRIES = """
+CREATE TABLE IF NOT EXISTS waitlist_entries (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_name TEXT NOT NULL,
+    contact_name TEXT,
+    email TEXT NOT NULL,
+    fleet_size TEXT,
+    company_size TEXT,
+    country TEXT,
+    source TEXT NOT NULL DEFAULT 'landing_page',
+    referral_code TEXT UNIQUE NOT NULL,
+    referred_by TEXT,
+    status TEXT NOT NULL DEFAULT 'joined',
+    joined_at TEXT NOT NULL DEFAULT (datetime('now')),
+    invited_at TEXT,
+    activated_at TEXT,
+    converted_at TEXT,
+    notes TEXT,
+    ip_hash TEXT,
+    user_agent TEXT,
+    unsubscribed_at TEXT
+);
+"""
+
+INDEX_WAITLIST_EMAIL = "CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_email ON waitlist_entries(lower(email));"
+INDEX_WAITLIST_STATUS = "CREATE INDEX IF NOT EXISTS idx_waitlist_status ON waitlist_entries(status);"
+INDEX_WAITLIST_JOINED = "CREATE INDEX IF NOT EXISTS idx_waitlist_joined ON waitlist_entries(joined_at);"
+INDEX_WAITLIST_SOURCE = "CREATE INDEX IF NOT EXISTS idx_waitlist_source ON waitlist_entries(source);"
+INDEX_WAITLIST_REFERRAL = "CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_referral ON waitlist_entries(referral_code);"

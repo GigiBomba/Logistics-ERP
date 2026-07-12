@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from repositories.automail_repository import AutoMailRepository
+from client.auth_manager import is_admin
 from services.i18n import t
 from ui.base_view import BaseView
 from services.invoicing.config_manager import load_company_config, save_company_config
@@ -194,7 +195,8 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         self._build_section_email()
         self._build_section_tracking()
         self._build_section_maintenance()
-        self._build_section_automation()
+        if is_admin():
+            self._build_section_automation()
 
         # Bottom save bar
         self._build_save_bar(layout)

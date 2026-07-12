@@ -1,7 +1,8 @@
-"""Tests for ``BoardStateMixin`` pure logic (no QApplication required).
+"""Tests for ``BoardStateMixin`` — pure logic + Qt integration.
 
-All Qt widget dependencies are mocked via ``unittest.mock.MagicMock`` so that
-these tests can run without a display server or a running QApplication.
+Pure‑logic tests (no QApplication needed) verify data mapping, caching,
+and stop-extraction logic.  The Qt integration section tests mixin
+methods that interact with the GUI (error display, load-older, dispatch).
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PySide6.QtCore import QTimer
+from PySide6.QtWidgets import QStackedWidget, QWidget
 
 from ui.views.dispatch_board.board_state import (
     BoardStateMixin,
@@ -19,7 +22,9 @@ from ui.views.dispatch_board.board_state import (
 )
 
 
-# ── Constants ────────────────────────────────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# Constants
+# ═════════════════════════════════════════════════════════════════════════════
 
 
 class TestStatusToColumn:
@@ -61,7 +66,9 @@ class TestColumnDefs:
             assert status in statuses_in_defs
 
 
-# ── Instance-method logic (mocked Qt) ───────────────────────────────────────
+# ═════════════════════════════════════════════════════════════════════════════
+# Instance-method logic (mocked Qt — no QApplication required)
+# ═════════════════════════════════════════════════════════════════════════════
 
 
 def _make_state_mock() -> MagicMock:
@@ -275,3 +282,132 @@ class TestExtractStops:
         origin, dest = BoardStateMixin._extract_stops(state, route)
         assert origin == ""
         assert dest == ""
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Qt integration — tests that need a QApplication / event loop
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+class _QtBoardStateTestWidget(BoardStateMixin, QWidget):
+    # Mixin must come before QWidget in MRO so that mixin methods
+    # take priority over QWidget's defaults.
+    """Minimal QWidget that combines with ``BoardStateMixin`` for Qt tests.
+
+    Sets only the attributes the mixin methods under test actually read,
+    avoiding the full ``QtDispatchBoardView`` initialisation.
+    """
+
+    def __init__(self, parent: QWidget | None = None) -> None:
+        super().__init__(parent)
+        # Mixin-required state
+        self._loading: bool = False
+        self._columns: dict[str, Any] = {
+            "Planned": MagicMock(),
+            "Loading": MagicMock(),
+            "In Transit": MagicMock(),
+            "Delivered": MagicMock(),
+            "Cancelled": MagicMock(),
+        }
+        for key, col in self._columns.items():
+            col.status_key = key
+            col._cards = []
+
+        self._board_stack = QStackedWidget(self)
+        self._search_bar = MagicMock()
+        self._alert_counts: dict[int, int] = {}
+        self._all_card_data: list[dict[str, Any]] = []
+        self._search_query: str = ""
+        self._search_statuses: list[str] = []
+        self._delivered_days: int = 30
+        self._destroyed: bool = False
+        self._status_cards: dict[str, Any] = {}
+
+        # Service references (kept as None / mocked)
+        self.ops = None
+        self._trip_service = None
+        self._fleet_repo = None
+        self._driver_cache = {}
+        self._route_cache = {}
+        self._driver_repo = MagicMock()
+        self._route_repo = MagicMock()
+
+        # Cross-thread dispatch via direct call in test context.
+        # In production this goes through a Signal so it runs on the GUI
+        # thread.  For tests we call synchronously.
+        self._dispatch = lambda fn: fn()
+
+    # Stub methods used by QTimer.singleShot in _populate_columns that
+    # are defined on the full QtDispatchBoardView (BoardActionsMixin +
+    # other mixins) but not on this test widget alone.
+    def _evaluate_all_delays(self) -> None:
+        pass
+
+    def _refresh_live_indicators(self) -> None:
+        pass
+
+    def _run_conflict_scan(self) -> None:
+        pass
+
+    def _refresh_side_panels(self) -> None:
+        pass
+
+
+@pytest.fixture
+def qt_board_state(qtbot):
+    """Create a ``_QtBoardStateTestWidget`` registered with ``qtbot``."""
+    widget = _QtBoardStateTestWidget()
+    qtbot.addWidget(widget)
+    # Let any QTimer.singleShot callbacks settle
+    qtbot.wait(50)
+    yield widget
+
+
+class TestBoardStateMixinWithQt:
+    """Qt integration tests for ``BoardStateMixin`` methods that touch the GUI."""
+
+    def test_initialization(self, qt_board_state):
+        """Test widget initialises without crashing."""
+        assert qt_board_state is not None
+        assert qt_board_state._loading is False
+        assert len(qt_board_state._columns) == 5
+
+    def test_show_error_all(self, qt_board_state):
+        """``_show_error_all`` calls ``show_error`` on every column."""
+        qt_board_state._show_error_all("Test error")
+        for col in qt_board_state._columns.values():
+            col.show_error.assert_called_once_with("Test error")
+        assert qt_board_state._loading is False
+
+    def test_on_load_older_increases_days(self, qt_board_state):
+        """``_on_load_older_delivered`` increments delivered_days by 30."""
+        old = qt_board_state._delivered_days
+        qt_board_state._on_load_older_delivered()
+        assert qt_board_state._delivered_days == old + 30
+        # Loading flag is immediately cleared because the synchronous
+        # ``_dispatch`` mock runs ``_populate_columns`` inline.
+
+    def test_tab_switch_alerts(self, qt_board_state):
+        """Switching to the alerts tab calls alerts_panel.refresh."""
+        qt_board_state._alerts_panel = MagicMock()
+        qt_board_state._on_tab_switch("alerts")
+        qt_board_state._alerts_panel.refresh.assert_called_once()
+
+    def test_tab_switch_timeline(self, qt_board_state):
+        """Switching to the timeline tab calls timeline.refresh."""
+        qt_board_state._timeline = MagicMock()
+        qt_board_state._on_tab_switch("timeline")
+        qt_board_state._timeline.refresh.assert_called_once()
+
+    def test_apply_filters_noop_with_empty_columns(self, qt_board_state):
+        """``_apply_filters`` handles empty columns without crashing."""
+        qt_board_state._apply_filters()
+        # Should not raise
+
+    def test_search_filter_updates_state(self, qt_board_state):
+        """``_on_search_filter`` stores query and statuses."""
+        with patch.object(qt_board_state, "_apply_filters") as mock_apply:
+            qt_board_state._on_search_filter("test", ["Planned", "Loading"])
+            assert qt_board_state._search_query == "test"
+            assert qt_board_state._search_statuses == ["Planned", "Loading"]
+            mock_apply.assert_called_once()

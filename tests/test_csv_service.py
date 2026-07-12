@@ -89,10 +89,10 @@ class TestExport:
 # ── import_csv ──────────────────────────────────────────────────────
 
 
-class TestImportCsv:
-    """CsvService.import_csv() behaviour."""
+class TestImportCsvWithCallback:
+    """CsvService.import_csv_with_callback() behaviour."""
 
-    def test_import_csv_reads_all_rows(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_reads_all_rows(self, tmp_path: pytest.TempPathFactory) -> None:
         path = os.path.join(str(tmp_path), "import.csv")
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
             writer = csv.writer(f)
@@ -101,26 +101,26 @@ class TestImportCsv:
             writer.writerow(["Bob", "25"])
 
         callback = MagicMock()
-        count = CsvService.import_csv(path, callback)
+        count = CsvService.import_csv_with_callback(path, callback)
 
         assert count == 2
         assert callback.call_count == 2
         callback.assert_any_call({"name": "Alice", "age": "30"})
         callback.assert_any_call({"name": "Bob", "age": "25"})
 
-    def test_import_csv_empty_file_returns_zero(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_empty_file_returns_zero(self, tmp_path: pytest.TempPathFactory) -> None:
         path = os.path.join(str(tmp_path), "empty.csv")
         # Create an empty file
         with open(path, "w", encoding="utf-8-sig") as f:
             f.write("")
 
         callback = MagicMock()
-        count = CsvService.import_csv(path, callback)
+        count = CsvService.import_csv_with_callback(path, callback)
 
         assert count == 0
         callback.assert_not_called()
 
-    def test_import_csv_with_header_only(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_with_header_only(self, tmp_path: pytest.TempPathFactory) -> None:
         """A CSV with only a header line yields 0 rows."""
         path = os.path.join(str(tmp_path), "header_only.csv")
         with open(path, "w", newline="", encoding="utf-8-sig") as f:
@@ -128,12 +128,12 @@ class TestImportCsv:
             writer.writerow(["name", "age"])
 
         callback = MagicMock()
-        count = CsvService.import_csv(path, callback)
+        count = CsvService.import_csv_with_callback(path, callback)
 
         assert count == 0
         callback.assert_not_called()
 
-    def test_import_csv_custom_encoding(self, tmp_path: pytest.TempPathFactory) -> None:
+    def test_custom_encoding(self, tmp_path: pytest.TempPathFactory) -> None:
         path = os.path.join(str(tmp_path), "utf16.csv")
         with open(path, "w", newline="", encoding="utf-16") as f:
             writer = csv.writer(f)
@@ -141,10 +141,56 @@ class TestImportCsv:
             writer.writerow(["value"])
 
         callback = MagicMock()
-        count = CsvService.import_csv(path, callback, encoding="utf-16")
+        count = CsvService.import_csv_with_callback(path, callback, encoding="utf-16")
 
         assert count == 1
         callback.assert_called_with({"key": "value"})
+
+
+class TestImportCsv:
+    """CsvService.import_csv() typed interface behaviour."""
+
+    def test_returns_row_count(self, tmp_path: pytest.TempPathFactory) -> None:
+        path = os.path.join(str(tmp_path), "typed_import.csv")
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["name", "age"])
+            writer.writerow(["Alice", "30"])
+            writer.writerow(["Bob", "25"])
+
+        result = CsvService.import_csv(path)
+        assert result.success is True
+        assert result.data == 2
+
+    def test_empty_file(self, tmp_path: pytest.TempPathFactory) -> None:
+        path = os.path.join(str(tmp_path), "empty_typed.csv")
+        with open(path, "w", encoding="utf-8-sig") as f:
+            f.write("")
+
+        result = CsvService.import_csv(path)
+        assert result.success is True
+        assert result.data == 0
+
+    def test_header_only(self, tmp_path: pytest.TempPathFactory) -> None:
+        path = os.path.join(str(tmp_path), "header_only_typed.csv")
+        with open(path, "w", newline="", encoding="utf-8-sig") as f:
+            writer = csv.writer(f)
+            writer.writerow(["name", "age"])
+
+        result = CsvService.import_csv(path)
+        assert result.success is True
+        assert result.data == 0
+
+    def test_custom_encoding(self, tmp_path: pytest.TempPathFactory) -> None:
+        path = os.path.join(str(tmp_path), "utf16_typed.csv")
+        with open(path, "w", newline="", encoding="utf-16") as f:
+            writer = csv.writer(f)
+            writer.writerow(["key"])
+            writer.writerow(["value"])
+
+        result = CsvService.import_csv(path, encoding="utf-16")
+        assert result.success is True
+        assert result.data == 1
 
 
 # ── validate_path ───────────────────────────────────────────────────

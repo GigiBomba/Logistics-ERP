@@ -43,7 +43,7 @@ class CountryExclusionsDialog(QDialog):
         self._build()
 
     def _build(self) -> None:
-        self.setWindowTitle(t("route.exclusions_label", default="Țări excluse"))
+        self.setWindowTitle(t("route.exclusions_label"))
         self.setMinimumSize(280, 320)
         self.resize(360, 440)
         self.setStyleSheet(f"""
@@ -58,7 +58,7 @@ class CountryExclusionsDialog(QDialog):
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
-        header = QLabel(t("route.exclusions_label", default="Selectați țări de exclus"))
+        header = QLabel(t("route.exclusions_label"))
         header.setStyleSheet(
             f"color: {COLOR_TEXT_PRIMARY}; font-size: 14px; font-weight: 600;"
         )
