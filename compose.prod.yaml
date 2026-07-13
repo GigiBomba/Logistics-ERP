@@ -48,7 +48,7 @@ services:
       - OPERION_JWT_SECRET_KEY=${OPERION_JWT_SECRET_KEY:-}
       - OPERION_API_KEY=${OPERION_API_KEY:-}
       - OPERION_ENCRYPTION_KEY=${OPERION_ENCRYPTION_KEY:-}
-      - OPERION_CORS_ORIGINS=${OPERION_CORS_ORIGINS:-https://app.operionerp.xyz}
+      - OPERION_CORS_ORIGINS=${OPERION_CORS_ORIGINS:-https://operionerp.xyz,https://app.operionerp.xyz}
       - OPERION_RATE_LIMIT=${OPERION_RATE_LIMIT:-100}
       - OPERION_ENVIRONMENT=production
     depends_on:
