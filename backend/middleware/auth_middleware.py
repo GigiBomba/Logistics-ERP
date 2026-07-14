@@ -63,6 +63,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     SKIP_PREFIXES = (
         "/docs", "/redoc", "/openapi.json", "/api/v1/health",
         "/api/v1/auth", "/api/v1/registration", "/api/v1/route-demo",
+        "/api/v1/waitlist",
     )
 
     @staticmethod
@@ -81,6 +82,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return self._db
 
     async def dispatch(self, request: Request, call_next):
+        # ── CORS preflight — pass through immediately ───────────────────
+        if request.method == "OPTIONS":
+            return await call_next(request)
+
         # ── Skip public paths ──────────────────────────────────────────
         if self._is_public_path(request.url.path):
             return await call_next(request)
