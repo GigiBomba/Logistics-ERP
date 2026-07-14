@@ -1,0 +1,25 @@
+# Local Docker deployment — runs the FastAPI backend with SQLite.
+# Cloudflare Tunnel (already running as a Windows service) forwards
+# api.operionerp.xyz → localhost:8000 → this container.
+#
+# Usage:
+#   docker compose -f compose.local.yaml up -d --build
+#   docker compose -f compose.local.yaml logs -f
+#   docker compose -f compose.local.yaml down
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: ./Dockerfile.api
+    command: uvicorn backend.main:app --host 0.0.0.0 --port 8000 --workers 4
+    ports:
+      - "127.0.0.1:8000:8000"
+    volumes:
+      # Persist SQLite database on the host so data survives container restarts
+      - ./data:/app/data
+    env_file:
+      - .env
+    environment:
+      - OPERION_ENV=development
+    restart: unless-stopped
