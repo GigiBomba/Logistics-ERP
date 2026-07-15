@@ -51,19 +51,29 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
         else "https://operionerp.xyz,https://app.operionerp.xyz,https://api.operionerp.xyz",
     ).split(",")
 
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=allowed_origins,
+    # In development, allow any localhost origin (Flutter web uses random ports).
+    cors_kwargs = dict(
         allow_credentials=True,
         allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-API-Key"],
     )
+    if not is_production:
+        cors_kwargs["allow_origin_regex"] = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+        cors_kwargs["allow_origins"] = []
+    else:
+        cors_kwargs["allow_origins"] = allowed_origins
+
+    app.add_middleware(CORSMiddleware, **cors_kwargs)
 
     app.add_middleware(CorrelationMiddleware)
     app.add_middleware(LoggingMiddleware)
     app.add_middleware(AuthMiddleware)
     # Security headers on ALL responses (after auth, before business logic)
-    app.add_middleware(SecurityHeadersMiddleware)
+    app.add_middleware(
+        SecurityHeadersMiddleware,
+        is_production=is_production,
+        cors_origins=allowed_origins,
+    )
     # Idempotency middleware before rate limiter so replayed keys aren't counted
     app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(RateLimitMiddleware)
