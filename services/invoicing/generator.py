@@ -48,18 +48,17 @@ class InvoiceGenerator:
         logger.info("Generating invoice PDF: invoice_id=%s, client=%s, total=%s, mode=%s",
                     invoice_id, client_name, total_price, mode)
 
-        try:
-            doc = SimpleDocTemplate(full_path, pagesize=A4,
-                                    leftMargin=1.5*cm, rightMargin=1.5*cm,
-                                    topMargin=1.5*cm, bottomMargin=1.5*cm)
-            story = []
+        doc = SimpleDocTemplate(full_path, pagesize=A4,
+                                leftMargin=1.5*cm, rightMargin=1.5*cm,
+                                topMargin=1.5*cm, bottomMargin=1.5*cm)
+        story = []
 
-            title_text = self._tr("invoice_pdf.title_client", mode) if mode == "client" else self._tr("invoice_pdf.title_internal", mode)
-            title_style = ParagraphStyle("InvTitle", parent=self.styles["Title"], fontSize=18, textColor=colors.HexColor("#1a73e8"), alignment=0)
+        title_text = self._tr("invoice_pdf.title_client", mode) if mode == "client" else self._tr("invoice_pdf.title_internal", mode)
+        title_style = ParagraphStyle("InvTitle", parent=self.styles["Title"], fontSize=18, textColor=colors.HexColor("#1a73e8"), alignment=0)
 
-            story.append(Paragraph(f"<b>{title_text}</b>", title_style))
-            story.append(Paragraph(self._tr("invoice_pdf.serial", mode).format(invoice_id, datetime.now().strftime('%d/%m/%Y')), self.styles["Normal"]))
-            story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a73e8"), spaceAfter=15))
+        story.append(Paragraph(f"<b>{title_text}</b>", title_style))
+        story.append(Paragraph(self._tr("invoice_pdf.serial", mode).format(invoice_id, datetime.now().strftime('%d/%m/%Y')), self.styles["Normal"]))
+        story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a73e8"), spaceAfter=15))
 
         company_info = (f"<b>{self._tr('invoice_pdf.sender_header', mode)}</b><br/>"
                         f"{remove_accents(conf.get('company_name', ''))}<br/>"
@@ -75,103 +74,99 @@ class InvoiceGenerator:
         if bank:
             company_info += f"<br/>Banca: {remove_accents(bank)}"
 
-            client_info = (f"<b>{self._tr('invoice_pdf.bill_to_header', mode)}</b><br/>"
-                           f"{remove_accents(trip_data.get('client_name', ''))}")
-            client_vat = trip_data.get("client_vat")
-            client_address = trip_data.get("client_address")
-            client_phone = trip_data.get("client_phone")
-            client_email = trip_data.get("client_email")
-            if client_vat:
-                client_info += f"<br/>VAT: {client_vat}"
-            if client_address:
-                client_info += f"<br/>{remove_accents(client_address)}"
-            if client_phone:
-                client_info += f"<br/>Tel: {client_phone}"
-            if client_email:
-                client_info += f"<br/>Email: {client_email}"
+        client_info = (f"<b>{self._tr('invoice_pdf.bill_to_header', mode)}</b><br/>"
+                       f"{remove_accents(trip_data.get('client_name', ''))}")
+        client_vat = trip_data.get("client_vat")
+        client_address = trip_data.get("client_address")
+        client_phone = trip_data.get("client_phone")
+        client_email = trip_data.get("client_email")
+        if client_vat:
+            client_info += f"<br/>VAT: {client_vat}"
+        if client_address:
+            client_info += f"<br/>{remove_accents(client_address)}"
+        if client_phone:
+            client_info += f"<br/>Tel: {client_phone}"
+        if client_email:
+            client_info += f"<br/>Email: {client_email}"
 
-            info_table = Table([[Paragraph(company_info, self.styles["Normal"]),
-                                 Paragraph(client_info, self.styles["Normal"])]], colWidths=[9.5*cm, 8.5*cm])
-            story.append(info_table)
-            story.append(Spacer(1, 1*cm))
+        info_table = Table([[Paragraph(company_info, self.styles["Normal"]),
+                             Paragraph(client_info, self.styles["Normal"])]], colWidths=[9.5*cm, 8.5*cm])
+        story.append(info_table)
+        story.append(Spacer(1, 1*cm))
 
-            story.append(Paragraph(f"<b>{self._tr('invoice_pdf.trip_info', mode)}</b>", self.styles["Normal"]))
-            tech_data = [
-                [self._tr("invoice_pdf.truck", mode), self._tr("invoice_pdf.driver", mode), self._tr("invoice_pdf.distance", mode), self._tr("invoice_pdf.start_date", mode), self._tr("invoice_pdf.end_date", mode)],
-                [trip_data.get("truck_number", ""), remove_accents(trip_data.get("driver_name", "")),
-                 f"{trip_data.get('distance_km', 0)} km", trip_data.get("start_date", ""), trip_data.get("end_date", "")]
+        story.append(Paragraph(f"<b>{self._tr('invoice_pdf.trip_info', mode)}</b>", self.styles["Normal"]))
+        tech_data = [
+            [self._tr("invoice_pdf.truck", mode), self._tr("invoice_pdf.driver", mode), self._tr("invoice_pdf.distance", mode), self._tr("invoice_pdf.start_date", mode), self._tr("invoice_pdf.end_date", mode)],
+            [trip_data.get("truck_number", ""), remove_accents(trip_data.get("driver_name", "")),
+             f"{trip_data.get('distance_km', 0)} km", trip_data.get("start_date", ""), trip_data.get("end_date", "")]
+        ]
+        tech_table = Table(tech_data, colWidths=[3.6*cm]*5)
+        tech_table.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f0f4ff")),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('ALIGN', (0,0), (-1,-1), 'CENTER'),
+            ('FONTSIZE', (0,0), (-1,-1), 9),
+        ]))
+        story.append(tech_table)
+        story.append(Spacer(1, 1*cm))
+
+        story.append(Paragraph(f"<b>{self._tr('invoice_pdf.financials', mode)}</b>", self.styles["Normal"]))
+
+        if mode == "internal":
+            fin_data = [
+                [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.amount_header", mode)],
+                [self._tr("invoice_pdf.line_gross", mode), f"{trip_data.get('total_price_eur', 0):.2f}"],
+                [self._tr("invoice_pdf.line_fuel", mode), f"- {trip_data.get('fuel_cost', 0):.2f}"],
+                [self._tr("invoice_pdf.line_tolls", mode), f"- {trip_data.get('toll_cost', 0):.2f}"],
+                [self._tr("invoice_pdf.line_salary", mode), f"- {trip_data.get('salary_cost', 0):.2f}"],
+                [self._tr("invoice_pdf.line_other", mode), f"- {trip_data.get('extra_costs', 0):.2f}"],
+                [Paragraph(f"<b>{self._tr('invoice_pdf.net_profit', mode)}</b>", self.styles["Normal"]),
+                 Paragraph(f"<b>{trip_data.get('net_profit', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
             ]
-            tech_table = Table(tech_data, colWidths=[3.6*cm]*5)
-            tech_table.setStyle(TableStyle([
-                ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#f0f4ff")),
-                ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
-                ('ALIGN', (0,0), (-1,-1), 'CENTER'),
-                ('FONTSIZE', (0,0), (-1,-1), 9),
-            ]))
-            story.append(tech_table)
-            story.append(Spacer(1, 1*cm))
+        else:
+            fin_data = [
+                [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.qty_header", mode), self._tr("invoice_pdf.total_header", mode)],
+                [self._tr("invoice_pdf.service_desc", mode).format(trip_data.get('distance_km', 0)),
+                 "1",
+                 Paragraph(f"<b>{trip_data.get('total_price_eur', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
+            ]
 
-            story.append(Paragraph(f"<b>{self._tr('invoice_pdf.financials', mode)}</b>", self.styles["Normal"]))
+        fin_col_widths = [13*cm, 5*cm] if mode == "internal" else [10*cm, 2*cm, 6*cm]
+        fin_table = Table(fin_data, colWidths=fin_col_widths)
+        fin_table.setStyle(TableStyle([
+            ('LINEBELOW', (0,0), (-1,0), 1, colors.black),
+            ('ALIGN', (-1,1), (-1,-1), 'RIGHT'),
+            ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
+            ('BOTTOMPADDING', (0,0), (-1,-1), 6),
+        ]))
+        if mode == "internal":
+            fin_table.setStyle(TableStyle([('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e8f0fe"))]))
 
-            if mode == "internal":
-                fin_data = [
-                    [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.amount_header", mode)],
-                    [self._tr("invoice_pdf.line_gross", mode), f"{trip_data.get('total_price_eur', 0):.2f}"],
-                    [self._tr("invoice_pdf.line_fuel", mode), f"- {trip_data.get('fuel_cost', 0):.2f}"],
-                    [self._tr("invoice_pdf.line_tolls", mode), f"- {trip_data.get('toll_cost', 0):.2f}"],
-                    [self._tr("invoice_pdf.line_salary", mode), f"- {trip_data.get('salary_cost', 0):.2f}"],
-                    [self._tr("invoice_pdf.line_other", mode), f"- {trip_data.get('extra_costs', 0):.2f}"],
-                    [Paragraph(f"<b>{self._tr('invoice_pdf.net_profit', mode)}</b>", self.styles["Normal"]),
-                     Paragraph(f"<b>{trip_data.get('net_profit', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
-                ]
-            else:
-                fin_data = [
-                    [self._tr("invoice_pdf.desc_header", mode), self._tr("invoice_pdf.qty_header", mode), self._tr("invoice_pdf.total_header", mode)],
-                    [self._tr("invoice_pdf.service_desc", mode).format(trip_data.get('distance_km', 0)),
-                     "1",
-                     Paragraph(f"<b>{trip_data.get('total_price_eur', 0):.2f} {trip_data.get('currency', 'EUR')}</b>", self.styles["Normal"])]
-                ]
+        story.append(fin_table)
 
-            fin_col_widths = [13*cm, 5*cm] if mode == "internal" else [10*cm, 2*cm, 6*cm]
-            fin_table = Table(fin_data, colWidths=fin_col_widths)
-            fin_table.setStyle(TableStyle([
-                ('LINEBELOW', (0,0), (-1,0), 1, colors.black),
-                ('ALIGN', (-1,1), (-1,-1), 'RIGHT'),
-                ('VALIGN', (0,0), (-1,-1), 'MIDDLE'),
-                ('BOTTOMPADDING', (0,0), (-1,-1), 6),
-            ]))
-            if mode == "internal":
-                fin_table.setStyle(TableStyle([('BACKGROUND', (0,-1), (-1,-1), colors.HexColor("#e8f0fe"))]))
-
-            story.append(fin_table)
-
-            story.append(Spacer(1, 1*cm))
+        story.append(Spacer(1, 1*cm))
 
             # Payment instructions
-            iban = conf.get("iban", "")
-            bank = conf.get("bank_name", "")
-            if iban:
-                pay_info = f"<b>Plata:</b> IBAN {iban}"
-                if bank:
-                    pay_info += f" — {remove_accents(bank)}"
-                pay_style = ParagraphStyle("PayInfo", parent=self.styles["Normal"],
-                                           fontSize=9, textColor=colors.HexColor("#333333"))
-                story.append(Paragraph(pay_info, pay_style))
-                story.append(Spacer(1, 0.3*cm))
+        iban = conf.get("iban", "")
+        bank = conf.get("bank_name", "")
+        if iban:
+            pay_info = f"<b>Plata:</b> IBAN {iban}"
+            if bank:
+                pay_info += f" — {remove_accents(bank)}"
+            pay_style = ParagraphStyle("PayInfo", parent=self.styles["Normal"],
+                                       fontSize=9, textColor=colors.HexColor("#333333"))
+            story.append(Paragraph(pay_info, pay_style))
+            story.append(Spacer(1, 0.3*cm))
 
-            story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
-            footer_msg = f"Email: {conf.get('email', '')} | Tel: {conf.get('phone', '')}"
-            story.append(Paragraph(remove_accents(footer_msg), self.styles["Italic"]))
-            story.append(Spacer(1, 0.5*cm))
-            story.append(Paragraph(self._tr("invoice_pdf.footer", mode), self.styles["Italic"]))
+        story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+        footer_msg = f"Email: {conf.get('email', '')} | Tel: {conf.get('phone', '')}"
+        story.append(Paragraph(remove_accents(footer_msg), self.styles["Italic"]))
+        story.append(Spacer(1, 0.5*cm))
+        story.append(Paragraph(self._tr("invoice_pdf.footer", mode), self.styles["Italic"]))
 
-            doc.build(story)
-            logger.info("Invoice PDF generated successfully: path=%s, invoice_id=%s", full_path, invoice_id)
-            return full_path
-        except Exception as e:
-            logger.error("Failed to generate invoice PDF: invoice_id=%s, client=%s, total=%s — %s",
-                         invoice_id, client_name, total_price, e, exc_info=True)
-            raise
+        doc.build(story)
+        logger.info("Invoice PDF generated successfully: path=%s, invoice_id=%s", full_path, invoice_id)
+        return full_path
 
     def _draw_watermark(self, canvas, doc, text="PROFORMA"):
         """Draw a light diagonal watermark across each page."""
