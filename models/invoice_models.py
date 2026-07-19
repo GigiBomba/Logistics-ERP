@@ -7,11 +7,53 @@ from .common import ServiceResult, UndoToken
 class InvoiceLineItem(BaseModel):
     description: str
     quantity: float = 1.0
+    unit_of_measure: str = "buc"  # buc, kg, km, l, ore, etc.
     unit_price: float
+    discount_percent: float = 0.0
+    discount_amount: float = 0.0
+    taxable_amount: Optional[float] = None  # net after discount
     vat_rate: float = 19.0  # percentage
-    total_net: Optional[float] = None
-    total_vat: Optional[float] = None
-    total_gross: Optional[float] = None
+    vat_amount: Optional[float] = None
+    line_total: Optional[float] = None  # gross total for this line
+
+
+INVOICE_TYPES = [
+    "invoice",        # factură fiscală standard
+    "storno",         # factură de stornare (credit note)
+    "proforma",       # factură proformă (non-fiscală)
+    "receipt",        # chitanță
+    "advance",        # factură de avans
+    "final",          # factură finală
+    "correction",     # factură de corecție
+]
+
+INVOICE_STATUSES = [
+    "draft",
+    "finalized",
+    "xml_generated",
+    "submitted_externally",
+    "queued",
+    "submitting",
+    "accepted",
+    "rejected",
+    "manual_review",
+    "cancelled",
+    "paid",
+]
+
+INVOICE_STATUS_TRANSITIONS: dict[str, list[str]] = {
+    "draft":                ["finalized", "cancelled"],
+    "finalized":            ["xml_generated", "cancelled", "paid"],
+    "xml_generated":        ["submitted_externally", "draft"],
+    "submitted_externally": ["queued", "rejected"],
+    "queued":               ["submitting", "rejected"],
+    "submitting":           ["accepted", "rejected", "manual_review"],
+    "accepted":             ["paid"],
+    "rejected":             ["draft", "manual_review"],
+    "manual_review":        ["draft", "accepted", "rejected"],
+    "cancelled":            [],
+    "paid":                 [],
+}
 
 
 class InvoiceCreate(BaseModel):
@@ -20,6 +62,8 @@ class InvoiceCreate(BaseModel):
     invoice_date: date
     due_date: date
     currency: str = "EUR"
+    exchange_rate: float = 1.0
+    invoice_type: str = "invoice"
     line_items: list[InvoiceLineItem] = []
     notes: str = ""
 
@@ -30,6 +74,13 @@ class InvoiceCreate(BaseModel):
             raise ValueError("Due date must be on or after invoice date")
         return v
 
+    @field_validator("invoice_type")
+    @classmethod
+    def validate_invoice_type(cls, v: str) -> str:
+        if v not in INVOICE_TYPES:
+            raise ValueError(f"Invalid invoice type: {v}. Must be one of {INVOICE_TYPES}")
+        return v
+
 
 class InvoiceUpdate(BaseModel):
     client_id: Optional[int] = None
@@ -37,9 +88,12 @@ class InvoiceUpdate(BaseModel):
     invoice_date: Optional[date] = None
     due_date: Optional[date] = None
     currency: Optional[str] = None
+    exchange_rate: Optional[float] = None
+    invoice_type: Optional[str] = None
     line_items: Optional[list[InvoiceLineItem]] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    amount_paid: Optional[float] = None
 
 
 class InvoiceFinalizeRequest(BaseModel):
@@ -58,13 +112,25 @@ class InvoiceResult(BaseModel):
     invoice_date: date
     due_date: date
     currency: str
+    exchange_rate: float = 1.0
+    invoice_type: str = "invoice"
     line_items: list[InvoiceLineItem] = []
     subtotal_net: float
     total_vat: float
     total_gross: float
-    status: str  # draft, finalized, cancelled, paid
+    amount_paid: float = 0.0
+    amount_remaining: float = 0.0
+    status: str = "draft"
     notes: str
     pdf_path: Optional[str] = None
+    # E-Factura tracking
+    efactura_status: str = ""
+    efactura_xml_path: Optional[str] = None
+    efactura_submission_id: Optional[str] = None
+    efactura_submitted_at: Optional[datetime] = None
+    efactura_response_code: str = ""
+    efactura_response_message: str = ""
+    # Audit
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
 

@@ -33,11 +33,13 @@ class ReceiptResult(BaseModel):
     vehicle_plate: str = ""
     receipt_date: date
     currency: str
+    payment_method: str = ""
     items: list[ReceiptLineItem]
     total_amount: float
     notes: str = ""
     pdf_path: Optional[str] = None
     created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
 
 
 ReceiptCreateResult = ServiceResult[ReceiptResult]

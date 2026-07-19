@@ -17,7 +17,8 @@ class TripRepository(BaseRepository):
         "cargo_description", "cargo_marks", "package_count", "package_type", "gross_weight_kg",
         "volume_m3", "hs_code", "carrier_instructions", "carrier_reservations",
         "special_agreements", "carriage_payer", "documents_attached", "place_of_loading",
-        "place_of_loading_date", "adr_info_json", "cmr_status", "cmr_remarks",
+        "place_of_loading_date",         "adr_info_json", "cmr_status", "cmr_remarks",
+        "transport_order_number", "dispatch_reference",
         "company_id",
         "source", "source_provider_id", "source_reference_id",
     ]

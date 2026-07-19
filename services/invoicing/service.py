@@ -23,6 +23,7 @@ from services.permission_service import PermissionService
 
 from models.common import ErrorDetail, ServiceResult
 from models.invoice_models import (
+    INVOICE_STATUS_TRANSITIONS,
     InvoiceCreate,
     InvoiceCreateResult,
     InvoiceFinalizeRequest,
@@ -64,38 +65,49 @@ class InvoiceService:
     def _calculate_line_items(
         self, items: list[InvoiceLineItem]
     ) -> tuple[list[InvoiceLineItem], float, float, float]:
-        """Fill in computed totals for each line item and return aggregates."""
+        """Fill in computed totals for each line item and return aggregates.
+
+        Romanian-compliant calculation:
+            taxable_amount = (qty * unit_price) - discount_amount
+            vat_amount = taxable_amount * vat_rate / 100
+            line_total = taxable_amount + vat_amount
+        """
         calculated: list[InvoiceLineItem] = []
         for li in items:
-            total_net = (
-                li.total_net
-                if li.total_net is not None
-                else round(li.quantity * li.unit_price, 2)
-            )
-            total_vat = (
-                li.total_vat
-                if li.total_vat is not None
-                else round(total_net * li.vat_rate / 100, 2)
-            )
-            total_gross = (
-                li.total_gross
-                if li.total_gross is not None
-                else round(total_net + total_vat, 2)
-            )
+            qty = li.quantity or 1.0
+            price = li.unit_price or 0.0
+            gross_value = round(qty * price, 2)
+
+            # Discount
+            discount_pct = li.discount_percent or 0.0
+            discount_amt = li.discount_amount or 0.0
+            if discount_amt == 0 and discount_pct > 0:
+                discount_amt = round(gross_value * discount_pct / 100, 2)
+            if discount_amt > gross_value:
+                discount_amt = gross_value
+
+            taxable_amount = li.taxable_amount if li.taxable_amount is not None else round(gross_value - discount_amt, 2)
+            vat_rate = li.vat_rate or 0.0
+            vat_amount = li.vat_amount if li.vat_amount is not None else round(taxable_amount * vat_rate / 100, 2)
+            line_total = li.line_total if li.line_total is not None else round(taxable_amount + vat_amount, 2)
+
             calculated.append(
                 InvoiceLineItem(
                     description=li.description,
-                    quantity=li.quantity,
-                    unit_price=li.unit_price,
-                    vat_rate=li.vat_rate,
-                    total_net=total_net,
-                    total_vat=total_vat,
-                    total_gross=total_gross,
+                    quantity=qty,
+                    unit_of_measure=li.unit_of_measure or "buc",
+                    unit_price=price,
+                    discount_percent=discount_pct,
+                    discount_amount=discount_amt,
+                    taxable_amount=taxable_amount,
+                    vat_rate=vat_rate,
+                    vat_amount=vat_amount,
+                    line_total=line_total,
                 )
             )
-        subtotal_net = round(sum(float(li.total_net or 0) for li in calculated), 2)
-        total_vat = round(sum(float(li.total_vat or 0) for li in calculated), 2)
-        total_gross = round(sum(float(li.total_gross or 0) for li in calculated), 2)
+        subtotal_net = round(sum(float(li.taxable_amount or 0) for li in calculated), 2)
+        total_vat = round(sum(float(li.vat_amount or 0) for li in calculated), 2)
+        total_gross = round(sum(float(li.line_total or 0) for li in calculated), 2)
         return calculated, subtotal_net, total_vat, total_gross
 
     def _row_to_invoice_result(self, row: dict[str, Any]) -> InvoiceResult:
@@ -152,13 +164,22 @@ class InvoiceService:
             invoice_date=_parse_date(invoice_date) if invoice_date else datetime.now().date(),
             due_date=_parse_date(due_date) if due_date else datetime.now().date(),
             currency=row.get("currency", "EUR"),
+            exchange_rate=float(row.get("exchange_rate", 1.0)),
+            invoice_type=row.get("invoice_type", "invoice"),
             line_items=line_items,
             subtotal_net=float(row.get("subtotal_net", row.get("total_amount", 0))),
             total_vat=float(row.get("total_vat", 0)),
             total_gross=float(row.get("total_gross", row.get("total_amount", 0))),
+            amount_paid=float(row.get("amount_paid", 0)),
+            amount_remaining=float(row.get("amount_remaining", row.get("total_amount", 0))),
             status=row.get("status", "draft"),
             notes=row.get("notes", ""),
             pdf_path=row.get("pdf_path"),
+            efactura_status=row.get("efactura_status", ""),
+            efactura_xml_path=row.get("efactura_xml_path"),
+            efactura_submission_id=row.get("efactura_submission_id"),
+            efactura_response_code=row.get("efactura_response_code", ""),
+            efactura_response_message=row.get("efactura_response_message", ""),
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -331,10 +352,14 @@ class InvoiceService:
             "client_id": request.client_id,
             "trip_id": request.trip_id,
             "currency": request.currency,
+            "exchange_rate": request.exchange_rate,
+            "invoice_type": request.invoice_type,
             "notes": request.notes,
             "subtotal_net": subtotal_net,
             "total_vat": total_vat,
             "total_gross": total_gross,
+            "amount_paid": 0.0,
+            "amount_remaining": total_gross,
             "created_at": now,
             "updated_at": now,
         }
@@ -383,10 +408,14 @@ class InvoiceService:
             invoice_date=request.invoice_date,
             due_date=request.due_date,
             currency=request.currency,
+            exchange_rate=request.exchange_rate,
+            invoice_type=request.invoice_type,
             line_items=calculated_items,
             subtotal_net=subtotal_net,
             total_vat=total_vat,
             total_gross=total_gross,
+            amount_paid=0.0,
+            amount_remaining=total_gross,
             status="draft",
             notes=request.notes,
             pdf_path=None,
@@ -429,6 +458,17 @@ class InvoiceService:
                 errors=[ErrorDetail(message="Invoice not found", code="not_found")],
             )
 
+        # Immutable archival: finalized invoices cannot be edited
+        current_status = row.get("status", "")
+        if current_status in ("finalized", "accepted", "paid", "cancelled"):
+            return InvoiceCreateResult(
+                success=False,
+                errors=[ErrorDetail(
+                    message=f"Cannot update invoice with status '{current_status}'",
+                    code="immutable",
+                )],
+            )
+
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
         update_data: dict[str, Any] = {"updated_at": now}
 
@@ -437,8 +477,11 @@ class InvoiceService:
             "client_id": "client_id",
             "trip_id": "trip_id",
             "currency": "currency",
+            "exchange_rate": "exchange_rate",
+            "invoice_type": "invoice_type",
             "notes": "notes",
             "status": "status",
+            "amount_paid": "amount_paid",
         }
         for model_field, db_field in field_map.items():
             val = getattr(request, model_field, None)
@@ -533,6 +576,43 @@ class InvoiceService:
         items = [self._row_to_invoice_result(r) for r in rows]
         return InvoiceListResult(success=True, data=items)
 
+    # ── Status transition validation ──────────────────────────────────
+
+    def _validate_status_transition(
+        self, current_status: str, new_status: str
+    ) -> Optional[ErrorDetail]:
+        """Check if *new_status* is a valid transition from *current_status*.
+
+        Returns an ``ErrorDetail`` if the transition is invalid, or ``None``.
+        """
+        allowed = INVOICE_STATUS_TRANSITIONS.get(current_status, [])
+        if new_status not in allowed:
+            return ErrorDetail(
+                message=(
+                    f"Cannot transition invoice from '{current_status}' "
+                    f"to '{new_status}'. Allowed transitions: "
+                    f"{allowed or '(none — terminal status)'}"
+                ),
+                code="invalid_status_transition",
+            )
+        return None
+
+    def _log_status_transition(
+        self, invoice_id: int, from_status: str, to_status: str, user_id: int
+    ) -> None:
+        """Record a status transition in the status history table."""
+        from datetime import datetime
+        try:
+            self._invoice_repo._execute(
+                "INSERT INTO invoice_status_history "
+                "(invoice_id, from_status, to_status, changed_by, changed_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (invoice_id, from_status, to_status, user_id, datetime.utcnow().isoformat()),
+                commit=True,
+            )
+        except Exception as exc:
+            logger.warning("Failed to log status transition for invoice %s: %s", invoice_id, exc)
+
     # ── 5. finalize ───────────────────────────────────────────────────
 
     def finalize(
@@ -555,17 +635,13 @@ class InvoiceService:
                 errors=[ErrorDetail(message="Invoice not found", code="not_found")],
             )
 
-        # Business validation
+        # Business validation using status machine
         current_status = row.get("status", "")
-        if current_status not in ("draft", ""):
+        trans_error = self._validate_status_transition(current_status, "finalized")
+        if trans_error:
             return InvoiceCreateResult(
                 success=False,
-                errors=[
-                    ErrorDetail(
-                        message=f"Cannot finalize invoice with status '{current_status}'",
-                        code="invalid_status",
-                    )
-                ],
+                errors=[trans_error],
             )
 
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -580,6 +656,9 @@ class InvoiceService:
                 success=False,
                 errors=[ErrorDetail(message=str(exc), code="finalize_failed")],
             )
+
+        # Status transition log
+        self._log_status_transition(invoice_id, current_status, "finalized", user_id)
 
         # Audit log
         AuditService(self.db).log(
@@ -623,15 +702,11 @@ class InvoiceService:
             )
 
         current_status = row.get("status", "")
-        if current_status == "cancelled":
+        trans_error = self._validate_status_transition(current_status, "cancelled")
+        if trans_error:
             return InvoiceCreateResult(
                 success=False,
-                errors=[
-                    ErrorDetail(
-                        message="Invoice is already cancelled",
-                        code="already_cancelled",
-                    )
-                ],
+                errors=[trans_error],
             )
 
         now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
@@ -647,12 +722,63 @@ class InvoiceService:
                 errors=[ErrorDetail(message=str(exc), code="cancel_failed")],
             )
 
+        # Status transition log
+        self._log_status_transition(invoice_id, current_status, "cancelled", user_id)
+
         # Audit log
         AuditService(self.db).log(
             event_type="invoice.cancelled",
             entity_type="invoice",
             entity_id=str(invoice_id),
             data={"status": "cancelled", "invoice_number": row.get("invoice_number", "")},
+            user_id=user_id,
+        )
+
+        updated_row = self._invoice_repo.get_by_id(invoice_id)
+        result = self._row_to_invoice_result(updated_row or row)
+        return InvoiceCreateResult(success=True, data=result)
+
+    # ── 6b. set_status ────────────────────────────────────────────────
+
+    def set_status(
+        self, invoice_id: int, new_status: str, user_id: int
+    ) -> InvoiceCreateResult:
+        """Transition an invoice to *new_status* with validation against the state machine."""
+        row = self._invoice_repo.get_by_id(invoice_id)
+        if not row:
+            return InvoiceCreateResult(
+                success=False,
+                errors=[ErrorDetail(message="Invoice not found", code="not_found")],
+            )
+
+        current_status = row.get("status", "")
+        trans_error = self._validate_status_transition(current_status, new_status)
+        if trans_error:
+            return InvoiceCreateResult(
+                success=False,
+                errors=[trans_error],
+            )
+
+        now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        try:
+            self._invoice_repo.update(invoice_id, {
+                "status": new_status,
+                "updated_at": now,
+            })
+        except (ValueError, RuntimeError, TypeError) as exc:
+            logger.error("Failed to set status for invoice %s: %s", invoice_id, exc, exc_info=True)
+            return InvoiceCreateResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="status_update_failed")],
+            )
+
+        self._log_status_transition(invoice_id, current_status, new_status, user_id)
+
+        AuditService(self.db).log(
+            event_type=f"invoice.status_changed",
+            entity_type="invoice",
+            entity_id=str(invoice_id),
+            data={"from_status": current_status, "to_status": new_status},
             user_id=user_id,
         )
 
@@ -823,6 +949,17 @@ class InvoiceService:
             return InvoiceCreateResult(
                 success=False,
                 errors=[ErrorDetail(message="Invoice not found", code="not_found")],
+            )
+
+        # Immutable archival: finalized invoices cannot be deleted
+        current_status = row.get("status", "")
+        if current_status in ("finalized", "accepted", "paid", "cancelled"):
+            return InvoiceCreateResult(
+                success=False,
+                errors=[ErrorDetail(
+                    message=f"Cannot delete invoice with status '{current_status}'",
+                    code="immutable",
+                )],
             )
 
         try:

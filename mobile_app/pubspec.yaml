@@ -1,0 +1,62 @@
+name: operion_mobile
+description: "Operion Mobile — Logistics ERP companion app"
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.12.2
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_localizations:
+    sdk: flutter
+  intl: ^0.20.2
+  # State management
+  flutter_riverpod: ^2.6.1
+  # Networking
+  dio: ^5.8.0+1
+  web_socket_channel: ^3.0.3
+  # Storage
+  flutter_secure_storage: ^9.2.4
+  path_provider: ^2.1.5
+  # Push notifications
+  firebase_core: ^3.15.2
+  firebase_messaging: ^15.2.5
+  # Connectivity & device
+  connectivity_plus: ^6.1.4
+  local_auth: ^2.3.0
+  # UI
+  lucide_icons_flutter: ^3.1.4
+  google_fonts: ^6.2.1
+  shimmer: ^3.0.0
+  # Camera & images
+  image_picker: ^1.1.2
+  image: ^4.5.3
+  # Maps
+  flutter_map: ^7.0.2
+  latlong2: ^0.9.1
+  # Geolocation
+  geolocator: ^13.0.2
+  # URL launcher
+  url_launcher: ^6.3.1
+  # Utils
+  uuid: ^4.5.1
+  json_annotation: ^4.9.0
+  logging: ^1.3.0
+  cupertino_icons: ^1.0.8
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  integration_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+  build_runner: ^2.4.15
+  json_serializable: ^6.9.4
+
+flutter:
+  uses-material-design: true
+  generate: true  # for l10n
+  assets:
+    - assets/images/

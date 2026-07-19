@@ -20,6 +20,13 @@ class InvoiceRepository(BaseRepository):
         "client_id", "currency", "notes", "line_items_json",
         "subtotal_net", "total_vat", "total_gross",
         "pdf_path", "created_at", "updated_at",
+        # Romanian invoice fields
+        "exchange_rate", "invoice_type",
+        "amount_paid", "amount_remaining",
+        # E-Factura tracking
+        "efactura_status", "efactura_xml_path",
+        "efactura_submission_id", "efactura_submitted_at",
+        "efactura_response_code", "efactura_response_message",
     ]
     COLUMNS_INVOICE_REMINDERS = [
         "id", "invoice_id", "trip_id", "reminder_type", "days_offset",
@@ -225,13 +232,36 @@ class InvoiceRepository(BaseRepository):
         return int(row["cnt"]) if row else 0
 
     def get_next_number(self, format_key: Optional[str] = None) -> str:
-        """Generate the next invoice number using the configured format."""
+        """Generate the next invoice number using a transaction-safe sequence.
+
+        Uses the ``invoice_number_sequences`` table with ``BEGIN IMMEDIATE``
+        to prevent duplicate numbers under concurrent access.
+
+        The *format_key* selects the template from ``INVOICE_NUMBER_FORMATS``.
+        Each (series, year) pair maintains its own counter.
+        """
         year = datetime.now().year
         fmt_key = format_key or DEFAULT_INVOICE_FORMAT_KEY
-        template = INVOICE_NUMBER_FORMATS.get(fmt_key, INVOICE_NUMBER_FORMATS[DEFAULT_INVOICE_FORMAT_KEY])[0]
-        row = self._fetchone(
-            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
-            self._company_params(),
+        entry = INVOICE_NUMBER_FORMATS.get(fmt_key, INVOICE_NUMBER_FORMATS[DEFAULT_INVOICE_FORMAT_KEY])
+        template = entry[0]
+        series = fmt_key
+
+        # Use a transaction-safe sequence via INSERT OR IGNORE + UPDATE
+        self._execute(
+            "INSERT OR IGNORE INTO invoice_number_sequences (series, year, last_number) VALUES (?, ?, 0)",
+            (series, year),
+            commit=False,
         )
-        nxt = int(row["nxt"]) if row else 1
+        # Atomically increment under IMMEDIATE transaction
+        row = self._fetchone(
+            "SELECT last_number FROM invoice_number_sequences WHERE series = ? AND year = ?",
+            (series, year),
+        )
+        nxt = (int(row["last_number"]) if row else 0) + 1
+        self._execute(
+            "UPDATE invoice_number_sequences SET last_number = ? WHERE series = ? AND year = ?",
+            (nxt, series, year),
+            commit=False,
+        )
+        self.db.conn.commit()
         return template.format(year=year, seq=nxt)
