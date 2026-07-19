@@ -47,6 +47,9 @@ services:
       - OPERION_CORS_ORIGINS=${OPERION_CORS_ORIGINS:-https://operionerp.xyz,https://app.operionerp.xyz}
       - OPERION_RATE_LIMIT=${OPERION_RATE_LIMIT:-100}
       - OPERION_ENVIRONMENT=production
+      # ── PostHog analytics ──────────────────────────────────────────────
+      - OPERION_POSTHOG_PROJECT_TOKEN=${OPERION_POSTHOG_PROJECT_TOKEN:-phc_kxBpudzXmyiLt855pk9UC749KxvZHGa9fq7P5Aoxvk3N}
+      - OPERION_POSTHOG_HOST=${OPERION_POSTHOG_HOST:-https://eu.i.posthog.com}
     depends_on:
       postgres:
         condition: service_healthy

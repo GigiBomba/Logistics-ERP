@@ -66,6 +66,13 @@ def create_client(
 ):
     company_id = current_user.get("company_id", 0)
     client_id = service.create(company_id=company_id, name=data.name, **data.model_dump(exclude={"name"}))
+    from backend.posthog_client import get_posthog
+    _ph = get_posthog()
+    if _ph:
+        _ph.capture("client_created", distinct_id=current_user.get("email", ""), properties={
+            "company_id": company_id,
+            "client_id": client_id,
+        })
     return {"id": client_id}
 
 

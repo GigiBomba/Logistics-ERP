@@ -97,6 +97,15 @@ def register(
             data.company_name, company_id, email,
         )
 
+        from backend.posthog_client import get_posthog
+        _ph = get_posthog()
+        if _ph:
+            _ph.capture("company_registered", distinct_id=email, properties={
+                "$set": {"role": "manager"},
+                "company_id": company_id,
+                "signup_method": "self_service",
+            })
+
         # ── Issue tokens ──────────────────────────────────────────────
         tokens = _issue_tokens(email, "manager", response)
         tokens["user"] = {
