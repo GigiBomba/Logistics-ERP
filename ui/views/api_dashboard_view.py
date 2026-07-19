@@ -138,7 +138,7 @@ class QtApiDashboardView(QWidget):
         status = "online" if online else "offline"
 
         api_card = _StatusCard(self, "API Server", status,
-                               "http://localhost:8000" if online else "Unreachable")
+                               "https://api.operionerp.xyz" if online else "Unreachable")
         self._status_grid.addWidget(api_card, 0, 0)
 
         if online:

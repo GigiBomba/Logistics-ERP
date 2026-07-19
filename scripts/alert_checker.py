@@ -136,52 +136,54 @@ def run_checks() -> None:
     """Run all periodic checks and notify for new alerts."""
     Config.ensure_dirs()
     db = DatabaseManager(Config.DB_PATH)
-
-    # Minimal service initialisation (same as the app's early boot)
-    init_language()
-    prefs = PreferencesManager(db)
-    prefs.load()
-
-    ops_engine = _init_ops_engine(db, prefs)
-    if ops_engine is None:
-        logger.warning("Operations engine not available — skipping checks")
-        return
-
-    # Capture alerts BEFORE running checks
-    before = _capture_alert_ids(ops_engine)
-
-    # Run the same checks the app runs on startup and daily
-    logger.info("Running periodic checks…")
     try:
-        ops_engine._event_bus.publish(DAILY_CHECK, {})
+        # Minimal service initialisation (same as the app's early boot)
+        init_language()
+        prefs = PreferencesManager(db)
+        prefs.load()
 
-        if hasattr(ops_engine, "_maintenance_engine") and ops_engine._maintenance_engine:
-            ops_engine._maintenance_engine.evaluate_all()
-    except Exception as e:
-        logger.exception("Check execution failed: %s", e)
+        ops_engine = _init_ops_engine(db, prefs)
+        if ops_engine is None:
+            logger.warning("Operations engine not available — skipping checks")
+            return
 
-    # Detect new alerts
-    alerts = _new_alerts(ops_engine, before)
-    if not alerts:
-        logger.info("No new alerts — done")
-        return
+        # Capture alerts BEFORE running checks
+        before = _capture_alert_ids(ops_engine)
 
-    logger.info("Found %d new alert(s)", len(alerts))
+        # Run the same checks the app runs on startup and daily
+        logger.info("Running periodic checks…")
+        try:
+            ops_engine._event_bus.publish(DAILY_CHECK, {})
 
-    # Play notification sound + show toast
-    _play_sound()
+            if hasattr(ops_engine, "_maintenance_engine") and ops_engine._maintenance_engine:
+                ops_engine._maintenance_engine.evaluate_all()
+        except Exception as e:
+            logger.exception("Check execution failed: %s", e)
 
-    for alert in alerts[:5]:  # limit to 5 toasts to avoid spam
-        title = f"[{alert.get('severity', '').upper()}] {alert.get('title', 'Alert')}"
-        msg = alert.get("message", "")
-        _send_toast(title, msg)
-        time.sleep(0.5)
+        # Detect new alerts
+        alerts = _new_alerts(ops_engine, before)
+        if not alerts:
+            logger.info("No new alerts — done")
+            return
 
-    if len(alerts) > 5:
-        _send_toast(
-            f"{len(alerts)} alerts",
-            f"{len(alerts) - 5} more alerts not shown — open the app to view all.",
-        )
+        logger.info("Found %d new alert(s)", len(alerts))
+
+        # Play notification sound + show toast
+        _play_sound()
+
+        for alert in alerts[:5]:  # limit to 5 toasts to avoid spam
+            title = f"[{alert.get('severity', '').upper()}] {alert.get('title', 'Alert')}"
+            msg = alert.get("message", "")
+            _send_toast(title, msg)
+            time.sleep(0.5)
+
+        if len(alerts) > 5:
+            _send_toast(
+                f"{len(alerts)} alerts",
+                f"{len(alerts) - 5} more alerts not shown — open the app to view all.",
+            )
+    finally:
+        db.close()
 
 
 def _init_ops_engine(db, prefs):

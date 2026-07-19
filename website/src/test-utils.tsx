@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, type RenderOptions } from "@testing-library/react"
 import { HelmetProvider } from "react-helmet-async"
 import type { ReactNode } from "react"
+import { LocaleProvider } from "@/i18n/locale-context"
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -17,18 +18,23 @@ function createTestQueryClient() {
 interface WrapperOptions {
   initialEntries?: MemoryRouterProps["initialEntries"]
   queryClient?: QueryClient
+  withLocale?: boolean
 }
 
-/** Minimal wrapper — no ThemeProvider or AuthProvider (mock in tests) */
-export function createWrapper({ initialEntries = ["/"], queryClient }: WrapperOptions = {}) {
+/** Minimal wrapper — add ThemeProvider/AuthProvider per-test via mock wrappers. */
+export function createWrapper({ initialEntries = ["/"], queryClient, withLocale = true }: WrapperOptions = {}) {
   const qc = queryClient ?? createTestQueryClient()
 
   function TestWrapper({ children }: { children: ReactNode }) {
+    let content = children
+    if (withLocale) {
+      content = <LocaleProvider>{content}</LocaleProvider>
+    }
     return (
       <HelmetProvider>
         <QueryClientProvider client={qc}>
           <MemoryRouter initialEntries={initialEntries}>
-            {children}
+            {content}
           </MemoryRouter>
         </QueryClientProvider>
       </HelmetProvider>

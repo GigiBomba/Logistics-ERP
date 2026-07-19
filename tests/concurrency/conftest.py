@@ -1,13 +1,34 @@
 """Shared fixtures for concurrency tests."""
 from __future__ import annotations
 
+import os
+import tempfile
 import pytest
-from tests.test_helpers import make_db, InMemoryDB
+from database.db_manager import DatabaseManager
 
 
 @pytest.fixture
 def db():
-    return make_db()
+    """File-based SQLite so each thread gets its own connection to the same DB.
+    
+    In-memory databases (``:memory:``) create a separate database per thread,
+    causing "no such table" errors in concurrent test scenarios.
+    """
+    tmp = tempfile.NamedTemporaryFile(suffix=".db", delete=False)
+    tmp.close()
+    db_path = tmp.name
+    dbu = DatabaseManager(db_path)
+    yield dbu
+    dbu.close()
+    try:
+        os.unlink(db_path)
+        os.unlink(db_path + "-wal")
+    except Exception:
+        pass
+    try:
+        os.unlink(db_path + "-shm")
+    except Exception:
+        pass
 
 
 @pytest.fixture(autouse=True)

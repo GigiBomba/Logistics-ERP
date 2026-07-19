@@ -11,6 +11,7 @@ import requests
 
 from models.common import ServiceResult
 from services.base_worker import GracefulWorker
+from services.i18n import t
 from utils.formatting import format_age
 from utils.resource_path import data_path, resource_path
 
@@ -226,7 +227,7 @@ class FuelPriceService(GracefulWorker):
         return ServiceResult(
             success=False,
             data=1.55,
-            errors=[{"message": "Failed to fetch live fuel prices, using fallback", "code": "FETCH_FAILED"}],
+            errors=[{"message": t("fuel.fetch_failed_fallback"), "code": "FETCH_FAILED"}],
         )
 
     def is_available(self) -> bool:

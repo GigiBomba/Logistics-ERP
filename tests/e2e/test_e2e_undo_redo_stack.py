@@ -31,7 +31,7 @@ logging.disable(logging.CRITICAL)
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _dt(days_offset: int = 0) -> str:
-    return (datetime.now().isoformat())
+    return (datetime.now()).strftime("%Y-%m-%d")
 
 
 def _create_truck(db) -> int:

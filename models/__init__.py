@@ -2,6 +2,7 @@
 
 from .common import (
     T,
+    Money,
     PaginationParams,
     PaginatedResponse,
     SuccessResponse,
@@ -168,9 +169,26 @@ from .automail_models import (
     AutomailSendResult,
 )
 
+from .freight_exchange_models import (
+    ProviderCredentials,
+    ProviderSession,
+    ProviderHealthCheck,
+    ProviderCapabilities,
+    GeoFilter,
+    LoadSearchFilters,
+    LoadSearchResult,
+    SavedSearch,
+    ImportResult,
+    VehicleCompatibility,
+    DriverCompatibility,
+    LoadEvaluation,
+    TruckMatchScore,
+)
+
 __all__ = [
     # common
     "T",
+    "Money",
     "PaginationParams",
     "PaginatedResponse",
     "SuccessResponse",
@@ -287,6 +305,20 @@ __all__ = [
     "SendReminderRequest",
     "SendReminderResult",
     "AutomailSendResult",
+    # freight exchange
+    "ProviderCredentials",
+    "ProviderSession",
+    "ProviderHealthCheck",
+    "ProviderCapabilities",
+    "GeoFilter",
+    "LoadSearchFilters",
+    "LoadSearchResult",
+    "SavedSearch",
+    "ImportResult",
+    "VehicleCompatibility",
+    "DriverCompatibility",
+    "LoadEvaluation",
+    "TruckMatchScore",
     # tacho
     "TachoImportRequest",
     "DriverActivity",

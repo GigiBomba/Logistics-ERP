@@ -31,6 +31,15 @@ class TestStressRegistration:
     def app(self):
         app = FastAPI()
         app.include_router(api_v1_router)
+        # Register JSON exception handlers so errors return JSON, not plain text.
+        from fastapi.responses import JSONResponse
+        from starlette.exceptions import HTTPException as StarletteHTTPException
+        @app.exception_handler(Exception)
+        async def generic_json_exception_handler(request, exc):
+            return JSONResponse(status_code=500, content={"detail": "Internal Server Error", "error_code": "INTERNAL_ERROR"})
+        @app.exception_handler(StarletteHTTPException)
+        async def http_json_exception_handler(request, exc):
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
         return app
 
     @pytest.fixture
@@ -41,6 +50,12 @@ class TestStressRegistration:
         app.dependency_overrides[require_admin] = lambda: self.MOCK_USER
         app.dependency_overrides[require_manager] = lambda: self.MOCK_USER
 
+        # Disable registration rate limiter for stress tests
+        from backend.api.v1.registration import _check_register_rate_limit
+        _original_check = _check_register_rate_limit
+        import backend.api.v1.registration as reg_mod
+        reg_mod._check_register_rate_limit = lambda ip: None
+
         with patch("backend.cache.get_cache") as mock_get_cache:
             mock_cache = MagicMock()
             mock_cache._enabled = True
@@ -49,9 +64,10 @@ class TestStressRegistration:
             mock_cache.rpush.return_value = True
             mock_cache.delete.return_value = True
             mock_get_cache.return_value = mock_cache
-            yield TestClient(app)
+            yield TestClient(app, raise_server_exceptions=False)
 
         app.dependency_overrides.clear()
+        reg_mod._check_register_rate_limit = _original_check
 
     def test_rapid_sequential_registrations(self, client):
         """50 rapid sequential registrations — all succeed with unique emails."""

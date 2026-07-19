@@ -86,7 +86,7 @@ class TestPermissions:
         with pytest.raises(HTTPException) as excinfo:
             await require_admin(current_user=user)
         assert excinfo.value.status_code == 403
-        assert "Admin privileges required" in excinfo.value.detail
+        assert "Admin privileges required" in str(excinfo.value.detail)
 
     @pytest.mark.asyncio
     async def test_require_dispatcher_regular_user(self):
@@ -95,7 +95,7 @@ class TestPermissions:
         with pytest.raises(HTTPException) as excinfo:
             await require_dispatcher(current_user=user)
         assert excinfo.value.status_code == 403
-        assert "Dispatcher or admin privileges" in excinfo.value.detail
+        assert "Dispatcher or admin privileges" in str(excinfo.value.detail)
 
 
 class TestPasswordHashing:

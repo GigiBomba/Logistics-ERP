@@ -1,5 +1,6 @@
 """Base repository providing shared database access patterns."""
 import logging
+from contextlib import contextmanager
 from typing import Any, Dict, List, Optional, Set
 
 logger = logging.getLogger("repositories")
@@ -88,7 +89,34 @@ class BaseRepository:
 
     def _adapt_query(self, query: str) -> str:
         if getattr(self.db, "_engine", "sqlite") == "postgresql":
-            return query.replace("?", "%s")
+            q = query.replace("?", "%s")
+            # Handle INSERT OR IGNORE → ON CONFLICT DO NOTHING
+            if "INSERT OR IGNORE INTO" in q:
+                q = q.replace("INSERT OR IGNORE INTO", "INSERT INTO")
+                if "ON CONFLICT" not in q.upper():
+                    q = q.rstrip(";") + " ON CONFLICT DO NOTHING"
+            # INSERT OR REPLACE → ON CONFLICT DO UPDATE (upsert)
+            elif "INSERT OR REPLACE INTO" in q:
+                q = q.replace("INSERT OR REPLACE INTO", "INSERT INTO")
+                if "ON CONFLICT" not in q.upper():
+                    # Extract column names to build the SET clause
+                    import re
+                    m = re.match(
+                        r"INSERT\s+INTO\s+\w+\s*\(([^)]+)\)\s*VALUES",
+                        q, re.IGNORECASE,
+                    )
+                    if m:
+                        cols = [c.strip() for c in m.group(1).split(",")]
+                        if cols:
+                            # Use the first column as the conflict target (typically PK)
+                            conflict_col = cols[0]
+                            set_clause = ", ".join(
+                                f"{c} = EXCLUDED.{c}" for c in cols
+                            )
+                            q = q.rstrip(";") + (
+                                f" ON CONFLICT ({conflict_col}) DO UPDATE SET {set_clause}"
+                            )
+            return q
         return query
 
     def _adapt_insert(self, query: str) -> str:
@@ -131,8 +159,26 @@ class BaseRepository:
             self.db.conn.commit()
         return cursor.rowcount
 
+    @contextmanager
+    def transaction(self):
+        """Context manager for safer transaction management.
+
+        Usage::
+
+            with repo.transaction():
+                repo._execute("INSERT ...", commit=False)
+                repo._execute("UPDATE ...", commit=False)
+        """
+        self.begin_transaction()
+        try:
+            yield self
+            self.commit_transaction()
+        except Exception:
+            self.rollback_transaction()
+            raise
+
     def begin_transaction(self) -> None:
-        self.db.conn.execute("BEGIN")
+        self.db.conn.execute("BEGIN IMMEDIATE")
 
     def commit_transaction(self) -> None:
         self.db.conn.commit()

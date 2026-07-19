@@ -1,6 +1,37 @@
 services:
+  # PostgreSQL (optional — enable with OPERION_DB_ENGINE=postgresql)
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: operion
+      POSTGRES_USER: operion
+      POSTGRES_PASSWORD: ${OPERION_DB_PASSWORD:-operion}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/schema_pg.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U operion"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    profiles:
+      - postgres
+
+  # Redis cache + message broker
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    profiles:
+      - full
+
   calculatorlogistica:
     image: calculatorlogistica
     build:
       context: .
       dockerfile: ./Dockerfile
+
+volumes:
+  postgres_data:

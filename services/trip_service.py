@@ -85,9 +85,30 @@ def _db_to_trip_result(row: dict) -> TripResult:
     if profit is not None and price > 0:
         mapped["margin_pct"] = round((profit / price) * 100, 2)
 
-    # Ensure required fields that may not exist in every DB row
-    mapped.setdefault("reference", "")
-    mapped.setdefault("notes", "")
+    # Ensure fields that may be NULL in DB have safe defaults
+    # Prevents Pydantic v2 rejection of None for non-Optional[str] fields
+    _safe_defaults = {
+        "reference": "",
+        "notes": "",
+        "truck_plate": "",
+        "driver_name": "",
+        "client_name": "",
+        "currency": "EUR",
+        "status": "Planned",
+        "start_date": "2000-01-01",
+        "end_date": None,
+        "price_eur": 0.0,
+        "client_id": 0,
+        "loading_city": "",
+        "delivery_city": "",
+        "created_at": None,
+        "updated_at": None,
+    }
+    for _key, _default in _safe_defaults.items():
+        if _key in mapped and mapped[_key] is None:
+            mapped[_key] = _default
+        else:
+            mapped.setdefault(_key, _default)
 
     return TripResult(**mapped)
 
@@ -179,7 +200,7 @@ class TripService:
                 errors=[ErrorDetail(message=str(e), code="internal_error")],
             )
 
-    def update(self, trip_id: int, request: Union[TripUpdate, dict[str, Any]], user_id: int = 0) -> TripCreateResult:
+    def update(self, trip_id: int, request: Union[TripUpdate, dict[str, Any]], user_id: int = 0, company_id=None) -> TripCreateResult:
         """Update an existing trip.
 
         Accepts either a ``TripUpdate`` model (preferred) or a raw dict
@@ -297,11 +318,21 @@ class TripService:
                 errors=[ErrorDetail(message=str(e), code="internal_error")],
             )
 
-    def get(self, trip_id: int) -> TripCreateResult:
-        """Fetch a single trip by ID, returning a ``ServiceResult``."""
+    def get(self, trip_id: int, driver_id: int | None = None) -> TripCreateResult:
+        """Fetch a single trip by ID, returning a ``ServiceResult``.
+
+        When ``driver_id`` is provided, the trip is only returned if it is
+        assigned to that driver (driver scoping for the mobile app).
+        """
         try:
             row = self._trip_repo.get_by_id(trip_id)
             if not row:
+                return ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(message=f"Trip {trip_id} not found", code="not_found")],
+                )
+            # Driver scoping: if caller is a driver, only return their trips
+            if driver_id is not None and row.get("driver_id") != driver_id:
                 return ServiceResult(
                     success=False,
                     errors=[ErrorDetail(message=f"Trip {trip_id} not found", code="not_found")],
@@ -315,10 +346,17 @@ class TripService:
                 errors=[ErrorDetail(message=str(e), code="internal_error")],
             )
 
-    def list_all(self, limit: int = 500) -> TripListResult:
-        """Return all trips as a typed list result."""
+    def list_all(self, limit: int = 500, driver_id: int | None = None) -> TripListResult:
+        """Return all trips as a typed list result.
+
+        When ``driver_id`` is provided, only trips assigned to that driver
+        are returned (driver scoping for the mobile app).
+        """
         try:
-            rows = self._trip_repo.get_all(limit=limit)
+            if driver_id is not None:
+                rows = self._trip_repo.get_by_driver_id(driver_id, limit=limit)
+            else:
+                rows = self._trip_repo.get_all(limit=limit)
             results = [_db_to_trip_result(r) for r in rows]
             return ServiceResult(success=True, data=results)
         except Exception as e:
@@ -328,7 +366,7 @@ class TripService:
                 errors=[ErrorDetail(message=str(e), code="internal_error")],
             )
 
-    def delete(self, trip_id: int, user_id: int = 0) -> TripCreateResult:
+    def delete(self, trip_id: int, user_id: int = 0, company_id=None) -> TripCreateResult:
         """Delete a trip by ID.
 
         Requires admin-level permission when ``user_id`` is provided.
@@ -421,7 +459,7 @@ class TripService:
     # Backward-compatible wrappers (deprecated)
     # ═════════════════════════════════════════════════════════════════════
 
-    def add(self, data: dict[str, Any]) -> int:
+    def add(self, data: dict[str, Any], company_id=None) -> int:
         """Deprecated: use ``create()`` with a ``TripCreate`` model instead.
 
         This shim preserves the original behaviour (raw DB dict in, raw ID out)
@@ -434,7 +472,9 @@ class TripService:
         )
         logger.info("Adding trip (deprecated): %s", {k: v for k, v in data.items() if k != '_csrf_token'})
         try:
-            new_id = self._trip_repo.create(data)
+            # Map model field names to DB column names for backward compatibility
+            mapped_data = _model_to_db(data)
+            new_id = self._trip_repo.create(mapped_data)
             self._event_bus.publish(TRIP_CREATED, {"trip_id": new_id, "data": data})
             logger.info("Trip created successfully (deprecated add): trip_id=%s", new_id)
             return new_id
@@ -446,10 +486,10 @@ class TripService:
     # Legacy query passthrough (return raw dicts for existing callers)
     # ═════════════════════════════════════════════════════════════════════
 
-    def get_filtered(self, search: str = "", status: str = "", limit: int = 200) -> list[dict[str, Any]]:
+    def get_filtered(self, search: str = "", status: str = "", limit: int = 200, company_id=None) -> list[dict[str, Any]]:
         return self._trip_repo.get_filtered(search=search, truck="", status=status, limit=limit)
 
-    def get_by_id(self, trip_id: int) -> Optional[dict[str, Any]]:
+    def get_by_id(self, trip_id: int, company_id=None) -> Optional[dict[str, Any]]:
         return self._trip_repo.get_by_id(trip_id)
 
     def get_by_statuses(self, statuses: list[str]) -> list[dict[str, Any]]:

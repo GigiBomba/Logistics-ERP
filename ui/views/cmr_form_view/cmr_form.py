@@ -915,19 +915,13 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
                 data["consignee_vat"] = conf.get("cui", "")
                 data["consignee_phone"] = conf.get("phone", "")
 
-        # Signature pad paths
-        sig_pad_keys = [
-            ("sig_sender_path", "Sender"),
-            ("sig_carrier_path", "Carrier"),
-            ("sig_consignee_path", "Consignee"),
-        ]
-        for data_key, _ in sig_pad_keys:
-            if data_key in self._cmr_entries:
-                pad = self._cmr_entries[data_key]
-                if hasattr(pad, "save_path") and pad.save_path:
-                    data[data_key] = pad.save_path
-                elif hasattr(pad, "image_path") and pad.image_path:
-                    data[data_key] = pad.image_path
+        # Signature pad paths — pads are stored as ``self.sig_{key}_pad`` attributes
+        for pad_key in ["sender", "carrier", "consignee"]:
+            pad = getattr(self, f"sig_{pad_key}_pad", None)
+            if pad is not None:
+                path = getattr(pad, "save_path", None) or getattr(pad, "image_path", None)
+                if path:
+                    data[f"sig_{pad_key}_path"] = path
 
         # ADR rows
         adr_entries = []
@@ -987,12 +981,18 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         data["truck_plate"] = data.get("truck_plate", "")
         data["driver_name"] = data.get("driver_name", "")
 
-        # Place and country fields
+        # Place, country, and address fields
         data["place_of_loading"] = data.get("place_of_loading", "")
         data["destination"] = data.get("destination", "")
         data["loading_country"] = data.get("loading_country", "")
         data["delivery_country"] = data.get("delivery_country", "")
         data["distance_km"] = data.get("distance_km", "")
+        # consignee_name is a multiline field containing the full consignee details;
+        # expose a consignee_address alias for downstream consumers.
+        if not data.get("consignee_address"):
+            data["consignee_address"] = data.get("consignee_name", "")
+        if not data.get("client_address"):
+            data["client_address"] = data.get("consignee_name", "")
 
         return data
 

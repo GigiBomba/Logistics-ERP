@@ -123,6 +123,7 @@ class QtGeneratorsView(QWidget):
         self._invoice_built = False
         self._cmr_built = False
         self._receipt_built = False
+        self._proforma_built = False
 
         # ── i18n tracking ───────────────────────────────────────────────
         self._i18n_labels: list[tuple[QLabel, str]] = []
@@ -804,14 +805,17 @@ class QtGeneratorsView(QWidget):
         except Exception:
             logger.warning("CMR registration in Document Center skipped", exc_info=True)
 
-        self._cmr_last_paths["Sender"] = filepath
+        # Determine correct copy suffix based on generating role
+        cmr_role = trip_data.get("generating_role", "consignor")
+        copy_suffix = "Sender" if cmr_role == "consignor" else "Consignee"
+        self._cmr_last_paths[copy_suffix] = filepath
         self._cmr_status_lbl.setText(
             t("generators.cmr_generated").format(path=os.path.basename(filepath))
         )
         self._cmr_status_lbl.setProperty("role", "success")
         self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
         self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
-        self._update_copy_status("Sender", filepath)
+        self._update_copy_status(copy_suffix, filepath)
         logger.info("CMR generated for trip %d: %s", trip_id, filepath)
 
     def _generate_all_copies(self) -> None:

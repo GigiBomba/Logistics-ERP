@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from services.invoicing.config_manager import load_company_config
+from services.operations.event_bus import TOUR_REPLAY_REQUESTED, EventBus
 from ui.components import Btn, Card, Divider, FieldLabel, Label, SectionTitle
 from ui.design_tokens import SP
 from ui.widgets import StyledComboBox, StyledLineEdit
@@ -464,11 +465,11 @@ class SettingsFieldsMixin:
     def _build_tracking_platform_values(self) -> list[str]:
         return [
             t("tracking.platform_not_configured"),
-            "Wialon / GPS-Trace (Gurtam)",
-            "Frotcom",
-            "Navixy",
-            "Traccar (self-hosted)",
-            "Generic REST API",
+            t("tracking.platform_wialon", default="Wialon / GPS-Trace (Gurtam)"),
+            t("tracking.platform_frotcom", default="Frotcom"),
+            t("tracking.platform_navixy", default="Navixy"),
+            t("tracking.platform_traccar", default="Traccar (self-hosted)"),
+            t("tracking.platform_generic_rest", default="Generic REST API"),
         ]
 
     def _rebuild_tracking_platform_menu(self) -> None:
@@ -798,6 +799,194 @@ class SettingsFieldsMixin:
         if self.prefs:
             self._fw_delete.setChecked(self.prefs.get_setting("folder_watcher_delete", "0") in ("1", "true"))
         card.layout().addWidget(self._fw_delete)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  Section: Autonomous Mode  (Enterprise-tier per-workflow AI toggles)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _get_subscription_tier(self) -> str:
+        """Return the current company's subscription tier from the DB.
+
+        Returns ``"starter"`` when the database is unavailable (remote mode
+        or offline without a configured company).
+        """
+        if not self.db:
+            return "starter"
+        try:
+            cursor = self.db.execute(
+                "SELECT subscription_tier FROM companies LIMIT 1",
+            )
+            row = cursor.fetchone()
+            return str(row[0]) if row else "starter"
+        except Exception:
+            return "starter"
+
+    def _build_section_autonomous_mode(self) -> None:
+        """Build settings card for AI Autonomous Mode (Enterprise feature).
+
+        Non-Enterprise tiers see an upgrade prompt.  Enterprise users get
+        per-workflow toggle switches and a circuit-breaker status stub.
+        """
+        card = self._section_card("settings.section_autonomous_mode")
+        self._scroll.add_widget(card)
+
+        tier = self._get_subscription_tier()
+        is_enterprise = tier == "enterprise"
+
+        if not is_enterprise:
+            upgrade_label = Label(
+                card,
+                t("settings.autonomous.upgrade_needed"),
+                role="muted",
+            )
+            upgrade_label.setWordWrap(True)
+            card._content_layout.addWidget(upgrade_label)
+            return
+
+        from ui.widgets import StyledCheckBox
+
+        # ── Auto-Dispatch ─────────────────────────────────────────────────
+        dispatch_cb = StyledCheckBox(
+            card, text=t("settings.autonomous.dispatch"),
+        )
+        if self.prefs:
+            dispatch_cb.setChecked(
+                self.prefs.get_setting("copilot.auto_dispatch", "0")
+                in ("1", "true"),
+            )
+        card._content_layout.addWidget(dispatch_cb)
+        self._auto_dispatch = dispatch_cb
+
+        dispatch_help = Label(
+            card, t("settings.autonomous.dispatch_help"), role="muted",
+        )
+        dispatch_help.setWordWrap(True)
+        card._content_layout.addWidget(dispatch_help)
+
+        # ── Auto-Invoice ─────────────────────────────────────────────────
+        invoice_cb = StyledCheckBox(
+            card, text=t("settings.autonomous.invoice"),
+        )
+        if self.prefs:
+            invoice_cb.setChecked(
+                self.prefs.get_setting("copilot.auto_invoice", "0")
+                in ("1", "true"),
+            )
+        card._content_layout.addWidget(invoice_cb)
+        self._auto_invoice = invoice_cb
+
+        invoice_help = Label(
+            card, t("settings.autonomous.invoice_help"), role="muted",
+        )
+        invoice_help.setWordWrap(True)
+        card._content_layout.addWidget(invoice_help)
+
+        # ── Auto-Email ────────────────────────────────────────────────────
+        email_cb = StyledCheckBox(
+            card, text=t("settings.autonomous.email"),
+        )
+        if self.prefs:
+            email_cb.setChecked(
+                self.prefs.get_setting("copilot.auto_email", "0")
+                in ("1", "true"),
+            )
+        card._content_layout.addWidget(email_cb)
+        self._auto_email = email_cb
+
+        email_help = Label(
+            card, t("settings.autonomous.email_help"), role="muted",
+        )
+        email_help.setWordWrap(True)
+        card._content_layout.addWidget(email_help)
+
+        # ── Circuit breaker status (stub) ────────────────────────────────
+        divider = Divider(card)
+        card._content_layout.addWidget(divider)
+
+        cb_header = Label(
+            card,
+            t("settings.autonomous.circuit_breaker_status"),
+            role="muted",
+        )
+        card._content_layout.addWidget(cb_header)
+
+        cb_status = Label(
+            card,
+            t("settings.autonomous.circuit_breaker_active"),
+            role="success",
+        )
+        card._content_layout.addWidget(cb_status)
+        self._circuit_breaker_status = cb_status
+
+    # ── Tutorial Section (§34.7) ──────────────────────────────────────────
+
+    def _build_section_tutorial(self) -> None:
+        """Build settings card for replaying the onboarding tour."""
+        card = self._section_card("settings.section_tutorial")
+        self._scroll.add_widget(card)
+
+        desc = Label(
+            card,
+            t("settings.tutorial.description"),
+            role="muted",
+        )
+        desc.setWordWrap(True)
+        card._content_layout.addWidget(desc)
+
+        # Check if tour has been completed before
+        from ui.copilot import tour_tracker
+        tour_completed = tour_tracker.is_tour_completed("app_overview")
+        status_key = "settings.tutorial.completed" if tour_completed else "settings.tutorial.not_completed"
+        status_label = Label(card, t(status_key), role="success" if tour_completed else "muted")
+        card._content_layout.addWidget(status_label)
+
+        # Replay button
+        replay_btn = Btn(
+            card,
+            t("settings.tutorial.replay_button"),
+            command=self._on_replay_tour,
+            variant="primary",
+        )
+        replay_btn.setFixedWidth(240)
+        card._content_layout.addWidget(replay_btn)
+
+        # Reset all tours button
+        reset_btn = Btn(
+            card,
+            t("settings.tutorial.reset_all_button"),
+            command=self._on_reset_all_tours,
+            variant="secondary",
+        )
+        reset_btn.setFixedWidth(240)
+        card._content_layout.addWidget(reset_btn)
+
+        self._i18n_buttons.append((replay_btn, "settings.tutorial.replay_button"))
+        self._i18n_buttons.append((reset_btn, "settings.tutorial.reset_all_button"))
+
+    def _on_replay_tour(self) -> None:
+        """Handle replay tour button click."""
+        from ui.copilot import tour_tracker
+        tour_tracker.clear_tour_completed("app_overview")
+        # Publish event so MainWindow picks it up
+        EventBus.publish(TOUR_REPLAY_REQUESTED, {"workflow_id": "app_overview"})
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self,
+            t("settings.tutorial.replay_title"),
+            t("settings.tutorial.replay_message"),
+        )
+
+    def _on_reset_all_tours(self) -> None:
+        """Handle reset all tours button."""
+        from ui.copilot import tour_tracker
+        tour_tracker.clear_all_tours()
+        EventBus.publish(TOUR_REPLAY_REQUESTED, {"workflow_id": "all"})
+        from PySide6.QtWidgets import QMessageBox
+        QMessageBox.information(
+            self,
+            t("settings.tutorial.reset_title"),
+            t("settings.tutorial.reset_message"),
+        )
 
     def _add_ocr_field(self, card, label: str, value: str):
         row = QWidget()

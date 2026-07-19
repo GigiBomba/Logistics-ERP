@@ -7,6 +7,7 @@ that uses the Qt widget toolkit from ``ui.qt_widgets``.
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Any, Callable
 
 from PySide6.QtCore import Qt
@@ -21,6 +22,8 @@ from services.i18n import register_listener, t, unregister_listener
 from services.trip_service import TripService
 from ui.theme import COLORS, S
 from ui.widgets import ActionButton, ScrollableFormContainer, StyledLineEdit, field
+
+logger = logging.getLogger(__name__)
 
 class QtEditWindow(QDialog):
     """Modal dialog for editing an existing trip record.
@@ -138,13 +141,16 @@ class QtEditWindow(QDialog):
         # Resolve truck_id from truck_number if the field was changed.
         raw_truck = new_data.get("truck_number", "").strip()
         if raw_truck:
-            from repositories.fleet_repository import FleetRepository
+            db = getattr(self._trip_service._trip_repo, '_db', None)  # type: ignore[union-attr]
+            if db is None:
+                logger.warning("Cannot resolve truck by plate - no local database in remote mode")
+                new_data["truck_id"] = None
+            else:
+                from repositories.fleet_repository import FleetRepository
 
-            fleet_repo = FleetRepository(
-                self._trip_service._trip_repo._db  # type: ignore[union-attr]
-            )
-            truck = fleet_repo.get_by_plate(raw_truck)
-            new_data["truck_id"] = truck["id"] if truck else None
+                fleet_repo = FleetRepository(db)
+                truck = fleet_repo.get_by_plate(raw_truck)
+                new_data["truck_id"] = truck["id"] if truck else None
         else:
             new_data["truck_id"] = None
 

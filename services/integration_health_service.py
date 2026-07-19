@@ -142,7 +142,7 @@ class IntegrationHealthService:
         try:
             import os
             import requests
-            url = os.environ.get("OPERION_GRAPHHOPPER_URL", "https://graphhopper.com/api/1")
+            url = os.environ.get("OPERION_GRAPHHOPPER_URL", "https://maps.operionerp.xyz")
             api_key = os.environ.get("OPERION_GRAPHHOPPER_API_KEY", "")
             if not api_key:
                 status.last_error = "GraphHopper API key not configured"

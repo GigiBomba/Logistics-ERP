@@ -219,14 +219,20 @@ class PermissionService:
     
     def can_create_receipt(self, user_id: int) -> PermissionCheckResult:
         return self.can_create_invoice(user_id)
-    
+
+    def can_update_receipt(self, user_id: int) -> PermissionCheckResult:
+        return self.can_create_invoice(user_id)
+
     # ------------------------------------------------------------------
     # Proforma permissions
     # ------------------------------------------------------------------
     
     def can_create_proforma(self, user_id: int) -> PermissionCheckResult:
         return self.can_create_invoice(user_id)
-    
+
+    def can_update_proforma(self, user_id: int) -> PermissionCheckResult:
+        return self.can_create_invoice(user_id)
+
     # ------------------------------------------------------------------
     # CMR permissions
     # ------------------------------------------------------------------

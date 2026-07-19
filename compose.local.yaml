@@ -18,8 +18,8 @@ services:
     volumes:
       # Persist SQLite database on the host so data survives container restarts
       - ./data:/app/data
-    env_file:
-      - .env
+      # Mount .env so main.py can load_dotenv() without Docker Compose corrupting $ in bcrypt hashes
+      - ./.env:/app/.env:ro
     environment:
       - OPERION_ENV=development
     restart: unless-stopped

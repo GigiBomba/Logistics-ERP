@@ -74,6 +74,10 @@ class TestSessionFixation:
         )
         assert login_resp_2.status_code == 200
 
+        # Clear cookies so the server reads the body refresh_token instead
+        # of the cookie set by the second login.
+        client.cookies.clear()
+
         # Verify the OLD refresh token from the first (admin) session
         # still cannot be used, even though a new session exists
         reuse_cross_session = client.post(
@@ -195,6 +199,10 @@ class TestRefreshRotationReplay:
         first_body = first.json()
         assert "access_token" in first_body
         assert "refresh_token" in first_body
+
+        # Clear cookies so the server reads the body refresh_token instead
+        # of the cookie set by the first refresh response.
+        client.cookies.clear()
 
         # Second use with the **original** refresh token — should fail
         second = client.post(

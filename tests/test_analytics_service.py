@@ -32,7 +32,7 @@ class TestDelegation:
 
     def test_get_financial_delegates(self, service, mock_repo):
         mock_repo.get_financial_analytics.return_value = {"rev": 100}
-        result = service.get_financial("2026-01-01", "2026-01-31")
+        result = service.get_financial(from_date="2026-01-01", to_date="2026-01-31")
         mock_repo.get_financial_analytics.assert_called_once_with(
             "2026-01-01", "2026-01-31"
         )

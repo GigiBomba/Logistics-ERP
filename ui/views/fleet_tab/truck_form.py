@@ -142,11 +142,13 @@ class _TruckFormDialog(QDialog):
                 ("", t("fleet.table_driver_unassigned"))
             ]
             try:
-                from repositories.driver_repository import DriverRepository
-
-                dr_repo = DriverRepository(self._service.db)
-                for dr in dr_repo.get_active_drivers():
-                    driver_options.append((str(dr["id"]), dr["name"]))
+                if self._service.db is None:
+                    logger.warning("DriverRepository requires local database - not available in remote mode")
+                else:
+                    from repositories.driver_repository import DriverRepository
+                    dr_repo = DriverRepository(self._service.db)
+                    for dr in dr_repo.get_active_drivers():
+                        driver_options.append((str(dr["id"]), dr["name"]))
             except Exception:
                 pass
 

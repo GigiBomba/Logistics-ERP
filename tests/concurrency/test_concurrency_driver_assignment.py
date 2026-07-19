@@ -15,10 +15,6 @@ pytestmark = pytest.mark.concurrency
 class TestConcurrencyDriverAssignment:
     """Concurrency tests for DriverTruckService assign/unassign races."""
 
-    @pytest.fixture
-    def db(self):
-        return make_db()
-
     def _create_truck(self, db, plate: str = "TRUCK-1", truck_id: int | None = None) -> int:
         if truck_id is not None:
             db.conn.execute(

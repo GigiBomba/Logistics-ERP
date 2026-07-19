@@ -64,7 +64,7 @@ class TestMaintenanceRouter:
 
         resp = client.get(f"{BASE}/cost-monthly?since=2024-01-01")
         assert resp.status_code == 200
-        mock_repo.get_maintenance_cost_monthly.assert_called_once_with("2024-01-01")
+        mock_repo.get_maintenance_cost_monthly.assert_called_once_with("2024-01-01", company_id=1)
 
     # ── cost-by-truck-monthly ──────────────────────────────────────────────
 

@@ -49,6 +49,7 @@ NAV_ICONS = {
     "calculator":         "fa5s.calculator",
     "dispatch_board":     "fa5s.truck-loading",
     "tracking":           "fa5s.map-marker-alt",
+    "freight_exchange":   "fa5s.search",
     "fleet":              "fa5s.truck-moving",
     "driver_manager":     "fa5s.user",
     "clients":            "fa5s.users",
@@ -59,6 +60,7 @@ NAV_ICONS = {
     "invoices":           "fa5s.file-invoice-dollar",
     "history":            "fa5s.clipboard-list",
     "route_history":       "fa5s.archive",
+    "copilot":             "fa5s.robot",
     "migration_center":    "fa5s.exchange-alt",
     "team":                "fa5s.user-cog",
     "settings":            "fa5s.cog",
@@ -336,16 +338,18 @@ class Sidebar(QFrame):
         frame = self._items.get(key)
         if frame is None:
             return
-        # Update styles directly for active state
+        # Update icon to accent color
+        icon_name = NAV_ICONS.get(key, "fa5s.circle")
         for child in frame.findChildren(QLabel):
-            if child.width() == 32 and child.height() == 16:
-                # This is the icon label
-                icon_name = NAV_ICONS.get(key, "fa5s.circle")
+            if child.width() == 32:  # icon label has fixedWidth(32)
                 child.setPixmap(qta.icon(icon_name, color=ACCENT_TEXT).pixmap(16, 16))
-            elif child.text() and child != frame.findChildren(QLabel)[0]:
-                child.setStyleSheet(
-                    f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600; background: transparent;"
-                )
+                break
+        # Update text label using stored reference (avoids fragile child detection)
+        text_lbl = self._labels.get(key)
+        if text_lbl is not None:
+            text_lbl.setStyleSheet(
+                f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600; background: transparent;"
+            )
         frame.setStyleSheet(
             f"background: {BG_OVERLAY}; border: none; border-left: 3px solid {ACCENT};"
         )
@@ -354,14 +358,16 @@ class Sidebar(QFrame):
         frame = self._items.get(key)
         if frame is None:
             return
+        icon_name = NAV_ICONS.get(key, "fa5s.circle")
         for child in frame.findChildren(QLabel):
-            if child.width() == 32 and child.height() == 16:
-                icon_name = NAV_ICONS.get(key, "fa5s.circle")
+            if child.width() == 32:  # icon label has fixedWidth(32)
                 child.setPixmap(qta.icon(icon_name, color=TEXT_MUTED).pixmap(16, 16))
-            elif child.text() and child != frame.findChildren(QLabel)[0]:
-                child.setStyleSheet(
-                    f"color: {TEXT_SECONDARY}; font-size: 13px; background: transparent;"
-                )
+                break
+        text_lbl = self._labels.get(key)
+        if text_lbl is not None:
+            text_lbl.setStyleSheet(
+                f"color: {TEXT_SECONDARY}; font-size: 13px; background: transparent;"
+            )
         frame.setStyleSheet("background: transparent; border: none;")
 
     # ── Event filter — nav item clicks ──────────────────────────

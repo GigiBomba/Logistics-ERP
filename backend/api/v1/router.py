@@ -8,16 +8,20 @@ from backend.api.v1 import (
     auth,
     clients,
     cmr,
+    copilot_router,
     documents,
     drivers,
     feature_flags,
     fleet,
+    freight_exchange,
     gdpr,
     health,
     invoices,
     maintenance,
+    mobile,
     oauth2,
     ocr,
+    payments,
     receipts,
     registration,
     route_demo,
@@ -42,6 +46,7 @@ api_v1_router.include_router(trips.router)
 api_v1_router.include_router(clients.router)
 api_v1_router.include_router(drivers.router)
 api_v1_router.include_router(fleet.router)
+api_v1_router.include_router(freight_exchange.router)
 api_v1_router.include_router(routes.router)
 api_v1_router.include_router(analytics.router)
 api_v1_router.include_router(maintenance.router)
@@ -50,13 +55,16 @@ api_v1_router.include_router(settings.router)
 api_v1_router.include_router(tacho.router)
 api_v1_router.include_router(invoices.router)
 api_v1_router.include_router(cmr.router)
+api_v1_router.include_router(copilot_router.router)
 api_v1_router.include_router(receipts.router)
 api_v1_router.include_router(registration.router)
 api_v1_router.include_router(route_demo.router)
 api_v1_router.include_router(users.router)
 api_v1_router.include_router(oauth2.router)
+api_v1_router.include_router(payments.router)
 api_v1_router.include_router(feature_flags.router)
 api_v1_router.include_router(gdpr.router)
 api_v1_router.include_router(slo.router)
 api_v1_router.include_router(webhooks.router)
 api_v1_router.include_router(waitlist.router)
+api_v1_router.include_router(mobile.router)

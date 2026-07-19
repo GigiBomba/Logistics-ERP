@@ -3,7 +3,7 @@
 Resolves the API base URL and environment mode from ``OPERION_ENV``
 and ``OPERION_API_URL`` environment variables.  In *production* mode
 SSL verification is enforced; for *development* the client falls back
-to ``http://127.0.0.1:8000`` with relaxed verification.
+to ``https://api.operionerp.xyz`` with relaxed verification.
 
 Usage::
 
@@ -41,9 +41,9 @@ class ClientConfig:
     def _read_fallback() -> str:
         try:
             from config import Config
-            return getattr(Config, "API_BASE_URL", "http://127.0.0.1:8000")
+            return getattr(Config, "API_BASE_URL", "https://api.operionerp.xyz")
         except Exception:
-            return "http://127.0.0.1:8000"
+            return "https://api.operionerp.xyz"
 
     @property
     def env(self) -> str:

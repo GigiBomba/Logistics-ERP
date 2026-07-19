@@ -154,7 +154,7 @@ class TestCalculateRouteDemoEndpoint:
     def test_success_returns_standard_and_optimized(self, app):
         """On success both 'standard' and 'optimized' cost objects are returned."""
         with patch("services.geocode_nominatim.geocode_place") as mock_geo, \
-             patch("services.route_service.GraphHopperClient") as mock_gh_cls:
+             patch("backend.services.route_service.GraphHopperClient") as mock_gh_cls:
 
             # Geocoding: Berlin → (52.52, 13.405), Paris → (48.8566, 2.3522)
             mock_geo.side_effect = [
@@ -197,7 +197,7 @@ class TestCalculateRouteDemoEndpoint:
     def test_success_response_contains_all_cost_keys(self, app):
         """Both cost objects include all expected cost metrics."""
         with patch("services.geocode_nominatim.geocode_place") as mock_geo, \
-             patch("services.route_service.GraphHopperClient") as mock_gh_cls:
+             patch("backend.services.route_service.GraphHopperClient") as mock_gh_cls:
 
             mock_geo.side_effect = [(52.52, 13.405), (48.8566, 2.3522)]
             mock_gh = MagicMock()
@@ -323,7 +323,7 @@ class TestCalculateRouteDemoEndpoint:
     def test_standard_route_fails_returns_502(self, app):
         """When the standard (truck) route call fails, returns 502."""
         with patch("services.geocode_nominatim.geocode_place") as mock_geo, \
-             patch("services.route_service.GraphHopperClient") as mock_gh_cls:
+             patch("backend.services.route_service.GraphHopperClient") as mock_gh_cls:
 
             mock_geo.side_effect = [(52.52, 13.405), (48.8566, 2.3522)]
             mock_gh = MagicMock()
@@ -344,7 +344,7 @@ class TestCalculateRouteDemoEndpoint:
     def test_optimized_route_fails_returns_502(self, app):
         """When the optimized (truck_fast) route call fails, returns 502."""
         with patch("services.geocode_nominatim.geocode_place") as mock_geo, \
-             patch("services.route_service.GraphHopperClient") as mock_gh_cls:
+             patch("backend.services.route_service.GraphHopperClient") as mock_gh_cls:
 
             mock_geo.side_effect = [(52.52, 13.405), (48.8566, 2.3522)]
             mock_gh = MagicMock()
@@ -365,7 +365,7 @@ class TestCalculateRouteDemoEndpoint:
     def test_both_routes_fail_returns_first_502(self, app):
         """When both routes fail, the first error (standard) is raised as 502."""
         with patch("services.geocode_nominatim.geocode_place") as mock_geo, \
-             patch("services.route_service.GraphHopperClient") as mock_gh_cls:
+             patch("backend.services.route_service.GraphHopperClient") as mock_gh_cls:
 
             mock_geo.side_effect = [(52.52, 13.405), (48.8566, 2.3522)]
             mock_gh = MagicMock()
@@ -384,7 +384,7 @@ class TestCalculateRouteDemoEndpoint:
     def test_no_auth_required(self, app):
         """The route-demo endpoint is public and returns 200 without any auth token."""
         with patch("services.geocode_nominatim.geocode_place") as mock_geo, \
-             patch("services.route_service.GraphHopperClient") as mock_gh_cls:
+             patch("backend.services.route_service.GraphHopperClient") as mock_gh_cls:
 
             mock_geo.side_effect = [(52.52, 13.405), (48.8566, 2.3522)]
             mock_gh = MagicMock()
@@ -403,7 +403,7 @@ class TestCalculateRouteDemoEndpoint:
     def test_costs_computed_correctly(self, app):
         """Verify the calculated costs with known geocoding and route data."""
         with patch("services.geocode_nominatim.geocode_place") as mock_geo, \
-             patch("services.route_service.GraphHopperClient") as mock_gh_cls:
+             patch("backend.services.route_service.GraphHopperClient") as mock_gh_cls:
 
             mock_geo.side_effect = [(52.52, 13.405), (48.8566, 2.3522)]
             mock_gh = MagicMock()

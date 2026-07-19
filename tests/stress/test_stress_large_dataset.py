@@ -42,23 +42,26 @@ def _seed_trips(db, count: int = 10000) -> None:
         end = start + timedelta(days=random.randint(1, 5))
         created = start - timedelta(days=random.randint(0, 3))
 
-        rows.append((
-            i + 1, created.strftime("%Y-%m-%d %H:%M:%S"), end.strftime("%Y-%m-%d %H:%M:%S"),
-            truck, driver, client, round(distance, 2), round(revenue, 2),
-            round(revenue / distance, 4) if distance > 0 else 0,
-            round(profit, 2), start.strftime("%Y-%m-%d"), end.strftime("%Y-%m-%d"),
-            "", round(fuel, 2), round(toll, 2), round(salary, 2),
-            "EUR", status, country, country, 0, "",
-            "", "", "", 0, 0, 0, 21.0, "",
-            "", "", "", "", "", "", "", "", "", "",
-            "", "", "", "", "", "", "", "",
-        ))
+        rows.append({
+            "id": i + 1, "created_at": created.strftime("%Y-%m-%d %H:%M:%S"),
+            "truck_number": truck, "driver_name": driver, "client_name": client,
+            "distance_km": round(distance, 2), "total_price_eur": round(revenue, 2),
+            "rate_per_km": round(revenue / distance, 4) if distance > 0 else 0,
+            "net_profit": round(profit, 2),
+            "start_date": start.strftime("%Y-%m-%d"), "end_date": end.strftime("%Y-%m-%d"),
+            "fuel_cost": round(fuel, 2), "toll_cost": round(toll, 2), "salary_cost": round(salary, 2),
+            "currency": "EUR", "status": status,
+            "loading_country": country, "delivery_country": country,
+        })
 
         if len(rows) >= batch_size or i == count - 1:
-            placeholders = ",".join("(" + ",".join("?" for _ in range(48)) + ")" for _ in rows)
-            flat_params = [v for row in rows for v in row]
+            cols = list(rows[0].keys())
+            col_list = ", ".join(cols)
+            val_placeholders = ", ".join("?" for _ in cols)
+            all_rows_ph = ",".join(f"({val_placeholders})" for _ in rows)
+            flat_params = [row[c] for row in rows for c in cols]
             db.conn.execute(
-                f"INSERT INTO trips VALUES {placeholders}",
+                f"INSERT INTO trips ({col_list}) VALUES {all_rows_ph}",
                 flat_params,
             )
             db.conn.commit()
@@ -78,7 +81,7 @@ class TestStressLargeDataset:
 
     def test_analytics_over_large_dataset(self, db_with_10k_trips):
         """Seed 10k trips, hit /analytics/financial with real SQL — verify < 5s."""
-        from services.analytics_service import AnalyticsService
+        from backend.services.analytics_service import AnalyticsService
 
         svc = AnalyticsService(db_with_10k_trips)
 
@@ -96,7 +99,7 @@ class TestStressLargeDataset:
 
     def test_analytics_all_endpoints_large_dataset(self, db_with_10k_trips):
         """Hit all analytics endpoints on 10k-trip DB — verify each < 10s."""
-        from services.analytics_service import AnalyticsService
+        from backend.services.analytics_service import AnalyticsService
 
         svc = AnalyticsService(db_with_10k_trips)
         # Invalidate caches between calls to force real DB queries

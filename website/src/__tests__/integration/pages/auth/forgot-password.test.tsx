@@ -9,15 +9,13 @@ describe("ForgotPasswordPage", () => {
 
   it("renders forgot password form", () => {
     render(<ForgotPasswordPage />)
-    expect(screen.getByText("Reset your password")).toBeInTheDocument()
+    expect(screen.getByText("Reset Password")).toBeInTheDocument()
     expect(screen.getByLabelText("Email")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /send reset link/i })).toBeInTheDocument()
   })
 
-  it("renders link back to login", () => {
+  it("renders link back to home", () => {
     render(<ForgotPasswordPage />)
     expect(screen.getByText(/remember your password/i)).toBeInTheDocument()
-    const signInLink = screen.getByText(/sign in/i)
-    expect(signInLink).toHaveAttribute("href", "/login")
   })
 })

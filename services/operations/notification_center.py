@@ -6,6 +6,7 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from typing import Any, Optional
 
+from repositories.settings_repository import SettingsRepository
 from services.encryption_service import decrypt_value
 from services.operations.alert_manager import AlertManager, Severity
 from services.operations.event_bus import ALERT_CREATED, ALERT_RESOLVED, EventBus
@@ -140,7 +141,7 @@ class NotificationCenter:
         if not self._db:
             return []
         try:
-            cfg = self._db.get_settings(["alert_email_recipients"])
+            cfg = SettingsRepository(self._db).get_settings_by_keys(["alert_email_recipients"])
             raw = cfg.get("alert_email_recipients", "")
             return [e.strip() for e in raw.split(",") if e.strip()]
         except Exception:

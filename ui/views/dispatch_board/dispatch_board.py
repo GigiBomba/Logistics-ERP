@@ -32,6 +32,7 @@ from services.driver_truck_service import DriverTruckService
 from services.fleet_service import FleetService
 from services.i18n import t
 from ui.base_view import BaseView
+from ui.mode_guard import ConnectionMode, detect_mode, guard_local_access
 from services.operations.alert_manager import AlertManager
 from services.operations.event_bus import (
     ALERT_CREATED,
@@ -104,8 +105,12 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._columns: dict[str, QtKanbanColumn] = {}
         self._loading = False
         self._delivered_days = DELIVERED_DEFAULT_DAYS
+        self._delivered_show_all = False
         self._destroyed = False
         self._load_thread: threading.Thread | None = None
+
+        # AlertManager — must be created BEFORE any service references it
+        self._alert_mgr = AlertManager()
 
         # ── Services (data access through service layer only) ────────
         if db is not None:
@@ -145,7 +150,10 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             self._fleet_repo = None
             self._driver_repo = None
             self._route_repo = None
-        self._alert_mgr = AlertManager()
+
+        # ── Mode guard ───────────────────────────────────────────────────────
+        self._mode = detect_mode(db, api_client)
+        guard_local_access(self._mode, "Dispatch board")
 
         # Caches
         self._driver_cache: dict[int, dict | None] = {}
@@ -473,6 +481,8 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                     on_assign_both=self._on_assign_both,
                 )
                 target_col.add_card(card, index=0)
+                if target_column_key == "Cancelled":
+                    self._trim_cancelled_column()
             logger.debug("Trip %d card added to %s column", trip_id, target_column_key)
         except Exception:
             logger.debug("Failed to handle trip.created for %s", trip_id, exc_info=True)
@@ -504,6 +514,10 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             card_data["status"] = new_status
 
             if source:
+                # Remove from selection if selected (card is about to be destroyed)
+                if card in self._selected_cards:
+                    self._selected_cards.remove(card)
+                    self._update_bulk_toolbar()
                 source.remove_card(card)
 
             new_card = QtTripCard(
@@ -517,6 +531,8 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                 on_assign_both=self._on_assign_both,
             )
             target.add_card(new_card, index=0)
+            if column_key == "Cancelled":
+                self._trim_cancelled_column()
 
             # Delegate to DispatchService for delay/alert logic
             if new_status == "Delivered" and self._dispatch_service is not None:
@@ -535,12 +551,20 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         trip_id = data.get("trip_id")
         if not trip_id:
             return
+        try:
+            trip_id = int(trip_id)
+        except (ValueError, TypeError):
+            return
         self._refresh_card_in_place(trip_id)
 
     def _handle_trip_assigned(self, ev) -> None:
         data = ev.get("data", {})
         trip_id = data.get("trip_id")
         if not trip_id:
+            return
+        try:
+            trip_id = int(trip_id)
+        except (ValueError, TypeError):
             return
         card = self._find_card_by_trip_id(trip_id)
         if not card:
@@ -569,7 +593,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._alert_counts[tid] = self._alert_counts.get(tid, 0) + 1
         card = self._find_card_by_trip_id(tid)
         if card:
-            card.trip_data["alerts_count"] = self._alert_counts[tid]
+            card.update_alert_count(self._alert_counts[tid])
 
     def _handle_alert_resolved(self, ev) -> None:
         data = ev.get("data", {})
@@ -585,7 +609,22 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._alert_counts[tid] = max(0, current - 1)
         card = self._find_card_by_trip_id(tid)
         if card:
-            card.trip_data["alerts_count"] = self._alert_counts.get(tid, 0)
+            card.update_alert_count(self._alert_counts.get(tid, 0))
+
+    CANCELLED_MAX = 3
+
+    def _trim_cancelled_column(self) -> None:
+        """Keep only the last CANCELLED_MAX cards in the Cancelled column."""
+        col = self._columns.get("Cancelled")
+        if col is None:
+            return
+        cards = list(col._cards)
+        if len(cards) <= self.CANCELLED_MAX:
+            return
+        # Cards are ordered with newest at top (index 0).
+        # Keep the first CANCELLED_MAX (newest), remove the rest.
+        for card in cards[self.CANCELLED_MAX:]:
+            col.remove_card(card)
 
     def _handle_truck_updated(self, ev) -> None:
         data = ev.get("data", {})
@@ -659,6 +698,41 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             card.update_truck(trip.get("truck_number", ""), trip.get("truck_id"))
             card.update_driver(trip.get("driver_name", ""), trip.get("driver_id"))
             card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
+
+            # Update route label
+            if card._route_lbl is not None:
+                origin = trip.get("origin", "") or card.trip_data.get("origin", "?")
+                destination = trip.get("destination", "") or card.trip_data.get("destination", "?")
+                if not origin and not destination:
+                    # Try to resolve from route
+                    route_id = trip.get("route_history_v2_id")
+                    if route_id:
+                        try:
+                            route = self._route_repo.get_by_id(int(route_id)) if self._route_repo else None
+                            if route:
+                                origin, destination = self._extract_stops(route)
+                                card.trip_data["origin"] = origin
+                                card.trip_data["destination"] = destination
+                        except Exception:
+                            pass
+                if not origin:
+                    origin = "?"
+                if not destination:
+                    destination = "?"
+                card._route_lbl.setText(f"{origin} \u2192 {destination}")
+
+            # Update date label
+            if card._date_lbl is not None:
+                departure = trip.get("start_date", "") or card.trip_data.get("departure_date", "")
+                eta = trip.get("end_date", "") or card.trip_data.get("eta", "")
+                date_parts = []
+                if departure:
+                    date_parts.append(f"\u25b6 {departure}")
+                if eta:
+                    date_parts.append(f"\u25c0 {eta}")
+                date_text = "  ".join(date_parts) if date_parts else ""
+                card._date_lbl.setText(date_text)
+
             self._evaluate_single_delay_from_data(card)
         except Exception:
             logger.debug("Failed to refresh card for trip %d", trip_id, exc_info=True)

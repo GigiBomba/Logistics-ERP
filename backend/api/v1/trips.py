@@ -12,9 +12,9 @@ from backend.schemas.trip import (
     TripResponse,
     TripUpdateRequest,
 )
-from config import Config
-from database.db_manager import DatabaseManager
-from services.trip_service import TripService
+from backend.db import DatabaseManager
+from backend.desktop_config import Config
+from backend.services.trip_service import TripService
 
 from backend.dependencies_security import require_dispatcher
 
@@ -35,7 +35,8 @@ def list_trips(
     service: TripService = Depends(get_trip_service),
 ):
     """Return paginated list of trips."""
-    items = service.get_filtered(search=search, status=status, limit=page_size)
+    company_id = current_user.get("company_id", 0)
+    items = service.get_filtered(company_id=company_id, search=search, status=status, limit=page_size)
     return PaginatedResponse.from_items(
         items=[TripResponse(**t) for t in items],
         total=len(items),
@@ -50,7 +51,8 @@ def get_trip(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
 ):
-    trip = service.get_by_id(trip_id)
+    company_id = current_user.get("company_id", 0)
+    trip = service.get_by_id(trip_id, company_id=company_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
     return TripResponse(**trip)
@@ -62,7 +64,8 @@ def create_trip(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
 ):
-    trip_id = service.add(data.model_dump(exclude_unset=True))
+    company_id = current_user.get("company_id", 0)
+    trip_id = service.add(data.model_dump(exclude_unset=True), company_id=company_id)
     return {"id": trip_id}
 
 
@@ -74,7 +77,8 @@ def update_trip_partial(
     service: TripService = Depends(get_trip_service),
 ):
     """Partially update a trip (PATCH)."""
-    service.update(trip_id, data.model_dump(exclude_unset=True))
+    company_id = current_user.get("company_id", 0)
+    service.update(trip_id, data.model_dump(exclude_unset=True), company_id=company_id)
     return {"status": "updated"}
 
 
@@ -87,7 +91,8 @@ def update_trip(
     response: Response = None,
 ):
     """[DEPRECATED] Use PATCH /{trip_id} instead."""
-    service.update(trip_id, data.model_dump(exclude_unset=True))
+    company_id = current_user.get("company_id", 0)
+    service.update(trip_id, data.model_dump(exclude_unset=True), company_id=company_id)
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
     return {"status": "updated"}
@@ -99,7 +104,8 @@ def delete_trip(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
 ):
-    service.delete(trip_id)
+    company_id = current_user.get("company_id", 0)
+    service.delete(trip_id, company_id=company_id)
     return {"status": "deleted"}
 
 
@@ -109,9 +115,10 @@ def check_trip_conflicts(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from services.conflict_service import TripConflictService
+    company_id = current_user.get("company_id", 0)
+    from backend.services.conflict_service import TripConflictService
     svc = TripConflictService(db)
-    conflicts = svc.check_conflicts(data.model_dump(exclude_unset=True))
+    conflicts = svc.check_conflicts(data.model_dump(exclude_unset=True), company_id=company_id)
     return {"conflicts": conflicts}
 
 
@@ -121,9 +128,10 @@ def export_trip_pdf(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from services.export_service import ExportService
+    company_id = current_user.get("company_id", 0)
+    from backend.services.export_service import ExportService
     svc = ExportService()
-    trip = TripService(db).get_by_id(trip_id)
+    trip = TripService(db).get_by_id(trip_id, company_id=company_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
     os.makedirs(Config.REPORTS_DIR, exist_ok=True)
@@ -139,9 +147,10 @@ def export_trip_excel(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from services.export_service import ExportService
+    company_id = current_user.get("company_id", 0)
+    from backend.services.export_service import ExportService
     svc = ExportService()
-    trip = TripService(db).get_by_id(trip_id)
+    trip = TripService(db).get_by_id(trip_id, company_id=company_id)
     if not trip:
         raise HTTPException(status_code=404, detail="Trip not found")
     os.makedirs(Config.REPORTS_DIR, exist_ok=True)

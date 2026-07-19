@@ -44,7 +44,7 @@ from PySide6.QtWidgets import (
 from services.app_state import AppState
 from services.client_service import ClientService
 from services.numbering_service import NumberingService
-from repositories.invoice_repository import INVOICE_NUMBER_FORMATS, DEFAULT_INVOICE_FORMAT_KEY as INV_DEFAULT_FMT
+from repositories.invoice_repository import INVOICE_NUMBER_FORMATS, DEFAULT_INVOICE_FORMAT_KEY as INV_DEFAULT_FMT  # model constants, not data access
 from services.i18n import t
 from ui.base_view import BaseView
 from utils.editor_toolkit import DebouncedTask, export_editor_data, register_shortcuts, validate_and_highlight
@@ -957,6 +957,8 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         lbl = QLabel(label)
         lbl.setProperty("fontRole", "label")
         lbl.setFixedWidth(70)
+        if tag == "logo":
+            self._logo_label = lbl
         row_layout.addWidget(lbl)
 
         entry = StyledLineEdit(text=path_value, height=28)
@@ -1459,6 +1461,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             "client_id": self._selected_client_id,
             "price_pre_vat": price_pre_vat,
             "vat_percent": vat_percent,
+            "trip_label": self._trip_combo.currentText() if hasattr(self, "_trip_combo") else "",
         }
 
     def _preview_pdf(self) -> None:
@@ -1824,6 +1827,17 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             if client_name and client_name in self._client_map:
                 self._client_combo.setCurrentText(client_name)
                 # Signal will fire _on_client_selected
+
+            # Restore selected trip ID from loaded data
+            loaded_trip_id = data.get("trip_id")
+            if loaded_trip_id is not None:
+                self._selected_trip_id = int(loaded_trip_id)
+                self._selected_trip_data = data.get("trip_data")
+            # Also try to match by trip combo text if trip data has client context
+            trip_label = data.get("trip_label", "")
+            if trip_label and trip_label in self._trip_map:
+                self._trip_combo.setCurrentText(trip_label)
+                # Signal will fire _on_trip_selected
 
             self._update_canvas_labels()
             self._recalc_all()

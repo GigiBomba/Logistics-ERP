@@ -45,7 +45,12 @@ from ui.components import (
 )
 from ui.design_tokens import (
     ACCENT,
+    COLOR_ERROR_TEXT,
+    COLOR_SUCCESS_TEXT,
+    COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_TEXT,
+    DANGER,
     DANGER_TEXT,
     FONT_MONO,
     FONT_SIZE_BASE,
@@ -54,9 +59,11 @@ from ui.design_tokens import (
     FONT_WEIGHT_SEMIBOLD,
     INFO_TEXT,
     SP,
+    SUCCESS,
     SUCCESS_TEXT,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
+    WARNING,
     WARNING_TEXT,
 )
 from ui.widgets.layout_utils import clear_layout
@@ -414,12 +421,6 @@ class QtOverviewView(BaseView):
 
     def _compute_kpi_value(self, key: str) -> tuple:
         """Compute (value_text, value_color) for the given KPI key."""
-        from ui.design_tokens import (
-            COLOR_ERROR_TEXT,
-            COLOR_SUCCESS_TEXT,
-            COLOR_TEXT_PRIMARY,
-            COLOR_WARNING_TEXT,
-        )
         svc = self._analytics_svc
         try:
             if key == "fin_revenue":
@@ -457,7 +458,14 @@ class QtOverviewView(BaseView):
                 return (str(len(drivers)), COLOR_TEXT_PRIMARY)
             elif key == "driver_top":
                 drivers = svc.get_driver() or []
-                top = drivers[0].get("driver", "\u2014") if drivers else "\u2014"
+                if drivers:
+                    # Sort by profit descending to show the top-performing driver
+                    sorted_drivers = sorted(
+                        drivers, key=lambda d: d.get("profit", 0) or 0, reverse=True
+                    )
+                    top = sorted_drivers[0].get("driver", "\u2014")
+                else:
+                    top = "\u2014"
                 return (top, COLOR_TEXT_PRIMARY)
             elif key == "driver_avg_trips":
                 drivers = svc.get_driver() or []
@@ -484,7 +492,6 @@ class QtOverviewView(BaseView):
                 clients = svc.get_client_analytics() or []
                 delays = [c.get("avg_payment_delay_days", 0) or 0 for c in clients]
                 avg = sum(delays) / max(len(delays), 1)
-                from ui.design_tokens import DANGER, SUCCESS, WARNING
                 color = DANGER if avg > 30 else (WARNING if avg > 15 else SUCCESS)
                 return (f"{avg:.1f} d", color)
             elif key == "client_conc":
@@ -495,7 +502,6 @@ class QtOverviewView(BaseView):
                     pct = (top_rev / total_rev * 100) if total_rev > 0 else 0
                 else:
                     pct = 0
-                from ui.design_tokens import DANGER, SUCCESS, WARNING
                 color = DANGER if pct > 70 else (WARNING if pct > 50 else SUCCESS)
                 return (f"{pct:.0f}%", color)
             elif key == "route_top":

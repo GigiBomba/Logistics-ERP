@@ -3,6 +3,25 @@ import type {
   AuthResponse,
   LoginRequest,
   RegisterRequest,
+  User,
+  Subscription,
+  Plan,
+  Company,
+  CompanyUpdateRequest,
+  BlogPost,
+  BlogCategory,
+  BlogAuthor,
+  PaginatedResponse,
+  SupportTicket,
+  ChangelogEntry,
+  RoadmapItem,
+  ServiceStatusGroup,
+  Tutorial,
+  DevResource,
+  DesktopRelease,
+  SecurityReport,
+  Announcement,
+  Invoice,
 } from "@/types"
 
 export const authApi = {
@@ -36,33 +55,27 @@ export const authApi = {
   resetPassword: (token: string, newPassword: string) =>
     apiClient.post("/api/v1/auth/reset-password", { token, new_password: newPassword }),
 
-  // TODO: Implement backend endpoint
-  // verifyEmail: (token: string) =>
-  //   apiClient.post("/api/v1/auth/verify-email", { token }),
+  verifyEmail: (token: string) =>
+    apiClient.post("/api/v1/auth/verify-email", { token }),
 
-  // TODO: Implement backend endpoint
-  // getMe: () => apiClient.get<User>("/api/v1/auth/me"),
+  getMe: () => apiClient.get<User>("/api/v1/auth/me"),
 
-  // TODO: Implement backend endpoint
-  // updateProfile: (data: { name?: string; email?: string }) =>
-  //   apiClient.patch<User>("/api/v1/auth/me", data),
+  updateProfile: (data: { name?: string; email?: string }) =>
+    apiClient.patch<User>("/api/v1/auth/me", data),
 
-  // TODO: Implement backend endpoint
-  // changePassword: (data: { current_password: string; new_password: string }) =>
-  //   apiClient.post("/api/v1/auth/change-password", data),
+  changePassword: (data: { current_password: string; new_password: string }) =>
+    apiClient.post("/api/v1/auth/change-password", data),
 }
 
-// TODO: Implement backend endpoint
-// export const subscriptionApi = {
-//   getCurrent: () => apiClient.get<Subscription>("/api/v1/subscriptions/current"),
-//   getPlans: () => apiClient.get<Plan[]>("/api/v1/subscriptions/plans"),
-// }
+export const subscriptionApi = {
+  getCurrent: () => apiClient.get<Subscription>("/api/v1/subscriptions/current"),
+  getPlans: () => apiClient.get<Plan[]>("/api/v1/subscriptions/plans"),
+}
 
-// TODO: Implement backend endpoint
-// export const companyApi = {
-//   get: () => apiClient.get<Company>("/api/v1/company"),
-//   update: (data: CompanyUpdateRequest) => apiClient.patch<Company>("/api/v1/company", data),
-// }
+export const companyApi = {
+  get: () => apiClient.get<Company>("/api/v1/company"),
+  update: (data: CompanyUpdateRequest) => apiClient.patch<Company>("/api/v1/company", data),
+}
 
 export interface CreateTicketRequest {
   subject: string
@@ -70,35 +83,32 @@ export interface CreateTicketRequest {
   priority?: "low" | "medium" | "high" | "urgent"
 }
 
-// TODO: Implement backend endpoint
-// export const supportApi = {
-//   createTicket: (data: CreateTicketRequest) =>
-//     apiClient.post<SupportTicket>("/api/v1/support/tickets", data),
-//   getTickets: () => apiClient.get<SupportTicket[]>("/api/v1/support/tickets"),
-//   getTicket: (id: string) => apiClient.get<SupportTicket>(`/api/v1/support/tickets/${id}`),
-// }
+export const supportApi = {
+  createTicket: (data: CreateTicketRequest) =>
+    apiClient.post<SupportTicket>("/api/v1/support/tickets", data),
+  getTickets: () => apiClient.get<SupportTicket[]>("/api/v1/support/tickets"),
+  getTicket: (id: string) => apiClient.get<SupportTicket>(`/api/v1/support/tickets/${id}`),
+}
 
-// TODO: Implement backend endpoint
-// export const downloadApi = {
-//   getLatest: () => apiClient.get("/api/v1/downloads/latest"),
-//   getVersions: () => apiClient.get("/api/v1/downloads/versions"),
-// }
+export const downloadApi = {
+  getLatest: () => apiClient.get("/api/v1/downloads/latest"),
+  getVersions: () => apiClient.get("/api/v1/downloads/versions"),
+}
 
 // ─── Blog ───────────────────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const blogApi = {
-//   getPosts: (params?: { page?: number; category?: string; tag?: string; search?: string }) =>
-//     apiClient.get<PaginatedResponse<BlogPost>>("/api/blog/posts", { params }),
-// 
-//   getPost: (slug: string) =>
-//     apiClient.get<BlogPost>(`/api/blog/posts/${slug}`),
-// 
-//   getCategories: () =>
-//     apiClient.get<BlogCategory[]>("/api/blog/categories"),
-// 
-//   getAuthor: (id: string) =>
-//     apiClient.get<BlogAuthor>(`/api/blog/authors/${id}`),
-// }
+export const blogApi = {
+  getPosts: (params?: { page?: number; category?: string; tag?: string; search?: string }) =>
+    apiClient.get<PaginatedResponse<BlogPost>>("/api/blog/posts", { params }),
+
+  getPost: (slug: string) =>
+    apiClient.get<BlogPost>(`/api/blog/posts/${slug}`),
+
+  getCategories: () =>
+    apiClient.get<BlogCategory[]>("/api/blog/categories"),
+
+  getAuthor: (id: string) =>
+    apiClient.get<BlogAuthor>(`/api/blog/authors/${id}`),
+}
 
 // ─── Admin Blog ─────────────────────────────────────────────
 export interface CreateBlogPostRequest {
@@ -127,82 +137,73 @@ export interface UpdateBlogPostRequest {
   published?: boolean
 }
 
-// TODO: Implement backend endpoint
-// export const adminBlogApi = {
-//   createPost: (data: CreateBlogPostRequest) =>
-//     apiClient.post<BlogPost>("/api/admin/blog/posts", data),
-// 
-//   updatePost: (slug: string, data: UpdateBlogPostRequest) =>
-//     apiClient.patch<BlogPost>(`/api/admin/blog/posts/${slug}`, data),
-// 
-//   deletePost: (slug: string) =>
-//     apiClient.delete(`/api/admin/blog/posts/${slug}`),
-// }
+export const adminBlogApi = {
+  createPost: (data: CreateBlogPostRequest) =>
+    apiClient.post<BlogPost>("/api/admin/blog/posts", data),
+
+  updatePost: (slug: string, data: UpdateBlogPostRequest) =>
+    apiClient.patch<BlogPost>(`/api/admin/blog/posts/${slug}`, data),
+
+  deletePost: (slug: string) =>
+    apiClient.delete(`/api/admin/blog/posts/${slug}`),
+}
 
 // ─── Changelog ──────────────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const changelogApi = {
-//   getEntries: () =>
-//     apiClient.get<ChangelogEntry[]>("/api/v1/changelog"),
-// }
+export const changelogApi = {
+  getEntries: () =>
+    apiClient.get<ChangelogEntry[]>("/api/v1/changelog"),
+}
 
 // ─── Roadmap ────────────────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const roadmapApi = {
-//   getItems: (status?: string) =>
-//     apiClient.get<RoadmapItem[]>("/api/v1/roadmap", { params: { status } }),
-// }
+export const roadmapApi = {
+  getItems: (status?: string) =>
+    apiClient.get<RoadmapItem[]>("/api/v1/roadmap", { params: { status } }),
+}
 
 // ─── Service Status ─────────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const statusApi = {
-//   getStatus: () =>
-//     apiClient.get<ServiceStatusGroup[]>("/api/v1/status"),
-// }
+export const statusApi = {
+  getStatus: () =>
+    apiClient.get<ServiceStatusGroup[]>("/api/v1/status"),
+}
 
 // ─── Tutorials ──────────────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const tutorialsApi = {
-//   getTutorials: (params?: { category?: string; search?: string }) =>
-//     apiClient.get<Tutorial[]>("/api/v1/tutorials", { params }),
-// 
-//   getTutorial: (slug: string) =>
-//     apiClient.get<Tutorial>(`/api/v1/tutorials/${slug}`),
-// }
+export const tutorialsApi = {
+  getTutorials: (params?: { category?: string; search?: string }) =>
+    apiClient.get<Tutorial[]>("/api/v1/tutorials", { params }),
+
+  getTutorial: (slug: string) =>
+    apiClient.get<Tutorial>(`/api/v1/tutorials/${slug}`),
+}
 
 // ─── Developer Resources ────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const developersApi = {
-//   getResources: () =>
-//     apiClient.get<DevResource[]>("/api/v1/developers/resources"),
-// 
-//   getToolkitVersions: () =>
-//     apiClient.get<DesktopRelease[]>("/api/v1/developers/toolkit/versions"),
-// }
+export const developersApi = {
+  getResources: () =>
+    apiClient.get<DevResource[]>("/api/v1/developers/resources"),
+
+  getToolkitVersions: () =>
+    apiClient.get<DesktopRelease[]>("/api/v1/developers/toolkit/versions"),
+}
 
 // ─── Security Reports ───────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const securityApi = {
-//   getReports: () =>
-//     apiClient.get<SecurityReport[]>("/api/v1/security/reports"),
-// 
-//   submitReport: (data: { title: string; description: string; severity: string }) =>
-//     apiClient.post<SecurityReport>("/api/v1/security/reports", data),
-// }
+export const securityApi = {
+  getReports: () =>
+    apiClient.get<SecurityReport[]>("/api/v1/security/reports"),
+
+  submitReport: (data: { title: string; description: string; severity: string }) =>
+    apiClient.post<SecurityReport>("/api/v1/security/reports", data),
+}
 
 // ─── Announcements ──────────────────────────────────────────
-// TODO: Implement backend endpoint
-// export const announcementsApi = {
-//   getAnnouncements: () =>
-//     apiClient.get<Announcement[]>("/api/v1/announcements"),
-// }
+export const announcementsApi = {
+  getAnnouncements: () =>
+    apiClient.get<Announcement[]>("/api/v1/announcements"),
+}
 
 // ─── Invoices (Subscription domain) ─────────────────────────
-// TODO: Implement backend endpoint
-// export const invoicesApi = {
-//   getInvoices: () =>
-//     apiClient.get<Invoice[]>("/api/v1/subscriptions/invoices"),
-// }
+export const invoicesApi = {
+  getInvoices: () =>
+    apiClient.get<Invoice[]>("/api/v1/subscriptions/invoices"),
+}
 
 // ─────────────────── V3 API Endpoint Groups ───────────────────
 

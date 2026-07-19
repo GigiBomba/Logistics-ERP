@@ -1,12 +1,19 @@
 """Tests for the users API router (``/api/v1/users``)."""
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.test_api.conftest import StrippedMock
+
 BASE = "/api/v1/users"
+
+
+@pytest.fixture
+def mock_cursor():
+    return MagicMock()
 
 
 class TestUsersRouter:
@@ -29,7 +36,7 @@ class TestUsersRouter:
                 "driver_name": None,
             },
         ]
-        mocks["db"].conn.execute.return_value = mock_cursor
+        mocks["db"].execute.return_value = mock_cursor
 
         resp = client.get(f"{BASE}/")
         assert resp.status_code == 200
@@ -41,7 +48,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         mock_cursor = MagicMock()
         mock_cursor.fetchall.return_value = []
-        mocks["db"].conn.execute.return_value = mock_cursor
+        mocks["db"].execute.return_value = mock_cursor
 
         resp = client.get(f"{BASE}/")
         assert resp.status_code == 200
@@ -57,7 +64,7 @@ class TestUsersRouter:
         check_cursor.fetchone.return_value = None  # email is unique
         insert_cursor = MagicMock()
         insert_cursor.lastrowid = 42
-        mocks["db"].conn.execute.side_effect = [check_cursor, insert_cursor]
+        mocks["db"].execute.side_effect = [check_cursor, insert_cursor]
 
         payload = {
             "email": "new@test.com",
@@ -78,7 +85,7 @@ class TestUsersRouter:
         driver_cursor.lastrowid = 99
         user_cursor = MagicMock()
         user_cursor.lastrowid = 43
-        mocks["db"].conn.execute.side_effect = [
+        mocks["db"].execute.side_effect = [
             check_cursor,
             driver_cursor,
             user_cursor,
@@ -110,7 +117,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = {"id": 99}  # email exists
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         payload = {
             "email": "existing@test.com",
@@ -133,7 +140,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = {"id": 2}
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         resp = client.put(f"{BASE}/2", json={"display_name": "Updated Name"})
         assert resp.status_code == 200
@@ -143,7 +150,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = None
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         resp = client.put(f"{BASE}/999", json={"display_name": "Nope"})
         assert resp.status_code == 404
@@ -154,7 +161,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = {"id": 1}
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         resp = client.put(f"{BASE}/1", json={"is_active": False})
         assert resp.status_code == 400
@@ -165,7 +172,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = {"id": 2}
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         resp = client.put(f"{BASE}/2", json={})
         assert resp.status_code == 200
@@ -177,7 +184,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = {"id": 2}
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         resp = client.delete(f"{BASE}/2")
         assert resp.status_code == 200
@@ -187,7 +194,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = None
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         resp = client.delete(f"{BASE}/999")
         assert resp.status_code == 404
@@ -198,7 +205,7 @@ class TestUsersRouter:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = {"id": 1}
-        mocks["db"].conn.execute.return_value = check_cursor
+        mocks["db"].execute.return_value = check_cursor
 
         resp = client.delete(f"{BASE}/1")
         assert resp.status_code == 400

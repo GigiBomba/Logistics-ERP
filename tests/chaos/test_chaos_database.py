@@ -133,9 +133,7 @@ class TestDatabaseChaos:
                 client.post,
                 "/api/v1/trips/",
                 json={
-                    "client_name": "Disk Full Test",
-                    "driver_name": "Chaos Driver",
-                    "truck_number": "DF-001",
+                    "client_id": 1,
                 },
                 headers=auth_admin,
             )
@@ -165,9 +163,7 @@ class TestDatabaseChaos:
                 client.post,
                 "/api/v1/trips/",
                 json={
-                    "client_name": "Readonly Test",
-                    "driver_name": "Chaos Driver",
-                    "truck_number": "RO-001",
+                    "client_id": 1,
                 },
                 headers=auth_admin,
             )
@@ -189,9 +185,7 @@ class TestDatabaseChaos:
                 client.post,
                 "/api/v1/trips/",
                 json={
-                    "client_name": "Disk Full Write",
-                    "driver_name": "Chaos Driver",
-                    "truck_number": "DF-002",
+                    "client_id": 1,
                 },
                 headers=auth_admin,
             )

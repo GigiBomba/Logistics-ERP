@@ -84,6 +84,14 @@ class _InMemoryDB:
         """)
         self.conn.commit()
 
+    def execute(self, query: str, params: tuple = ()) -> sqlite3.Cursor:
+        """Execute a SQL statement, matching DatabaseManager.execute() interface."""
+        return self.conn.execute(query, params)
+
+    def commit(self) -> None:
+        """Commit the current transaction."""
+        self.conn.commit()
+
     @staticmethod
     def row_to_dict(row: sqlite3.Row | None) -> dict[str, Any] | None:
         if row is None:

@@ -240,6 +240,68 @@ class ReceiptGenerator:
                 errors=[ErrorDetail(message=str(exc), code="PDF_ERROR")],
             )
 
+    def finalize(self, receipt_id: int, user_id: int) -> ServiceResult:
+        """Finalize a draft receipt — set its status to **Finalized**.
+
+        1. Permission check via ``PermissionService. can_update_receipt``
+        2. Verify the receipt exists and is in ``Draft`` status
+        3. Update status to ``Finalized``
+        4. Return the updated receipt data
+        """
+        # ── 1. Permission check ──────────────────────────────────────
+        try:
+            perm = self._perm
+            check = perm.can_update_receipt(user_id)
+            if not check.allowed:
+                logger.warning("Permission denied for user %s to finalize receipt: %s", user_id, check.reason)
+                return ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(field="permission", message=check.reason, code="FORBIDDEN")],
+                )
+        except RuntimeError:
+            pass  # no db — skip permission check (backward compat)
+
+        # ── 2. Verify existence and status ───────────────────────────
+        try:
+            repo = self._repo
+        except RuntimeError as exc:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=str(exc), code="DB_ERROR")],
+            )
+
+        row = repo.get_by_id(receipt_id)
+        if not row:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message=f"Receipt {receipt_id} not found", code="NOT_FOUND")],
+            )
+
+        current_status = (row.get("status") or "").lower()
+        if current_status != "draft":
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(
+                    message=f"Receipt must be in Draft status, current: {row.get('status', '')}",
+                    code="INVALID_STATUS",
+                )],
+            )
+
+        # ── 3. Update to Finalized ──────────────────────────────────
+        repo.update(receipt_id, status="Finalized")
+
+        # ── 4. Build result ─────────────────────────────────────────
+        result = self._row_to_result(row)
+        # Override status with the new value
+        return ServiceResult(
+            success=True,
+            data={
+                "receipt_id": receipt_id,
+                "receipt_number": result.receipt_number,
+                "status": "Finalized",
+            },
+        )
+
     def get(self, receipt_id: int) -> ReceiptCreateResult:
         """Fetch a single receipt by ID."""
         try:

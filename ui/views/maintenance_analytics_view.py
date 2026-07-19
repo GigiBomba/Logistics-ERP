@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 from services.fleet_maintenance_service import MAINT_DISPLAY, MaintType
 from services.i18n import register_listener, t, unregister_listener
 from ui.components import Btn, Card, Label, PageTitle
+from ui.mode_guard import ConnectionMode, detect_mode, guard_local_access
 from ui.design_tokens import SP
 from ui.icons import iconed
 from ui.models.maintenance_view_model import MaintenanceViewModel
@@ -69,6 +70,12 @@ class QtMaintenanceAnalyticsView(QWidget):
         if self.repo is None and self.db is not None:
             from repositories.fleet_repository import FleetRepository
             self.repo = FleetRepository(db=self.db)
+        elif self.repo is None and self.db is None:
+            logger.warning("MaintenanceAnalyticsView: no local database - repository operations disabled in remote mode")
+
+        # ── Mode guard ───────────────────────────────────────────────────────
+        self._mode = detect_mode(db, None)  # no api_client — local-only view
+        guard_local_access(self._mode, "Maintenance analytics")
 
         # Chart widgets (created once, re-used)
         self._chart_widget_a: PlotlyChartWidget | None = None
@@ -166,9 +173,6 @@ class QtMaintenanceAnalyticsView(QWidget):
             return
         if self.repo is None:
             return
-
-        if self._data_loaded:
-            return  # Already loaded — ViewModel drives updates
 
         now = datetime.now()
         twelve_ago = now - timedelta(days=365)
@@ -304,7 +308,10 @@ class QtMaintenanceAnalyticsView(QWidget):
     # ── i18n ─────────────────────────────────────────────────────
 
     def _on_language_changed(self, lang: str):
-        QTimer.singleShot(0, self, self._load_data)
+        # Re-render charts and table so translated labels are picked up.
+        # Data reload is not needed — the ViewModel already has fresh data.
+        self._render_charts()
+        self._render_table()
 
     # ── Helpers ──────────────────────────────────────────────────
 

@@ -445,3 +445,564 @@ class TestMaxConnections:
         # Each thread should see its own data
         for i in range(3):
             assert per_thread_data[i] == [(f"data-{i}",)]
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  PostgresConnectionPool
+# ══════════════════════════════════════════════════════════════════════
+
+from unittest.mock import MagicMock, patch
+
+# These tests mock psycopg2 so no real PostgreSQL connection is needed.
+# Each test patches database.connection_pool.psycopg2 before importing
+# PostgresConnectionPool to avoid import-time side effects.
+
+
+_PSYCOPG2_PATCHED: list[str] = []
+
+
+def _patch_psycopg2():
+    """Install mock psycopg2 modules into sys.modules.
+
+    connection_pool.py uses ``import psycopg2`` / ``import psycopg2.pool``
+    / ``import psycopg2.extras`` inside its methods.  We install mocks
+    at the ``sys.modules`` level so those imports grab our mocks.
+    """
+    import sys
+
+    mock_psycopg2 = MagicMock()
+    mock_pool = MagicMock()
+    mock_extras = MagicMock()
+
+    mock_psycopg2.pool = mock_pool
+    mock_psycopg2.extras = mock_extras
+
+    # Track what we've added so _unpatch_psycopg2 can clean up
+    _PSYCOPG2_PATCHED.clear()
+    for key in ("psycopg2", "psycopg2.pool", "psycopg2.extras"):
+        if key not in sys.modules:
+            _PSYCOPG2_PATCHED.append(key)
+        sys.modules[key] = {
+            "psycopg2": mock_psycopg2,
+            "psycopg2.pool": mock_pool,
+            "psycopg2.extras": mock_extras,
+        }[key]
+
+    return mock_pool, mock_extras
+
+
+def _unpatch_psycopg2():
+    """Remove mock psycopg2 entries we added to sys.modules."""
+    import sys
+
+    for key in _PSYCOPG2_PATCHED:
+        sys.modules.pop(key, None)
+    _PSYCOPG2_PATCHED.clear()
+
+
+# ── PostgresConnectionPool Initialisation ──────────────────────────────
+
+
+class TestPostgresPoolInit:
+    """Pool construction and configuration."""
+
+    def test_default_params(self):
+        """Default min=2, max=20."""
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://user:pass@localhost/db")
+            try:
+                assert pool._min == 2
+                assert pool._max == 20
+                assert pool._dsn == "postgresql://user:pass@localhost/db"
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_custom_min_max(self):
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool(
+                "postgresql://u:p@h/d", min_connections=5, max_connections=50,
+            )
+            try:
+                assert pool._min == 5
+                assert pool._max == 50
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_initializes_pool_on_construction(self):
+        """The pool is created in __init__ via _initialize()."""
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                mock_pool_mod.ThreadedConnectionPool.assert_called_once_with(
+                    pool._min, pool._max, pool._dsn,
+                )
+                assert pool._pool is not None
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_init_failure_raises(self):
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            mock_pool_mod.ThreadedConnectionPool.side_effect = Exception("connection refused")
+            with pytest.raises(Exception, match="connection refused"):
+                PostgresConnectionPool("postgresql://u:p@h/d")
+        finally:
+            _unpatch_psycopg2()
+
+    def test_dsn_passed_correctly(self):
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            dsn = "postgresql://operion:operion@localhost:5432/operion"
+            pool = PostgresConnectionPool(dsn)
+            try:
+                mock_pool_mod.ThreadedConnectionPool.assert_called_once()
+                call_args = mock_pool_mod.ThreadedConnectionPool.call_args
+                assert call_args[0][2] == dsn, (
+                    f"DSN mismatch: expected {dsn}, got {call_args[0][2]}"
+                )
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+
+# ── Connection Management ──────────────────────────────────────────────
+
+
+class TestPostgresConnectionManagement:
+    """Acquire, release, and cache connections."""
+
+    def test_get_connection_returns_connection(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                conn = pool.get_connection()
+                assert conn is not None
+                assert conn.autocommit is True
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_get_connection_sets_cursor_factory(self):
+        _pool_mod, mock_extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                conn = pool.get_connection()
+                assert conn.cursor_factory == mock_extras.RealDictCursor
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_return_connection_puts_back(self):
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                conn = pool.get_connection()
+                pool.return_connection(conn)
+                pool_inst = mock_pool_mod.ThreadedConnectionPool.return_value
+                pool_inst.putconn.assert_called_with(conn)
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_get_cached_connection_returns_same(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                conn1 = pool.get_cached_connection()
+                conn2 = pool.get_cached_connection()
+                assert conn1 is conn2, "Cached connections should be the same object"
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_get_cached_connection_isolation(self):
+        """Different threads get different cached connections."""
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            pool_inst = mock_pool_mod.ThreadedConnectionPool.return_value
+            # Return a unique MagicMock per call to simulate distinct connections
+            pool_inst.getconn.side_effect = lambda: MagicMock()
+
+            connections: dict[int, object] = {}
+            lock = threading.Lock()
+
+            def worker() -> None:
+                c = pool.get_cached_connection()
+                with lock:
+                    connections[threading.get_ident()] = c
+
+            threads = [threading.Thread(target=worker) for _ in range(3)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            pool.close_all()
+            assert len({id(c) for c in connections.values()}) == 3, (
+                "Each thread should get a distinct cached connection"
+            )
+        finally:
+            _unpatch_psycopg2()
+
+    def test_return_connection_handles_none(self):
+        """return_connection(None) should not raise."""
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                pool.return_connection(None)  # should not raise
+                pool.return_connection(None)  # twice
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_get_connection_after_close_all_raises(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            pool.close_all()
+            with pytest.raises(RuntimeError, match="not initialized"):
+                pool.get_connection()
+        finally:
+            _unpatch_psycopg2()
+
+
+# ── Pool Exhaustion ────────────────────────────────────────────────────
+
+
+class TestPostgresPoolExhaustion:
+    """Behaviour when pool reaches max connections."""
+
+    def test_getconn_raises_when_exhausted(self):
+        """When pool.getconn() raises, the error propagates."""
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                pool_inst = mock_pool_mod.ThreadedConnectionPool.return_value
+                pool_inst.getconn.side_effect = Exception("pool exhausted")
+                with pytest.raises(Exception, match="pool exhausted"):
+                    pool.get_connection()
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_get_cached_connection_raises_when_exhausted(self):
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                pool_inst = mock_pool_mod.ThreadedConnectionPool.return_value
+                pool_inst.getconn.side_effect = Exception("Too many connections")
+                with pytest.raises(Exception, match="Too many connections"):
+                    pool.get_cached_connection()
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_return_connection_frees_slot(self):
+        """After returning a connection, getconn can succeed again."""
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                pool_inst = mock_pool_mod.ThreadedConnectionPool.return_value
+                mock_conn = MagicMock()
+                mock_conn2 = MagicMock()
+                pool_inst.getconn.side_effect = [mock_conn, mock_conn2]
+
+                conn = pool.get_connection()
+                pool.return_connection(conn)
+                pool_inst.putconn.assert_called_with(conn)
+
+                # After returning a connection, a new one should be obtainable
+                conn2 = pool.get_connection()
+                assert conn2 is not None
+                assert conn2 is mock_conn2
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+
+# ── Empty Pool Handling ────────────────────────────────────────────────
+
+
+class TestPostgresEmptyPool:
+    """Operations when pool is closed or not initialised."""
+
+    def test_get_connection_after_close(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            pool.close_all()
+            with pytest.raises(RuntimeError, match="not initialized"):
+                pool.get_connection()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_get_cached_connection_after_close(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            pool.close_all()
+            with pytest.raises(RuntimeError, match="not initialized"):
+                pool.get_cached_connection()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_close_all_on_empty_pool(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            pool.close_all()
+            # Second close_all should be safe
+            pool.close_all()
+            pool.close_all()  # third call also safe
+        finally:
+            _unpatch_psycopg2()
+
+    def test_return_connection_to_closed_pool(self):
+        """Returning a connection after pool is closed is safe."""
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            conn = pool.get_connection()
+            pool.close_all()
+            pool.return_connection(conn)  # should not raise (pool is None)
+        finally:
+            _unpatch_psycopg2()
+
+    def test_close_all_returns_cached_connections(self):
+        """close_all returns the current thread's cached connection to pool."""
+        mock_pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            pool_inst = mock_pool_mod.ThreadedConnectionPool.return_value
+
+            conn = pool.get_cached_connection()
+            pool.close_all()
+
+            # The cached connection should have been returned to the pool
+            pool_inst.putconn.assert_called_with(conn)
+        finally:
+            _unpatch_psycopg2()
+
+
+# ── Thread Safety ──────────────────────────────────────────────────────
+
+
+class TestPostgresThreadSafety:
+    """Concurrent access from multiple threads is safe."""
+
+    def test_concurrent_get_connection(self):
+        """Multiple threads can get connections concurrently."""
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            errors: list[Exception] = []
+            lock = threading.Lock()
+
+            def worker() -> None:
+                try:
+                    c = pool.get_connection()
+                    assert c is not None
+                    pool.return_connection(c)
+                except Exception as exc:
+                    with lock:
+                        errors.append(exc)
+
+            threads = [threading.Thread(target=worker) for _ in range(8)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            pool.close_all()
+            assert errors == [], f"Concurrent get_connection raised: {errors}"
+        finally:
+            _unpatch_psycopg2()
+
+    def test_concurrent_get_cached_connection(self):
+        """Multiple threads can get and reuse cached connections."""
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            results: list[str] = []
+            lock = threading.Lock()
+
+            def worker() -> None:
+                for _ in range(3):
+                    try:
+                        c = pool.get_cached_connection()
+                        assert c is not None
+                        with lock:
+                            results.append("ok")
+                    except Exception:
+                        with lock:
+                            results.append("err")
+
+            threads = [threading.Thread(target=worker) for _ in range(4)]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join()
+
+            pool.close_all()
+            assert "err" not in results, (
+                "Errors occurred in cached connection access"
+            )
+        finally:
+            _unpatch_psycopg2()
+
+    def test_concurrent_close_all(self):
+        """close_all can be called while threads use get_connection."""
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+
+            def worker() -> None:
+                for _ in range(5):
+                    try:
+                        c = pool.get_connection()
+                        pool.return_connection(c)
+                    except Exception:
+                        pass
+
+            threads = [threading.Thread(target=worker) for _ in range(4)]
+            for t in threads:
+                t.start()
+
+            for _ in range(3):
+                pool.close_all()
+                time.sleep(0.02)
+
+            for t in threads:
+                t.join(timeout=5)
+
+            # After final close_all, pool should be None
+            assert pool._pool is None
+        finally:
+            _unpatch_psycopg2()
+
+
+# ── Statistics ─────────────────────────────────────────────────────────
+
+
+class TestPostgresStats:
+    """Pool statistics reporting."""
+
+    def test_stats_active(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            try:
+                stats = pool.stats
+                assert stats["min"] == 2
+                assert stats["max"] == 20
+                assert stats["status"] == "active"
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()
+
+    def test_stats_inactive_after_close(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool("postgresql://u:p@h/d")
+            pool.close_all()
+            stats = pool.stats
+            assert stats["status"] == "inactive"
+            assert stats["min"] == 0
+            assert stats["max"] == 0
+        finally:
+            _unpatch_psycopg2()
+
+    def test_stats_after_custom_config(self):
+        _pool_mod, _extras = _patch_psycopg2()
+        try:
+            from database.connection_pool import PostgresConnectionPool
+
+            pool = PostgresConnectionPool(
+                "postgresql://u:p@h/d", min_connections=5, max_connections=100,
+            )
+            try:
+                stats = pool.stats
+                assert stats["min"] == 5
+                assert stats["max"] == 100
+            finally:
+                pool.close_all()
+        finally:
+            _unpatch_psycopg2()

@@ -410,7 +410,7 @@ class DriverTruckService:
 
     # ── Existing methods (kept with backward compatibility) ─────────────────
 
-    def assign_driver_to_truck(self, driver_id: int, truck_id: int) -> dict[str, Any]:
+    def assign_driver_to_truck(self, driver_id: int, truck_id: int, company_id=None) -> dict[str, Any]:
         """Legacy: assign a driver to a truck (raw dict return).
 
         Prefer :meth:`assign_truck` for typed results with permission checks.
@@ -423,7 +423,7 @@ class DriverTruckService:
         )
         return self._do_assign_driver_to_truck(driver_id, truck_id)
 
-    def unassign_driver(self, driver_id: int) -> Optional[int]:
+    def unassign_driver(self, driver_id: int, company_id=None) -> Optional[int]:
         """Legacy: unassign a driver from their truck (returns truck_id or None).
 
         Prefer :meth:`unassign_driver_from_truck` for typed results with
@@ -473,7 +473,7 @@ class DriverTruckService:
             return None
         return self._driver_repo.get_by_id(assignment["driver_id"])
 
-    def get_truck_plate_for_driver(self, driver_id: int) -> str:
+    def get_truck_plate_for_driver(self, driver_id: int, company_id=None) -> str:
         """Get the plate number of the truck assigned to a driver."""
         return self._repo.get_truck_plate_for_driver(driver_id)
 

@@ -26,11 +26,14 @@ def hash_password(password: str, rounds: Optional[int] = None) -> str:
 
     This function is used by the **one-time** ``hash_admin_password.py``
     script and should not be called at runtime from API handlers.
+
+    Note: bcrypt has a 72-byte input limit.  We truncate to 72 bytes to
+    match the behavior of verify_password.
     """
     if rounds is None:
         rounds = BackendSettings().bcrypt_rounds
     return bcrypt.hashpw(
-        password.encode("utf-8"),
+        password.encode("utf-8")[:72],
         bcrypt.gensalt(rounds=rounds),
     ).decode("utf-8")
 
@@ -40,10 +43,16 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
     Returns ``True`` if the password matches the hash, ``False`` otherwise.
     This is a CPU-bound operation (~5-15 ms per call on modern hardware).
+
+    Note: bcrypt has a 72-byte input limit.  Newer versions of the ``bcrypt``
+    library raise an exception for passwords exceeding this limit instead of
+    silently truncating.  We truncate to 72 bytes here to match the behavior
+    that was used when the hash was originally created.
     """
+    password_bytes = plain_password.encode("utf-8")[:72]
     try:
         return bcrypt.checkpw(
-            plain_password.encode("utf-8"),
+            password_bytes,
             hashed_password.encode("utf-8"),
         )
     except Exception as exc:

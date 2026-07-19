@@ -342,7 +342,7 @@ class PaymentBatchService:
     # Existing dict-based methods (deprecated, kept for backward compat)
     # ═══════════════════════════════════════════════════════════════════
 
-    def get_all_recipients(self, query: str = "") -> List[Dict[str, Any]]:
+    def get_all_recipients(self, query: str = "", company_id=None) -> List[Dict[str, Any]]:
         """Get all payment recipients across clients, drivers, and custom profiles.
 
         .. deprecated::
@@ -427,7 +427,7 @@ class PaymentBatchService:
 
         return recipients
 
-    def build_batch_csv(self, batch_items: List[Dict[str, Any]]) -> str:
+    def build_batch_csv(self, batch_items: List[Dict[str, Any]], company_id=None) -> str:
         """Build a CSV string from batch items for banking bulk payment import.
 
         .. deprecated::
@@ -548,7 +548,7 @@ class PaymentBatchService:
 
         return self.build_batch_csv(rows)
 
-    def validate_recipient_payment_info(self, recipient_id: int, recipient_type: str) -> List[str]:
+    def validate_recipient_payment_info(self, recipient_id: int, recipient_type: str, company_id=None) -> List[str]:
         """Validate that a recipient has sufficient payment info.
 
         .. deprecated::

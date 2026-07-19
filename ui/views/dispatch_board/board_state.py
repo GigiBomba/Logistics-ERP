@@ -46,10 +46,14 @@ COLUMN_DEFS = [
 ]
 
 DELIVERED_DEFAULT_DAYS = 30
+CANCELLED_MAX = 3
+DELIVERED_INITIAL_MAX = 4
 
 
 class BoardStateMixin:
     """Mixin providing data loading, filtering, search, and cache logic."""
+
+    _delivered_show_all: bool = False
 
     # ── Data loading ──────────────────────────────────────────────────────────
 
@@ -94,6 +98,26 @@ class BoardStateMixin:
 
                 card_data = self._build_card_data(trip)
                 column_trips[column].append(card_data)
+
+            # ── Limit recent completed/cancelled trips ─────────────────────────
+            # Cancelled: show only the last CANCELLED_MAX
+            cancelled_trips = column_trips.get("Cancelled", [])
+            cancelled_trips.sort(
+                key=lambda t: t.get("eta", "") or t.get("departure_date", "") or "",
+                reverse=True,
+            )
+            if len(cancelled_trips) > CANCELLED_MAX:
+                column_trips["Cancelled"] = cancelled_trips[:CANCELLED_MAX]
+
+            # Delivered: show only the last DELIVERED_INITIAL_MAX unless "show all"
+            if not self._delivered_show_all:
+                delivered_trips = column_trips.get("Delivered", [])
+                delivered_trips.sort(
+                    key=lambda t: t.get("eta", "") or t.get("departure_date", "") or "",
+                    reverse=True,
+                )
+                if len(delivered_trips) > DELIVERED_INITIAL_MAX:
+                    column_trips["Delivered"] = delivered_trips[:DELIVERED_INITIAL_MAX]
 
             self._dispatch(lambda ct=column_trips: self._populate_columns(ct))
 
@@ -300,7 +324,7 @@ class BoardStateMixin:
             pass
 
     def _on_load_older_delivered(self) -> None:
-        self._delivered_days += 30
+        self._delivered_show_all = True
         self._start_load()
 
     # ── Tab switching ─────────────────────────────────────────────────────────
@@ -319,6 +343,8 @@ class BoardStateMixin:
         self._apply_filters()
 
     def _apply_filters(self) -> None:
+        if getattr(self, '_destroyed', False):
+            return
         visible = 0
         total = 0
         for col in self._columns.values():
@@ -360,6 +386,8 @@ class BoardStateMixin:
     # ── Conflict scan ─────────────────────────────────────────────────────────
 
     def _run_conflict_scan(self) -> None:
+        if getattr(self, '_destroyed', False):
+            return
         try:
             all_trips = self._trip_service.get_all(limit=2000)
             active_trips = [
@@ -387,6 +415,8 @@ class BoardStateMixin:
             logger.debug("Conflict scan failed", exc_info=True)
 
     def _refresh_side_panels(self) -> None:
+        if getattr(self, '_destroyed', False):
+            return
         try:
             self._alerts_panel.refresh(self._all_card_data)
         except Exception:

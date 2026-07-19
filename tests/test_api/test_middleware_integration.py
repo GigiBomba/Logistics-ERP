@@ -185,7 +185,7 @@ class TestAuthMiddleware:
         assert resp.json() == {"pong": True}
 
     def test_request_with_invalid_api_key_returns_401(self, monkeypatch):
-        """Wrong X-API-Key header → 401."""
+        """Wrong X-API-Key header → 403 (Forbidden)."""
         monkeypatch.setattr(Config, "API_KEY", _TEST_API_KEY)
         app = FastAPI()
         app.add_middleware(AuthMiddleware)
@@ -196,8 +196,7 @@ class TestAuthMiddleware:
 
         client = TestClient(app)
         resp = client.get("/ping", headers={"X-API-Key": "invalid-key"})
-        assert resp.status_code == 401
-        assert resp.json()["detail"] == "Missing or invalid API key"
+        assert resp.status_code == 403
 
     def test_request_without_api_key_returns_401_when_key_required(self, monkeypatch):
         """API key required but not sent → 401."""
@@ -212,20 +211,10 @@ class TestAuthMiddleware:
         client = TestClient(app)
         resp = client.get("/ping")
         assert resp.status_code == 401
-        assert resp.json()["detail"] == "Missing or invalid API key"
+        assert resp.json()["detail"] == "API key required"
 
     # ── Auth endpoint must be accessible ───────────────────────────
 
-    @pytest.mark.xfail(
-        strict=False,
-        reason=(
-            "AuthMiddleware does not yet exempt /api/v1/auth/token from "
-            "API key validation. Expected behaviour: the auth endpoint should "
-            "bypass the API key check so unauthenticated clients can obtain JWTs. "
-            "Fix: add '/api/v1/auth/token' (or '/api/v1/auth') to the "
-            "skip_prefixes tuple in AuthMiddleware.dispatch."
-        ),
-    )
     def test_auth_endpoint_accessible_without_api_key(self, monkeypatch):
         """/api/v1/auth/token must be reachable *without* an API key.
 
@@ -478,7 +467,7 @@ class TestAuthGuards:
         client = TestClient(app)
         resp = client.get("/protected")
         assert resp.status_code == 403
-        assert "Admin privileges required" in resp.json()["detail"]
+        assert "Admin privileges required" in resp.json()["detail"]["detail"]
 
     def test_require_admin_blocks_driver_user(self):
         """driver role → 403."""
@@ -515,7 +504,7 @@ class TestAuthGuards:
         client = TestClient(app)
         resp = client.get("/protected")
         assert resp.status_code == 403
-        assert "Manager or admin privileges required" in resp.json()["detail"]
+        assert "Manager or admin privileges required" in resp.json()["detail"]["detail"]
 
     def test_require_manager_blocks_dispatcher(self):
         """dispatcher → 403."""
@@ -546,7 +535,7 @@ class TestAuthGuards:
         client = TestClient(app)
         resp = client.get("/protected")
         assert resp.status_code == 403
-        assert "Dispatcher or admin privileges required" in resp.json()["detail"]
+        assert "Dispatcher or admin privileges required" in resp.json()["detail"]["detail"]
 
     def test_require_dispatcher_blocks_unauthenticated(self):
         """No Bearer token → 401 from get_current_user."""

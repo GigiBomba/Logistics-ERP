@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from repositories.trip_repository import TripRepository
 from services.document_automation import PackageBuilder
 from services.i18n import t
 from ui.design_tokens import SP
@@ -61,9 +60,23 @@ class PackagePreviewDialog(QDialog):
         self.trip_id = int(trip_id) if trip_id is not None else None
         self.prefs = prefs
         self._doc_ids: list[int] = []
-        self._trip_repo = trip_repo if trip_repo is not None else TripRepository(db)
-        from repositories.document_repository import DocumentRepository
-        self._doc_repo = doc_repo if doc_repo is not None else DocumentRepository(db)
+        if trip_repo is not None:
+            self._trip_repo = trip_repo
+        elif db is not None:
+            from repositories.trip_repository import TripRepository
+            self._trip_repo = TripRepository(db)
+        else:
+            logger.warning("PackagePreview: no local database - TripRepository disabled in remote mode")
+            self._trip_repo = None
+
+        if doc_repo is not None:
+            self._doc_repo = doc_repo
+        elif db is not None:
+            from repositories.document_repository import DocumentRepository
+            self._doc_repo = DocumentRepository(db)
+        else:
+            logger.warning("PackagePreview: no local database - DocumentRepository disabled in remote mode")
+            self._doc_repo = None
         # The already-loaded documents (one per list item) so the
         # downstream email composer doesn't have to re-query the DB.
         self._documents_by_id: dict[int, dict[str, Any]] = {}

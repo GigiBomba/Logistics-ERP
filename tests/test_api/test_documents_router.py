@@ -150,8 +150,8 @@ class TestDocumentsRouter:
         client, mocks = client_with_mocks
         mocks["document_service"].advanced_search.side_effect = RuntimeError("DB error")
 
-        with pytest.raises(RuntimeError, match="DB error"):
-            client.get(f"{BASE}/")
+        resp = client.get(f"{BASE}/")
+        assert resp.status_code == 500
 
     # ── upload ─────────────────────────────────────────────────────────────
 

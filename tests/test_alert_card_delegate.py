@@ -9,11 +9,14 @@ class TestAlertCardDelegate:
         assert delegate is not None
 
     def test_size_hint(self, qt_widget, qtbot):
-        from PySide6.QtCore import QSize, QModelIndex
+        from PySide6.QtCore import QSize, QModelIndex, QRect
+        from PySide6.QtWidgets import QStyleOptionViewItem
         from ui.delegates.alert_card_delegate import AlertCardDelegate
         delegate = AlertCardDelegate(qt_widget)
         index = QModelIndex()
-        size = delegate.sizeHint(None, index)
+        option = QStyleOptionViewItem()
+        option.rect = QRect(0, 0, 200, 50)
+        size = delegate.sizeHint(option, index)
         assert isinstance(size, QSize)
         assert size.width() > 0
         assert size.height() > 0

@@ -6,6 +6,8 @@ from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Optional
 
+from repositories.trip_repository import TripRepository
+
 logger = logging.getLogger(__name__)
 
 
@@ -384,7 +386,7 @@ def update_trip_revenue(tc: TripContext, revenue: Optional[float]) -> TripContex
     return tc
 
 
-def save_trip_to_db(db_manager, tc: TripContext, client_name: Optional[str] = None) -> int:
+def save_trip_to_db(db, tc: TripContext, client_name: Optional[str] = None) -> int:
     """Persist a TripContext snapshot into the trips table.
 
     Writes a single-row snapshot (including full context_json) in one transaction.
@@ -417,8 +419,8 @@ def save_trip_to_db(db_manager, tc: TripContext, client_name: Optional[str] = No
         'route_history_v2_id': tc.route.route_history_v2_id if tc.route else None,
     }
 
-    # Use db_manager.add_trip which already performs a single-transaction insert
-    trip_db_id = db_manager.add_trip(payload)
+    # Use TripRepository.create for a single-transaction insert
+    trip_db_id = TripRepository(db).create(payload)
     # notify listeners about saved trip
     try:
         tc.status = 'saved'
@@ -428,12 +430,12 @@ def save_trip_to_db(db_manager, tc: TripContext, client_name: Optional[str] = No
     return trip_db_id
 
 
-def load_trip_from_db(db_manager, trip_db_id) -> Optional[TripContext]:
+def load_trip_from_db(db, trip_db_id) -> Optional[TripContext]:
     """Load trip row by DB id and rebuild a TripContext.
 
     After rebuilding, notifies listeners so UI can refresh from TripContext.
     """
-    row = db_manager.get_trip_by_id(trip_db_id)
+    row = TripRepository(db).get_by_id(trip_db_id)
     if not row:
         return None
 
@@ -553,6 +555,10 @@ class TripContextService:
             _notify_listeners(self._tc, ['route', 'costs', 'truck'])
         except (ValueError, TypeError, RuntimeError) as e:
             logger.warning("Failed to notify listeners in set_active_trip_info: %s", e)
+
+    def get_current_context(self) -> Optional["TripContext"]:
+        """Return the current active TripContext, or None if not yet initialised."""
+        return getattr(self, "_tc", None)
 
     def get_active_trip_info(self) -> dict:
         return self._active_trip_info

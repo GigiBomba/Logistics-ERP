@@ -130,7 +130,7 @@ class FleetService:
                 errors=[ErrorDetail(message=str(exc), code="FETCH_ERROR")],
             )
 
-    def get_truck(self, truck_id):
+    def get_truck(self, truck_id, company_id=None):
         """Backward-compatible dict-returning method.
 
         .. deprecated::
@@ -158,7 +158,7 @@ class FleetService:
                 errors=[ErrorDetail(message=str(exc), code="LIST_ERROR")],
             )
 
-    def get_trucks(self):
+    def get_trucks(self, company_id=None):
         """Backward-compatible list-returning method.
 
         .. deprecated::
@@ -277,7 +277,7 @@ class FleetService:
                 errors=[ErrorDetail(message=str(exc), code="CREATE_ERROR")],
             )
 
-    def add_truck(self, data: dict) -> int:
+    def add_truck(self, data: dict, company_id=None) -> int:
         """Backward-compatible dict-returning method.
 
         .. deprecated::
@@ -353,7 +353,7 @@ class FleetService:
                 errors=[ErrorDetail(message=str(exc), code="UPDATE_ERROR")],
             )
 
-    def update_truck(self, truck_id, data: dict):
+    def update_truck(self, truck_id, data: dict, company_id=None):
         """Backward-compatible dict-returning method.
 
         .. deprecated::
@@ -394,7 +394,7 @@ class FleetService:
                 errors=[ErrorDetail(message=str(exc), code="DELETE_ERROR")],
             )
 
-    def delete_truck(self, truck_id):
+    def delete_truck(self, truck_id, company_id=None):
         """Backward-compatible dict-returning method.
 
         .. deprecated::

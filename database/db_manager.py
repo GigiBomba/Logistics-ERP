@@ -18,6 +18,39 @@ def _deprecated(msg: str) -> None:
         warnings.warn(msg, DeprecationWarning, stacklevel=3)
 
 
+def _split_pg_statements(sql: str) -> list:
+    """Split PostgreSQL SQL into individual statements, preserving $$-delimited blocks.
+
+    PL/pgSQL function bodies use ``$$ ... $$`` delimiters and may contain
+    semicolons.  Naive ``sql.split(';')`` would break these blocks.
+    """
+    import re
+    statements = []
+    # Replace $$-delimited blocks with a placeholder so semicolons
+    # inside them are not treated as statement terminators.
+    dollar_blocks = []
+    def _replace_dollar(m):
+        dollar_blocks.append(m.group(0))
+        return f"\x00DOLLAR{len(dollar_blocks)-1}\x00"
+    # Match $$...$$ blocks (non-greedy, across newlines)
+    protected = re.sub(r'\$\$.*?\$\$', _replace_dollar, sql, flags=re.DOTALL)
+    for part in protected.split(";"):
+        # Restore dollar blocks, strip comments and whitespace
+        stmt = part.strip()
+        if not stmt:
+            continue
+        # Restore $$ blocks
+        for i, block in enumerate(dollar_blocks):
+            stmt = stmt.replace(f"\x00DOLLAR{i}\x00", block)
+        dollar_blocks.clear()
+        # Skip comment-only statements
+        lines = [l for l in stmt.split("\n") if l.strip() and not l.strip().startswith("--")]
+        clean = "\n".join(lines).strip()
+        if clean:
+            statements.append(clean)
+    return statements
+
+
 from database import schema as _schema
 from database.connection_pool import ConnectionPool, PostgresConnectionPool
 
@@ -53,6 +86,16 @@ class DatabaseManager:
             "PostgreSQL pool initialised: min=%d max=%d",
             self._pg_pool_min, self._pg_pool_max,
         )
+
+    def generate_uuid(self) -> str:
+        """Return a new UUID string for use as a primary key value.
+
+        PostgreSQL uses ``gen_random_uuid()`` as a column DEFAULT, so
+        this is primarily needed for SQLite inserts where we must supply
+        the value from Python.
+        """
+        import uuid
+        return str(uuid.uuid4())
 
     @contextmanager
     def _get_connection(self) -> Generator[Any, None, None]:
@@ -133,11 +176,57 @@ class DatabaseManager:
     def row_to_dict(row):
         if row is None:
             return None
+        # PostgreSQL (psycopg2 RealDictCursor) already returns dict-like;
+        # SQLite (sqlite3.Row) needs explicit dict() conversion.
+        if isinstance(row, dict):
+            return row
         return dict(row)
 
     @staticmethod
     def rows_to_dicts(rows):
-        return [dict(r) for r in rows] if rows else []
+        if not rows:
+            return []
+        return [DatabaseManager.row_to_dict(r) for r in rows]
+
+    # ── Centralised query adaptation ─────────────────────────────────
+
+    def _adapt_placeholders(self, query: str) -> str:
+        """Convert ``?`` placeholders to ``%s`` for PostgreSQL.
+
+        Called automatically by :meth:`execute` and :meth:`executemany`.
+        SQLite queries pass through unchanged.
+        """
+        if self._engine == "postgresql":
+            return query.replace("?", "%s")
+        return query
+
+    def execute(self, query: str, params: tuple = ()):
+        """Execute a SQL statement with engine-appropriate placeholders.
+
+        Thin wrapper around ``self.conn.execute`` that adapts ``?`` → ``%s``
+        for PostgreSQL.  Callers should use this instead of
+        ``self.conn.execute()`` directly for cross-engine compatibility.
+        """
+        return self.conn.execute(self._adapt_placeholders(query), params)
+
+    def executemany(self, query: str, seq_of_params):
+        """Execute a SQL statement against all parameter sequences.
+
+        PostgreSQL-compatible wrapper around ``self.conn.executemany``.
+        """
+        return self.conn.executemany(self._adapt_placeholders(query), seq_of_params)
+
+    def commit(self):
+        """Commit the current transaction (engine-agnostic)."""
+        self.conn.commit()
+
+    def rollback(self):
+        """Rollback the current transaction (engine-agnostic)."""
+        # PostgreSQL uses conn.rollback(), SQLite uses conn.execute("ROLLBACK")
+        if self._engine == "postgresql":
+            self.conn.rollback()
+        else:
+            self.conn.execute("ROLLBACK")
 
     # ── Read-only connection (engine-level sandbox) ───────────────────
 
@@ -178,10 +267,67 @@ class DatabaseManager:
         Each migration method manages its own transactions internally;
         we do NOT wrap everything in a single BEGIN/COMMIT here to
         avoid nested transaction errors (SQLite does not support them).
+
+        For PostgreSQL: executes schema_pg.sql which contains all DDL
+        in PostgreSQL-compatible syntax.
         """
-        self._create_tables_and_indices()
-        self._run_column_migrations()
-        self._migrate_legacy_data()
+        if self._engine == "postgresql":
+            self._init_pg_schema()
+        else:
+            self._create_tables_and_indices()
+            self._run_column_migrations()
+            self._migrate_legacy_data()
+
+        # Run Alembic migrations for Freight Exchange tables (PostgreSQL only)
+        if self._engine == "postgresql":
+            try:
+                from alembic.config import Config
+                from alembic import command
+                import os
+
+                alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+                # Override the script_location to be absolute
+                script_location = os.path.join(os.path.dirname(__file__), "..", "alembic")
+                alembic_cfg.set_main_option("script_location", script_location)
+                command.upgrade(alembic_cfg, "head")
+                logger.info("Alembic migrations applied successfully")
+            except Exception as e:
+                logger.warning("Alembic migrations skipped (non-fatal): %s", e)
+
+        # Ensure mobile tables exist (best-effort, non-critical)
+        try:
+            from backend.api.v1.mobile import ensure_mobile_tables
+            ensure_mobile_tables(self)
+        except Exception:
+            pass  # mobile tables are non-critical
+
+    def _init_pg_schema(self):
+        """Execute PostgreSQL schema from schema_pg.sql."""
+        import os
+        schema_path = os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "schema_pg.sql",
+        )
+        if not os.path.isfile(schema_path):
+            logger.error("PostgreSQL schema file not found: %s", schema_path)
+            raise FileNotFoundError(f"Schema file not found: {schema_path}")
+
+        with open(schema_path, "r", encoding="utf-8") as f:
+            sql = f.read()
+
+        # Split by semicolons while preserving $$...$$ blocks (PL/pgSQL functions).
+        # $$-delimited blocks may contain semicolons that must not be split.
+        statements = _split_pg_statements(sql)
+        for stmt in statements:
+            if not stmt:
+                continue
+            try:
+                self.conn.execute(stmt)
+            except Exception as e:
+                if "already exists" in str(e).lower():
+                    logger.debug("Skipping existing object: %s", str(e)[:80])
+                else:
+                    logger.warning("PG schema statement failed: %s — %s", str(e)[:120], stmt[:80])
 
     def _create_tables_and_indices(self):
         """Execute all CREATE TABLE and CREATE INDEX statements."""
@@ -307,6 +453,14 @@ class DatabaseManager:
             S.INDEX_WAITLIST_EMAIL, S.INDEX_WAITLIST_STATUS,
             S.INDEX_WAITLIST_JOINED, S.INDEX_WAITLIST_SOURCE,
             S.INDEX_WAITLIST_REFERRAL,
+            # Freight Exchange
+            S.TABLE_FREIGHT_EXCHANGE_CONNECTIONS,
+            S.INDEX_FREIGHT_CONNECTIONS_COMPANY,
+            S.INDEX_FREIGHT_CONNECTIONS_PROVIDER,
+            S.INDEX_FREIGHT_CONNECTIONS_STATUS,
+            S.TABLE_SAVED_SEARCHES,
+            S.INDEX_SAVED_SEARCHES_COMPANY,
+            S.INDEX_SAVED_SEARCHES_USER,
         ]
         for stmt in exec_stmts:
             try:
@@ -341,43 +495,111 @@ class DatabaseManager:
             self.conn.execute(S.INDEX_CONTRACTS_END_DATE)
         except Exception:
             pass
-        # Document Center P2 (FTS5 is best-effort)
-        # Drop old V1 FTS table if upgrading — V2 adds cmr_number + extracted_data_json columns.
-        try:
-            self.conn.execute(S.MIGRATION_DOCUMENTS_FTS_V2)
-        except Exception as e:
-            logger.warning("FTS migration (drop old table) failed: %s", e)
-        for stmt in (S.TABLE_DOCUMENTS_FTS, S.TRIGGER_DOCUMENTS_FTS_INSERT,
-                     S.TRIGGER_DOCUMENTS_FTS_DELETE, S.TRIGGER_DOCUMENTS_FTS_UPDATE):
+        # Freight Exchange: trips source columns
+        for _alter_stmt in (
+            S.ALTER_TRIPS_ADD_SOURCE,
+            S.ALTER_TRIPS_ADD_SOURCE_PROVIDER,
+            S.ALTER_TRIPS_ADD_SOURCE_REFERENCE,
+        ):
             try:
-                self.conn.execute(stmt)
+                self.conn.execute(_alter_stmt)
+            except Exception:
+                pass
+        # Document Center P2 (FTS5 is best-effort, SQLite only)
+        if self._engine != "postgresql":
+            try:
+                self.conn.execute(S.MIGRATION_DOCUMENTS_FTS_V2)
             except Exception as e:
-                logger.warning("Migration step failed: %s", e)
+                logger.warning("FTS migration (drop old table) failed: %s", e)
+            for stmt in (S.TABLE_DOCUMENTS_FTS, S.TRIGGER_DOCUMENTS_FTS_INSERT,
+                         S.TRIGGER_DOCUMENTS_FTS_DELETE, S.TRIGGER_DOCUMENTS_FTS_UPDATE):
+                try:
+                    self.conn.execute(stmt)
+                except Exception as e:
+                    logger.warning("Migration step failed: %s", e)
         # Seed initial schema migration version
         try:
             self.conn.execute(S.SCHEMA_MIGRATIONS_SEED)
         except Exception as e:
             logger.warning("Schema migration seed failed: %s", e)
 
+    def _table_exists(self, table: str) -> bool:
+        """Check if a table exists (engine-agnostic)."""
+        try:
+            if self._engine == "postgresql":
+                row = self.conn.execute(
+                    "SELECT 1 FROM information_schema.tables "
+                    "WHERE table_name = %s", (table,)
+                ).fetchone()
+                return row is not None
+            else:
+                row = self.conn.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='table' AND name=?", (table,)
+                ).fetchone()
+                return row is not None
+        except Exception:
+            return False
+
+    def _column_exists(self, table: str, column: str) -> bool:
+        """Check if a column exists in a table (engine-agnostic)."""
+        try:
+            if self._engine == "postgresql":
+                row = self.conn.execute(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = %s AND column_name = %s",
+                    (table, column),
+                ).fetchone()
+                return row is not None
+            else:
+                cols = [r[1] for r in self.conn.execute(
+                    f"PRAGMA table_info({table})"
+                ).fetchall()]
+                return column in cols
+        except Exception:
+            return False
+
     def _ensure_column(self, table: str, column: str, alter_sql: str) -> None:
         """Add a column if it doesn't already exist in the table."""
         try:
-            cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
-            if column not in cols:
-                self.conn.execute(alter_sql)
+            if self._engine == "postgresql":
+                # Use information_schema for PostgreSQL
+                row = self.conn.execute(
+                    "SELECT 1 FROM information_schema.columns "
+                    "WHERE table_name = %s AND column_name = %s",
+                    (table, column),
+                ).fetchone()
+                if not row:
+                    self.conn.execute(alter_sql)
+            else:
+                cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
+                if column not in cols:
+                    self.conn.execute(alter_sql)
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
 
     def _ensure_columns(self, table: str, migrations: list) -> None:
         """Add multiple columns to a table if they don't exist."""
         try:
-            cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
-            for column, alter_sql in migrations:
-                if column not in cols:
-                    try:
-                        self.conn.execute(alter_sql)
-                    except Exception as e:
-                        logger.warning("Migration step failed for %s.%s: %s", table, column, e)
+            if self._engine == "postgresql":
+                existing = set(r[0] for r in self.conn.execute(
+                    "SELECT column_name FROM information_schema.columns "
+                    "WHERE table_name = %s", (table,)
+                ).fetchall())
+                for column, alter_sql in migrations:
+                    if column not in existing:
+                        try:
+                            self.conn.execute(alter_sql)
+                        except Exception as e:
+                            logger.warning("Migration step failed for %s.%s: %s", table, column, e)
+            else:
+                cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
+                for column, alter_sql in migrations:
+                    if column not in cols:
+                        try:
+                            self.conn.execute(alter_sql)
+                        except Exception as e:
+                            logger.warning("Migration step failed for %s.%s: %s", table, column, e)
         except Exception as e:
             logger.warning("Migration step failed for table %s: %s", table, e)
 
@@ -429,6 +651,7 @@ class DatabaseManager:
             logger.warning("Migration step failed: %s", e)
 
         self._ensure_columns("trips", [
+            ("reference", "ALTER TABLE trips ADD COLUMN reference TEXT DEFAULT ''"),
             ("context_json", "ALTER TABLE trips ADD COLUMN context_json TEXT"),
             ("route_history_v2_id", "ALTER TABLE trips ADD COLUMN route_history_v2_id INTEGER REFERENCES route_history_v2(id)"),
             ("truck_consumption_l_per_100km", "ALTER TABLE trips ADD COLUMN truck_consumption_l_per_100km REAL"),
@@ -647,6 +870,11 @@ class DatabaseManager:
             ("document_package", "ALTER TABLE document_package ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("contracts", "ALTER TABLE contracts ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("tacho_imports", "ALTER TABLE tacho_imports ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            # P0.6: Tables newly scoped to company_id
+            ("client_contacts", "ALTER TABLE client_contacts ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("client_tags", "ALTER TABLE client_tags ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("document_links", "ALTER TABLE document_links ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("document_versions", "ALTER TABLE document_versions ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
         ]
         for table, alter_sql in _tenant_tables:
             self._ensure_column(table, "company_id", alter_sql)
@@ -663,6 +891,22 @@ class DatabaseManager:
                 )
             except Exception as e:
                 logger.warning("Index creation failed for %s: %s", table, e)
+
+        # ── P0.7: Soft delete columns ─────────────────────────────────────
+        _soft_delete_tables = [
+            "trips", "invoices", "clients", "drivers", "trucks",
+            "routes", "route_history_v2", "receipts", "contracts",
+            "proforma_invoices", "maintenance_records", "maintenance_schedules",
+        ]
+        for table in _soft_delete_tables:
+            self._ensure_column(table, "deleted_at",
+                f"ALTER TABLE {table} ADD COLUMN deleted_at TEXT")
+            try:
+                self.conn.execute(
+                    f"CREATE INDEX IF NOT EXISTS idx_{table}_deleted ON {table}(deleted_at)"
+                )
+            except Exception as e:
+                logger.warning("Soft-delete index failed for %s: %s", table, e)
 
         # ── Audit log: add entity tracking columns to operation_events ───
         _audit_columns = [
@@ -703,6 +947,26 @@ class DatabaseManager:
             self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V3)
         except Exception as e:
             logger.warning("Schema migration V3 record failed: %s", e)
+
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V4)
+        except Exception as e:
+            logger.warning("Schema migration V4 record failed: %s", e)
+
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V5)
+        except Exception as e:
+            logger.warning("Schema migration V5 record failed: %s", e)
+
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V6)
+        except Exception as e:
+            logger.warning("Schema migration V6 record failed: %s", e)
+
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V7)
+        except Exception as e:
+            logger.warning("Schema migration V7 record failed: %s", e)
 
         # ── Migration: settings table → composite PK (key, company_id) ──
         try:
@@ -956,16 +1220,27 @@ class DatabaseManager:
     # ── SETTINGS (canonical API, not deprecated) ─────────────────────
 
     def get_settings(self, keys: List[str]) -> Dict[str, str]:
+        company_filter = ""
+        params: List[Any] = list(keys)
+        if self.user_company_id is not None:
+            company_filter = " AND company_id = ?"
+            params.append(self.user_company_id)
         rows = self.conn.execute(
-            f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(keys))})",
-            keys,
+            f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(keys))}){company_filter}",
+            params,
         ).fetchall()
         return {r[0]: r[1] for r in rows}
 
     def save_setting(self, key: str, value: str) -> None:
-        self.conn.execute(
-            "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value)
-        )
+        if self.user_company_id is not None:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value, company_id) VALUES (?, ?, ?)",
+                (key, value, self.user_company_id),
+            )
+        else:
+            self.conn.execute(
+                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value),
+            )
         self.conn.commit()
 
     def get_setting(self, key: str) -> Optional[str]:

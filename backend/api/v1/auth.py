@@ -3,6 +3,7 @@
 POST /api/v1/auth/token   — Exchange credentials for JWT + refresh token.
 POST /api/v1/auth/refresh — Exchange a refresh token for a new JWT.
 POST /api/v1/auth/logout  — Revoke a refresh token.
+GET  /api/v1/auth/me      — Return the current authenticated user's profile.
 """
 
 import asyncio
@@ -19,7 +20,9 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from backend.config import BackendSettings
 from backend.dependencies import get_db
+from backend.dependencies_security import get_current_user
 from backend.errors import ErrorCode
+from backend.db import DatabaseManager
 from backend.schemas.auth import (
     ForgotPasswordRequest,
     LogoutRequest,
@@ -254,11 +257,14 @@ def _set_refresh_cookie(response: Response, refresh_token: str) -> None:
     )
 
 
-def _issue_tokens(email: str, role: str, response: Optional[Response] = None) -> Dict[str, Any]:
+def _issue_tokens(email: str, role: str, response: Optional[Response] = None, device_id: Optional[str] = None) -> Dict[str, Any]:
     """Create and persist an access token + refresh token pair.
 
     If *response* is provided, the refresh token is also set as an httpOnly
     cookie for the web frontend (prevents XSS theft).
+
+    If *device_id* is provided, it is stored in the refresh token payload
+    so that the refresh flow can verify the device is still active.
 
     Returns the response dict with both tokens.
     """
@@ -271,11 +277,14 @@ def _issue_tokens(email: str, role: str, response: Optional[Response] = None) ->
     token_hash = _hash_token(refresh_token)
 
     expires_at = time.time() + settings.refresh_token_expire_days * 86400
-    _store_refresh(token_hash, {
+    payload: Dict[str, Any] = {
         "email": email,
         "role": role,
         "expires_at": expires_at,
-    })
+    }
+    if device_id:
+        payload["device_id"] = device_id
+    _store_refresh(token_hash, payload)
 
     if response is not None:
         _set_refresh_cookie(response, refresh_token)
@@ -298,6 +307,7 @@ async def login_for_access_token(
     request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
+    device_id: Optional[str] = Form(None),
 ) -> Dict[str, Any]:
     """Authenticate and return an access token + refresh token pair.
 
@@ -306,6 +316,9 @@ async def login_for_access_token(
 
     The refresh token is also set as an httpOnly cookie on the response
     for XSS-resistant browser storage.
+
+    If *device_id* is provided, it is stored in the refresh token payload
+    so that the refresh flow can verify the device is still active.
     """
     settings = BackendSettings()
     email = form_data.username.strip().lower()
@@ -335,13 +348,13 @@ async def login_for_access_token(
 
             _clear_lockout(email)
             logger.info("Admin login successful for %s from %s", email, client_ip)
-            return _issue_tokens(email, "admin", response)
+            return _issue_tokens(email, "admin", response, device_id)
         # No admin hash configured — fall through to database check below
 
     # ── Gate 2: Database users table (future-proof fallback) ───────────
     async for db in get_db():
         try:
-            cursor = db.conn.execute(
+            cursor = db.execute(
                 "SELECT id, email, password_hash, role FROM users "
                 "WHERE email = ? AND is_active = 1",
                 (email,),
@@ -390,7 +403,7 @@ async def login_for_access_token(
 
         _clear_lockout(email)
         logger.info("Login successful for %s from %s", email, client_ip)
-        return _issue_tokens(user["email"], user.get("role", "dispatcher"), response)
+        return _issue_tokens(user["email"], user.get("role", "dispatcher"), response, device_id)
 
     raise HTTPException(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -406,6 +419,7 @@ def refresh_access_token(
     request: Request,
     response: Response,
     body: RefreshTokenRequest,
+    db: DatabaseManager = Depends(get_db),
 ) -> Dict[str, Any]:
     """Exchange a valid refresh token for a new access token.
 
@@ -416,6 +430,10 @@ def refresh_access_token(
     The refresh token is looked up in the server-side store (Redis or
     in-memory dict).  If found and not expired, a new short-lived access
     token is issued.
+
+    If the refresh token was issued with a ``device_id``, the
+    corresponding device must still be active in the ``mobile_devices``
+    table.  Deactivated devices cause the refresh to be rejected.
     """
     # Read from cookie first (XSS-safe), then fall back to body (desktop client)
     refresh_token: str = request.cookies.get("refresh_token", "") or body.refresh_token
@@ -451,11 +469,35 @@ def refresh_access_token(
             },
         )
 
+    # ── Device active check ────────────────────────────────────────────
+    device_id: Optional[str] = payload.get("device_id")
+    if device_id:
+        try:
+            row = db.execute(
+                "SELECT is_active FROM mobile_devices WHERE device_id = ? AND is_active = 1",
+                (device_id,),
+            ).fetchone()
+            if not row:
+                _delete_refresh(token_hash)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail={
+                        "error_code": ErrorCode.TOKEN_INVALID.value,
+                        "detail": "Device has been deactivated — please re-authenticate.",
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # If the mobile_devices table doesn't exist yet or a query
+            # fails, allow the refresh to proceed (defensive).
+            pass
+
     # Rotate: delete old refresh token, issue new pair
     _delete_refresh(token_hash)
     email: str = payload["email"]
     role: str = payload["role"]
-    return _issue_tokens(email, role, response)
+    return _issue_tokens(email, role, response, device_id)
 
 
 @router.post("/logout")
@@ -478,6 +520,51 @@ def logout(request: Request, response: Response, body: LogoutRequest) -> Dict[st
         samesite="strict",
     )
     return {"status": "ok", "detail": "Logged out."}
+
+
+@router.get("/me")
+def get_current_user_info(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return the current authenticated user's profile."""
+    user_id = current_user["id"]
+    company_id = current_user["company_id"]
+
+    # Admin users are resolved from env — no DB row exists for id=0
+    if current_user.get("is_admin") or user_id == 0:
+        return {
+            "user": {
+                "id": 0,
+                "email": current_user.get("email", "admin@example.com"),
+                "role": current_user.get("role", "admin"),
+                "display_name": "Administrator",
+                "driver_id": None,
+                "is_active": True,
+            }
+        }
+
+    # Fetch user with display_name (from column migration)
+    row = db.execute(
+        "SELECT id, email, role, display_name, driver_id, is_active, created_at FROM users WHERE id = ?",
+        (user_id,),
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user = dict(row)
+
+    # Include linked driver info if a driver record exists
+    if user.get("driver_id"):
+        dr = db.execute(
+            "SELECT id, name, phone, license_number, license_category, license_expiry FROM drivers WHERE id = ?",
+            (user["driver_id"],),
+        ).fetchone()
+        if dr:
+            user["driver"] = dict(dr)
+
+    return {"user": user}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -596,11 +683,11 @@ def reset_password(body: ResetPasswordRequest) -> Dict[str, str]:
             while True:
                 db = loop.run_until_complete(gen.__anext__())
                 break
-            db.conn.execute(
+            db.execute(
                 "UPDATE users SET password_hash = ? WHERE email = ?",
                 (pw_hash, email),
             )
-            db.conn.commit()
+            db.commit()
         finally:
             loop.run_until_complete(gen.aclose())
             loop.close()

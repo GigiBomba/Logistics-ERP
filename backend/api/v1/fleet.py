@@ -7,8 +7,8 @@ from backend.dependencies import get_db, get_fleet_service
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.fleet import GpsPing, GpsPosition, TruckResponse
-from database.db_manager import DatabaseManager
-from services.fleet_service import FleetService
+from backend.db import DatabaseManager
+from backend.services.fleet_service import FleetService
 
 router = APIRouter(prefix="/fleet", tags=["fleet"])
 
@@ -25,7 +25,8 @@ def list_trucks(
     service: FleetService = Depends(get_fleet_service),
 ):
     """Return paginated list of trucks."""
-    trucks = service.get_trucks()
+    company_id = current_user.get("company_id", 0)
+    trucks = service.get_trucks(company_id=company_id)
     return PaginatedResponse.from_items(
         items=[TruckResponse(**t) for t in trucks],
         total=len(trucks),
@@ -40,7 +41,8 @@ def get_truck(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
-    truck = service.get_truck(truck_id)
+    company_id = current_user.get("company_id", 0)
+    truck = service.get_truck(truck_id, company_id=company_id)
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     return TruckResponse(**truck)
@@ -52,7 +54,8 @@ def create_truck(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
-    truck_id = service.add_truck(data)
+    company_id = current_user.get("company_id", 0)
+    truck_id = service.add_truck(data, company_id=company_id)
     return {"id": truck_id}
 
 
@@ -64,7 +67,8 @@ def update_truck_partial(
     service: FleetService = Depends(get_fleet_service),
 ):
     """Partially update a truck (PATCH)."""
-    service.update_truck(truck_id, data)
+    company_id = current_user.get("company_id", 0)
+    service.update_truck(truck_id, data, company_id=company_id)
     return {"status": "updated"}
 
 
@@ -77,7 +81,8 @@ def update_truck(
     response: Response = None,
 ):
     """[DEPRECATED] Use PATCH /trucks/{truck_id} instead."""
-    service.update_truck(truck_id, data)
+    company_id = current_user.get("company_id", 0)
+    service.update_truck(truck_id, data, company_id=company_id)
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
     return {"status": "updated"}
@@ -89,7 +94,8 @@ def delete_truck(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
-    service.delete_truck(truck_id)
+    company_id = current_user.get("company_id", 0)
+    service.delete_truck(truck_id, company_id=company_id)
     return {"status": "deleted"}
 
 
@@ -149,7 +155,7 @@ def get_gps_history(
     """Return paginated GPS history for a truck."""
     company_id = current_user.get("company_id", 0)
     rows = db.rows_to_dicts(
-        db.conn.execute(
+        db.execute(
             "SELECT * FROM gps_telemetry WHERE truck_id = ? "
             "AND company_id = ? "
             "ORDER BY recorded_at DESC LIMIT ?",

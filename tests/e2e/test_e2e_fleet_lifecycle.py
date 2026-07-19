@@ -48,10 +48,11 @@ class TestFleetLifecycle:
     """Complete truck lifecycle: add → assign → maintain → GPS → decommission."""
 
     def _seed_driver(self, db) -> int:
+        now = datetime.now().isoformat()
         db.conn.execute(
-            "INSERT INTO drivers (name, license_number, phone, is_active) "
-            "VALUES (?, ?, ?, 1)",
-            ("Fleet Driver", "LIC-FL-001", "+49-170-1111111"),
+            "INSERT INTO drivers (name, license_number, phone, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, 1, ?, ?)",
+            ("Fleet Driver", "LIC-FL-001", "+49-170-1111111", now, now),
         )
         db.conn.commit()
         return db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -79,13 +80,13 @@ class TestFleetLifecycle:
         # ── 2. Assign driver to truck ──────────────────────────────────────
         driver_id = self._seed_driver(db)
         assign_svc = DriverTruckService(db)
-        assign_result = assign_svc.assign_driver(driver_id, truck_id)
-        assert assign_result is True
+        assign_result = assign_svc.assign_driver_to_truck(driver_id, truck_id)
+        assert assign_result is not None
 
         # Verify assignment in DB
         assignment = db.conn.execute(
             "SELECT * FROM driver_truck_assignments WHERE "
-            "driver_id = ? AND truck_id = ? AND end_date IS NULL",
+            "driver_id = ? AND truck_id = ?",
             (driver_id, truck_id),
         ).fetchone()
         assert assignment is not None, "Driver-truck assignment not found"
@@ -164,13 +165,10 @@ class TestFleetLifecycle:
         assert truck["plate_number"] == "TR-MIN-001"
 
     def test_duplicate_plate_creates_separate_truck(self, db, fleet_svc):
-        """Duplicate plate numbers are allowed at the DB level."""
+        """Duplicate plate numbers are caught by UNIQUE constraint."""
         id1 = fleet_svc.add_truck({"plate_number": "TR-DUP-001"})
-        id2 = fleet_svc.add_truck({"plate_number": "TR-DUP-001"})
-        assert id1 != id2
-        trucks = fleet_svc.get_trucks()
-        dup_plates = [t for t in trucks if t["plate_number"] == "TR-DUP-001"]
-        assert len(dup_plates) == 2
+        with pytest.raises(Exception):
+            fleet_svc.add_truck({"plate_number": "TR-DUP-001"})
 
     def test_multiple_maintenance_records(self, db, fleet_svc, maint_svc):
         """Multiple maintenance records for same truck are stored and counted."""

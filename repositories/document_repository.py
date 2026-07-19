@@ -539,8 +539,20 @@ class DocumentRepository(BaseRepository):
         params: list = list(self._company_params())
 
         if query:
-            conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
-            params.append(self._fts_query(query))
+            if getattr(self.db, "_engine", "sqlite") == "postgresql":
+                terms = query.strip().split()
+                like_clauses = []
+                for term in terms:
+                    p = f"%{term}%"
+                    like_clauses.append(
+                        "(d.title ILIKE ? OR d.file_name ILIKE ? "
+                        "OR d.description ILIKE ? OR d.text_content ILIKE ?)"
+                    )
+                    params.extend([p, p, p, p])
+                conditions.append(f"({' AND '.join(like_clauses)})")
+            else:
+                conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
+                params.append(self._fts_query(query))
 
         if category:
             conditions.append("d.category = ?")
@@ -569,8 +581,20 @@ class DocumentRepository(BaseRepository):
         params: list = list(self._company_params())
 
         if query:
-            conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
-            params.append(self._fts_query(query))
+            if getattr(self.db, "_engine", "sqlite") == "postgresql":
+                terms = query.strip().split()
+                like_clauses = []
+                for term in terms:
+                    p = f"%{term}%"
+                    like_clauses.append(
+                        "(d.title ILIKE ? OR d.file_name ILIKE ? "
+                        "OR d.description ILIKE ? OR d.text_content ILIKE ?)"
+                    )
+                    params.extend([p, p, p, p])
+                conditions.append(f"({' AND '.join(like_clauses)})")
+            else:
+                conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
+                params.append(self._fts_query(query))
 
         if category:
             conditions.append("d.category = ?")
@@ -777,8 +801,17 @@ class DocumentRepository(BaseRepository):
 
     def rebuild_fts_index(self) -> None:
         try:
-            self._execute(
-                "INSERT INTO documents_fts(documents_fts) VALUES('rebuild')"
-            )
+            if getattr(self.db, "_engine", "sqlite") == "postgresql":
+                self._execute(
+                    "UPDATE documents SET search_vector = "
+                    "to_tsvector('english', "
+                    "COALESCE(title,'') || ' ' "
+                    "|| COALESCE(description,'') || ' ' "
+                    "|| COALESCE(text_content,''))"
+                )
+            else:
+                self._execute(
+                    "INSERT INTO documents_fts(documents_fts) VALUES('rebuild')"
+                )
         except Exception as e:
-            logger.warning("FTS5 index rebuild failed: %s", e)
+            logger.warning("FTS index rebuild failed: %s", e)

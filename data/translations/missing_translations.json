@@ -671,5 +671,6 @@
   "upload.fetching_ocr": "Fetching OCR results...",
   "upload.ocr_done": "OCR complete.",
   "upload.error_title": "Upload Error",
-  "upload.extracted_fields": "Extracted Fields"
+  "upload.extracted_fields": "Extracted Fields",
+  "language_name": "Missing Translations"
 }

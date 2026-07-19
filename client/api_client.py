@@ -586,7 +586,7 @@ class ApiClient:
 
     def get_tacho_import_history(self, limit: int = 50) -> Dict[str, Any]:
         return self._get("/api/v1/tacho/import-history",
-                         params=self._clean_params(limit=limit))
+                         params=self._clean_params(page_size=limit))
 
     def get_tacho_status(self) -> Dict[str, Any]:
         return self._get("/api/v1/tacho/status")

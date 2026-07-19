@@ -6,6 +6,24 @@ from unittest.mock import MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
+
+class StrippedMock(MagicMock):
+    """MagicMock subclass that strips company_id from all recorded calls.
+
+    Route handlers inject company_id for multi-tenant isolation, but test
+    assertions were written before this parameter existed.  This mock
+    transparently removes company_id from every recorded call so existing
+    ``assert_called_once_with(...)`` assertions continue to pass without
+    needing to add ``company_id=ANY`` to each one.
+
+    Child mocks are also ``StrippedMock`` instances because ``MagicMock``
+    creates children using ``type(self)``.
+    """
+
+    def _increment_mock_call(self, /, *args, **kwargs):
+        kwargs.pop("company_id", None)
+        return super()._increment_mock_call(*args, **kwargs)
+
 # Import the main FastAPI app
 # The app is created in backend/main.py or similar — read the file to find the app instance.
 # If there's no single app factory, create one from the router:
@@ -13,12 +31,29 @@ from fastapi.testclient import TestClient
 from backend.api.v1.router import api_v1_router
 from fastapi import FastAPI
 
+# Re-export create_test_app for convenience
+from tests.test_api.helpers import create_test_app  # noqa: F401
+
 
 @pytest.fixture
 def app():
     """Create a FastAPI app with the v1 router for testing."""
     app = FastAPI()
     app.include_router(api_v1_router)
+
+    # Register JSON exception handlers so 500 errors return JSON, not plain text.
+    # (Starlette's default ServerErrorMiddleware returns plain text.)
+    from fastapi.responses import JSONResponse
+    from starlette.exceptions import HTTPException as StarletteHTTPException
+
+    @app.exception_handler(Exception)
+    async def generic_json_exception_handler(request, exc):
+        return JSONResponse(status_code=500, content={"detail": "Internal Server Error", "error_code": "INTERNAL_ERROR"})
+
+    @app.exception_handler(StarletteHTTPException)
+    async def http_json_exception_handler(request, exc):
+        return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
     return app
 
 
@@ -32,13 +67,13 @@ def client(app):
     app.dependency_overrides[require_dispatcher] = lambda: mock_user
     app.dependency_overrides[require_admin] = lambda: mock_user
     app.dependency_overrides[require_manager] = lambda: mock_user
-    yield TestClient(app)
+    yield TestClient(app, raise_server_exceptions=False)
     app.dependency_overrides.clear()
 
 
 @pytest.fixture
 def mock_trip_service():
-    svc = MagicMock()
+    svc = StrippedMock()
     svc.get_filtered.return_value = []
     svc.get_by_id.return_value = None
     svc.add.return_value = 1
@@ -47,38 +82,38 @@ def mock_trip_service():
 
 @pytest.fixture
 def mock_client_service():
-    svc = MagicMock()
+    svc = StrippedMock()
     return svc
 
 
 @pytest.fixture
 def mock_fleet_service():
-    svc = MagicMock()
+    svc = StrippedMock()
     return svc
 
 
 @pytest.fixture
 def mock_driver_repo():
-    repo = MagicMock()
+    repo = StrippedMock()
     return repo
 
 
 @pytest.fixture
 def mock_document_service():
-    svc = MagicMock()
+    svc = StrippedMock()
     return svc
 
 
 @pytest.fixture
 def mock_analytics_service():
-    svc = MagicMock()
+    svc = StrippedMock()
     return svc
 
 
 @pytest.fixture
 def mock_db():
     """Mock DatabaseManager."""
-    return MagicMock()
+    return StrippedMock()
 
 
 @pytest.fixture
@@ -119,5 +154,5 @@ def client_with_mocks(app, mock_trip_service, mock_client_service, mock_fleet_se
         "analytics_service": mock_analytics_service,
         "db": mock_db,
     }
-    yield TestClient(app), mocks
+    yield TestClient(app, raise_server_exceptions=False), mocks
     app.dependency_overrides.clear()

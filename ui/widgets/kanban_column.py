@@ -157,7 +157,7 @@ class QtKanbanColumn(QFrame):
         self._title_label.setProperty("fontRole", "kanban-column-title")
         header_layout.addWidget(self._title_label)
 
-        self._count_label = QLabel(" \u2022 0")
+        self._count_label = QLabel(t("kanban.empty_count"))
         self._count_label.setProperty("fontRole", "kanban-column-count")
         header_layout.addWidget(self._count_label)
 
@@ -325,6 +325,12 @@ class QtKanbanColumn(QFrame):
         for old_card in stale:
             self._scroll_layout.removeWidget(old_card)
             old_card.deleteLater()
+
+        # Reorder cards in layout to match new_cards order
+        for card in new_cards:
+            self._scroll_layout.removeWidget(card)
+        for card in new_cards:
+            self._scroll_layout.addWidget(card)
 
         self._cards = new_cards
         self._count_label.setText(f" \u2022 {len(trips)}")

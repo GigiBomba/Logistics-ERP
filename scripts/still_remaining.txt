@@ -1,0 +1,100 @@
+﻿python : Traceback (most recent call last):
+At line:1 char:1
++ python -c "
++ ~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (Traceback (most recent call last)::String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+Remaining: 536
+about.page_header|About Operion
+about.page_header_desc|We're building the future of enterprise logistics software.
+about.page_title|About - Operion ERP
+about.story_p1|Operion was founded in 2024 with a clear mission: make enterprise-grade logistics software accessible to fleets of all sizes.
+about.story_p2|Our team combines decades of experience in logistics, software engineering, and AI to build tools that solve real-world problems.
+about.story_title|Our Story
+about.team_desc|Our team combines decades of experience in logistics, software engineering, and AI.
+about.value_customer_desc|Every feature we build starts with real customer needs and feedback.
+about.value_customer_title|Customer First
+about.value_innovation_desc|We invest heavily in R&D to bring cutting-edge AI and optimization to logistics.
+about.value_partnership_desc|We don't just sell software. We partner with our customers for their success.
+about.value_reliability_desc|Your operations depend on our software. We take that responsibility seriously.
+about.value_security_desc|Enterprise-grade encryption, GDPR compliance, and regular security audits.
+about.value_transparency_desc|Clear pricing, honest communication, and no hidden fees.
+about.values_desc|The principles that guide every decision we make.
+about.values_title|Our Values
+admin.email_placeholder|admin@example.com
+admin.execute_query|Execute
+admin.latency_ms|{value} ms
+admin.password_placeholder|╖╖╖╖╖╖╖╖╖╖╖╖
+admin.query_placeholder|SELECT * FROM table LIMIT 100
+analytics.col_km|KM
+analytics.col_profit_km|Profit/KM
+analytics.doc_cmrs|CMRs
+analytics.group_relevant|Relevant
+analytics.group_total|Total
+analytics.insufficient_route_data|Insufficient data for chart ù add more trips
+analytics.kpi_cmrs|CMRs
+analytics.kpi_total_km|Total KM
+analytics.months|months
+analytics.total_costs|Total costs
+app.subtitle|ERP
+auth.account_created|Account created successfully!
+auth.company_label|Company Name (optional)
+auth.company_placeholder|Acme Inc.
+auth.confirm_password_placeholder|Repeat your password
+auth.create_account|Create account
+auth.creating_account|Creating accountà
+auth.email_placeholder|you@company.com
+auth.forgot_password|Forgot password?
+auth.has_account|Already have an account?
+auth.hide_password|Hide password
+auth.login_brand|Operion
+auth.login_subtitle|Sign in to your Operion account
+auth.login_title|Sign In ù Operion ERP
+auth.login_welcome|Welcome back
+auth.name_label|Full Name
+auth.name_placeholder|John Doe
+auth.no_account|Don't have an account?
+auth.password_min_hint|At least 8 characters
+auth.password_placeholder|Enter your password
+auth.register_brand|Operion
+auth.register_title|Create Account ù Operion ERP
+auth.register_welcome|Create your account
+auth.signed_in_success|Signed in successfully!
+auth.signing_in|Signing inà
+auth.validation_invalid_email|Please enter a valid email
+auth.validation_name_min|Name must be at least 2 characters
+auth.validation_passwords_match|Passwords don't match
+automation.attachments_empty|Attachments Empty
+automation.body_label|Body:
+automation.continue_to_email|Continue to Email
+automation.copy_run|Copy path
+automation.download_done|Package saved to:
+{path}
+automation.download_empty|No documents to package.
+automation.draft_saved_title|Draft saved
+automation.err_bad_to|Email address is not valid.
+automation.err_database|Database error: {}
+automation.err_grouping|Grouping failed: {}
+automation.err_grouping_no_doc|Grouping produced no document
+automation.err_matching|Matching failed: {}
+automation.err_no_to|Please enter a recipient address.
+automation.err_ocr|OCR failed: {}
+automation.err_ocr_persist|OCR persistence failed
+automation.err_read_input|Cannot read input: {}
+automation.imported|Imported {} ({} bytes)
+automation.label_document|Doc #{}
+automation.label_matched_trip|Matched trip:
+automation.label_stage|Stage:
+automation.linked_doc|Linked document #{} to trip #{}
+automation.mode_label|Mode:
+automation.mode_simple|Simple
+automation.no_docs_msg|There are no documents to send. Cancel and run the automation first.
+automation.no_match|No trip match ù run finished without attachment
+automation.ocr_complete|OCR complete: {} chars, confidence={}%, engine={}
+automation.package_create_error|Internal error: package row creation failed
+  File "<string>", line 23, in <module>
+  File "C:\Users\Bonjo\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 40: character maps to <undefined>

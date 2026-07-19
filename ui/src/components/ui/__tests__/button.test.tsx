@@ -12,7 +12,7 @@ describe('Button', () => {
   })
 
   describe('variants', () => {
-    const variants = ['default', 'destructive', 'outline', 'ghost', 'link'] as const
+    const variants = ['default', 'destructive', 'outline', 'secondary', 'ghost', 'link'] as const
     for (const variant of variants) {
       it(`renders ${variant} variant`, () => {
         render(<Button variant={variant}>{variant}</Button>)
@@ -25,11 +25,11 @@ describe('Button', () => {
   })
 
   describe('sizes', () => {
-    const sizes = ['default', 'sm', 'lg'] as const
+    const sizes = ['default', 'sm', 'lg', 'icon'] as const
     for (const size of sizes) {
       it(`renders ${size} size`, () => {
-        render(<Button size={size}>{size}</Button>)
-        const btn = screen.getByRole('button', { name: size })
+        render(<Button size={size}>{size === 'icon' ? 'X' : size}</Button>)
+        const btn = screen.getByRole('button', { name: size === 'icon' ? 'X' : size })
         expect(btn).toBeInTheDocument()
       })
     }
@@ -67,5 +67,35 @@ describe('Button', () => {
     const link = screen.getByRole('link', { name: /link button/i })
     expect(link).toBeInTheDocument()
     expect(link.getAttribute('href')).toBe('/test')
+  })
+
+  describe('snapshots', () => {
+    const variants = ['default', 'destructive', 'outline', 'secondary', 'ghost', 'link'] as const
+    for (const variant of variants) {
+      it(`matches snapshot for ${variant} variant`, () => {
+        const { container } = render(<Button variant={variant}>{variant}</Button>)
+        expect(container.firstChild).toMatchSnapshot()
+      })
+    }
+
+    const sizes = ['default', 'sm', 'lg', 'icon'] as const
+    for (const size of sizes) {
+      it(`matches snapshot for ${size} size`, () => {
+        const { container } = render(
+          <Button size={size}>{size === 'icon' ? 'X' : size}</Button>,
+        )
+        expect(container.firstChild).toMatchSnapshot()
+      })
+    }
+
+    it('matches snapshot for disabled button', () => {
+      const { container } = render(<Button disabled>Disabled</Button>)
+      expect(container.firstChild).toMatchSnapshot()
+    })
+
+    it('matches snapshot with additional className', () => {
+      const { container } = render(<Button className="extra-class">Styled</Button>)
+      expect(container.firstChild).toMatchSnapshot()
+    })
   })
 })

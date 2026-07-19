@@ -416,7 +416,7 @@ class DocumentService:
                category: str = "", entity_type: str = "",
                entity_id: Optional[int] = None,
                description: str = "", tags: Optional[list[str]] = None,
-               uploaded_by: str = "") -> Optional[int]:
+               uploaded_by: str = "", company_id=None) -> Optional[int]:
         """DEPRECATED: Use ``upload_document(DocumentUpload, user_id)`` instead."""
         warnings.warn(
             "upload(source_path, ...) is deprecated; use upload_document(DocumentUpload, user_id)",
@@ -500,7 +500,8 @@ class DocumentService:
                         date_from: str = "", date_to: str = "",
                         mime_type: str = "", tag: str = "",
                         order: str = "uploaded_at DESC",
-                        page: int = 0, page_size: int = 20) -> dict[str, Any]:
+                        page: int = 0, page_size: int = 20,
+                        company_id=None) -> dict[str, Any]:
         return self.search_svc.advanced_search(
             query=query, category=category, entity_type=entity_type,
             entity_id=entity_id, date_from=date_from, date_to=date_to,
@@ -542,7 +543,7 @@ class DocumentService:
 
     # ── Document operations ────────────────────────────────────────────
 
-    def get_by_id(self, doc_id: int) -> Optional[dict[str, Any]]:
+    def get_by_id(self, doc_id: int, company_id=None) -> Optional[dict[str, Any]]:
         cache = self._get_cache()
         if cache:
             cached = cache.get(self._cache_key(doc_id))

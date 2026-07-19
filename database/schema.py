@@ -409,10 +409,15 @@ CREATE TABLE IF NOT EXISTS drivers (
     monthly_salary REAL DEFAULT 0,
     notes TEXT,
     is_active INTEGER DEFAULT 1,
+    company_id INTEGER,
+    user_id INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 """
+
+ALTER_DRIVERS_ADD_COMPANY_ID = "ALTER TABLE drivers ADD COLUMN company_id INTEGER"
+ALTER_DRIVERS_ADD_USER_ID = "ALTER TABLE drivers ADD COLUMN user_id INTEGER REFERENCES users(id)"
 
 INDEX_DRIVERS_ACTIVE = "CREATE INDEX IF NOT EXISTS idx_drivers_active ON drivers(is_active);"
 
@@ -787,6 +792,13 @@ ALTER_DOCUMENTS_ADD_CMR_NUMBER = "ALTER TABLE documents ADD COLUMN cmr_number TE
 ALTER_DOCUMENTS_ADD_CMR_METADATA = "ALTER TABLE documents ADD COLUMN cmr_metadata_json TEXT DEFAULT '{}'"
 ALTER_DOCUMENTS_ADD_IS_SIGNED = "ALTER TABLE documents ADD COLUMN is_signed INTEGER DEFAULT 0"
 
+# ── Multi-tenant: company_id for tables that lacked it (P0.6) ──────────
+ALTER_DOCUMENTS_ADD_COMPANY_ID = "ALTER TABLE documents ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_CLIENT_CONTACTS_ADD_COMPANY_ID = "ALTER TABLE client_contacts ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_CLIENT_TAGS_ADD_COMPANY_ID = "ALTER TABLE client_tags ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_DOCUMENT_LINKS_ADD_COMPANY_ID = "ALTER TABLE document_links ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_DOCUMENT_VERSIONS_ADD_COMPANY_ID = "ALTER TABLE document_versions ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+
 INDEX_TRIPS_CMR_STATUS = "CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status);"
 INDEX_DOCUMENTS_COPY_TYPE = "CREATE INDEX IF NOT EXISTS idx_documents_copy_type ON documents(copy_type);"
 INDEX_DOCUMENTS_CMR_NUMBER = "CREATE INDEX IF NOT EXISTS idx_documents_cmr_number ON documents(cmr_number);"
@@ -1065,9 +1077,14 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL DEFAULT 'dispatcher',
     company_id INTEGER REFERENCES companies(id),
     is_active INTEGER NOT NULL DEFAULT 1,
+    display_name TEXT DEFAULT '',
+    driver_id INTEGER REFERENCES drivers(id),
     created_at TEXT DEFAULT (datetime('now'))
 );
 """
+
+ALTER_USERS_ADD_DISPLAY_NAME = "ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT ''"
+ALTER_USERS_ADD_DRIVER_ID = "ALTER TABLE users ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"
 
 INDEX_USERS_EMAIL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
@@ -1099,6 +1116,21 @@ INDEX_GPS_RECORDED = (
     "CREATE INDEX IF NOT EXISTS idx_gps_recorded ON gps_telemetry(recorded_at)"
 )
 
+# ── Soft delete: deleted_at for all business tables (P0.7) ───────────
+ALTER_TRIPS_ADD_DELETED_AT = "ALTER TABLE trips ADD COLUMN deleted_at TEXT"
+ALTER_INVOICES_ADD_DELETED_AT = "ALTER TABLE invoices ADD COLUMN deleted_at TEXT"
+ALTER_CLIENTS_ADD_DELETED_AT = "ALTER TABLE clients ADD COLUMN deleted_at TEXT"
+ALTER_DRIVERS_ADD_DELETED_AT = "ALTER TABLE drivers ADD COLUMN deleted_at TEXT"
+ALTER_TRUCKS_ADD_DELETED_AT = "ALTER TABLE trucks ADD COLUMN deleted_at TEXT"
+ALTER_ROUTES_ADD_DELETED_AT = "ALTER TABLE routes ADD COLUMN deleted_at TEXT"
+ALTER_ROUTE_HISTORY_V2_ADD_DELETED_AT = "ALTER TABLE route_history_v2 ADD COLUMN deleted_at TEXT"
+ALTER_RECEIPTS_ADD_DELETED_AT = "ALTER TABLE receipts ADD COLUMN deleted_at TEXT"
+ALTER_CONTRACTS_ADD_DELETED_AT = "ALTER TABLE contracts ADD COLUMN deleted_at TEXT"
+ALTER_PROFORMA_ADD_DELETED_AT = "ALTER TABLE proforma_invoices ADD COLUMN deleted_at TEXT"
+ALTER_MAINTENANCE_RECORDS_ADD_DELETED_AT = "ALTER TABLE maintenance_records ADD COLUMN deleted_at TEXT"
+ALTER_MAINTENANCE_SCHEDULES_ADD_DELETED_AT = "ALTER TABLE maintenance_schedules ADD COLUMN deleted_at TEXT"
+ALTER_DOCUMENTS_ADD_DELETED_AT = "ALTER TABLE documents ADD COLUMN deleted_at TEXT"
+
 # ── Schema migration version bump ───────────────────────────────────────
 
 INSERT_SCHEMA_MIGRATION_V2 = (
@@ -1109,6 +1141,28 @@ INSERT_SCHEMA_MIGRATION_V2 = (
 INSERT_SCHEMA_MIGRATION_V3 = (
     "INSERT OR IGNORE INTO schema_migrations (version, name) "
     "VALUES (3, 'add_gps_telemetry_company_id');"
+)
+
+# ── Schema migration version bump for P0.6-P0.8 ───────────────────────
+INSERT_SCHEMA_MIGRATION_V4 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (4, 'add_missing_company_id_and_soft_delete');"
+)
+
+# ── Schema migration version bump for Freight Exchange (P0.9) ─────────
+INSERT_SCHEMA_MIGRATION_V5 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (5, 'create_freight_exchange_connections');"
+)
+
+INSERT_SCHEMA_MIGRATION_V6 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (6, 'create_saved_searches');"
+)
+
+INSERT_SCHEMA_MIGRATION_V7 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (7, 'add_trips_source_columns');"
 )
 
 # ── Multi-tenant company_id indexes ────────────────────────────────────
@@ -1134,6 +1188,23 @@ INDEX_DOCUMENT_PACKAGE_COMPANY = "CREATE INDEX IF NOT EXISTS idx_document_packag
 INDEX_PROFORMA_COMPANY    = "CREATE INDEX IF NOT EXISTS idx_proforma_company ON proforma_invoices(company_id);"
 INDEX_CONTRACTS_COMPANY   = "CREATE INDEX IF NOT EXISTS idx_contracts_company ON contracts(company_id);"
 INDEX_TACHO_IMPORTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_tacho_imports_company ON tacho_imports(company_id);"
+
+# ── Multi-tenant company_id indexes for newly-scoped tables (P0.6) ────
+INDEX_DOCUMENTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_documents_company ON documents(company_id);"
+INDEX_CLIENT_CONTACTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_client_contacts_company ON client_contacts(company_id);"
+INDEX_CLIENT_TAGS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_client_tags_company ON client_tags(company_id);"
+INDEX_DOCUMENT_LINKS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_doc_links_company ON document_links(company_id);"
+INDEX_DOCUMENT_VERSIONS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_doc_versions_company ON document_versions(company_id);"
+
+# ── Soft delete indexes (P0.7) ─────────────────────────────────────────
+INDEX_TRIPS_DELETED = "CREATE INDEX IF NOT EXISTS idx_trips_deleted ON trips(deleted_at);"
+INDEX_INVOICES_DELETED = "CREATE INDEX IF NOT EXISTS idx_invoices_deleted ON invoices(deleted_at);"
+INDEX_CLIENTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_clients_deleted ON clients(deleted_at);"
+INDEX_DRIVERS_DELETED = "CREATE INDEX IF NOT EXISTS idx_drivers_deleted ON drivers(deleted_at);"
+INDEX_TRUCKS_DELETED = "CREATE INDEX IF NOT EXISTS idx_trucks_deleted ON trucks(deleted_at);"
+INDEX_DOCUMENTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_documents_deleted ON documents(deleted_at);"
+INDEX_RECEIPTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_receipts_deleted ON receipts(deleted_at);"
+INDEX_CONTRACTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_contracts_deleted ON contracts(deleted_at);"
 
 # ── Additional performance indexes for commonly filtered columns ───────
 
@@ -1244,3 +1315,75 @@ INDEX_WAITLIST_STATUS = "CREATE INDEX IF NOT EXISTS idx_waitlist_status ON waitl
 INDEX_WAITLIST_JOINED = "CREATE INDEX IF NOT EXISTS idx_waitlist_joined ON waitlist_entries(joined_at);"
 INDEX_WAITLIST_SOURCE = "CREATE INDEX IF NOT EXISTS idx_waitlist_source ON waitlist_entries(source);"
 INDEX_WAITLIST_REFERRAL = "CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_referral ON waitlist_entries(referral_code);"
+
+
+# ── Freight Exchange: Connections ─────────────────────────────────────────
+TABLE_FREIGHT_EXCHANGE_CONNECTIONS = """
+CREATE TABLE IF NOT EXISTS freight_exchange_connections (
+    id TEXT PRIMARY KEY,                      -- UUID, generated by Python for SQLite
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    provider_id TEXT NOT NULL,
+    credentials_encrypted TEXT NOT NULL,
+    session_state TEXT,                       -- JSON blob stored as TEXT in SQLite
+    status TEXT NOT NULL DEFAULT 'disconnected',
+    last_health_check_at TEXT,
+    last_health_check_status TEXT,
+    connected_at TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (company_id, provider_id)
+);
+"""
+
+INDEX_FREIGHT_CONNECTIONS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_connections_company "
+    "ON freight_exchange_connections(company_id);"
+)
+
+INDEX_FREIGHT_CONNECTIONS_PROVIDER = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_connections_provider "
+    "ON freight_exchange_connections(company_id, provider_id);"
+)
+
+INDEX_FREIGHT_CONNECTIONS_STATUS = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_connections_status "
+    "ON freight_exchange_connections(company_id, status);"
+)
+
+
+# ── Freight Exchange: Saved Searches ──────────────────────────────────────
+TABLE_SAVED_SEARCHES = """
+CREATE TABLE IF NOT EXISTS saved_searches (
+    id TEXT PRIMARY KEY,                      -- UUID, generated by Python for SQLite
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    label TEXT NOT NULL,
+    filters TEXT NOT NULL,                    -- JSON blob stored as TEXT in SQLite
+    provider_ids TEXT,                        -- JSON blob (nullable array)
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_refreshed_at TEXT
+);
+"""
+
+INDEX_SAVED_SEARCHES_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_saved_searches_company "
+    "ON saved_searches(company_id);"
+)
+
+INDEX_SAVED_SEARCHES_USER = (
+    "CREATE INDEX IF NOT EXISTS idx_saved_searches_user "
+    "ON saved_searches(user_id);"
+)
+
+
+# ── Freight Exchange: trips source columns ────────────────────────────────
+ALTER_TRIPS_ADD_SOURCE = (
+    "ALTER TABLE trips ADD COLUMN source TEXT DEFAULT 'manual';"
+)
+
+ALTER_TRIPS_ADD_SOURCE_PROVIDER = (
+    "ALTER TABLE trips ADD COLUMN source_provider_id TEXT;"
+)
+
+ALTER_TRIPS_ADD_SOURCE_REFERENCE = (
+    "ALTER TABLE trips ADD COLUMN source_reference_id TEXT;"
+)

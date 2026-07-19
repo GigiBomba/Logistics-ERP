@@ -45,6 +45,13 @@ class BaseView(QScrollArea):
         self._i18n_id: Callable[[str], None] | None = None
         self._shutdown_flag: bool = False
 
+    # ── Qt event overrides ──────────────────────────────────────
+
+    def closeEvent(self, event) -> None:
+        """Ensure shutdown is called when the widget is closed."""
+        self.shutdown()
+        super().closeEvent(event)
+
     # ── Lifecycle ──────────────────────────────────────────────
 
     def _build_ui(self) -> None:

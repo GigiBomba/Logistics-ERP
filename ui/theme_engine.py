@@ -150,7 +150,7 @@ class QtTheme:
 
     @classmethod
     def _fs(cls, role: str) -> int:
-        return FONT_SIZES.get(role, FONT_SIZES.get("body", 13))
+        return max(1, FONT_SIZES.get(role, FONT_SIZES.get("body", 13)))
 
     @classmethod
     def _px(cls, key: str) -> int:

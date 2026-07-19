@@ -11,6 +11,7 @@ import { SearchInput } from "@/components/shared/search-input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { blogConfig } from "@/config/site"
 import { useBlogPosts } from "@/services/queries"
+import { useLocale } from "@/i18n/locale-context"
 
 const MOCK_POSTS = [
   {
@@ -282,6 +283,7 @@ const CATEGORY_NAMES: Record<string, string> = {
 }
 
 export default function BlogCategoryPage() {
+  const { t } = useLocale()
   const { category: categorySlug } = useParams<{ category: string }>()
   const [searchParams, setSearchParams] = useSearchParams()
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10))
@@ -360,7 +362,7 @@ export default function BlogCategoryPage() {
         >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <SearchInput
-              placeholder="Search articles..."
+              placeholder={t("blog.searchPlaceholder")}
               value={search}
               onChange={handleSearchChange}
               className="w-full sm:max-w-sm"

@@ -46,6 +46,7 @@ DOCUMENT_OCR_RAN = "document.ocr_ran"
 
 TRIP_CONFLICT = "trip.conflict"
 SETTINGS_UPDATED = "settings.updated"
+TOUR_REPLAY_REQUESTED = "tour.replay_requested"
 
 ALERT_CREATED = "alert.created"
 ALERT_RESOLVED = "alert.resolved"

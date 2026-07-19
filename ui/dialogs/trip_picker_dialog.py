@@ -125,6 +125,14 @@ class QtTripPickerDialog(QDialog):
     # ------------------------------------------------------------------
 
     def _load_trips(self, query: str) -> None:
+        if self._db is None:
+            logger.warning("Trip picker requires local database access - not available in remote mode")
+            trips = []
+            self._list.clear()
+            self._empty_lbl.setVisible(True)
+            self._link_btn.setEnabled(False)
+            self._selected = None
+            return
         try:
             from repositories.trip_repository import TripRepository
             repo = TripRepository(self._db)

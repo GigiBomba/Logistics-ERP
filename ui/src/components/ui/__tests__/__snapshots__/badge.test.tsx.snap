@@ -1,0 +1,57 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Badge > snapshots > matches snapshot for default variant 1`] = `
+<div
+  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20"
+>
+  default
+</div>
+`;
+
+exports[`Badge > snapshots > matches snapshot for destructive variant 1`] = `
+<div
+  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-destructive/10 text-destructive hover:bg-destructive/20"
+>
+  destructive
+</div>
+`;
+
+exports[`Badge > snapshots > matches snapshot for outline variant 1`] = `
+<div
+  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 text-foreground hover:bg-accent"
+>
+  outline
+</div>
+`;
+
+exports[`Badge > snapshots > matches snapshot for secondary variant 1`] = `
+<div
+  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-secondary text-secondary-foreground hover:bg-secondary/80"
+>
+  secondary
+</div>
+`;
+
+exports[`Badge > snapshots > matches snapshot for success variant 1`] = `
+<div
+  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/20"
+>
+  success
+</div>
+`;
+
+exports[`Badge > snapshots > matches snapshot for warning variant 1`] = `
+<div
+  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-amber-500/10 text-amber-600 hover:bg-amber-500/20"
+>
+  warning
+</div>
+`;
+
+exports[`Badge > snapshots > matches snapshot with additional className 1`] = `
+<div
+  class="inline-flex items-center rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors duration-200 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 border-transparent bg-primary/10 text-primary hover:bg-primary/20 custom-badge"
+>
+  Styled
+</div>
+`;

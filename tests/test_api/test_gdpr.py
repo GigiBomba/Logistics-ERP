@@ -38,6 +38,10 @@ def _make_db(**conn_attrs) -> MagicMock:
     mock_db = MagicMock()
     mock_conn = MagicMock(**conn_attrs)
     type(mock_db).conn = PropertyMock(return_value=mock_conn)
+    # Wire db.execute() → db.conn.execute() so production code works via either path
+    mock_db.execute = MagicMock(side_effect=lambda q, p=None: mock_conn.execute(q, p))
+    # Wire db.commit() → db.conn.commit()
+    mock_db.commit = MagicMock(side_effect=lambda: mock_conn.commit())
     # Fake engine so repository code does not try to adapt queries
     mock_db._engine = "sqlite"
     return mock_db
@@ -684,7 +688,7 @@ class TestDeleteCompany:
 
         # Patch at the definition site — AuditRepository is imported *inside*
         # the delete_company_data function body.
-        with patch("repositories.audit_repository.AuditRepository") as mock_audit_cls:
+        with patch("backend.repositories.audit_repository.AuditRepository") as mock_audit_cls:
             mock_audit_instance = MagicMock()
             mock_audit_cls.return_value = mock_audit_instance
 
@@ -713,7 +717,7 @@ class TestDeleteCompany:
             tables_with_is_active=set(EXPORT_TABLES),
         )
 
-        with patch("repositories.audit_repository.AuditRepository") as mock_audit_cls:
+        with patch("backend.repositories.audit_repository.AuditRepository") as mock_audit_cls:
             mock_audit_cls.side_effect = RuntimeError("audit fail")
 
             client = _override_deps(app, mock_db)

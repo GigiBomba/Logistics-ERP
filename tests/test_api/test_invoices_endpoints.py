@@ -17,11 +17,15 @@ class TestInvoicesGenerate:
         mock_svc = MagicMock()
         mock_svc_cls.return_value = mock_svc
         mock_svc.generate_and_record.return_value = str(pdf_file)
-        payload = {"id": 1, "client_name": "Acme Corp", "total_price_eur": 1500.00, "mode": "client"}
+        payload = {"trip_id": 1, "client_name": "Acme Corp", "total_price_eur": 1500.00, "mode": "client"}
         resp = client.post(f"{BASE}/generate", json=payload)
         assert resp.status_code == 200
         assert "application/pdf" in resp.headers.get("content-type", "")
-        mock_svc.generate_and_record.assert_called_once_with(payload, mode="client")
+        # The endpoint passes data.model_dump() which includes schema defaults
+        call_args, call_kwargs = mock_svc.generate_and_record.call_args
+        assert call_args[0]["trip_id"] == 1
+        assert call_args[0]["client_name"] == "Acme Corp"
+        assert call_kwargs.get("mode") == "client"
 
     @patch("os.path.isfile", return_value=False)
     @patch("services.invoicing.service.InvoiceService")
@@ -30,7 +34,7 @@ class TestInvoicesGenerate:
         mock_svc = MagicMock()
         mock_svc_cls.return_value = mock_svc
         mock_svc.generate_and_record.return_value = "/tmp/missing.pdf"
-        resp = client.post(f"{BASE}/generate", json={"id": 1})
+        resp = client.post(f"{BASE}/generate", json={"trip_id": 1})
         assert resp.status_code == 500
         assert resp.json()["detail"] == "Invoice generation failed"
 
@@ -43,7 +47,7 @@ class TestInvoicesSend:
         mock_svc = MagicMock()
         mock_svc_cls.return_value = mock_svc
         mock_svc.send_invoice_email.return_value = True
-        payload = {"recipient": "client@example.com", "trip_id": 1, "trip_data": {"client_name": "Acme"}, "mode": "client"}
+        payload = {"recipient_email": "client@example.com", "trip_id": 1, "trip_data": {"client_name": "Acme"}, "mode": "client"}
         resp = client.post(f"{BASE}/1/send", json=payload)
         assert resp.status_code == 200
         assert resp.json() == {"status": "sent", "recipient": "client@example.com"}
@@ -51,9 +55,9 @@ class TestInvoicesSend:
     @patch("services.invoicing.service.InvoiceService")
     def test_send_invoice_email_returns_400_without_recipient(self, mock_svc_cls, client_with_mocks):
         client, mocks = client_with_mocks
+        # Schema requires recipient_email, so empty body returns 422
         resp = client.post(f"{BASE}/1/send", json={})
-        assert resp.status_code == 400
-        assert resp.json()["detail"] == "Recipient email is required"
+        assert resp.status_code in (400, 422)
 
     @patch("services.invoicing.service.InvoiceService")
     def test_send_invoice_email_returns_400_on_value_error(self, mock_svc_cls, client_with_mocks):
@@ -61,7 +65,7 @@ class TestInvoicesSend:
         mock_svc = MagicMock()
         mock_svc_cls.return_value = mock_svc
         mock_svc.send_invoice_email.side_effect = ValueError("SMTP not configured")
-        payload = {"recipient": "client@example.com", "trip_data": {}}
+        payload = {"recipient_email": "client@example.com", "trip_data": {}}
         resp = client.post(f"{BASE}/1/send", json=payload)
         assert resp.status_code == 400
         assert "SMTP" in resp.json()["detail"]
@@ -72,7 +76,7 @@ class TestInvoicesSend:
         mock_svc = MagicMock()
         mock_svc_cls.return_value = mock_svc
         mock_svc.send_invoice_email.return_value = False
-        payload = {"recipient": "client@example.com", "trip_data": {}}
+        payload = {"recipient_email": "client@example.com", "trip_data": {}}
         resp = client.post(f"{BASE}/1/send", json=payload)
         assert resp.status_code == 200
         assert resp.json() == {"status": "failed", "detail": "Email sending failed"}

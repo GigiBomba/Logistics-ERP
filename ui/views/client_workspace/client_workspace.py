@@ -132,6 +132,7 @@ class QtClientWorkspace(QWidget):
     def _cleanup(self) -> None:
         with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
+        self._listener_registered = False
 
     def shutdown(self) -> None:
         """Release resources when the view is hidden."""

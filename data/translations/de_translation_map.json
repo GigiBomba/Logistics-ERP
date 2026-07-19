@@ -1007,5 +1007,6 @@
   "Truck {}": "LKW {}",
   "Alerts": "Warnungen",
   "Tracking Device ID": "Tracking-Geraete-ID",
-  "Delete": "Loeschen"
+  "Delete": "Loeschen",
+  "language_name": "Deutsch"
 }

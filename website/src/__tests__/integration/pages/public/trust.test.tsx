@@ -20,10 +20,10 @@ describe("TrustPage", () => {
 
   it("renders security overview cards", () => {
     render(<TrustPage />)
-    expect(screen.getByText("Encryption")).toBeInTheDocument()
+    expect(screen.getByText("Secure by Design")).toBeInTheDocument()
     expect(screen.getByText("Access Control")).toBeInTheDocument()
-    expect(screen.getByText("Monitoring")).toBeInTheDocument()
-    expect(screen.getByText("Penetration Testing")).toBeInTheDocument()
+    expect(screen.getByText("Transparency")).toBeInTheDocument()
+    expect(screen.getByText("Future Auditing")).toBeInTheDocument()
   })
 
   it("renders compliance section", () => {
@@ -33,6 +33,6 @@ describe("TrustPage", () => {
 
   it("renders call-to-action", () => {
     render(<TrustPage />)
-    expect(screen.getByText(/need more details/i)).toBeInTheDocument()
+    expect(screen.getByText("Have questions?")).toBeInTheDocument()
   })
 })

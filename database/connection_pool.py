@@ -225,6 +225,8 @@ class PostgresConnectionPool:
                 logger.info("PostgreSQL pool closed")
             except Exception as e:
                 logger.warning("Error closing PostgreSQL pool: %s", e)
+            finally:
+                self._pool = None
 
     @property
     def stats(self) -> dict:

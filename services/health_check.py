@@ -34,8 +34,13 @@ def check_database(db_path: str | None = None) -> dict[str, Any]:
             from database.db_manager import DatabaseManager
             db = DatabaseManager(dsn, engine="postgresql")
             try:
-                # Quick connectivity check
-                db.conn.execute("SELECT 1").fetchone()
+                # Quick connectivity check (engine-agnostic)
+                db.execute("SELECT 1")
+                # PostgreSQL-specific health checks via _table_exists
+                table_checks = {}
+                for tbl in ["alerts", "trips", "trucks", "invoices", "settings"]:
+                    table_checks[tbl] = db._table_exists(tbl)
+                result["table_checks"] = table_checks
                 tables = SettingsRepository(db).get_table_names()
                 expected_tables = {"alerts", "trips", "trucks", "invoices", "settings"}
                 missing = expected_tables - set(tables)

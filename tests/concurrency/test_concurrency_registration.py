@@ -34,10 +34,6 @@ pytestmark = pytest.mark.concurrency
 class TestConcurrencyRegistration:
     """Concurrent registration scenarios with in-memory DB."""
 
-    @pytest.fixture
-    def db(self):
-        return make_db()
-
     # ── helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod

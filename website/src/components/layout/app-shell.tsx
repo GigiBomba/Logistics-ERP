@@ -255,7 +255,7 @@ function DashboardLayout() {
           <button
             onClick={() => setSearchOpen(true)}
             className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground max-w-48 min-w-[120px]"
-            aria-label="Open search"
+            aria-label={t("common.aria.openSearch")}
           >
             <Search className="h-4 w-4 shrink-0" />
             <span className="hidden md:inline flex-1 text-left">{t("common.search")}</span>
@@ -270,7 +270,7 @@ function DashboardLayout() {
             variant="ghost"
             size="icon"
             onClick={cycleTheme}
-            aria-label="Toggle theme"
+            aria-label={t("common.aria.toggleTheme")}
           >
             {themeIcons[theme]}
           </Button>
@@ -282,7 +282,7 @@ function DashboardLayout() {
           <Button
             variant="ghost"
             size="icon"
-            aria-label="Notifications"
+            aria-label={t("common.aria.notifications")}
             className="relative"
           >
             <Bell className="h-4 w-4" />
@@ -428,7 +428,7 @@ function PublicLayout() {
             <button
               onClick={() => setSearchOpen(true)}
               className="flex items-center gap-2 rounded-lg border border-input bg-background px-3 py-1.5 text-sm text-muted-foreground shadow-sm transition-colors hover:bg-accent hover:text-accent-foreground max-w-48 min-w-[120px]"
-              aria-label="Open search"
+              aria-label={t("common.aria.openSearch")}
             >
               <Search className="h-4 w-4 shrink-0" />
               <span className="hidden md:inline flex-1 text-left">{t("common.search")}</span>
@@ -442,7 +442,7 @@ function PublicLayout() {
               variant="ghost"
               size="icon"
               onClick={cycleTheme}
-              aria-label="Toggle theme"
+              aria-label={t("common.aria.toggleTheme")}
             >
               {themeIcons[theme]}
             </Button>
@@ -475,7 +475,7 @@ function PublicLayout() {
               variant="ghost"
               size="icon"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              aria-label="Toggle menu"
+              aria-label={t("common.aria.toggleMenu")}
             >
               {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
             </Button>

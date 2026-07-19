@@ -154,14 +154,14 @@ class QtTripCard(QFrame):
         # ── Content area ────────────────────────────────────────────────
         self._content_widget = QWidget()
         content_layout = QVBoxLayout(self._content_widget)
-        content_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        content_layout.setSpacing(S["1"])
+        content_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        content_layout.setSpacing(0)
 
         # Row 1 — trip ID + status chip + delayed chip
         row1 = QWidget()
         row1_layout = QHBoxLayout(row1)
         row1_layout.setContentsMargins(0, 0, 0, 0)
-        row1_layout.setSpacing(S["1"])
+        row1_layout.setSpacing(0)
 
         trip_id = d.get("trip_id", t("common.na"))
         id_lbl = QLabel(str(trip_id))
@@ -214,7 +214,7 @@ class QtTripCard(QFrame):
         )
         truck_row_layout = QHBoxLayout(truck_row)
         truck_row_layout.setContentsMargins(0, 0, 0, 0)
-        truck_row_layout.setSpacing(S["1"])
+        truck_row_layout.setSpacing(0)
 
         truck_icon = QLabel("\U0001f69a")
         truck_icon.setProperty("fontRole", "label")
@@ -264,7 +264,7 @@ class QtTripCard(QFrame):
         driver_row = QWidget()
         driver_row_layout = QHBoxLayout(driver_row)
         driver_row_layout.setContentsMargins(0, 0, 0, 0)
-        driver_row_layout.setSpacing(S["1"])
+        driver_row_layout.setSpacing(0)
 
         driver_icon = QLabel("\U0001f464")
         driver_icon.setProperty("fontRole", "label")
@@ -352,7 +352,7 @@ class QtTripCard(QFrame):
         self._live_row = QWidget()
         live_layout = QHBoxLayout(self._live_row)
         live_layout.setContentsMargins(0, 0, 0, 0)
-        live_layout.setSpacing(S["1"])
+        live_layout.setSpacing(0)
 
         live_dot = QLabel("\u25cf " + t("dispatch_board.live"))
         live_dot.setProperty("fontRole", "label")
@@ -516,7 +516,7 @@ class QtTripCard(QFrame):
                 self._driver_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
 
         new_alerts = new_data.get("alerts_count", 0)
-        self.trip_data["alerts_count"] = new_alerts
+        self._update_alert_badge(new_alerts)
 
         # Update route label
         if self._route_lbl is not None:
@@ -538,8 +538,76 @@ class QtTripCard(QFrame):
             self._date_lbl.setText(date_text)
             self._date_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
 
+        # Update clear buttons for truck/driver
+        self._sync_truck_clear_button()
+        self._sync_driver_clear_button()
+
         # Reset delayed state (will be re-evaluated by caller)
         self.set_delayed(False, 0)
+
+    def _sync_truck_clear_button(self) -> None:
+        """Ensure truck clear button matches current truck_plate state."""
+        if self._truck_lbl is None:
+            return
+        has_plate = bool(self.trip_data.get("truck_plate", ""))
+        if has_plate and self._truck_clear_btn is None:
+            truck_row = self._truck_lbl.parent()
+            if truck_row is not None:
+                self._truck_clear_btn = QLabel("\u2715")
+                self._truck_clear_btn.setProperty("fontRole", "label")
+                self._truck_clear_btn.setStyleSheet(f"color: {COLORS['text_muted']};")
+                self._truck_clear_btn.setCursor(Qt.PointingHandCursor)
+                self._truck_clear_btn.mousePressEvent = self._on_truck_clear  # type: ignore[assignment]
+                truck_row.layout().addWidget(self._truck_clear_btn)
+        elif not has_plate and self._truck_clear_btn is not None:
+            self._truck_clear_btn.deleteLater()
+            self._truck_clear_btn = None
+
+    def _sync_driver_clear_button(self) -> None:
+        """Ensure driver clear button matches current driver_name state."""
+        if self._driver_lbl is None:
+            return
+        has_driver = bool(self.trip_data.get("driver_name", ""))
+        if has_driver and self._driver_clear_btn is None:
+            driver_row = self._driver_lbl.parent()
+            if driver_row is not None:
+                self._driver_clear_btn = QLabel("\u2715")
+                self._driver_clear_btn.setProperty("fontRole", "label")
+                self._driver_clear_btn.setStyleSheet(f"color: {COLORS['text_muted']};")
+                self._driver_clear_btn.setCursor(Qt.PointingHandCursor)
+                self._driver_clear_btn.mousePressEvent = self._on_driver_clear  # type: ignore[assignment]
+                driver_row.layout().addWidget(self._driver_clear_btn)
+        elif not has_driver and self._driver_clear_btn is not None:
+            self._driver_clear_btn.deleteLater()
+            self._driver_clear_btn = None
+
+    def _update_alert_badge(self, count: int) -> None:
+        """Recreate the alert banner with *count* alerts, or remove it."""
+        if self._alert_frame is not None:
+            self._content_widget.layout().removeWidget(self._alert_frame)
+            self._alert_frame.deleteLater()
+            self._alert_frame = None
+
+        if count > 0:
+            self._alert_frame = QFrame()
+            self._alert_frame.setStyleSheet(
+                f"background-color: {COLORS['danger']}; border-radius: 3px;"
+            )
+            alert_layout = QHBoxLayout(self._alert_frame)
+            alert_layout.setContentsMargins(S["1"], 1, S["1"], 1)
+            alert_layout.setSpacing(0)
+            alert_lbl = QLabel(
+                f"\u26a0 {count} {t('dispatch_board.alerts')}"
+            )
+            alert_lbl.setProperty("fontRole", "label")
+            alert_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+            alert_layout.addWidget(alert_lbl)
+            self._content_widget.layout().addWidget(self._alert_frame)
+
+    def update_alert_count(self, count: int) -> None:
+        """Public method to update the alert count and badge on the card."""
+        self.trip_data["alerts_count"] = count
+        self._update_alert_badge(count)
 
     def set_selected(self, selected: bool) -> None:
         """Set the selected state and update the card border."""
@@ -606,13 +674,17 @@ class QtTripCard(QFrame):
         self._chip_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
 
     def _update_card_style(self) -> None:
-        """Recompute the card background from current hover/delayed state."""
+        """Recompute the card background and border from current state."""
         bg = self.DELAYED_BG if self._delayed else (
             self.CARD_BG_HOVER if self._hovered else self.CARD_BG
+        )
+        border = (
+            f"2px solid {COLORS['accent']}" if self._selected else "none"
         )
         self.setStyleSheet(
             f"QtTripCard {{"
             f"  background-color: {bg};"
+            f"  border: {border};"
             f"}}"
         )
         if self._content_widget is not None:
@@ -623,29 +695,8 @@ class QtTripCard(QFrame):
             )
 
     def _update_selection_visual(self) -> None:
-        """Set the card border to reflect selection state.
-
-        Calls ``_update_card_style`` for the background, then applies
-        the appropriate border via an inline stylesheet on ``self``.
-        """
+        """Update the card border to reflect selection state."""
         self._update_card_style()
-
-        if self._selected:
-            # accent border — overrides global QSS via inline stylesheet
-            self.setStyleSheet(
-                self.styleSheet() + "\n"
-                f"QtTripCard {{"
-                f"  border: 2px solid {COLORS['accent']};"
-                f"}}"
-            )
-        else:
-            # Restore the default border from global QSS by clearing
-            # the border override and re-applying only the background.
-            self.setStyleSheet(
-                f"QtTripCard {{"
-                f"  background-color: {self.DELAYED_BG if self._delayed else (self.CARD_BG_HOVER if self._hovered else self.CARD_BG)};"
-                f"}}"
-            )
 
     # ── Hover events ───────────────────────────────────────────────────────
 
@@ -682,8 +733,14 @@ class QtTripCard(QFrame):
                 self._dragging = True
                 if self._on_drag_start is not None:
                     self._on_drag_start(self, event)
-        elif self._on_drag_start is not None:
-            self._on_drag_start(self, event)
+                # QDrag.exec() is synchronous; reset drag state afterward
+                self._dragging = False
+                self._drag_start_pos = None
+                return
+        else:
+            # Already dragging — forward move events
+            if self._on_drag_start is not None:
+                self._on_drag_start(self, event)
             return
 
         super().mouseMoveEvent(event)

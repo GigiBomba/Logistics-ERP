@@ -194,7 +194,7 @@ class QtCalculatorView(QWidget):
         outer.addLayout(split)
 
         # Return key triggers calculation on most inputs
-        for widget in (self.e_price, self.e_sal, self.e_extra, self.e_days, self.e_term):
+        for widget in (self.e_price, self.e_km, self.e_sal, self.e_extra, self.e_days, self.e_term):
             widget.returnPressed.connect(self._handle_calculate)
 
     def _build_identification_section(self):
@@ -295,6 +295,9 @@ class QtCalculatorView(QWidget):
         card = Card(self.left_content)
         cl = card.layout()
         CardHeader(cl, t("main.section_costs"))
+
+        self.e_km = StyledLineEdit(card, text="0", placeholder=t("main.distance_label", default="Distance (km)"))
+        cl.addWidget(field(card, t("main.distance_label", default="Distance (km)"), self.e_km))
 
         self.e_sal = StyledLineEdit(card, text="0", placeholder=t("main.salary_label"))
         cl.addWidget(field(card, t("main.salary_label"), self.e_sal))
@@ -544,7 +547,11 @@ class QtCalculatorView(QWidget):
 
     def _handle_calculate(self):
         try:
-            km = float(self._route_distance or 0)
+            # Use manually entered km, or fall back to route planner distance
+            try:
+                km = float(self.e_km.text().strip() or self._route_distance or 0)
+            except ValueError:
+                km = float(self._route_distance or 0)
             price_raw = float(self.e_price.text() or 0)
             if km <= 0 or price_raw <= 0:
                 QMessageBox.warning(self, t("main.warning_title"), t("main.fields_required"))
@@ -683,7 +690,10 @@ class QtCalculatorView(QWidget):
 
         # Delegated: revenue/cost/profit/margin come from service result
         self._res_revenue.setText(fmt_currency(res.total_income))
-        self._res_cost.setText(fmt_currency(res.total_income - res.net_profit))
+        # Compute total cost from the rounded breakdown fields to avoid
+        # 1-cent discrepancies from double rounding (total_income - net_profit).
+        total_cost = res.fuel_cost + res.toll_cost + res.salary_cost + res.extra_costs
+        self._res_cost.setText(fmt_currency(total_cost))
         self._res_profit.setText(fmt_currency(res.net_profit))
         self._res_profit.setStyleSheet(
             f"font-family: 'Consolas', monospace; font-size: 16px; font-weight: {FONT_WEIGHT_SEMIBOLD}; color: {color};"
@@ -715,6 +725,9 @@ class QtCalculatorView(QWidget):
                     f"\U0001f5fa\ufe0f {t('route.loaded_route', default='Route loaded')}:"
                     f" {fmt_distance(self._route_distance)}"
                 )
+                # Pre-populate the km field if it's still at its default (0 or empty)
+                if not self.e_km.text().strip() or float(self.e_km.text().strip()) == 0:
+                    self.e_km.setText(str(int(self._route_distance)))
             if tc.route and tc.route.route_history_v2_id is not None:
                 self._current_route_history_id = tc.route.route_history_v2_id
             if tc.costs:
@@ -733,7 +746,7 @@ class QtCalculatorView(QWidget):
 
     def _sync_from_trip_context(self):
         try:
-            tc = TripContextService()._tc
+            tc = TripContextService().get_current_context()
             if tc and tc.route and tc.route.distance_km is not None:
                 self._apply_trip_context(tc, ["route"])
         except (AttributeError, KeyError):
@@ -748,6 +761,9 @@ class QtCalculatorView(QWidget):
     def shutdown(self):
         with contextlib.suppress(Exception):
             unregister_trip_listener(self._trip_listener)
+        if self._rebuild_timer is not None:
+            self._rebuild_timer.stop()
+            self._rebuild_timer = None
         if getattr(self, "_events_subscribed", False):
             try:
                 self._event_bus.unsubscribe(TRUCK_CREATED, self._on_truck_or_client_event)

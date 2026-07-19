@@ -10,12 +10,14 @@ import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { useAuth } from "@/contexts/auth-provider"
 import { waitlistApi, type WaitlistStatsResponse } from "@/api/endpoints"
 import { extractApiError } from "@/api/client"
+import { useLocale } from "@/i18n/locale-context"
 import OverviewTab from "./overview-tab"
 import EntriesTab from "./entries-tab"
 import CampaignTab from "./campaign-tab"
 
 export default function AdminWaitlistPage() {
   const { isAdmin } = useAuth()
+  const { t } = useLocale()
   const [stats, setStats] = useState<WaitlistStatsResponse | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
   const [statsError, setStatsError] = useState<string | null>(null)
@@ -44,8 +46,8 @@ export default function AdminWaitlistPage() {
   if (!isAdmin) {
     return (
       <SectionWrapper>
-        <Callout variant="warning" title="Access Denied">
-          You do not have permission to access this page.
+        <Callout variant="warning" title={t("adminWaitlist.accessDenied.title")}>
+          {t("adminWaitlist.accessDenied.message")}
         </Callout>
       </SectionWrapper>
     )
@@ -54,17 +56,17 @@ export default function AdminWaitlistPage() {
   return (
     <>
       <Helmet>
-        <title>Waitlist Management — Operion ERP</title>
+        <title>{t("adminWaitlist.pageTitle")}</title>
       </Helmet>
 
       <PageHeader
-        title="Waitlist Management"
+        title={t("adminWaitlist.pageHeader")}
         description={
           statsLoading
-            ? "Loading waitlist stats…"
+            ? t("adminWaitlist.loading")
             : statsError
-              ? "Unable to load stats"
-              : `${stats?.total ?? 0} total signups · Manage entries, review analytics, and plan campaigns.`
+              ? t("adminWaitlist.loadError")
+              : t("adminWaitlist.subtitle").replace("{count}", String(stats?.total ?? 0))
         }
       />
 
@@ -82,9 +84,9 @@ export default function AdminWaitlistPage() {
 
           <Tabs defaultValue="overview">
             <TabsList>
-              <TabsTrigger value="overview">Overview</TabsTrigger>
-              <TabsTrigger value="entries">Entries</TabsTrigger>
-              <TabsTrigger value="campaign">Campaign</TabsTrigger>
+              <TabsTrigger value="overview">{t("adminWaitlist.tabs.overview")}</TabsTrigger>
+              <TabsTrigger value="entries">{t("adminWaitlist.tabs.entries")}</TabsTrigger>
+              <TabsTrigger value="campaign">{t("adminWaitlist.tabs.campaign")}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-6">

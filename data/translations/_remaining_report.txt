@@ -1,0 +1,977 @@
+
+=== cs.json - 333 remaining untranslated ===
+  app.subtitle: ERP
+  nav.group_finance: Finance
+  team.email_label: EMAIL
+  team.role_label: ROLE
+  team.col_email: Email
+  team.col_role: Role
+  main.separator: ───────────────────────────────────────────────────────────
+  fleet.alert_format: [{type}] {msg}
+  fleet.detail_km: KM:
+  fleet.detail_vin: VIN:
+  fleet.expenses_table_date: Datum
+  fleet.form_km: KM:
+  fleet.form_model: Model:
+  fleet.form_vin: VIN:
+  fleet.maintenance_table_date: Datum
+  history.button_email: Email
+  history.button_excel: Excel
+  history.col_brut_km: €/km
+  history.email_done: Emailed
+  history.button_export_pdf: Export PDF
+  history.button_export_excel: Export Excel
+  history.table_date: Datum
+  analytics.client_rest: Rest
+  analytics.net_profit: Net Profit (€)
+  analytics.net_profit_label: Net Profit (€)
+  analytics.group_top3: Top 3
+  analytics.kpi_avg_trips: Kpi Avg Trips
+  analytics.kpi_total_drivers: Kpi Total Drivers
+  analytics.kpi_total_violations: Kpi Total Violations
+  analytics.revenue_vs_profit_scatter: Revenue Vs Profit Scatter
+  invoice.button_email: Button Email
+  settings.section_branding: BRANDING
+  route.stop_start: Start
+  route_history.export_json: Export JSON
+  alerts.severity_info: Info
+  dispatch_board.driver_hours_weekly: {hours:.1f}h/{max_h}h
+  driver_manager.import_csv: Import CSV
+  driver_manager.field_email: Email
+  driver_manager.field_phone: Telefon
+  home.testimonial_1_author: Mihai Popescu
+  home.testimonial_2: Having real-time visibility into our fleet has been a game-changer. Our customers love the accurate ETAs.
+  home.testimonial_2_author: Sarah Müller
+  home.testimonial_3_author: John Smith
+  home.testimonial_3_role: CEO, Smith Logistics
+  home.page_title: Operion ERP — Enterprise Logistics, Simplified
+  home.section_testimonials_desc: See how Operion is helping companies transform their logistics operations.
+  maint.action_maint: Action Maint
+  maint.action_remind: Action Remind
+  maint.action_resolve: Action Resolve
+  maint.col_notes: Col Notes
+  maint.col_provider: Col Provider
+  maint.critical_health: Critical Health
+  maint.flash_maint_scheduled: Flash Maint Scheduled
+  maint.metric_compliance: Metric Compliance
+  maint.metric_downtime: Metric Downtime
+  maint.metric_recurring: Metric Recurring
+  maint.metric_score: Metric Score
+  maint.predictions: Predictions
+  maint.prev: Prev
+  maint.refresh_score: Refresh Score
+  maint.status_ok: Status Ok
+  maint.tab_health: Tab Health
+  maint.tab_schedules: Tab Schedules
+  maint.updated: Updated
+  maint.severity_info: Info
+  maint.health_overall: Overall Health
+  maint.health_compliance: Compliance
+  maint.health_recurring: Recurring Issues
+  maint.col_interval_days: Interval (days)
+  maint.health_downtime: Downtime
+  maint.control_panel_subtitle: Maintenance schedules and health monitoring
+  maint.unit_km:  km
+  tacho.result_calibration: Calibration
+  tacho.result_days: Days
+  tacho.hdr_records: Records
+  tacho.status_ok: OK
+  tacho.drop_supported: DDD / TGD / other tachograph files
+  maint_analytics.subtitle: Fleet maintenance costs and trends
+  client.billed: Billed
+  client.table_email: Email
+  client.field_email: Email
+  client.deactivate_confirm: Deactivate '{name}'?
+  client.kpi_total_trips: Total Trips
+  client.kpi_last_30d: Trips (30d)
+  client.kpi_avg_profit: Avg Profit/Trip
+  client.section_contacts: Contacts
+  client.section_chart: Revenue Trend
+  client.section_timeline: Activity Timeline
+  client.field_credit_limit: Credit Limit (EUR)
+  client.field_default_rate: Default Rate/km
+  client.field_rating: Rating (1-5)
+  client.csv_saved: Clients exported successfully.
+  client.merge_button: Merge
+  client.merge_title: Merge Clients
+  client.section_kpis: KPIs
+  client.vat: VAT:
+  client.limit_eur: Limit: €{:,}
+  client.phone: 📞
+  client.email_icon: ✉
+  docs.prev: <
+  docs.next: >
+  docs.cat_vehicles: Vehicles
+  docs.filters: Filters
+  docs.filter_clear: Clear Filters
+  docs.email: Email
+  docs.email_sent: Email sent successfully.
+  docs.unlink: Unlink
+  docs.set_expiry: Set
+  docs.versions_label: Versions:
+  docs.restore: Restore
+  docs.generate_cmr: Generate CMR
+  docs.version_comment: Comment
+  docs.link_to_trip_exists: Already linked.
+  docs.ocr_fields: Extracted
+  docs.rerun_ocr: Re-run OCR
+  docs.rerun_ocr_done: OCR complete
+  docs.rerun_ocr_started: OCR started…
+  docs.tab_proforma: Proforma
+  docs.cat_receipts: Receipts
+  docs.entity_documents_default: Entity Documents
+  generators.cmr_title: Generate CMR Waybill
+  generators.cmr_generate: Generate CMR
+  generators.cmr_step_instructions: Instructions & Reservations
+  generators.cmr_step_adr: ADR Dangerous Goods
+  generators.cmr_step_signatures: Signature & Stamp
+  generators.cmr_not_generated: not generated
+  generators.cmr_copies_title: Generated Copies
+  generators.cmr_generated_status: generated
+  generators.doc_receipt_title: Receipt
+  invoice_editor.auto_fill: Auto-Fill
+  invoice_editor.tax_rate_short: Tax%
+  invoice_editor.grand_total: Grand Total
+  invoice_editor.financial_controls: Financial Controls
+  invoice_editor.branding: Branding
+  invoice_editor.logo: Logo
+  invoice_editor.signature: Signature
+  invoice_editor.stamp: Stamp
+  invoice_editor.pick_color: Pick
+  invoice_editor.preview_pdf: Preview
+  invoice_editor.generate_pdf: Generate PDF
+  invoice_editor.email: Email
+  invoice_editor.load_draft: Load Draft
+  invoice_editor.discount_fixed: Fixed
+  invoice_editor.net_30: Net 30
+  invoice_editor.net_15: Net 15
+  invoice_editor.net_60: Net 60
+  invoice_editor.draft_saved: Draft Saved
+  invoice_editor.draft_saved_msg: Draft '{}' saved successfully.
+  invoice_editor.draft_loaded: Draft Loaded
+  invoice_editor.draft_loaded_msg: Draft '{}' loaded successfully.
+  invoice_editor.default_service: Transport services
+  invoice_editor.email_to: Recipient Email
+  invoice_editor.unloading_stops: Unloading Stops
+  invoice_editor.unloading_label: Unloading
+  invoice_editor.browse: Browse
+  invoice_editor.totals: Totals
+  invoice_editor.line_items: Line Items
+  invoice_editor.export_json: Export JSON
+  invoice_editor.branch: Branch / Office
+  proforma_editor.mode_internal: Internal Mode
+  proforma_editor.proforma_number: Proforma #
+  proforma_editor.line_items: Line Items
+  proforma_editor.discount_fixed: Fixed
+  proforma_editor.grand_total: Grand Total
+  proforma_editor.financial_controls: Financial Controls
+  proforma_editor.branding: Branding
+  proforma_editor.logo: Logo
+  proforma_editor.signature: Signature
+  proforma_editor.stamp: Stamp
+  proforma_editor.browse: Browse
+  proforma_editor.pick_color: Pick
+  proforma_editor.linked_documents: Linked Documents
+  proforma_editor.unlink_document: Unlink
+  proforma_editor.preview_pdf: Preview
+  proforma_editor.generate_pdf: Generate PDF
+  proforma_editor.email: Email
+  proforma_editor.email_to: Recipient Email
+  proforma_editor.include_linked_docs: Include linked CMRs and invoices
+  proforma_editor.email_sent: Email sent successfully.
+  proforma_editor.load_draft: Load Draft
+  proforma_editor.draft_saved: Draft Saved
+  proforma_editor.draft_saved_msg: Draft '{}' saved successfully.
+  proforma_editor.load: Load
+  proforma_editor.net_30: Net 30
+  proforma_editor.net_15: Net 15
+  proforma_editor.net_60: Net 60
+  proforma_editor.export_json: Export JSON
+  cmr.gross_weight: Gross Weight (kg)
+  cmr.role_consignor: I am the Consignor (Sender)
+  cmr.role_consignee: I am the Consignee (Receiver)
+  cmr.consignor: Consignor / Shipper
+  cmr.consignor_ro: EXPEDITOR / EXPEDITEUR
+  cmr.consignee: Consignee
+  cmr.consignee_ro: DESTINATAR / CONSIGNATAIRE
+  cmr.section_parties_sub: Boxes 1-2
+  cmr.section_route_sub: Boxes 3-5
+  cmr.place_of_loading_ro: LOCUL PREDARII MARFII / LIEU DE PRISE EN CHARGE
+  cmr.destination_ro: LOCUL LIVRARII MARFII / LIEU DE LIVRAISON
+  cmr.documents: Documents attached
+  cmr.documents_ro: DOCUMENTE ANEXATE / DOCUMENTS ANNEXES
+  ... and 133 more
+
+  By section:
+    cmr: 47
+    receipt: 39
+    invoice_editor: 30
+    proforma_editor: 28
+    maint: 26
+    client: 21
+    docs: 21
+    admin: 21
+    automation: 15
+    generators: 9
+    fleet: 8
+    analytics: 8
+    history: 7
+    home: 7
+    about: 6
+    tacho: 5
+    auth: 5
+    team: 4
+    features: 4
+    upload: 4
+    driver_manager: 3
+    app: 1
+    nav: 1
+    main: 1
+    invoice: 1
+    settings: 1
+    route: 1
+    route_history: 1
+    alerts: 1
+    dispatch_board: 1
+    maint_analytics: 1
+    text_danger: 1
+    file_filter: 1
+    signature: 1
+    login: 1
+    proforma: 1
+
+=== pt.json - 339 remaining untranslated ===
+  app.subtitle: ERP
+  team.email_label: EMAIL
+  team.col_email: Email
+  main.separator: ───────────────────────────────────────────────────────────
+  fleet.alert_format: [{type}] {msg}
+  fleet.detail_km: KM:
+  fleet.detail_vin: VIN:
+  fleet.form_km: KM:
+  fleet.form_vin: VIN:
+  history.button_email: Email
+  history.button_excel: Excel
+  history.col_brut_km: €/km
+  history.email_done: Emailed
+  history.table_gross_per_km: Bruto/km
+  analytics.kpi_cmrs: CMRs
+  analytics.client_rest: Rest
+  analytics.doc_cmrs: CMRs
+  analytics.net_profit: Net Profit (€)
+  analytics.net_profit_label: Net Profit (€)
+  analytics.group_total: Total
+  analytics.group_top3: Top 3
+  analytics.kpi_avg_trips: Kpi Avg Trips
+  analytics.kpi_total_drivers: Kpi Total Drivers
+  analytics.kpi_total_violations: Kpi Total Violations
+  analytics.revenue_vs_profit_scatter: Revenue Vs Profit Scatter
+  invoice.button_email: Button Email
+  route.open_in_gmaps: Google Maps
+  route_history.label_total: Total:
+  invoice_pdf.total_header: Total (EUR)
+  alerts.severity_info: Info
+  common.down: ↓ Down
+  common.up: ↑ Up
+  dispatch_board.driver_hours_weekly: {hours:.1f}h/{max_h}h
+  driver_manager.field_email: Email
+  home.testimonial_1_author: Mihai Popescu
+  home.testimonial_2: Having real-time visibility into our fleet has been a game-changer. Our customers love the accurate ETAs.
+  home.testimonial_2_author: Sarah Müller
+  home.testimonial_3_author: John Smith
+  home.testimonial_3_role: CEO, Smith Logistics
+  home.page_title: Operion ERP — Enterprise Logistics, Simplified
+  home.section_testimonials_desc: See how Operion is helping companies transform their logistics operations.
+  maint.action_maint: Action Maint
+  maint.action_remind: Action Remind
+  maint.action_resolve: Action Resolve
+  maint.col_notes: Col Notes
+  maint.col_provider: Col Provider
+  maint.critical_health: Critical Health
+  maint.flash_maint_scheduled: Flash Maint Scheduled
+  maint.metric_compliance: Metric Compliance
+  maint.metric_downtime: Metric Downtime
+  maint.metric_recurring: Metric Recurring
+  maint.metric_score: Metric Score
+  maint.predictions: Predictions
+  maint.prev: Prev
+  maint.refresh_score: Refresh Score
+  maint.status_ok: Status Ok
+  maint.tab_health: Tab Health
+  maint.tab_schedules: Tab Schedules
+  maint.updated: Updated
+  maint.severity_info: Info
+  maint.health_overall: Overall Health
+  maint.health_compliance: Compliance
+  maint.health_recurring: Recurring Issues
+  maint.col_interval_days: Interval (days)
+  maint.health_downtime: Downtime
+  maint.control_panel_subtitle: Maintenance schedules and health monitoring
+  maint.unit_km:  km
+  tacho.result_calibration: Calibration
+  tacho.result_days: Days
+  tacho.hdr_records: Records
+  tacho.status_ok: OK
+  tacho.drop_supported: DDD / TGD / other tachograph files
+  maint_analytics.month_jan: Jan
+  maint_analytics.month_mar: Mar
+  maint_analytics.month_jun: Jun
+  maint_analytics.month_jul: Jul
+  maint_analytics.month_nov: Nov
+  maint_analytics.subtitle: Fleet maintenance costs and trends
+  client.billed: Billed
+  client.table_email: Email
+  client.field_email: Email
+  client.deactivate_confirm: Deactivate '{name}'?
+  client.kpi_total_trips: Total Trips
+  client.kpi_last_30d: Trips (30d)
+  client.kpi_avg_profit: Avg Profit/Trip
+  client.section_contacts: Contacts
+  client.section_tags: Tags
+  client.section_chart: Revenue Trend
+  client.section_timeline: Activity Timeline
+  client.field_credit_limit: Credit Limit (EUR)
+  client.field_default_rate: Default Rate/km
+  client.field_rating: Rating (1-5)
+  client.csv_saved: Clients exported successfully.
+  client.merge_button: Merge
+  client.merge_title: Merge Clients
+  client.section_kpis: KPIs
+  client.vat: VAT:
+  client.limit_eur: Limit: €{:,}
+  client.phone: 📞
+  client.email_icon: ✉
+  docs.prev: <
+  docs.next: >
+  docs.cat_vehicles: Vehicles
+  docs.filters: Filters
+  docs.filter_clear: Clear Filters
+  docs.email: Email
+  docs.email_sent: Email sent successfully.
+  docs.unlink: Unlink
+  docs.set_expiry: Set
+  docs.versions_label: Versions:
+  docs.restore: Restore
+  docs.generate_cmr: Generate CMR
+  docs.version_comment: Comment
+  docs.link_to_trip_exists: Already linked.
+  docs.ocr_fields: Extracted
+  docs.rerun_ocr: Re-run OCR
+  docs.rerun_ocr_done: OCR complete
+  docs.rerun_ocr_started: OCR started…
+  docs.tab_proforma: Proforma
+  docs.cat_proformas: Proformas
+  docs.cat_receipts: Receipts
+  docs.entity_documents_default: Entity Documents
+  generators.cmr_title: Generate CMR Waybill
+  generators.cmr_generate: Generate CMR
+  generators.cmr_step_instructions: Instructions & Reservations
+  generators.cmr_step_adr: ADR Dangerous Goods
+  generators.cmr_step_signatures: Signature & Stamp
+  generators.cmr_not_generated: not generated
+  generators.cmr_copies_title: Generated Copies
+  generators.cmr_generated_status: generated
+  generators.doc_receipt_title: Receipt
+  invoice_editor.auto_fill: Auto-Fill
+  invoice_editor.tax_rate_short: Tax%
+  invoice_editor.total: Total
+  invoice_editor.subtotal: Subtotal
+  invoice_editor.grand_total: Grand Total
+  invoice_editor.financial_controls: Financial Controls
+  invoice_editor.branding: Branding
+  invoice_editor.logo: Logo
+  invoice_editor.signature: Signature
+  invoice_editor.stamp: Stamp
+  invoice_editor.pick_color: Pick
+  invoice_editor.preview_pdf: Preview
+  invoice_editor.generate_pdf: Generate PDF
+  invoice_editor.email: Email
+  invoice_editor.load_draft: Load Draft
+  invoice_editor.discount_fixed: Fixed
+  invoice_editor.net_30: Net 30
+  invoice_editor.net_15: Net 15
+  invoice_editor.net_60: Net 60
+  invoice_editor.draft_saved: Draft Saved
+  invoice_editor.draft_saved_msg: Draft '{}' saved successfully.
+  invoice_editor.draft_loaded: Draft Loaded
+  invoice_editor.draft_loaded_msg: Draft '{}' loaded successfully.
+  invoice_editor.default_service: Transport services
+  invoice_editor.email_to: Recipient Email
+  invoice_editor.unloading_stops: Unloading Stops
+  invoice_editor.unloading_label: Unloading
+  invoice_editor.browse: Browse
+  invoice_editor.totals: Totals
+  invoice_editor.line_items: Line Items
+  invoice_editor.branch: Branch / Office
+  proforma_editor.mode_internal: Internal Mode
+  proforma_editor.proforma_number: Proforma #
+  proforma_editor.line_items: Line Items
+  proforma_editor.total: Total
+  proforma_editor.discount_fixed: Fixed
+  proforma_editor.subtotal: Subtotal
+  proforma_editor.grand_total: Grand Total
+  proforma_editor.financial_controls: Financial Controls
+  proforma_editor.branding: Branding
+  proforma_editor.logo: Logo
+  proforma_editor.signature: Signature
+  proforma_editor.stamp: Stamp
+  proforma_editor.browse: Browse
+  proforma_editor.pick_color: Pick
+  proforma_editor.linked_documents: Linked Documents
+  proforma_editor.unlink_document: Unlink
+  proforma_editor.preview_pdf: Preview
+  proforma_editor.generate_pdf: Generate PDF
+  proforma_editor.email: Email
+  proforma_editor.email_to: Recipient Email
+  proforma_editor.include_linked_docs: Include linked CMRs and invoices
+  proforma_editor.email_sent: Email sent successfully.
+  proforma_editor.load_draft: Load Draft
+  proforma_editor.draft_saved: Draft Saved
+  proforma_editor.draft_saved_msg: Draft '{}' saved successfully.
+  proforma_editor.load: Load
+  proforma_editor.net_30: Net 30
+  proforma_editor.net_15: Net 15
+  proforma_editor.net_60: Net 60
+  cmr.gross_weight: Gross Weight (kg)
+  cmr.role_consignor: I am the Consignor (Sender)
+  cmr.role_consignee: I am the Consignee (Receiver)
+  cmr.consignor: Consignor / Shipper
+  cmr.consignor_ro: EXPEDITOR / EXPEDITEUR
+  cmr.consignee: Consignee
+  cmr.consignee_ro: DESTINATAR / CONSIGNATAIRE
+  cmr.section_parties_sub: Boxes 1-2
+  cmr.section_route_sub: Boxes 3-5
+  ... and 139 more
+
+  By section:
+    cmr: 47
+    receipt: 38
+    invoice_editor: 31
+    proforma_editor: 29
+    maint: 26
+    admin: 24
+    client: 22
+    docs: 22
+    automation: 15
+    analytics: 11
+    generators: 9
+    home: 7
+    maint_analytics: 6
+    about: 6
+    fleet: 5
+    history: 5
+    tacho: 5
+    auth: 5
+    features: 4
+    upload: 4
+    team: 2
+    common: 2
+    app: 1
+    main: 1
+    invoice: 1
+    route: 1
+    route_history: 1
+    invoice_pdf: 1
+    alerts: 1
+    dispatch_board: 1
+    driver_manager: 1
+    text_danger: 1
+    file_filter: 1
+    signature: 1
+    login: 1
+    proforma: 1
+
+=== hu.json - 828 remaining untranslated ===
+  app.subtitle: ERP
+  team.email_label: EMAIL
+  team.col_email: Email
+  main.separator: ───────────────────────────────────────────────────────────
+  fleet.alert_format: [{type}] {msg}
+  fleet.detail_km: KM:
+  fleet.detail_vin: VIN:
+  fleet.expenses_table_date: Datum
+  fleet.form_km: KM:
+  fleet.form_vin: VIN:
+  fleet.maintenance_table_date: Datum
+  fleet.validation_km_cost_invalid: Ervenytelen KM vagy Koltseg.
+  history.button_email: Email
+  history.button_excel: Excel
+  history.col_brut_km: €/km
+  history.email_done: Emailed
+  history.table_date: Datum
+  history.table_truck: Kamion
+  analytics.financial_subtitle: Revenue, profit, margin, and cash flow trends
+  analytics.fleet_subtitle: Truck utilization, fuel efficiency, and maintenance alerts
+  analytics.route_subtitle: Route profitability and country corridor analysis
+  analytics.client_subtitle: Client revenue, payment behavior, and growth
+  analytics.driver_subtitle: Driver performance, efficiency, and compliance
+  analytics.document_subtitle: Document volume, trends, and expiration tracking
+  analytics.fleet_profitability: Truck Profitability
+  analytics.fleet_fuel_efficiency: Fuel Efficiency (L/100km)
+  analytics.fleet_utilization: Truck Utilization (Trips)
+  analytics.client_revenue: Revenue by Client
+  analytics.client_profit: Profit by Client
+  analytics.client_payment_delay: Average Payment Delay (Days)
+  analytics.client_concentration: Revenue Concentration
+  analytics.last_quarter: Last quarter
+  analytics.client_rest: Rest
+  analytics.client_growth: New Clients per Month
+  analytics.client_insight: Insight: {client} generates {rev_pct}% of revenue but only {profit_pct}% of profit.
+  analytics.driver_trips: Trips Completed
+  analytics.driver_efficiency: Efficiency (Profit/km)
+  analytics.driver_tacho: Tacho Violations (90 days)
+  analytics.route_profitability: Most Profitable Routes
+  analytics.route_profit_per_km: Profit per KM
+  analytics.route_fuel_per_km: Fuel Cost per KM
+  analytics.route_country_profit_km: Country Profit per KM
+  analytics.doc_distribution: Document Distribution
+  analytics.doc_upload_trend: Monthly Uploads
+  analytics.doc_cmr_trend: CMR Generation Trend
+  analytics.country_revenue: Revenue by Country
+  analytics.section_financial_trends: Financial Trends
+  analytics.section_financial_performance: Financial Performance
+  analytics.section_client_geographic: Client & Geographic
+  analytics.section_volume_cost: Volume & Cost
+  analytics.section_fleet_performance: Fleet Performance
+  analytics.section_fleet_composition: Fleet Composition
+  analytics.section_cost_maintenance: Cost & Maintenance
+  analytics.section_volume_efficiency: Volume & Efficiency
+  analytics.section_driver_compliance: Compliance & Safety
+  analytics.section_driver_distribution: Distribution & Insights
+  analytics.driver_distance_distribution: Trip Distance Distribution
+  analytics.driver_month_heatmap: Trips by Month x Driver
+  analytics.driver_profit_waterfall: Profit Breakdown (Top Driver)
+  analytics.driver_driving_rest_ratio: Driving vs Rest Hours
+  analytics.driver_utilization_score: Driver Utilization Score
+  analytics.driver_avg_profit_per_trip: Avg Profit per Trip
+  analytics.total_costs: Total costs
+  analytics.kpi_top_route: Top Route
+  analytics.kpi_avg_profit_km: Avg Profit/km
+  analytics.kpi_total_routes: Total Routes
+  analytics.kpi_top_country: Top Country
+  analytics.route_performance: Route Performance
+  analytics.geographic_analysis: Geographic Analysis
+  analytics.correlation_distribution: Correlation & Distribution
+  analytics.volume_trends: Volume & Trends
+  analytics.top_countries_volume: Top Countries by Volume
+  analytics.top_countries_profit: Top Countries by Profit
+  analytics.cost_breakdown_route: Cost Breakdown
+  analytics.net_profit: Net Profit (€)
+  analytics.distance_distribution: Distance Distribution
+  analytics.route_length_trend: Route Length Trend
+  analytics.avg_profit_trend: Net Profit Trend
+  analytics.route_count_month: Monthly Trip Volume
+  analytics.trucks: Trucks
+  analytics.idle: Idle
+  analytics.section_client_performance: Client Performance
+  analytics.section_client_composition: Client Composition
+  analytics.section_client_trends: Client Trends
+  analytics.section_client_insights: Client Insights
+  analytics.section_document_overview: Document Overview
+  analytics.section_document_breakdown: Document Breakdown
+  analytics.section_expiry_aging: Expiry & Aging
+  analytics.section_growth_trends: Growth & Trends
+  analytics.doc_type_breakdown: Document Type Breakdown
+  analytics.category_distribution: Category Distribution
+  analytics.upload_by_quarter: Upload by Quarter
+  analytics.expiry_timeline: Expiry Timeline
+  analytics.document_aging: Document Aging
+  analytics.expiring_by_type: Expiring by Type
+  analytics.document_growth: Document Growth
+  analytics.volume_vs_revenue: Volume vs Revenue
+  analytics.total_documents_trend: Total Documents Trend
+  analytics.client_revenue_per_client: Revenue per Client Trend
+  analytics.trip_count_trend: Trip Count Trend
+  analytics.profit_margin_per_client: Profit Margin per Client
+  analytics.revenue_vs_profit: Revenue vs Profit
+  analytics.active_clients_trend: Active Clients Trend
+  analytics.kpi_total_clients: Total Clients
+  analytics.kpi_avg_payment_delay: Avg Payment Delay
+  analytics.kpi_revenue_concentration: Concentration
+  analytics.client_payment_delay_full: Average Payment Delay (Days)
+  analytics.section_route_performance: Route Performance
+  analytics.safety_score: Safety Score
+  analytics.active_vs_inactive: Active vs Inactive
+  analytics.net_profit_label: Net Profit (€)
+  analytics.group_top3: Top 3
+  analytics.client_retention: Client Retention
+  analytics.cost_breakdown: Cost Breakdown
+  analytics.cost_per_truck: Cost Per Truck
+  analytics.country_corridors: Country Corridors
+  analytics.driver_distance: Driver Distance
+  analytics.driver_driving_hours: Driver Driving Hours
+  analytics.driver_ranking: Driver Ranking
+  analytics.driver_rest_hours: Driver Rest Hours
+  analytics.efficiency_trend: Efficiency Trend
+  analytics.extra_costs: Extra Costs
+  analytics.fuel_cost_trend: Fuel Cost Trend
+  analytics.fuel_efficiency_trend: Fuel Efficiency Trend
+  analytics.idle_vs_active: Idle Vs Active
+  analytics.invoiced_vs_paid: Invoiced Vs Paid
+  analytics.kpi_avg_trips: Kpi Avg Trips
+  analytics.kpi_total_drivers: Kpi Total Drivers
+  analytics.kpi_total_violations: Kpi Total Violations
+  analytics.maintenance_cost: Maintenance Cost
+  analytics.mileage_ranking: Mileage Ranking
+  analytics.monthly_trip_volume: Monthly Trip Volume
+  analytics.profit_vs_distance: Profit Vs Distance
+  analytics.quarterly_revenue: Quarterly Revenue
+  analytics.revenue_vs_profit_scatter: Revenue Vs Profit Scatter
+  analytics.truck_age_distribution: Truck Age Distribution
+  analytics.aging_31_60: 31-60 days
+  analytics.aging_61_90: 61-90 days
+  analytics.aging_current: Current (0-30d)
+  analytics.aging_overdue: 90+ days
+  analytics.all_countries: All Countries
+  analytics.doc_actual_uploads: Actual Uploads
+  analytics.doc_expected_uploads: Expected (Trips)
+  analytics.doc_no_expiring: No documents expiring within 30 days
+  analytics.doc_see_all: See all ({count})
+  analytics.doc_upload_vs_expected: Document Uploads vs Expected
+  analytics.invoice_aging: Outstanding Invoices by Age
+  analytics.kpi_active_drivers: Active Drivers
+  analytics.kpi_avg_profit_per_driver: Avg Profit/Driver
+  analytics.kpi_avg_route_profit: Avg Profit/Route
+  analytics.kpi_avg_trips_per_driver: Avg Trips/Driver
+  analytics.kpi_cost_per_km: Avg Cost/km
+  analytics.kpi_dso_subtitle: Avg collection period
+  analytics.kpi_dso: DSO (Days)
+  analytics.kpi_most_frequent: Most Frequent
+  analytics.kpi_new_clients: New Clients
+  analytics.kpi_top_country_route: Top Country
+  analytics.kpi_unassigned_trips: Unassigned Trips
+  analytics.kpi_unique_routes: Unique Routes
+  analytics.no_driver_data: No assigned driver data for this period.
+  analytics.outstanding: Outstanding
+  analytics.payment_target: Target 30d
+  analytics.refresh_tooltip: Refresh data
+  analytics.revenue_profit_trend: Revenue vs Profit Trend
+  analytics.route_country_treemap: Revenue by Country
+  analytics.route_frequency: Route Frequency
+  analytics.section_driver_activity: Driver Activity Timeline
+  analytics.section_invoice_aging: Invoice Aging
+  analytics.section_payment_timeline: Payment Behavior
+  analytics.section_revenue_trend: Revenue & Profit Trend
+  analytics.no_data: No revenue data yet
+  analytics.doc_expires: Expires
+  invoice.button_email: Button Email
+  invoice.default_client: Default Client
+  invoice.email_body: Email Body
+  invoice.email_failed: Email Failed
+  invoice.email_subject: Email Subject
+  invoice.email_success: Email Success
+  invoice.smtp_not_configured: Smtp Not Configured
+  settings.section_email: EMAIL & SMTP
+  settings.section_maintenance: MAINTENANCE THRESHOLDS
+  settings.subtitle: Application Settings
+  settings.field_smtp_server: SMTP Server:
+  settings.field_smtp_port: SMTP Port:
+  settings.field_smtp_user: SMTP User:
+  settings.field_smtp_password: SMTP Password:
+  settings.field_alert_recipients: Alert Email Recipients:
+  settings.field_alert_days_ahead: Alert Days Ahead:
+  settings.field_tacho_warning: Tacho Warning Days:
+  settings.field_tacho_critical: Tacho Critical Days:
+  settings.test_connection: Test Connection
+  settings.email_logs: Email Logs
+  settings.test_success: Connection successful
+  settings.test_failed: Test failed: {}
+  settings.section_branding: BRANDING
+  settings.field_logo: Company Logo:
+  settings.field_signature: Signature Image:
+  settings.field_stamp: Stamp Image:
+  settings.field_automation_body: Body template:
+  settings.field_ocr_config: PaddleOCR advanced settings:
+  ... and 628 more
+
+  By section:
+    analytics: 154
+    receipt: 68
+    dispatch_board: 67
+    cmr: 48
+    maint: 44
+    invoice_editor: 34
+    proforma_editor: 33
+    admin: 33
+    home: 30
+    route: 28
+    features: 28
+    client: 27
+    auth: 25
+    settings: 24
+    docs: 22
+    route_history: 21
+    automation: 17
+    tracking: 14
+    generators: 13
+    common: 12
+    about: 10
+    upload: 10
+    fleet: 8
+    invoice: 7
+    history: 6
+    tacho: 6
+    driver_manager: 5
+    maint_analytics: 5
+    signature: 5
+    result: 4
+    invoice_pdf: 3
+    email_logs: 3
+    team: 2
+    date_picker: 2
+    app: 1
+    main: 1
+    email: 1
+    alerts: 1
+    fuel: 1
+    text_danger: 1
+    document: 1
+    file_filter: 1
+    login: 1
+    proforma: 1
+
+=== tr.json - 804 remaining untranslated ===
+  app.subtitle: ERP
+  main.separator: ───────────────────────────────────────────────────────────
+  fleet.alert_format: [{type}] {msg}
+  fleet.detail_km: KM:
+  fleet.detail_vin: VIN:
+  fleet.form_km: KM:
+  fleet.form_model: Model:
+  fleet.form_vin: VIN:
+  history.button_excel: Excel
+  history.col_brut_km: €/km
+  history.email_done: Emailed
+  analytics.subtitle: Fleet performance analytics and KPIs
+  analytics.financial_subtitle: Revenue, profit, margin, and cash flow trends
+  analytics.fleet_subtitle: Truck utilization, fuel efficiency, and maintenance alerts
+  analytics.route_subtitle: Route profitability and country corridor analysis
+  analytics.client_subtitle: Client revenue, payment behavior, and growth
+  analytics.driver_subtitle: Driver performance, efficiency, and compliance
+  analytics.document_subtitle: Document volume, trends, and expiration tracking
+  analytics.fleet_profitability: Truck Profitability
+  analytics.fleet_fuel_efficiency: Fuel Efficiency (L/100km)
+  analytics.fleet_utilization: Truck Utilization (Trips)
+  analytics.client_revenue: Revenue by Client
+  analytics.client_profit: Profit by Client
+  analytics.client_payment_delay: Average Payment Delay (Days)
+  analytics.client_concentration: Revenue Concentration
+  analytics.last_quarter: Last quarter
+  analytics.client_rest: Rest
+  analytics.client_growth: New Clients per Month
+  analytics.client_insight: Insight: {client} generates {rev_pct}% of revenue but only {profit_pct}% of profit.
+  analytics.driver_trips: Trips Completed
+  analytics.driver_efficiency: Efficiency (Profit/km)
+  analytics.driver_tacho: Tacho Violations (90 days)
+  analytics.route_profitability: Most Profitable Routes
+  analytics.route_profit_per_km: Profit per KM
+  analytics.route_fuel_per_km: Fuel Cost per KM
+  analytics.route_country_profit_km: Country Profit per KM
+  analytics.doc_distribution: Document Distribution
+  analytics.doc_upload_trend: Monthly Uploads
+  analytics.doc_cmr_trend: CMR Generation Trend
+  analytics.country_revenue: Revenue by Country
+  analytics.section_financial_trends: Financial Trends
+  analytics.section_financial_performance: Financial Performance
+  analytics.section_client_geographic: Client & Geographic
+  analytics.section_volume_cost: Volume & Cost
+  analytics.section_fleet_performance: Fleet Performance
+  analytics.section_fleet_composition: Fleet Composition
+  analytics.section_cost_maintenance: Cost & Maintenance
+  analytics.section_volume_efficiency: Volume & Efficiency
+  analytics.section_driver_compliance: Compliance & Safety
+  analytics.section_driver_distribution: Distribution & Insights
+  analytics.driver_distance_distribution: Trip Distance Distribution
+  analytics.driver_month_heatmap: Trips by Month x Driver
+  analytics.driver_profit_waterfall: Profit Breakdown (Top Driver)
+  analytics.driver_driving_rest_ratio: Driving vs Rest Hours
+  analytics.driver_utilization_score: Driver Utilization Score
+  analytics.driver_avg_profit_per_trip: Avg Profit per Trip
+  analytics.total_costs: Total costs
+  analytics.kpi_top_route: Top Route
+  analytics.kpi_avg_profit_km: Avg Profit/km
+  analytics.kpi_total_routes: Total Routes
+  analytics.kpi_top_country: Top Country
+  analytics.route_performance: Route Performance
+  analytics.geographic_analysis: Geographic Analysis
+  analytics.correlation_distribution: Correlation & Distribution
+  analytics.volume_trends: Volume & Trends
+  analytics.top_countries_volume: Top Countries by Volume
+  analytics.top_countries_profit: Top Countries by Profit
+  analytics.cost_breakdown_route: Cost Breakdown
+  analytics.net_profit: Net Profit (€)
+  analytics.distance_distribution: Distance Distribution
+  analytics.route_length_trend: Route Length Trend
+  analytics.avg_profit_trend: Net Profit Trend
+  analytics.route_count_month: Monthly Trip Volume
+  analytics.trucks: Trucks
+  analytics.idle: Idle
+  analytics.section_client_performance: Client Performance
+  analytics.section_client_composition: Client Composition
+  analytics.section_client_trends: Client Trends
+  analytics.section_client_insights: Client Insights
+  analytics.section_document_overview: Document Overview
+  analytics.section_document_breakdown: Document Breakdown
+  analytics.section_expiry_aging: Expiry & Aging
+  analytics.section_growth_trends: Growth & Trends
+  analytics.doc_type_breakdown: Document Type Breakdown
+  analytics.category_distribution: Category Distribution
+  analytics.upload_by_quarter: Upload by Quarter
+  analytics.expiry_timeline: Expiry Timeline
+  analytics.document_aging: Document Aging
+  analytics.expiring_by_type: Expiring by Type
+  analytics.document_growth: Document Growth
+  analytics.volume_vs_revenue: Volume vs Revenue
+  analytics.total_documents_trend: Total Documents Trend
+  analytics.client_revenue_per_client: Revenue per Client Trend
+  analytics.trip_count_trend: Trip Count Trend
+  analytics.profit_margin_per_client: Profit Margin per Client
+  analytics.revenue_vs_profit: Revenue vs Profit
+  analytics.active_clients_trend: Active Clients Trend
+  analytics.kpi_total_clients: Total Clients
+  analytics.kpi_avg_payment_delay: Avg Payment Delay
+  analytics.kpi_revenue_concentration: Concentration
+  analytics.client_payment_delay_full: Average Payment Delay (Days)
+  analytics.section_route_performance: Route Performance
+  analytics.safety_score: Safety Score
+  analytics.active_vs_inactive: Active vs Inactive
+  analytics.net_profit_label: Net Profit (€)
+  analytics.waterfall_net: Net
+  analytics.client_retention: Client Retention
+  analytics.cost_breakdown: Cost Breakdown
+  analytics.cost_per_truck: Cost Per Truck
+  analytics.country_corridors: Country Corridors
+  analytics.driver_distance: Driver Distance
+  analytics.driver_driving_hours: Driver Driving Hours
+  analytics.driver_ranking: Driver Ranking
+  analytics.driver_rest_hours: Driver Rest Hours
+  analytics.efficiency_trend: Efficiency Trend
+  analytics.extra_costs: Extra Costs
+  analytics.fuel_cost_trend: Fuel Cost Trend
+  analytics.fuel_efficiency_trend: Fuel Efficiency Trend
+  analytics.idle_vs_active: Idle Vs Active
+  analytics.invoiced_vs_paid: Invoiced Vs Paid
+  analytics.kpi_avg_trips: Kpi Avg Trips
+  analytics.kpi_total_drivers: Kpi Total Drivers
+  analytics.kpi_total_violations: Kpi Total Violations
+  analytics.maintenance_cost: Maintenance Cost
+  analytics.mileage_ranking: Mileage Ranking
+  analytics.monthly_trip_volume: Monthly Trip Volume
+  analytics.profit_vs_distance: Profit Vs Distance
+  analytics.quarterly_revenue: Quarterly Revenue
+  analytics.revenue_vs_profit_scatter: Revenue Vs Profit Scatter
+  analytics.truck_age_distribution: Truck Age Distribution
+  analytics.aging_31_60: 31-60 days
+  analytics.aging_61_90: 61-90 days
+  analytics.aging_current: Current (0-30d)
+  analytics.aging_overdue: 90+ days
+  analytics.all_countries: All Countries
+  analytics.doc_actual_uploads: Actual Uploads
+  analytics.doc_expected_uploads: Expected (Trips)
+  analytics.doc_no_expiring: No documents expiring within 30 days
+  analytics.doc_see_all: See all ({count})
+  analytics.doc_upload_vs_expected: Document Uploads vs Expected
+  analytics.invoice_aging: Outstanding Invoices by Age
+  analytics.kpi_active_drivers: Active Drivers
+  analytics.kpi_avg_profit_per_driver: Avg Profit/Driver
+  analytics.kpi_avg_route_profit: Avg Profit/Route
+  analytics.kpi_avg_trips_per_driver: Avg Trips/Driver
+  analytics.kpi_cost_per_km: Avg Cost/km
+  analytics.kpi_dso_subtitle: Avg collection period
+  analytics.kpi_dso: DSO (Days)
+  analytics.kpi_most_frequent: Most Frequent
+  analytics.kpi_new_clients: New Clients
+  analytics.kpi_top_country_route: Top Country
+  analytics.kpi_unassigned_trips: Unassigned Trips
+  analytics.kpi_unique_routes: Unique Routes
+  analytics.no_driver_data: No assigned driver data for this period.
+  analytics.outstanding: Outstanding
+  analytics.payment_target: Target 30d
+  analytics.refresh_tooltip: Refresh data
+  analytics.revenue_profit_trend: Revenue vs Profit Trend
+  analytics.route_country_treemap: Revenue by Country
+  analytics.route_frequency: Route Frequency
+  analytics.section_driver_activity: Driver Activity Timeline
+  analytics.section_invoice_aging: Invoice Aging
+  analytics.section_payment_timeline: Payment Behavior
+  analytics.section_revenue_trend: Revenue & Profit Trend
+  analytics.no_data: No revenue data yet
+  analytics.doc_expires: Expires
+  invoice.default_client: Default Client
+  invoice.email_body: Email Body
+  invoice.email_failed: Email Failed
+  invoice.email_subject: Email Subject
+  invoice.email_success: Email Success
+  invoice.smtp_not_configured: Smtp Not Configured
+  settings.section_email: EMAIL & SMTP
+  settings.section_maintenance: MAINTENANCE THRESHOLDS
+  settings.subtitle: Application Settings
+  settings.field_smtp_server: SMTP Server:
+  settings.field_smtp_port: SMTP Port:
+  settings.field_smtp_user: SMTP User:
+  settings.field_smtp_password: SMTP Password:
+  settings.field_alert_recipients: Alert Email Recipients:
+  settings.field_alert_days_ahead: Alert Days Ahead:
+  settings.field_tacho_warning: Tacho Warning Days:
+  settings.field_tacho_critical: Tacho Critical Days:
+  settings.test_connection: Test Connection
+  settings.email_logs: Email Logs
+  settings.test_success: Connection successful
+  settings.test_failed: Test failed: {}
+  settings.section_branding: BRANDING
+  settings.field_logo: Company Logo:
+  settings.field_signature: Signature Image:
+  settings.field_stamp: Stamp Image:
+  settings.field_automation_body: Body template:
+  settings.field_ocr_config: PaddleOCR advanced settings:
+  settings.field_ocr_credentials: Cloud OCR credentials:
+  settings.field_ocr_help: Set at least one provider
+  settings.unit_seconds:  seconds
+  route.info_empty_subtitle: Calculate a route to see details.
+  route.add_to_dispatch: Add to Dispatch
+  route.send_to_calculator: Send to Calculator
+  route.client_name: Client Name
+  ... and 604 more
+
+  By section:
+    analytics: 155
+    dispatch_board: 67
+    receipt: 66
+    cmr: 48
+    maint: 45
+    invoice_editor: 32
+    admin: 32
+    route: 30
+    home: 30
+    proforma_editor: 30
+    features: 28
+    client: 25
+    settings: 24
+    auth: 24
+    route_history: 22
+    docs: 20
+    automation: 17
+    tracking: 14
+    generators: 13
+    common: 12
+    about: 10
+    upload: 10
+    fleet: 6
+    invoice: 6
+    tacho: 5
+    signature: 5
+    result: 4
+    driver_manager: 4
+    history: 3
+    email_logs: 3
+    maint_analytics: 3
+    date_picker: 2
+    app: 1
+    main: 1
+    email: 1
+    fuel: 1
+    text_danger: 1
+    document: 1
+    file_filter: 1
+    login: 1
+    proforma: 1

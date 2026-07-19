@@ -2,6 +2,7 @@
 
 import { Search, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 
 interface SearchInputProps {
   placeholder?: string
@@ -18,6 +19,7 @@ export function SearchInput({
   onClear,
   className,
 }: SearchInputProps) {
+  const { t } = useLocale()
   return (
     <div className={cn("relative", className)}>
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -46,7 +48,7 @@ export function SearchInput({
             "absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1",
             "text-muted-foreground transition-colors hover:text-foreground"
           )}
-          aria-label="Clear search"
+          aria-label={t("common.aria.clearSearch")}
         >
           <X className="h-4 w-4" />
         </button>

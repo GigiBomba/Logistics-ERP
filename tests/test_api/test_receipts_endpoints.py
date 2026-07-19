@@ -31,7 +31,7 @@ class TestReceiptsGenerate:
             mock_gen = MagicMock()
             mock_gen_cls.return_value = mock_gen
             mock_gen.generate.return_value = str(pdf_file)
-            resp = client.post(f"{BASE}/generate", json={"id": 1, "amount": 500.0})
+            resp = client.post(f"{BASE}/generate", json={"amount": 500.0, "receipt_type": "payment"})
             assert resp.status_code == 200
 
     @patch("os.path.isfile", return_value=False)

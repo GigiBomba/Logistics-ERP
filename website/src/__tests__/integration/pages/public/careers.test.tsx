@@ -36,19 +36,17 @@ describe("CareersPage", () => {
     render(<CareersPage />)
     expect(screen.getByText("Remote-first culture")).toBeInTheDocument()
     expect(screen.getByText("Flexible hours")).toBeInTheDocument()
-    expect(screen.getByText("Learning budget")).toBeInTheDocument()
+    expect(screen.getByText("Health coverage")).toBeInTheDocument()
+    expect(screen.getByText("Home office stipend")).toBeInTheDocument()
   })
 
-  it("renders job openings", () => {
+  it("shows no open positions message", () => {
     render(<CareersPage />)
-    expect(screen.getByText("Senior Frontend Engineer")).toBeInTheDocument()
-    expect(screen.getByText("Backend Engineer (Rust)")).toBeInTheDocument()
-    expect(screen.getByText("Product Designer")).toBeInTheDocument()
-    expect(screen.getByText("DevOps Engineer")).toBeInTheDocument()
+    expect(screen.getByText("No open positions at this time")).toBeInTheDocument()
   })
 
   it("renders call-to-action banner", () => {
     render(<CareersPage />)
-    expect(screen.getByText("Ready to build with us?")).toBeInTheDocument()
+    expect(screen.getByText("Want to connect?")).toBeInTheDocument()
   })
 })

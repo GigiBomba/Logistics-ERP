@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from repositories.settings_repository import SettingsRepository
 from services.operations.notification_center import NotificationCenter, Severity
 
 
@@ -94,9 +95,9 @@ def test_send_test_email_success(mock_smtp, nc):
 
 def test_get_alert_recipients_from_db(nc):
     nc._alert_recipients = None
-    nc._db.get_settings.return_value = {"alert_email_recipients": "a@b.com, c@d.com"}
-    recipients = nc._get_alert_recipients({})
-    assert recipients == ["a@b.com", "c@d.com"]
+    with patch.object(SettingsRepository, "get_settings_by_keys", return_value={"alert_email_recipients": "a@b.com, c@d.com"}):
+        recipients = nc._get_alert_recipients({})
+        assert recipients == ["a@b.com", "c@d.com"]
 
 
 def test_get_alert_recipients_from_arg(nc):

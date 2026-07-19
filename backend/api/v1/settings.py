@@ -6,8 +6,8 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Response
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.settings import CompanyConfigUpdateRequest, SettingUpdateRequest
-from config import Config
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
+from backend.desktop_config import Config
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 

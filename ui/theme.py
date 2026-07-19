@@ -149,5 +149,13 @@ CHART_PRIMARY   = COLOR_CHART_1
 CHART_SECONDARY = COLOR_CHART_2
 CHART_ACCENT    = COLOR_CHART_1
 
-# Legacy FONTS dict
-FONTS = {}
+# Legacy FONTS dict — populated from design_tokens
+import ui.design_tokens as _dt
+FONTS = {
+    k: (_dt.FONT_SIZES[k], _dt.FONT_WEIGHT_REGULAR)
+    for k in ("display", "h1", "h2", "h3", "body", "small", "label")
+}
+FONTS["body_bold"] = (FONTS["body"][0], _dt.FONT_WEIGHT_BOLD)
+FONTS["mono"] = (_dt.FONT_SIZES.get("mono", _dt.FONT_SIZE_BASE), _dt.FONT_WEIGHT_REGULAR)
+FONTS["mono_lg"] = (_dt.FONT_SIZES.get("mono_lg", _dt.FONT_SIZE_LG), _dt.FONT_WEIGHT_REGULAR)
+FONTS["mono_xl"] = (_dt.FONT_SIZES.get("mono_xl", _dt.FONT_SIZE_2XL), _dt.FONT_WEIGHT_REGULAR)

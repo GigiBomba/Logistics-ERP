@@ -41,6 +41,7 @@ from ui.theme import S
 from ui.widgets import (
     ActionButton,
     ScrollableFormContainer,
+    StyledCheckBox,
     StyledComboBox,
     StyledLineEdit,
 )
@@ -78,7 +79,7 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         self.prefs = prefs or PreferencesManager(db)
         self.ops = ops
         if self._api_client is not None:
-            self._automail_repo = None
+            self._automail_repo = None  # remote mode: no local database access
         else:
             self._automail_repo = automail_repo if automail_repo is not None else AutoMailRepository(db)
         # ── i18n tracking ────────────────────────────────────────────────
@@ -108,6 +109,12 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         self._alert_days_ahead_entry: StyledLineEdit | None = None
         self._tacho_warning_entry: StyledLineEdit | None = None
         self._tacho_critical_entry: StyledLineEdit | None = None
+
+        # ── Autonomous Mode toggles ──────────────────────────────────────
+        self._auto_dispatch: StyledCheckBox | None = None
+        self._auto_invoice: StyledCheckBox | None = None
+        self._auto_email: StyledCheckBox | None = None
+        self._circuit_breaker_status: QLabel | None = None
 
         # ── Build UI ─────────────────────────────────────────────────────
         self._build_ui()
@@ -195,8 +202,10 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         self._build_section_email()
         self._build_section_tracking()
         self._build_section_maintenance()
+        self._build_section_tutorial()
         if is_admin():
             self._build_section_automation()
+            self._build_section_autonomous_mode()
 
         # Bottom save bar
         self._build_save_bar(layout)
@@ -383,6 +392,18 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
                 val = "1" if val is True else ("0" if val is False else val)
                 self.prefs.save_setting(key, str(val))
 
+        # ── Autonomous Mode ────────────────────────────────────────────
+        for key, attr in [
+            ("copilot.auto_dispatch", "_auto_dispatch"),
+            ("copilot.auto_invoice", "_auto_invoice"),
+            ("copilot.auto_email", "_auto_email"),
+        ]:
+            cb = getattr(self, attr, None)
+            if cb is not None:
+                self.prefs.save_setting(
+                    key, "1" if cb.isChecked() else "0",
+                )
+
         # Reload cloud OCR credentials from DB so they take effect immediately.
         try:
             from services.document_automation.cloud_ocr import init_from_db
@@ -455,6 +476,19 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
             entry = getattr(self, attr_name, None)
             if entry is not None:
                 entry.setText(self.prefs.get_setting(key) or "")
+
+        # Autonomous Mode
+        if self.prefs is not None:
+            for pref_key, attr in [
+                ("copilot.auto_dispatch", "_auto_dispatch"),
+                ("copilot.auto_invoice", "_auto_invoice"),
+                ("copilot.auto_email", "_auto_email"),
+            ]:
+                cb = getattr(self, attr, None)
+                if cb is not None:
+                    cb.setChecked(
+                        self.prefs.get_setting(pref_key, "0") in ("1", "true"),
+                    )
 
     # ── File / colour pickers ───────────────────────────────────────────
 

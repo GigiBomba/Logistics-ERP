@@ -22,7 +22,7 @@ export function verifyJwt(token: string): JwtClaims | null {
       return null
     }
 
-    let payload = parts[1]
+    let payload = parts[1].replace(/-/g, "+").replace(/_/g, "/")
 
     // Restore base64 padding that was stripped by the JWT encoder
     const padding = 4 - (payload.length % 4)

@@ -13,12 +13,17 @@ Fixtures provided:
 """
 
 import os
+import uuid
 # ⚠ Set OPERION_DB_PATH before any other import that reads Config.DB_PATH.
 # Config.DB_PATH is evaluated at module-import time, so the env var must be
 # set before ANY test module or dependency imports from config.py.
-TEST_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", "test_security.db")
+# Use a unique DB path per session to avoid conflicts with other test suites
+# (e.g. E2E tests) that also set OPERION_DB_PATH at import time.
+_TEST_DB_FILENAME = f"test_security_{uuid.uuid4().hex[:8]}.db"
+TEST_DB_PATH = os.path.join(os.path.dirname(__file__), "..", "..", "data", _TEST_DB_FILENAME)
 os.environ["OPERION_DB_PATH"] = TEST_DB_PATH
 os.environ["OPERION_RATE_LIMIT"] = "10000"  # Disable effective rate limiting for tests
+os.environ.pop("OPERION_API_KEY", None)  # Ensure API key middleware stays disabled
 
 import bcrypt
 import json
@@ -34,10 +39,44 @@ DISPATCHER_PW = "dispatcher-pw-456"
 
 
 def _clean_test_db():
+    """Remove the test database files entirely.
+    
+    Only safe to call when NO SQLite connections exist. On Windows,
+    SQLite holds file locks even after connection close, so this
+    should only be called from fixture *setup* (before any app
+    requests) or from a session-finalizer.
+    """
     for suffix in ("", "-wal", "-shm"):
         p = TEST_DB_PATH + suffix
         if os.path.isfile(p):
-            os.remove(p)
+            try:
+                os.remove(p)
+            except PermissionError:
+                pass  # File still locked — the next setup will clean it
+
+
+def _truncate_tables():
+    """Delete all rows from known tables so the DB can be re-seeded.
+    
+    Also checkpoints and truncates the WAL to avoid locks when the
+    next module connects. Should only be called after all connections
+    from the current module are closed (i.e. in fixture teardown).
+    """
+    import sqlite3
+    try:
+        conn = sqlite3.connect(TEST_DB_PATH, timeout=2)
+        conn.execute("PRAGMA busy_timeout=5000")
+        conn.execute("PRAGMA journal_mode=DELETE")  # Switch off WAL so we can checkpoint
+        tables = conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
+        ).fetchall()
+        for (tname,) in tables:
+            conn.execute(f"DELETE FROM [{tname}]")
+        conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        conn.commit()
+        conn.close()
+    except Exception:
+        pass  # If the DB doesn't exist yet, that's fine
 
 
 def _make_dispatcher_token(client, email, password):
@@ -50,13 +89,42 @@ def _make_dispatcher_token(client, email, password):
     return resp.json()["access_token"] if resp.status_code == 200 else None
 
 
-def _seed_test_data():
+def _seed_test_data(db_path=None):
     """Directly insert two companies + users + sample data into the test DB."""
-    from config import Config
+    if db_path is None:
+        db_path = os.environ.get("OPERION_DB_PATH", TEST_DB_PATH)
+    # Use DatabaseManager for schema creation (handles all tables, migrations, indexes)
     from database.db_manager import DatabaseManager
-
-    db = DatabaseManager(TEST_DB_PATH)
+    db = DatabaseManager(db_path)
+    db.close()
+    
+    # Re-open with raw sqlite3 for seeding (avoids lock contention during import)
+    import sqlite3
+    conn = sqlite3.connect(db_path, timeout=5)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA busy_timeout=1000")
+    db = type('_', (), {'conn': conn})()
     now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+    # ── Ensure columns required by mobile endpoints and Pydantic models ──
+    for col_ddl in [
+        "ALTER TABLE trips ADD COLUMN reference TEXT DEFAULT ''",
+        "ALTER TABLE trips ADD COLUMN loading_city TEXT DEFAULT ''",
+        "ALTER TABLE trips ADD COLUMN delivery_city TEXT DEFAULT ''",
+        "ALTER TABLE trips ADD COLUMN updated_at TEXT",
+        "ALTER TABLE trips ADD COLUMN notes TEXT DEFAULT ''",
+        "ALTER TABLE trips ADD COLUMN loading_lat REAL",
+        "ALTER TABLE trips ADD COLUMN loading_lng REAL",
+        "ALTER TABLE trips ADD COLUMN delivery_lat REAL",
+        "ALTER TABLE trips ADD COLUMN delivery_lng REAL",
+    ]:
+        col_name = col_ddl.split()[3]
+        try:
+            cols = {r[1] for r in db.conn.execute("PRAGMA table_info(trips)").fetchall()}
+            if col_name not in cols:
+                db.conn.execute(col_ddl)
+        except Exception:
+            pass
     dispatcher_hash = bcrypt.hashpw(DISPATCHER_PW.encode(), bcrypt.gensalt(rounds=4)).decode()
 
     # ── Companies ──────────────────────────────────────────────────
@@ -146,42 +214,108 @@ def _seed_test_data():
         "VALUES (4, 'Client B-2', 'Driver B-2', 'CD-04-DDD', 'Loading', ?, ?, 2)", (now, now))
 
     db.conn.commit()
-    db.close()
+    db.conn.close()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# Session-scoped fixtures
+# Module-scoped fixtures — each test module gets a fresh app/client/DB
+# to avoid SQLite lock contention and token-invalidation across tests.
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@pytest.fixture(scope="session")
-def app():
-    """Create the FastAPI app with test env vars."""
-    _clean_test_db()
+@pytest.fixture(scope="module")
+def app(request):
+    """Create the FastAPI app with test env vars (module-scoped — unique per module)."""
+    # Use a unique DB file per module to avoid Windows SQLite file-lock
+    # contention between modules.  The prior module's DB file + WAL/SHM
+    # are simply abandoned; they will be deleted by _clean_test_db from
+    # a fresh process or a manual cleanup.
+    module_name = request.module.__name__.replace("tests.security.", "").replace(".", "_")
+    _db_path = os.path.join(
+        os.path.dirname(__file__), "..", "..", "data",
+        f"test_security_{module_name}_{uuid.uuid4().hex[:8]}.db",
+    )
+    os.environ["OPERION_DB_PATH"] = _db_path
+
     os.environ["OPERION_JWT_SECRET_KEY"] = "test-secret-key-32-chars-for-testing-only!!"
     admin_hash = bcrypt.hashpw(ADMIN_PW.encode(), bcrypt.gensalt(rounds=4)).decode()
     os.environ["OPERION_ADMIN_EMAIL"] = "admin-a@test.com"
     os.environ["OPERION_ADMIN_PASSWORD_HASH"] = admin_hash
     os.environ["OPERION_ENV"] = "test"
 
-    _seed_test_data()
+    # Clear in-memory login lockout state so the tokens fixture never fails
+    # with "account locked".  Each module starts with a fresh lockout slate.
+    from backend.api.v1.auth import _clear_lockout, _failed_attempts
+    _failed_attempts.clear()
+    for email in ("admin-a@test.com", "dispatcher-a@test.com", "dispatcher-b@test.com",
+                  "driver-a@test.com", "driver-b@test.com"):
+        _clear_lockout(email)
+
+    # Create the schema via DatabaseManager on the unique DB file
+    from database.db_manager import DatabaseManager
+    dbu = DatabaseManager(_db_path)
+    dbu.close()
+
+    # Force Config.DB_PATH to our unique DB file
+    from config import Config
+    Config.DB_PATH = _db_path
+
+    # Prevent background threads from OcrService and ai_fallback that would
+    # leak across test modules and cause timeouts (daemon threads from OCR
+    # workers + 8-minute keepalive refresh thread).
+    import services.document.ocr_service as _ocr_mod
+    import services.document_automation.ai_fallback as _ai_mod
+    _orig_ocr_init = _ocr_mod.OcrService.__init__
+    _orig_start_workers = _ocr_mod.OcrService._start_ocr_workers
+
+    def _noop_start(self):
+        self._ocr_workers = []
+        self._ocr_running = False
+
+    _ocr_mod.OcrService._start_ocr_workers = _noop_start
+    _ai_mod._schedule_keepalive_refresh = lambda: None
 
     from backend.main import app as fastapi_app
-    return fastapi_app
+    
+    # Seed test data via a fresh connection (app is already initialized)
+    _seed_test_data()
+    
+    yield fastapi_app
+    
+    # Teardown: close the global DatabaseManager singleton so SQLite
+    # connections are released and the DB file can be safely cleaned.
+    # Without this, the connection pool from backend.dependencies.init_db()
+    # keeps the file locked (especially on Windows).
+    import backend.dependencies as _deps
+    if _deps._db_instance is not None:
+        _deps._db_instance.close()
+        _deps._db_instance = None
+    
+    # Truncate all tables so the next module starts with a clean DB.
+    # We use truncation instead of file deletion because some SQLite
+    # connections may still be open (WAL checkpoint, etc.).
+    _truncate_tables()
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def client(app):
-    """Return a TestClient bound to the test app."""
-    return TestClient(app)
+    """Return a TestClient bound to the test app (module-scoped)."""
+    return TestClient(app, raise_server_exceptions=False)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # Token fixtures
 # ═══════════════════════════════════════════════════════════════════════════════
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="module")
 def tokens(client):
     """Return dict with tokens for all test users."""
+    # Clear any leftover lockout state so all logins succeed
+    from backend.api.v1.auth import _clear_lockout, _failed_attempts
+    _failed_attempts.clear()
+    for email in ("admin-a@test.com", "dispatcher-a@test.com", "dispatcher-b@test.com",
+                  "driver-a@test.com", "driver-b@test.com"):
+        _clear_lockout(email)
+
     result = {}
 
     # Admin
@@ -249,30 +383,44 @@ def get_db():
     return DatabaseManager(TEST_DB_PATH)
 
 
-def create_test_trip(client, headers, overrides: dict = None) -> Dict[str, Any]:
-    """POST /api/v1/trips/ and return the response JSON."""
+def create_test_trip(client, headers, overrides: dict = None, company_id: int = 1) -> Dict[str, Any]:
+    """POST /api/v1/trips/ and return the response JSON.
+    
+    Uses the schema's required ``client_id`` field. Defaults to client_id=1
+    (Client A-1 in Company A). Override via dict or *company_id*.
+    
+    Automatically removes the legacy ``truck_number`` field (replaced by
+    ``truck_plate`` / ``truck_id`` in the Pydantic schema) and maps
+    ``company_id`` to a valid ``client_id``.
+    """
     data = {
         "client_name": "E2E Test Client",
         "driver_name": "E2E Driver",
-        "truck_number": "E2E-TRUCK",
         "status": "Planned",
     }
+    # Map company_id to a valid client_id
+    if company_id == 2:
+        data["client_id"] = 3  # First client in Company B
+    else:
+        data["client_id"] = 1  # First client in Company A
     if overrides:
         data.update(overrides)
+    # Remove legacy fields that TripCreateRequest forbids
+    data.pop("truck_number", None)
     try:
         resp = client.post("/api/v1/trips/", json=data, headers=headers)
-        return resp.json() if resp.status_code == 200 else {"error": resp.text, "status": resp.status_code}
+        return resp.json() if resp.status_code in (200, 201) else {"error": resp.text, "status": resp.status_code}
     except Exception as e:
         return {"error": str(e), "status": 500}
 
 
 def create_test_client(client, headers, name: str = "E2E Client", overrides: dict = None) -> Dict[str, Any]:
     """POST /api/v1/clients/ and return the response JSON."""
-    data = {"email": "e2e@test.com", "phone": "+40-700-000-000"}
+    data = {"name": name, "email": "e2e@test.com", "phone": "+40-700-000-000"}
     if overrides:
         data.update(overrides)
     try:
-        resp = client.post(f"/api/v1/clients/?name={name}", json=data, headers=headers)
+        resp = client.post("/api/v1/clients/", json=data, headers=headers)
         return resp.json() if resp.status_code == 200 else {"error": resp.text, "status": resp.status_code}
     except Exception as e:
         return {"error": str(e), "status": 500}
@@ -291,22 +439,48 @@ def create_test_driver(client, headers, overrides: dict = None) -> Dict[str, Any
 
 
 def create_test_truck(client, headers, overrides: dict = None) -> Dict[str, Any]:
-    """POST /api/v1/fleet/trucks/ and return the response JSON."""
+    """POST /api/v1/fleet/trucks/ and return the response JSON.
+
+    Uses the non-slash URL to avoid 307 redirects from trailing-slash handling.
+    """
     data = {"plate_number": "E2E-001", "manufacturer": "TestTruck", "year": 2026, "model": "E2E Model", "status": "Active"}
     if overrides:
         data.update(overrides)
     try:
-        resp = client.post("/api/v1/fleet/trucks/", json=data, headers=headers)
+        # Use URL without trailing slash to avoid 307 redirect
+        resp = client.post("/api/v1/fleet/trucks", json=data, headers=headers)
+        # Accept both 200 (direct) and 307 (redirect that would succeed on follow)
+        if resp.status_code == 307:
+            location = resp.headers.get("location", "")
+            if location:
+                resp = client.post(location, json=data, headers=headers)
         return resp.json() if resp.status_code == 200 else {"error": resp.text, "status": resp.status_code}
     except Exception as e:
         return {"error": str(e), "status": 500}
+
+
+def _minimal_valid_pdf() -> bytes:
+    """Return a minimal but valid PDF that pymupdf can open without crashing."""
+    return (
+        b"%PDF-1.4\n"
+        b"1 0 obj\n<< /Type /Catalog /Pages 2 0 R >>\nendobj\n"
+        b"2 0 obj\n<< /Type /Pages /Kids [3 0 R] /Count 1 >>\nendobj\n"
+        b"3 0 obj\n<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] >>\nendobj\n"
+        b"xref\n0 4\n"
+        b"0000000000 65535 f \n"
+        b"0000000009 00000 n \n"
+        b"0000000058 00000 n \n"
+        b"0000000115 00000 n \n"
+        b"trailer\n<< /Size 4 /Root 1 0 R >>\n"
+        b"startxref\n190\n%%EOF"
+    )
 
 
 def upload_test_document(client, headers, filename: str = "test.pdf",
                          content: bytes = None, mime: str = "application/pdf") -> Dict[str, Any]:
     """POST /api/v1/documents/upload and return the response JSON."""
     if content is None:
-        content = b"%PDF-1.4 fake pdf content for testing"
+        content = _minimal_valid_pdf()
     try:
         resp = client.post(
             "/api/v1/documents/upload",

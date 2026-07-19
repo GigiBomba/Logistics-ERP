@@ -311,7 +311,7 @@ class TripCalculator:
         request = CalculationRequest(
             km=km,
             price_eur=0.0,
-            fuel_price=fuel_price or 1.55,
+            fuel_price=fuel_price if fuel_price is not None else 1.55,
             days=max(1, round(km / 800)),
             consum_litri=float(consumption),
         )

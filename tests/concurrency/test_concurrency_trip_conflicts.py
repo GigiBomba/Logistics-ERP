@@ -15,10 +15,6 @@ pytestmark = pytest.mark.concurrency
 class TestConcurrencyTripConflicts:
     """Concurrency tests for TripConflictService and trip creation."""
 
-    @pytest.fixture
-    def db(self):
-        return make_db()
-
     def _create_truck(self, db, plate: str = "TRUCK-1") -> int:
         db.conn.execute(
             "INSERT INTO trucks (plate_number, model, manufacturer) "
@@ -102,54 +98,58 @@ class TestConcurrencyTripConflicts:
         )
 
         from services.conflict_service import TripConflictService
-        import copy
-
-        # We'll simulate a slow conflict check by injecting a delay into
-        # the repository method called by check_conflicts.
-        original_get_active = db.conn.execute
+        from unittest.mock import patch
 
         check_started = threading.Event()
         trip_created = threading.Event()
 
-        def delayed_get_active(sql, params=None):
-            if "get_active_for_truck" in sql or "FROM trips" in sql:
+        original_execute = db.execute
+
+        def delayed_execute(sql, params=None):
+            if isinstance(params, tuple) and any(
+                "get_active_for_truck" in str(sql) or "FROM trips" in str(sql)
+                for _ in [1]
+            ):
                 check_started.set()
                 time.sleep(0.5)  # simulate slow DB
-            return original_get_active(sql, params)
+            return original_execute(sql, params or ())
 
-        db.conn.execute = delayed_get_active
+        with patch.object(db, "execute", wraps=db.execute) as mock_exec:
+            def side_effect(sql, params=()):
+                if "FROM trips" in sql:
+                    check_started.set()
+                    time.sleep(0.5)
+                return original_execute(sql, params)
+            mock_exec.side_effect = side_effect
 
-        conflict_result = []
+            conflict_result = []
 
-        def run_conflict_check():
-            svc = TripConflictService(db)
-            conflicts = svc.check_conflicts({
-                "truck_id": truck_id,
-                "truck_number": "TRUCK-1",
-                "start_date": "2026-07-05",
-                "end_date": "2026-07-25",
-            })
-            conflict_result.append(conflicts)
+            def run_conflict_check():
+                svc = TripConflictService(db)
+                conflicts = svc.check_conflicts({
+                    "truck_id": truck_id,
+                    "truck_number": "TRUCK-1",
+                    "start_date": "2026-07-05",
+                    "end_date": "2026-07-25",
+                })
+                conflict_result.append(conflicts)
 
-        def run_trip_creation():
-            check_started.wait(timeout=3)
-            self._create_trip_for_truck(
-                db, truck_id, "TRUCK-1",
-                start_date="2026-07-12", end_date="2026-07-18",
-            )
-            trip_created.set()
+            def run_trip_creation():
+                check_started.wait(timeout=3)
+                self._create_trip_for_truck(
+                    db, truck_id, "TRUCK-1",
+                    start_date="2026-07-12", end_date="2026-07-18",
+                )
+                trip_created.set()
 
-        with ThreadPoolExecutor(max_workers=2) as pool:
-            fut_a = pool.submit(run_conflict_check)
-            fut_b = pool.submit(run_trip_creation)
-            for fut in [fut_a, fut_b]:
-                try:
-                    fut.result()
-                except Exception as e:
-                    pytest.fail(f"Thread failed: {e}")
-
-        # Restore original
-        db.conn.execute = original_get_active
+            with ThreadPoolExecutor(max_workers=2) as pool:
+                fut_a = pool.submit(run_conflict_check)
+                fut_b = pool.submit(run_trip_creation)
+                for fut in [fut_a, fut_b]:
+                    try:
+                        fut.result()
+                    except Exception as e:
+                        pytest.fail(f"Thread failed: {e}")
 
         # The conflict check should have completed and returned results
         assert len(conflict_result) == 1

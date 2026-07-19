@@ -83,8 +83,9 @@ class TestQtClientFormDialog:
         assert dialog._entries["phone"].text() == "+40123"
         dialog.close()
 
-    def test_save_empty_name_shows_warning(self, qtbot, mock_client_service):
+    def test_save_empty_name_shows_warning(self, qtbot, mock_client_service, monkeypatch):
         """Saving with empty name shows warning and returns."""
+        monkeypatch.setattr("ui.views.client_manager.QMessageBox", MagicMock())
         dialog = self._create_dialog(qtbot, mock_client_service)
         dialog._entries["name"].setText("")
         dialog._save()
@@ -105,8 +106,9 @@ class TestQtClientFormDialog:
         dialog.on_save.assert_called_once()
         dialog.close()
 
-    def test_save_duplicate_name_shows_warning(self, qtbot, mock_client_service):
+    def test_save_duplicate_name_shows_warning(self, qtbot, mock_client_service, monkeypatch):
         """_save shows warning when duplicate name exists."""
+        monkeypatch.setattr("ui.views.client_manager.QMessageBox", MagicMock())
         mock_client_service._repo.get_by_name.return_value = {"id": 99, "name": "Existing"}
 
         dialog = self._create_dialog(qtbot, mock_client_service)

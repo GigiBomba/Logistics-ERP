@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from repositories.trip_repository import TripRepository
 from services.trip_context import (
     TripContext,
     TripContextService,
@@ -199,19 +200,21 @@ def test_update_trip_revenue_none():
 
 
 def test_save_trip_to_db():
-    db_mock = MagicMock()
-    db_mock.add_trip.return_value = 42
-    tc = TripContext.create("test-1")
-    tc.route.distance_km = 500
-    tc.truck.name = "Truck1"
-    tc.driver.name = "John"
-    tc.profit.revenue_estimate = 1000
-    result = save_trip_to_db(db_mock, tc, client_name="Client1")
-    assert result == 42
-    db_mock.add_trip.assert_called_once()
-    payload = db_mock.add_trip.call_args[0][0]
-    assert payload["truck_number"] == "Truck1"
-    assert payload["distance_km"] == 500
+    with patch("services.trip_context.TripRepository") as mock_trip_repo_cls:
+        mock_repo = MagicMock()
+        mock_trip_repo_cls.return_value = mock_repo
+        mock_repo.create.return_value = 42
+        tc = TripContext.create("test-1")
+        tc.route.distance_km = 500
+        tc.truck.name = "Truck1"
+        tc.driver.name = "John"
+        tc.profit.revenue_estimate = 1000
+        result = save_trip_to_db(MagicMock(), tc, client_name="Client1")
+        assert result == 42
+        mock_repo.create.assert_called_once()
+        payload = mock_repo.create.call_args[0][0]
+        assert payload["truck_number"] == "Truck1"
+        assert payload["distance_km"] == 500
 
 
 def test_save_trip_to_db_none():
@@ -220,34 +223,40 @@ def test_save_trip_to_db_none():
 
 
 def test_load_trip_from_db():
-    db_mock = MagicMock()
-    db_mock.get_trip_by_id.return_value = {
-        "context_json": '{"trip_id": "test-1", "status": "saved"}',
-        "status": "saved",
-    }
-    tc = load_trip_from_db(db_mock, 42)
-    assert tc is not None
-    assert tc.trip_id == "test-1"
+    with patch("services.trip_context.TripRepository") as mock_trip_repo_cls:
+        mock_repo = MagicMock()
+        mock_trip_repo_cls.return_value = mock_repo
+        mock_repo.get_by_id.return_value = {
+            "context_json": '{"trip_id": "test-1", "status": "saved"}',
+            "status": "saved",
+        }
+        tc = load_trip_from_db(MagicMock(), 42)
+        assert tc is not None
+        assert tc.trip_id == "test-1"
 
 
 def test_load_trip_from_db_not_found():
-    db_mock = MagicMock()
-    db_mock.get_trip_by_id.return_value = None
-    assert load_trip_from_db(db_mock, 999) is None
+    with patch("services.trip_context.TripRepository") as mock_trip_repo_cls:
+        mock_repo = MagicMock()
+        mock_trip_repo_cls.return_value = mock_repo
+        mock_repo.get_by_id.return_value = None
+        assert load_trip_from_db(MagicMock(), 999) is None
 
 
 def test_load_trip_from_db_no_json():
-    db_mock = MagicMock()
-    db_mock.get_trip_by_id.return_value = {
-        "context_json": None,
-        "distance_km": 100,
-        "truck_number": "Truck1",
-        "driver_name": "John",
-        "status": "saved",
-    }
-    tc = load_trip_from_db(db_mock, 42)
-    assert tc is not None
-    assert tc.route.distance_km == 100
+    with patch("services.trip_context.TripRepository") as mock_trip_repo_cls:
+        mock_repo = MagicMock()
+        mock_trip_repo_cls.return_value = mock_repo
+        mock_repo.get_by_id.return_value = {
+            "context_json": None,
+            "distance_km": 100,
+            "truck_number": "Truck1",
+            "driver_name": "John",
+            "status": "saved",
+        }
+        tc = load_trip_from_db(MagicMock(), 42)
+        assert tc is not None
+        assert tc.route.distance_km == 100
 
 
 def test_listeners():

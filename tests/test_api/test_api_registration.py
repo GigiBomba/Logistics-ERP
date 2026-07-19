@@ -9,6 +9,7 @@ import time
 import pytest
 from fastapi.testclient import TestClient
 
+from backend.api.v1.registration import _register_rate_limit
 from backend.main import create_app
 from backend.security import decode_access_token
 from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
@@ -28,6 +29,14 @@ def _set_env():
 def client():
     app = create_app()
     return TestClient(app)
+
+
+@pytest.fixture(autouse=True)
+def _clear_rate_limit():
+    """Clear registration rate limit between tests."""
+    _register_rate_limit.clear()
+    from backend.api.v1.auth import _failed_attempts
+    _failed_attempts.clear()
 
 
 class TestRegistrationEndpoint:

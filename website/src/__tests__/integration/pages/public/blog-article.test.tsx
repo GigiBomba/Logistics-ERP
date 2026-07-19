@@ -15,6 +15,7 @@ vi.mock("@/contexts/auth-provider", () => ({
 vi.mock("motion/react", () => ({
   motion: {
     div: ({ children, ...props }: any) => <div {...props}>{children}</div>,
+    article: ({ children, ...props }: any) => <article {...props}>{children}</article>,
   },
 }))
 
@@ -22,7 +23,7 @@ vi.mock("react-router", async () => {
   const actual = await vi.importActual("react-router")
   return {
     ...(actual as object),
-    useParams: vi.fn(() => ({ slug: "getting-started-with-operion" })),
+    useParams: vi.fn(() => ({ slug: "how-to-calculate-trip-profitability-road-transport" })),
   }
 })
 
@@ -30,19 +31,19 @@ describe("BlogArticlePage", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(useAuth).mockReturnValue({ isAdmin: false })
-    vi.mocked(useParams).mockReturnValue({ slug: "getting-started-with-operion" })
+    vi.mocked(useParams).mockReturnValue({ slug: "how-to-calculate-trip-profitability-road-transport" })
   })
 
   it("renders article title", () => {
     render(<BlogArticlePage />)
     expect(
-      screen.getByText("Getting Started with Operion")
+      screen.getByText("Trip Profitability: How to Calculate Profit Per Transport Job")
     ).toBeInTheDocument()
   })
 
   it("renders breadcrumb link back to blog", () => {
     render(<BlogArticlePage />)
-    expect(screen.getByText("Back to Blog")).toBeInTheDocument()
+    expect(screen.getByText("Back to all articles")).toBeInTheDocument()
   })
 
   it("shows reading time", () => {
@@ -52,27 +53,20 @@ describe("BlogArticlePage", () => {
 
   it("renders tags", () => {
     render(<BlogArticlePage />)
-    expect(screen.getByText("onboarding")).toBeInTheDocument()
-    expect(screen.getByText("fleet-setup")).toBeInTheDocument()
-    expect(screen.getByText("dispatch")).toBeInTheDocument()
+    expect(screen.getByText("trip-profitability")).toBeInTheDocument()
+    expect(screen.getByText("cost-calculation")).toBeInTheDocument()
+    expect(screen.getByText("transport-finance")).toBeInTheDocument()
   })
 
   it("shows author info", () => {
     render(<BlogArticlePage />)
-    const authorNames = screen.getAllByText("Sarah Chen")
+    const authorNames = screen.getAllByText("Operion Team")
     expect(authorNames.length).toBeGreaterThanOrEqual(1)
-    const roles = screen.getAllByText("Engineering Lead")
-    expect(roles.length).toBeGreaterThanOrEqual(1)
   })
 
-  it("renders social share section", () => {
+  it("renders category badge", () => {
     render(<BlogArticlePage />)
-    expect(screen.getByText("Share this article")).toBeInTheDocument()
-  })
-
-  it("renders related articles section", () => {
-    render(<BlogArticlePage />)
-    expect(screen.getByText("Related Articles")).toBeInTheDocument()
+    expect(screen.getByText("Profitability & Transport Finance")).toBeInTheDocument()
   })
 })
 
@@ -85,9 +79,10 @@ describe("BlogArticlePage not found", () => {
 
   it("shows article not found for invalid slug", () => {
     render(<BlogArticlePage />)
-    expect(screen.getByText("Article Not Found")).toBeInTheDocument()
+    const notFoundTexts = screen.getAllByText("Article Not Found")
+    expect(notFoundTexts.length).toBeGreaterThanOrEqual(1)
     expect(
-      screen.getByText("This article does not exist.")
+      screen.getByText("The article you are looking for does not exist or may have been removed.")
     ).toBeInTheDocument()
     expect(screen.getByText("Back to Blog")).toBeInTheDocument()
   })

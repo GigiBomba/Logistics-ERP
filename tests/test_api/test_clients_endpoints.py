@@ -42,12 +42,12 @@ class TestClientsListEndpoint:
             {"id": 1, "name": "Acme"},
         ]
 
-        resp = client.get(f"{BASE}/?query=acme&include_inactive=true&limit=50")
+        resp = client.get(f"{BASE}/?query=acme&include_inactive=true")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
         mocks["client_service"].search_advanced.assert_called_once_with(
-            "acme", include_inactive=True, limit=50,
+            "acme", include_inactive=True, limit=20,
         )
 
     def test_list_clients_defaults_when_no_query(self, client_with_mocks):
@@ -90,12 +90,13 @@ class TestClientsCreateEndpoint:
         client, mocks = client_with_mocks
         mocks["client_service"].create.return_value = 10
 
-        resp = client.post(f"{BASE}/?name=NewCo", json={"email": "n@n.com"})
+        resp = client.post(f"{BASE}/", json={"name": "NewCo", "email": "n@n.com"})
         assert resp.status_code == 200
         assert resp.json() == {"id": 10}
-        mocks["client_service"].create.assert_called_once_with(
-            name="NewCo", email="n@n.com",
-        )
+        mocks["client_service"].create.assert_called_once()
+        call_kwargs = mocks["client_service"].create.call_args[1]
+        assert call_kwargs["name"] == "NewCo"
+        assert call_kwargs["email"] == "n@n.com"
 
 
 class TestClientsUpdateEndpoint:
@@ -229,5 +230,5 @@ class TestClientsAuth:
     def test_service_exception_propagates(self, client_with_mocks):
         client, mocks = client_with_mocks
         mocks["client_service"].get_all.side_effect = RuntimeError("fail")
-        with pytest.raises(RuntimeError, match="fail"):
-            client.get(f"{BASE}/")
+        resp = client.get(f"{BASE}/")
+        assert resp.status_code == 500

@@ -11,8 +11,8 @@ services:
     environment:
       POSTGRES_DB: operion
       POSTGRES_USER: operion
-      POSTGRES_PASSWORD: ${OPERION_POSTGRES_PASSWORD:-operion_secret}
-      OPERION_CELERY_PASSWORD: ${OPERION_CELERY_PASSWORD:-CHANGE_ME_CELERY_PASSWORD}
+      POSTGRES_PASSWORD: ${OPERION_POSTGRES_PASSWORD}
+      OPERION_CELERY_PASSWORD: ${OPERION_CELERY_PASSWORD}
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/10-init-celery-user.sh:ro
@@ -53,7 +53,7 @@ services:
       - .env.production
     environment:
       OPERION_DB_ENGINE: postgresql
-      OPERION_POSTGRES_DSN: postgresql://operion:${OPERION_POSTGRES_PASSWORD:-operion_secret}@db:5432/operion
+      OPERION_POSTGRES_DSN: postgresql://operion:${OPERION_POSTGRES_PASSWORD}@db:5432/operion
       OPERION_REDIS_URL: ${OPERION_REDIS_URL:-redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/0}
       OPERION_REDIS_PASSWORD: ${OPERION_REDIS_PASSWORD:-}
       OPERION_CELERY_BROKER: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/1
@@ -84,7 +84,7 @@ services:
     environment:
       OPERION_DB_ENGINE: postgresql
       # Celery worker uses a RESTRICTED database user with only SELECT/INSERT/UPDATE
-      OPERION_POSTGRES_DSN: postgresql://operion_celery:${OPERION_CELERY_PASSWORD:-CHANGE_ME_CELERY_PASSWORD}@db:5432/operion
+      OPERION_POSTGRES_DSN: postgresql://operion_celery:${OPERION_CELERY_PASSWORD}@db:5432/operion
       OPERION_REDIS_URL: ${OPERION_REDIS_URL:-redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/0}
       OPERION_REDIS_PASSWORD: ${OPERION_REDIS_PASSWORD:-}
       OPERION_CELERY_BROKER: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/1
@@ -111,7 +111,7 @@ services:
       - .env.production
     environment:
       OPERION_DB_ENGINE: postgresql
-      OPERION_POSTGRES_DSN: postgresql://operion_celery:${OPERION_CELERY_PASSWORD:-CHANGE_ME_CELERY_PASSWORD}@db:5432/operion
+      OPERION_POSTGRES_DSN: postgresql://operion_celery:${OPERION_CELERY_PASSWORD}@db:5432/operion
       OPERION_REDIS_URL: ${OPERION_REDIS_URL:-redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/0}
       OPERION_CELERY_BROKER: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/1
       OPERION_CELERY_RESULT: redis://${OPERION_REDIS_PASSWORD:+:${OPERION_REDIS_PASSWORD}@}redis:6379/2
@@ -137,7 +137,7 @@ services:
       OPERION_DB_PORT: 5432
       OPERION_DB_NAME: operion
       OPERION_DB_USER: operion
-      OPERION_DB_PASSWORD: ${OPERION_POSTGRES_PASSWORD:-operion_secret}
+      OPERION_DB_PASSWORD: ${OPERION_POSTGRES_PASSWORD}
       OPERION_BACKUP_DIR: /backups
       OPERION_BACKUP_RETENTION_DAYS: 30
       # R2 backup (uncomment when R2 bucket is created):

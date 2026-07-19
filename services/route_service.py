@@ -237,7 +237,7 @@ class GraphHopperClient:
             "profile": profile,
             "points": [[float(lon), float(lat)] for lat, lon in points],
             "points_encoded": False,
-            "instructions": False,
+            "instructions": True,
             "calc_points": True,
         }
         if custom_model is not None:
@@ -330,6 +330,26 @@ class GraphHopperClient:
         return geometry
 
     @staticmethod
+    def _parse_instructions(path: dict) -> list[dict]:
+        """Extract turn-by-turn instructions from GraphHopper response."""
+        raw_instructions = path.get("instructions")
+        if not raw_instructions or not isinstance(raw_instructions, list):
+            return []
+
+        parsed = []
+        for i, inst in enumerate(raw_instructions):
+            parsed.append({
+                "text": inst.get("text", ""),
+                "distance_meters": inst.get("distance", 0),
+                "time_seconds": inst.get("time", 0) / 1000.0 if inst.get("time") else 0,
+                "sign": inst.get("sign", 0),
+                "interval_start": inst.get("interval_start", 0) if "interval" in inst else None,
+                "interval_end": inst.get("interval_end", 0) if "interval" in inst else None,
+                "point_index": i,
+            })
+        return parsed
+
+    @staticmethod
     def _build_route_result(path: dict, points: list, elapsed: float,
                             avoid, use_post: bool, meta: dict,
                             data: dict) -> dict:
@@ -345,6 +365,7 @@ class GraphHopperClient:
             "distance_km": distance_km,
             "duration_min": duration_min,
             "geometry": geometry,
+            "instructions": GraphHopperClient._parse_instructions(path),
             "points_count": len(points),
             "request_time_s": elapsed,
             "graphhopper_response": data,
@@ -379,7 +400,7 @@ class GraphHopperClient:
             "profile": profile,
             "point": [format_point_param(lat, lon) for lat, lon in points],
             "points_encoded": "false",
-            "instructions": "false",
+            "instructions": "true",
             "calc_points": "true",
             "type": "json",
         }

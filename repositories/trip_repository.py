@@ -19,6 +19,7 @@ class TripRepository(BaseRepository):
         "special_agreements", "carriage_payer", "documents_attached", "place_of_loading",
         "place_of_loading_date", "adr_info_json", "cmr_status", "cmr_remarks",
         "company_id",
+        "source", "source_provider_id", "source_reference_id",
     ]
     COLUMNS_CMR_COUNTER = ["id", "year", "sequence_number"]
 
@@ -109,9 +110,12 @@ class TripRepository(BaseRepository):
                 self.commit_transaction()
                 break
             except Exception as e:
-                self.rollback_transaction()
+                try:
+                    self.rollback_transaction()
+                except Exception:
+                    pass
                 if attempt < 2:
-                    time.sleep(0.1)
+                    time.sleep(0.1 * (attempt + 1))  # exponential backoff
                     continue
                 logger = __import__('logging').getLogger(__name__)
                 logger.warning("cmr_counter DB error after 3 retries: %s", e)
@@ -160,10 +164,10 @@ class TripRepository(BaseRepository):
 
     # ── Domain-specific queries ───────────────────────────────────────
 
-    def get_by_driver_id(self, driver_id: int) -> List[Dict[str, Any]]:
+    def get_by_driver_id(self, driver_id: int, limit: int = 500) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC",
-            (driver_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            (driver_id,) + self._company_params() + (limit,),
         )
 
     def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
@@ -426,7 +430,10 @@ class TripRepository(BaseRepository):
         window_days: int = 14,
         limit: int = 25,
     ) -> List[Dict[str, Any]]:
-        """Return trips whose start_date is within ±window_days of target_date."""
+        """Return trips whose start_date is within ±window_days of target_date.
+
+        Sorted by date proximity in Python to support both SQLite and PostgreSQL.
+        """
         from datetime import datetime, timedelta
         try:
             anchor = datetime.strptime(target_date[:10], "%Y-%m-%d")
@@ -434,13 +441,22 @@ class TripRepository(BaseRepository):
             return self.get_recent_trips_for_matching()
         start = (anchor - timedelta(days=window_days)).strftime("%Y-%m-%d")
         end = (anchor + timedelta(days=window_days)).strftime("%Y-%m-%d")
-        return self._fetchall(
+        rows = self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
             f"{self._company_filter()} "
-            "ORDER BY ABS(JULIANDAY(start_date) - JULIANDAY(?)) ASC LIMIT ?",
-            (start, end) + self._company_params() + (target_date, limit),
+            "ORDER BY id DESC",
+            (start, end) + self._company_params(),
         )
+        # Sort by proximity in Python (portable across DB engines)
+        def _proximity(row: Dict[str, Any]) -> float:
+            try:
+                row_date = datetime.strptime(str(row.get("start_date", ""))[:10], "%Y-%m-%d")
+                return abs((row_date - anchor).total_seconds())
+            except (ValueError, TypeError):
+                return float("inf")
+        rows.sort(key=_proximity)
+        return rows[:limit]
 
     def get_by_client_name_fuzzy(
         self,

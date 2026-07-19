@@ -57,7 +57,7 @@ class ClientService:
 
     # ── New typed CRUD methods ──────────────────────────────────────────────
 
-    def create(self, request, user_id=None, **kwargs):
+    def create(self, request=None, user_id=None, company_id=None, **kwargs):
         """Create a new client.
 
         New API (preferred)::
@@ -89,12 +89,21 @@ class ClientService:
             DeprecationWarning,
             stacklevel=2,
         )
-        name = request
+        name = request or kwargs.pop("name", None)
+        if name is None:
+            raise ValueError("name is required for legacy create()")
         data: dict[str, Any] = {"name": name}
-        data.update(kwargs)
+        # Only pass columns the repository supports (the Pydantic schema may
+        # contain fields like ``city`` and ``company_code`` that are not in
+        # the DB table — see ClientCreateRequest/ClientRepository.COLUMNS).
+        allowed = set(self._repo.COLUMNS) if hasattr(self._repo, "COLUMNS") else set()
+        if allowed:
+            data.update((k, v) for k, v in kwargs.items() if k in allowed)
+        else:
+            data.update(kwargs)
         return self._repo.create(data)
 
-    def update(self, client_id, request=None, user_id=None, **kwargs):
+    def update(self, client_id, request=None, user_id=None, company_id=None, **kwargs):
         """Update an existing client.
 
         New API (preferred)::
@@ -183,7 +192,7 @@ class ClientService:
 
     # ── Contact management ─────────────────────────────────────────────────
 
-    def add_contact(self, client_id, contact=None, user_id=None, **kwargs):
+    def add_contact(self, client_id, contact=None, user_id=None, company_id=None, **kwargs):
         """Add a contact to a client.
 
         New API (preferred)::
@@ -233,11 +242,11 @@ class ClientService:
 
     # ── Existing methods (kept as-is) ───────────────────────────────────────
 
-    def get_by_id(self, client_id: int) -> Optional[dict[str, Any]]:
+    def get_by_id(self, client_id: int, company_id=None) -> Optional[dict[str, Any]]:
         """Legacy: returns a raw dict. Prefer :meth:`get` for typed results."""
         return self._repo.get_by_id(client_id)
 
-    def get_all(self, include_inactive: bool = False) -> list[dict[str, Any]]:
+    def get_all(self, include_inactive: bool = False, company_id=None) -> list[dict[str, Any]]:
         """Legacy: returns raw dicts. Prefer :meth:`list_all` for typed results."""
         return self._repo.get_all(include_inactive=include_inactive)
 
@@ -247,13 +256,13 @@ class ClientService:
     def search(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
         return self._repo.search(query, limit=limit)
 
-    def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200) -> list[dict[str, Any]]:
+    def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200, company_id=None) -> list[dict[str, Any]]:
         return self._repo.search_advanced(query, include_inactive=include_inactive, limit=limit)
 
-    def deactivate(self, client_id: int) -> None:
+    def deactivate(self, client_id: int, company_id=None) -> None:
         self._repo.deactivate(client_id)
 
-    def get_trip_count(self, client_id: int) -> int:
+    def get_trip_count(self, client_id: int, company_id=None) -> int:
         return self._repo.get_trip_count(client_id)
 
     def get_top_clients(self, limit: int = 5) -> list[dict[str, Any]]:
@@ -277,7 +286,7 @@ class ClientService:
 
     # ── Dashboard & queries ─────────────────────────────────────────────
 
-    def get_client_dashboard(self, client_id: int) -> dict[str, Any]:
+    def get_client_dashboard(self, client_id: int, company_id=None) -> dict[str, Any]:
         client = self._repo.get_by_id(client_id)
         if not client:
             return {}
@@ -303,13 +312,13 @@ class ClientService:
             "tags": tags,
         }
 
-    def get_client_trips(self, client_id: int, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
+    def get_client_trips(self, client_id: int, company_id=None, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
         return self._repo.get_trips(client_id, limit=limit, offset=offset)
 
-    def get_client_invoices(self, client_id: int, limit: int = 100) -> list[dict[str, Any]]:
+    def get_client_invoices(self, client_id: int, company_id=None, limit: int = 100) -> list[dict[str, Any]]:
         return self._repo.get_invoices(client_id, limit=limit)
 
-    def get_client_revenue_history(self, client_id: int, months: int = 12) -> list[dict[str, Any]]:
+    def get_client_revenue_history(self, client_id: int, company_id=None, months: int = 12) -> list[dict[str, Any]]:
         return self._repo.get_revenue_history(client_id, months=months)
 
     def get_outstanding_invoices(self, client_id: int) -> list[dict[str, Any]]:
@@ -320,7 +329,7 @@ class ClientService:
 
     # ── Contact management (legacy) ─────────────────────────────────────
 
-    def get_contacts(self, client_id: int) -> list[dict[str, Any]]:
+    def get_contacts(self, client_id: int, company_id=None) -> list[dict[str, Any]]:
         return self._contact_repo.get_by_client(client_id)
 
     def update_contact(self, contact_id: int, **kwargs) -> None:
@@ -334,11 +343,11 @@ class ClientService:
 
     # ── Tag management ─────────────────────────────────────────────────
 
-    def get_tags(self, client_id: int) -> list[str]:
+    def get_tags(self, client_id: int, company_id=None) -> list[str]:
         rows = self._tag_repo.get_by_client(client_id)
         return [r["tag"] for r in rows]
 
-    def add_tag(self, client_id: int, tag: str) -> None:
+    def add_tag(self, client_id: int, tag: str, company_id=None) -> None:
         self._tag_repo.add(client_id, tag)
 
     def remove_tag(self, client_id: int, tag: str) -> None:
@@ -349,7 +358,7 @@ class ClientService:
 
     # ── Payment tracking ────────────────────────────────────────────────
 
-    def get_payment_summary(self, client_id: int) -> dict[str, Any]:
+    def get_payment_summary(self, client_id: int, company_id=None) -> dict[str, Any]:
         row = self._inv_repo.get_payment_summary(client_id)
         if not row:
             return {

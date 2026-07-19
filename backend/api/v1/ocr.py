@@ -16,8 +16,9 @@ def run_ocr(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
+    company_id = current_user.get("company_id", 0)
     try:
-        doc = service.get_by_id(request.document_id)
+        doc = service.get_by_id(request.document_id, company_id=company_id)
     except Exception:
         raise HTTPException(status_code=500, detail="OCR service error")
     if not doc:
@@ -36,8 +37,9 @@ def get_ocr_status(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
+    company_id = current_user.get("company_id", 0)
     try:
-        doc = service.get_by_id(doc_id)
+        doc = service.get_by_id(doc_id, company_id=company_id)
     except Exception:
         raise HTTPException(status_code=500, detail="OCR service error")
     if not doc:
@@ -57,9 +59,10 @@ def run_ocr_batch(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
+    company_id = current_user.get("company_id", 0)
     results: List[Dict[str, Any]] = []
     for doc_id in doc_ids:
-        doc = service.get_by_id(doc_id)
+        doc = service.get_by_id(doc_id, company_id=company_id)
         if doc:
             results.append(
                 OcrResult(

@@ -12,7 +12,7 @@ import csv
 import json
 import logging
 from datetime import datetime, timedelta
-from typing import Any
+from typing import Any, TYPE_CHECKING
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtGui import QAction, QColor
@@ -35,6 +35,10 @@ from PySide6.QtWidgets import (
 from repositories.driver_repository import DriverRepository
 from services.driver_truck_service import DriverTruckService
 from services.i18n import t
+
+if TYPE_CHECKING:
+    from repositories.driver_repository import DriverRepository
+from ui.mode_guard import ConnectionMode, detect_mode, guard_local_access
 from services.operations.event_bus import (
     DRIVER_CREATED,
     DRIVER_DELETED,
@@ -174,6 +178,11 @@ class QtDriverFormDialog(QDialog):
             self._truck_ids = [""]
             try:
                 from repositories.fleet_repository import FleetRepository
+
+                # Guard: local-only operation (FleetRepository instantiation)
+                if self._repo is not None:
+                    mode = detect_mode(self._repo.db, None)
+                    guard_local_access(mode, "Driver form — truck assignment dropdown")
 
                 fleet_repo = FleetRepository(self._repo.db)
                 for tr in fleet_repo.get_active_trucks():
@@ -334,6 +343,10 @@ class QtDriverManager(BaseView):
         self._trip_repo = trip_svc
         self._dta_service = dta_svc
         self._tacho_activity_repo = tacho_repo
+
+        # Mode guard — local-only view (no api_client param)
+        self._mode = detect_mode(db, None)  # no api_client — always local
+        guard_local_access(self._mode, "Driver manager")
 
         self._kpi_value_labels: dict[str, MonoLabel] = {}
         self._kpi_strip_layout: QHBoxLayout | None = None
@@ -577,13 +590,18 @@ class QtDriverManager(BaseView):
                     driver_trip_ids.add(did)
 
             rows: list[dict[str, Any]] = []
+            unassigned_count = 0
             for d in drivers:
                 did = d["id"]
-                truck_text = (
+                truck_plate = (
                     self._dta_service.get_truck_plate_for_driver(did)
                     if self._dta_service
                     else ""
-                ) or t("driver_manager.unassigned")
+                )
+                is_unassigned = not truck_plate
+                if is_unassigned:
+                    unassigned_count += 1
+                truck_text = truck_plate or t("driver_manager.unassigned")
 
                 salary = float(d.get("monthly_salary") or 0)
                 is_active = d.get("is_active", 1)
@@ -629,7 +647,7 @@ class QtDriverManager(BaseView):
             if "driver_manager.kpi_expiring" in self._kpi_value_labels:
                 self._kpi_value_labels["driver_manager.kpi_expiring"].setText(str(expiring))
             if "driver_manager.kpi_unassigned" in self._kpi_value_labels:
-                self._kpi_value_labels["driver_manager.kpi_unassigned"].setText(str(total - active_count))
+                self._kpi_value_labels["driver_manager.kpi_unassigned"].setText(str(unassigned_count))
 
             # ── Grey out inactive rows ────────────────────────────────────
             muted = QColor(COLORS["text_muted"])
@@ -895,9 +913,9 @@ class QtDriverManager(BaseView):
 
     def _show_driver_tacho_detail(self) -> None:
         """Display a tachograph activity summary for the selected driver."""
-        # Clear previous content
-        for i in reversed(range(self._tacho_layout.count())):
-            item = self._tacho_layout.itemAt(i)
+        # Clear previous content — use takeAt to properly remove layout items
+        while self._tacho_layout.count():
+            item = self._tacho_layout.takeAt(0)
             if item is not None and item.widget() is not None:
                 item.widget().deleteLater()
 

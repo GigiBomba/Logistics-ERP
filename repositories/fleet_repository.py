@@ -148,11 +148,13 @@ class FleetRepository(BaseRepository):
         return [r["id"] for r in rows]
 
     def get_expiring_insurance(self, days_ahead: int = 30) -> List[Dict[str, Any]]:
+        from datetime import datetime, timedelta
+        target_date = (datetime.now() + timedelta(days=days_ahead)).strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE insurance_expiry IS NOT NULL AND insurance_expiry != ''"
-            " AND insurance_expiry <= date('now', '+' || ? || ' days')"
+            " AND insurance_expiry <= ?"
             f" {self._company_filter()}",
-            (days_ahead,) + self._company_params(),
+            (target_date,) + self._company_params(),
         )
 
     # ── Maintenance Records CRUD ─────────────────────────────────────
@@ -292,7 +294,7 @@ class FleetRepository(BaseRepository):
 
     def get_top_maintained_trucks(self, limit: int = 5) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT truck_id, COALESCE(SUM(cost), 0) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY truck_id ORDER BY total LIMIT ?",
+            f"SELECT truck_id, COALESCE(SUM(cost), 0) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY truck_id ORDER BY total DESC LIMIT ?",
             self._company_params() + (limit,),
         )
 
@@ -382,29 +384,57 @@ class FleetRepository(BaseRepository):
 
     def count_overdue_schedules(self) -> int:
         """Return count of active schedules that are overdue based on km, months, or fixed expiry."""
-        from datetime import datetime
+        from datetime import datetime, timedelta
+        import calendar
         today = datetime.now().strftime("%Y-%m-%d")
-        row = self._fetchone(
-            f"""SELECT COUNT(*) AS cnt
+
+        rows = self._fetchall(
+            f"""SELECT s.*, t.mileage AS current_km
                 FROM {self.TABLE_MAINT_SCHEDULES} s
                 LEFT JOIN trucks t ON t.id = s.truck_id
-                WHERE s.active = 1
-                AND (
-                    (s.interval_km IS NOT NULL AND s.last_done_km IS NOT NULL
-                     AND COALESCE(t.mileage, 0) >= s.last_done_km + s.interval_km)
-                    OR (s.interval_months IS NOT NULL AND s.last_done_date IS NOT NULL
-                        AND DATE(s.last_done_date, '+' || s.interval_months || ' months') <= ?)
-                    OR (s.fixed_expiry_date IS NOT NULL AND s.fixed_expiry_date != ''
-                        AND s.fixed_expiry_date <= ?)
-                )
-                {self._company_filter("s")}""",
-            (today, today) + self._company_params(),
+                WHERE s.active = 1 {self._company_filter("s")}""",
+            self._company_params(),
         )
-        return row["cnt"] if row else 0
+
+        def _add_months(source_date, months):
+            total_months = source_date.month - 1 + months
+            year = source_date.year + total_months // 12
+            month = total_months % 12 + 1
+            max_day = calendar.monthrange(year, month)[1]
+            day = min(source_date.day, max_day)
+            return source_date.replace(year=year, month=month, day=day)
+
+        count = 0
+        for r in rows:
+            # Check km-based overdue
+            current_km = r.get("current_km") or 0
+            last_done_km = r.get("last_done_km")
+            interval_km = r.get("interval_km")
+            if interval_km is not None and last_done_km is not None and current_km >= last_done_km + interval_km:
+                count += 1
+                continue
+            # Check month-based overdue
+            interval_months = r.get("interval_months")
+            last_done_date = r.get("last_done_date")
+            if interval_months is not None and last_done_date:
+                try:
+                    last_done = datetime.strptime(last_done_date[:10], "%Y-%m-%d")
+                    due_date = _add_months(last_done, int(interval_months))
+                    if due_date.strftime("%Y-%m-%d") <= today:
+                        count += 1
+                        continue
+                except (ValueError, TypeError):
+                    pass
+            # Check fixed expiry
+            fixed_expiry = r.get("fixed_expiry_date")
+            if fixed_expiry and fixed_expiry <= today:
+                count += 1
+                continue
+        return count
 
     # ── Analytics Queries ────────────────────────────────────────────
 
-    def get_maintenance_cost_truck_monthly(self, date_from: str) -> List[Dict[str, Any]]:
+    def get_maintenance_cost_truck_monthly(self, date_from: str, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT truck_id,
                        substr(date, 1, 7) AS ym,
@@ -416,7 +446,7 @@ class FleetRepository(BaseRepository):
             (date_from,) + self._company_params(),
         )
 
-    def get_maintenance_cost_monthly(self, date_from: str) -> List[Dict[str, Any]]:
+    def get_maintenance_cost_monthly(self, date_from: str, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
@@ -427,7 +457,7 @@ class FleetRepository(BaseRepository):
             (date_from,) + self._company_params(),
         )
 
-    def get_maintenance_truck_summary(self, date_from: str) -> List[Dict[str, Any]]:
+    def get_maintenance_truck_summary(self, date_from: str, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT truck_id,
                        COALESCE(SUM(cost), 0) AS total_ytd,
@@ -440,7 +470,7 @@ class FleetRepository(BaseRepository):
             (date_from,) + self._company_params(),
         )
 
-    def get_maintenance_most_expensive_category(self, date_from: str) -> List[Dict[str, Any]]:
+    def get_maintenance_most_expensive_category(self, date_from: str, company_id=None) -> List[Dict[str, Any]]:
         rows = self._fetchall(
             f"""SELECT truck_id, maintenance_type, COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}

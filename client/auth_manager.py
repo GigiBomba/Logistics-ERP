@@ -19,6 +19,7 @@ import logging
 from typing import Optional
 
 from client.auth import Auth
+from services.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -205,12 +206,9 @@ def _show_driver_denied(parent: object = None) -> None:
         from PySide6.QtWidgets import QMessageBox  # type: ignore[import-untyped]
         msg = QMessageBox(parent)  # type: ignore[arg-type]
         msg.setIcon(QMessageBox.Warning)
-        msg.setWindowTitle("Access Denied")
-        msg.setText("Driver accounts cannot access this application.")
-        msg.setInformativeText(
-            "Please contact your manager to request a dispatcher "
-            "or manager account if you need application access."
-        )
+        msg.setWindowTitle(t("auth.access_denied"))
+        msg.setText(t("auth.driver_no_access"))
+        msg.setInformativeText(t("auth.driver_no_access_info"))
         msg.exec()
     except Exception:
         logger.warning("Driver access denied — could not show dialog.")

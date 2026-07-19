@@ -1,0 +1,31 @@
+﻿Traceback (most recent call last):
+  File "<string>", line 35, in <module>
+  File "C:\Users\Bonjo\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+383
+=== about ===
+  about.team_desc = 'Our team combines decades of experience in logistics, software engineering, and
+=== admin ===
+  admin.latency_ms = '{value} ms'
+  admin.password_placeholder = '????????????'
+  admin.query_placeholder = 'SELECT * FROM table LIMIT 100'
+=== analytics ===
+  analytics.col_km = 'KM'
+  analytics.doc_cmrs = 'CMRs'
+  analytics.group_total = 'Total'
+  analytics.insufficient_route_data = 'Insufficient data for chart ? add more trips'
+  analytics.kpi_cmrs = 'CMRs'
+=== app ===
+  app.subtitle = 'ERP'
+=== auth ===
+  auth.company_placeholder = 'Acme Inc.'
+  auth.login_brand = 'Operion'
+  auth.login_title = 'Sign In ? Operion ERP'
+  auth.register_brand = 'Operion'
+  auth.register_title = 'Create Account ? Operion ERP'
+=== automation ===
+  automation.label_document = 'Doc #{}'
+  automation.mode_simple = 'Simple'
+  automation.no_match = 'No trip match ? run finished without attachment'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2192' in position 45: character maps to <undefined>

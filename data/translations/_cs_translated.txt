@@ -1,0 +1,2466 @@
+about.page_header	About Operion
+about.page_header_desc	We're building the future of enterprise logistics software.
+about.page_title	About - Operion ERP
+about.story_p1	Operion was founded in 2024 with a clear mission: make enterprise-grade logistics software accessible to fleets of all sizes.
+about.story_p2	Our team combines decades of experience in logistics, software engineering, and AI to build tools that solve real-world problems.
+about.story_p3	Today, Operion powers fleets across Europe, helping them plan smarter, dispatch faster, and grow bigger.
+about.story_title	Our Story
+about.team_desc	Our team combines decades of experience in logistics, software engineering, and AI.
+about.team_title	Our Team
+about.value_customer_desc	Every feature we build starts with real customer needs and feedback.
+about.value_customer_title	Customer First
+about.value_innovation_desc	We invest heavily in R&D to bring cutting-edge AI and optimization to logistics.
+about.value_innovation_title	Innovation
+about.value_partnership_desc	We don't just sell software. We partner with our customers for their success.
+about.value_partnership_title	Partnership
+about.value_reliability_desc	Your operations depend on our software. We take that responsibility seriously.
+about.value_reliability_title	Reliability
+about.value_security_desc	Enterprise-grade encryption, GDPR compliance, and regular security audits.
+about.value_security_title	Security
+about.value_transparency_desc	Clear pricing, honest communication, and no hidden fees.
+about.value_transparency_title	Transparency
+about.values_desc	The principles that guide every decision we make.
+about.values_title	Our Values
+admin.active_tasks	Active Tasks
+admin.api_version_label	API Version:
+admin.back	Back
+admin.cache_cleared	Cache cleared
+admin.cancel	Cancel
+admin.celery_status	Celery Status
+admin.clear_cache	Clear Cache
+admin.config_flags	Configuration
+admin.connected_label	Connected:
+admin.db_engine_label	DB Engine:
+admin.db_inspector	Database Inspector
+admin.db_path_label	DB Path
+admin.debug_mode_label	Debug Mode:
+admin.diagnostics	Diagnostics
+admin.doc_stats	Document Statistics
+admin.email	Email
+admin.email_invalid	Please enter a valid email address.
+admin.email_placeholder	admin@example.com
+admin.email_prompt	Enter your email
+admin.email_required	Please enter your email address.
+admin.environment_label	Environment:
+admin.execute_query	Execute
+admin.forbidden	Access denied
+admin.health	Health
+admin.hit_rate	Hit Rate
+admin.invalid_query	Invalid query
+admin.keys_count	Keys
+admin.latency	Latency
+admin.latency_ms	{value} ms
+admin.login_button	Login
+admin.login_failed	Invalid email or password.
+admin.login_required	Admin authentication required
+admin.login_title	Admin Login
+admin.memory_used	Memory Used
+admin.next	Next
+admin.no_data	No data
+admin.ocr_coverage	OCR Coverage
+admin.offline	Server unreachable
+admin.orphan_docs	Orphan Documents
+admin.password	Password
+admin.password_placeholder	············
+admin.password_required	Please enter your password.
+admin.platform_label	Platform
+admin.python_version_label	Python Version
+admin.query_error	Query error
+admin.query_placeholder	SELECT * FROM table LIMIT 100
+admin.queue_size	Queue Size
+admin.redis_status	Redis Status
+admin.refresh	Refresh
+admin.required_fields	Email and password are required.
+admin.rows	{count} rows
+admin.scheduled_tasks	Scheduled
+admin.storage_used	Storage Used
+admin.system_info	System Info
+admin.tab_title	Admin Panel
+admin.table_selector	Select table
+admin.total_docs	Total Documents
+admin.unavailable	Unavailable
+admin.workers_online	Workers Online
+alerts.none_active	Žádné aktivní
+alerts.panel_title	Panel upozornění
+alerts.severity_critical	Critical
+alerts.severity_info	Info
+alerts.severity_warning	Warning
+analytics.active	Active
+analytics.active_clients_trend	Active Clients Trend
+analytics.active_vs_inactive	Active vs Inactive
+analytics.aging_31_60	31-60 days
+analytics.aging_61_90	61-90 days
+analytics.aging_current	Current (0-30d)
+analytics.aging_overdue	90+ days
+analytics.all_countries	All Countries
+analytics.apply	Apply
+analytics.avg_profit_trend	Net Profit Trend
+analytics.category_distribution	Category Distribution
+analytics.chart_profit_expenses_ratio	Poměr Zisk / Náklady (Celkem)
+analytics.chart_profit_per_driver	Zisk na řidiče
+analytics.chart_revenue_vs_expenses	Výnosy vs Náklady (Posledních 6 měsíců)
+analytics.chart_top_trucks	Top 10 vozidel (Čistý zisk)
+analytics.client_concentration	Revenue Concentration
+analytics.client_growth	New Clients per Month
+analytics.client_insight	Insight: {client} generates {rev_pct}% of revenue but only {profit_pct}% of profit.
+analytics.client_payment_delay	Average Payment Delay (Days)
+analytics.client_payment_delay_full	Average Payment Delay (Days)
+analytics.client_profit	Profit by Client
+analytics.client_rest	Rest
+analytics.client_retention	Client Retention
+analytics.client_revenue	Revenue by Client
+analytics.client_revenue_per_client	Revenue per Client Trend
+analytics.client_subtitle	Client revenue, payment behavior, and growth
+analytics.col_driver	Driver
+analytics.col_km	KM
+analytics.col_profit_km	Profit/KM
+analytics.col_route	Route
+analytics.col_trips	Trips
+analytics.correlation_distribution	Correlation & Distribution
+analytics.cost_breakdown	Cost Breakdown
+analytics.cost_breakdown_route	Cost Breakdown
+analytics.cost_per_truck	Cost Per Truck
+analytics.country_corridors	Country Corridors
+analytics.country_revenue	Revenue by Country
+analytics.daily_activity	Daily Activity
+analytics.distance_distribution	Distance Distribution
+analytics.distance_km	Distance (km)
+analytics.distance_label	Distance (km)
+analytics.doc_actual_uploads	Actual Uploads
+analytics.doc_cmr_trend	CMR Generation Trend
+analytics.doc_cmrs	CMRs
+analytics.doc_distribution	Document Distribution
+analytics.doc_expected_uploads	Expected (Trips)
+analytics.doc_expires	Expires
+analytics.doc_expiring_header	{count} documents expiring within 30 days:
+analytics.doc_invoices	Invoices
+analytics.doc_no_expiring	No documents expiring within 30 days
+analytics.doc_other	Other
+analytics.doc_see_all	See all ({count})
+analytics.doc_type_breakdown	Document Type Breakdown
+analytics.doc_upload_trend	Monthly Uploads
+analytics.doc_upload_vs_expected	Document Uploads vs Expected
+analytics.document_aging	Document Aging
+analytics.document_growth	Document Growth
+analytics.document_subtitle	Document volume, trends, and expiration tracking
+analytics.driver_avg_profit_per_trip	Avg Profit per Trip
+analytics.driver_distance	Driver Distance
+analytics.driver_distance_distribution	Trip Distance Distribution
+analytics.driver_driving_hours	Driver Driving Hours
+analytics.driver_driving_rest_ratio	Driving vs Rest Hours
+analytics.driver_efficiency	Efficiency (Profit/km)
+analytics.driver_month_heatmap	Trips by Month x Driver
+analytics.driver_profit	Profit per Driver
+analytics.driver_profit_title	Driver Profit
+analytics.driver_profit_waterfall	Profit Breakdown (Top Driver)
+analytics.driver_ranking	Driver Ranking
+analytics.driver_rest_hours	Driver Rest Hours
+analytics.driver_subtitle	Driver performance, efficiency, and compliance
+analytics.driver_tacho	Tacho Violations (90 days)
+analytics.driver_trips	Trips Completed
+analytics.driver_unassigned_note	{count} trips without assigned driver (excluded)
+analytics.driver_utilization_score	Driver Utilization Score
+analytics.efficiency_trend	Efficiency Trend
+analytics.empty_state	V systému není dostatek dat pro vytvoření vizuální analytiky.
+Zadejte jízdy do historie.
+analytics.error	Chart Error
+analytics.expenses_label	Expenses
+analytics.expiring_by_type	Expiring by Type
+analytics.expiry_timeline	Expiry Timeline
+analytics.extra	Other
+analytics.extra_costs	Extra Costs
+analytics.financial_subtitle	Revenue, profit, margin, and cash flow trends
+analytics.fleet_fuel_efficiency	Fuel Efficiency (L/100km)
+analytics.fleet_profitability	Truck Profitability
+analytics.fleet_subtitle	Truck utilization, fuel efficiency, and maintenance alerts
+analytics.fleet_utilization	Truck Utilization (Trips)
+analytics.from_label	From
+analytics.fuel	Fuel
+analytics.fuel_cost_trend	Fuel Cost Trend
+analytics.fuel_efficiency_trend	Fuel Efficiency Trend
+analytics.geographic_analysis	Geographic Analysis
+analytics.group_clients	Clients
+analytics.group_others	Others
+analytics.group_relevant	Relevant
+analytics.group_top3	Top 3
+analytics.group_total	Total
+analytics.group_trips	Trips
+analytics.header	POKROČILÁ ANALÝZA VÝKONNOSTI VOZOVÉHO PARKU
+analytics.idle	Idle
+analytics.idle_vs_active	Idle Vs Active
+analytics.inactive	Inactive
+analytics.insufficient_route_data	Insufficient data for chart — add more trips
+analytics.invalid_date_format	Invalid Date Format
+analytics.invalid_date_order	Invalid date range
+analytics.invoice_aging	Outstanding Invoices by Age
+analytics.invoiced	Invoiced
+analytics.invoiced_vs_paid	Invoiced Vs Paid
+analytics.kpi_active_drivers	Active Drivers
+analytics.kpi_active_trucks	Active Trucks
+analytics.kpi_avg_consumption	Avg Consumption
+analytics.kpi_avg_margin	Current Margin
+analytics.kpi_avg_payment_delay	Avg Payment Delay
+analytics.kpi_avg_profit_km	Avg Profit/km
+analytics.kpi_avg_profit_per_driver	Avg Profit/Driver
+analytics.kpi_avg_route_profit	Avg Profit/Route
+analytics.kpi_avg_trips	Kpi Avg Trips
+analytics.kpi_avg_trips_per_driver	Avg Trips/Driver
+analytics.kpi_cmrs	CMRs
+analytics.kpi_cost_per_km	Avg Cost/km
+analytics.kpi_dso	DSO (Days)
+analytics.kpi_dso_subtitle	Avg collection period
+analytics.kpi_expiring	Expiring
+analytics.kpi_invoices	Invoices
+analytics.kpi_maint_alerts	Maint. Alerts
+analytics.kpi_most_frequent	Most Frequent
+analytics.kpi_new_clients	New Clients
+analytics.kpi_revenue_concentration	Concentration
+analytics.kpi_top_client	Top Client
+analytics.kpi_top_client_rev	Top Client
+analytics.kpi_top_country	Top Country
+analytics.kpi_top_country_route	Top Country
+analytics.kpi_top_driver	Kpi Top Driver
+analytics.kpi_top_route	Top Route
+analytics.kpi_total_clients	Total Clients
+analytics.kpi_total_docs	Total Docs
+analytics.kpi_total_drivers	Kpi Total Drivers
+analytics.kpi_total_km	Total KM
+analytics.kpi_total_profit	Total Profit
+analytics.kpi_total_revenue	Total Revenue
+analytics.kpi_total_routes	Total Routes
+analytics.kpi_total_violations	Kpi Total Violations
+analytics.kpi_unassigned_trips	Unassigned Trips
+analytics.kpi_unique_routes	Unique Routes
+analytics.last_quarter	Last quarter
+analytics.legend_expenses	Náklady
+analytics.legend_revenue	Výnosy
+analytics.maintenance_cost	Maintenance Cost
+analytics.mileage_ranking	Mileage Ranking
+analytics.monthly_trip_volume	Monthly Trip Volume
+analytics.months	months
+analytics.net_profit	Net Profit (€)
+analytics.net_profit_label	Net Profit (€)
+analytics.no_data	No revenue data yet
+analytics.no_driver_data	No assigned driver data for this period.
+analytics.no_financial_data	Žádná finanční data
+analytics.outstanding	Outstanding
+analytics.paid	Paid
+analytics.payment_target	Target 30d
+analytics.period_1y	Last year
+analytics.period_30d	Last 30 days
+analytics.period_6m	Last 6 months
+analytics.period_90d	Last 90 days
+analytics.period_all	All time
+analytics.period_label	Period
+analytics.pie_expenses	Náklady
+analytics.pie_profit	Zisk
+analytics.profit_label	Profit
+analytics.profit_margin_per_client	Profit Margin per Client
+analytics.profit_ratio_title	Profit Margin
+analytics.profit_vs_distance	Profit Vs Distance
+analytics.quarterly_revenue	Quarterly Revenue
+analytics.refresh_tooltip	Refresh data
+analytics.render_error	Chyba při vykreslování grafů: {}
+analytics.revenue_expenses_title	Revenue vs Expenses
+analytics.revenue_label	Revenue
+analytics.revenue_per_client_trend	Revenue Per Client Trend
+analytics.revenue_profit_trend	Revenue vs Profit Trend
+analytics.revenue_vs_profit	Revenue vs Profit
+analytics.revenue_vs_profit_scatter	Revenue Vs Profit Scatter
+analytics.route_count_month	Monthly Trip Volume
+analytics.route_country_profit_km	Country Profit per KM
+analytics.route_country_treemap	Revenue by Country
+analytics.route_frequency	Route Frequency
+analytics.route_fuel_per_km	Fuel Cost per KM
+analytics.route_length_trend	Route Length Trend
+analytics.route_performance	Route Performance
+analytics.route_profit_per_km	Profit per KM
+analytics.route_profitability	Most Profitable Routes
+analytics.route_subtitle	Route profitability and country corridor analysis
+analytics.safety_score	Safety Score
+analytics.salary	Salary
+analytics.section_client_composition	Client Composition
+analytics.section_client_geographic	Client & Geographic
+analytics.section_client_insights	Client Insights
+analytics.section_client_performance	Client Performance
+analytics.section_client_trends	Client Trends
+analytics.section_cost_maintenance	Cost & Maintenance
+analytics.section_document_breakdown	Document Breakdown
+analytics.section_document_overview	Document Overview
+analytics.section_driver_activity	Driver Activity Timeline
+analytics.section_driver_compliance	Compliance & Safety
+analytics.section_driver_distribution	Distribution & Insights
+analytics.section_driver_metrics	Section Driver Metrics
+analytics.section_driver_performance	Section Driver Performance
+analytics.section_expiry_aging	Expiry & Aging
+analytics.section_financial_performance	Financial Performance
+analytics.section_financial_trends	Financial Trends
+analytics.section_fleet_composition	Fleet Composition
+analytics.section_fleet_performance	Fleet Performance
+analytics.section_growth_trends	Growth & Trends
+analytics.section_invoice_aging	Invoice Aging
+analytics.section_payment_timeline	Payment Behavior
+analytics.section_revenue_trend	Revenue & Profit Trend
+analytics.section_route_performance	Route Performance
+analytics.section_volume_cost	Volume & Cost
+analytics.section_volume_efficiency	Volume & Efficiency
+analytics.section_volume_safety	Section Volume Safety
+analytics.subtitle	Fleet performance analytics and KPIs
+analytics.tab_client	Clients
+analytics.tab_document	Documents
+analytics.tab_driver	Drivers
+analytics.tab_financial	Financial
+analytics.tab_fleet	Fleet
+analytics.tab_route	Routes
+analytics.title	Analytika Business Intelligence
+analytics.to_label	To
+analytics.toll	Toll
+analytics.top_countries_profit	Top Countries by Profit
+analytics.top_countries_volume	Top Countries by Volume
+analytics.top_trucks_title	Top Trucks by Revenue
+analytics.total_costs	Total costs
+analytics.total_distance	Total Distance
+analytics.total_documents_trend	Total Documents Trend
+analytics.trip_count_trend	Trip Count Trend
+analytics.trip_status_distribution	Trip Status Distribution
+analytics.truck_age_distribution	Truck Age Distribution
+analytics.truck_year	Year
+analytics.trucks	Trucks
+analytics.upload_by_quarter	Upload by Quarter
+analytics.volume_trends	Volume & Trends
+analytics.volume_vs_revenue	Volume vs Revenue
+analytics.waterfall_fuel	Fuel
+analytics.waterfall_net	Net
+analytics.waterfall_other	Other
+analytics.waterfall_revenue	Revenue
+analytics.waterfall_salary	Salary
+analytics.waterfall_toll	Toll
+app.loading	Načítání...
+app.name	ERP LOGISTIKA
+app.subtitle	ERP
+app.title	Cashflow Manager v2.0 - Logistika
+auth.account_created	Account created successfully!
+auth.company_label	Company Name (optional)
+auth.company_placeholder	Acme Inc.
+auth.confirm_password_label	Confirm Password
+auth.confirm_password_placeholder	Repeat your password
+auth.create_account	Create account
+auth.create_account_failed	Failed to create account
+auth.creating_account	Creating account…
+auth.email_label	Email
+auth.email_placeholder	you@company.com
+auth.forgot_password	Forgot password?
+auth.has_account	Already have an account?
+auth.hide_password	Hide password
+auth.login_back	Back to home
+auth.login_brand	Operion
+auth.login_subtitle	Sign in to your Operion account
+auth.login_title	Sign In — Operion ERP
+auth.login_welcome	Welcome back
+auth.name_label	Full Name
+auth.name_placeholder	John Doe
+auth.no_account	Don't have an account?
+auth.password_label	Password
+auth.password_min_hint	At least 8 characters
+auth.password_placeholder	Enter your password
+auth.register_back	Back to home
+auth.register_brand	Operion
+auth.register_subtitle	Start your 14-day free trial
+auth.register_title	Create Account — Operion ERP
+auth.register_welcome	Create your account
+auth.show_password	Show password
+auth.sign_in	Sign in
+auth.sign_in_failed	Failed to sign in
+auth.sign_in_link	Sign in
+auth.sign_up_link	Sign up
+auth.signed_in_success	Signed in successfully!
+auth.signing_in	Signing in…
+auth.validation_invalid_email	Please enter a valid email
+auth.validation_name_min	Name must be at least 2 characters
+auth.validation_password_max	Password must be at most 72 characters
+auth.validation_password_min	Password must be at least 8 characters
+auth.validation_password_required	Password is required
+auth.validation_passwords_match	Passwords don't match
+automation.attachments_empty	Attachments Empty
+automation.body_label	Body:
+automation.browse_title	Browse Title
+automation.cancelled	Cancelled
+automation.confirm_delete_title	Delete this pipeline run and its processed file?
+automation.continue_to_email	Continue to Email
+automation.copy_run	Copy path
+automation.delete_run	🗑 Delete
+automation.detail_title	Select a run to view details
+automation.download_done	Package saved to:
+{path}
+automation.download_empty	No documents to package.
+automation.download_pdf	📄 Download Combined PDF
+automation.download_run	📥 Download
+automation.download_zip	📦 Download ZIP
+automation.draft_saved_title	Draft saved
+automation.drop_title	Drop images or PDFs here
+automation.email_title	Send Customer Package
+automation.err_bad_to	Email address is not valid.
+automation.err_database	Database error: {}
+automation.err_grouping	Grouping failed: {}
+automation.err_grouping_no_doc	Grouping produced no document
+automation.err_match_persist	Match persistence failed
+automation.err_matching	Matching failed: {}
+automation.err_no_to	Please enter a recipient address.
+automation.err_ocr	OCR failed: {}
+automation.err_ocr_persist	OCR persistence failed
+automation.err_package_failed	Failed to build the package. Try again.
+automation.err_processing	Processing failed: {}
+automation.err_read_input	Cannot read input: {}
+automation.err_standalone_failed	Failed to create standalone document. Check that the processed PDF exists on disk.
+automation.imported	Imported {} ({} bytes)
+automation.label_document	Doc #{}
+automation.label_extracted_fields	Extracted fields:
+automation.label_matched_trip	Matched trip:
+automation.label_stage	Stage:
+automation.label_status	Status:
+automation.label_top_candidates	Top candidates:
+automation.linked_doc	Linked document #{} to trip #{}
+automation.match_found	Match: trip #{} confidence={}% ({} candidates)
+automation.match_manual	Match required manual selection ({} candidates)
+automation.mode_advanced	Advanced
+automation.mode_label	Mode:
+automation.mode_simple	Simple
+automation.no_docs_msg	There are no documents to send. Cancel and run the automation first.
+automation.no_docs_title	No documents
+automation.no_match	No trip match — run finished without attachment
+automation.ocr_complete	OCR complete: {} chars, confidence={}%, engine={}
+automation.package_create_error	Internal error: package row creation failed
+automation.package_empty	(No documents linked to this trip yet)
+automation.package_subtitle	Package for {trip}
+automation.package_title	Prepare Customer Package
+automation.prepare_package	Prepare Customer Package
+automation.preview_trip_format	Trip #{} — {} ({} → {})
+automation.processing_complete	Enhanced → {} ({} pages, {} images)
+automation.refresh	Refresh
+automation.related_docs	Related documents:
+automation.run_label	Run #{}
+automation.save_draft	Save Draft
+automation.save_pdf	Save document as…
+automation.scanned_title	Scanned — {}
+automation.search_trips	Search all trips…
+automation.select_trip	Select a trip to link this document to:
+automation.send	Send
+automation.send_documents	Send Documents
+automation.sending	Sending…
+automation.simple_awaiting	Document processed — choose an action below.
+automation.simple_done	Simple mode: processing complete, awaiting user action
+automation.simple_select_trip	Optionally select a trip to associate this document with:
+automation.skip_package	Skip — Create Package
+automation.standalone_title	Standalone Package
+automation.subject_label	Subject:
+automation.tab_title	Automation
+automation.title	Document Automation
+automation.to_label	To:
+automation.to_placeholder	Type email address...
+automation.trip_not_found	Trip not found
+client.add_contact	Add Contact
+client.already_exists	Client '{name}' already exists.
+client.billed	Billed
+client.confirm_delete_contact	Delete this contact?
+client.csv_saved	Clients exported successfully.
+client.deactivate_button	Deactivate
+client.deactivate_confirm	Deactivate '{name}'?
+client.deactivate_trips_warning	
+({count} trip(s) linked — trips will be preserved)
+client.edit_button	Edit
+client.edit_contact	Edit Contact
+client.edit_title	Edit Client
+client.email_icon	✉
+client.export_csv	Export CSV
+client.field_address	Address
+client.field_contact	Contact Person
+client.field_contact_type	Contact Type
+client.field_credit_limit	Credit Limit (EUR)
+client.field_default_rate	Default Rate/km
+client.field_email	Email
+client.field_full_name	Full Name *
+client.field_name	Client Name *
+client.field_notes	Notes
+client.field_payment_terms	Payment Terms (days)
+client.field_phone	Phone
+client.field_rating	Rating (1-5)
+client.field_title	Job Title
+client.field_type	Client Type
+client.field_vat	VAT Number
+client.filter_active	Show All
+client.invoice_timeline	Invoice: {} — {} — {} EUR ({})
+client.kpi_avg_profit	Avg Profit/Trip
+client.kpi_last_30d	Trips (30d)
+client.kpi_last_trip	Last Trip
+client.kpi_outstanding	Outstanding
+client.kpi_total_km	Total Distance
+client.kpi_total_profit	Total Profit
+client.kpi_total_revenue	Total Revenue
+client.kpi_total_trips	Total Trips
+client.limit_eur	Limit: €{:,}
+client.merge_button	Merge
+client.merge_execute	Execute Merge
+client.merge_final_confirm	Merge all data from '{source}' into '{target}'?
+client.merge_source	Merge from: {name}
+client.merge_target_label	Into target client:
+client.merge_title	Merge Clients
+client.merge_warning	All trips, invoices, contacts and tags will be moved to the target client. The source client will be deactivated. This cannot be undone.
+client.name_required	Name is required.
+client.new_button	New Client
+client.new_contact	New Contact
+client.new_title	New Client
+client.no_data_export	No client data to export.
+client.no_invoices	No outstanding invoices for this client.
+client.no_tags	No tags assigned.
+client.no_trips	No trips found for this client.
+client.overdue	Overdue
+client.paid	Paid
+client.phone	📞
+client.save_button	Save
+client.section_chart	Revenue Trend
+client.section_contacts	Contacts
+client.section_invoices	Outstanding Invoices
+client.section_kpis	KPIs
+client.section_payment	Payment Summary
+client.section_tags	Tags
+client.section_timeline	Activity Timeline
+client.section_trips	Recent Trips
+client.select_hint	Select a client to view details
+client.tab_details	Details
+client.tab_invoices	Invoices
+client.tab_revenue	Revenue
+client.tab_trips	Trips
+client.table_amount	Amount
+client.table_contact	Contact Person
+client.table_due_date	Due Date
+client.table_email	Email
+client.table_inv_number	Invoice #
+client.table_inv_status	Status
+client.table_name	Name
+client.table_outstanding	Outstanding
+client.table_phone	Phone
+client.table_revenue	Revenue
+client.table_trips	Trips
+client.tag_placeholder	Add tag...
+client.terms_days	Terms: {} days
+client.title	Clients
+client.trip_timeline	Trip: {} — {} / {} — {} km
+client.unpaid	Unpaid
+client.vat	VAT:
+cmr.add_adr	+ Add ADR Entry
+cmr.add_successive_carrier	+ Add successive carrier
+cmr.adr_toggle	ADR Dangerous Goods
+cmr.amount_eur	Amount (EUR)
+cmr.carrier	Carrier (Transporter)
+cmr.carrier_reservations	Carrier reservations and observations
+cmr.carrier_reservations_ro	REZERVARILE TRANSPORTATORULUI / RESERVES DU TRANSPORTEUR
+cmr.carrier_ro	TRANSPORTATOR / TRANSPORTEUR
+cmr.city_country	City / Country
+cmr.cmr_number	CMR Number
+cmr.cod	Cash on delivery (COD)
+cmr.cod_ro	PLATA LA LIVRARE / REMBOURSEMENT
+cmr.consignee	Consignee
+cmr.consignee_placeholder	Name, address, country
+cmr.consignee_ro	DESTINATAR / CONSIGNATAIRE
+cmr.consignee_short	Consignee
+cmr.consignor	Consignor / Shipper
+cmr.consignor_placeholder	Name, address, country
+cmr.consignor_ro	EXPEDITOR / EXPEDITEUR
+cmr.contact	Contact:
+cmr.cost_type	Cost type
+cmr.date	Date
+cmr.delivery_country	Delivery Country
+cmr.destination	Destination
+cmr.destination_ro	LOCUL LIVRARII MARFII / LIEU DE LIVRAISON
+cmr.distance	Distance (km)
+cmr.distance_km	Distance (km)
+cmr.distance_placeholder	Total transport distance
+cmr.distance_ro	DISTANTA / DISTANCE
+cmr.documents	Documents attached
+cmr.documents_placeholder	List attached documents
+cmr.documents_ro	DOCUMENTE ANEXATE / DOCUMENTS ANNEXES
+cmr.driver_license	Driver license
+cmr.driver_name	Driver name
+cmr.email	Email:
+cmr.eori	EORI:
+cmr.established_in	Established in
+cmr.generate	Generate CMR
+cmr.goods_description	Goods Description
+cmr.gross_weight	Gross Weight (kg)
+cmr.label_address	Address
+cmr.label_country	Country
+cmr.label_driver	Driver
+cmr.label_from	From
+cmr.label_name	Name
+cmr.label_plate	Plate
+cmr.label_to	To
+cmr.label_trailer	Trailer
+cmr.loading_country	Loading Country
+cmr.locality_country	Locality / Country
+cmr.payment_instruction	Payment instruction
+cmr.payment_instruction_ro	MODALITATEA DE PLATA / INSTRUCTION DE PAIEMENT
+cmr.place	Place
+cmr.place_of_loading	Place of Loading
+cmr.place_of_loading_ro	LOCUL PREDARII MARFII / LIEU DE PRISE EN CHARGE
+cmr.print	Print
+cmr.reg_no	Reg No:
+cmr.role_consignee	I am the Consignee (Receiver)
+cmr.role_consignor	I am the Consignor (Sender)
+cmr.save	Save
+cmr.section_cargo	Cargo Description
+cmr.section_cargo_sub	Boxes 8-14
+cmr.section_carrier	Carrier
+cmr.section_carrier_sub	Boxes 18-19
+cmr.section_charges	Charges (Box 20)
+cmr.section_charges_sub	The sender pays / The consignee pays
+cmr.section_instructions	Instructions & Reservations
+cmr.section_instructions_sub	Boxes 13-17
+cmr.section_issue	Issue & Signatures
+cmr.section_issue_sub	Boxes 21-24
+cmr.section_parties	Parties to the Contract
+cmr.section_parties_sub	Boxes 1-2
+cmr.section_route	Route & Attached Documents
+cmr.section_route_sub	Boxes 3-5
+cmr.section_vehicle	Vehicle & Driver
+cmr.section_vehicle_sub	Boxes 6-7
+cmr.select_role	Select your role to autofill the form
+cmr.sender	Sender
+cmr.sender_instructions	Instructions (carriage, customs, insurance)
+cmr.sender_instructions_ro	INSTRUCTIUNILE EXPEDITORULUI / INSTRUCTIONS DE L'EXPEDITEUR
+cmr.sig_carrier	Signature — Carrier (Transporter)
+cmr.sig_consignee	Signature — Consignee
+cmr.sig_sender	Signature — Consignor (Sender)
+cmr.special_agreements	Special agreements
+cmr.special_agreements_ro	INTELEGERI SPECIALE / CONVENTIONS SPECIALES
+cmr.subtitle	Convention on the Contract for the International Carriage of Goods by Road (CMR)
+cmr.successive_carriers	Successive carriers
+cmr.tel	Tel:
+cmr.title	CMR International Consignment Note
+cmr.trailer_plate	Trailer plate
+cmr.truck_plate	Truck plate
+cmr.vat	VAT:
+cmr.vat_cui	VAT/CUI:
+cmr.vehicle	Vehicle
+common.all	Vše
+common.cancel	Cancel
+common.confirm	Confirm
+common.csv_filter	CSV filtr
+common.currency_eur	EUR
+common.down	↓ Down
+common.error	Error
+common.from_date	Od data
+common.id	ID
+common.na	N/A
+common.no	Ne
+common.no_activity	No activity recorded
+common.no_data	Žádná data
+common.no_revenue_data	No revenue data yet
+common.no_schedule	Schedule
+common.no_signature	No signature
+common.open_calendar	Open calendar
+common.ops_unavailable	Ops not available
+common.refresh	Refresh
+common.schedule_label	Schedule
+common.search	Search...
+common.select_date	Select date
+common.select_signature_image	Select Signature Image
+common.show_alerts	Show alerts
+common.signature_accepted	Signature accepted
+common.signature_cleared	Cleaned up
+common.status	Stav
+common.to_date	Do data
+common.truck_label	Truck
+common.unknown	Neznámý
+common.up	↑ Up
+common.warning	Warning
+common.yes	Ano
+compliance.border_crossings	Překročení hranic: {}
+compliance.excluded_avoided	Vyhnuto vyloučeným: {}
+compliance.extra_distance	Dodatečná vzdálenost: {:.1f} km
+compliance.toll_countries	Země s mýtným: {}
+compliance.traversed	Projeto: {}
+compliance.why_chosen	Proč vybráno: {}. {}
+dashboard.card_avg_gross_rate	Prům. hrubá sazba
+dashboard.card_avg_net_rate	Prům. čistá sazba
+dashboard.card_best_month	Nejlepší měsíc
+dashboard.card_gross_revenue	Hrubé výnosy
+dashboard.card_net_profit	Čistý zisk
+dashboard.card_top_driver	Nejlepší řidič
+dashboard.card_top_truck	Nejlepší vozidlo
+dashboard.chart_profit_evolution	VÝVOJ ZISKU
+dashboard.error_msg	Nelze zpracovat data: {}
+dashboard.error_title	Chyba dat
+dashboard.kpi_active_trips	Aktivní jízdy
+dashboard.kpi_avg_profit_per_km	Prům. zisk / KM
+dashboard.kpi_monthly_profit	Měsíční zisk
+dashboard.kpi_monthly_revenue	Měsíční výnosy
+dashboard.kpi_unpaid_invoices	Nezaplacené faktury
+dashboard.no_alerts	Žádná upozornění
+dashboard.period_label	OBDOBÍ ANALÝZY:
+dashboard.refresh_button	OBNOVIT
+dashboard.section_alerts	CENTRUM UPOZORNĚNÍ
+dashboard.section_financial	FINANČNÍ VÝKONNOST
+dashboard.title	Dashboard Business Intelligence
+dashboard.total_overdue	Celkem po splatnosti: {:,.2f} €
+date_picker.open_calendar	Open calendar
+date_picker.select_date	Select date
+dispatch_board.alerts	Upozornění
+dispatch_board.alerts_no_alerts_hint	All alerts have been resolved
+dispatch_board.alerts_no_unassigned_hint	All trips are fully assigned
+dispatch_board.alerts_panel_fully_assigned	Fully Assigned
+dispatch_board.alerts_panel_neither	No Truck or Driver
+dispatch_board.alerts_panel_no_alerts	No active alerts
+dispatch_board.alerts_panel_no_driver	No Driver
+dispatch_board.alerts_panel_no_truck	No Truck
+dispatch_board.alerts_panel_no_unassigned	All trips assigned
+dispatch_board.alerts_panel_partial	Partial
+dispatch_board.alerts_panel_quick_assign	Quick Assign
+dispatch_board.alerts_panel_resolve_all	Resolve All
+dispatch_board.alerts_panel_summary_title	Assignment Summary
+dispatch_board.alerts_panel_title	Operational Alerts
+dispatch_board.alerts_panel_total_trips	Total Active
+dispatch_board.alerts_panel_unassigned	Unassigned
+dispatch_board.alerts_panel_unassigned_title	Unassigned Trips
+dispatch_board.assign_both	Assign Truck + Driver
+dispatch_board.assign_both_title	Quick Assign Truck & Driver
+dispatch_board.assign_driver	Přiřadit řidiče
+dispatch_board.assign_driver_blocked	Driver blocked: {reason}
+dispatch_board.assign_truck	Přiřadit vozidlo
+dispatch_board.assign_truck_blocked	Truck blocked: {reason}
+dispatch_board.available_from	Dostupné od {next_slot}
+dispatch_board.brief_arriving_today	Arriving Today
+dispatch_board.brief_critical	Critical
+dispatch_board.brief_departing_today	Departing Today
+dispatch_board.brief_needs_attention	Needs Attention
+dispatch_board.brief_title	Today's Brief
+dispatch_board.bulk_assign_driver	Assign Driver
+dispatch_board.bulk_assign_truck	Assign Truck
+dispatch_board.bulk_clear_selection	Clear
+dispatch_board.bulk_partial	Assigned to {ok} trips ({failed} blocked)
+dispatch_board.bulk_selected_count	{n} trips selected
+dispatch_board.bulk_success	Assigned to {count} trips
+dispatch_board.cancelled_title	Cancelled
+dispatch_board.col_cancelled	Cancelled
+dispatch_board.col_delivered	Doručeno
+dispatch_board.col_in_transit	Na Cestě
+dispatch_board.col_loading	Nakládka
+dispatch_board.col_planned	Plánováno
+dispatch_board.confirm_backward	Potvrdit přesun jízdy #{trip_id} zpět z {old_status} do {new_status}?
+dispatch_board.confirm_cancel	Cancel Trip
+dispatch_board.confirm_cancel_body	Are you sure you want to cancel trip {trip_id}?
+dispatch_board.confirm_title	Potvrdit přechod
+dispatch_board.conflict_body	The following conflicts were detected:
+dispatch_board.conflict_detected	Resource Conflict
+dispatch_board.conflict_warning_title	Varování před konfliktem
+dispatch_board.count_trips	{} trips
+dispatch_board.delay_alert_message	Jízda #{trip_id} ({client}) je zpožděna o více než {hours} hod.
+dispatch_board.delay_alert_title	Zpoždění jízdy #{trip_id}
+dispatch_board.delayed	Zpožděno
+dispatch_board.detail_alerts_for_trip	Alerts
+dispatch_board.detail_cancel	Cancel
+dispatch_board.detail_client	Client
+dispatch_board.detail_close	Close
+dispatch_board.detail_currency	Currency
+dispatch_board.detail_departure	Departure
+dispatch_board.detail_distance	Distance
+dispatch_board.detail_driver	Driver
+dispatch_board.detail_edit_button	Edit Trip
+dispatch_board.detail_eta	ETA
+dispatch_board.detail_net_profit	Net Profit
+dispatch_board.detail_no_alerts	No alerts for this trip
+dispatch_board.detail_notes	Notes
+dispatch_board.detail_price	Price
+dispatch_board.detail_route	Route
+dispatch_board.detail_save	Save
+dispatch_board.detail_status	Status
+dispatch_board.detail_title	Trip Details
+dispatch_board.detail_trip_id	Trip ID
+dispatch_board.detail_truck	Truck
+dispatch_board.driver_hours_exceeded	Weekly hours exceeded ({hours:.1f}h/{max_h}h)
+dispatch_board.driver_hours_weekly	{hours:.1f}h/{max_h}h
+dispatch_board.driver_not_found	Řidič nenalezen.
+dispatch_board.export_csv	CSV
+dispatch_board.export_error	Export failed: {error}
+dispatch_board.export_pdf	PDF
+dispatch_board.export_success	Exported to {path}
+dispatch_board.hours_overdue	{hours} hod po termínu
+dispatch_board.live	LIVE
+dispatch_board.load_error	Chyba načítání
+dispatch_board.load_older	Načíst starší
+dispatch_board.loading	Načítání...
+dispatch_board.loading_options	Načítání možností...
+dispatch_board.minutes_overdue	{minutes} min po termínu
+dispatch_board.no_options	Žádné dostupné možnosti
+dispatch_board.no_results_subtitle	Try adjusting your search or filter criteria
+dispatch_board.no_results_title	No trips found
+dispatch_board.pair_assign_both	Assign Both
+dispatch_board.pair_assign_driver_only	Assign Driver Only
+dispatch_board.pair_assign_truck_only	Assign Truck Only
+dispatch_board.pair_driver_label	Select Driver
+dispatch_board.pair_suggestion	Suggested pair: {driver} ↔ {truck}
+dispatch_board.pair_title	Assign Truck & Driver
+dispatch_board.pair_truck_label	Select Truck
+dispatch_board.redo_nothing	Nothing to redo
+dispatch_board.redo_success	Redone: {trip_id} {old_status} → {new_status}
+dispatch_board.refresh	Obnovit
+dispatch_board.resource_current_trip	Trip
+dispatch_board.resource_drivers_title	Driver Availability
+dispatch_board.resource_eta	ETA
+dispatch_board.resource_hours_exceeded	Hours Exceeded
+dispatch_board.resource_in_service	In Service
+dispatch_board.resource_inspection_expired	Inspection Expired
+dispatch_board.resource_insurance_expired	Insurance Expired
+dispatch_board.resource_license_expired	License Expired
+dispatch_board.resource_maintenance_due	Maint. Due
+dispatch_board.resource_medical_expired	Medical Expired
+dispatch_board.resource_next_free	Next free
+dispatch_board.resource_no_drivers	No active drivers
+dispatch_board.resource_no_trucks	No active trucks
+dispatch_board.resource_status_blocked	Blocked
+dispatch_board.resource_status_free	Available
+dispatch_board.resource_status_on_trip	On Trip
+dispatch_board.resource_status_returning	Returning
+dispatch_board.resource_trucks_title	Truck Availability
+dispatch_board.retry	Zkusit znovu
+dispatch_board.search_clear	Clear
+dispatch_board.search_filter_status	Filter by status
+dispatch_board.search_no_results	No matching trips
+dispatch_board.search_placeholder	Search trips...
+dispatch_board.select_driver	Vybrat řidiče
+dispatch_board.select_truck	Vybrat vozidlo
+dispatch_board.showing_trips	Showing {} of {} trips
+dispatch_board.status_bar_active	Active
+dispatch_board.status_bar_drivers_free	Drivers Free
+dispatch_board.status_bar_trucks_free	Trucks Free
+dispatch_board.subtitle	Dispečerský panel
+dispatch_board.tabs_alerts	Alerts & Ops
+dispatch_board.tabs_board	Board
+dispatch_board.tabs_resources	Resources
+dispatch_board.tabs_timeline	Timeline
+dispatch_board.timeline_no_data	No scheduled trips to display
+dispatch_board.timeline_no_data_hint	No trips scheduled for the selected period
+dispatch_board.timeline_now	NOW
+dispatch_board.timeline_plan_trip	Plan a Trip
+dispatch_board.timeline_title	Schedule Timeline
+dispatch_board.title	Dispečerský panel
+dispatch_board.transition_error	Chyba při přechodu z {old_status} do {new_status}.
+dispatch_board.transition_success	Úspěšně přesunuto do stavu {new_status}.
+dispatch_board.trip_id_prefix	#
+dispatch_board.truck_not_found	Vozidlo nenalezeno.
+dispatch_board.unavailable_overlap	Nedostupné: překrývá se s jízdou {trip_ref}
+dispatch_board.undo_nothing	Nothing to undo
+dispatch_board.undo_success	Undone: {trip_id} {new_status} → {old_status}
+docs.add_tag	Add tag...
+docs.archive	Archive
+docs.batch_delete	Delete Selected
+docs.batch_select_all	Select All
+docs.cat_all	All
+docs.cat_drivers	Drivers
+docs.cat_invoices	Invoices
+docs.cat_maintenance	Maintenance
+docs.cat_other	Other
+docs.cat_proformas	Proformas
+docs.cat_receipts	Receipts
+docs.cat_trips	Trips
+docs.cat_vehicles	Vehicles
+docs.confirm_delete_msg	Delete '{name}'?
+This will remove the file and all its links.
+docs.confirm_delete_title	Delete Document
+docs.confirm_restore	Restore Version
+docs.confirm_restore_msg	Restore version {v}? Current version will be replaced.
+docs.contract	Create Contract
+docs.contract_type	Contract type:
+docs.delete	Delete
+docs.details	Details
+docs.download_zip	Download as ZIP
+docs.email	Email
+docs.email_prompt	Recipient email address:
+docs.email_sent	Email sent successfully.
+docs.email_title	Send document via email
+docs.entity_documents_default	Entity Documents
+docs.entity_documents_title	Documents — {title}
+docs.expiry_label	Expiry date:
+docs.expiry_saved	Expiry date saved
+docs.filter_apply	Apply Filters
+docs.filter_clear	Clear Filters
+docs.filter_date_from	From date:
+docs.filter_date_range	Date range:
+docs.filter_date_to	To date:
+docs.filter_entity	Entity type:
+docs.filter_type	File type:
+docs.filters	Filters
+docs.generate_cmr	Generate CMR
+docs.invalid_document_data	Invalid document data.
+docs.link_to_trip	Link to trip…
+docs.link_to_trip_done	Document linked to trip.
+docs.link_to_trip_exists	Already linked.
+docs.linked_to	Linked to:
+docs.next	>
+docs.no_documents	No documents found
+docs.ocr_fields	Extracted
+docs.ocr_last_run	Last run
+docs.ocr_not_run	OCR has not been run on this document yet.
+docs.ocr_section	OCR
+docs.pick_trip_empty	No trips match your filter.
+docs.pick_trip_placeholder	Type to filter…
+docs.pick_trip_search	Search:
+docs.pick_trip_title	Pick a trip
+docs.prev	<
+docs.rerun_ocr	Re-run OCR
+docs.rerun_ocr_done	OCR complete
+docs.rerun_ocr_started	OCR started…
+docs.restore	Restore
+docs.search_placeholder	Search documents...
+docs.select_document	Select a document to see details
+docs.select_trip	Select
+docs.set_expiry	Set
+docs.sort_name_az	Name A-Z
+docs.sort_name_za	Name Z-A
+docs.sort_newest	Newest first
+docs.sort_oldest	Oldest first
+docs.sort_size_lg	Largest first
+docs.sort_size_sm	Smallest first
+docs.tab_documents	Documents
+docs.tab_proforma	Proforma
+docs.tags_label	Tags:
+docs.title	DOCUMENT CENTER
+docs.unlink	Unlink
+docs.upload	UPLOAD
+docs.upload_title	Select files to upload
+docs.upload_version	Upload new version
+docs.version_comment	Comment
+docs.version_error	Version error
+docs.version_uploaded	Version uploaded
+docs.versions_label	Versions:
+docs.view	View
+document.batch_deleted	{n} documents deleted
+document.deleted	Document deleted
+document.downloaded_zip	Downloaded as ZIP
+document.emailed	Document emailed
+document.version_added	New version added
+document.version_restored	Version restored
+driver_manager.add_driver	Přidat řidiče
+driver_manager.cancel	Zrušit
+driver_manager.col_active	Aktivní
+driver_manager.col_hire_date	Datum nástupu
+driver_manager.col_id	ID
+driver_manager.col_license	Řidičský průkaz
+driver_manager.col_license_expiry	Platnost ŘP
+driver_manager.col_medical_expiry	Platnost lékařské prohlídky
+driver_manager.col_name	Jméno
+driver_manager.col_phone	Telefon
+driver_manager.col_salary	Plat
+driver_manager.col_truck	Vozidlo
+driver_manager.confirm_delete	Opravdu chcete odstranit tohoto řidiče?
+driver_manager.delete_driver	Odstranit řidiče
+driver_manager.documents_button	Documents
+driver_manager.driver_title	Driver {}
+driver_manager.edit_driver	Upravit řidiče
+driver_manager.export_csv	Export CSV
+driver_manager.export_success	Export proběhl úspěšně.
+driver_manager.field_active	Aktivní
+driver_manager.field_email	Email
+driver_manager.field_hire_date	Datum nástupu
+driver_manager.field_license_category	Skupina ŘP
+driver_manager.field_license_expiry	Platnost ŘP
+driver_manager.field_license_number	Číslo ŘP
+driver_manager.field_medical_expiry	Platnost lékařské prohlídky
+driver_manager.field_monthly_salary	Měsíční plat
+driver_manager.field_name	Jméno
+driver_manager.field_notes	Poznámky
+driver_manager.field_phone	Telefon
+driver_manager.import_csv	Import CSV
+driver_manager.import_success	Drivers imported
+driver_manager.kpi_expiring	Končící platnosti
+driver_manager.kpi_on_trip	Na jízdě
+driver_manager.kpi_total	Řidičů celkem
+driver_manager.kpi_unassigned	Nepřiřazení
+driver_manager.no_driver_selected	Vyberte řidiče
+driver_manager.save	Uložit
+driver_manager.search_placeholder	Hledat...
+driver_manager.select_driver_first	Select a driver first.
+driver_manager.title	Správce řidičů
+driver_manager.toggle_active	Přepnout aktivitu
+driver_manager.unassigned	Nepřiřazen
+edit_trip.error_title	Chyba
+edit_trip.field_client	Klient:
+edit_trip.field_distance	Vzdálenost KM:
+edit_trip.field_driver	Řidič:
+edit_trip.field_profit	Zisk (Upravit ručně):
+edit_trip.field_status	Stav:
+edit_trip.field_truck	SPZ vozidla:
+edit_trip.save_button	Uložit změny
+edit_trip.title	Upravit jízdu #{}
+email.config_missing	Chybí konfigurace SMTP. Přejděte do Nastavení.
+email.default_body	Vážený(á) pane/paní,
+
+máte novou zprávu z logistického systému.
+
+S pozdravem.
+email.default_subject	Oznámení ERP Logistika
+email.invoice_body	Vážený(á) pane/paní,
+
+v příloze naleznete fakturu {}.
+
+Celková částka: {:.2f} EUR
+Datum splatnosti: {}
+
+Děkujeme za spolupráci.
+
+S pozdravem,
+{}
+email.invoice_subject	Faktura {} - {}
+email.label_trip	Trip #{}
+email.reminder_body	Vážený(á) pane/paní,
+
+toto je upomínka k faktuře {} v celkové výši {:.2f} EUR,
+se splatností {}.
+
+Prosíme o provedení platby v co nejkratším termínu.
+
+S pozdravem,
+{}
+email.reminder_subject	UPOMÍNKA: Platba po splatnosti Faktura {}
+email.subject_trip	Documents for Trip #{}
+email_logs.col_id	ID
+email_logs.col_recipient	Recipient
+email_logs.col_sent	Sent
+email_logs.col_status	Status
+email_logs.col_subject	Subject
+email_logs.no_logs	No logs found
+features.auto_assign_desc	Match jobs to the best available drivers and trucks based on location, skills, and compliance.
+features.auto_assign_title	Automated Job Assignment
+features.auto_invoicing_desc	Generate invoices from delivery data automatically and email them to clients.
+features.auto_invoicing_title	Automated Invoicing
+features.category_analytics	Analytics & Reporting
+features.category_dispatch	Dispatch & Operations
+features.category_documents	Document Management
+features.category_drivers	Driver Management
+features.category_fleet	Fleet Management
+features.category_route_planning	Route Planning & Optimization
+features.dashboards_desc	Build personalized views with KPIs, charts, and real-time data.
+features.dashboards_title	Custom Dashboards
+features.digital_archive_desc	Store and search all documents with version history, tags, and full-text search.
+features.digital_archive_title	Digital Archive
+features.driver_performance_desc	Monitor driver efficiency, safety scores, tachograph compliance, and driving hours.
+features.driver_performance_title	Performance Tracking
+features.driver_profiles_desc	Complete driver database with licenses, medical certificates, contracts, and documents.
+features.driver_profiles_title	Driver Profiles
+features.export_desc	Export reports in multiple formats and integrate with your existing ERP and accounting software.
+features.export_title	Export & Integration
+features.geofencing_desc	Set geographic boundaries and receive instant notifications when vehicles enter or leave zones.
+features.geofencing_title	Geofencing & Alerts
+features.gps_tracking_desc	Monitor every vehicle's location, speed, and status on an interactive map.
+features.gps_tracking_title	Real-Time GPS Tracking
+features.kpi_desc	Monitor key performance indicators including profit per mile, fuel efficiency, and driver performance.
+features.kpi_title	KPI Tracking
+features.maintenance_desc	Schedule and track maintenance with automated alerts for inspections, insurance, and services.
+features.maintenance_title	Vehicle Maintenance Tracking
+features.multi_stop_desc	Plan complex multi-stop routes with up to 50 waypoints and automated sequencing.
+features.multi_stop_title	Multi-Stop Optimization
+features.ocr_ai_desc	Scan and digitize invoices, CMRs, receipts, and contracts with AI-powered OCR.
+features.ocr_ai_title	AI-Powered OCR
+features.page_header	Powerful Features for Modern Logistics
+features.page_header_desc	Everything you need to run your fleet efficiently, from route planning to analytics.
+features.page_title	Features - Operion ERP
+features.pod_desc	Capture signatures, photos, and timestamps at delivery for complete proof of delivery.
+features.pod_title	Digital Proof of Delivery
+features.route_planning_desc	Advanced algorithms optimize for time, distance, fuel, and toll costs across Europe.
+features.route_planning_title	Intelligent Route Planning
+features.schedule_desc	Plan driver shifts, manage availability, and track working hours.
+features.schedule_title	Schedule Management
+features.status_updates_desc	Track every job from assignment to completion with live status updates.
+features.status_updates_title	Real-Time Status Updates
+features.traffic_desc	Routes adjust dynamically based on live traffic conditions and road closures.
+features.traffic_title	Real-Time Traffic Integration
+file_filter.all	All Files
+file_filter.images	Images
+fleet.add_expense	Přidat výdaj
+fleet.add_maintenance	Přidat údržbu
+fleet.add_truck	Přidat vozidlo
+fleet.alert_format	[{type}] {msg}
+fleet.alert_load_error	Chyba při načítání upozornění.
+fleet.cancel_button	Zrušit
+fleet.confirm_delete	Opravdu chcete odstranit toto vozidlo?
+fleet.delete_button	Odstranit
+fleet.detail_edit_button	Upravit vozidlo
+fleet.detail_export_button	Export podrobností CSV
+fleet.detail_km	KM:
+fleet.detail_manufacturer	Výrobce:
+fleet.detail_rate	Měsíční sazba:
+fleet.detail_vin	VIN:
+fleet.detail_year	Rok:
+fleet.documents_button	Documents
+fleet.edit_button	Upravit
+fleet.error_delete	Nepodařilo se odstranit vozidlo: {}
+fleet.error_load	Nepodařilo se načíst vozový park: {}
+fleet.error_save	Nepodařilo se uložit: {}
+fleet.error_save_expense	Nepodařilo se uložit výdaj: {}
+fleet.error_save_maintenance	Nepodařilo se uložit údržbu: {}
+fleet.expense_default_category	General
+fleet.expenses_table_amount	Částka
+fleet.expenses_table_category	Kategorie
+fleet.expenses_table_date	Datum
+fleet.expenses_table_desc	Popis
+fleet.expenses_table_id	ID
+fleet.export_csv	Export CSV
+fleet.export_csv_error	Chyba exportu CSV: {}
+fleet.export_csv_success	CSV uloženo: {}
+fleet.export_excel	Export Excel
+fleet.export_excel_error	Chyba exportu Excel: {}
+fleet.export_excel_success	Excel uložen: {}
+fleet.export_pdf	Export PDF
+fleet.export_pdf_error	Chyba exportu PDF: {}
+fleet.export_pdf_success	PDF uloženo: {}
+fleet.export_truck_csv_error	Chyba exportu CSV vozidla: {}
+fleet.export_truck_csv_success	CSV vozidla uloženo: {}
+fleet.find_button	Najít
+fleet.form_active	Aktivní
+fleet.form_consumption	Spotřeba (L/100km):
+fleet.form_inspection	STK (dd/mm/RRRR):
+fleet.form_insurance	Pojištění (dd/mm/RRRR):
+fleet.form_km	KM:
+fleet.form_manufacturer	Výrobce:
+fleet.form_model	Model:
+fleet.form_plate	SPZ:
+fleet.form_rate	Měsíční sazba (EUR):
+fleet.form_service_km	Servis při (KM):
+fleet.form_status	Stav:
+fleet.form_tracking_device_id	Tracking Device ID
+fleet.form_vin	VIN:
+fleet.form_year	Rok (RRRR):
+fleet.header	Správa vozového parku
+fleet.inspection_label	STK (dd/mm/RRRR):
+fleet.insurance_label	Pojištění (dd/mm/RRRR):
+fleet.kpi_active	Aktivní
+fleet.kpi_alerts	Alerts
+fleet.kpi_monthly_rate	Měsíční sazba (EUR)
+fleet.kpi_service_due	Vyžaduje servis
+fleet.kpi_total_trucks	Vozidel celkem
+fleet.maint_history_desc	Maintenance History
+fleet.maint_kpi_alerts	Open Alerts
+fleet.maint_kpi_cost_month	Cost/Month
+fleet.maint_kpi_last_service	Last Service
+fleet.maint_kpi_next_due	Next Due
+fleet.maint_kpi_odometer	Odometer
+fleet.maint_kpi_tacho	Tachograph
+fleet.maint_kpi_title	Maintenance
+fleet.maintenance_table_cost	Náklady
+fleet.maintenance_table_date	Datum
+fleet.maintenance_table_desc	Popis
+fleet.maintenance_table_id	ID
+fleet.maintenance_table_km	KM
+fleet.maintenance_table_type	Typ
+fleet.model_quick	Model:
+fleet.no_alerts	Žádná aktuální upozornění.
+fleet.no_data_chart	Žádná data
+fleet.no_engine	No engine data
+fleet.open_maintenance_manager	Open Maintenance
+fleet.plate_label	SPZ:
+fleet.plate_quick	SPZ:
+fleet.rate_quick	Měsíční sazba (EUR):
+fleet.reset_button	Resetovat
+fleet.save_button	Uložit
+fleet.save_csv_title	Uložit CSV
+fleet.save_expense	Uložit výdaj
+fleet.save_maintenance	Uložit údržbu
+fleet.save_quick	Rychlé uložení
+fleet.save_truck_csv_title	Uložit CSV vozidla
+fleet.search_info_msg	Zadejte SPZ.
+fleet.search_info_title	Hledání
+fleet.search_label	Hledat:
+fleet.search_not_found	Vozidlo s SPZ {} nebylo nalezeno.
+fleet.section_alerts	Upozornění
+fleet.section_charts	Grafy vozového parku
+fleet.section_quick_add	Rychlé přidání
+fleet.select_first	Nejprve vyberte vozidlo.
+fleet.select_truck_first	Select a truck first.
+fleet.status_active	Active
+fleet.status_unknown	Unknown
+fleet.success_added	Vozidlo přidáno.
+fleet.success_updated	Data aktualizována.
+fleet.tab_expenses	Výdaje
+fleet.tab_insurance	Pojištění/STK
+fleet.tab_maintenance	Údržba
+fleet.table_active	Aktivní
+fleet.table_consumption	L/100km
+fleet.table_driver	Driver
+fleet.table_driver_unassigned	Unassigned
+fleet.table_id	ID
+fleet.table_inspection	STK
+fleet.table_insurance	Pojištění
+fleet.table_km	KM
+fleet.table_manufacturer	Výrobce
+fleet.table_model	Model
+fleet.table_plate	SPZ
+fleet.table_rate	Sazba EUR
+fleet.table_service_km	Servis KM
+fleet.table_status	Stav
+fleet.table_vin	VIN
+fleet.table_year	Rok
+fleet.title	Správa vozového parku
+fleet.truck_detail_title	Podrobnosti vozidla - {}
+fleet.truck_form_title	Vozidlo
+fleet.truck_not_found	Vozidlo nenalezeno.
+fleet.truck_title	Truck {}
+fleet.unit_km	km
+fleet.validation_amount_invalid	Neplatná částka.
+fleet.validation_consumption_invalid	Neplatná spotřeba.
+fleet.validation_km_cost_invalid	Neplatné KM nebo Náklady.
+fleet.validation_km_rate_service_invalid	Neplatné hodnoty KM/Sazby/Servisu.
+fleet.validation_plate_required	SPZ je povinná.
+fleet.validation_rate_invalid	Neplatná sazba.
+fleet.validation_year_invalid	Rok musí být celé číslo.
+fleet_dashboard.activity_title	Aktivita vozového parku
+fleet_dashboard.activity_view_all	Zobrazit vše
+fleet_dashboard.card_avg_profit	Průměrný zisk
+fleet_dashboard.card_best_driver	Nejlepší řidič
+fleet_dashboard.card_best_truck	Nejlepší vozidlo
+fleet_dashboard.card_consumption	Spotřeba paliva
+fleet_dashboard.card_fuel_cost	Náklady na palivo
+fleet_dashboard.card_highest_fuel	Nejvyšší spotřeba paliva
+fleet_dashboard.card_revenue	Výnosy
+fleet_dashboard.card_trips	Jízdy
+fleet_dashboard.chart_fleet_status	Stav vozového parku
+fleet_dashboard.chart_trip_activity	Aktivita jízd
+fleet_dashboard.charts_unavailable	Grafy nedostupné
+fleet_dashboard.date	Datum
+fleet_dashboard.error_msg	Chyba při načítání dat.
+fleet_dashboard.error_title	Chyba
+fleet_dashboard.last_refreshed	Poslední obnovení
+fleet_dashboard.no_data	Žádná data
+fleet_dashboard.no_driver_data	Žádná data o řidičích
+fleet_dashboard.refresh	Obnovit
+fleet_dashboard.status_active	Aktivní
+fleet_dashboard.status_cancelled	Zrušeno
+fleet_dashboard.status_completed	Dokončeno
+fleet_dashboard.status_idle	Nečinný
+fleet_dashboard.status_in_progress	Probíhá
+fleet_dashboard.status_inactive	Neaktivní
+fleet_dashboard.status_maintenance	V servisu
+fleet_dashboard.title	Přehled vozového parku
+fleet_dashboard.trips	Jízdy
+form.duration	Trvání
+form.start_date	Datum zahájení
+form.status	Stav
+form.truck	Vozidlo
+fuel.age_hours	před {n} hod
+fuel.age_minutes	před {n} min
+fuel.age_seconds	před {n} sek
+fuel.no_data	Žádná data
+fuel.not_fetched	Zatím nenačteno
+fuel.section_title	Ceny paliv
+fuel.updated_status	Aktualizováno: {ts} ({age})
+fuel.updated_tooltip	Fuel prices updated {minutes} ago
+generators.cmr_actions_title	Actions
+generators.cmr_all_generated	All copies generated: {path}
+generators.cmr_copies_title	Generated Copies
+generators.cmr_copy_admin	Administrative Copy
+generators.cmr_copy_carrier	Carrier Copy
+generators.cmr_copy_consignee	Consignee Copy
+generators.cmr_copy_sender	Sender Copy
+generators.cmr_copy_title	CMR Trip #{} - {} COPY
+generators.cmr_driver	Driver Name:
+generators.cmr_error	CMR generation failed: {error}
+generators.cmr_generate	Generate CMR
+generators.cmr_generate_all	Generate All 4 Copies
+generators.cmr_generate_single	Generate Single Copy
+generators.cmr_generated	CMR generated: {path}
+generators.cmr_generated_status	generated
+generators.cmr_loading	Loading Address:
+generators.cmr_not_generated	not generated
+generators.cmr_open	Open PDF
+generators.cmr_options	2. Optional Overrides:
+generators.cmr_options_title	Options
+generators.cmr_primary_language	Primary Language
+generators.cmr_secondary_language	Secondary Language
+generators.cmr_select_trip	Please select a trip first.
+generators.cmr_status_generating	Generating 4 copies...
+generators.cmr_status_ready	Ready to generate.
+generators.cmr_step_adr	ADR Dangerous Goods
+generators.cmr_step_cargo	Cargo Details
+generators.cmr_step_consignment	Consignment Parties
+generators.cmr_step_instructions	Instructions & Reservations
+generators.cmr_step_signatures	Signature & Stamp
+generators.cmr_step_successive	Successive Carriers
+generators.cmr_step_transport	Transport Details
+generators.cmr_subtitle	Create an international CMR waybill for a selected trip.
+generators.cmr_title	Generate CMR Waybill
+generators.cmr_trip_select	1. Select Trip:
+generators.cmr_trip_title	CMR Trip #{}
+generators.cmr_unloading	Unloading Address:
+generators.doc_cmr_desc	Generate an international road consignment note (CMR) with all 4 copies.
+generators.doc_cmr_title	CMR Waybill
+generators.doc_invoice_desc	Generate a professional PDF invoice for the selected trip.
+generators.doc_invoice_title	Invoice
+generators.doc_receipt_title	Receipt
+generators.open_pdf	Open
+generators.subtitle	Create invoices and international CMR waybills for your trips.
+generators.tab_cmr	CMR
+generators.tab_invoice	Invoice
+generators.title	Document Generators
+generators.trip_label	Trip:
+history.button_delete	Odstranit
+history.button_documents	Documents
+history.button_edit	Upravit
+history.button_email	Email
+history.button_email_invoice	Email Invoice
+history.button_excel	Excel
+history.button_export_excel	Export Excel
+history.button_export_pdf	Export PDF
+history.button_invoice	Faktura
+history.button_load_more	Load More
+history.button_pdf	PDF
+history.button_status	Stav
+history.button_view_route	Zobrazit trasu
+history.cancel_status	Cancel Status
+history.col_brut_km	€/km
+history.col_camion	Truck
+history.col_client	Client
+history.col_data	Date
+history.col_driver	Driver
+history.col_id	ID
+history.col_km	Distance (km)
+history.col_profit	Profit
+history.col_status	Status
+history.confirm_delete_msg	Opravdu chcete odstranit tento záznam?
+history.confirm_delete_title	Odstranit
+history.confirm_status	Confirm Status
+history.email_done	Emailed
+history.email_done_msg	Trip emailed successfully
+history.email_error	Odeslání emailu selhalo: {}
+history.email_recipient_msg	Zadejte emailovou adresu klienta:
+history.email_recipient_title	Příjemce
+history.email_success	Email úspěšně odeslán na: {}
+history.error	Error
+history.error_excel	Chyba Excel
+history.error_pdf	Chyba PDF
+history.error_title	Chyba
+history.inv_prefix	INV-
+history.invoice_done	Invoiced
+history.invoice_done_msg	Invoice generated successfully
+history.no_engine	No Engine
+history.no_export_data	Žádná data k exportu!
+history.no_route_linked	Tato jízda nemá propojenou trasu.
+history.no_transitions	No Transitions
+history.reset_button	Resetovat
+history.route_not_found	Propojená trasa nenalezena.
+history.search_label	Hledat:
+history.search_placeholder	Search trips...
+history.select_trip_first	Vyberte jízdu z tabulky!
+history.status_prompt	Status Prompt
+history.subtitle	Operations management and invoicing
+history.table_client	Klient
+history.table_date	Datum
+history.table_driver	Řidič
+history.table_gross_per_km	Hrubý/km
+history.table_id	ID
+history.table_km	KM
+history.table_profit	Zisk
+history.table_status	Stav
+history.table_truck	Vozidlo
+history.title	Správa provozu a fakturace
+history.transition_failed	Transition Failed
+history.trip_title	Trip #{}
+history.update_status_title	Aktualizovat stav
+history.warning_title	Varování
+home.active_alerts	Aktivní upozornění
+home.active_trips	Aktivní jízdy
+home.benefit_cost_desc	Cut fuel consumption by up to 20%% with optimized routing, reduce idle time, and minimize maintenance costs.
+home.benefit_cost_title	Reduce Operational Costs
+home.benefit_paperwork_desc	Digitize all documents with OCR, automate invoicing, and go fully paperless.
+home.benefit_paperwork_title	Eliminate Paperwork
+home.benefit_scale_desc	From 5 vehicles to 500, our platform grows with your business without missing a beat.
+home.benefit_scale_title	Scale With Confidence
+home.benefit_speed_desc	Complete more deliveries per day with intelligent route optimization and real-time traffic avoidance.
+home.benefit_speed_title	Increase Delivery Speed
+home.cta_see_how	See How It Works
+home.cta_start_trial	Start Free Trial
+home.cta_talk_sales	Talk to Sales
+home.feature_analytics_desc	Gain actionable insights with dashboards, KPIs, and customizable reports.
+home.feature_analytics_title	Advanced Analytics
+home.feature_dispatch_desc	Assign jobs automatically based on driver availability, truck status, and proximity.
+home.feature_dispatch_title	Smart Dispatch
+home.feature_driver_desc	Manage driver profiles, licenses, medical certificates, and performance.
+home.feature_driver_title	Driver Management
+home.feature_ocr_desc	Scan and digitize invoices, CMRs, and receipts with AI-powered OCR.
+home.feature_ocr_title	OCR Document Processing
+home.feature_route_planning_desc	Optimize routes in seconds with advanced algorithms that consider distance, traffic, fuel costs, and delivery windows.
+home.feature_route_planning_title	Intelligent Route Planning
+home.feature_tracking_desc	Monitor every vehicle in your fleet with live GPS tracking, geofencing, and instant alerts.
+home.feature_tracking_title	Real-Time Fleet Tracking
+home.hero_description	Operion ERP gives your fleet the power to plan smarter, dispatch faster, and grow bigger.
+home.hero_headline	Enterprise Logistics, Simplified
+home.more	more
+home.no_active_trips	Žádné aktivní jízdy
+home.no_alerts	Žádná upozornění
+home.page_title	Operion ERP — Enterprise Logistics, Simplified
+home.profit_30_days	Past 30 Days
+home.profit_chart_title	Zisk za minulý měsíc
+home.profit_data_source	Data automaticky importována z Analytiky
+home.profit_day_label	Den
+home.profit_no_data	Údaje o zisku zatím nejsou k dispozici.
+home.recent_activity	Nedávná aktivita
+home.section_benefits	Built for real logistics results
+home.section_benefits_desc	Every feature is designed to solve a real problem our customers faced.
+home.section_cta_desc	Join hundreds of companies that trust Operion to run their fleet operations.
+home.section_cta_title	Ready to Transform Your Logistics?
+home.section_features	Everything you need to run your fleet
+home.section_features_desc	Powerful tools that work together to streamline every aspect of your logistics operations.
+home.section_mission	Our Mission
+home.section_mission_desc	Our mission is to make enterprise logistics software accessible, powerful, and easy to use.
+home.section_testimonials	Trusted by logistics leaders
+home.section_testimonials_desc	See how Operion is helping companies transform their logistics operations.
+home.testimonial_1	Operion transformed our operations. We cut route planning time by 80%% and fuel costs by 15%% in the first quarter.
+home.testimonial_1_author	Mihai Popescu
+home.testimonial_1_role	Fleet Manager, TransLogistic
+home.testimonial_2	Having real-time visibility into our fleet has been a game-changer. Our customers love the accurate ETAs.
+home.testimonial_2_author	Sarah Müller
+home.testimonial_2_role	Operations Director, EuroFreight
+home.testimonial_3	We scaled from 10 to 50 vehicles without adding a single dispatcher. Operion's automation is incredible.
+home.testimonial_3_author	John Smith
+home.testimonial_3_role	CEO, Smith Logistics
+home.top_trucks	Nejlepší vozidla tento měsíc
+invoice.button_email	Button Email
+invoice.default_client	Default Client
+invoice.doc_type_label	2. Typ dokumentu:
+invoice.email_body	Email Body
+invoice.email_failed	Email Failed
+invoice.email_subject	Email Subject
+invoice.email_success	Email Success
+invoice.error_generate	Generování selhalo: {}
+invoice.field_address	Sídlo:
+invoice.field_company_name	Název společnosti:
+invoice.field_cui	IČO / DIČ:
+invoice.field_email	Emailová adresa:
+invoice.field_phone	Telefonní číslo:
+invoice.field_reg_number	Reg. č. obch. rejstříku:
+invoice.field_{key}	Field {Key}
+invoice.generate_button	VYGENEROVAT PDF A OTEVŘÍT
+invoice.radio_client_invoice	Faktura klientovi (Pouze celková cena)
+invoice.radio_internal_invoice	Interní vyúčtování (Podrobný zisk a náklady)
+invoice.save_company	Uložit údaje společnosti
+invoice.section_company	Údaje vaší společnosti (Odesílatel)
+invoice.section_generator	Generátor dokumentů
+invoice.select_trip	1. Vyberte jízdu z historie:
+invoice.smtp_not_configured	Smtp Not Configured
+invoice.success_save_company	Údaje společnosti uloženy a budou použity v nových fakturách.
+invoice.trip_list_format	#{id} {truck_number} — {client_name} [{created_at}]
+invoice.warning_fields_msg	Název společnosti a IČO jsou povinné.
+invoice.warning_fields_title	Povinná pole
+invoice.warning_select_trip	Vyberte prosím jízdu ze seznamu.
+invoice_editor.add_loading_stop	Add Loading Stop
+invoice_editor.add_row	Add Row
+invoice_editor.add_unloading_stop	Add Unloading Stop
+invoice_editor.amount	Amount
+invoice_editor.auto_fill	Auto-Fill
+invoice_editor.bill_to	Bill To
+invoice_editor.branch	Branch / Office
+invoice_editor.branding	Branding
+invoice_editor.browse	Browse
+invoice_editor.cancel	Cancel
+invoice_editor.client_info	Client Info
+invoice_editor.company_color	Color
+invoice_editor.currency	Currency
+invoice_editor.default_service	Transport services
+invoice_editor.description	Description
+invoice_editor.discount	Discount
+invoice_editor.discount_fixed	Fixed
+invoice_editor.discount_percentage	Percentage
+invoice_editor.discount_type	Discount Type
+invoice_editor.discount_value	Discount Value
+invoice_editor.distance	Distance
+invoice_editor.draft_loaded	Draft Loaded
+invoice_editor.draft_loaded_msg	Draft '{}' loaded successfully.
+invoice_editor.draft_name	Enter a name for this draft:
+invoice_editor.draft_saved	Draft Saved
+invoice_editor.draft_saved_msg	Draft '{}' saved successfully.
+invoice_editor.driver	Driver
+invoice_editor.due_date	Due Date
+invoice_editor.due_on_receipt	Due on Receipt
+invoice_editor.duplicate_row	Duplicate
+invoice_editor.email	Email
+invoice_editor.email_to	Recipient Email
+invoice_editor.enter_email	Enter recipient email address:
+invoice_editor.export_json	Export JSON
+invoice_editor.financial_controls	Financial Controls
+invoice_editor.from	From
+invoice_editor.generate_pdf	Generate PDF
+invoice_editor.grand_total	Grand Total
+invoice_editor.invoice_details	Invoice Details
+invoice_editor.invoice_generated	Invoice generated: {}
+invoice_editor.invoice_metadata	Invoice Metadata
+invoice_editor.invoice_number	Invoice #
+invoice_editor.issue_date	Issue Date
+invoice_editor.line_items	Line Items
+invoice_editor.load_draft	Load Draft
+invoice_editor.loading_label	Loading
+invoice_editor.loading_stops	Loading Stops
+invoice_editor.logo	Logo
+invoice_editor.move_down	Move Down
+invoice_editor.move_up	Move Up
+invoice_editor.net_15	Net 15
+invoice_editor.net_30	Net 30
+invoice_editor.net_60	Net 60
+invoice_editor.no_drafts	No drafts found.
+invoice_editor.notes	Notes
+invoice_editor.notes_section	Notes
+invoice_editor.number_format	Number Format
+invoice_editor.payment_terms	Payment Terms
+invoice_editor.pick_color	Pick
+invoice_editor.pick_color_title	Choose Company Color
+invoice_editor.preview_pdf	Preview
+invoice_editor.print	Print
+invoice_editor.quantity	Qty
+invoice_editor.remove_row	Remove
+invoice_editor.save_draft	Save Draft
+invoice_editor.select_client	Client:
+invoice_editor.select_logo	Select Logo Image
+invoice_editor.select_signature	Select Signature Image
+invoice_editor.select_stamp	Select Stamp Image
+invoice_editor.select_trip	Trip:
+invoice_editor.signature	Signature
+invoice_editor.stamp	Stamp
+invoice_editor.subtitle	Create and edit professional invoices
+invoice_editor.subtotal	Subtotal
+invoice_editor.tax	Tax
+invoice_editor.tax_preset	Tax Preset
+invoice_editor.tax_rate	Tax Rate
+invoice_editor.tax_rate_short	Tax%
+invoice_editor.title	Invoice Editor
+invoice_editor.total	Total
+invoice_editor.totals	Totals
+invoice_editor.trip_details	Trip Details
+invoice_editor.truck_plate	Truck Plate
+invoice_editor.unit_price	Unit Price
+invoice_editor.unloading_label	Unloading
+invoice_editor.unloading_stops	Unloading Stops
+invoice_editor.upload	Upload
+invoice_pdf.amount_header	Částka (EUR)
+invoice_pdf.bill_to_header	PŘÍJEMCE:
+invoice_pdf.default_address	Úplná Adresa
+invoice_pdf.default_company	Název Vaší Společnosti
+invoice_pdf.default_cui	CZ12345678
+invoice_pdf.default_email	kontakt@firma.cz
+invoice_pdf.default_phone	7xx xxx xxx
+invoice_pdf.default_reg	B 12345/MSPH
+invoice_pdf.desc_header	Popis
+invoice_pdf.distance	Vzdálenost
+invoice_pdf.driver	Řidič
+invoice_pdf.end_date	Datum ukončení
+invoice_pdf.financials	HODNOTA SLUŽBY / FINANCE
+invoice_pdf.footer	Děkujeme za důvěru!
+Vygenerováno ERP Logistickým Systémem
+invoice_pdf.line_fuel	Náklady na palivo
+invoice_pdf.line_gross	Přepravní poplatek (Hrubý)
+invoice_pdf.line_other	Ostatní náklady
+invoice_pdf.line_salary	Plat řidiče/denně
+invoice_pdf.line_tolls	Mýtné
+invoice_pdf.net_profit	CELKOVÝ ČISTÝ ZISK
+invoice_pdf.qty_header	Množ.
+invoice_pdf.sender_header	ODESÍLATEL:
+invoice_pdf.serial	Série/č.: {} | Datum: {}
+invoice_pdf.service_desc	Silniční nákladní přeprava ({} km)
+invoice_pdf.start_date	Datum zahájení
+invoice_pdf.title_client	FAKTURA KLIENTOVI
+invoice_pdf.title_internal	INTERNÍ VYÚČTOVÁNÍ
+invoice_pdf.total_header	Celkem (EUR)
+invoice_pdf.trip_info	PODROBNOSTI PŘEPRAVY / INFO O JÍZDĚ
+invoice_pdf.truck	Vozidlo
+language_name	Čeština
+login.email_placeholder	admin@example.com
+login.password_placeholder	············
+main.calculate_button	VYPOČÍTAT A ULOŽIT DO DATABÁZE
+main.check_data	Zkontrolujte data: {}
+main.client_label	Klient (Společnost):
+main.cost_breakdown	Palivo: {:.2f} € | Mýtné: {:.2f} € | Plat: {:.2f} €
+main.currency_label	Měna:
+main.duration_label	Trvání jízdy (Dny):
+main.empty_calc_subtitle	Enter trip data and press Calculate.
+main.empty_calc_title	Fill in the form to calculate profit
+main.error_title	Chyba
+main.extra_costs_label	Dodatečné náklady (EUR):
+main.fields_required	Vzdálenost a Cena jsou povinné.
+main.fuel_age	Stáří: {}
+main.fuel_offline	Offline (použita záloha)
+main.fuel_updated_at	Aktualizováno: {}
+main.gross_rate	HRUBÁ SAZBA: {:.2f} €/km | ČISTÁ SAZBA: {:.2f} €/km
+main.margin	MARŽE: {}% | ODHAD. INKASO: {}
+main.module_not_migrated	{module}
+(Module not yet migrated)
+main.net_profit	ČISTÝ ZISK: {:.2f} EUR
+main.offer_price	Nabídková cena (Celkem):
+main.offer_price_post_vat	Price (after VAT):
+main.offer_price_pre_vat	Price (before VAT):
+main.payment_term_label	Doba splatnosti (Dny):
+main.placeholder_info	Zadejte data pro zahájení analýzy.
+main.result_cost	Total Cost
+main.result_margin	Margin
+main.result_profit	Net Profit
+main.result_rate	Rate / km
+main.result_revenue	Gross Revenue
+main.results_header	CALCULATION RESULT
+main.salary_label	Plat/Den (EUR):
+main.save_success	Jízda úspěšně uložena!
+main.section_costs	NÁKLADY (0 = AUTO)
+main.section_finance	FINANCE A SPOTŘEBA
+main.section_identify	IDENTIFIKACE
+main.section_planning	PLÁNOVÁNÍ
+main.separator	───────────────────────────────────────────────────────────
+main.start_date_label	Datum zahájení (DD/MM/RRRR):
+main.truck_label	Vozidlo:
+main.vat_checkbox	Add VAT
+main.vat_percent_placeholder	VAT %
+main.warning_title	Varování
+maint.action_maint	Action Maint
+maint.action_remind	Action Remind
+maint.action_resolve	Action Resolve
+maint.action_trip	Action Trip
+maint.action_truck	Action Truck
+maint.add_record	Add Record
+maint.alert_plural	Alert Plural
+maint.alert_s	Alert S
+maint.avg_health	Průměrný Stav
+maint.cancel	Cancel
+maint.close	Close
+maint.col_cost	Col Cost
+maint.col_date	Col Date
+maint.col_description	Description
+maint.col_interval_days	Interval (days)
+maint.col_interval_km	Interval (km)
+maint.col_km	Col Km
+maint.col_mileage	Mileage
+maint.col_next_date	Next Date
+maint.col_next_mileage	Next Mileage
+maint.col_notes	Col Notes
+maint.col_provider	Col Provider
+maint.col_type	Col Type
+maint.confirm_delete_msg	Confirm Delete Msg
+maint.confirm_delete_title	Confirm Delete Title
+maint.control_panel_subtitle	Maintenance schedules and health monitoring
+maint.control_panel_title	Kontrolní panel údržby
+maint.cost_30d	Cost (30d)
+maint.critical_count	Critical Count
+maint.critical_health	Critical Health
+maint.days_left	Days Left
+maint.delete	Delete
+maint.due_by_date	Due By Date
+maint.due_by_km	Due by Km
+maint.due_service	Due for Service
+maint.edit	Edit
+maint.error_generic	Error Generic
+maint.excellent	Excellent
+maint.export	Export
+maint.export_success	Export Success
+maint.export_title	Export Title
+maint.fair	Fair
+maint.filter_label	Filter Label
+maint.filter_placeholder	Filter...
+maint.filter_severity	Filter by Severity
+maint.filter_trip	Filter Trip
+maint.filter_truck	Filter Truck
+maint.filter_type	Filter Type
+maint.flash_maint_scheduled	Flash Maint Scheduled
+maint.flash_reminder	Flash Reminder
+maint.flash_trip_copied	Flash Trip Copied
+maint.flash_truck_copied	Flash Truck Copied
+maint.form_attachment	Attachment:
+maint.form_choose_file	Choose File
+maint.form_cost	Form Cost
+maint.form_date	Form Date
+maint.form_km	Form Km
+maint.form_no_attachment	No file selected
+maint.form_notes	Notes
+maint.form_provider	Service Provider
+maint.form_quick	Quick select:
+maint.form_title_add	Add Record
+maint.form_title_edit	Edit Record
+maint.form_type	Type:
+maint.header	Header
+maint.health_compliance	Compliance
+maint.health_downtime	Downtime
+maint.health_no_data	No health data available
+maint.health_ok	All systems nominal
+maint.health_overall	Overall Health
+maint.health_overdue	Overdue
+maint.health_recurring	Recurring Issues
+maint.info_count	Info Count
+maint.km_remaining	Km Remaining
+maint.label_trip	Label Trip
+maint.label_truck	Label Truck
+maint.metric_compliance	Metric Compliance
+maint.metric_downtime	Metric Downtime
+maint.metric_overdue	Metric Overdue
+maint.metric_recurring	Metric Recurring
+maint.metric_score	Metric Score
+maint.next	Next
+maint.no_alerts_filter	No Alerts
+maint.no_records	No Records
+maint.no_schedule	No Schedule
+maint.no_schedules	No Schedules
+maint.overdue	Overdue
+maint.page_info	Page Info
+maint.predictions	Predictions
+maint.predictions_header	Predictions Header
+maint.predictions_title	Predictions Title
+maint.prev	Prev
+maint.refresh	Refresh
+maint.refresh_score	Refresh Score
+maint.save	Save
+maint.schedule_add	Schedule Add
+maint.schedule_delete_confirm	Schedule Delete Confirm
+maint.schedule_delete_prompt	Schedule Delete Prompt
+maint.schedule_delete_title	Schedule Delete Title
+maint.schedule_due_by	Schedule Due By
+maint.schedule_every_km	Schedule Every Km
+maint.schedule_every_months	Schedule Every Months
+maint.schedule_expires	Schedule Expires
+maint.schedule_form_expiry	Schedule Form Expiry
+maint.schedule_form_interval_km	Schedule Form Interval Km
+maint.schedule_form_interval_months	Schedule Form Interval Months
+maint.schedule_form_last_date	Schedule Form Last Date
+maint.schedule_form_last_km	Schedule Form Last Km
+maint.schedule_form_title_add	Schedule Form Title Add
+maint.schedule_form_title_edit	Schedule Form Title Edit
+maint.schedule_last_date	Schedule Last Date
+maint.schedule_last_km	Schedule Last Km
+maint.schedule_next_due_km	Next due at {km} km
+maint.section_alerts	Alerts
+maint.section_status	Status
+maint.severity_critical	Critical
+maint.severity_info	Info
+maint.severity_warning	Warning
+maint.show_resolved	Show Resolved
+maint.status_due_soon	Status Due Soon
+maint.status_ok	Status Ok
+maint.status_overdue	Po termínu
+maint.status_remaining	{km} km remaining
+maint.tab_health	Tab Health
+maint.tab_history	Tab History
+maint.tab_schedules	Tab Schedules
+maint.target_km	Target Km
+maint.title	Title
+maint.total_cost_kpi	Total Cost
+maint.unit_km	 km
+maint.unit_months	 months
+maint.updated	Updated
+maint.warning_count	Warning Count
+maint_analytics.chart_cost_per_truck	Náklady na vozidlo
+maint_analytics.chart_fleet_trend	Trend vozového parku
+maint_analytics.col_avg_cost	Prům. náklady
+maint_analytics.col_count	Služby
+maint_analytics.col_top_category	Hlavní kat.
+maint_analytics.col_truck	Vůz
+maint_analytics.col_ytd_cost	Náklady (YTD)
+maint_analytics.cost_label	Náklady
+maint_analytics.cost_month	Cost per Month
+maint_analytics.cost_total	Total Cost
+maint_analytics.cost_year	Cost per Year
+maint_analytics.filter_all	All
+maint_analytics.filter_truck	Truck
+maint_analytics.month_apr	Dub
+maint_analytics.month_aug	Srp
+maint_analytics.month_dec	Pro
+maint_analytics.month_feb	Úno
+maint_analytics.month_jan	Led
+maint_analytics.month_jul	Čvc
+maint_analytics.month_jun	Čvn
+maint_analytics.month_mar	Bře
+maint_analytics.month_may	Kvě
+maint_analytics.month_nov	Lis
+maint_analytics.month_oct	Říj
+maint_analytics.month_sep	Zář
+maint_analytics.no_data	Žádná data
+maint_analytics.no_data_12mo	Žádná data za 12 měs.
+maint_analytics.no_records	Žádné záznamy
+maint_analytics.section_title	Maintenance Analytics
+maint_analytics.subtitle	Fleet maintenance costs and trends
+maint_analytics.title	Analýza Údřeby
+maint_analytics.total_cost_label	Celkové náklady
+maint_analytics.truck_fallback	Vozidlo
+maint_analytics.type	Type
+maint_timeline.add_entry	Add Entry
+maint_timeline.cost	Cost
+maint_timeline.date	Date
+maint_timeline.description	Description
+maint_timeline.detail_title	Podrobnosti záznamu údržby
+maint_timeline.field_cost	Náklady
+maint_timeline.field_date	Datum
+maint_timeline.field_km	KM
+maint_timeline.field_notes	Poznámky
+maint_timeline.field_provider	Poskytovatel
+maint_timeline.field_type	Typ
+maint_timeline.km	KM
+maint_timeline.no_entries	No Entries
+maint_timeline.section_title	Maintenance Timeline
+maint_timeline.title	Časová Osa Údřeby
+maint_timeline.type	Type
+migration.subtitle	Import and export your data
+migration.tab_emigrate	Export Data
+migration.tab_physical	Physical Archive
+migration.tab_software	Import from Software
+migration.title	Migration Center
+nav.analytics	Analytika
+nav.calculator	Calculator
+nav.clients	Clients
+nav.dashboard	Přehled
+nav.dispatch_board	Dispatcher Board
+nav.documents	Document Center
+nav.does_not_exist	Does Not Exist
+nav.driver_manager	Driver Manager
+nav.fleet	Flotila
+nav.generators	Generators
+nav.group_administration	Administration
+nav.group_finance	Finance
+nav.group_fleet	Fleet
+nav.group_operations	Operations
+nav.group_overview	Overview
+nav.group_tools	Tools
+nav.history	Historie
+nav.invoices	Faktury
+nav.language	Jazyk
+nav.live_tracking	Živé sledování
+nav.maintenance	Údřeba
+nav.maintenance_analytics	Maintenance Analytics
+nav.maintenance_control	Maintenance Control
+nav.migration_center	Migration Center
+nav.overview	Overview
+nav.route_history	Historie Tras
+nav.route_planner	Plánovač Tras
+nav.routes	Trasy
+nav.safety	Bezpečnost
+nav.settings	Nastavení
+nav.tachograph	Tachograph
+nav.team	Team
+nav.tracking	Živé Sledování
+notification.test_message	This is a test notification from the Operations Engine.
+proforma.default_description	Transport services
+proforma_editor.add_row	Add Row
+proforma_editor.autofill_done	Fields auto-filled from linked document.
+proforma_editor.autofill_empty	No extractable text in the selected document.
+proforma_editor.autofill_from_doc	Auto-Fill from Doc
+proforma_editor.autofill_partial	Linked document has text but no structured data. Manual entry required.
+proforma_editor.bill_to	Bill To
+proforma_editor.branding	Branding
+proforma_editor.browse	Browse
+proforma_editor.cancel	Cancel
+proforma_editor.client_info	Client Info
+proforma_editor.company_color	Color
+proforma_editor.company_editor	Edit Company Info
+proforma_editor.currency	Currency
+proforma_editor.description	Description
+proforma_editor.discount	Discount
+proforma_editor.discount_fixed	Fixed
+proforma_editor.discount_percentage	Percentage
+proforma_editor.draft_name	Enter a name for this draft:
+proforma_editor.draft_save_failed	Failed to save draft.
+proforma_editor.draft_saved	Draft Saved
+proforma_editor.draft_saved_msg	Draft '{}' saved successfully.
+proforma_editor.due_on_receipt	Due on Receipt
+proforma_editor.email	Email
+proforma_editor.email_confirm	Send proforma via email?
+proforma_editor.email_failed	Failed to send email.
+proforma_editor.email_sent	Email sent successfully.
+proforma_editor.email_to	Recipient Email
+proforma_editor.enter_email	Enter recipient email address:
+proforma_editor.error	Error
+proforma_editor.export_json	Export JSON
+proforma_editor.financial_controls	Financial Controls
+proforma_editor.from	From
+proforma_editor.generate_pdf	Generate PDF
+proforma_editor.grand_total	Grand Total
+proforma_editor.include_linked_docs	Include linked CMRs and invoices
+proforma_editor.issue_date	Issue Date
+proforma_editor.line_items	Line Items
+proforma_editor.link_document	Link Document
+proforma_editor.linked_documents	Linked Documents
+proforma_editor.load	Load
+proforma_editor.load_draft	Load Draft
+proforma_editor.logo	Logo
+proforma_editor.mode_client	Client Mode
+proforma_editor.mode_internal	Internal Mode
+proforma_editor.net_15	Net 15
+proforma_editor.net_30	Net 30
+proforma_editor.net_60	Net 60
+proforma_editor.no_docs_available	No documents available to link.
+proforma_editor.no_drafts	No drafts found.
+proforma_editor.no_items	Please add at least one line item.
+proforma_editor.notes	Notes
+proforma_editor.number_format	Number Format
+proforma_editor.payment_terms	Payment Terms
+proforma_editor.pick_color	Pick
+proforma_editor.pick_color_title	Choose Company Color
+proforma_editor.preview_pdf	Preview
+proforma_editor.print	Print
+proforma_editor.proforma_details	Proforma Details
+proforma_editor.proforma_generated	Proforma generated: {}
+proforma_editor.proforma_number	Proforma #
+proforma_editor.quantity	Qty
+proforma_editor.save	Save
+proforma_editor.save_draft	Save Draft
+proforma_editor.select	Select
+proforma_editor.select_client	Client:
+proforma_editor.select_document	Select Document
+proforma_editor.select_logo	Select Logo Image
+proforma_editor.select_signature	Select Signature Image
+proforma_editor.select_stamp	Select Stamp Image
+proforma_editor.signature	Signature
+proforma_editor.stamp	Stamp
+proforma_editor.subtitle	Create and manage proforma invoices
+proforma_editor.subtotal	Subtotal
+proforma_editor.success	Success
+proforma_editor.tax	Tax
+proforma_editor.tax_rate	Tax Rate
+proforma_editor.title	Proforma Invoice Editor
+proforma_editor.total	Total
+proforma_editor.unit_price	Unit Price
+proforma_editor.unlink_document	Unlink
+proforma_editor.valid_until	Valid Until
+receipt.accommodation_label	Accommodation
+receipt.amount_helper	Enter the payment amount
+receipt.amount_hint	Enter an amount above
+receipt.amount_label	Amount
+receipt.amount_placeholder	0.00
+receipt.amount_words_label	Amount in Words
+receipt.attach_type_cmr	CMR
+receipt.attach_type_document	Document
+receipt.attach_type_fuel	Fuel Receipt
+receipt.attach_type_image	Image
+receipt.attach_type_invoice	Invoice
+receipt.attach_type_label	Attachment Type
+receipt.attach_type_other	Other
+receipt.attach_type_photo	Receipt Photo
+receipt.attach_type_pod	POD
+receipt.bank_reference_label	Bank Reference
+receipt.branch_label	Branch / Office
+receipt.branch_placeholder	e.g. Bucharest HQ
+receipt.company_signature_label	Company Signature
+receipt.company_stamp_label	Company Stamp
+receipt.currency_label	Currency
+receipt.customer_label	Customer
+receipt.delivery_label	Delivery Location
+receipt.department_label	Department
+receipt.dispatcher_label	Dispatcher
+receipt.editor.attach_files	Attach Files
+receipt.editor.browse	Browse
+receipt.editor.cancel	Cancel
+receipt.editor.draft_name	Draft name:
+receipt.editor.draft_save_failed	Failed to save draft.
+receipt.editor.draft_saved	Draft Saved
+receipt.editor.draft_saved_msg	Draft "{name}" saved.
+receipt.editor.duplicate	Duplicate
+receipt.editor.duplicated	Receipt Duplicated
+receipt.editor.duplicated_msg	Copy created with new number.
+receipt.editor.email	Email
+receipt.editor.email_placeholder	Email feature coming soon.
+receipt.editor.error	Error
+receipt.editor.export_json	Export JSON
+receipt.editor.generate_pdf	Generate PDF
+receipt.editor.load	Load
+receipt.editor.load_draft	Load Draft
+receipt.editor.no_attachments	No files attached.
+receipt.editor.no_drafts	No drafts saved yet.
+receipt.editor.pdf_generated	Receipt Generated
+receipt.editor.pdf_generated_msg	PDF saved to: {path}
+receipt.editor.print	Print
+receipt.editor.print_no_file	No PDF file found. Generate first.
+receipt.editor.print_no_number	No receipt number. Generate first.
+receipt.editor.save_draft	Save Draft
+receipt.editor.select_file	Select File
+receipt.editor.subtitle	Create professional receipts for payments, reimbursements and expenses
+receipt.editor.title	Receipt Generator
+receipt.editor.validation_error	Validation Error
+receipt.employee_name_label	Employee Name
+receipt.expense_category_label	Expense Category
+receipt.export_json	Export JSON
+receipt.exported_msg	Data exported to: {path}
+receipt.fuel_label	Fuel
+receipt.generated_by	Generated by Operion
+receipt.invoice_autofill_helper	Select an invoice to auto-fill receipt fields
+receipt.invoice_autofill_label	Select Invoice
+receipt.invoice_reference_label	Invoice Reference
+receipt.issue_date_label	Issue Date
+receipt.issue_date_placeholder	YYYY-MM-DD
+receipt.language_label	Language
+receipt.logo_label	Company Logo
+receipt.logo_placeholder	Path to logo image
+receipt.meals_label	Meals
+receipt.mileage_label	Mileage
+receipt.notes_label	Notes
+receipt.number_format_label	Number Format
+receipt.number_label	Receipt No.
+receipt.number_placeholder	Auto-generated
+receipt.other_label	Other
+receipt.parking_label	Parking
+receipt.payment_date_label	Payment Date
+receipt.payment_date_placeholder	YYYY-MM-DD
+receipt.payment_method_label	Payment Method
+receipt.pickup_label	Pickup Location
+receipt.purpose_label	Purpose
+receipt.received_by	Received By
+receipt.received_from	Received From
+receipt.received_from_placeholder	Will be completed
+receipt.recipient_signature_label	Recipient Signature
+receipt.reference_number_label	Reference No.
+receipt.related_trip_label	Related Trip
+receipt.route_label	Route
+receipt.section_attachments	ATTACHMENTS
+receipt.section_branding	BRANDING & SIGNATURES
+receipt.section_employee	EMPLOYEE EXPENSES
+receipt.section_financial	FINANCIAL
+receipt.section_info	RECEIPT INFORMATION
+receipt.section_invoice_autofill	QUICK FILL FROM INVOICE
+receipt.section_logistics	LOGISTICS
+receipt.section_notes	NOTES
+receipt.section_parties	PARTIES
+receipt.section_payment	PAYMENT DETAILS
+receipt.section_purpose	PURPOSE
+receipt.section_type	RECEIPT TYPE
+receipt.signature_label	Signature
+receipt.signature_placeholder	Path to signature image
+receipt.stamp_label	Company Stamp
+receipt.stamp_placeholder	Path to stamp image
+receipt.title	RECEIPT
+receipt.tolls_label	Tolls
+receipt.total_label	Total
+receipt.trailer_label	Trailer
+receipt.transaction_id_label	Transaction ID
+receipt.trip_placeholder	Trip #
+receipt.type_advance_payment	Advance Payment
+receipt.type_cash_receipt	Cash Receipt
+receipt.type_customer_payment	Customer Payment
+receipt.type_deposit	Deposit
+receipt.type_driver_reimbursement	Driver Reimbursement
+receipt.type_employee_expense	Employee Expense Reimbursement
+receipt.type_fuel_reimbursement	Fuel Reimbursement
+receipt.type_miscellaneous	Miscellaneous Business Expense
+receipt.type_other	Other
+receipt.type_refund	Refund
+receipt.type_toll_reimbursement	Toll Reimbursement
+receipt.validation.amount_required	Amount is required and must be positive.
+receipt.validation.date_format	{field} must be in YYYY-MM-DD format.
+receipt.validation.date_required	Issue date is required.
+receipt.validation.number_required	Receipt number is required.
+receipt.validation.recipient_required	Recipient (Received From) is required.
+receipt.validation.vat_invalid	VAT rate must be between 0 and 100.
+receipt.vat_amount_label	VAT Amount
+receipt.vat_helper	Optional
+receipt.vat_placeholder	e.g. 19
+receipt.vat_rate_label	VAT Rate (%)
+receipt.vehicle_label	Vehicle
+receipt.words_placeholder	Auto-calculated
+result.connection_error	Chyba připojení - Nelze se připojit k serveru GraphHopper.
+Ujistěte se, že server běží na adrese {}
+result.controller_calc_failed	Trasu nelze vypočítat.
+result.controller_empty_stop	Zastávka #{} má prázdnou adresu.
+result.controller_invalid_distance	Neplatná vzdálenost trasy.
+result.controller_invalid_truck	Neplatné vozidlo.
+result.controller_need_2_stops	Jsou vyžadovány alespoň 2 zastávky.
+result.controller_no_metadata	Žádná metadata trasy k exportu.
+result.controller_select_truck	Vyberte vozidlo.
+result.day	day
+result.days	dny
+result.distance	Vzdálenost: {:.2f} km
+result.duplicate_stops	Duplicitní zastávky - Odstraňte identické polohy.
+result.duration	Trvání: {}
+result.fuel	Palivo: {:.2f} L
+result.fuel_cost	Náklady na palivo: {}
+result.generic_error	{}:
+{}
+result.geocode_error	Adresa nenalezena
+result.history_loaded	Trasa načtena z historie
+result.hour	hour
+result.hours	hod
+result.invalid_coords	Neplatné souřadnice
+result.invalid_route_distance	Neplatná vzdálenost trasy.
+result.minute	minute
+result.minutes	min
+result.need_2_stops	Jsou vyžadovány alespoň 2 zastávky.
+result.route_not_found_msg	Body mohou být nedosažitelné.
+Zkuste přidat mezilehlé zastávky.
+result.route_not_found_title	Trasa nenalezena
+result.routing_server_off	Routing server is off. Check that GraphHopper is running.
+result.stops	Zastávky: {} zastávek
+result.timeout_error	Časový limit - Výpočet trasy trval příliš dlouho.
+Zkuste méně zastávek nebo zkontrolujte server GraphHopper.
+route.add_country	Add Country
+route.add_stop	+ Přidat zastávku
+route.add_to_dispatch	Add to Dispatch
+route.calc_failed	Trasu nelze vypočítat.
+route.calculate	Calculate Route
+route.calculate_button	Vypočítat trasu
+route.calculating	Výpočet...
+route.click_to_add_stop	Click map to add stop
+route.client_name	Client Name
+route.clipboard_unavailable	Clipboard unavailable
+route.copy_link	Copy
+route.destinations_label	Destinace:
+route.exclusions_clear	Vymazat vše
+route.exclusions_empty	Žádné vyloučené země
+route.exclusions_label	Vyloučené země
+route.exclusions_none	Nic nevybráno
+route.exclusions_selected	{} vybráno
+route.export_file	Export File
+route.export_metadata	Exportovat metadata trasy
+route.export_success	Metadata exportována: {}
+route.export_success_file	Saved: {path}
+route.highlight_avoided	Zvýraznit vyloučené země
+route.info_empty_subtitle	Calculate a route to see details.
+route.info_placeholder	Zde se objeví informace o trase.
+route.link_copied	Copied!
+route.loaded_route	Route loaded
+route.no_saved_route_id	No saved route ID
+route.open_in_gmaps	Google Maps
+route.options_header	Route Options
+route.page_subtitle	Plan multi-stop routes with cost estimation
+route.page_title	Route Planner
+route.planner_title	Plánovač tras
+route.processing	Zpracování výpočtu trasy...
+route.profile_cheapest	Cheapest
+route.profile_fastest	Fastest
+route.profile_label	Profil trasy:
+route.profile_recommended	Recommended
+route.profile_safest	Safest
+route.profile_shortest	Shortest
+route.remove_stop	- Odebrat zastávku
+route.result.distance	Distance
+route.result.duration	Duration
+route.save_and_open	Save & Open Folder
+route.section.excluded_countries	EXCLUDED COUNTRIES
+route.section.options	OPTIONS
+route.section.result	ROUTE RESULT
+route.section.smart_route	SMART ROUTE
+route.section_header	CHYTRÁ TRASA
+route.select_driver	Select Driver
+route.select_truck	Vybrat vozidlo:
+route.send_to_calculator	Send to Calculator
+route.share_link_label	Share link
+route.share_subtitle	Share this route with others so they can load it in Operion.
+route.share_title	Share Route
+route.show_comparison	Zobrazit původní vs konečnou trasu
+route.start_date	Start Date
+route.stop_destination	Destination
+route.stop_n	Stop {n}
+route.stop_start	Start
+route.trip_created	Trip Created
+route_history.apply_button	Použít
+route_history.archive	Archive
+route_history.archive_button	Archivovat
+route_history.archive_confirm	Confirm Archive
+route_history.archive_confirm_msg	Archive these routes?
+route_history.archived_checkbox	Archivované
+route_history.calculate_trip_button	Vypočítat jízdu
+route_history.compare	Compare
+route_history.compare_button	Porovnat vybrané
+route_history.comparison_error	Pro porovnání vyberte přesně dvě trasy.
+route_history.comparison_hint	Vyberte dvě trasy a klikněte na Porovnat.
+route_history.comparison_result	Route #{a} vs #{b}
+Distance delta: {d_dist:+.1f} km
+Duration delta: {d_dur}
+Profiles: {p_a} / {p_b}
+route_history.confirm_delete_msg	Odstranit {} vybraných tras?
+route_history.confirm_delete_title	Odstranit trasy
+route_history.delete	Delete
+route_history.delete_button	Odstranit
+route_history.delete_confirm	Confirm Delete
+route_history.delete_confirm_msg	Delete these routes?
+route_history.duplicate_button	Duplikovat
+route_history.error_not_found	Trasa nenalezena.
+route_history.export_button	Exportovat
+route_history.export_csv	Export CSV
+route_history.export_dialog	Export trasy
+route_history.export_json	Export JSON
+route_history.export_success	Trasa exportována:
+{}
+route_history.exported	Exported
+route_history.exported_msg	Routes exported successfully.
+route_history.filter_truck	Filter by Truck
+route_history.header	Historie tras
+route_history.inv_prefix	INV-
+route_history.label_active	Active:
+route_history.label_archived	Archived:
+route_history.label_date	Date:
+route_history.label_distance	Distance:
+route_history.label_duration	Duration:
+route_history.label_total	Total:
+route_history.label_truck	Truck:
+route_history.loading_placeholder	Načítání...
+route_history.loading_routes	Načítání tras...
+route_history.map_loading	Loading map...
+route_history.next_button	Další
+route_history.open_planner	Otevřít plánovač tras
+route_history.page_info	Page {current} of {total} ({count} routes)
+route_history.page_subtitle	Review and manage saved routes
+route_history.page_title	Route History
+route_history.prev_button	Předchozí
+route_history.profile_label	Profil
+route_history.recalculate	Recalculate
+route_history.recalculate_button	Přepočítat
+route_history.recalculated	Recalculated
+route_history.recalculated_msg	Routes recalculated successfully.
+route_history.refresh	Obnovit
+route_history.reopen_button	Znovu otevřít
+route_history.reset_button	Resetovat
+route_history.search	Search...
+route_history.search_label	Hledat
+route_history.search_placeholder	Search routes...
+route_history.section_comparison	Porovnání tras
+route_history.section_map	Náhled mapy
+route_history.section_stats	Statistiky trasy
+route_history.stats_none	None
+route_history.stats_summary	Total routes: {count}
+Total distance: {dist:.1f} km
+Top destinations: {dests}
+route_history.table_datetime	Datum / Čas
+route_history.table_destination	Cíl
+route_history.table_distance	Vzdálenost
+route_history.table_duration	Trvání
+route_history.table_net_profit	Čistý zisk
+route_history.table_origin	Původ
+route_history.table_profile	Profil
+route_history.table_total_cost	Celkové náklady
+route_history.table_truck	Vozidlo
+route_history.title	Historie tras
+route_history.trip_title	Trip #{}
+route_history.truck_all	Vše
+route_history.truck_filter	Filter by truck
+route_history.truck_label	Vozidlo
+route_history.truck_placeholder	Select truck...
+route_history.warning_select_one	Vyberte alespoň jednu trasu.
+route_history.warning_select_route	Nejprve vyberte trasu.
+safety.backup_info	Automatické zálohy (.db) jsou v:
+data/backups/
+safety.export_button	EXPORTOVAT VŠE (JSON)
+safety.export_success	Data exportována do JSON:
+{}
+safety.import_button	IMPORTOVAT Z JSON
+safety.import_confirm	Importovat data do aktuální databáze?
+safety.import_success	Importováno {} záznamů.
+safety.management	SPRÁVA DAT
+safety.title	Bezpečnost dat
+settings.currency_label	Výchozí měna:
+settings.email_logs	Email Logs
+settings.error_save_smtp	Nepodařilo se uložit nastavení SMTP: {}
+settings.field_address	Sídlo:
+settings.field_ai_vision	Field Ai Vision
+settings.field_alert_days_ahead	Alert Days Ahead:
+settings.field_alert_recipients	Alert Email Recipients:
+settings.field_automation_body	Body template:
+settings.field_color	Color
+settings.field_company_name	Název společnosti:
+settings.field_cui	IČO / DIČ:
+settings.field_email	Kontaktní email:
+settings.field_email_importer	Field Email Importer
+settings.field_folder_watcher	Field Folder Watcher
+settings.field_logo	Company Logo:
+settings.field_ocr_config	PaddleOCR advanced settings:
+settings.field_ocr_credentials	Cloud OCR credentials:
+settings.field_ocr_gpu	Field Ocr Gpu
+settings.field_ocr_help	Set at least one provider
+settings.field_phone	Telefon:
+settings.field_reg_number	Reg. č. obch. rejstříku:
+settings.field_signature	Signature Image:
+settings.field_smtp_password	SMTP Password:
+settings.field_smtp_port	SMTP Port:
+settings.field_smtp_server	SMTP Server:
+settings.field_smtp_user	SMTP User:
+settings.field_stamp	Stamp Image:
+settings.field_tacho_critical	Tacho Critical Days:
+settings.field_tacho_warning	Tacho Warning Days:
+settings.language_label	Jazyk:
+settings.reset	Reset
+settings.save	Save
+settings.save_all	ULOŽIT VŠECHNA NASTAVENÍ
+settings.save_smtp	Uložit nastavení SMTP
+settings.section_branding	BRANDING
+settings.section_company	ÚDAJE SPOLEČNOSTI (ODESÍLATEL)
+settings.section_email	EMAIL & SMTP
+settings.section_maintenance	MAINTENANCE THRESHOLDS
+settings.section_preferences	PŘEDVOLBY
+settings.section_smtp	KONFIGURACE EMAILOVÉHO SERVERU
+settings.section_smtp_legacy	KONFIGURACE SMTP (EMAIL)
+settings.smtp_password	Heslo aplikace:
+settings.smtp_password_legacy	Heslo aplikace:
+settings.smtp_port	Port (např. 587 nebo 465):
+settings.smtp_port_legacy	SMTP Port (např. 587):
+settings.smtp_server	SMTP Server (např. smtp.gmail.com):
+settings.smtp_user	Email (Uživatel):
+settings.smtp_user_legacy	Email uživatele:
+settings.subtitle	Application Settings
+settings.success_save	Všechna nastavení uložena!
+settings.success_smtp	Nastavení emailu uložena!
+settings.test_connection	Test Connection
+settings.test_failed	Test failed: {}
+settings.test_success	Connection successful
+settings.theme_dark	Dark
+settings.theme_light	Light
+settings.title	Nastavení ERP a Emailu
+settings.unit_seconds	 seconds
+signature.accepted	Signature accepted
+signature.cleaned_up	Cleaned up
+signature.filter_images	Image files (*.png *.jpg *.jpeg *.bmp);;All files (*.*)
+signature.label_loaded	Loaded: {}
+signature.label_selected	Selected: {}
+signature.no_signature	No signature
+signature.select_title	Select Signature Image
+status.Archived	Archived
+status.Cancelled	Cancelled
+status.Delivered	Delivered
+status.In Transit	In Transit
+status.Invoiced	Invoiced
+status.Loading	Loading
+status.Paid	Paid
+status.Planned	Planned
+status.cancelled	Cancelled
+status.delivered	Delivered
+status.in_transit	In Transit
+status.invoiced	Invoiced
+status.loading	Loading
+status.paid	Paid
+status.planned	Planned
+status.unknown	Unknown
+tacho.avg_daily	Denní průměr
+tacho.calibration_date	Datum kalibrace
+tacho.driver_activity_title	Aktivita tachografu
+tacho.drop_hint	Drop files here or click to select
+tacho.drop_supported	DDD / TGD / other tachograph files
+tacho.expiry	Vypršení
+tacho.hdr_date	Date
+tacho.hdr_file	File
+tacho.hdr_records	Records
+tacho.hdr_status	Status
+tacho.hdr_type	Type
+tacho.history_empty_subtitle	Import a tachograph file to see the history
+tacho.history_empty_title	No imports yet
+tacho.how_it_works	Vyberte soubor .ddd níže pro import dat z karty řidiče nebo jednotky vozidla.
+tacho.import_card_title	Import souborů
+tacho.import_driver_card	Importovat kartu řidiče
+tacho.import_history	Historie importu
+tacho.import_now	Importovat nyní
+tacho.import_steps	1. Driver inserts card into USB reader
+2. Export .DDD file using card reader software
+3. Import the .DDD file here
+tacho.import_successful	Import successful
+tacho.import_vehicle_unit	Importovat jednotku vozidla
+tacho.importing	Importuje se...
+tacho.last_14_days	Posledních 14 dní
+tacho.last_import	Poslední import
+tacho.no_activity	Žádná aktivita tachografu pro tohoto řidiče
+tacho.no_data	Žádná data tachografu
+tacho.no_history	Zatím žádné importy.
+tacho.no_trucks	Žádná registrovaná vozidla
+tacho.recent_violations	Nedávná porušení
+tacho.result_calibration	Calibration
+tacho.result_days	Days
+tacho.result_driver	Driver
+tacho.result_label	{label}: {value}
+tacho.result_odometer	Odometer
+tacho.result_plate	Plate
+tacho.section_status_title	Stav tachografu
+tacho.select_driver_card	Vybrat kartu řidiče (DDD)
+tacho.select_file	Select tachograph file
+tacho.select_vehicle_unit	Vybrat jednotku vozidla (DDD)
+tacho.status_error	Error
+tacho.status_expired	Prošlé
+tacho.status_no_data	Žádná data
+tacho.status_ok	OK
+tacho.status_partial	Partial
+tacho.status_valid	Platné
+tacho.subtitle	Import souborů karty řidiče (DDD) a jednotky vozidla (DDD)
+tacho.title	Tachograf
+tacho.total_hours	Celkem hodin
+tacho.type_driver	Karta řidiče
+tacho.type_vehicle	Jednotka vozidla
+tacho.unknown_error	Unknown error
+tacho.violations	Porušení
+tacho.violations_warning	Found {count} violation(s) flagged
+team.add_user	Add User
+team.add_user_failed	Failed to add user: {error}
+team.col_actions	Actions
+team.col_created	Created
+team.col_email	Email
+team.col_role	Role
+team.col_status	Status
+team.deactivate	Deactivate
+team.deactivate_button	Deactivate
+team.deactivate_confirm	Are you sure you want to deactivate {email}?
+team.deactivate_failed	Failed to deactivate user: {error}
+team.deactivate_title	Deactivate User
+team.deactivate_user	Deactivate User
+team.email_label	EMAIL
+team.email_required	Email is required.
+team.error_failed_add	Failed to add user: {}
+team.error_failed_deactivate	Failed to deactivate user: {}
+team.error_title	Error
+team.invite_subtitle	Invite a new team member
+team.link_driver_label	LINK DRIVER
+team.members_subtitle	Manage existing users
+team.members_title	Team Members
+team.no_api_client	No API client or database available.
+team.password_label	PASSWORD
+team.password_required	Password is required.
+team.role_dispatcher	Dispatcher
+team.role_driver	Driver
+team.role_label	ROLE
+team.success_title	Success
+team.success_user_added	User added successfully.
+team.title	Team Management
+team.user_added	User added successfully.
+team.validation_email_required	Email is required.
+team.validation_password_required	Password is required.
+team.validation_title	Validation
+text_danger	Danger
+text_success	Success
+text_warning	Warning
+time.days_ago	před {n} dny
+time.hours_ago	před {n} hod
+time.just_now	Právě teď
+time.minutes_ago	před {n} min
+tracking.account	Account / Subdomain
+tracking.btn_fleet_detail	Zobrazit ve Správci vozového parku →
+tracking.btn_test	Test Connection
+tracking.d_address	Poloha
+tracking.d_odometer	Kilometrovník
+tracking.d_speed	Rychlost
+tracking.d_status	Stav
+tracking.d_updated	Aktualizováno
+tracking.go_to_settings	Přejít do Nastavení
+tracking.host	Server URL
+tracking.id_field	ID Field
+tracking.lat_field	Latitude Field
+tracking.lng_field	Longitude Field
+tracking.mapview_missing	tkintermapview not installed.
+Run: pip install tkintermapview
+tracking.no_vehicles	Nenalezena žádná vozidla
+tracking.not_configured	Not Configured
+tracking.not_configured_hint	Nastavte sledovací platformu v Nastavení pro zobrazení pozic vozidel v reálném čase.
+tracking.not_configured_title	Sledování není nakonfigurováno
+tracking.panel_title	Vozový park
+tracking.password	Password
+tracking.platform	Tracking Platform
+tracking.platform_not_configured	Platform not configured
+tracking.positions_path	Positions JSON Path
+tracking.section_title	Fleet Tracking
+tracking.setup_hint	Configure fleet tracking credentials in Settings.
+tracking.stopped	Stopped
+tracking.test_incomplete	Neúplné informace
+tracking.test_incorrect	Nesprávné informace
+tracking.token	API Token
+tracking.username	Username
+trip.speed_display	{speed:.0f} km/h
+upload.browse	Browse...
+upload.done	Upload complete. Document #{id}
+upload.error	Error
+upload.error_title	Upload Error
+upload.extracted_fields	Extracted Fields
+upload.fetching_ocr	Fetching OCR results...
+upload.no_file	No file selected
+upload.ocr_done	OCR complete.
+upload.select_document	Select Document
+upload.start	Upload & Run OCR
+upload.title	Upload & OCR
+upload.too_large_msg	Maximum upload size is 50 MB.
+upload.too_large_title	File too large
+upload.uploading	Uploading...
+validation.numeric_km_price	KM a Cena musí být číselné hodnoty.
+validation.positive_km_price	KM a Cena musí být kladné.

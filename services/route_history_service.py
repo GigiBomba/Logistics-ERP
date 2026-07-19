@@ -284,6 +284,38 @@ class RouteHistoryService:
         RouteEventBus.publish(event_type, {"id": event_id, "route_id": route_id, **(payload or {})})
         return event_id
 
+    def update_route(self, route_id: int, record: RouteHistoryRecord) -> bool:
+        """Update an existing route history record.
+
+        Loads the existing record to verify it exists, normalizes the
+        new data, builds a DB payload, and calls ``RouteRepository.update()``.
+        Returns ``True`` on success, ``False`` if the route was not found.
+        """
+        existing = self.load_route(route_id)
+        if not existing:
+            return False
+
+        normalized = self._normalize_record(record)
+        payload = self._to_db_payload(normalized)
+        now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+
+        data: dict[str, Any] = {
+            "stops_json": payload["stops_json"],
+            "geometry_compressed": payload["geometry_compressed"],
+            "total_distance_km": normalized.total_distance_km,
+            "duration_min": normalized.duration_min,
+            "truck_id": normalized.truck_id,
+            "truck_label": normalized.truck_label,
+            "truck_json": payload["truck_json"],
+            "profile": normalized.profile,
+            "excluded_countries_json": payload["excluded_countries_json"],
+            "countries_traversed_json": payload["countries_traversed_json"],
+        }
+
+        self._route_repo.update(route_id, data)
+        self.record_event(route_id, "route_updated", {"route_id": route_id})
+        return True
+
     def duplicate_route(self, route_id: int) -> int | None:
         """Create a copy of a history route as a new row."""
         record = self.load_route(route_id)

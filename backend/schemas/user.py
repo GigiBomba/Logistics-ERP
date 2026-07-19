@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 class UserCreateRequest(BaseModel):
     email: str
-    password: str = Field(min_length=6)
+    password: str = Field(min_length=6, max_length=72)
     role: str  # "dispatcher" or "driver"
     display_name: str = ""
 
@@ -14,7 +14,7 @@ class UserCreateRequest(BaseModel):
 class UserUpdateRequest(BaseModel):
     display_name: Optional[str] = None
     is_active: Optional[bool] = None
-    password: Optional[str] = Field(default=None, min_length=6)
+    password: Optional[str] = Field(default=None, min_length=6, max_length=72)
     email: Optional[str] = None
 
 

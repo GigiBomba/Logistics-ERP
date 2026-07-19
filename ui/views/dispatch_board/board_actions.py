@@ -440,6 +440,10 @@ class BoardActionsMixin:
         target_col.add_card(new_card)
 
         if source_col:
+            # Remove from selection if selected (card is about to be destroyed)
+            if card in self._selected_cards:
+                self._selected_cards.remove(card)
+                self._update_bulk_toolbar()
             source_col.remove_card(card)
 
         new_card.trip_data["status"] = new_status
@@ -620,7 +624,11 @@ class BoardActionsMixin:
             driver_hours: dict[int, tuple] = {}
             now = datetime.now()
             cutoff_7 = date.today() - timedelta(days=7)
-            tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
+            if self._db is None:
+                logger.warning("TachoDriverActivityRepository requires local database - not available in remote mode")
+                tacho_repo = None
+            else:
+                tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
 
             for d in active_drivers:
                 did = d.get("id")
@@ -785,7 +793,11 @@ class BoardActionsMixin:
             except Exception:
                 score += 40
             try:
-                tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
+                if self._db is None:
+                    logger.warning("TachoDriverActivityRepository requires local database - not available in remote mode")
+                    tacho_repo = None
+                else:
+                    tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
                 from datetime import date, timedelta
                 records = tacho_repo.get_by_driver(
                     int(driver_id), date.today() - timedelta(days=7)
@@ -806,7 +818,11 @@ class BoardActionsMixin:
         active_drivers = self._driver_repo.get_active_drivers()
         now = datetime.now()
         cutoff_7 = date.today() - timedelta(days=7)
-        tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
+        if self._db is None:
+            logger.warning("TachoDriverActivityRepository requires local database - not available in remote mode")
+            tacho_repo = None
+        else:
+            tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
 
         truck_items = []
         for trk in active_trucks:
@@ -1020,17 +1036,17 @@ class BoardActionsMixin:
     # ══════════════════════════════════════════════════════════════════════════
 
     def _evaluate_all_delays(self) -> None:
-        try:
-            now = datetime.now()
-            for col in self._columns.values():
-                for card in col._cards:
-                    trip_data = card.trip_data
-                    is_delayed, minutes_overdue = self._is_trip_delayed(trip_data, now)
-                    card.set_delayed(is_delayed, minutes_overdue)
-                    if is_delayed:
-                        self._create_delay_alert(card, minutes_overdue)
-        except Exception:
-            logger.debug("Delay evaluation skipped", exc_info=True)
+        if getattr(self, '_destroyed', False):
+            return
+        if self._dispatch_service is None:
+            return
+        for col in self._columns.values():
+            for card in col._cards:
+                card_data = card.trip_data
+                is_delayed, minutes = self._dispatch_service.evaluate_trip_delay(card_data)
+                card.set_delayed(is_delayed, minutes)
+                if is_delayed:
+                    self._dispatch_service.create_delay_alert(card_data, minutes)
 
     def _is_trip_delayed(self, trip_data: dict, now: datetime):
         status = trip_data.get("status", "")

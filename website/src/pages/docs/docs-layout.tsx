@@ -5,6 +5,7 @@ import { Menu, X, BookOpen, MapPin, Radio, Send, Scan, BarChart3, Users, FileTex
 import { Button } from "@/components/ui/button"
 import { SearchInput } from "@/components/shared/search-input"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 
 const sidebarItems = [
   { icon: BookOpen, label: "Getting Started", href: "/docs/getting-started" },
@@ -18,6 +19,7 @@ const sidebarItems = [
 ]
 
 export default function DocsLayout() {
+  const { t } = useLocale()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [versionOpen, setVersionOpen] = useState(false)
@@ -64,7 +66,7 @@ export default function DocsLayout() {
           {/* Search */}
           <div className="px-4 pt-3 pb-1">
             <SearchInput
-              placeholder="Filter sections..."
+              placeholder={t("docs.filterSections")}
               value={searchQuery}
               onChange={setSearchQuery}
               onClear={() => setSearchQuery("")}

@@ -118,20 +118,19 @@ def t(key: str, default: str | None = None, *args: Any, **kwargs: Any) -> str:
     with _LOCK:
         lang_dict = _translations.get(_current_lang, {})
         msg = lang_dict.get(key)
-    if msg is None:
-        with _LOCK:
+        if msg is None:
             en_dict = _translations.get("en", {})
-        msg = en_dict.get(key)
+            msg = en_dict.get(key)
+        if msg is None:
+            msg = default
+    # Do string formatting OUTSIDE the lock for performance
     if msg is None:
-        msg = default if default is not None else key
-    if args or kwargs:
-        try:
-            msg = msg.format(*args, **kwargs)
-        except (KeyError, IndexError, ValueError) as e:
-            logger.warning("i18n format failed for %s: %s | msg=%r | args=%s kwargs=%s",
-                           key, e, msg, args, kwargs)
-            # fall back to unformatted message to avoid crash
-    return msg
+        return key
+    try:
+        return str(msg).format(*args, **kwargs)
+    except Exception:
+        logger.warning("i18n format failed for %s", key)
+        return str(msg)
 
 
 def set_language(lang: str) -> None:

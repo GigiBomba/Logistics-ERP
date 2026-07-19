@@ -8,6 +8,14 @@ every test (via ``pytestmark`` or auto-use) to clear the cross-test state
 that the singleton pattern introduces.
 """
 
+import os
+# Set test environment BEFORE any backend imports can happen.
+# The .env file has OPERION_ENV=production which causes RuntimeErrors
+# in BackendSettings._check_admin_config and AuthMiddleware.__init__.
+os.environ.setdefault("OPERION_ENV", "testing")
+os.environ.setdefault("OPERION_JWT_SECRET_KEY", "test-jwt-secret-key-for-testing")
+
+import logging
 import pytest
 from unittest.mock import MagicMock
 
@@ -22,6 +30,18 @@ def reset_singletons():
     singletons (EventBus, AlertManager, ExchangeRateService, etc.)
     that would otherwise persist across test cases.
     """
+    # Clear all logger handlers to prevent MagicMock handlers
+    # installed by `mock_file_handler` in test_logger.py from
+    # polluting subsequent tests in the same process.
+    logging.root.handlers.clear()
+    logging.root.propagate = True
+    logging.root.setLevel(logging.NOTSET)
+    for name in list(logging.root.manager.loggerDict.keys()):
+        log = logging.getLogger(name)
+        log.handlers.clear()
+        log.propagate = True
+        log.setLevel(logging.NOTSET)
+
     # EventBus
     from services.operations.event_bus import EventBus
     EventBus._instance = None

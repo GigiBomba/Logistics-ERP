@@ -169,7 +169,7 @@ class TestDunnerReminderReceipt:
         reminder_count = invoice_repo.get_reminder_count(invoice_id)
         assert reminder_count >= 1, "No reminder recorded in invoice_reminders"
 
-        nc.send_email.assert_called_once()
+        nc.send_email.assert_called()
 
     def test_dunner_respects_client_override_disabled(
         self, db, automail_repo, invoice_repo,

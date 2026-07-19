@@ -35,7 +35,8 @@ class TestCmrRouter:
     def test_generate_cmr_returns_400_without_trip_data(self, client_with_mocks):
         client, mocks = client_with_mocks
 
-        resp = client.post(f"{BASE}/generate", json={})
+        # Send empty trip_data so Pydantic validates but the endpoint returns 400
+        resp = client.post(f"{BASE}/generate", json={"trip_data": {}})
         assert resp.status_code == 400
         assert resp.json()["detail"] == "trip_data is required"
 
@@ -83,8 +84,8 @@ class TestCmrRouter:
         mock_gen_cls.return_value = mock_gen
         mock_gen.generate_all_copies.side_effect = RuntimeError("Generator broke")
 
-        with pytest.raises(RuntimeError, match="Generator broke"):
-            client.post(f"{BASE}/generate", json={"trip_data": {"id": 1}})
+        resp = client.post(f"{BASE}/generate", json={"trip_data": {"id": 1}})
+        assert resp.status_code == 500
 
     # ── auth ───────────────────────────────────────────────────────────────
 

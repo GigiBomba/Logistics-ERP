@@ -178,12 +178,15 @@ class MaintenanceEngine:
                 self._log_eval_failure("insurance", exc, truck_id, plate)
 
         # ── Maintenance schedules (replaces legacy maintenance_due field) ──
+        _schedule_alert_created = False
+        _schedules_evaluated = False
         try:
             maint_svc = FleetMaintenanceService(self._db)
             schedules = maint_svc.get_schedules(truck_id=truck_id_int)
             km_buffer = self._rules.get("service_km_buffer", 5000)
 
             for s in schedules:
+                _schedules_evaluated = True
                 pred = maint_svc.predict_next_service(truck_id_int, s["maintenance_type"])
                 if not pred:
                     continue
@@ -213,6 +216,7 @@ class MaintenanceEngine:
                             truck_id=truck_id,
                         )
                         count += 1
+                        _schedule_alert_created = True
                 elif pred.get("remaining_km") is not None and pred["remaining_km"] < km_buffer:
                     existing = self._alert_mgr.get_active_by_type_and_entity(
                         AlertType.MAINTENANCE, truck_id
@@ -225,6 +229,7 @@ class MaintenanceEngine:
                             truck_id=truck_id,
                         )
                         count += 1
+                        _schedule_alert_created = True
         except Exception as exc:
             self._log_eval_failure("schedules", exc, truck_id, plate)
 
@@ -264,6 +269,16 @@ class MaintenanceEngine:
                 except Exception as exc:
                     self._log_eval_failure(f"resolve_stale_{atype.value}", exc, truck_id, plate)
 
+        # ── Resolve stale MAINTENANCE alerts ─────────────────────────
+        # Only when the schedule evaluation actually ran and no schedule
+        # triggered an alert, resolve any leftover MAINTENANCE alert.
+        if _schedules_evaluated and not _schedule_alert_created:
+            stale_maint = self._alert_mgr.get_active_by_type_and_entity(
+                AlertType.MAINTENANCE, truck_id
+            )
+            if stale_maint:
+                self._alert_mgr.resolve_alert(stale_maint.id)
+
         return count
 
     # ── Tachograph evaluations ───────────────────────────────────
@@ -293,6 +308,14 @@ class MaintenanceEngine:
                 severity = Severity.WARNING
                 msg = f"Tachograph calibration expires in {days_remaining} days — Truck {plate}"
             else:
+                # Calibration is still more than 30 days away — resolve
+                # any stale tacho alert that may exist from a previous
+                # evaluation pass.
+                existing = self._alert_mgr.get_active_by_type_and_entity(
+                    AlertType.TACHOGRAPH_EXPIRY, truck_id
+                )
+                if existing:
+                    self._alert_mgr.resolve_alert(existing.id)
                 return 0
 
             existing = self._alert_mgr.get_active_by_type_and_entity(
