@@ -18,6 +18,7 @@ class ClientCreate(BaseModel):
     vat_number: str = ""
     address: str = ""
     city: str = ""
+    county: str = ""
     country: str = ""
     email: str = ""
     phone: str = ""
@@ -38,6 +39,7 @@ class ClientUpdate(BaseModel):
     vat_number: Optional[str] = None
     address: Optional[str] = None
     city: Optional[str] = None
+    county: Optional[str] = None
     country: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
@@ -51,6 +53,7 @@ class ClientResult(BaseModel):
     vat_number: str
     address: str
     city: str
+    county: str = ""
     country: str
     email: str
     phone: str

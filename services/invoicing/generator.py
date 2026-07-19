@@ -61,12 +61,19 @@ class InvoiceGenerator:
             story.append(Paragraph(self._tr("invoice_pdf.serial", mode).format(invoice_id, datetime.now().strftime('%d/%m/%Y')), self.styles["Normal"]))
             story.append(HRFlowable(width="100%", thickness=1, color=colors.HexColor("#1a73e8"), spaceAfter=15))
 
-            company_info = (f"<b>{self._tr('invoice_pdf.sender_header', mode)}</b><br/>"
-                            f"{remove_accents(conf.get('company_name', ''))}<br/>"
-                            f"CUI: {conf.get('cui', '')}<br/>"
-                            f"Reg. Com: {conf.get('reg_number', '')}<br/>"
-                            f"Adresa: {remove_accents(conf.get('address', ''))}<br/>"
-                            f"Tel: {conf.get('phone', '')}")
+        company_info = (f"<b>{self._tr('invoice_pdf.sender_header', mode)}</b><br/>"
+                        f"{remove_accents(conf.get('company_name', ''))}<br/>"
+                        f"CUI: {conf.get('cui', '')}<br/>"
+                        f"Reg. Com: {conf.get('reg_number', '')}<br/>"
+                        f"Adresa: {remove_accents(conf.get('address', ''))}<br/>"
+                        f"Judet: {conf.get('county', '')} Oras: {conf.get('city', '')}<br/>"
+                        f"Tel: {conf.get('phone', '')}")
+        iban = conf.get("iban", "")
+        bank = conf.get("bank_name", "")
+        if iban:
+            company_info += f"<br/>IBAN: {iban}"
+        if bank:
+            company_info += f"<br/>Banca: {remove_accents(bank)}"
 
             client_info = (f"<b>{self._tr('invoice_pdf.bill_to_header', mode)}</b><br/>"
                            f"{remove_accents(trip_data.get('client_name', ''))}")
@@ -138,7 +145,20 @@ class InvoiceGenerator:
 
             story.append(fin_table)
 
-            story.append(Spacer(1, 2*cm))
+            story.append(Spacer(1, 1*cm))
+
+            # Payment instructions
+            iban = conf.get("iban", "")
+            bank = conf.get("bank_name", "")
+            if iban:
+                pay_info = f"<b>Plata:</b> IBAN {iban}"
+                if bank:
+                    pay_info += f" — {remove_accents(bank)}"
+                pay_style = ParagraphStyle("PayInfo", parent=self.styles["Normal"],
+                                           fontSize=9, textColor=colors.HexColor("#333333"))
+                story.append(Paragraph(pay_info, pay_style))
+                story.append(Spacer(1, 0.3*cm))
+
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
             footer_msg = f"Email: {conf.get('email', '')} | Tel: {conf.get('phone', '')}"
             story.append(Paragraph(remove_accents(footer_msg), self.styles["Italic"]))
@@ -246,15 +266,22 @@ class InvoiceGenerator:
                                     color=company_color, spaceAfter=12))
 
             # ── FROM / BILL TO ──────────────────────────────────────────
+            iban = conf.get("iban", "")
+            bank = conf.get("bank_name", "")
             company_info = (
                 f"<b>FROM:</b><br/>"
                 f"{remove_accents(conf.get('company_name', ''))}<br/>"
                 f"CUI: {conf.get('cui', '')}<br/>"
                 f"Reg. Com: {conf.get('reg_number', '')}<br/>"
                 f"{remove_accents(conf.get('address', ''))}<br/>"
+                f"Judet: {conf.get('county', '')}, Oras: {conf.get('city', '')}<br/>"
                 f"Tel: {conf.get('phone', '')}<br/>"
                 f"Email: {conf.get('email', '')}"
             )
+            if iban:
+                company_info += f"<br/>IBAN: {iban}"
+            if bank:
+                company_info += f"<br/>Banca: {remove_accents(bank)}"
 
             client_info = (
                 f"<b>BILL TO:</b><br/>"
@@ -546,6 +573,18 @@ class InvoiceGenerator:
                     ]))
                     story.append(sig_table)
                     story.append(Spacer(1, 0.5*cm))
+
+            # ── PAYMENT INSTRUCTIONS ───────────────────────────────────
+            iban = conf.get("iban", "")
+            bank = conf.get("bank_name", "")
+            if iban:
+                pay_info = f"<b>Payment:</b> IBAN {iban}"
+                if bank:
+                    pay_info += f" — {remove_accents(bank)}"
+                pay_style = ParagraphStyle("PayInfo", parent=self.styles["Normal"],
+                                           fontSize=9, textColor=colors.HexColor("#333333"))
+                story.append(Paragraph(pay_info, pay_style))
+                story.append(Spacer(1, 0.3*cm))
 
             # ── FOOTER ──────────────────────────────────────────────────
             story.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))

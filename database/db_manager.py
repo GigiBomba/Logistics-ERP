@@ -681,6 +681,8 @@ class DatabaseManager:
             ("adr_info_json", "ALTER TABLE trips ADD COLUMN adr_info_json TEXT"),
             ("cmr_status", "ALTER TABLE trips ADD COLUMN cmr_status TEXT DEFAULT 'draft'"),
             ("cmr_remarks", "ALTER TABLE trips ADD COLUMN cmr_remarks TEXT"),
+            ("transport_order_number", "ALTER TABLE trips ADD COLUMN transport_order_number TEXT DEFAULT ''"),
+            ("dispatch_reference", "ALTER TABLE trips ADD COLUMN dispatch_reference TEXT DEFAULT ''"),
         ])
         try:
             self.conn.execute(S.INDEX_TRIPS_TRUCK_ID)
@@ -731,9 +733,71 @@ class DatabaseManager:
             ("rating", S.ALTER_CLIENTS_ADD_RATING),
             ("eori_number", "ALTER TABLE clients ADD COLUMN eori_number TEXT DEFAULT ''"),
             ("country", "ALTER TABLE clients ADD COLUMN country TEXT DEFAULT ''"),
+            ("county", "ALTER TABLE clients ADD COLUMN county TEXT DEFAULT ''"),
             ("consignee_contact_name", "ALTER TABLE clients ADD COLUMN consignee_contact_name TEXT DEFAULT ''"),
             ("consignee_contact_phone", "ALTER TABLE clients ADD COLUMN consignee_contact_phone TEXT DEFAULT ''"),
         ])
+
+        # ── Invoice table: add all columns required by InvoiceRepository ──
+        self._ensure_columns("invoices", [
+            ("client_id", "ALTER TABLE invoices ADD COLUMN client_id INTEGER REFERENCES clients(id)"),
+            ("currency", "ALTER TABLE invoices ADD COLUMN currency TEXT DEFAULT 'EUR'"),
+            ("notes", "ALTER TABLE invoices ADD COLUMN notes TEXT DEFAULT ''"),
+            ("line_items_json", "ALTER TABLE invoices ADD COLUMN line_items_json TEXT DEFAULT '[]'"),
+            ("subtotal_net", "ALTER TABLE invoices ADD COLUMN subtotal_net REAL DEFAULT 0"),
+            ("total_vat", "ALTER TABLE invoices ADD COLUMN total_vat REAL DEFAULT 0"),
+            ("total_gross", "ALTER TABLE invoices ADD COLUMN total_gross REAL DEFAULT 0"),
+            ("pdf_path", "ALTER TABLE invoices ADD COLUMN pdf_path TEXT DEFAULT ''"),
+            ("created_at", "ALTER TABLE invoices ADD COLUMN created_at TEXT"),
+            ("updated_at", "ALTER TABLE invoices ADD COLUMN updated_at TEXT"),
+            # Romanian e-Factura readiness fields
+            ("exchange_rate", "ALTER TABLE invoices ADD COLUMN exchange_rate REAL DEFAULT 1.0"),
+            ("invoice_type", "ALTER TABLE invoices ADD COLUMN invoice_type TEXT DEFAULT 'invoice'"),
+            ("amount_paid", "ALTER TABLE invoices ADD COLUMN amount_paid REAL DEFAULT 0"),
+            ("amount_remaining", "ALTER TABLE invoices ADD COLUMN amount_remaining REAL DEFAULT 0"),
+            # E-Factura tracking fields
+            ("efactura_status", "ALTER TABLE invoices ADD COLUMN efactura_status TEXT DEFAULT ''"),
+            ("efactura_xml_path", "ALTER TABLE invoices ADD COLUMN efactura_xml_path TEXT DEFAULT ''"),
+            ("efactura_submission_id", "ALTER TABLE invoices ADD COLUMN efactura_submission_id TEXT DEFAULT ''"),
+            ("efactura_submitted_at", "ALTER TABLE invoices ADD COLUMN efactura_submitted_at TEXT"),
+            ("efactura_response_code", "ALTER TABLE invoices ADD COLUMN efactura_response_code TEXT DEFAULT ''"),
+            ("efactura_response_message", "ALTER TABLE invoices ADD COLUMN efactura_response_message TEXT DEFAULT ''"),
+        ])
+
+        # ── Invoice number sequence table (race-condition-safe) ──────────
+        try:
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS invoice_number_sequences (
+                    series TEXT NOT NULL,
+                    year INTEGER NOT NULL,
+                    last_number INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY (series, year)
+                )
+            """)
+            logger.info("invoice_number_sequences table created")
+        except Exception as e:
+            logger.warning("Failed to create invoice_number_sequences: %s", e)
+
+        # ── Invoice status history table ─────────────────────────────────
+        try:
+            self.conn.execute("""
+                CREATE TABLE IF NOT EXISTS invoice_status_history (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    invoice_id INTEGER NOT NULL REFERENCES invoices(id),
+                    from_status TEXT NOT NULL DEFAULT '',
+                    to_status TEXT NOT NULL,
+                    changed_by INTEGER DEFAULT 0,
+                    changed_at TEXT NOT NULL,
+                    reason TEXT DEFAULT ''
+                )
+            """)
+            self.conn.execute("""
+                CREATE INDEX IF NOT EXISTS idx_inv_status_history_invoice
+                ON invoice_status_history(invoice_id)
+            """)
+            logger.info("invoice_status_history table created")
+        except Exception as e:
+            logger.warning("Failed to create invoice_status_history: %s", e)
 
         # ── Migration: make document_package.trip_id nullable ────────────
         try:
