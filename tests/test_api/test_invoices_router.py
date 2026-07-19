@@ -6,6 +6,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from tests.test_api.conftest import StrippedMock
+
 BASE = "/api/v1/invoices"
 
 
@@ -21,12 +23,12 @@ class TestInvoicesRouter:
         client, mocks = client_with_mocks
         pdf_file = tmp_path / "INV-2024-0001.pdf"
         pdf_file.write_text("fake-pdf-content")
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc_cls.return_value = mock_svc
         mock_svc.generate_and_record.return_value = str(pdf_file)
 
         payload = {
-            "id": 1,
+            "trip_id": 1,
             "client_name": "Acme Corp",
             "total_price_eur": 1500.00,
             "mode": "client",
@@ -35,9 +37,11 @@ class TestInvoicesRouter:
         assert resp.status_code == 200
         # FileResponse returns the file — status 200, content-disposition header
         assert "application/pdf" in resp.headers.get("content-type", "")
-        mock_svc.generate_and_record.assert_called_once_with(
-            payload, mode="client"
-        )
+        mock_svc.generate_and_record.assert_called_once()
+        call_args = mock_svc.generate_and_record.call_args
+        assert call_args[0][0]["trip_id"] == 1
+        assert call_args[0][0]["client_name"] == "Acme Corp"
+        assert call_args[1].get("mode") == "client"
 
     @patch("os.path.isfile", return_value=False)
     @patch("services.invoicing.service.InvoiceService")
@@ -49,7 +53,7 @@ class TestInvoicesRouter:
         mock_svc_cls.return_value = mock_svc
         mock_svc.generate_and_record.return_value = "/tmp/missing.pdf"
 
-        resp = client.post(f"{BASE}/generate", json={"id": 1})
+        resp = client.post(f"{BASE}/generate", json={"trip_id": 1})
         assert resp.status_code == 500
         assert resp.json()["detail"] == "Invoice generation failed"
 
@@ -60,12 +64,12 @@ class TestInvoicesRouter:
         self, mock_svc_cls, client_with_mocks
     ):
         client, mocks = client_with_mocks
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc_cls.return_value = mock_svc
         mock_svc.send_invoice_email.return_value = True
 
         payload = {
-            "recipient": "client@example.com",
+            "recipient_email": "client@example.com",
             "trip_id": 1,
             "trip_data": {"client_name": "Acme"},
             "mode": "client",
@@ -80,7 +84,8 @@ class TestInvoicesRouter:
     ):
         client, mocks = client_with_mocks
 
-        resp = client.post(f"{BASE}/1/send", json={})
+        # Send empty recipient_email — passes pydantic validation but triggers route check
+        resp = client.post(f"{BASE}/1/send", json={"recipient_email": ""})
         assert resp.status_code == 400
         assert resp.json()["detail"] == "Recipient email is required"
 
@@ -94,7 +99,7 @@ class TestInvoicesRouter:
         mock_svc.send_invoice_email.side_effect = ValueError("SMTP not configured")
 
         payload = {
-            "recipient": "client@example.com",
+            "recipient_email": "client@example.com",
             "trip_data": {},
         }
         resp = client.post(f"{BASE}/1/send", json=payload)
@@ -111,7 +116,7 @@ class TestInvoicesRouter:
         mock_svc.send_invoice_email.return_value = False
 
         payload = {
-            "recipient": "client@example.com",
+            "recipient_email": "client@example.com",
             "trip_data": {},
         }
         resp = client.post(f"{BASE}/1/send", json=payload)

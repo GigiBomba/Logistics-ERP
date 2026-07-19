@@ -137,8 +137,8 @@ class QtHistoryView(BaseView):
         self.c_status = StyledComboBox(bar)
         self.c_status.addItem("")
         self.c_status.addItems([
-            t("status.Planned"), t("status.In Transit"), t("status.Loading"),
-            t("status.Delivered"), t("status.Invoiced"), t("status.Paid"), t("status.Archived"),
+            t("status.planned"), t("status.In Transit"), t("status.loading"),
+            t("status.delivered"), t("status.invoiced"), t("status.paid"), t("status.Archived"),
         ])
         self.c_status.currentTextChanged.connect(self._on_status_filter_changed)
         bar_layout.addWidget(self.c_status)

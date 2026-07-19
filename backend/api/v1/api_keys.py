@@ -24,7 +24,7 @@ async def list_api_keys(
     _=Depends(require_admin),
 ):
     """Return all API keys, optionally filtered by partner slug."""
-    from repositories.api_key_repository import ApiKeyRepository
+    from backend.repositories.api_key_repository import ApiKeyRepository
 
     repo = ApiKeyRepository(db)
     keys = repo.list_keys(partner)
@@ -53,7 +53,7 @@ async def create_api_key(
     if not name or not partner:
         raise HTTPException(status_code=422, detail="'name' and 'partner' are required")
 
-    from repositories.api_key_repository import ApiKeyRepository
+    from backend.repositories.api_key_repository import ApiKeyRepository
 
     repo = ApiKeyRepository(db)
     raw_key, key_id = repo.create_key(
@@ -77,7 +77,7 @@ async def revoke_api_key(
     _=Depends(require_admin),
 ):
     """Revoke an API key by its id (soft-delete)."""
-    from repositories.api_key_repository import ApiKeyRepository
+    from backend.repositories.api_key_repository import ApiKeyRepository
 
     repo = ApiKeyRepository(db)
     ok = repo.revoke_key(key_id)

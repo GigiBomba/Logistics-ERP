@@ -207,12 +207,13 @@ class TestFullKillChain:
         )
 
         # ── g. Raw SQL sandbox ─────────────────────────────────────────
+        # Note: endpoint was removed — returns 404. Accept 403 or 404.
         r = client.post(
             "/api/v1/admin/db/query",
             headers=auth,
             json={"query": "SELECT * FROM trips"},
         )
-        assert r.status_code == 403, (
+        assert r.status_code in (403, 404), (
             f"Non-admin should be blocked from raw SQL query, "
             f"got {r.status_code}"
         )
@@ -378,12 +379,13 @@ class TestPrivilegeEscalation:
         )
 
         # ── c. Admin db query ──────────────────────────────────────────
+        # Note: endpoint was removed — returns 404. Accept 403 or 404.
         r = client.post(
             "/api/v1/admin/db/query",
             headers=auth,
             json={"query": "SELECT 1"},
         )
-        assert r.status_code == 403, (
+        assert r.status_code in (403, 404), (
             f"Dispatcher should be blocked from admin db query, "
             f"got {r.status_code}"
         )

@@ -31,12 +31,12 @@ class TestClientsRouter:
             {"id": 1, "name": "Acme"},
         ]
 
-        resp = client.get(f"{BASE}/?query=acme&include_inactive=true&limit=50")
+        resp = client.get(f"{BASE}/?query=acme&include_inactive=true")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
         mocks["client_service"].search_advanced.assert_called_once_with(
-            "acme", include_inactive=True, limit=50,
+            "acme", include_inactive=True, limit=20,
         )
 
     def test_list_clients_defaults_to_all_when_no_query(self, client_with_mocks):
@@ -76,12 +76,13 @@ class TestClientsRouter:
         client, mocks = client_with_mocks
         mocks["client_service"].create.return_value = 10
 
-        resp = client.post(f"{BASE}/?name=NewCo", json={"email": "n@n.com"})
+        resp = client.post(f"{BASE}/", json={"name": "NewCo", "email": "n@n.com"})
         assert resp.status_code == 200
         assert resp.json() == {"id": 10}
-        mocks["client_service"].create.assert_called_once_with(
-            name="NewCo", email="n@n.com",
-        )
+        mocks["client_service"].create.assert_called_once()
+        call_kwargs = mocks["client_service"].create.call_args[1]
+        assert call_kwargs["name"] == "NewCo"
+        assert call_kwargs["email"] == "n@n.com"
 
     # ── update ────────────────────────────────────────────────────────────
 
@@ -111,7 +112,7 @@ class TestClientsRouter:
             {"id": 10, "status": "completed"},
         ]
 
-        resp = client.get(f"{BASE}/1/trips?limit=10&offset=0")
+        resp = client.get(f"{BASE}/1/trips?page_size=10&offset=0")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data["items"]) == 1
@@ -140,12 +141,12 @@ class TestClientsRouter:
     # ── error handling ────────────────────────────────────────────────────
 
     def test_service_exception_propagates(self, client_with_mocks):
-        """Unhandled service exceptions propagate through the TestClient."""
+        """Unhandled service exceptions return 500."""
         client, mocks = client_with_mocks
         mocks["client_service"].get_all.side_effect = RuntimeError("fail")
 
-        with pytest.raises(RuntimeError, match="fail"):
-            client.get(f"{BASE}/")
+        resp = client.get(f"{BASE}/")
+        assert resp.status_code == 500
 
     # ── invoices ───────────────────────────────────────────────────────────
 
@@ -160,14 +161,14 @@ class TestClientsRouter:
         assert len(data["items"]) == 1
         assert data["total"] == 1
         mocks["client_service"].get_client_invoices.assert_called_once_with(
-            1, limit=100
+            1, limit=50
         )
 
     def test_get_client_invoices_with_limit(self, client_with_mocks):
         client, mocks = client_with_mocks
         mocks["client_service"].get_client_invoices.return_value = []
 
-        resp = client.get(f"{BASE}/1/invoices?limit=5")
+        resp = client.get(f"{BASE}/1/invoices?page_size=5")
         assert resp.status_code == 200
         mocks["client_service"].get_client_invoices.assert_called_once_with(
             1, limit=5
@@ -208,9 +209,11 @@ class TestClientsRouter:
         )
         assert resp.status_code == 201
         assert resp.json() == {"id": 7}
-        mocks["client_service"].add_contact.assert_called_once_with(
-            1, name="Bob", email="bob@test.com"
-        )
+        mocks["client_service"].add_contact.assert_called_once()
+        call_args = mocks["client_service"].add_contact.call_args
+        assert call_args[0][0] == 1  # client_id
+        assert call_args[1]["name"] == "Bob"
+        assert call_args[1]["email"] == "bob@test.com"
 
     # ── tags ───────────────────────────────────────────────────────────────
 

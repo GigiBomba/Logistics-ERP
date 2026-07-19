@@ -511,7 +511,7 @@ export default function ProductTourPage() {
                   className="h-8 w-48 rounded-md border bg-background pl-8 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
                 />
               </div>
-              <button aria-label="Notifications" className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <button aria-label={t("common.aria.notifications")} className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground">
                 <Bell className="h-4 w-4" />
                 <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
               </button>

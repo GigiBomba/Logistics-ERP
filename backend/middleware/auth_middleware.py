@@ -33,8 +33,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from backend.desktop_config import Config
 from backend.errors import ErrorCode
-from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -112,7 +112,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # ── 2. Check per-partner keys ──────────────────────────────────
-        from repositories.api_key_repository import ApiKeyRepository
+        from backend.repositories.api_key_repository import ApiKeyRepository
 
         repo = ApiKeyRepository(self._get_db())
         key_data = repo.validate_key(api_key)

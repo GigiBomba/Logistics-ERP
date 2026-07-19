@@ -198,7 +198,7 @@ class InvoiceService:
     def create_record(self, trip_id: int, inv_number: str, amount: float, due_date: str) -> None:
         self.db.create_invoice_record(trip_id, inv_number, amount, due_date)
 
-    def generate_and_record(self, trip_data: dict[str, Any], mode: str = "client") -> str:
+    def generate_and_record(self, trip_data: dict[str, Any], mode: str = "client", company_id=None) -> str:
         path = self.generate(trip_data, mode=mode)
         if mode == "client":
             due_date = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
@@ -243,6 +243,7 @@ class InvoiceService:
         smtp_config: Optional[dict[str, str]] = None,
         trip_data: Optional[dict[str, Any]] = None,
         mode: str = "client",
+        company_id=None,
     ) -> bool:
         trip = trip_data or {}
         if not recipient:

@@ -1,6 +1,9 @@
 """Restore business data from the latest backup into the current schema.
 Seeds company + admin user if missing.
 
+NOTE: This script uses ``sqlite3.connect()`` directly and will NOT work
+with a PostgreSQL backend.  It is strictly SQLite-only.
+
 Usage:
     py scripts/restore_data_from_backup.py
 """
@@ -121,64 +124,66 @@ def main():
     src = sqlite3.connect(backup_path)
     src.row_factory = sqlite3.Row
 
-    print(f"\n--- Copying data from backup ---")
+    try:
+        print(f"\n--- Copying data from backup ---")
 
-    tables_config = [
-        ("trips", ["id", "created_at", "truck_number", "driver_name", "client_name",
-                    "distance_km", "total_price_eur", "rate_per_km", "gross_per_km",
-                    "net_profit", "start_date", "end_date", "payment_date", "extra_costs",
-                    "fuel_cost", "toll_cost", "salary_cost", "currency", "status",
-                    "context_json", "route_history_v2_id", "truck_consumption_l_per_100km"],
-         {"company_id": company_id}),
-        ("trucks", ["id", "plate_number", "model", "manufacturer", "year", "vin",
-                     "fuel_consumption", "mileage", "monthly_rate", "status",
-                     "insurance_expiry", "inspection_expiry", "maintenance_due",
-                     "active_status"],
-         {"company_id": company_id}),
-        ("drivers", ["id", "name", "phone", "email", "license_number", "license_category",
-                      "license_expiry", "medical_expiry", "hire_date", "monthly_salary",
-                      "notes", "is_active", "created_at", "updated_at"],
-         {"company_id": company_id}),
-        ("invoices", ["id", "trip_id", "invoice_number", "issue_date", "due_date",
-                       "total_amount", "status"],
-         {"company_id": company_id}),
-        ("route_history_v2", ["id", "route_fingerprint", "metadata_version", "created_at",
-                               "last_calculated_at", "calculation_count", "stops_json",
-                               "geometry_compressed", "geometry_encoding", "total_distance_km",
-                               "duration_min", "truck_id", "truck_label", "truck_json",
-                               "profile", "excluded_countries_json", "toll_estimates_json",
-                               "fuel_estimates_json", "profit_estimates_json",
-                               "countries_traversed_json", "route_summary_json", "archived_at"],
-         {"company_id": company_id, "is_committed": 0}),
-        ("route_events", ["id", "route_id", "event_type", "payload_json", "created_at"],
-         None),
-        ("truck_route_assignments", ["id", "truck_id", "route_id", "status", "assigned_at",
-                                      "started_at", "completed_at", "archived_at", "notes"],
-         None),
-        ("driver_truck_assignments", ["id", "driver_id", "truck_id", "assigned_at"],
-         None),
-        ("email_logs", ["id", "trip_id", "recipient", "subject", "timestamp",
-                         "status", "error_msg"],
-         None),
-        ("settings", ["key", "value"], None),
-    ]
+        tables_config = [
+            ("trips", ["id", "created_at", "truck_number", "driver_name", "client_name",
+                        "distance_km", "total_price_eur", "rate_per_km", "gross_per_km",
+                        "net_profit", "start_date", "end_date", "payment_date", "extra_costs",
+                        "fuel_cost", "toll_cost", "salary_cost", "currency", "status",
+                        "context_json", "route_history_v2_id", "truck_consumption_l_per_100km"],
+             {"company_id": company_id}),
+            ("trucks", ["id", "plate_number", "model", "manufacturer", "year", "vin",
+                         "fuel_consumption", "mileage", "monthly_rate", "status",
+                         "insurance_expiry", "inspection_expiry", "maintenance_due",
+                         "active_status"],
+             {"company_id": company_id}),
+            ("drivers", ["id", "name", "phone", "email", "license_number", "license_category",
+                          "license_expiry", "medical_expiry", "hire_date", "monthly_salary",
+                          "notes", "is_active", "created_at", "updated_at"],
+             {"company_id": company_id}),
+            ("invoices", ["id", "trip_id", "invoice_number", "issue_date", "due_date",
+                           "total_amount", "status"],
+             {"company_id": company_id}),
+            ("route_history_v2", ["id", "route_fingerprint", "metadata_version", "created_at",
+                                   "last_calculated_at", "calculation_count", "stops_json",
+                                   "geometry_compressed", "geometry_encoding", "total_distance_km",
+                                   "duration_min", "truck_id", "truck_label", "truck_json",
+                                   "profile", "excluded_countries_json", "toll_estimates_json",
+                                   "fuel_estimates_json", "profit_estimates_json",
+                                   "countries_traversed_json", "route_summary_json", "archived_at"],
+             {"company_id": company_id, "is_committed": 0}),
+            ("route_events", ["id", "route_id", "event_type", "payload_json", "created_at"],
+             None),
+            ("truck_route_assignments", ["id", "truck_id", "route_id", "status", "assigned_at",
+                                          "started_at", "completed_at", "archived_at", "notes"],
+             None),
+            ("driver_truck_assignments", ["id", "driver_id", "truck_id", "assigned_at"],
+             None),
+            ("email_logs", ["id", "trip_id", "recipient", "subject", "timestamp",
+                             "status", "error_msg"],
+             None),
+            ("settings", ["key", "value"], None),
+        ]
 
-    for table, columns, extra in tables_config:
-        if not table_exists(src, table):
-            print(f"  {table}: not found in backup (skipped)")
-            continue
-        if not table_exists(db.conn, table):
-            print(f"  {table}: not found in target (skipped)")
-            continue
-        placeholders = ["?"] * len(columns)
-        try:
-            copy_table(src, db.conn, table, columns, placeholders, extra_columns=extra)
-        except Exception as e:
-            print(f"  {table}: error - {e}")
+        for table, columns, extra in tables_config:
+            if not table_exists(src, table):
+                print(f"  {table}: not found in backup (skipped)")
+                continue
+            if not table_exists(db.conn, table):
+                print(f"  {table}: not found in target (skipped)")
+                continue
+            placeholders = ["?"] * len(columns)
+            try:
+                copy_table(src, db.conn, table, columns, placeholders, extra_columns=extra)
+            except Exception as e:
+                print(f"  {table}: error - {e}")
 
-    db.conn.commit()
-    src.close()
-    db.close()
+        db.conn.commit()
+    finally:
+        src.close()
+        db.close()
 
     print()
     print("Restoration complete. Restart the app to see your data.")

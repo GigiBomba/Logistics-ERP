@@ -15,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status
 
 from backend.dependencies import get_db
 from backend.schemas.waitlist import WaitlistJoinRequest, WaitlistJoinResponse
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,7 @@ def join_waitlist(
     email = data.email.strip().lower()
 
     # ── Check for duplicate email (case-insensitive) ───────────────────
-    existing = db.conn.execute(
+    existing = db.execute(
         "SELECT id FROM waitlist_entries WHERE lower(email) = lower(?)",
         (email,),
     ).fetchone()
@@ -96,7 +96,7 @@ def join_waitlist(
     referral_code = ""
     for _ in range(max_attempts):
         candidate = _generate_referral_code()
-        exists = db.conn.execute(
+        exists = db.execute(
             "SELECT id FROM waitlist_entries WHERE referral_code = ?",
             (candidate,),
         ).fetchone()
@@ -117,7 +117,7 @@ def join_waitlist(
 
     # ── Insert row ─────────────────────────────────────────────────────
     try:
-        db.conn.execute(
+        db.execute(
             """INSERT INTO waitlist_entries 
                (company_name, contact_name, email, fleet_size, company_size,
                 country, source, referral_code, ip_hash, user_agent)
@@ -135,9 +135,9 @@ def join_waitlist(
                 user_agent,
             ),
         )
-        db.conn.commit()
+        db.commit()
     except Exception:
-        db.conn.rollback()
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Signup failed. Please try again.",

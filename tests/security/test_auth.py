@@ -71,10 +71,14 @@ def test_wrong_password_fails(client: TestClient) -> None:
         data={"username": ADMIN_EMAIL, "password": WRONG_PW},
     )
     assert resp.status_code == 401
-    detail = resp.json().get("detail", "").lower()
+    body = resp.json()
+    detail = body.get("detail", "")
+    if isinstance(detail, dict):
+        detail = detail.get("detail", detail.get("error_code", str(detail)))
+    detail = detail.lower()
     assert "admin" not in detail, "Error message leaked 'admin'"
     assert "email" not in detail, "Error message leaked 'email'"
-    assert "invalid" in detail, (
+    assert "invalid" in detail or "incorrect" in detail, (
         "Error message does not match expected generic phrasing"
     )
 
@@ -91,7 +95,11 @@ def test_wrong_email_fails(client: TestClient) -> None:
         data={"username": UNKNOWN_EMAIL, "password": "irrelevant"},
     )
     assert resp.status_code == 401
-    detail = resp.json().get("detail", "").lower()
+    body = resp.json()
+    detail = body.get("detail", "")
+    if isinstance(detail, dict):
+        detail = detail.get("detail", detail.get("error_code", str(detail)))
+    detail = detail.lower()
     # The message should be identical in style to the wrong-password case
     # (e.g. "Incorrect email or password.") and must not hint at which
     # field is wrong.
@@ -232,6 +240,8 @@ def test_refresh_rotation(client: TestClient) -> None:
     assert "refresh_token" in first_body  # New rotated token
 
     # Second use with the **original** refresh token — should fail
+    # Clear cookies first so the body token is used (not the cookie set by first response)
+    client.cookies.clear()
     second = client.post(
         "/api/v1/auth/refresh",
         json={"refresh_token": refresh_token},

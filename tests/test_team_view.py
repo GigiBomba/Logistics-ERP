@@ -43,6 +43,7 @@ def team_view(qtbot, mock_user_service, mock_api_client):
         db=MagicMock(),
         api_client=mock_api_client,
     )
+    widget.show()
     qtbot.addWidget(widget)
     yield widget
 
@@ -114,8 +115,9 @@ class TestQtTeamView:
             team_view._role_combo.setCurrentText(dispatcher_role)
         assert not team_view._driver_combo_label.isVisible()
 
-    def test_add_user_validates_email(self, team_view):
+    def test_add_user_validates_email(self, team_view, monkeypatch):
         """_on_add_user shows warning if email is empty."""
+        monkeypatch.setattr("ui.views.team_view.QMessageBox", MagicMock())
         team_view._email_input.clear()
         team_view._password_input.setText("secret123")
         # Should not crash; warning dialog appears
@@ -123,8 +125,9 @@ class TestQtTeamView:
         # Form should remain intact
         assert team_view._email_input.text() == ""
 
-    def test_add_user_validates_password(self, team_view):
+    def test_add_user_validates_password(self, team_view, monkeypatch):
         """_on_add_user shows warning if password is empty."""
+        monkeypatch.setattr("ui.views.team_view.QMessageBox", MagicMock())
         team_view._email_input.setText("user@test.com")
         team_view._password_input.clear()
         team_view._on_add_user()

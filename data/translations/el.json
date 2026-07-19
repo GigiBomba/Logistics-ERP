@@ -1,5 +1,340 @@
 {
   "language_name": "Ελληνικά",
+  "copilot": {
+    "panel": {
+      "title": "AI Co-Pilot",
+      "coming_soon": "The AI Co-Pilot is coming soon. Phase 1 will enable natural language queries for routes, vehicles, drivers, and analytics."
+    },
+    "input": {
+      "placeholder": "Ask me anything about your fleet...",
+      "send": "Send"
+    },
+    "timeline": {
+      "title": "Execution Timeline",
+      "empty": "No active plan. Ask the Co-Pilot to do something.",
+      "confirmation_needed": "⚠ This plan requires your confirmation.",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "view_steps": "View Steps",
+      "view_reasoning": "View Reasoning"
+    },
+    "confirmation": {
+      "title": "Confirm Action",
+      "review": "Review the proposed action:",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "level_2_warning": "This action will modify business data.",
+      "level_3_warning": "This action is IRREVERSIBLE. Type the {label} to confirm:",
+      "diff_before": "Before",
+      "diff_after": "After",
+      "no_confirmation_needed": "No confirmation needed",
+      "select_candidate": "Select the correct match:",
+      "none_of_these": "None of these",
+      "type_phrase": "Type '{phrase}' to confirm"
+    },
+    "reasoning": {
+      "need_destination": "Destination needed",
+      "need_origin": "Origin needed",
+      "need_date": "Date needed",
+      "need_vehicle": "Vehicle selection needed",
+      "selected_lowest_cost": "Selected as lowest total cost"
+    },
+    "step_status": {
+      "pending": "Pending",
+      "running": "Running",
+      "succeeded": "Succeeded",
+      "failed": "Failed",
+      "skipped": "Skipped"
+    },
+    "phase0": {
+      "not_yet_implemented": "The AI Co-Pilot is not yet available. Coming in Phase 1."
+    },
+    "error": {
+      "too_many_steps": "This plan has too many steps. Can you narrow it down?",
+      "too_many_graph_nodes": "This request would generate too many reasoning steps. Can you narrow it down?",
+      "too_many_tokens": "This request is too complex to process in one turn. Can you break it into smaller parts?",
+      "timeout": "The operation timed out. Please try again.",
+      "feature_not_in_tier": "This feature is not available on your subscription tier.",
+      "unavailable": "The AI Co-Pilot is temporarily unavailable. Please use the standard screens instead.",
+      "service_error": "The backend service returned an error.",
+      "unexpected": "An unexpected error occurred.",
+      "no_db": "Database connection unavailable. Please try again later.",
+      "internal": "An internal error occurred. Please try again.",
+      "circuit_breaker_tripped": "The Co-Pilot is temporarily unavailable for autonomous actions. Please use manual confirmation or try again later.",
+      "unknown_analytics_domain": "Unknown analytics domain. Available: financial, fleet, driver, client, route_profitability, trip_status, cost_breakdown, monthly_volume, revenue_quarterly, maintenance, truck_utilization, invoice_aging, overdue, summary."
+    },
+    "step": {
+      "vehicle_search_done": "Vehicle search completed.",
+      "vehicle_health_score_done": "Vehicle health score computed.",
+      "driver_hours_check_done": "Driver hours check completed.",
+      "analytics_query_done": "Analytics query completed."
+    },
+    "tool": {
+      "db_unavailable": "Database not available — cannot execute query.",
+      "ocr": {
+        "unavailable": "OCR processing is not yet available. The pipeline service is still being developed.",
+        "confirm_match_unavailable": "OCR confirm-match is not yet available."
+      },
+      "document": {
+        "search_ok": "Document search completed.",
+        "search_failed": "Document search failed.",
+        "auto_rename_unavailable": "Auto-rename is not yet available.",
+        "generate_cmr_ok": "CMR generated successfully.",
+        "generate_cmr_failed": "CMR generation failed.",
+        "ocr_import_ok": "Document OCR processed successfully.",
+        "create_failed": "Document record creation failed.",
+        "ocr_match_ok": "OCR match confirmed successfully.",
+        "ocr_match_failed": "OCR match confirmation failed."
+      },
+      "currency": {
+        "get_rate_ok": "Exchange rate retrieved.",
+        "get_rate_failed": "Failed to get exchange rate.",
+        "convert_ok": "Currency conversion completed.",
+        "convert_failed": "Currency conversion failed."
+      },
+      "automail": {
+        "schedule_unavailable": "Automail scheduling is not yet available.",
+        "sent": "Email sent successfully.",
+        "send_failed": "Failed to send email."
+      },
+      "freight": {
+        "service_unavailable": "Freight exchange service is not available.",
+        "search_loads_ok": "Load search completed.",
+        "search_loads_failed": "Load search failed.",
+        "get_load_ok": "Load details retrieved.",
+        "get_load_not_found": "Load not found.",
+        "get_load_failed": "Failed to retrieve load details.",
+        "save_search_ok": "Search saved successfully.",
+        "save_search_failed": "Failed to save search.",
+        "refresh_search_ok": "Search refreshed.",
+        "refresh_search_not_found": "Saved search not found.",
+        "refresh_search_failed": "Failed to refresh search.",
+        "evaluate_load_ok": "Load evaluation completed.",
+        "evaluate_load_not_found": "Load not found for evaluation.",
+        "evaluate_load_failed": "Load evaluation failed.",
+        "find_best_trucks_ok": "Best trucks found.",
+        "find_best_trucks_not_found": "No compatible trucks found.",
+        "find_best_trucks_failed": "Failed to find best trucks.",
+        "import_load_ok": "Load imported successfully.",
+        "import_load_failed": "Failed to import load.",
+        "recommend_dispatch_ok": "Dispatch recommendation completed.",
+        "recommend_dispatch_not_found": "Cannot recommend — load or trucks not found.",
+        "recommend_dispatch_failed": "Dispatch recommendation failed.",
+        "list_connected_providers_ok": "Connected providers listed.",
+        "list_connected_providers_failed": "Failed to list connected providers."
+      },
+      "email": {
+        "bulk_sent": "Bulk email sent. {sent} succeeded, {failed} failed.",
+        "bulk_failed": "Bulk email sending failed."
+      },
+      "export": {
+        "generate_pdf_ok": "PDF generated successfully.",
+        "generate_pdf_failed": "PDF generation failed.",
+        "generate_excel_ok": "Excel generated successfully.",
+        "generate_excel_failed": "Excel generation failed."
+      }
+    },
+    "dispatch": {
+      "create": {
+        "success": "Dispatch created successfully.",
+        "failed": "Failed to create dispatch."
+      },
+      "cancel": {
+        "success": "Dispatch cancelled successfully.",
+        "failed": "Failed to cancel dispatch."
+      },
+      "bulk_assign": {
+        "success": "Bulk assign completed successfully."
+      },
+      "undo_failed": "Failed to undo dispatch action."
+    },
+    "client": {
+      "payment_summary": {
+        "success": "Client payment summary retrieved."
+      },
+      "delete_failed": "Failed to delete client.",
+      "create": {
+        "success": "Client created successfully."
+      },
+      "update": {
+        "success": "Client updated successfully."
+      }
+    },
+    "driver": {
+      "remove_failed": "Failed to remove driver.",
+      "create": {
+        "success": "Driver created successfully."
+      },
+      "update": {
+        "success": "Driver updated successfully."
+      }
+    },
+    "trip": {
+      "calculate_profitability": {
+        "success": "Trip profitability calculated."
+      },
+      "calculate_estimate_failed": "Trip profitability estimate failed.",
+      "delete_failed": "Failed to delete trip."
+    },
+    "vehicle": {
+      "delete_failed": "Failed to delete vehicle."
+    },
+    "tracking": {
+      "positions_fetched": "Live vehicle positions retrieved.",
+      "history_unavailable": "Vehicle position history is not yet available."
+    },
+    "proforma": {
+      "create": {
+        "success": "Proforma invoice created successfully."
+      },
+      "update_unavailable": "Proforma update is not yet available.",
+      "convert_to_invoice": {
+        "success": "Proforma converted to invoice successfully."
+      }
+    },
+    "invoice": {
+      "delete_failed": "Failed to delete invoice.",
+      "deleted": "Invoice deleted successfully.",
+      "draft": {
+        "success": "Invoice draft created successfully."
+      },
+      "generate_pdf": {
+        "success": "Invoice PDF generated successfully."
+      },
+      "finalize": {
+        "success": "Invoice finalized successfully."
+      }
+    },
+    "route": {
+      "delete_failed": "Failed to delete route.",
+      "delete_unavailable": "Route deletion is not yet available.",
+      "error": {
+        "service_unavailable": "Route service is currently unavailable.",
+        "calculate": "Route calculation failed.",
+        "estimate_cost": "Cost estimation failed.",
+        "plan_multistop": "Multi-stop route planning failed."
+      },
+      "calculate": {
+        "success": "Route calculated successfully."
+      },
+      "estimate_cost": {
+        "success": "Cost estimate completed.",
+        "error": "Cost estimation failed."
+      },
+      "plan_multistop": {
+        "success": "Multi-stop route planned successfully.",
+        "error": "Multi-stop route planning failed."
+      }
+    },
+    "maintenance": {
+      "schedule": {
+        "success": "Maintenance schedule saved successfully."
+      }
+    },
+    "clarification": {
+      "unknown_intent": "I didn't understand that request. Could you rephrase it?",
+      "tool_unavailable": "That feature is not available. Please try a different request.",
+      "low_confidence": "I'm not confident I understood correctly. Could you provide more details?",
+      "missing_entities": "I need more information to complete this request.",
+      "cannot_compile": "I couldn't build an execution plan for that request."
+    },
+    "handoff": {
+      "message": "I'm having trouble understanding this request. I'll pass you to the standard screens where you can complete this manually."
+    },
+    "plan": {
+      "not_persisted": "Plan history is not yet available.",
+      "cancelled": "Plan has been cancelled.",
+      "not_found": "Plan with ID {plan_id} not found.",
+      "not_owned": "You do not have access to this plan."
+    },
+    "world_model": {
+      "overdue_invoices": "There are {count} overdue invoices requiring attention.",
+      "overdue_maintenance": "{count} maintenance items are overdue."
+    },
+    "payment": {
+      "bulk_csv_ok": "Bulk payment CSV generated with {count} payees.",
+      "bulk_csv_failed": "Failed to generate bulk payment CSV."
+    },
+    "undo": {
+      "tool_not_found": "Undo failed: tool not found.",
+      "not_supported": "This action does not support undo.",
+      "not_implemented": "Undo is not yet implemented for this action.",
+      "invalid_token": "Undo failed: invalid or expired undo token.",
+      "success": "Action undone successfully.",
+      "not_found": "No undoable action found for this plan.",
+      "not_available": "This action does not have an undo token available.",
+      "expired": "The undo window has expired (30-minute limit)."
+    },
+    "chat": {
+      "you": "You",
+      "co_pilot": "Co-Pilot",
+      "thinking": "Thinking...",
+      "empty": "Start a conversation with the AI Co-Pilot.",
+      "error": "Sorry, something went wrong. Please try again.",
+      "new_conversation": "New Conversation"
+    },
+    "insight": {
+      "title": "Insights",
+      "empty": "No insights to review",
+      "filter_all": "All",
+      "filter_new": "New",
+      "filter_reviewed": "Reviewed",
+      "severity": {
+        "critical": "Critical",
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low"
+      },
+      "action": {
+        "review": "Review",
+        "dismiss": "Dismiss",
+        "remind": "Remind later"
+      },
+      "type": {
+        "cost_anomaly": "Cost Anomaly",
+        "driver_alert": "Driver Alert",
+        "maintenance_due": "Maintenance Due",
+        "overdue_invoice": "Overdue Invoice",
+        "fuel_trend": "Fuel Trend",
+        "return_load": "Return Load",
+        "fleet_availability": "Fleet Availability"
+      },
+      "time": {
+        "just_now": "just now",
+        "minutes_ago": "{n}m ago",
+        "hours_ago": "{n}h ago",
+        "days_ago": "{n}d ago"
+      }
+    },
+    "help": {
+      "answer_ready": "Here's what I found about that. I used {article_count} article(s) to answer.",
+      "no_answer": "I couldn't find documentation about \"{question}\". Try the help menu or contact support.",
+      "answer": "{answer}",
+      "ask_ai_menu": "Ask AI about this",
+      "ask_ai_question": "What does the {label} do?",
+      "ask_ai_question_screen": "What does the {label} do in the {screen} section?",
+      "error": {
+        "empty_question": "Please type a question first.",
+        "question_too_long": "That question is too long. Try a shorter version.",
+        "search_failed": "Sorry, I couldn't search the documentation right now.",
+        "empty_workflow": "Please specify which workflow you need help with.",
+        "workflow_not_found": "I don't have a walkthrough for \"{workflow_id}\" yet.",
+        "workflow_failed": "Sorry, I couldn't load that walkthrough right now."
+      }
+    },
+    "guided": {
+      "ready": "Here's a step-by-step walkthrough for you."
+    },
+    "voice": {
+      "mode_ptt": "Push to Talk",
+      "mode_wake_word": "Wake Word",
+      "ptt_tooltip": "Hold to record a voice command",
+      "listening_tooltip": "Listening...",
+      "processing_tooltip": "Processing...",
+      "wake_word_phase3": "Wake word support coming soon. Switching back to Push to Talk.",
+      "recording_error": "Microphone error: {error}"
+    }
+  },
   "app": {
     "name": "LOGISTICS ERP",
     "title": "Cashflow Manager v2.0 - Εφοδιαστική",
@@ -39,7 +374,8 @@
     "team": "Team",
     "migration_center": "Migration Center",
     "group_tools": "Tools",
-    "group_administration": "Administration"
+    "group_administration": "Administration",
+    "copilot": "AI Co-Pilot"
   },
   "migration": {
     "title": "Migration Center",
@@ -735,7 +1071,33 @@
     "field_ocr_credentials": "Cloud OCR credentials:",
     "field_ocr_gpu": "Field Ocr Gpu",
     "field_ocr_help": "Set at least one provider",
-    "unit_seconds": " seconds"
+    "unit_seconds": " seconds",
+    "section_autonomous_mode": "AUTONOMOUS MODE",
+    "autonomous": {
+      "dispatch": "Auto-Dispatch",
+      "dispatch_help": "Let the AI Co-Pilot automatically dispatch trips when conditions are met.",
+      "invoice": "Auto-Invoice",
+      "invoice_help": "Let the AI Co-Pilot generate and send invoices automatically.",
+      "email": "Auto-Email",
+      "email_help": "Let the AI Co-Pilot send automated email notifications to clients.",
+      "upgrade_needed": "Autonomous Mode is an Enterprise-tier feature. Upgrade your subscription to enable per-workflow AI-driven automatic execution.",
+      "circuit_breaker_status": "Circuit Breaker Status",
+      "circuit_breaker_active": "Active — autonomous actions are permitted.",
+      "circuit_breaker_tripped": "Tripped — autonomous actions are paused. Reset after cooldown.",
+      "reset_circuit": "Reset Circuit Breaker"
+    },
+    "section_tutorial": "ONBOARDING TOUR",
+    "tutorial": {
+      "description": "Go through the interactive onboarding tour that shows you around the app. You can replay it anytime.",
+      "replay_button": "Replay Onboarding Tour",
+      "reset_all_button": "Reset All Tours",
+      "replay_title": "Tour Ready",
+      "replay_message": "The onboarding tour will start next time you open the app or when you navigate to an unvisited screen.",
+      "reset_title": "All Tours Reset",
+      "reset_message": "All tour completions have been cleared. They will show again on your next visit.",
+      "completed": "Onboarding tour completed. You can replay it below.",
+      "not_completed": "You haven't completed the onboarding tour yet. Start it below!"
+    }
   },
   "edit_trip": {
     "title": "Επεξεργασία Διαδρομής #{}",
@@ -1036,11 +1398,7 @@
     "severity_info": "Info"
   },
   "status": {
-    "Planned": "Planned",
-    "Loading": "Loading",
     "In Transit": "In Transit",
-    "Delivered": "Delivered",
-    "Cancelled": "Cancelled",
     "unknown": "Unknown",
     "planned": "Planned",
     "loading": "Loading",
@@ -1049,8 +1407,6 @@
     "cancelled": "Cancelled",
     "invoiced": "Invoiced",
     "paid": "Paid",
-    "Invoiced": "Invoiced",
-    "Paid": "Paid",
     "Archived": "Archived"
   },
   "common": {
@@ -2237,35 +2593,37 @@
   },
   "receipt": {
     "title": "RECEIPT",
-    "editor.title": "Receipt Generator",
-    "editor.subtitle": "Create professional receipts for payments, reimbursements and expenses",
-    "editor.generate_pdf": "Generate PDF",
-    "editor.print": "Print",
-    "editor.save_draft": "Save Draft",
-    "editor.load_draft": "Load Draft",
-    "editor.duplicate": "Duplicate",
-    "editor.export_json": "Export JSON",
-    "editor.email": "Email",
-    "editor.browse": "Browse",
-    "editor.attach_files": "Attach Files",
-    "editor.select_file": "Select File",
-    "editor.validation_error": "Validation Error",
-    "editor.pdf_generated": "Receipt Generated",
-    "editor.pdf_generated_msg": "PDF saved to: {path}",
-    "editor.error": "Error",
-    "editor.print_no_number": "No receipt number. Generate first.",
-    "editor.print_no_file": "No PDF file found. Generate first.",
-    "editor.duplicated": "Receipt Duplicated",
-    "editor.duplicated_msg": "Copy created with new number.",
-    "editor.email_placeholder": "Email feature coming soon.",
-    "editor.no_attachments": "No files attached.",
-    "editor.draft_name": "Draft name:",
-    "editor.draft_saved": "Draft Saved",
-    "editor.draft_saved_msg": "Draft \"{name}\" saved.",
-    "editor.draft_save_failed": "Failed to save draft.",
-    "editor.no_drafts": "No drafts saved yet.",
-    "editor.load": "Load",
-    "editor.cancel": "Cancel",
+    "editor": {
+      "title": "Receipt Generator",
+      "subtitle": "Create professional receipts for payments, reimbursements and expenses",
+      "generate_pdf": "Generate PDF",
+      "print": "Print",
+      "save_draft": "Save Draft",
+      "load_draft": "Load Draft",
+      "duplicate": "Duplicate",
+      "export_json": "Export JSON",
+      "email": "Email",
+      "browse": "Browse",
+      "attach_files": "Attach Files",
+      "select_file": "Select File",
+      "validation_error": "Validation Error",
+      "pdf_generated": "Receipt Generated",
+      "pdf_generated_msg": "PDF saved to: {path}",
+      "error": "Error",
+      "print_no_number": "No receipt number. Generate first.",
+      "print_no_file": "No PDF file found. Generate first.",
+      "duplicated": "Receipt Duplicated",
+      "duplicated_msg": "Copy created with new number.",
+      "email_placeholder": "Email feature coming soon.",
+      "no_attachments": "No files attached.",
+      "draft_name": "Draft name:",
+      "draft_saved": "Draft Saved",
+      "draft_saved_msg": "Draft \"{name}\" saved.",
+      "draft_save_failed": "Failed to save draft.",
+      "no_drafts": "No drafts saved yet.",
+      "load": "Load",
+      "cancel": "Cancel"
+    },
     "section_type": "RECEIPT TYPE",
     "section_info": "RECEIPT INFORMATION",
     "section_parties": "PARTIES",
@@ -2341,10 +2699,14 @@
     "recipient_signature_label": "Recipient Signature",
     "company_stamp_label": "Company Stamp",
     "generated_by": "Generated by Operion",
-    "validation.amount_required": "Amount is required and must be positive.",
-    "validation.recipient_required": "Recipient (Received From) is required.",
-    "validation.number_required": "Receipt number is required.",
-    "validation.date_required": "Issue date is required.",
+    "validation": {
+      "amount_required": "Amount is required and must be positive.",
+      "recipient_required": "Recipient (Received From) is required.",
+      "number_required": "Receipt number is required.",
+      "date_required": "Issue date is required.",
+      "vat_invalid": "VAT rate must be between 0 and 100.",
+      "date_format": "{field} must be in YYYY-MM-DD format."
+    },
     "customer_label": "Customer",
     "vehicle_label": "Vehicle",
     "trailer_label": "Trailer",
@@ -2352,8 +2714,6 @@
     "branch_placeholder": "e.g. Bucharest HQ",
     "export_json": "Export JSON",
     "exported_msg": "Data exported to: {path}",
-    "validation.vat_invalid": "VAT rate must be between 0 and 100.",
-    "validation.date_format": "{field} must be in YYYY-MM-DD format.",
     "section_invoice_autofill": "QUICK FILL FROM INVOICE",
     "invoice_autofill_label": "Select Invoice",
     "invoice_autofill_helper": "Select an invoice to auto-fill receipt fields",
@@ -2575,5 +2935,230 @@
     "error_title": "Upload Error",
     "extracted_fields": "Extracted Fields",
     "select_document": "Select Document"
+  },
+  "freight": {
+    "title": "Freight Exchange",
+    "search": "Search Loads",
+    "evaluate": "Evaluate Load",
+    "import": "Import as Trip",
+    "match": {
+      "subtitle": "Best matching trucks for this load",
+      "score": "Score",
+      "truck_id": "Truck #{id}"
+    },
+    "assign": "Assign",
+    "refresh": "Refresh",
+    "evaluate_again": "Evaluate Again",
+    "back_to_search": "Back to Search",
+    "searching": "Searching...",
+    "provider": {
+      "timocom": "TIMOCOM",
+      "trans_eu": "Trans.eu",
+      "teleroute": "Teleroute",
+      "wtransnet": "Wtransnet",
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "error": "Error",
+      "degraded": "Degraded"
+    },
+    "status": {
+      "connected": "Connected",
+      "degraded": "Degraded",
+      "disconnected": "Disconnected",
+      "error": "Error"
+    },
+    "connection": {
+      "connect": "Connect",
+      "disconnect": "Disconnect",
+      "test": "Test Connection",
+      "add_first": "Add First Provider",
+      "client_id": "Client ID",
+      "client_secret": "Client Secret",
+      "client_id_placeholder": "Enter your client ID",
+      "client_secret_placeholder": "Enter your client secret",
+      "no_providers": "No providers connected",
+      "no_providers_hint": "Connect to a freight exchange to start searching for loads",
+      "test_success": "Connection successful ({latency}ms)",
+      "test_failed": "Connection failed: {error}",
+      "health_check": "Health Check",
+      "credentials": "API Credentials",
+      "last_checked": "Last checked: {time}"
+    },
+    "provider_settings": {
+      "title": "Freight Exchange Providers",
+      "subtitle": "Manage your connections to freight exchange platforms"
+    },
+    "load_detail": {
+      "title": "Load Detail"
+    },
+    "match_reason": {
+      "lowest_deadhead": "Lowest deadhead",
+      "closest_vehicle": "Closest suitable vehicle",
+      "highest_profit": "Highest expected profit",
+      "driver_hours": "Driver has sufficient hours",
+      "trailer_compatible": "Trailer type compatible",
+      "maintenance_health": "Good maintenance health",
+      "reliable_history": "Reliable delivery record",
+      "good_positioning": "Good onward positioning"
+    },
+    "compat": {
+      "trailer_mismatch": "Trailer type incompatible",
+      "driver_hours_insufficient": "Insufficient driver hours",
+      "maintenance_due": "Maintenance overdue",
+      "vehicle_unavailable": "Vehicle not available",
+      "adr_required": "ADR certification required"
+    },
+    "filters": {
+      "title": "Filters",
+      "route": "Route",
+      "date_range": "Date Range",
+      "vehicle": "Vehicle"
+    },
+    "filter": {
+      "loading_place": "Loading place",
+      "delivery_place": "Delivery place",
+      "date": "Date range",
+      "trailer_type": "Trailer type",
+      "adr": "ADR (hazardous)",
+      "weight": "Weight",
+      "price": "Price",
+      "distance": "Distance",
+      "radius": "Radius (km)",
+      "all_providers": "All providers",
+      "search_now": "Search",
+      "save_search": "Save Search",
+      "date_from_placeholder": "From (YYYY-MM-DD)",
+      "date_to_placeholder": "To (YYYY-MM-DD)",
+      "missing_route": "Please enter both origin and destination",
+      "weight_min_placeholder": "Min kg",
+      "weight_max_placeholder": "Max kg",
+      "distance_max_placeholder": "Max km",
+      "loading_type": "Loading Type",
+      "loading_country_placeholder": "Loading country (e.g. RO)",
+      "delivery_country_placeholder": "Delivery country (e.g. DE)",
+      "country": "Countries",
+      "sort_by": "Sort by"
+    },
+    "loading_type": {
+      "any": "Any Type"
+    },
+    "trailer": {
+      "any": "Any",
+      "standard": "Standard",
+      "refrigerated": "Refrigerated",
+      "tanker": "Tanker",
+      "flatbed": "Flatbed",
+      "low_loader": "Low Loader"
+    },
+    "results": {
+      "empty_title": "No results found",
+      "empty_subtitle": "Try adjusting your search criteria",
+      "count": "{count} results",
+      "last_updated": "Last updated: {time}"
+    },
+    "sort": {
+      "relevance": "Relevance",
+      "price_asc": "Price: Low to High",
+      "price_desc": "Price: High to Low",
+      "distance_asc": "Distance: Short to Long",
+      "distance_desc": "Distance: Long to Short",
+      "date_asc": "Date: Earliest First",
+      "date_desc": "Date: Latest First"
+    },
+    "col": {
+      "provider": "Provider"
+    },
+    "eval": {
+      "revenue": "Estimated Revenue",
+      "fuel_cost": "Fuel Cost",
+      "toll_cost": "Toll Cost",
+      "driver_salary": "Driver Salary",
+      "deadhead": "Deadhead Distance",
+      "expected_profit": "Expected Profit",
+      "profit_margin": "Profit Margin",
+      "duration": "Est. Duration",
+      "risk_score": "Risk Score",
+      "vehicle_compat": "Vehicle Compatibility",
+      "driver_compat": "Driver Compatibility",
+      "compatible": "Compatible",
+      "not_compatible": "Not Compatible",
+      "subtitle": "Financial evaluation and risk assessment",
+      "total_cost": "Total Cost",
+      "compatibility": "Compatibility"
+    },
+    "import_result": {
+      "success": "Load imported as trip #{trip_id}",
+      "failed": "Import failed: {error}",
+      "duplicate": "This load has already been imported",
+      "confirm_title": "Import Load as Trip",
+      "confirm_body": "Create a new trip from this load?",
+      "source_label": "Source"
+    },
+    "health": {
+      "healthy": "Healthy",
+      "degraded": "Degraded",
+      "down": "Down"
+    }
+  },
+  "tour": {
+    "control": {
+      "cancel": "Cancel",
+      "skip": "Skip",
+      "replay": "Replay"
+    },
+    "help_nudge": {
+      "generic": "Need help? Try asking the Co-Pilot or follow the onboarding tour in Settings.",
+      "fleet": "Looking for vehicles? The Fleet section shows all your trucks and their health scores.",
+      "dispatch": "You can assign trucks and drivers to trips using the Dispatch Board.",
+      "drivers": "The Driver Manager lets you add drivers and track their hours.",
+      "invoices": "Generate invoices for your clients from the Generators section.",
+      "maintenance": "Schedule vehicle maintenance and track service history."
+    },
+    "expert": {
+      "quick_complete": "You've done this before, so here's the quick version. Everything is set up."
+    },
+    "app_overview": {
+      "title": "Welcome to Operion ERP",
+      "welcome": "Welcome to Operion ERP! This quick tour will show you around the main sections so you can get started right away. Use the controls below to skip or cancel at any time.",
+      "sidebar": "This is the navigation sidebar. Click any item to switch screens. Let's explore the main sections together.",
+      "fleet": "Fleet — manage all your vehicles here. View health scores, locations, and maintenance history for every truck.",
+      "drivers": "Drivers — manage driver information, licenses, tachograph data, and hours of service. Add new drivers and track their compliance.",
+      "trips": "Trips — create and manage trips. The system calculates profitability including fuel, tolls, and driver costs.",
+      "dispatch": "Dispatch Board — use the Kanban-style board to quickly assign trucks and drivers to trips. Drag and drop to update statuses.",
+      "copilot": "AI Co-Pilot — your natural language assistant. Ask questions about your data, request actions, or get step-by-step help. Available in 22 languages.",
+      "complete": "That's it! You're all set to use Operion. If you ever have questions, simply ask the AI Co-Pilot. Happy dispatching!"
+    },
+    "add_driver": {
+      "title": "Add a New Driver",
+      "navigate": "First, navigate to the Drivers section using the sidebar.",
+      "click_add": "Click the 'Add Driver' button to open the new driver form.",
+      "fill_form": "Fill in the driver's name and details in the form fields.",
+      "save": "Click 'Save' to create the new driver record.",
+      "complete": "The driver has been added! You can now assign them to trips."
+    },
+    "generate_invoice": {
+      "title": "Generate an Invoice",
+      "navigate": "Navigate to the Invoices section using the sidebar.",
+      "click_new": "Click the 'New Invoice' button to create a new invoice.",
+      "fill_client": "Select a client from the client field. The invoice will be addressed to them.",
+      "add_items": "Add line items to the invoice — descriptions, quantities, and amounts.",
+      "complete": "The invoice is ready to be finalized and sent to the client."
+    },
+    "dispatch_trip": {
+      "title": "Dispatch a Trip",
+      "navigate": "Navigate to the Dispatch Board using the sidebar.",
+      "select_trip": "Click on a trip card to select it and see its details.",
+      "assign_truck": "Click 'Assign Truck' to select a vehicle for this trip.",
+      "assign_driver": "Click 'Assign Driver' to select a driver for this trip.",
+      "confirm": "Review the assignment details and click 'Confirm' to dispatch the trip.",
+      "complete": "The trip has been dispatched! The driver and truck are now assigned."
+    },
+    "schedule_maintenance": {
+      "title": "Schedule Maintenance",
+      "navigate": "Navigate to the Maintenance section using the sidebar.",
+      "click_schedule": "Click the 'Schedule Maintenance' button.",
+      "fill_details": "Enter the vehicle, type of service, and any notes for the maintenance team.",
+      "complete": "Maintenance has been scheduled! You'll get a reminder when it's due."
+    }
   }
 }

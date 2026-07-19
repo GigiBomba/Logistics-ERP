@@ -1,6 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
 import { ChevronRight } from "lucide-react"
+import { useLocale } from "@/i18n/locale-context"
 
 export interface BreadcrumbItem {
   label: React.ReactNode
@@ -18,8 +19,9 @@ export function Breadcrumbs({
   className,
   ...props
 }: BreadcrumbsProps) {
+  const { t } = useLocale()
   return (
-    <nav aria-label="Breadcrumb" className={cn("", className)} {...props}>
+    <nav aria-label={t("common.aria.breadcrumb")} className={cn("", className)} {...props}>
       <ol className="flex items-center gap-1.5 text-sm text-muted-foreground">
         {items.map((item, index) => {
           const isLast = index === items.length - 1

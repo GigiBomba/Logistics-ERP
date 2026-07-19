@@ -27,13 +27,16 @@ class TestLoadRoutes:
     @pytest.fixture
     def client(self, app):
         from backend.dependencies_security import get_current_user, require_dispatcher, require_admin
+        from backend.dependencies import get_db
 
         app.dependency_overrides[get_current_user] = lambda: self.MOCK_USER
         app.dependency_overrides[require_dispatcher] = lambda: self.MOCK_USER
         app.dependency_overrides[require_admin] = lambda: self.MOCK_USER
 
         db = make_db()
-        yield TestClient(app)
+        app.dependency_overrides[get_db] = lambda: db
+
+        yield TestClient(app, raise_server_exceptions=False)
         app.dependency_overrides.clear()
 
     # ── test 1: route calculation concurrency ─────────────────────────────

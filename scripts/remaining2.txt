@@ -1,0 +1,72 @@
+﻿Remaining: 398
+  receipt: 48
+  dispatch_board: 31
+  proforma_editor: 29
+  home: 27
+  invoice_editor: 26
+  docs: 23
+  route: 19
+  client: 16
+  cmr: 16
+  features: 15
+  fleet: 12
+  history: 12
+  settings: 12
+  about: 11
+  maint: 11
+  auth: 9
+  maint_analytics: 8
+  route_history: 8
+  automation: 7
+  analytics: 6
+  common: 6
+  status: 6
+  upload: 6
+  tacho: 5
+  generators: 4
+  invoice_pdf: 4
+  result: 4
+  admin: 3
+  main: 2
+  team: 2
+  app: 1
+  document: 1
+  driver_manager: 1
+  edit_trip: 1
+  email_logs: 1
+  invoice: 1
+  login: 1
+  maint_timeline: 1
+  signature: 1
+  trip: 1
+
+about.page_header_desc="We're building the future of enterprise logistics software."
+about.story_p1='Operion was founded in 2024 with a clear mission: make enterprise-grade logistics software accessible to fleets of all sizes.'
+about.story_p2='Our team combines decades of experience in logistics, software engineering, and AI to build tools that solve real-world problems.'
+about.team_desc='Our team combines decades of experience in logistics, software engineering, and AI.'
+about.value_customer_desc='Every feature we build starts with real customer needs and feedback.'
+about.value_innovation_desc='We invest heavily in R&D to bring cutting-edge AI and optimization to logistics.'
+about.value_partnership_desc="We don't just sell software. We partner with our customers for their success."
+about.value_reliability_desc='Your operations depend on our software. We take that responsibility seriously.'
+about.value_security_desc='Enterprise-grade encryption, GDPR compliance, and regular security audits.'
+about.value_transparency_desc='Clear pricing, honest communication, and no hidden fees.'
+about.values_desc='The principles that guide every decision we make.'
+admin.latency_ms='{value} ms'
+admin.password_placeholder='????????????'
+admin.query_placeholder='SELECT * FROM table LIMIT 100'
+analytics.col_km='KM'
+analytics.doc_cmrs='CMRs'
+analytics.group_total='Total'
+analytics.insufficient_route_data='Insufficient data for chart ? add more trips'
+analytics.kpi_cmrs='CMRs'
+analytics.kpi_total_km='Total KM'
+app.subtitle='ERP'
+auth.company_placeholder='Acme Inc.'
+auth.creating_account='Creating account?'
+auth.login_brand='Operion'
+auth.login_title='Sign In ? Operion ERP'
+auth.no_account="Don't have an account?"
+auth.password_min_hint='At least 8 characters'
+auth.register_brand='Operion'
+auth.register_title='Create Account ? Operion ERP'
+auth.signing_in='Signing in?'

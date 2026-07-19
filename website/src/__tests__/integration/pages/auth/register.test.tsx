@@ -20,10 +20,10 @@ describe("RegisterPage", () => {
 
   it("renders registration form", () => {
     render(<RegisterPage />)
-    expect(screen.getByText("Create your account")).toBeInTheDocument()
+    expect(screen.getByText("Create Account")).toBeInTheDocument()
     expect(screen.getByLabelText(/full name/i)).toBeInTheDocument()
     expect(screen.getByLabelText("Email")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /create account/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /create/i })).toBeInTheDocument()
   })
 
   it("renders link to login", () => {

@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.invoice import InvoiceGenerateRequest, InvoiceSendEmailRequest
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
@@ -19,8 +19,9 @@ def generate_invoice(
     db: DatabaseManager = Depends(get_db),
 ):
     from services.invoicing.service import InvoiceService
+    company_id = current_user.get("company_id", 0)
     svc = InvoiceService(db)
-    path = svc.generate_and_record(data.model_dump(), mode=data.mode)
+    path = svc.generate_and_record(data.model_dump(), mode=data.mode, company_id=company_id)
     if not os.path.isfile(path):
         raise HTTPException(status_code=500, detail="Invoice generation failed")
     return FileResponse(path, filename=os.path.basename(path), media_type="application/pdf")
@@ -34,6 +35,7 @@ def send_invoice_email(
     db: DatabaseManager = Depends(get_db),
 ):
     from services.invoicing.service import InvoiceService
+    company_id = current_user.get("company_id", 0)
     svc = InvoiceService(db)
     if not data.recipient_email:
         raise HTTPException(status_code=400, detail="Recipient email is required")
@@ -43,6 +45,7 @@ def send_invoice_email(
             recipient=data.recipient_email,
             trip_data=data.trip_data or {},
             mode=data.mode,
+            company_id=company_id,
         )
         if ok:
             return {"status": "sent", "recipient": data.recipient_email}

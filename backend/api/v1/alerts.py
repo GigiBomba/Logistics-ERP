@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
 
 router = APIRouter(prefix="/alerts", tags=["alerts"])
 
@@ -18,11 +18,12 @@ def list_alerts(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return paginated list of active alerts."""
+    company_id = current_user.get("company_id", 0)
     from services.operations.operations_engine import OperationsEngine
     from services.preferences import PreferencesManager
     prefs = PreferencesManager(db)
     ops = OperationsEngine(db, prefs=prefs)
-    alerts = ops.get_active_alerts(limit=page_size)
+    alerts = ops.get_active_alerts(company_id=company_id, limit=page_size)
     items = []
     for a in alerts:
         items.append({
@@ -39,11 +40,12 @@ def get_alert_count(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
+    company_id = current_user.get("company_id", 0)
     from services.operations.operations_engine import OperationsEngine
     from services.preferences import PreferencesManager
     prefs = PreferencesManager(db)
     ops = OperationsEngine(db, prefs=prefs)
-    return {"count": ops.get_active_alert_count()}
+    return {"count": ops.get_active_alert_count(company_id=company_id)}
 
 
 @router.post("/{alert_id}/resolve")
@@ -52,11 +54,12 @@ def resolve_alert(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
+    company_id = current_user.get("company_id", 0)
     from services.operations.operations_engine import OperationsEngine
     from services.preferences import PreferencesManager
     prefs = PreferencesManager(db)
     ops = OperationsEngine(db, prefs=prefs)
-    result = ops.resolve_alert(alert_id)
+    result = ops.resolve_alert(alert_id, company_id=company_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Alert not found")
     return {"status": "resolved"}

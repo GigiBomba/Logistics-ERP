@@ -20,6 +20,10 @@ class AnalyticsRepository(BaseRepository):
     _month_lock: Any = None  # set via threading.Lock() lazily
 
     def _ensure_month_checked(self) -> None:
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            AnalyticsRepository._month_col_available = False
+            AnalyticsRepository._month_check_done = True
+            return
         import threading
         if AnalyticsRepository._month_lock is None:
             AnalyticsRepository._month_lock = threading.Lock()
@@ -36,6 +40,8 @@ class AnalyticsRepository(BaseRepository):
             AnalyticsRepository._month_check_done = True
 
     def _month_expr(self) -> str:
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            return "SUBSTRING(created_at, 1, 7)"
         self._ensure_month_checked()
         return "month" if self._month_col_available else "SUBSTR(created_at, 1, 7)"
 
@@ -122,8 +128,9 @@ class AnalyticsRepository(BaseRepository):
 
     def get_available_years(self):
         """Anii disponibili pentru filtre."""
+        year_expr = "SUBSTRING(created_at, 1, 4)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 4)"
         rows = self._fetchall(
-            f"SELECT DISTINCT SUBSTR(created_at, 1, 4) as year FROM trips WHERE 1=1 {self._company_filter()} ORDER BY year DESC",
+            f"SELECT DISTINCT {year_expr} as year FROM trips WHERE 1=1 {self._company_filter()} ORDER BY year DESC",
             self._company_params(),
         )
         return [r["year"] for r in rows if r.get("year")]
@@ -174,9 +181,13 @@ class AnalyticsRepository(BaseRepository):
                   due_date, total_amount, days_late (computed via SQL).
                 - neg_margin_rows: each with keys id, truck_number.
         """
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            days_late_expr = "(CURRENT_DATE - i.due_date::date) AS days_late"
+        else:
+            days_late_expr = "CAST(JULIANDAY('now') - JULIANDAY(i.due_date) AS INTEGER) AS days_late"
         overdue_query = f"""
             SELECT t.id, t.client_name, i.invoice_number, i.due_date, i.total_amount,
-                   CAST(JULIANDAY('now') - JULIANDAY(i.due_date) AS INTEGER) AS days_late
+                   {days_late_expr}
             FROM trips t
             JOIN invoices i ON t.id = i.trip_id
             WHERE i.status = 'Unpaid' {self._company_filter('t')}
@@ -284,12 +295,20 @@ class AnalyticsRepository(BaseRepository):
 
     def get_client_analytics(self, from_date=None, to_date=None):
         clause, params = self._date_clause(from_date, to_date)
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            delay_expr = (
+                "ROUND(AVG(COALESCE(payment_date, CURRENT_DATE)::date - created_at::date), 1)"
+            )
+        else:
+            delay_expr = (
+                "ROUND(AVG(JULIANDAY(COALESCE(payment_date, 'now')) - JULIANDAY(created_at)), 1)"
+            )
         return self._fetchall(f"""
             SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
                    COUNT(*) AS trip_count,
                    SUM(total_price_eur) AS revenue,
                    SUM(net_profit) AS profit,
-                   ROUND(AVG(JULIANDAY(COALESCE(payment_date, 'now')) - JULIANDAY(created_at)), 1) AS avg_payment_delay_days
+                   {delay_expr} AS avg_payment_delay_days
             FROM trips {clause}
             GROUP BY COALESCE(NULLIF(client_name, ''), 'Unknown')
             ORDER BY profit DESC LIMIT 12
@@ -360,14 +379,16 @@ class AnalyticsRepository(BaseRepository):
         )
         inv_count = (inv_row.get("cnt", 0) or 0) if inv_row else 0
         cmr_row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM documents WHERE tags LIKE '%cmr%' {self._company_filter()}",
+            # Match the exact JSON array element "cmr" (tags stored as JSON array)
+            f"SELECT COUNT(*) AS cnt FROM documents WHERE tags LIKE '%\"cmr\"%' {self._company_filter()}",
             self._company_params(),
         )
         cmr_count = (cmr_row.get("cnt", 0) or 0) if cmr_row else 0
+        expiry_cutoff = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
         expiring = self._fetchall(
             f"SELECT title, expiry_date FROM documents WHERE expiry_date IS NOT NULL "
-            f"AND expiry_date <= date('now', '+30 days') {self._company_filter()} ORDER BY expiry_date ASC LIMIT 10",
-            self._company_params(),
+            f"AND expiry_date <= ? {self._company_filter()} ORDER BY expiry_date ASC LIMIT 10",
+            (expiry_cutoff,) + self._company_params(),
         )
         total_row = self._fetchone(
             f"SELECT COUNT(*) AS cnt FROM documents WHERE 1=1 {self._company_filter()}",
@@ -400,8 +421,9 @@ class AnalyticsRepository(BaseRepository):
             extra = " AND created_at >= ? AND created_at <= ?"
             extra_params.extend([from_date, to_date])
         company_filter = self._company_filter()
+        month_expr = "SUBSTRING(created_at, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 7)"
         return self._fetchall(
-            f"SELECT SUBSTR(created_at, 1, 7) AS month, COUNT(*) AS new_clients "
+            f"SELECT {month_expr} AS month, COUNT(*) AS new_clients "
             f"FROM clients WHERE is_active = 1 {company_filter}{extra} "
             "GROUP BY month ORDER BY month ASC LIMIT ?",
             tuple(extra_params + [months]),
@@ -420,8 +442,9 @@ class AnalyticsRepository(BaseRepository):
         """, self._company_params())
 
     def get_document_upload_trend(self, months: int = 12):
+        month_expr = "SUBSTRING(uploaded_at, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(uploaded_at, 1, 7)"
         return self._fetchall(
-            f"SELECT SUBSTR(uploaded_at, 1, 7) AS month, COUNT(*) AS count, "
+            f"SELECT {month_expr} AS month, COUNT(*) AS count, "
             f"SUM(CASE WHEN category IN ('invoices','trips','cmr') THEN 1 ELSE 0 END) AS doc_count, "
             f"SUM(CASE WHEN category = 'cmr' THEN 1 ELSE 0 END) AS cmr_count "
             f"FROM documents WHERE is_archived = 0 {self._company_filter()} "
@@ -430,6 +453,7 @@ class AnalyticsRepository(BaseRepository):
         )
 
     def get_driver_tacho_violations(self):
+        activity_cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
         return self._fetchall(f"""
             SELECT d.name AS driver, COUNT(da.id) AS activity_days,
                    COALESCE(SUM(da.violations), 0) AS total_violations,
@@ -437,9 +461,9 @@ class AnalyticsRepository(BaseRepository):
                    COALESCE(SUM(da.rest_minutes) / 60.0, 0) AS rest_hours
             FROM tacho_driver_activity da
             JOIN drivers d ON da.driver_id = d.id
-            WHERE da.activity_date >= DATE('now', '-90 days') {self._company_filter('da')}
+            WHERE da.activity_date >= ? {self._company_filter('da')}
             GROUP BY da.driver_id ORDER BY total_violations DESC LIMIT 15
-        """, self._company_params())
+        """, (activity_cutoff,) + self._company_params())
 
     def get_profit_per_km_by_country(self):
         return self._fetchall(f"""
@@ -581,9 +605,18 @@ class AnalyticsRepository(BaseRepository):
     def get_revenue_quarterly(self, quarters: int = 8, from_date=None, to_date=None):
         """Quarterly revenue and profit summary."""
         clause, clause_params = self._date_clause(from_date, to_date)
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            quarter_expr = (
+                "SUBSTRING(created_at, 1, 4) || '-Q' || "
+                "(CAST(SUBSTRING(created_at, 6, 2) AS INTEGER) + 2) / 3"
+            )
+        else:
+            quarter_expr = (
+                "SUBSTR(created_at, 1, 4) || '-Q' || "
+                "(CAST(SUBSTR(created_at, 6, 2) AS INTEGER) + 2) / 3"
+            )
         return self._fetchall(
-            f"SELECT SUBSTR(created_at, 1, 4) || '-Q' || "
-            "(CAST(SUBSTR(created_at, 6, 2) AS INTEGER) + 2) / 3 AS quarter, "
+            f"SELECT {quarter_expr} AS quarter, "
             "COALESCE(SUM(total_price_eur), 0) AS revenue, "
             "COALESCE(SUM(net_profit), 0) AS profit, "
             "COUNT(*) AS trip_count "
@@ -630,6 +663,20 @@ class AnalyticsRepository(BaseRepository):
             params = [from_date, to_date]
         full_clause = f"{clause} {company_filter}" if company_filter else clause
         full_params = params + company_params
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            delay_case = (
+                "CASE WHEN t.payment_date IS NOT NULL AND t.payment_date != '' "
+                "THEN (t.payment_date::date - i.issue_date::date) "
+                "ELSE (i.due_date::date - i.issue_date::date) "
+                "END"
+            )
+        else:
+            delay_case = (
+                "CASE WHEN t.payment_date IS NOT NULL AND t.payment_date != '' "
+                "THEN ROUND(JULIANDAY(t.payment_date) - JULIANDAY(i.issue_date), 0) "
+                "ELSE ROUND(JULIANDAY(i.due_date) - JULIANDAY(i.issue_date), 0) "
+                "END"
+            )
         return self._fetchall(
             f"""WITH client_totals AS (
                     SELECT t.client_name,
@@ -645,10 +692,7 @@ class AnalyticsRepository(BaseRepository):
                     SELECT t.client_name, i.invoice_number, i.issue_date,
                            i.due_date, i.total_amount, i.status,
                            t.payment_date,
-                           CASE WHEN t.payment_date IS NOT NULL AND t.payment_date != ''
-                                THEN ROUND(JULIANDAY(t.payment_date) - JULIANDAY(i.issue_date), 0)
-                                ELSE ROUND(JULIANDAY(i.due_date) - JULIANDAY(i.issue_date), 0)
-                           END AS delay_days,
+                           {delay_case} AS delay_days,
                            ROW_NUMBER() OVER (
                                PARTITION BY t.client_name
                                ORDER BY i.issue_date DESC
@@ -678,10 +722,18 @@ class AnalyticsRepository(BaseRepository):
             drivers_clause = f"WHERE {filter_condition} {self._company_filter()}"
         else:
             drivers_clause = f"{clause} AND {filter_condition}"
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            week_start_expr = (
+                "(created_at::date - EXTRACT(DOW FROM created_at::date)::integer) AS week_start"
+            )
+        else:
+            week_start_expr = (
+                "DATE(created_at, '-' || CAST((JULIANDAY(created_at) - JULIANDAY("
+                "DATE(created_at, 'weekday 0'))) AS INTEGER) || ' days') AS week_start"
+            )
         return self._fetchall(
             f"""SELECT driver_name,
-                       DATE(created_at, '-' || CAST((JULIANDAY(created_at) - JULIANDAY(
-                           DATE(created_at, 'weekday 0'))) AS INTEGER) || ' days') AS week_start,
+                       {week_start_expr},
                        COUNT(*) AS trip_count
                 FROM trips
                 {drivers_clause}

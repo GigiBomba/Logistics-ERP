@@ -50,7 +50,7 @@ class TripConflictService:
         )
         return same_truck, same_driver
 
-    def check_conflicts(self, trip_data: dict[str, Any]) -> list[dict[str, Any]]:
+    def check_conflicts(self, trip_data: dict[str, Any], company_id=None) -> list[dict[str, Any]]:
         truck_plate = (trip_data.get("truck_number") or trip_data.get("truck_plate") or "").strip()
         truck_id = trip_data.get("truck_id")
         driver_id = trip_data.get("driver_id")

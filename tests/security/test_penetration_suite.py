@@ -38,6 +38,8 @@ class TestAccountTakeoverAttempt:
           2. Brute-force password guessing on a known email
           3. Attempt to use a stolen/replayed token from another tenant
         """
+        from backend.api.v1.auth import _clear_lockout
+
         # ── Stage 1: Timing / response analysis for email enumeration ──
         # Valid email
         resp_valid = client.post(
@@ -101,6 +103,10 @@ class TestAccountTakeoverAttempt:
                     f"Cross-tenant access should return 401/403/404, "
                     f"got {resp.status_code}: {resp.text}"
                 )
+
+        # Clear lockout so other tests in this module can still login
+        _clear_lockout("dispatcher-a@test.com")
+        _clear_lockout("admin-a@test.com")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

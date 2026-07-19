@@ -55,6 +55,7 @@ def safe_number(value: Any, decimals: int = 2, default: float = 0.0, label: str 
 
 import contextlib
 
+from repositories.settings_repository import SettingsRepository
 from services.app_state import AppState
 from services.audit_service import AuditService
 from services.currency_service import CURRENCY_SYMBOLS
@@ -112,7 +113,7 @@ class PreferencesManager:
             return {}
         known_keys = [_PREF_LANG_KEY, _PREF_CURRENCY_KEY, *self._SMTP_KEYS, "alert_email_recipients"]
         try:
-            result = self._db.get_settings(known_keys)
+            result = SettingsRepository(self._db).get_settings_by_keys(known_keys)
             return {k: result.get(k) for k in known_keys}
         except Exception:
             return {}
@@ -128,7 +129,7 @@ class PreferencesManager:
             self._settings_cache = self._read_settings_batch()
             self._cache_dirty = False
         if key not in self._settings_cache:
-            self._settings_cache[key] = self._db.get_setting(key)
+            self._settings_cache[key] = SettingsRepository(self._db).get_setting_value(key)
         value = self._settings_cache.get(key)
         if value is not None and key in _SENSITIVE_KEYS:
             value = decrypt_value(value)
@@ -144,7 +145,7 @@ class PreferencesManager:
             logger.warning("Cannot save setting %s: no database", key)
             return
         encrypted = encrypt_value(value) if key in _SENSITIVE_KEYS else value
-        self._db.save_setting(key, encrypted)
+        SettingsRepository(self._db).upsert_setting(key, encrypted)
         self._settings_cache[key] = encrypted
         try:
             AuditService(self._db).log(

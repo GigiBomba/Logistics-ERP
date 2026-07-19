@@ -2,6 +2,9 @@
 name = "operion-erp"
 version = "1.0.0"
 description = "Logistics ERP — calculator, route planner, fleet manager, CMR/eFTI generator"
+dependencies = [
+    "alembic>=1.13",
+]
 requires-python = ">=3.9"
 readme = "README.md"
 
@@ -9,6 +12,9 @@ readme = "README.md"
 dev = [
     "pytest>=8.4",
     "pytest-qt>=4.4",
+    "pytest-timeout>=2.4",
+    "pytest-xdist>=3.6",
+    "pytest-split>=0.9",
     "coverage>=7.0",
     "ruff>=0.12",
     "pre-commit>=4.0",
@@ -86,7 +92,7 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = ["--strict-markers", "--tb=short", "-q"]
+addopts = ["--strict-markers", "--tb=short", "-q", "-n", "auto"]
 filterwarnings = [
     "ignore::DeprecationWarning:pytestqt.*",
 ]
@@ -100,6 +106,7 @@ markers = [
     "stresstest: system stress tests",
     "chaos: chaos and resilience tests",
     "concurrency: thread-safety and race-condition tests",
+    "asyncio: async/await tests",
 ]
 
 # ──────────────────────────────────────────────────────────────
@@ -107,13 +114,21 @@ markers = [
 # ──────────────────────────────────────────────────────────────
 [tool.coverage.run]
 source = ["."]
+fail_under = 60
 omit = [
     "*/tests/*",
     "*/scripts/*",
     "*/__pycache__/*",
+    "*/migrations/*",
+    ".venv/*",
+    "venv/*",
+    "build/*",
+    "dist/*",
 ]
 
 [tool.coverage.report]
+show_missing = true
+skip_covered = false
 exclude_lines = [
     "pragma: no cover",
     "if __name__ == .__main__.:",

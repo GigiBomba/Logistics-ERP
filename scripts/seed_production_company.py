@@ -38,7 +38,7 @@ from database.db_manager import DatabaseManager
 
 def _fetch_user(db, email: str):
     """Return existing user row or None."""
-    return db.conn.execute(
+    return db.execute(
         "SELECT id, email, role, company_id FROM users WHERE email = ?",
         (email,),
     ).fetchone()
@@ -85,7 +85,7 @@ def main() -> int:
 
     try:
         # Step 1 — Create company
-        cursor = db.conn.execute(
+        cursor = db.execute(
             "INSERT INTO companies (company_name, subscription_tier) "
             "VALUES (?, ?)",
             (company_name, "starter"),
@@ -98,21 +98,21 @@ def main() -> int:
 
         # Step 3 — Create or update the manager user
         if existing is not None:
-            db.conn.execute(
+            db.execute(
                 "UPDATE users SET password_hash = ?, company_id = ?, "
                 "is_active = 1, role = 'manager' WHERE email = ?",
                 (hashed, company_id, manager_email),
             )
             print(f"✓ Manager updated: {manager_email} → reassigned to company {company_id}")
         else:
-            db.conn.execute(
+            db.execute(
                 "INSERT INTO users (email, password_hash, role, company_id, is_active) "
                 "VALUES (?, ?, ?, ?, 1)",
                 (manager_email, hashed, "manager", company_id),
             )
             print(f"✓ Manager created: {manager_email}")
 
-        db.conn.commit()
+        db.commit()
         print()
         print(f"Company:     {company_name}")
         print(f"Manager:     {manager_email}")
@@ -123,7 +123,7 @@ def main() -> int:
         return 0
 
     except Exception:
-        db.conn.rollback()
+        db.rollback()
         traceback.print_exc()
         return 1
     finally:

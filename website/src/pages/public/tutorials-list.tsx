@@ -15,6 +15,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { useTutorials } from "@/services/queries"
 import { formatDate } from "@/lib/utils"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 
 const TUTORIALS_PER_PAGE = 9
 
@@ -320,6 +321,7 @@ function TutorialsSkeleton() {
 }
 
 export default function TutorialsListPage() {
+  const { t } = useLocale()
   const [searchParams, setSearchParams] = useSearchParams()
   const page = Math.max(1, parseInt(searchParams.get("page") || "1", 10))
   const activeTab = (searchParams.get("category") as FilterTab) || "All"
@@ -414,7 +416,7 @@ export default function TutorialsListPage() {
         >
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <SearchInput
-              placeholder="Search tutorials..."
+              placeholder={t("tutorials.searchPlaceholder")}
               value={search}
               onChange={handleSearchChange}
               className="w-full sm:max-w-sm"

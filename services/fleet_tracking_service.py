@@ -25,6 +25,7 @@ class VehiclePosition:
     address: str = ""
     odometer_km: float = 0.0
     ignition_on: bool = False
+    driver_id: int = 0       # populated by caller via driver→vehicle mapping
 
 
 # ── Base adapter ────────────────────────────────────────────────────
@@ -533,7 +534,14 @@ class FleetTrackingService:
             )
         return None
 
-    def get_positions(self, force_refresh: bool = False) -> list[VehiclePosition]:
+    def get_positions(self, force_refresh: bool = False, driver_id: int | None = None) -> list[VehiclePosition]:
+        """Return cached (or freshly polled) vehicle positions.
+
+        When ``driver_id`` is provided, positions are filtered to only
+        include the vehicle assigned to that driver (driver scoping for
+        the mobile app).  The driver's vehicle is determined by looking
+        up the driver → truck assignment in the database.
+        """
         if not self._adapter:
             return []
         now = datetime.utcnow()
@@ -544,11 +552,44 @@ class FleetTrackingService:
         )
         if needs_refresh:
             try:
-                self._last_positions = self._adapter.get_positions()
-                self._last_poll = now
+                with self._lock:
+                    self._last_positions = self._adapter.get_positions()
+                    self._last_poll = now
             except Exception as e:
                 logger.error("Tracking poll failed: %s", e)
-        return self._last_positions
+        with self._lock:
+            positions = list(self._last_positions)
+
+        # ── Driver scoping: filter to only the driver's assigned vehicle ──
+        if driver_id is not None and self._db:
+            try:
+                from repositories.driver_repository import DriverRepository
+                driver_repo = DriverRepository(self._db)
+                driver = driver_repo.get_by_id(driver_id)
+                if driver and driver.get("truck_id"):
+                    from repositories.fleet_repository import FleetRepository
+                    fleet_repo = FleetRepository(self._db)
+                    truck = fleet_repo.get_by_id(driver["truck_id"])
+                    if truck:
+                        # Match by plate number (position.name is the vehicle plate/name)
+                        truck_plate = truck.get("plate_number", "").lower()
+                        if truck_plate:
+                            positions = [p for p in positions if p.name.lower() == truck_plate]
+                        else:
+                            # Fallback: match by device_id if no plate
+                            tracking_id = truck.get("tracking_device_id", "")
+                            if tracking_id:
+                                positions = [p for p in positions if p.device_id == tracking_id]
+                            else:
+                                positions = []  # Can't match — return nothing
+                    else:
+                        positions = []  # Truck not found — return nothing
+                else:
+                    positions = []  # Driver has no truck assigned — return nothing
+            except Exception as e:
+                logger.warning("Driver scoping lookup failed: %s — returning unfiltered", e)
+
+        return positions
 
     def test_connection(self) -> tuple:
         if not self._adapter:

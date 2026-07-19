@@ -646,7 +646,7 @@ class TachoService:
             return str(val.get("value", val.get("name", "")))
         return str(val)
 
-    def import_ddd_file(self, file_path: str) -> dict:
+    def import_ddd_file(self, file_path: str, company_id=None) -> dict:
         """Legacy dict-based import entry point.
 
         .. deprecated::

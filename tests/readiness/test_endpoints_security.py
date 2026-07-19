@@ -109,7 +109,7 @@ class TestWebhookReceiver:
         self.mock_db = _inject_db(self.app)
         self.mock_cursor = MagicMock()
         self.mock_cursor.lastrowid = 42
-        self.mock_db.conn.execute.return_value = self.mock_cursor
+        self.mock_db.execute.return_value = self.mock_cursor
         # By default no webhook secret is configured so signature verification
         # is skipped.  Tests that verify signature behaviour override this.
         self._webhook_secret_patch = patch(
@@ -117,8 +117,17 @@ class TestWebhookReceiver:
             return_value="",
         )
         self._webhook_secret_patch.start()
+        # Enable the timocom_integration feature flag so webhook dispatch
+        # does not skip processing.  FeatureFlagService is imported locally
+        # inside _handle_timocom_webhook, so patch at its definition site.
+        self._ff_patch = patch(
+            "backend.services.feature_flags_service.FeatureFlagService.is_enabled",
+            return_value=True,
+        )
+        self._ff_patch.start()
         self.client = TestClient(self.app)
         yield
+        self._ff_patch.stop()
         self._webhook_secret_patch.stop()
         self.app.dependency_overrides.clear()
 
@@ -220,7 +229,7 @@ class TestWebhookReceiver:
         # Verify an INSERT was performed on webhook_events
         insert_calls = [
             c
-            for c in self.mock_db.conn.execute.call_args_list
+            for c in self.mock_db.execute.call_args_list
             if "INSERT INTO webhook_events" in str(c)
         ]
         assert len(insert_calls) >= 1
@@ -236,7 +245,7 @@ class TestWebhookReceiver:
 
         update_calls = [
             c
-            for c in self.mock_db.conn.execute.call_args_list
+            for c in self.mock_db.execute.call_args_list
             if "UPDATE webhook_events" in str(c)
         ]
         assert len(update_calls) >= 1
@@ -280,7 +289,7 @@ class TestGdprEndpoints:
         self.mock_user_row = {"id": 1, "email": "user@test.com",
                               "role": "driver", "company_id": 1,
                               "is_active": 1}
-        self.mock_db.conn.execute.return_value.fetchone.return_value = \
+        self.mock_db.execute.return_value.fetchone.return_value = \
             self.mock_user_row
         self.client = TestClient(self.app)
         yield
@@ -304,7 +313,7 @@ class TestGdprEndpoints:
 
     def test_export_user_not_found(self):
         """POST /gdpr/export/user/{id} returns 404 for unknown user."""
-        self.mock_db.conn.execute.return_value.fetchone.return_value = None
+        self.mock_db.execute.return_value.fetchone.return_value = None
         resp = self.client.post(f"{BASE}/gdpr/export/user/999")
         assert resp.status_code == 404
 
@@ -340,7 +349,7 @@ class TestGdprEndpoints:
         self.client.post(f"{BASE}/gdpr/delete/user/1")
         update_calls = [
             c
-            for c in self.mock_db.conn.execute.call_args_list
+            for c in self.mock_db.execute.call_args_list
             if "UPDATE users SET is_active" in str(c)
         ]
         assert len(update_calls) >= 1

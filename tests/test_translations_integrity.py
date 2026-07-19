@@ -18,6 +18,8 @@ import pytest
 TRANSLATIONS_DIR = os.path.join(
     os.path.dirname(__file__), "..", "data", "translations"
 )
+# Files that use a different structure (not standard translation flat-keys format)
+SPECIAL_FILES = {"de_translation_map.json", "missing_translations.json"}
 
 
 def _flatten(d: dict, prefix: str = "") -> dict[str, object]:
@@ -55,7 +57,7 @@ def translation_files():
 
 @pytest.fixture(scope="module")
 def non_en_files(translation_files):
-    return [f for f in translation_files if f != "en.json"]
+    return [f for f in translation_files if f != "en.json" and f not in SPECIAL_FILES]
 
 
 # ── JSON validity ────────────────────────────────────────────────────

@@ -30,8 +30,6 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from repositories.pipeline_repository import PipelineRepository
-from repositories.trip_repository import TripRepository
 from services.document_automation import CustomerDetector, EmailTemplateService
 from services.document_automation.package_builder import PackageBuilder
 from services.i18n import t
@@ -112,8 +110,23 @@ class EmailComposerDialog(QDialog):
         self.trip_id = int(trip_id) if trip_id is not None else None
         self.prefs = prefs
         self.ordered_doc_ids = list(ordered_doc_ids or [])
-        self._trip_repo = trip_repo if trip_repo is not None else TripRepository(db)
-        self._pipeline_repo = pipeline_repo if pipeline_repo is not None else PipelineRepository(db)
+        if trip_repo is not None:
+            self._trip_repo = trip_repo
+        elif db is not None:
+            from repositories.trip_repository import TripRepository
+            self._trip_repo = TripRepository(db)
+        else:
+            logger.warning("EmailComposer: no local database - TripRepository disabled in remote mode")
+            self._trip_repo = None
+
+        if pipeline_repo is not None:
+            self._pipeline_repo = pipeline_repo
+        elif db is not None:
+            from repositories.pipeline_repository import PipelineRepository
+            self._pipeline_repo = PipelineRepository(db)
+        else:
+            logger.warning("EmailComposer: no local database - PipelineRepository disabled in remote mode")
+            self._pipeline_repo = None
         # If the caller already loaded the ordered documents (the
         # package preview does), reuse them.  Otherwise, fall back to
         # a PackageBuilder lookup.

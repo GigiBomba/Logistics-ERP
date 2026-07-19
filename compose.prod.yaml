@@ -10,7 +10,7 @@ services:
       POSTGRES_PASSWORD: ${OPERION_DB_PASSWORD:-changeme}
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./database/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./database/schema_pg.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U operion"]
       interval: 10s
@@ -39,11 +39,7 @@ services:
       - "8000:8000"
     environment:
       - OPERION_DB_ENGINE=postgresql
-      - OPERION_DB_HOST=postgres
-      - OPERION_DB_PORT=5432
-      - OPERION_DB_NAME=operion
-      - OPERION_DB_USER=operion
-      - OPERION_DB_PASSWORD=${OPERION_DB_PASSWORD:-changeme}
+      - OPERION_POSTGRES_DSN=postgresql://operion:${OPERION_DB_PASSWORD:-changeme}@postgres:5432/operion
       - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
       - OPERION_JWT_SECRET_KEY=${OPERION_JWT_SECRET_KEY:-}
       - OPERION_API_KEY=${OPERION_API_KEY:-}
@@ -69,11 +65,7 @@ services:
     command: celery -A backend.celery_app worker --loglevel=info --concurrency=4
     environment:
       - OPERION_DB_ENGINE=postgresql
-      - OPERION_DB_HOST=postgres
-      - OPERION_DB_PORT=5432
-      - OPERION_DB_NAME=operion
-      - OPERION_DB_USER=operion
-      - OPERION_DB_PASSWORD=${OPERION_DB_PASSWORD:-changeme}
+      - OPERION_POSTGRES_DSN=postgresql://operion:${OPERION_DB_PASSWORD:-changeme}@postgres:5432/operion
       - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
       - OPERION_JWT_SECRET_KEY=${OPERION_JWT_SECRET_KEY:-}
       - OPERION_ENCRYPTION_KEY=${OPERION_ENCRYPTION_KEY:-}
@@ -93,11 +85,7 @@ services:
     command: celery -A backend.celery_app beat --loglevel=info
     environment:
       - OPERION_DB_ENGINE=postgresql
-      - OPERION_DB_HOST=postgres
-      - OPERION_DB_PORT=5432
-      - OPERION_DB_NAME=operion
-      - OPERION_DB_USER=operion
-      - OPERION_DB_PASSWORD=${OPERION_DB_PASSWORD:-changeme}
+      - OPERION_POSTGRES_DSN=postgresql://operion:${OPERION_DB_PASSWORD:-changeme}@postgres:5432/operion
       - OPERION_REDIS_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/0
       - CELERY_BROKER_URL=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/1
       - CELERY_RESULT_BACKEND=redis://:${OPERION_REDIS_PASSWORD:-}@redis:6379/2
@@ -111,10 +99,10 @@ services:
 
   # Optional: pgAdmin for database management
   pgadmin:
-    image: dpage/pgadmin4:latest
+    image: dpage/pgadmin4:9.2
     environment:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@operionerp.xyz}
-      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-changeme}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD}
     ports:
       - "5050:80"
     depends_on:

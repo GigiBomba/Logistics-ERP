@@ -45,6 +45,9 @@ class TripCreate(BaseModel):
     truck_consumption_l_per_100km: Optional[float] = None
     price_pre_vat: Optional[float] = None
     vat_percent: Optional[float] = None
+    source: str = "manual"
+    source_provider_id: Optional[str] = None
+    source_reference_id: Optional[str] = None
 
     @field_validator("price_eur")
     @classmethod
@@ -74,6 +77,9 @@ class TripUpdate(BaseModel):
     stops: Optional[list[TripStop]] = None
     notes: Optional[str] = None
     status: Optional[str] = None
+    source: Optional[str] = None
+    source_provider_id: Optional[str] = None
+    source_reference_id: Optional[str] = None
 
 
 class TripResult(BaseModel):
@@ -95,6 +101,8 @@ class TripResult(BaseModel):
     profit: Optional[float] = None
     cost: Optional[float] = None
     margin_pct: Optional[float] = None
+    rate_per_km: Optional[float] = None
+    gross_per_km: Optional[float] = None
     notes: str = ""
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

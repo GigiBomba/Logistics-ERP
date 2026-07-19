@@ -313,10 +313,16 @@ class AlertManager:
             logger.info("Alert %s severity updated to %s", alert_id, severity.value)
 
     def _play_notification(self) -> None:
-        """Play a notification sound in a background thread."""
-        if self._notification_playing:
-            return
-        self._notification_playing = True
+        """Play a notification sound in a background thread.
+
+        Uses ``_notification_lock`` to prevent two threads from
+        playing sounds simultaneously (race-safe).
+        """
+        with self._alerts_lock:
+            if self._notification_playing:
+                return
+            self._notification_playing = True
+
         def _play():
             try:
                 import winsound
@@ -327,6 +333,7 @@ class AlertManager:
                 pass
             finally:
                 self._notification_playing = False
+
         threading.Thread(target=_play, daemon=True).start()
 
     def cleanup_old(self, days: int = 90) -> int:

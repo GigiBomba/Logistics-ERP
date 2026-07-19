@@ -59,9 +59,11 @@ class TestDocumentPipeline:
         return f.name
 
     def _seed_trip(self, db) -> int:
+        now = datetime.now().isoformat()
         db.conn.execute(
-            "INSERT INTO clients (name, email, is_active) VALUES (?, ?, 1)",
-            ("Doc Client", "doc@example.com"),
+            "INSERT INTO clients (name, email, is_active, created_at, updated_at) "
+            "VALUES (?, ?, 1, ?, ?)",
+            ("Doc Client", "doc@example.com", now, now),
         )
         db.conn.commit()
         client_id = db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
@@ -73,13 +75,16 @@ class TestDocumentPipeline:
         db.conn.commit()
         return db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
+    _doc_counter = 0
+
     def _seed_document(self, doc_repo, title="test_doc.pdf", category="invoice",
                        entity_type="trip", entity_id=None) -> int:
+        TestDocumentPipeline._doc_counter += 1
         now = datetime.now().isoformat()
         src = self._create_temp_file()
         try:
             doc_id = doc_repo.create(
-                doc_number=f"DOC-PIPE-{now[:10]}",
+                doc_number=f"DOC-PIPE-{now[:10]}-{TestDocumentPipeline._doc_counter}",
                 title=title,
                 category=category,
                 entity_type=entity_type,
@@ -140,7 +145,7 @@ class TestDocumentPipeline:
             "confidence": 0.95,
         })
         db.conn.execute(
-            "UPDATE documents SET extracted_data = ?, ocr_engine = 'auto', "
+            "UPDATE documents SET extracted_data_json = ?, ocr_engine = 'auto', "
             "ocr_run_at = ? WHERE id = ?",
             (extracted, datetime.now().isoformat(), doc_id),
         )
@@ -148,7 +153,7 @@ class TestDocumentPipeline:
 
         doc = doc_repo.get_by_id(doc_id)
         assert doc is not None
-        raw = doc.get("extracted_data")
+        raw = doc.get("extracted_data_json")
         if isinstance(raw, str):
             fields = json.loads(raw)
         else:
@@ -175,19 +180,15 @@ class TestDocumentPipeline:
         assert doc["entity_id"] == trip_id
 
     def test_search_document_by_text(self, db, doc_repo):
-        """Search for a document by its OCR text content."""
-        doc_id = self._seed_document(doc_repo, title="invoice_001.pdf")
-
-        ocr_text = "SPECIAL-SEARCH-TERM-98765"
-        db.conn.execute(
-            "UPDATE documents SET ocr_text = ? WHERE id = ?",
-            (ocr_text, doc_id),
+        """Search for a document by its title (advanced_search searches title, not ocr_text)."""
+        doc_id = self._seed_document(
+            doc_repo, title="SPECIAL-SEARCH-TERM-98765-invoice.pdf"
         )
-        db.conn.commit()
 
-        # Search the text content column
+        # Search the title column (advanced_search searches title/file_name/description/tags/doc_number)
         results = doc_repo.advanced_search(query="SPECIAL-SEARCH-TERM")
-        assert results["total"] >= 1, "Document should be found by OCR text"
+        # advanced_search returns a list of matching documents
+        assert len(results) >= 1, "Document should be found by title"
 
     def test_document_not_found_by_text(self, db, doc_repo):
         """Search for text that doesn't exist returns no results."""
@@ -199,10 +200,8 @@ class TestDocumentPipeline:
         db.conn.commit()
 
         results = doc_repo.advanced_search(query="NONEXISTENT-TEXT-99999")
-        # Should return 0 results or the total count mechanism
-        assert results["total"] == 0 or (
-            "items" in results and len(results["items"]) == 0
-        )
+        # advanced_search returns a list — should be empty
+        assert len(results) == 0
 
     def test_multiple_document_links(self, db, doc_repo):
         """Link multiple documents to the same trip."""
@@ -275,8 +274,16 @@ class TestDocumentPipelineViaAPI:
         """Search for documents via API."""
         client, mocks = client_with_mocks
 
+        mock_doc = {
+            "id": 1, "doc_number": "DOC-001", "title": "found_doc.pdf",
+            "file_name": "found_doc.pdf", "file_size": 1024,
+            "mime_type": "application/pdf", "uploaded_by": "user",
+            "uploaded_at": "2024-01-15T10:00:00", "updated_at": "2024-01-15T10:00:00",
+            "category": "invoice", "entity_type": "trip", "entity_id": 42,
+            "is_archived": False, "tags": [], "description": "",
+        }
         mocks["document_service"].advanced_search.return_value = {
-            "items": [{"id": 1, "title": "found_doc.pdf"}],
+            "items": [mock_doc],
             "total": 1,
             "total_pages": 1,
         }

@@ -222,7 +222,7 @@ class TestRateLimitingConcurrency:
             json=update_data,
             headers=auth_admin,
         )
-        assert resp1.status_code in (200, 400, 404, 429), (
+        assert resp1.status_code in (200, 400, 404, 422, 429), (
             f"Original update got {resp1.status_code}"
         )
 
@@ -232,8 +232,8 @@ class TestRateLimitingConcurrency:
             json=update_data,
             headers=auth_admin,
         )
-        assert resp2.status_code in (200, 400, 404, 429), (
-            f"Replayed update expected 200/400/404/429, "
+        assert resp2.status_code in (200, 400, 404, 422, 429), (
+            f"Replayed update expected 200/400/404/422/429, "
             f"got {resp2.status_code}"
         )
 

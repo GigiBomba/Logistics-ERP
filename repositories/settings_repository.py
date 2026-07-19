@@ -51,7 +51,13 @@ class SettingsRepository(BaseRepository):
         )
 
     def get_table_names(self) -> List[str]:
-        rows = self._fetchall(
-            "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
-        )
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            rows = self._fetchall(
+                "SELECT table_name AS name FROM information_schema.tables "
+                "WHERE table_schema = 'public' ORDER BY table_name"
+            )
+        else:
+            rows = self._fetchall(
+                "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+            )
         return [r["name"] for r in rows]

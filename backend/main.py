@@ -58,7 +58,7 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-API-Key"],
     )
     if not is_production:
-        cors_kwargs["allow_origin_regex"] = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+        cors_kwargs["allow_origin_regex"] = r"https?://(localhost|127\.0\.0\.1|operionerp\.xyz|.*\.operionerp\.xyz)(:\d+)?"
         cors_kwargs["allow_origins"] = []
     else:
         cors_kwargs["allow_origins"] = allowed_origins

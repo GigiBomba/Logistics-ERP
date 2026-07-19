@@ -55,3 +55,10 @@ class OperationLog(BaseModel):
     success: bool
     error: Optional[str] = None
     timestamp: datetime
+
+
+class Money(BaseModel):
+    """Shared currency+amount value type used across Invoices/Receipts/Analytics
+    and the Freight Exchange subsystem."""
+    amount: float
+    currency: str = "EUR"

@@ -187,7 +187,7 @@ class TestBackendSettingsEnvOverride:
 
 class TestBackendSettingsValidation:
     def test_init_does_not_raise_when_no_admin(self):
-        s = BackendSettings()
+        s = BackendSettings(_env_file=None, jwt_secret_key="test-key")
         assert s.admin_password_hash == ""
 
     def test_init_no_jwt_warning(self, caplog):
@@ -196,11 +196,10 @@ class TestBackendSettingsValidation:
         BackendSettings(jwt_secret_key="")
         assert any("JWT_SECRET_KEY" in msg for msg in caplog.messages)
 
-    def test_admin_email_without_hash_warning(self, monkeypatch, caplog):
+    def test_admin_email_without_hash_warning(self, caplog):
         import logging
-        monkeypatch.setenv("OPERION_ADMIN_EMAIL", "admin@test.com")
         caplog.set_level(logging.WARNING)
-        BackendSettings()
+        BackendSettings(_env_file=None, admin_email="admin@test.com", jwt_secret_key="test-key")
         assert any("ADMIN_EMAIL" in msg for msg in caplog.messages)
 
     def test_type_conversion_port(self, monkeypatch):

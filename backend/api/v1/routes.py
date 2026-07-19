@@ -6,7 +6,7 @@ from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.route import RouteCalculateRequest, RouteResponse
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 
@@ -24,7 +24,7 @@ def list_route_history(
 ):
     """Return paginated list of route history."""
     try:
-        from repositories.route_repository import RouteRepository
+        from backend.repositories.route_repository import RouteRepository
         repo = RouteRepository(db)
         rows = repo.get_all(limit=page_size)
         return PaginatedResponse.from_items(
@@ -43,7 +43,7 @@ def get_route_statistics(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return route statistics."""
-    from services.route_history_service import RouteHistoryService
+    from backend.services.route_history_service import RouteHistoryService
     svc = RouteHistoryService(db)
     return svc.get_statistics()
 
@@ -54,7 +54,7 @@ def get_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:
@@ -68,7 +68,7 @@ def calculate_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from services.route_service import RouteService
+    from backend.services.route_service import RouteService
 
     points = data.points
     if not points or len(points) < 2:
@@ -107,7 +107,7 @@ def duplicate_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from services.route_history_service import RouteHistoryService
+    from backend.services.route_history_service import RouteHistoryService
     svc = RouteHistoryService(db)
     status = svc.duplicate_route(route_id)
     return {"status": "duplicated", "new_route_id": status}
@@ -119,7 +119,7 @@ def archive_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:
@@ -134,7 +134,7 @@ def delete_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:
@@ -150,7 +150,7 @@ def export_route(
     fmt: str = Query("json", pattern="^(json|csv)$"),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:

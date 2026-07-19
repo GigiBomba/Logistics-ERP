@@ -12,7 +12,7 @@ from backend.schemas.payment_profile import (
     PaymentProfileResponse,
     PaymentProfileUpdate,
 )
-from services.payment_profile_service import PaymentProfileService
+from backend.services.payment_profile_service import PaymentProfileService
 
 from backend.dependencies_security import require_dispatcher
 
@@ -34,10 +34,11 @@ def list_payment_profiles(
 ):
     """Return paginated list of payment profiles."""
     try:
+        company_id = current_user.get("company_id", 0)
         if query:
-            items = service.search(query, limit=page_size)
+            items = service.search(query, company_id=company_id, limit=page_size)
         else:
-            items = service.get_all(include_inactive=include_inactive, limit=page_size)
+            items = service.get_all(company_id=company_id, include_inactive=include_inactive, limit=page_size)
         return PaginatedResponse.from_items(
             items=[PaymentProfileResponse(**p) for p in items],
             total=len(items),
@@ -56,7 +57,8 @@ def get_payment_profile(
     service: PaymentProfileService = Depends(get_payment_profile_service),
 ):
     try:
-        profile = service.get_by_id(profile_id)
+        company_id = current_user.get("company_id", 0)
+        profile = service.get_by_id(profile_id, company_id=company_id)
     except Exception as exc:
         logger.exception("Operation failed: %s", exc)
         raise HTTPException(status_code=500, detail="Operation failed")
@@ -72,7 +74,8 @@ def create_payment_profile(
     service: PaymentProfileService = Depends(get_payment_profile_service),
 ):
     try:
-        profile_id = service.create(data.model_dump())
+        company_id = current_user.get("company_id", 0)
+        profile_id = service.create(data.model_dump(), company_id=company_id)
         return {"id": profile_id}
     except Exception as exc:
         logger.exception("Operation failed: %s", exc)
@@ -88,7 +91,8 @@ def update_payment_profile_partial(
 ):
     """Partially update a payment profile (PATCH)."""
     try:
-        existing = service.get_by_id(profile_id)
+        company_id = current_user.get("company_id", 0)
+        existing = service.get_by_id(profile_id, company_id=company_id)
     except Exception as exc:
         logger.exception("Operation failed: %s", exc)
         raise HTTPException(status_code=500, detail="Operation failed")
@@ -97,7 +101,8 @@ def update_payment_profile_partial(
     update_fields = {k: v for k, v in data.model_dump().items() if v is not None}
     if update_fields:
         try:
-            service.update(profile_id, update_fields)
+            company_id = current_user.get("company_id", 0)
+            service.update(profile_id, update_fields, company_id=company_id)
         except Exception as exc:
             logger.exception("Operation failed: %s", exc)
             raise HTTPException(status_code=500, detail="Operation failed")
@@ -114,7 +119,8 @@ def update_payment_profile(
 ):
     """[DEPRECATED] Use PATCH /{profile_id} instead."""
     try:
-        existing = service.get_by_id(profile_id)
+        company_id = current_user.get("company_id", 0)
+        existing = service.get_by_id(profile_id, company_id=company_id)
     except Exception as exc:
         logger.exception("Operation failed: %s", exc)
         raise HTTPException(status_code=500, detail="Operation failed")
@@ -123,7 +129,8 @@ def update_payment_profile(
     update_fields = {k: v for k, v in data.model_dump().items() if v is not None}
     if update_fields:
         try:
-            service.update(profile_id, update_fields)
+            company_id = current_user.get("company_id", 0)
+            service.update(profile_id, update_fields, company_id=company_id)
         except Exception as exc:
             logger.exception("Operation failed: %s", exc)
             raise HTTPException(status_code=500, detail="Operation failed")
@@ -139,14 +146,16 @@ def delete_payment_profile(
     service: PaymentProfileService = Depends(get_payment_profile_service),
 ):
     try:
-        existing = service.get_by_id(profile_id)
+        company_id = current_user.get("company_id", 0)
+        existing = service.get_by_id(profile_id, company_id=company_id)
     except Exception as exc:
         logger.exception("Operation failed: %s", exc)
         raise HTTPException(status_code=500, detail="Operation failed")
     if not existing:
         raise HTTPException(status_code=404, detail="Payment profile not found")
     try:
-        service.delete(profile_id)
+        company_id = current_user.get("company_id", 0)
+        service.delete(profile_id, company_id=company_id)
     except Exception as exc:
         logger.exception("Operation failed: %s", exc)
         raise HTTPException(status_code=500, detail="Operation failed")

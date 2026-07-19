@@ -36,20 +36,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return
     }
     try {
-      // TODO: Implement when backend endpoint is ready
-      // const { data } = await authApi.getMe()
-      // setUser(data as User)
-
-      // If /me fails, attempt to verify and decode from JWT claims for a minimal user
-      const claims = await verifyJwt(token)
-      if (claims) {
-        setUser({
-          id: (claims.sub as string) || 0,
-          email: (claims.sub as string) || "",
-          role: (claims.role as User["role"]) || "dispatcher",
-          is_admin: claims.is_admin === true || claims.role === "admin",
-          company_id: (claims.company_id as number) ?? null,
-        })
+      // Try to fetch user profile from backend
+      try {
+        const { data } = await authApi.getMe()
+        setUser(data as User)
+      } catch {
+        // If /me fails, attempt to verify and decode from JWT claims for a minimal user
+        const claims = await verifyJwt(token)
+        if (claims) {
+          setUser({
+            id: (claims.sub as string) || 0,
+            email: (claims.sub as string) || "",
+            role: (claims.role as User["role"]) || "dispatcher",
+            is_admin: claims.is_admin === true || claims.role === "admin",
+            company_id: (claims.company_id as number) ?? null,
+          })
+        }
       }
     } finally {
       setIsLoading(false)

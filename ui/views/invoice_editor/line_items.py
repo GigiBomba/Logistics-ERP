@@ -235,7 +235,7 @@ class LineItemsMixin:
         self._tax_combo.setFixedWidth(80)
         tax_row_layout.addWidget(self._tax_combo)
 
-        pct_label = QLabel("%")
+        pct_label = QLabel(t("common.percent"))
         pct_label.setProperty("fontRole", "label")
         tax_row_layout.addWidget(pct_label)
         tax_row_layout.addStretch()
@@ -268,7 +268,7 @@ class LineItemsMixin:
         self._disc_entry.textChanged.connect(self._on_discount_value_changed)
         disc_row_layout.addWidget(self._disc_entry)
 
-        self._disc_symbol_lbl = QLabel("%")
+        self._disc_symbol_lbl = QLabel(t("common.percent"))
         self._disc_symbol_lbl.setProperty("fontRole", "label")
         disc_row_layout.addWidget(self._disc_symbol_lbl)
         disc_row_layout.addStretch()
@@ -301,7 +301,7 @@ class LineItemsMixin:
         self._subtotal_title = QLabel(t("invoice_editor.subtotal"))
         self._subtotal_title.setProperty("fontRole", "label")
         card_layout.addWidget(self._subtotal_title)
-        self._subtotal_lbl = QLabel("0.00")
+        self._subtotal_lbl = QLabel(t("common.zero_amount"))
         self._subtotal_lbl.setProperty("fontRole", "body")
         self._subtotal_lbl.setAlignment(Qt.AlignRight)
         card_layout.addWidget(self._subtotal_lbl)
@@ -309,7 +309,7 @@ class LineItemsMixin:
         self._tax_title = QLabel(t("invoice_editor.tax"))
         self._tax_title.setProperty("fontRole", "label")
         card_layout.addWidget(self._tax_title)
-        self._tax_lbl = QLabel("0.00")
+        self._tax_lbl = QLabel(t("common.zero_amount"))
         self._tax_lbl.setProperty("fontRole", "body")
         self._tax_lbl.setAlignment(Qt.AlignRight)
         card_layout.addWidget(self._tax_lbl)
@@ -317,17 +317,15 @@ class LineItemsMixin:
         self._discount_title = QLabel(t("invoice_editor.discount"))
         self._discount_title.setProperty("fontRole", "label")
         card_layout.addWidget(self._discount_title)
-        self._discount_lbl = QLabel("0.00")
+        self._discount_lbl = QLabel(t("common.zero_amount"))
         self._discount_lbl.setProperty("fontRole", "body")
         self._discount_lbl.setAlignment(Qt.AlignRight)
         card_layout.addWidget(self._discount_lbl)
 
-        card_layout.addWidget(Divider())
-
         self._grand_title = QLabel(t("invoice_editor.grand_total"))
-        self._grand_title.setProperty("fontRole", "body-bold")
+        self._grand_title.setProperty("fontRole", "label")
         card_layout.addWidget(self._grand_title)
-        self._grand_lbl = QLabel("0.00")
+        self._grand_lbl = QLabel(t("common.zero_amount"))
         self._grand_lbl.setProperty("fontRole", "body-bold")
         self._grand_lbl.setAlignment(Qt.AlignRight)
         card_layout.addWidget(self._grand_lbl)
@@ -342,7 +340,7 @@ class LineItemsMixin:
         self._canvas_subtotal_label = QLabel(t("invoice_editor.subtotal"))
         self._canvas_subtotal_label.setProperty("fontRole", "label")
         canvas_totals_layout.addWidget(self._canvas_subtotal_label)
-        self._canvas_subtotal = QLabel("0.00")
+        self._canvas_subtotal = QLabel(t("common.zero_amount"))
         self._canvas_subtotal.setProperty("fontRole", "body")
         self._canvas_subtotal.setAlignment(Qt.AlignRight)
         canvas_totals_layout.addWidget(self._canvas_subtotal)
@@ -350,7 +348,7 @@ class LineItemsMixin:
         self._canvas_tax_label = QLabel(t("invoice_editor.tax"))
         self._canvas_tax_label.setProperty("fontRole", "label")
         canvas_totals_layout.addWidget(self._canvas_tax_label)
-        self._canvas_tax = QLabel("0.00")
+        self._canvas_tax = QLabel(t("common.zero_amount"))
         self._canvas_tax.setProperty("fontRole", "body")
         self._canvas_tax.setAlignment(Qt.AlignRight)
         canvas_totals_layout.addWidget(self._canvas_tax)
@@ -358,7 +356,7 @@ class LineItemsMixin:
         self._canvas_discount_label = QLabel(t("invoice_editor.discount"))
         self._canvas_discount_label.setProperty("fontRole", "label")
         canvas_totals_layout.addWidget(self._canvas_discount_label)
-        self._canvas_discount = QLabel("0.00")
+        self._canvas_discount = QLabel(t("common.zero_amount"))
         self._canvas_discount.setProperty("fontRole", "body")
         self._canvas_discount.setAlignment(Qt.AlignRight)
         canvas_totals_layout.addWidget(self._canvas_discount)
@@ -368,7 +366,7 @@ class LineItemsMixin:
         self._canvas_grand_label = QLabel(t("invoice_editor.grand_total"))
         self._canvas_grand_label.setProperty("fontRole", "body-bold")
         canvas_totals_layout.addWidget(self._canvas_grand_label)
-        self._canvas_grand = QLabel("0.00")
+        self._canvas_grand = QLabel(t("common.zero_amount"))
         self._canvas_grand.setProperty("fontRole", "body-bold")
         self._canvas_grand.setAlignment(Qt.AlignRight)
         canvas_totals_layout.addWidget(self._canvas_grand)
@@ -385,7 +383,7 @@ class LineItemsMixin:
     def _on_discount_type_changed(self, text: str) -> None:
         self._discount_type = text
         is_percent = text == t("invoice_editor.discount_percentage")
-        self._disc_symbol_lbl.setText("%" if is_percent else self._get_currency_symbol(self._currency))
+        self._disc_symbol_lbl.setText(t("common.percent") if is_percent else self._get_currency_symbol(self._currency))
         self._recalc_all()
 
     def _on_discount_value_changed(self, text: str) -> None:
@@ -480,7 +478,7 @@ class LineItemsMixin:
 
         # Update discount symbol
         if calc["is_percent"]:
-            self._disc_symbol_lbl.setText("%")
+            self._disc_symbol_lbl.setText(t("common.percent"))
         else:
             self._disc_symbol_lbl.setText(sym)
 

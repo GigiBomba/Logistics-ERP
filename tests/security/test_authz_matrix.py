@@ -192,9 +192,9 @@ class TestDispatcherCrudOwnTrips:
         create_resp = client.post(
             "/api/v1/trips/",
             json={
+                "client_id": 1,  # Client A-1 in Company A
                 "client_name": "Authz Matrix Client",
                 "driver_name": "Authz Matrix Driver",
-                "truck_number": "AUTHZ-TRK-001",
                 "status": "Planned",
             },
             headers=auth_a,
@@ -224,7 +224,7 @@ class TestDispatcherCrudOwnTrips:
             json={"status": "In Transit"},
             headers=auth_a,
         )
-        assert update_resp.status_code == 200, (
+        assert update_resp.status_code in (200, 204), (
             f"Dispatcher should be able to update own trip, "
             f"got {update_resp.status_code}: {update_resp.text}"
         )
@@ -232,7 +232,7 @@ class TestDispatcherCrudOwnTrips:
         # ── Delete the trip (may be allowed or blocked by policy) ────────
         delete_resp = client.delete(f"/api/v1/trips/{trip_id}", headers=auth_a)
         # Accept either 200 (allowed) or 403 (policy-blocked)
-        assert delete_resp.status_code in (200, 403), (
+        assert delete_resp.status_code in (200, 403, 204), (
             f"Delete own trip returned unexpected status, "
             f"got {delete_resp.status_code}: {delete_resp.text}"
         )

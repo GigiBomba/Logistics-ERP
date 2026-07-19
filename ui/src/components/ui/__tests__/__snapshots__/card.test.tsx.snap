@@ -1,0 +1,80 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Card composition > snapshots > matches snapshot for Card 1`] = `
+<div
+  class="rounded-xl border bg-card text-card-foreground shadow-sm transition-all duration-200 hover:shadow-md hover:border-primary/20"
+>
+  Card content
+</div>
+`;
+
+exports[`Card composition > snapshots > matches snapshot for CardContent 1`] = `
+<div
+  class="p-6 pt-0"
+>
+  Content
+</div>
+`;
+
+exports[`Card composition > snapshots > matches snapshot for CardDescription 1`] = `
+<p
+  class="text-sm text-muted-foreground"
+>
+  Description
+</p>
+`;
+
+exports[`Card composition > snapshots > matches snapshot for CardFooter 1`] = `
+<div
+  class="flex items-center p-6 pt-0"
+>
+  Footer
+</div>
+`;
+
+exports[`Card composition > snapshots > matches snapshot for CardHeader 1`] = `
+<div
+  class="flex flex-col space-y-1.5 p-6"
+>
+  Header
+</div>
+`;
+
+exports[`Card composition > snapshots > matches snapshot for CardTitle 1`] = `
+<h3
+  class="text-lg font-semibold leading-tight tracking-tight"
+>
+  Title
+</h3>
+`;
+
+exports[`Card composition > snapshots > matches snapshot for composed card 1`] = `
+<div
+  class="rounded-xl border bg-card text-card-foreground shadow-sm transition-all duration-200 hover:shadow-md hover:border-primary/20"
+>
+  <div
+    class="flex flex-col space-y-1.5 p-6"
+  >
+    <h3
+      class="text-lg font-semibold leading-tight tracking-tight"
+    >
+      Card Title
+    </h3>
+    <p
+      class="text-sm text-muted-foreground"
+    >
+      Card Description
+    </p>
+  </div>
+  <div
+    class="p-6 pt-0"
+  >
+    Main content
+  </div>
+  <div
+    class="flex items-center p-6 pt-0"
+  >
+    Footer actions
+  </div>
+</div>
+`;

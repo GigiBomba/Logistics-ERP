@@ -1,5 +1,347 @@
 {
   "language_name": "Română",
+  "copilot": {
+    "panel": {
+      "title": "AI Co-Pilot",
+      "coming_soon": "AI Co-Pilot-ul este în curs de dezvoltare. Faza 1 va permite interogări în limbaj natural pentru rute, vehicule, șoferi și analize."
+    },
+    "input": {
+      "placeholder": "Întreabă-mă orice despre flota ta...",
+      "send": "Trimite"
+    },
+    "timeline": {
+      "title": "Cronologie Execuție",
+      "empty": "Niciun plan activ. Cere-i Co-Pilot-ului să facă ceva.",
+      "confirmation_needed": "⚠ This plan requires your confirmation.",
+      "confirm": "Confirm",
+      "cancel": "Cancel",
+      "view_steps": "View Steps",
+      "view_reasoning": "View Reasoning"
+    },
+    "confirmation": {
+      "title": "Confirmă Acțiunea",
+      "review": "Revizuiește acțiunea propusă:",
+      "confirm": "Confirmă",
+      "cancel": "Anulează",
+      "level_2_warning": "Această acțiune va modifica datele de business.",
+      "level_3_warning": "Această acțiune este IREVERSIBILĂ. Tastează {label} pentru a confirma:",
+      "diff_before": "Înainte",
+      "diff_after": "După",
+      "no_confirmation_needed": "Nu este necesară confirmarea",
+      "select_candidate": "Selectează potrivirea corectă:",
+      "none_of_these": "Niciuna dintre acestea",
+      "type_phrase": "Tastează '{phrase}' pentru a confirma"
+    },
+    "reasoning": {
+      "need_destination": "Destinație necesară",
+      "need_origin": "Origine necesară",
+      "need_date": "Dată necesară",
+      "need_vehicle": "Selecție vehicul necesară",
+      "selected_lowest_cost": "Selectat ca având cel mai mic cost total"
+    },
+    "step_status": {
+      "pending": "În așteptare",
+      "running": "În execuție",
+      "succeeded": "Finalizat",
+      "failed": "Eșuat",
+      "skipped": "Sărit"
+    },
+    "phase0": {
+      "not_yet_implemented": "AI Co-Pilot-ul nu este încă disponibil. Va fi lansat în Faza 1."
+    },
+    "help": {
+      "answer_ready": "Iată ce am găsit despre asta. Am folosit {article_count} articol(e) pentru a răspunde.",
+      "no_answer": "Nu am găsit documentație despre \"{question}\". Încearcă meniul de ajutor sau contactează suportul.",
+      "answer": "{answer}",
+      "ask_ai_menu": "Întreabă AI despre asta",
+      "ask_ai_question": "Ce face {label}?",
+      "ask_ai_question_screen": "Ce face {label} în secțiunea {screen}?",
+      "error": {
+        "empty_question": "Te rog să scrii o întrebare mai întâi.",
+        "question_too_long": "Această întrebare este prea lungă. Încearcă o versiune mai scurtă.",
+        "search_failed": "Ne pare rău, nu am putut căuta în documentație acum.",
+        "empty_workflow": "Te rog să specifici pentru ce flux de lucru ai nevoie de ajutor.",
+        "workflow_not_found": "Nu am încă un ghid pentru \"{workflow_id}\".",
+        "workflow_failed": "Ne pare rău, nu am putut încărca acel ghid acum."
+      }
+    },
+    "guided": {
+      "ready": "Iată un ghid pas cu pas pentru tine."
+    },
+    "chat": {
+      "no_controller": "Co-Pilot-ul nu este disponibil. Verifică conexiunea și încearcă din nou.",
+      "new_conversation": "Conversație Nouă",
+      "error": "Ne pare rău, am întâmpinat o eroare la procesarea cererii tale.",
+      "you": "Tu",
+      "co_pilot": "Co-Pilot"
+    },
+    "voice": {
+      "mode_ptt": "Apasă pentru a Vorbi",
+      "mode_wake_word": "Cuvânt de Activare",
+      "ptt_tooltip": "Ține apăsat pentru a înregistra o comandă vocală",
+      "listening_tooltip": "Ascult...",
+      "processing_tooltip": "Procesez...",
+      "wake_word_phase3": "Suportul pentru cuvânt de activare vine curând. Se revine la Apasă pentru a Vorbi.",
+      "recording_error": "Eroare microfon: {error}"
+    },
+    "error": {
+      "too_many_steps": "Acest plan are prea mulți pași. Poți restrânge cererea?",
+      "too_many_graph_nodes": "Această solicitare ar genera prea mulți pași de raționament. Poți restrânge cererea?",
+      "too_many_tokens": "Această solicitare este prea complexă pentru a fi procesată într-o singură etapă. Poți împărți în părți mai mici?",
+      "timeout": "Operațiunea a expirat. Te rugăm să încerci din nou.",
+      "feature_not_in_tier": "Această funcție nu este disponibilă la abonamentul tău.",
+      "unavailable": "AI Co-Pilot-ul este temporar indisponibil. Te rugăm să folosești ecranele standard.",
+      "service_error": "Serviciul backend a returnat o eroare.",
+      "unexpected": "A apărut o eroare neașteptată.",
+      "no_db": "Conexiunea la baza de date este indisponibilă. Încearcă din nou.",
+      "internal": "A apărut o eroare internă. Încearcă din nou.",
+      "circuit_breaker_tripped": "Co-Pilot-ul este temporar indisponibil pentru acțiuni autonome. Utilizați confirmarea manuală sau încercați din nou mai târziu.",
+      "unknown_analytics_domain": "Domeniu de analiză necunoscut. Disponibil: financial, fleet, driver, client, route_profitability, trip_status, cost_breakdown, monthly_volume, revenue_quarterly, maintenance, truck_utilization, invoice_aging, overdue, summary."
+    },
+    "step": {
+      "vehicle_search_done": "Căutare vehicule finalizată.",
+      "vehicle_health_score_done": "Scor sănătate vehicul calculat.",
+      "driver_hours_check_done": "Verificare ore șofer finalizată.",
+      "analytics_query_done": "Interogare analiză finalizată."
+    },
+    "tool": {
+      "db_unavailable": "Baza de date indisponibilă — nu se poate executa interogarea.",
+      "ocr": {
+        "unavailable": "Procesarea OCR nu este încă disponibilă.",
+        "confirm_match_unavailable": "Confirmarea potrivirii OCR nu este încă disponibilă."
+      },
+      "document": {
+        "search_ok": "Căutare documente finalizată.",
+        "search_failed": "Căutarea documentelor a eșuat.",
+        "auto_rename_unavailable": "Redenumirea automată nu este încă disponibilă.",
+        "generate_cmr_ok": "CMR generat cu succes.",
+        "generate_cmr_failed": "Generarea CMR a eșuat.",
+        "ocr_import_ok": "Document OCR procesat cu succes.",
+        "create_failed": "Crearea înregistrării documentului a eșuat.",
+        "ocr_match_ok": "Potrivire OCR confirmată cu succes.",
+        "ocr_match_failed": "Confirmarea potrivirii OCR a eșuat."
+      },
+      "currency": {
+        "get_rate_ok": "Curs valutar obținut.",
+        "get_rate_failed": "Obținerea cursului valutar a eșuat.",
+        "convert_ok": "Conversie valutară finalizată.",
+        "convert_failed": "Conversia valutară a eșuat."
+      },
+      "automail": {
+        "schedule_unavailable": "Programarea trimiterii automate nu este încă disponibilă.",
+        "sent": "Email trimis cu succes.",
+        "send_failed": "Trimiterea emailului a eșuat."
+      },
+      "freight": {
+        "service_unavailable": "Serviciul de schimb de mărfuri nu este disponibil.",
+        "search_loads_ok": "Căutare încărcături finalizată.",
+        "search_loads_failed": "Căutarea încărcăturilor a eșuat.",
+        "get_load_ok": "Detalii încărcătură obținute.",
+        "get_load_not_found": "Încărcătura nu a fost găsită.",
+        "get_load_failed": "Obținerea detaliilor încărcăturii a eșuat.",
+        "save_search_ok": "Căutare salvată cu succes.",
+        "save_search_failed": "Salvarea căutării a eșuat.",
+        "refresh_search_ok": "Căutare reîmprospătată.",
+        "refresh_search_not_found": "Căutarea salvată nu a fost găsită.",
+        "refresh_search_failed": "Reîmprospătarea căutării a eșuat.",
+        "evaluate_load_ok": "Evaluare încărcătură finalizată.",
+        "evaluate_load_not_found": "Încărcătura nu a fost găsită pentru evaluare.",
+        "evaluate_load_failed": "Evaluarea încărcăturii a eșuat.",
+        "find_best_trucks_ok": "Cele mai bune camioane găsite.",
+        "find_best_trucks_not_found": "Niciun camion compatibil găsit.",
+        "find_best_trucks_failed": "Găsirea celor mai bune camioane a eșuat.",
+        "import_load_ok": "Încărcătură importată cu succes.",
+        "import_load_failed": "Importul încărcăturii a eșuat.",
+        "recommend_dispatch_ok": "Recomandare expediție finalizată.",
+        "recommend_dispatch_not_found": "Nu se poate recomanda — încărcătura sau camioanele nu au fost găsite.",
+        "recommend_dispatch_failed": "Recomandarea expediției a eșuat.",
+        "list_connected_providers_ok": "Furnizori conectați listați.",
+        "list_connected_providers_failed": "Listarea furnizorilor conectați a eșuat."
+      },
+      "email": {
+        "bulk_sent": "Email trimis în bulk. {sent} reușite, {failed} eșuate.",
+        "bulk_failed": "Trimiterea în bulk a eșuat."
+      },
+      "export": {
+        "generate_pdf_ok": "PDF generat cu succes.",
+        "generate_pdf_failed": "Generarea PDF a eșuat.",
+        "generate_excel_ok": "Excel generat cu succes.",
+        "generate_excel_failed": "Generarea Excel a eșuat."
+      }
+    },
+    "dispatch": {
+      "create": {
+        "success": "Expediție creată cu succes.",
+        "failed": "Crearea expediției a eșuat."
+      },
+      "cancel": {
+        "success": "Expediție anulată cu succes.",
+        "failed": "Anularea expediției a eșuat."
+      },
+      "bulk_assign": {
+        "success": "Atribuire în masă finalizată cu succes."
+      },
+      "undo_failed": "Anularea acțiunii de expediere a eșuat."
+    },
+    "client": {
+      "payment_summary": {
+        "success": "Sumar plăți client obținut."
+      },
+      "delete_failed": "Eșec la ștergerea clientului.",
+      "create": {
+        "success": "Client creat cu succes."
+      },
+      "update": {
+        "success": "Client actualizat cu succes."
+      }
+    },
+    "driver": {
+      "remove_failed": "Eșec la eliminarea șoferului.",
+      "create": {
+        "success": "Șofer creat cu succes."
+      },
+      "update": {
+        "success": "Șofer actualizat cu succes."
+      }
+    },
+    "trip": {
+      "calculate_profitability": {
+        "success": "Profitabilitate cursă calculată."
+      },
+      "calculate_estimate_failed": "Estimarea profitabilității a eșuat.",
+      "delete_failed": "Eșec la ștergerea cursei."
+    },
+    "vehicle": {
+      "delete_failed": "Eșec la ștergerea vehiculului."
+    },
+    "tracking": {
+      "positions_fetched": "Poziții vehicule în timp real obținute.",
+      "history_unavailable": "Istoricul pozițiilor vehiculelor nu este încă disponibil."
+    },
+    "proforma": {
+      "create": {
+        "success": "Factură proformă creată cu succes."
+      },
+      "update_unavailable": "Actualizarea proformei nu este încă disponibilă.",
+      "convert_to_invoice": {
+        "success": "Proformă convertită în factură cu succes."
+      }
+    },
+    "invoice": {
+      "delete_failed": "Eșec la ștergerea facturii.",
+      "deleted": "Factură ștearsă cu succes.",
+      "draft": {
+        "success": "Schiță de factură creată cu succes."
+      },
+      "generate_pdf": {
+        "success": "PDF factură generat cu succes."
+      },
+      "finalize": {
+        "success": "Factură finalizată cu succes."
+      }
+    },
+    "route": {
+      "delete_failed": "Eșec la ștergerea rutei.",
+      "delete_unavailable": "Ștergerea rutei nu este încă disponibilă.",
+      "error": {
+        "service_unavailable": "Serviciul de rute este momentan indisponibil.",
+        "calculate": "Calculul rutei a eșuat.",
+        "estimate_cost": "Estimarea costului a eșuat.",
+        "plan_multistop": "Planificarea rutei multi-stop a eșuat."
+      },
+      "calculate": {
+        "success": "Rută calculată cu succes."
+      },
+      "estimate_cost": {
+        "success": "Estimare cost finalizată.",
+        "error": "Estimarea costului a eșuat."
+      },
+      "plan_multistop": {
+        "success": "Rută multi-stop planificată cu succes.",
+        "error": "Planificarea rutei multi-stop a eșuat."
+      }
+    },
+    "maintenance": {
+      "schedule": {
+        "success": "Programare întreținere salvată cu succes."
+      }
+    },
+    "clarification": {
+      "unknown_intent": "Nu am înțeles această solicitare. Poți reformula?",
+      "tool_unavailable": "Această funcție nu este disponibilă. Încearcă o altă solicitare.",
+      "low_confidence": "Nu sunt sigur că am înțeles corect. Poți oferi mai multe detalii?",
+      "missing_entities": "Am nevoie de mai multe informații pentru a finaliza această solicitare.",
+      "cannot_compile": "Nu am putut construi un plan de execuție pentru această solicitare."
+    },
+    "handoff": {
+      "message": "Am dificultăți în înțelegerea acestei solicitări. Vă voi redirecționa către ecranele standard pentru a finaliza manual."
+    },
+    "plan": {
+      "not_persisted": "Istoricul planurilor nu este încă disponibil.",
+      "cancelled": "Planul a fost anulat.",
+      "not_found": "Planul cu ID-ul {plan_id} nu a fost găsit.",
+      "not_owned": "Nu aveți acces la acest plan."
+    },
+    "world_model": {
+      "overdue_invoices": "Există {count} facturi restante care necesită atenție.",
+      "overdue_maintenance": "{count} întrețineri sunt depășite."
+    },
+    "payment": {
+      "bulk_csv_ok": "CSV de plată în vrac generat cu {count} beneficiari.",
+      "bulk_csv_failed": "Generarea CSV-ului de plată în vrac a eșuat."
+    },
+    "undo": {
+      "tool_not_found": "Anulare eșuată: instrumentul nu a fost găsit.",
+      "not_supported": "Această acțiune nu suportă anularea.",
+      "not_implemented": "Anularea nu este încă implementată pentru această acțiune.",
+      "invalid_token": "Anulare eșuată: token invalid sau expirat.",
+      "success": "Acțiune anulată cu succes.",
+      "not_found": "Nu s-a găsit nicio acțiune care poate fi anulată pentru acest plan.",
+      "not_available": "Această acțiune nu are un token de anulare disponibil.",
+      "expired": "Fereastra de anulare a expirat (limită de 30 de minute)."
+    },
+    "chat": {
+      "you": "You",
+      "co_pilot": "Co-Pilot",
+      "thinking": "Thinking...",
+      "empty": "Start a conversation with the AI Co-Pilot.",
+      "error": "Sorry, something went wrong. Please try again.",
+      "new_conversation": "New Conversation"
+    },
+    "insight": {
+      "title": "Insights",
+      "empty": "No insights to review",
+      "filter_all": "All",
+      "filter_new": "New",
+      "filter_reviewed": "Reviewed",
+      "severity": {
+        "critical": "Critical",
+        "high": "High",
+        "medium": "Medium",
+        "low": "Low"
+      },
+      "action": {
+        "review": "Review",
+        "dismiss": "Dismiss",
+        "remind": "Remind later"
+      },
+      "type": {
+        "cost_anomaly": "Cost Anomaly",
+        "driver_alert": "Driver Alert",
+        "maintenance_due": "Maintenance Due",
+        "overdue_invoice": "Overdue Invoice",
+        "fuel_trend": "Fuel Trend",
+        "return_load": "Return Load",
+        "fleet_availability": "Fleet Availability"
+      },
+      "time": {
+        "just_now": "just now",
+        "minutes_ago": "{n}m ago",
+        "hours_ago": "{n}h ago",
+        "days_ago": "{n}d ago"
+      }
+    }
+  },
   "app": {
     "name": "ERP LOGISTICĂ",
     "title": "Cashflow Manager v2.0 - Logistică",
@@ -39,7 +381,8 @@
     "team": "Echipă",
     "migration_center": "Centru Migrare",
     "group_tools": "Unelte",
-    "group_administration": "Administrare"
+    "group_administration": "Administrare",
+    "copilot": "AI Co-Pilot"
   },
   "migration": {
     "title": "Centru de Migrare",
@@ -735,7 +1078,94 @@
     "field_ocr_credentials": "Credențiale OCR cloud:",
     "field_ocr_gpu": "Folosește GPU pentru OCR (necesită CUDA + PaddlePaddle GPU)",
     "field_ocr_help": "Configurați cel puțin un furnizor pentru recunoașterea scrisului de mână.",
-    "unit_seconds": " secunde"
+    "section_tutorial": "TUR DE ONBOARDING",
+    "tutorial": {
+      "description": "Parcurge turul interactiv de onboarding care îți prezintă aplicația. Îl poți relua oricând.",
+      "replay_button": "Reia Turul de Onboarding",
+      "reset_all_button": "Resetează Toate Tururile",
+      "replay_title": "Tur Pregătit",
+      "replay_message": "Turul de onboarding va începe data viitoare când deschizi aplicația sau când navighezi la un ecran nevizitat.",
+      "reset_title": "Toate Tururile Resetate",
+      "reset_message": "Toate completările tururilor au fost șterse. Vor apărea din nou la următoarea vizită.",
+      "completed": "Turul de onboarding completat. Îl poți relua mai jos.",
+      "not_completed": "Nu ai finalizat încă turul de onboarding. Pornește-l mai jos!"
+    },
+    "unit_seconds": " secunde",
+    "section_autonomous_mode": "AUTONOMOUS MODE",
+    "autonomous": {
+      "dispatch": "Auto-Dispatch",
+      "dispatch_help": "Let the AI Co-Pilot automatically dispatch trips when conditions are met.",
+      "invoice": "Auto-Invoice",
+      "invoice_help": "Let the AI Co-Pilot generate and send invoices automatically.",
+      "email": "Auto-Email",
+      "email_help": "Let the AI Co-Pilot send automated email notifications to clients.",
+      "upgrade_needed": "Autonomous Mode is an Enterprise-tier feature. Upgrade your subscription to enable per-workflow AI-driven automatic execution.",
+      "circuit_breaker_status": "Circuit Breaker Status",
+      "circuit_breaker_active": "Active — autonomous actions are permitted.",
+      "circuit_breaker_tripped": "Tripped — autonomous actions are paused. Reset after cooldown.",
+      "reset_circuit": "Reset Circuit Breaker"
+    }
+  },
+  "tour": {
+    "control": {
+      "cancel": "Anulează",
+      "skip": "Sari peste",
+      "replay": "Reia"
+    },
+    "help_nudge": {
+      "generic": "Ai nevoie de ajutor? Întreabă Co-Pilot-ul sau urmărește turul de onboarding din Setări.",
+      "fleet": "Cauți vehicule? Secțiunea Flotă îți arată toate camioanele și scorurile lor de sănătate.",
+      "dispatch": "Poți atribui camioane și șoferi la curse folosind Panoul de Dispecerat.",
+      "drivers": "Managerul de Șoferi îți permite să adaugi șoferi și să urmărești orele lor.",
+      "invoices": "Generează facturi pentru clienții tăi din secțiunea Generatoare.",
+      "maintenance": "Programează mentenanța vehiculelor și urmărește istoricul service."
+    },
+    "expert": {
+      "quick_complete": "Ai mai făcut asta, deci iată versiunea rapidă. Totul este configurat."
+    },
+    "app_overview": {
+      "title": "Bun venit la Operion ERP",
+      "welcome": "Bun venit la Operion ERP! Acest tur scurt îți va prezenta secțiunile principale pentru a te putea începe imediat. Folosește comenzile de mai jos pentru a sări sau anula oricând.",
+      "sidebar": "Aceasta este bara de navigare laterală. Dă click pe orice element pentru a schimba ecranele. Hai să explorăm împreună secțiunile principale.",
+      "fleet": "Flotă — gestionează toate vehiculele aici. Vezi scorurile de sănătate, locațiile și istoricul de mentenanță pentru fiecare camion.",
+      "drivers": "Șoferi — gestionează informațiile șoferilor, permisele, datele tahografului și orele de serviciu. Adaugă șoferi noi și urmărește conformitatea.",
+      "trips": "Curse — creează și gestionează curse. Sistemul calculează profitabilitatea incluzând combustibil, taxe și costuri șofer.",
+      "dispatch": "Panou de Dispecerat — folosește panoul tip Kanban pentru a atribui rapid camioane și șoferi la curse. Trage și plasează pentru a actualiza statusurile.",
+      "copilot": "AI Co-Pilot — asistentul tău în limbaj natural. Pune întrebări despre datele tale, solicită acțiuni sau obține ajutor pas cu pas. Disponibil în 22 de limbi.",
+      "complete": "Gata! Acum ești pregătit să folosești Operion. Dacă ai întrebări, întreabă pur și simplu AI Co-Pilot-ul. Dispecerat fericit!"
+    },
+    "add_driver": {
+      "title": "Adaugă un Șofer Nou",
+      "navigate": "Mai întâi, navighează la secțiunea Șoferi folosind bara laterală.",
+      "click_add": "Dă click pe butonul 'Adaugă Șofer' pentru a deschide formularul de șofer nou.",
+      "fill_form": "Completează numele și detaliile șoferului în câmpurile formularului.",
+      "save": "Dă click pe 'Salvează' pentru a crea noul registru de șofer.",
+      "complete": "Șoferul a fost adăugat! Acum îl poți atribui la curse."
+    },
+    "generate_invoice": {
+      "title": "Generează o Factură",
+      "navigate": "Navighează la secțiunea Facturi folosind bara laterală.",
+      "click_new": "Dă click pe butonul 'Factură Nouă' pentru a crea o factură nouă.",
+      "fill_client": "Selectează un client din câmpul de client. Factura va fi adresată acestuia.",
+      "add_items": "Adaugă linii de articol la factură — descrieri, cantități și sume.",
+      "complete": "Factura este gata să fie finalizată și trimisă clientului."
+    },
+    "dispatch_trip": {
+      "title": "Dispecetează o Cursă",
+      "navigate": "Navighează la Panoul de Dispecerat folosind bara laterală.",
+      "select_trip": "Dă click pe o carte de cursă pentru a o selecta și a-i vedea detaliile.",
+      "assign_truck": "Dă click pe 'Atribuie Camion' pentru a selecta un vehicul pentru această cursă.",
+      "assign_driver": "Dă click pe 'Atribuie Șofer' pentru a selecta un șofer pentru această cursă.",
+      "confirm": "Revizuiește detaliile atribuirii și dă click pe 'Confirmă' pentru a dispeceta cursa.",
+      "complete": "Cursa a fost dispecetată! Șoferul și camionul sunt acum atribuite."
+    },
+    "schedule_maintenance": {
+      "title": "Programează Mentenanță",
+      "navigate": "Navighează la secțiunea Mentenanță folosind bara laterală.",
+      "click_schedule": "Dă click pe butonul 'Programează Mentenanță'.",
+      "fill_details": "Introdu vehiculul, tipul de serviciu și orice note pentru echipamentul de mentenanță.",
+      "complete": "Mentenanța a fost programată! Vei primi o remitere când este scadentă."
+    }
   },
   "edit_trip": {
     "title": "Editare Cursă #{}",
@@ -1036,11 +1466,7 @@
     "severity_info": "Info"
   },
   "status": {
-    "Planned": "Planificată",
-    "Loading": "Încărcare",
     "In Transit": "În tranzit",
-    "Delivered": "Livrată",
-    "Cancelled": "Anulată",
     "unknown": "Necunoscut",
     "planned": "Planificată",
     "loading": "Încărcare",
@@ -1049,8 +1475,6 @@
     "cancelled": "Anulată",
     "invoiced": "Facturată",
     "paid": "Plătită",
-    "Invoiced": "Facturată",
-    "Paid": "Plătită",
     "Archived": "Arhivată"
   },
   "common": {
@@ -2237,35 +2661,37 @@
   },
   "receipt": {
     "title": "CHITANȚĂ",
-    "editor.title": "Generator Chitanțe",
-    "editor.subtitle": "Creați chitanțe profesionale pentru plăți, rambursări și cheltuieli",
-    "editor.generate_pdf": "Generează PDF",
-    "editor.print": "Tipărește",
-    "editor.save_draft": "Salvează Ciornă",
-    "editor.load_draft": "Încarcă Ciornă",
-    "editor.duplicate": "Duplică",
-    "editor.export_json": "Exportă JSON",
-    "editor.email": "Email",
-    "editor.browse": "Răsfoiește",
-    "editor.attach_files": "Atașează Fișiere",
-    "editor.select_file": "Selectează Fișier",
-    "editor.validation_error": "Eroare de Validare",
-    "editor.pdf_generated": "Chitanță Generată",
-    "editor.pdf_generated_msg": "PDF salvat la: {path}",
-    "editor.error": "Eroare",
-    "editor.print_no_number": "Număr chitanță lipsă. Generați mai întâi.",
-    "editor.print_no_file": "Fișier PDF negăsit. Generați mai întâi.",
-    "editor.duplicated": "Chitanță Duplicată",
-    "editor.duplicated_msg": "Copie creată cu număr nou.",
-    "editor.email_placeholder": "Funcția de email va fi disponibilă curând.",
-    "editor.no_attachments": "Niciun fișier atașat.",
-    "editor.draft_name": "Nume ciornă:",
-    "editor.draft_saved": "Ciornă Salvată",
-    "editor.draft_saved_msg": "Ciorna \"{name}\" salvată.",
-    "editor.draft_save_failed": "Salvarea ciornei a eșuat.",
-    "editor.no_drafts": "Nicio ciornă salvată.",
-    "editor.load": "Încarcă",
-    "editor.cancel": "Anulează",
+    "editor": {
+      "title": "Generator Chitanțe",
+      "subtitle": "Creați chitanțe profesionale pentru plăți, rambursări și cheltuieli",
+      "generate_pdf": "Generează PDF",
+      "print": "Tipărește",
+      "save_draft": "Salvează Ciornă",
+      "load_draft": "Încarcă Ciornă",
+      "duplicate": "Duplică",
+      "export_json": "Exportă JSON",
+      "email": "Email",
+      "browse": "Răsfoiește",
+      "attach_files": "Atașează Fișiere",
+      "select_file": "Selectează Fișier",
+      "validation_error": "Eroare de Validare",
+      "pdf_generated": "Chitanță Generată",
+      "pdf_generated_msg": "PDF salvat la: {path}",
+      "error": "Eroare",
+      "print_no_number": "Număr chitanță lipsă. Generați mai întâi.",
+      "print_no_file": "Fișier PDF negăsit. Generați mai întâi.",
+      "duplicated": "Chitanță Duplicată",
+      "duplicated_msg": "Copie creată cu număr nou.",
+      "email_placeholder": "Funcția de email va fi disponibilă curând.",
+      "no_attachments": "Niciun fișier atașat.",
+      "draft_name": "Nume ciornă:",
+      "draft_saved": "Ciornă Salvată",
+      "draft_saved_msg": "Ciorna \"{name}\" salvată.",
+      "draft_save_failed": "Salvarea ciornei a eșuat.",
+      "no_drafts": "Nicio ciornă salvată.",
+      "load": "Încarcă",
+      "cancel": "Anulează"
+    },
     "section_type": "TIP CHITANȚĂ",
     "section_info": "INFORMAȚII CHITANȚĂ",
     "section_parties": "PĂRȚI",
@@ -2341,10 +2767,14 @@
     "recipient_signature_label": "Semnătura Beneficiarului",
     "company_stamp_label": "Ștampila Companiei",
     "generated_by": "Generat de Operion",
-    "validation.amount_required": "Suma este obligatorie și trebuie să fie pozitivă.",
-    "validation.recipient_required": "Beneficiarul (Primit de la) este obligatoriu.",
-    "validation.number_required": "Numărul chitanței este obligatoriu.",
-    "validation.date_required": "Data emiterii este obligatorie.",
+    "validation": {
+      "amount_required": "Suma este obligatorie și trebuie să fie pozitivă.",
+      "recipient_required": "Beneficiarul (Primit de la) este obligatoriu.",
+      "number_required": "Numărul chitanței este obligatoriu.",
+      "date_required": "Data emiterii este obligatorie.",
+      "vat_invalid": "Cota TVA trebuie să fie între 0 și 100.",
+      "date_format": "{field} trebuie să fie în format AAAA-LL-ZZ."
+    },
     "customer_label": "Client",
     "vehicle_label": "Vehicul",
     "trailer_label": "Remorcă",
@@ -2352,8 +2782,6 @@
     "branch_placeholder": "ex. Sediul București",
     "export_json": "Exportă JSON",
     "exported_msg": "Date exportate la: {path}",
-    "validation.vat_invalid": "Cota TVA trebuie să fie între 0 și 100.",
-    "validation.date_format": "{field} trebuie să fie în format AAAA-LL-ZZ.",
     "section_invoice_autofill": "COMPLETARE RAPIDĂ DIN FACTURĂ",
     "invoice_autofill_label": "Selectează Factură",
     "invoice_autofill_helper": "Selectați o factură pentru completarea automată",
@@ -2575,5 +3003,169 @@
     "error_title": "Eroare Încărcare",
     "extracted_fields": "Câmpuri Extrase",
     "select_document": "Selectează Document"
+  },
+  "freight": {
+    "title": "Bursa de Transport",
+    "search": "Cauta Marfuri",
+    "evaluate": "Evalueaza Marfa",
+    "import": "Importa ca Transport",
+    "match": {
+      "subtitle": "Cele mai potrivite camioane pentru aceasta marfa",
+      "score": "Scor",
+      "truck_id": "Camion #{id}"
+    },
+    "assign": "Atribuie",
+    "refresh": "Reimprospatare",
+    "evaluate_again": "Evalueaza Din Nou",
+    "back_to_search": "Inapoi la Cautare",
+    "searching": "Se cauta...",
+    "provider": {
+      "timocom": "TIMOCOM",
+      "trans_eu": "Trans.eu",
+      "teleroute": "Teleroute",
+      "wtransnet": "Wtransnet",
+      "connected": "Conectat",
+      "disconnected": "Deconectat",
+      "error": "Eroare",
+      "degraded": "Degradat"
+    },
+    "status": {
+      "connected": "Conectat",
+      "degraded": "Degradat",
+      "disconnected": "Deconectat",
+      "error": "Eroare"
+    },
+    "connection": {
+      "connect": "Conecteaza",
+      "disconnect": "Deconecteaza",
+      "test": "Testeaza Conexiunea",
+      "add_first": "Adauga Primul Furnizor",
+      "client_id": "ID Client",
+      "client_secret": "Secret Client",
+      "client_id_placeholder": "Introduceti ID-ul client",
+      "client_secret_placeholder": "Introduceti secretul client",
+      "no_providers": "Niciun furnizor conectat",
+      "no_providers_hint": "Conectati-va la o bursa de transport pentru a cauta marfuri",
+      "test_success": "Conexiune reusita ({latency}ms)",
+      "test_failed": "Conexiune esuata: {error}",
+      "health_check": "Verificare Stare",
+      "credentials": "Credentiale API",
+      "last_checked": "Ultima verificare: {time}"
+    },
+    "provider_settings": {
+      "title": "Furnizori Bursa de Transport",
+      "subtitle": "Gestionati conexiunile la platformele de transport"
+    },
+    "load_detail": {
+      "title": "Detalii Marfa"
+    },
+    "match_reason": {
+      "lowest_deadhead": "Cel mai mic deadhead",
+      "closest_vehicle": "Cel mai apropiat vehicul compatibil",
+      "highest_profit": "Cel mai mare profit estimat",
+      "driver_hours": "Soferul are ore suficiente",
+      "trailer_compatible": "Tip remorca compatibil",
+      "maintenance_health": "Stare buna de intretinere",
+      "reliable_history": "Istoric de livrare fiabil",
+      "good_positioning": "Pozitionare buna pentru viitor"
+    },
+    "compat": {
+      "trailer_mismatch": "Tip remorca incompatibil",
+      "driver_hours_insufficient": "Ore sofer insuficiente",
+      "maintenance_due": "Intretinere depasita",
+      "vehicle_unavailable": "Vehicul indisponibil",
+      "adr_required": "Certificare ADR necesara"
+    },
+    "filters": {
+      "title": "Filtre",
+      "route": "Ruta",
+      "date_range": "Interval Data",
+      "vehicle": "Vehicul"
+    },
+    "filter": {
+      "loading_place": "Loc incarcare",
+      "delivery_place": "Loc descarcare",
+      "date": "Interval data",
+      "trailer_type": "Tip remorca",
+      "adr": "ADR (periculos)",
+      "weight": "Greutate",
+      "price": "Pret",
+      "distance": "Distanta",
+      "radius": "Raza (km)",
+      "all_providers": "Toti furnizorii",
+      "search_now": "Cauta",
+      "save_search": "Salveaza Cautarea",
+      "date_from_placeholder": "De la (AAAA-LL-ZZ)",
+      "date_to_placeholder": "Pana la (AAAA-LL-ZZ)",
+      "missing_route": "Introduceti atat originea cat si destinatia",
+      "weight_min_placeholder": "Min kg",
+      "weight_max_placeholder": "Max kg",
+      "distance_max_placeholder": "Max km",
+      "loading_type": "Tip Incarcare",
+      "loading_country_placeholder": "Tara incarcare (ex: RO)",
+      "delivery_country_placeholder": "Tara descarcare (ex: DE)",
+      "country": "Tari",
+      "sort_by": "Sorteaza dupa"
+    },
+    "loading_type": {
+      "any": "Orice Tip"
+    },
+    "trailer": {
+      "any": "Oricare",
+      "standard": "Standard",
+      "refrigerated": "Frigorific",
+      "tanker": "Cisterna",
+      "flatbed": "Platforma",
+      "low_loader": "Trailer Jos"
+    },
+    "results": {
+      "empty_title": "Niciun rezultat gasit",
+      "empty_subtitle": "Incercati sa ajustati criteriile de cautare",
+      "count": "{count} rezultate",
+      "last_updated": "Ultima actualizare: {time}"
+    },
+    "sort": {
+      "relevance": "Relevanta",
+      "price_asc": "Pret: Crescator",
+      "price_desc": "Pret: Descrescator",
+      "distance_asc": "Distanta: Scurt la Lung",
+      "distance_desc": "Distanta: Lung la Scurt",
+      "date_asc": "Data: Cele mai vechi",
+      "date_desc": "Data: Cele mai noi"
+    },
+    "col": {
+      "provider": "Furnizor"
+    },
+    "eval": {
+      "revenue": "Venit Estimat",
+      "fuel_cost": "Cost Combustibil",
+      "toll_cost": "Taxe Drum",
+      "driver_salary": "Salariu Sofer",
+      "deadhead": "Distanta Deadhead",
+      "expected_profit": "Profit Estimat",
+      "profit_margin": "Marja Profit",
+      "duration": "Durata Est.",
+      "risk_score": "Scor Risc",
+      "vehicle_compat": "Compatibilitate Vehicul",
+      "driver_compat": "Compatibilitate Sofer",
+      "compatible": "Compatibil",
+      "not_compatible": "Incompatibil",
+      "subtitle": "Evaluare financiara si analiza de risc",
+      "total_cost": "Cost Total",
+      "compatibility": "Compatibilitate"
+    },
+    "import_result": {
+      "success": "Marfa importata ca transport #{trip_id}",
+      "failed": "Import esuat: {error}",
+      "duplicate": "Aceasta marfa a fost deja importata",
+      "confirm_title": "Importa Marfa ca Transport",
+      "confirm_body": "Creati un transport nou din aceasta marfa?",
+      "source_label": "Sursa"
+    },
+    "health": {
+      "healthy": "Sanatos",
+      "degraded": "Degradat",
+      "down": "Nefunctional"
+    }
   }
 }

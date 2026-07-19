@@ -1,0 +1,98 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`Button > snapshots > matches snapshot for default size 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md h-10 px-5 py-2"
+>
+  default
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for default variant 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md h-10 px-5 py-2"
+>
+  default
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for destructive variant 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-destructive text-destructive-foreground shadow-sm hover:bg-destructive/90 hover:shadow-md h-10 px-5 py-2"
+>
+  destructive
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for disabled button 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md h-10 px-5 py-2"
+  disabled=""
+>
+  Disabled
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for ghost variant 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] hover:bg-accent hover:text-accent-foreground h-10 px-5 py-2"
+>
+  ghost
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for icon size 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md h-10 w-10"
+>
+  X
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for lg size 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md h-11 rounded-md px-8 text-base"
+>
+  lg
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for link variant 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] text-primary underline-offset-4 hover:underline h-10 px-5 py-2"
+>
+  link
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for outline variant 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] border border-input bg-background shadow-sm hover:bg-accent hover:text-accent-foreground hover:border-accent h-10 px-5 py-2"
+>
+  outline
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for secondary variant 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-secondary text-secondary-foreground shadow-sm hover:bg-secondary/80 hover:shadow-md h-10 px-5 py-2"
+>
+  secondary
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot for sm size 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md h-8 rounded-md px-3 text-xs"
+>
+  sm
+</button>
+`;
+
+exports[`Button > snapshots > matches snapshot with additional className 1`] = `
+<button
+  class="inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-lg text-sm font-medium transition-all duration-200 ease-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-50 active:scale-[0.98] bg-primary text-primary-foreground shadow-sm hover:bg-primary/90 hover:shadow-md h-10 px-5 py-2 extra-class"
+>
+  Styled
+</button>
+`;

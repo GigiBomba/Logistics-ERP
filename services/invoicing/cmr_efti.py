@@ -325,10 +325,12 @@ def generate_efti_xml(
     loading_country = trip_data.get("loading_country", "")
     if loading_city or loading_country:
         _build_location(dept, f"{{{NS_RAM}}}DepartureLocation",
-                        country=loading_country, city=loading_city or loading_place)
+                        country=loading_country, city=loading_city or "")
     elif loading_place:
+        # Use the full place string as location identifier (not just city name)
+        # when no separate city field is available
         _build_location(dept, f"{{{NS_RAM}}}DepartureLocation",
-                        city=loading_place)
+                        city=loading_place[:100])
     loading_date = trip_data.get("place_of_loading_date", "")
     _date_time_element(dept, f"{{{NS_RAM}}}PlannedDepartureDateTime", loading_date)
 
@@ -340,10 +342,10 @@ def generate_efti_xml(
     delivery_country = trip_data.get("delivery_country", "")
     if delivery_city or delivery_country:
         _build_location(delv, f"{{{NS_RAM}}}ArrivalLocation",
-                        country=delivery_country, city=delivery_city or delivery_place)
+                        country=delivery_country, city=delivery_city or "")
     elif delivery_place:
         _build_location(delv, f"{{{NS_RAM}}}ArrivalLocation",
-                        city=delivery_place)
+                        city=delivery_place[:100])
 
     # ── Box 5 — Documents Attached ───────────────────────────────────
     docs_raw = trip_data.get("documents_attached", "")

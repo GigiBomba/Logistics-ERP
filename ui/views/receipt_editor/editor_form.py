@@ -35,7 +35,7 @@ from services.i18n import t
 from ui.base_view import BaseView
 from utils.editor_toolkit import DebouncedTask, export_editor_data, mark_field_invalid, register_shortcuts, validate_and_highlight
 from services.invoicing.config_manager import load_company_config
-from repositories.receipt_repository import RECEIPT_NUMBER_FORMATS, DEFAULT_FORMAT_KEY
+from repositories.receipt_repository import RECEIPT_NUMBER_FORMATS, DEFAULT_FORMAT_KEY  # model constants, not data access
 from services.invoicing.receipt_service import ReceiptService
 from services.client_service import ClientService
 from services.fleet_service import FleetService

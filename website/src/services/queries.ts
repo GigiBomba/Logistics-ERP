@@ -1,163 +1,319 @@
-// Imports preserved for when backend endpoints are ready:
-// import { authApi } from "@/api/endpoints"
-// import { useAuth } from "@/contexts/auth-provider"
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
+import { authApi, subscriptionApi, companyApi, supportApi, blogApi, changelogApi, roadmapApi, statusApi, tutorialsApi, developersApi, securityApi, announcementsApi, invoicesApi, adminBlogApi } from "@/api/endpoints"
+import { useAuth } from "@/contexts/auth-provider"
+import { toast } from "sonner"
 
 // ─── Auth ────────────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useProfile() {
-  return { data: undefined, isLoading: false, isError: false }
+  const token = typeof window !== "undefined" ? localStorage.getItem("operion-access-token") : null
+  return useQuery({
+    queryKey: ["profile"],
+    queryFn: async () => {
+      const { data } = await authApi.getMe()
+      return data
+    },
+    enabled: !!token,
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useUpdateProfile() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  const queryClient = useQueryClient()
+  const { updateUser } = useAuth()
+  return useMutation({
+    mutationFn: async (profileData: { name?: string; email?: string }) => {
+      const { data } = await authApi.updateProfile(profileData)
+      return data
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["profile"] })
+      updateUser(data as any)
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useChangePassword() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  return useMutation({
+    mutationFn: async (data: { current_password: string; new_password: string }) => {
+      await authApi.changePassword(data)
+    },
+  })
 }
 
 // ─── Subscription ────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useSubscription() {
-  return { data: undefined, isLoading: false, isError: false }
+  const token = typeof window !== "undefined" ? localStorage.getItem("operion-access-token") : null
+  return useQuery({
+    queryKey: ["subscription"],
+    queryFn: async () => {
+      const { data } = await subscriptionApi.getCurrent()
+      return data
+    },
+    enabled: !!token,
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function usePlans() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["plans"],
+    queryFn: async () => {
+      const { data } = await subscriptionApi.getPlans()
+      return data
+    },
+  })
 }
 
 // ─── Company ─────────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useCompany() {
-  return { data: undefined, isLoading: false, isError: false }
+  const token = typeof window !== "undefined" ? localStorage.getItem("operion-access-token") : null
+  return useQuery({
+    queryKey: ["company"],
+    queryFn: async () => {
+      const { data } = await companyApi.get()
+      return data
+    },
+    enabled: !!token,
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useUpdateCompany() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (companyData: { name?: string }) => {
+      const { data } = await companyApi.update(companyData)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["company"] })
+    },
+  })
 }
 
 // ─── Support ─────────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useCreateTicket() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  return useMutation({
+    mutationFn: async (ticketData: { subject: string; description: string; priority?: string }) => {
+      const { data } = await supportApi.createTicket(ticketData as any)
+      return data
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useTickets() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  const token = typeof window !== "undefined" ? localStorage.getItem("operion-access-token") : null
+  return useQuery({
+    queryKey: ["tickets"],
+    queryFn: async () => {
+      const { data } = await supportApi.getTickets()
+      return data
+    },
+    enabled: !!token,
+  })
 }
 
 // ─── Blog ────────────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
-export function useBlogPosts(_params?: Record<string, unknown>) {
-  return { data: [] as any[], isLoading: false, isError: false }
+export function useBlogPosts(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: ["blog-posts", params],
+    queryFn: async () => {
+      const { data } = await blogApi.getPosts(params as any)
+      return data
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
-export function useBlogPost(_slug: string) {
-  return { data: undefined, isLoading: false, isError: false }
+export function useBlogPost(slug: string) {
+  return useQuery({
+    queryKey: ["blog-post", slug],
+    queryFn: async () => {
+      const { data } = await blogApi.getPost(slug)
+      return data
+    },
+    enabled: !!slug,
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useBlogCategories() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["blog-categories"],
+    queryFn: async () => {
+      const { data } = await blogApi.getCategories()
+      return data
+    },
+  })
 }
 
 // ─── Changelog ──────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useChangelog() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["changelog"],
+    queryFn: async () => {
+      const { data } = await changelogApi.getEntries()
+      return data
+    },
+  })
 }
 
 // ─── Roadmap ────────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
-export function useRoadmap(_status?: string) {
-  return { data: [] as any[], isLoading: false, isError: false }
+export function useRoadmap(status?: string) {
+  return useQuery({
+    queryKey: ["roadmap", status],
+    queryFn: async () => {
+      const { data } = await roadmapApi.getItems(status)
+      return data
+    },
+  })
 }
 
 // ─── Service Status ─────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useServiceStatus() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["service-status"],
+    queryFn: async () => {
+      const { data } = await statusApi.getStatus()
+      return data
+    },
+  })
 }
 
 // ─── Tutorials ──────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
-export function useTutorials(_params?: Record<string, unknown>) {
-  return { data: [] as any[], isLoading: false, isError: false }
+export function useTutorials(params?: Record<string, unknown>) {
+  return useQuery({
+    queryKey: ["tutorials", params],
+    queryFn: async () => {
+      const { data } = await tutorialsApi.getTutorials(params as any)
+      return data
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
-export function useTutorial(_slug: string) {
-  return { data: undefined, isLoading: false, isError: false }
+export function useTutorial(slug: string) {
+  return useQuery({
+    queryKey: ["tutorial", slug],
+    queryFn: async () => {
+      const { data } = await tutorialsApi.getTutorial(slug)
+      return data
+    },
+    enabled: !!slug,
+  })
 }
 
 // ─── Developer Resources ────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useDevResources() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["dev-resources"],
+    queryFn: async () => {
+      const { data } = await developersApi.getResources()
+      return data
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useToolkitVersions() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["toolkit-versions"],
+    queryFn: async () => {
+      const { data } = await developersApi.getToolkitVersions()
+      return data
+    },
+  })
 }
 
 // ─── Security Reports ──────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useSecurityReports() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["security-reports"],
+    queryFn: async () => {
+      const { data } = await securityApi.getReports()
+      return data
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useSubmitSecurityReport() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  return useMutation({
+    mutationFn: async (reportData: { title: string; description: string; severity: string }) => {
+      const { data } = await securityApi.submitReport(reportData)
+      return data
+    },
+  })
 }
 
 // ─── Announcements ──────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useAnnouncements() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["announcements"],
+    queryFn: async () => {
+      const { data } = await announcementsApi.getAnnouncements()
+      return data
+    },
+  })
 }
 
 // ─── Invoices ──────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useInvoices() {
-  return { data: [] as any[], isLoading: false, isError: false }
+  return useQuery({
+    queryKey: ["invoices"],
+    queryFn: async () => {
+      const { data } = await invoicesApi.getInvoices()
+      return data
+    },
+  })
 }
 
 // ─── Admin Blog ────────────────────────────────────────────
 
-// TODO: Implement when backend endpoint is ready
 export function useCreateBlogPost() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (postData: Record<string, unknown>) => {
+      const { data } = await adminBlogApi.createPost(postData as any)
+      return data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blog-posts"] })
+    },
+    onError: () => {
+      toast.error("Failed to create post")
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useUpdateBlogPost() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ slug, ...data }: Record<string, unknown>) => {
+      const { data: result } = await adminBlogApi.updatePost(slug as string, data as any)
+      return result
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blog-posts"] })
+    },
+  })
 }
 
-// TODO: Implement when backend endpoint is ready
 export function useDeleteBlogPost() {
-  return { mutate: (..._args: any[]) => {}, mutateAsync: (..._args: any[]) => Promise.resolve({}), isPending: false }
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: async (slug: string) => {
+      await adminBlogApi.deletePost(slug)
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["blog-posts"] })
+    },
+  })
 }
 
 // ─── Organizations ────────────────────────────────────────────

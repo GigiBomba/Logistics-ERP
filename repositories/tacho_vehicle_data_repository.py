@@ -44,8 +44,10 @@ class TachoVehicleDataRepository(BaseRepository):
         )
 
     def get_tacho_status_data(self) -> List[Dict[str, Any]]:
+        company_filter = self._company_filter("t")
+        company_params = self._company_params()
         rows = self._fetchall(
-            """SELECT
+            f"""SELECT
                 t.id AS truck_id,
                 t.plate_number,
                 tvd.calibration_date,
@@ -60,8 +62,9 @@ class TachoVehicleDataRepository(BaseRepository):
                 JOIN tacho_imports ti2 ON ti2.id = tvd2.import_id
             ) tvd ON tvd.truck_id = t.id AND tvd.rn = 1
             LEFT JOIN tacho_imports ti ON ti.id = tvd.import_id
-            WHERE t.active_status = 1
-            ORDER BY t.plate_number ASC"""
+            WHERE t.active_status = 1 {company_filter}
+            ORDER BY t.plate_number ASC""",
+            company_params,
         )
         return rows
 
@@ -76,5 +79,7 @@ class TachoVehicleDataRepository(BaseRepository):
                     WHERE tvd_inner.truck_id IS NOT NULL
                     GROUP BY tvd_inner.truck_id
                 ) latest ON latest.truck_id = tvd.truck_id
-                JOIN tacho_imports ti2 ON ti2.id = tvd.import_id AND ti2.imported_at = latest.latest_at"""
+                JOIN tacho_imports ti2 ON ti2.id = tvd.import_id AND ti2.imported_at = latest.latest_at
+                {self._company_filter('tvd')}""",
+            self._company_params(),
         )

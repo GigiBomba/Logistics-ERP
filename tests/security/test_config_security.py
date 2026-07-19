@@ -29,6 +29,7 @@ class TestProductionSettings:
     def test_debug_disabled_in_production(self) -> None:
         """App created with OPERION_ENV=production must not expose docs or OpenAPI."""
         os.environ["OPERION_ENV"] = "production"
+        os.environ["OPERION_API_KEY"] = "test-api-key-for-testing"
         try:
             app = create_app()
             assert app.docs_url is None, "docs_url must be None in production"
@@ -65,8 +66,8 @@ class TestCorsConfiguration:
         import backend.main as main_module
         source = inspect.getsource(main_module)
 
-        # Search for CORS allow_origins configuration
-        assert "allow_origins=" in source, (
+        # Search for CORS allow_origins configuration (may be inside create_app())
+        assert "allow_origins" in source or "cors_origins" in source, (
             "CORS allow_origins must be configured"
         )
 

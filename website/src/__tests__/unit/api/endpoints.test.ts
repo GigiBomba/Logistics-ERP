@@ -21,7 +21,12 @@ describe("authApi", () => {
 
   it("register calls POST /api/v1/auth/register", () => {
     authApi.register({ email: "a@b.com", password: "secret123", name: "John" })
-    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/registration/register", { email: "a@b.com", password: "secret123", name: "John" })
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/registration/register", {
+      email: "a@b.com",
+      password: "secret123",
+      display_name: "John",
+      company_name: "My Company",
+    })
   })
 
   it("logout calls POST /api/v1/auth/logout", () => {

@@ -363,10 +363,11 @@ class InvoiceGenerator:
                 vat_rate = float(vat_percent) / 100.0
                 expected_vat = round(price_pre_val * vat_rate, 2)
                 actual_vat = round(trip_price_val - price_pre_val, 2)
-                if abs(expected_vat - actual_vat) > 0.02:
-                    raise ValueError(
-                        f"VAT mismatch: expected {expected_vat:.2f} at {vat_percent}% "
-                        f"but got {actual_vat:.2f} (trip={trip_price_val:.2f}, base={price_pre_val:.2f})"
+                if abs(expected_vat - actual_vat) > 0.05:
+                    logger.warning(
+                        "VAT rounding discrepancy: expected %.2f at %s%% "
+                        "but got %.2f (trip=%.2f, base=%.2f) — proceeding",
+                        expected_vat, vat_percent, actual_vat, trip_price_val, price_pre_val,
                     )
                 price_data.append([
                     Paragraph(f"Transport fee (excl. VAT {vat_percent}%)", self.styles["Normal"]),

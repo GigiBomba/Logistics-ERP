@@ -77,7 +77,7 @@ def mock_db():
 @pytest.fixture
 def mock_db_down():
     db = MagicMock()
-    db.conn.execute.side_effect = RuntimeError("Connection refused")
+    db.execute.side_effect = RuntimeError("Connection refused")
     return db
 
 
@@ -363,7 +363,9 @@ class TestMetrics:
 
     def test_metrics_endpoint(self):
         """GET /metrics returns Prometheus-format text."""
-        app = _build_app([metrics_router])
+        admin = {"id": 1, "email": "admin@test.com", "role": "admin",
+                 "is_admin": True, "company_id": 0}
+        app = _build_app([metrics_router], overrides={require_admin: admin})
         client = TestClient(app)
         resp = client.get("/metrics")
         assert resp.status_code == 200
@@ -372,7 +374,9 @@ class TestMetrics:
 
     def test_metrics_includes_http_counter(self):
         """Metrics output includes the operion_http_requests_total counter."""
-        app = _build_app([metrics_router])
+        admin = {"id": 1, "email": "admin@test.com", "role": "admin",
+                 "is_admin": True, "company_id": 0}
+        app = _build_app([metrics_router], overrides={require_admin: admin})
         client = TestClient(app)
 
         # Issue a request first so the counter is registered

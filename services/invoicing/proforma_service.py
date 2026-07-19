@@ -283,7 +283,60 @@ class ProformaService:
                 errors=[ErrorDetail(message=str(exc), code="LIST_ERROR")],
             )
 
-    # ── 4. generate_pdf ───────────────────────────────────────────────
+    # ── 4. update ──────────────────────────────────────────────────────
+
+    def update(self, proforma_id: int, data: dict[str, Any], user_id: int) -> ServiceResult:
+        """Update an existing proforma invoice's editable fields.
+
+        Permission check: ``can_update_proforma(user_id)``
+
+        Supported fields: ``notes``, ``currency``, ``valid_until``, ``status``.
+        """
+        # Permission check
+        perm = self._get_permission_service()
+        err = self._check(perm.can_update_proforma(user_id))
+        if err:
+            return err
+
+        # Check existence
+        row = self._proforma_repo.get_by_id(proforma_id)
+        if not row:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message="Proforma not found", code="NOT_FOUND")],
+            )
+
+        # Build updates dict with only allowed fields
+        updates: dict[str, Any] = {}
+        if "notes" in data:
+            updates["notes"] = str(data["notes"])
+        if "currency" in data:
+            updates["currency"] = str(data["currency"]).upper()
+        if "valid_until" in data:
+            valid_until = self._parse_date(data["valid_until"])
+            updates["valid_until"] = valid_until.isoformat() if valid_until else str(data["valid_until"])
+        if "status" in data:
+            updates["status"] = str(data["status"])
+
+        if not updates:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message="No updateable fields provided", code="NO_UPDATES")],
+            )
+
+        ok = self._proforma_repo.update(proforma_id, **updates)
+        if not ok:
+            return ServiceResult(
+                success=False,
+                errors=[ErrorDetail(message="Failed to update proforma in database", code="UPDATE_FAILED")],
+            )
+
+        logger.info("Proforma %s updated by user %s — fields: %s", proforma_id, user_id, list(updates.keys()))
+
+        # Return refreshed proforma data
+        return self.get(proforma_id)
+
+    # ── 5. generate_pdf ───────────────────────────────────────────────
 
     def generate_pdf(self, proforma_id: int) -> ProformaCreateResult:
         """Generate a PDF for the given proforma and store the path."""

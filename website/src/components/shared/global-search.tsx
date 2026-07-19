@@ -310,7 +310,7 @@ export function GlobalSearch({ open: controlledOpen, onOpenChange }: GlobalSearc
             className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] sm:pt-[18vh]"
             role="dialog"
             aria-modal="true"
-            aria-label="Search"
+            aria-label={t("common.aria.search")}
           >
             <div
               className="w-full max-w-xl rounded-xl border border-border/50 bg-background shadow-2xl shadow-black/20 dark:border-border/30 dark:bg-zinc-900/95 dark:backdrop-blur-2xl"

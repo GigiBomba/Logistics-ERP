@@ -1,0 +1,96 @@
+﻿Traceback (most recent call last):
+  File "<string>", line 27, in <module>
+  File "C:\Users\Bonjo\AppData\Local\Programs\Python\Python311\Lib\encodings\cp1252.py", line 19, in encode
+    return codecs.charmap_encode(input,self.errors,encoding_table)[0]
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+UnicodeEncodeError: 'charmap' codec can't encode character '\u2193' in position 0: character maps to <undefined>
+383 remaining
+EMAIL
+Error
+Error
+{module}
+(Module not yet migrated)
+km
+General
+No engine data
+Cost/Month
+[{type}] {msg}
+ID
+ID
+L/100km
+ID
+VIN
+PDF
+Excel
+Error
+No Transitions
+ID
+Ç/km
+Emailed
+Error
+INV-
+Bruto/km
+ID
+Total
+Insufficient data for chart ù add more trips
+#{id} {truck_number} ù {client_name} [{created_at}]
+EMAIL & SMTP
+MAINTENANCE THRESHOLDS
+Connection successful
+BRANDING
+Company Logo:
+Color
+Dark
+Light
+Body template:
+PaddleOCR advanced settings:
+Cloud OCR credentials:
+Set at least one provider
+Error
+Calculate a route to see details.
+No saved route ID
+Recommended
+Fastest
+Cheapest
+Safest
+Shortest
+Click map to add stop
+Plan multi-stop routes with cost estimation
+SMART ROUTE
+OPTIONS
+EXCLUDED COUNTRIES
+ROUTE RESULT
+Share this route with others so they can load it in Operion.
+Share link
+Google Maps
+Copied!
+Clipboard unavailable
+Saved: {path}
+Recalculate
+Compare
+Exported
+Recalculated
+Review and manage saved routes
+Total:
+Archived:
+INV-
+day
+hour
+minute
+{}:
+{}
+Total (EUR)
+RO12345678
+J40/123/2023
+07xx xxx xxx
+ID
+Planned
+In Transit
+Delivered
+Planned
+In Transit
+Delivered
+EUR
+ID
+No
+Error

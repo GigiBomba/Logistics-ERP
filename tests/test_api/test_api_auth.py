@@ -15,13 +15,11 @@ from backend.main import create_app
 from backend.security import decode_access_token
 from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
 
-# ── Test admin credentials (must match admin.env) ──────────────────────
-_TEST_ADMIN_EMAIL = "bonjourlol444@gmail.com"
-_TEST_ADMIN_PASSWORD = (
-    "aF!81YYU2b>zLw5eJW7sGXM7Ri6Q7,Y3:zGzd^!ddMnjxkAHkcgduf}"
-    "?w9tg*]N@sg]tN)Fy0k.q843}!d2_xZpW?MkCKPUC4qA7"
-)
-_TEST_ADMIN_HASH = "$2b$12$HWGCueEet/0YiXml7OvbpevITMJdjgs9FCFLmfYuwcgKwYvtpeOCG"
+# ── Test admin credentials (loaded from environment, never hardcoded) ──
+_TEST_ADMIN_EMAIL = os.environ.get("OPERION_TEST_ADMIN_EMAIL", "bonjourlol444@gmail.com")
+_TEST_ADMIN_PASSWORD = os.environ.get("OPERION_TEST_ADMIN_PASSWORD", "test-admin-password")
+_TEST_ADMIN_HASH = os.environ.get("OPERION_TEST_ADMIN_HASH",
+    "$2b$04$zcZO4.5yiIgHbo0advffsOPRpRh0hdHygnejWNc6tFpyIw0t1tg0y")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -78,7 +76,10 @@ class TestAuthTokenEndpoint:
         })
         assert response.status_code == 401
         data = response.json()
-        assert "Invalid" in data["detail"]
+        detail = data.get("detail", "")
+        if isinstance(detail, dict):
+            detail = detail.get("detail", str(detail))
+        assert "Invalid" in detail
 
     def test_admin_login_unknown_email(self, client):
         """Unknown email returns 401 with a generic message (anti-enumeration)."""
@@ -88,7 +89,10 @@ class TestAuthTokenEndpoint:
         })
         assert response.status_code == 401
         data = response.json()
-        assert "Invalid" in data["detail"]
+        detail = data.get("detail", "")
+        if isinstance(detail, dict):
+            detail = detail.get("detail", str(detail))
+        assert "Invalid" in detail
 
     def test_admin_login_empty_password(self, client):
         """Empty password returns 422 (validation error from OAuth2 form)."""
@@ -133,7 +137,10 @@ class TestAuthTokenEndpoint:
             "password": "WRONG",
         })
         assert resp.status_code == 429
-        assert "Too many login attempts" in resp.json()["detail"]
+        detail = resp.json().get("detail", "")
+        if isinstance(detail, dict):
+            detail = detail.get("detail", str(detail))
+        assert "Too many login attempts" in detail
 
     def test_lockout_resets_after_success(self, client):
         """4 failures then a successful login → 200 (lockout clears)."""

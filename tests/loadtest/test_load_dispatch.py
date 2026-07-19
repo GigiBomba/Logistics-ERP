@@ -46,6 +46,12 @@ class TestLoadDispatch:
         svc._availability.check_truck = lambda _truck, _data: mock_avail
         svc._availability.check_driver = lambda _driver, _data: mock_avail
 
+        # Ensure get_dispatch_board_data falls back to trip_service.get_all
+        # by making _trip_repo.get_by_statuses raise
+        mock_repo = MagicMock()
+        mock_repo.get_by_statuses.side_effect = Exception("fallback")
+        mock_trip_service._trip_repo = mock_repo
+
         return svc, mock_trip_service, mock_fleet_repo, mock_driver_repo
 
     # ── 1. Bulk assignment throughput ────────────────────────────────────
@@ -218,8 +224,8 @@ class TestLoadDispatch:
         for status_idx in range(len(transition_chain) - 1):
             new_status = transition_chain[status_idx + 1]
             for tid in trip_ids:
-                trip_statuses[tid] = new_status  # advance status
                 svc.transition_status(tid, new_status)
+                trip_statuses[tid] = new_status  # advance status AFTER transition
                 total_transitions += 1
 
         elapsed = time.perf_counter() - start

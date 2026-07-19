@@ -25,6 +25,7 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Callout } from "@/components/ui/callout"
 import { Input, Label } from "@/components/ui/input"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
+import { useLocale } from "@/i18n/locale-context"
 import type { Organization, OrganizationMember, OrganizationInvitation } from "@/types"
 
 const mockOrganization: Organization = {
@@ -146,6 +147,7 @@ export default function OrganizationSettingsPage() {
   const [invitations] = useState(mockInvitations)
   const [inviteEmail, setInviteEmail] = useState("")
   const [inviteRole, setInviteRole] = useState<"admin" | "member">("member")
+  const { t } = useLocale()
 
   // In a real app, we'd fetch by slug. For demo, use mock data.
   const currentOrg = slug === org.slug ? org : null
@@ -153,13 +155,13 @@ export default function OrganizationSettingsPage() {
   if (!currentOrg) {
     return (
       <SectionWrapper>
-        <Callout variant="warning" title="Organization not found">
-          The organization you are looking for does not exist or you do not have access.
+        <Callout variant="warning" title={t("orgSettings.notFoundTitle")}>
+          {t("orgSettings.notFoundDesc")}
         </Callout>
         <Button variant="outline" className="mt-4" asChild>
           <Link to="/dashboard/organizations">
             <ArrowLeft className="mr-2 h-4 w-4" />
-            Back to Organizations
+            {t("orgSettings.backToOrganizations")}
           </Link>
         </Button>
       </SectionWrapper>
@@ -169,7 +171,7 @@ export default function OrganizationSettingsPage() {
   return (
     <>
       <Helmet>
-        <title>{currentOrg.name} Settings — Operion ERP</title>
+        <title>{currentOrg.name} {t("orgSettings.pageTitleSuffix")}</title>
       </Helmet>
       <SectionWrapper>
         {/* Back Link + Header */}
@@ -181,7 +183,7 @@ export default function OrganizationSettingsPage() {
           <Button variant="ghost" size="sm" className="mb-4 -ml-2" asChild>
             <Link to="/dashboard/organizations">
               <ArrowLeft className="mr-1.5 h-4 w-4" />
-              Back to Organizations
+              {t("orgSettings.backToOrganizations")}
             </Link>
           </Button>
           <div className="flex items-center gap-3">
@@ -198,7 +200,7 @@ export default function OrganizationSettingsPage() {
             <div>
               <h1 className="text-3xl font-bold tracking-tight">{currentOrg.name}</h1>
               <p className="mt-1 text-muted-foreground">
-                Organization settings and member management
+                {t("orgSettings.pageDescription")}
               </p>
             </div>
           </div>
@@ -206,10 +208,10 @@ export default function OrganizationSettingsPage() {
 
         <Tabs defaultValue="general" className="mt-8">
           <TabsList className="mb-6">
-            <TabsTrigger value="general">General</TabsTrigger>
-            <TabsTrigger value="members">Members</TabsTrigger>
-            <TabsTrigger value="billing">Billing</TabsTrigger>
-            <TabsTrigger value="danger">Danger Zone</TabsTrigger>
+            <TabsTrigger value="general">{t("orgSettings.tabs.general")}</TabsTrigger>
+            <TabsTrigger value="members">{t("orgSettings.tabs.members")}</TabsTrigger>
+            <TabsTrigger value="billing">{t("orgSettings.tabs.billing")}</TabsTrigger>
+            <TabsTrigger value="danger">{t("orgSettings.tabs.dangerZone")}</TabsTrigger>
           </TabsList>
 
           {/* ─── General Tab ─── */}
@@ -226,10 +228,10 @@ export default function OrganizationSettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Building2 className="h-5 w-5" />
-                      General Information
+                      {t("orgSettings.general.title")}
                     </CardTitle>
                     <CardDescription>
-                      Update your organization profile and contact details.
+                      {t("orgSettings.general.description")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-6">
@@ -246,16 +248,16 @@ export default function OrganizationSettingsPage() {
                         </AvatarFallback>
                       </Avatar>
                       <div>
-                        <p className="text-sm font-medium">Organization Logo</p>
+                        <p className="text-sm font-medium">{t("orgSettings.general.logoLabel")}</p>
                         <p className="text-xs text-muted-foreground">
-                          Logo upload coming soon. Your initials are displayed as a fallback.
+                          {t("orgSettings.general.logoDescription")}
                         </p>
                       </div>
                     </div>
 
                     <div className="grid gap-4 sm:grid-cols-2">
                       <div className="space-y-2">
-                        <Label htmlFor="org-name">Organization Name</Label>
+                        <Label htmlFor="org-name">{t("orgSettings.general.nameLabel")}</Label>
                         <Input
                           id="org-name"
                           defaultValue={currentOrg.name}
@@ -263,11 +265,11 @@ export default function OrganizationSettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-slug">Slug</Label>
+                        <Label htmlFor="org-slug">{t("orgSettings.general.slugLabel")}</Label>
                         <Input id="org-slug" defaultValue={currentOrg.slug} disabled />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-industry">Industry</Label>
+                        <Label htmlFor="org-industry">{t("orgSettings.general.industryLabel")}</Label>
                         <select
                           id="org-industry"
                           defaultValue={currentOrg.industry}
@@ -282,7 +284,7 @@ export default function OrganizationSettingsPage() {
                         </select>
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-size">Size</Label>
+                        <Label htmlFor="org-size">{t("orgSettings.general.sizeLabel")}</Label>
                         <select
                           id="org-size"
                           defaultValue={currentOrg.size}
@@ -291,13 +293,13 @@ export default function OrganizationSettingsPage() {
                         >
                           {sizes.map((s) => (
                             <option key={s} value={s}>
-                              {s} employees
+                              {s} {t("orgSettings.general.employeesSuffix")}
                             </option>
                           ))}
                         </select>
                       </div>
                       <div className="space-y-2 sm:col-span-2">
-                        <Label htmlFor="org-address">Address</Label>
+                        <Label htmlFor="org-address">{t("orgSettings.general.addressLabel")}</Label>
                         <Input
                           id="org-address"
                           defaultValue={currentOrg.address}
@@ -305,11 +307,11 @@ export default function OrganizationSettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-city">City</Label>
+                        <Label htmlFor="org-city">{t("orgSettings.general.cityLabel")}</Label>
                         <Input id="org-city" defaultValue={currentOrg.city} disabled />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-country">Country</Label>
+                        <Label htmlFor="org-country">{t("orgSettings.general.countryLabel")}</Label>
                         <Input
                           id="org-country"
                           defaultValue={currentOrg.country}
@@ -317,7 +319,7 @@ export default function OrganizationSettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-postal">Postal Code</Label>
+                        <Label htmlFor="org-postal">{t("orgSettings.general.postalCodeLabel")}</Label>
                         <Input
                           id="org-postal"
                           defaultValue={currentOrg.postal_code}
@@ -325,11 +327,11 @@ export default function OrganizationSettingsPage() {
                         />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-phone">Phone</Label>
+                        <Label htmlFor="org-phone">{t("orgSettings.general.phoneLabel")}</Label>
                         <Input id="org-phone" defaultValue={currentOrg.phone} disabled />
                       </div>
                       <div className="space-y-2">
-                        <Label htmlFor="org-website">Website</Label>
+                        <Label htmlFor="org-website">{t("orgSettings.general.websiteLabel")}</Label>
                         <Input
                           id="org-website"
                           defaultValue={currentOrg.website}
@@ -339,9 +341,9 @@ export default function OrganizationSettingsPage() {
                     </div>
 
                     <div className="flex items-center gap-3">
-                      <Button disabled>Save Changes</Button>
+                      <Button disabled>{t("orgSettings.general.saveButton")}</Button>
                       <p className="text-xs text-muted-foreground">
-                        Organization editing is coming soon.
+                        {t("orgSettings.general.comingSoon")}
                       </p>
                     </div>
                   </CardContent>
@@ -357,23 +359,23 @@ export default function OrganizationSettingsPage() {
               >
                 <Card>
                   <CardHeader className="pb-3">
-                    <CardTitle className="text-base">Details</CardTitle>
+                    <CardTitle className="text-base">{t("orgSettings.details.title")}</CardTitle>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Created</span>
+                      <span className="text-muted-foreground">{t("orgSettings.details.created")}</span>
                       <span className="font-medium">
                         {new Date(currentOrg.created_at ?? "").toLocaleDateString()}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">Last Updated</span>
+                      <span className="text-muted-foreground">{t("orgSettings.details.lastUpdated")}</span>
                       <span className="font-medium">
                         {new Date(currentOrg.updated_at ?? "").toLocaleDateString()}
                       </span>
                     </div>
                     <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">ID</span>
+                      <span className="text-muted-foreground">{t("orgSettings.details.id")}</span>
                       <span className="font-medium font-mono text-xs">
                         {currentOrg.id}
                       </span>
@@ -399,10 +401,10 @@ export default function OrganizationSettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2">
                       <Users className="h-5 w-5" />
-                      Members
+                      {t("orgSettings.members.title")}
                     </CardTitle>
                     <CardDescription>
-                      Manage members and their roles within this organization.
+                      {t("orgSettings.members.description")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -434,11 +436,11 @@ export default function OrganizationSettingsPage() {
                             <div className="flex items-center gap-3">
                               <div className="hidden sm:flex items-center gap-1.5 text-xs text-muted-foreground">
                                 <Clock className="h-3 w-3" />
-                                Joined {new Date(member.joined_at).toLocaleDateString()}
+                                {t("orgSettings.members.joined")} {new Date(member.joined_at).toLocaleDateString()}
                               </div>
                               <Badge variant={roleBadgeVariant(member.role)} className="text-xs">
                                 <RoleIcon className="mr-1 h-3 w-3" />
-                                {member.role.charAt(0).toUpperCase() + member.role.slice(1)}
+                                {t(`orgSettings.roles.${member.role}`)}
                               </Badge>
                               <Button
                                 variant="ghost"
@@ -468,41 +470,41 @@ export default function OrganizationSettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
                       <UserPlus className="h-5 w-5" />
-                      Invite Member
+                      {t("orgSettings.invite.title")}
                     </CardTitle>
                     <CardDescription>
-                      Send an invitation to join this organization.
+                      {t("orgSettings.invite.description")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
-                      <Label htmlFor="invite-email">Email Address</Label>
+                      <Label htmlFor="invite-email">{t("orgSettings.invite.emailLabel")}</Label>
                       <Input
                         id="invite-email"
                         type="email"
-                        placeholder="colleague@company.com"
+                        placeholder={t("orgSettings.invite.emailPlaceholder")}
                         value={inviteEmail}
                         onChange={(e) => setInviteEmail(e.target.value)}
                       />
                     </div>
                     <div className="space-y-2">
-                      <Label htmlFor="invite-role">Role</Label>
+                      <Label htmlFor="invite-role">{t("orgSettings.invite.roleLabel")}</Label>
                       <select
                         id="invite-role"
                         value={inviteRole}
                         onChange={(e) => setInviteRole(e.target.value as "admin" | "member")}
                         className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       >
-                        <option value="member">Member</option>
-                        <option value="admin">Admin</option>
+                        <option value="member">{t("orgSettings.invite.roleMember")}</option>
+                        <option value="admin">{t("orgSettings.invite.roleAdmin")}</option>
                       </select>
                     </div>
                     <Button className="w-full" disabled>
                       <Mail className="mr-2 h-4 w-4" />
-                      Send Invitation
+                      {t("orgSettings.invite.sendButton")}
                     </Button>
                     <p className="text-xs text-muted-foreground text-center">
-                      Invitations are coming soon.
+                      {t("orgSettings.invite.comingSoon")}
                     </p>
                   </CardContent>
                 </Card>
@@ -521,10 +523,10 @@ export default function OrganizationSettingsPage() {
                   <CardHeader>
                     <CardTitle className="flex items-center gap-2 text-base">
                       <Mail className="h-5 w-5" />
-                      Pending Invitations
+                      {t("orgSettings.pendingInvitations.title")}
                     </CardTitle>
                     <CardDescription>
-                      Invitations awaiting acceptance.
+                      {t("orgSettings.pendingInvitations.description")}
                     </CardDescription>
                   </CardHeader>
                   <CardContent>
@@ -541,14 +543,14 @@ export default function OrganizationSettingsPage() {
                             <div>
                               <p className="text-sm font-medium">{inv.email}</p>
                               <p className="text-xs text-muted-foreground">
-                                {inv.role} · Invited by {inv.invited_by_name} ·{" "}
+                                {t(`orgSettings.roles.${inv.role}`)} · {t("orgSettings.pendingInvitations.invitedBy")} {inv.invited_by_name} ·{" "}
                                 {new Date(inv.created_at).toLocaleDateString()}
                               </p>
                             </div>
                           </div>
                           <Badge variant="secondary">
                             <Clock className="mr-1 h-3 w-3" />
-                            Pending
+                            {t("orgSettings.pendingInvitations.pending")}
                           </Badge>
                         </div>
                       ))}
@@ -571,25 +573,24 @@ export default function OrganizationSettingsPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2">
                     <CreditCard className="h-5 w-5" />
-                    Billing
+                    {t("orgSettings.billing.title")}
                   </CardTitle>
                   <CardDescription>
-                    Manage organization billing and subscription settings.
+                    {t("orgSettings.billing.description")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <Callout variant="info" title="Coming Soon">
-                    Organization billing settings are under development. You will be able to
-                    manage plans, payment methods, and invoices per organization.
+                  <Callout variant="info" title={t("orgSettings.billing.comingSoonTitle")}>
+                    {t("orgSettings.billing.comingSoonText")}
                   </Callout>
                   <div className="mt-6 flex items-center justify-between rounded-lg border p-4">
                     <div>
-                      <p className="text-sm font-medium">Current Plan</p>
+                      <p className="text-sm font-medium">{t("orgSettings.billing.currentPlan")}</p>
                       <p className="text-xs text-muted-foreground">
-                        Professional Plan — Billed monthly
+                        {t("orgSettings.billing.planDescription")}
                       </p>
                     </div>
-                    <Badge variant="success">Active</Badge>
+                    <Badge variant="success">{t("orgSettings.billing.active")}</Badge>
                   </div>
                 </CardContent>
               </Card>
@@ -608,29 +609,27 @@ export default function OrganizationSettingsPage() {
                 <CardHeader>
                   <CardTitle className="flex items-center gap-2 text-destructive">
                     <AlertTriangle className="h-5 w-5" />
-                    Danger Zone
+                    {t("orgSettings.danger.title")}
                   </CardTitle>
                   <CardDescription>
-                    Destructive actions that cannot be undone.
+                    {t("orgSettings.danger.description")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <Callout variant="danger" title="Warning">
-                    Deleting an organization will permanently remove all associated data,
-                    including members, settings, and billing history. This action cannot be
-                    undone.
+                  <Callout variant="danger" title={t("orgSettings.danger.warningTitle")}>
+                    {t("orgSettings.danger.warningText")}
                   </Callout>
 
                   <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 rounded-lg border p-4">
                     <div>
-                      <p className="text-sm font-medium">Delete Organization</p>
+                      <p className="text-sm font-medium">{t("orgSettings.danger.deleteTitle")}</p>
                       <p className="text-xs text-muted-foreground">
-                        Permanently delete {currentOrg.name} and all its data.
+                        {t("orgSettings.danger.deleteDescription")} {currentOrg.name} {t("orgSettings.danger.deleteDescriptionSuffix")}
                       </p>
                     </div>
                     <Button variant="destructive" disabled>
                       <Trash2 className="mr-2 h-4 w-4" />
-                      Delete Organization
+                      {t("orgSettings.danger.deleteButton")}
                     </Button>
                   </div>
                 </CardContent>

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen, fireEvent } from "@/test-utils"
+import { render, screen } from "@/test-utils"
 import PartnersPage from "@/pages/public/partners"
 
 vi.mock("motion/react", () => ({
@@ -19,30 +19,15 @@ vi.mock("@/config/site", () => ({
 }))
 
 describe("PartnersPage", () => {
-  it("renders heading and partner type filters", () => {
+  it("renders heading", () => {
     render(<PartnersPage />)
     expect(screen.getByText("Partner with Operion")).toBeInTheDocument()
-    expect(screen.getByText("All")).toBeInTheDocument()
-    expect(screen.getAllByText("Technology").length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText("Implementation").length).toBeGreaterThanOrEqual(1)
-    expect(screen.getAllByText("Reseller").length).toBeGreaterThanOrEqual(1)
   })
 
-  it("renders partner cards", () => {
+  it("renders partner benefits", () => {
     render(<PartnersPage />)
-    expect(screen.getByText("Google Maps")).toBeInTheDocument()
-    expect(screen.getByText("TomTom")).toBeInTheDocument()
-  })
-
-  it("filters partners by type when tab clicked", () => {
-    render(<PartnersPage />)
-    const filterButtons = screen.getAllByText("Technology").filter(
-      (el: HTMLElement) => el.tagName === "BUTTON"
-    )
-    if (filterButtons.length > 0) {
-      fireEvent.click(filterButtons[0])
-    }
-    expect(screen.getByText("Google Maps")).toBeInTheDocument()
+    expect(screen.getByText("Revenue Share")).toBeInTheDocument()
+    expect(screen.getByText("Early Access")).toBeInTheDocument()
   })
 
   it("renders partners heading section", () => {

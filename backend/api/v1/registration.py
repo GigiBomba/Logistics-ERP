@@ -13,7 +13,7 @@ from backend.dependencies import get_db
 from backend.schemas.registration import RegistrationRequest
 from backend.security import hash_password
 from backend.api.v1.auth import _issue_tokens
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,11 @@ router = APIRouter(prefix="/registration", tags=["registration"])
 _register_rate_limit: Dict[str, list] = {}
 _REGISTER_RATE_LIMIT = 3
 _REGISTER_RATE_WINDOW = 900  # 15 minutes
+
+
+def _clear_register_rate_limit() -> None:
+    """Clear all registration rate-limit tracking (for testing)."""
+    _register_rate_limit.clear()
 
 
 def _check_register_rate_limit(ip: str) -> None:
@@ -57,7 +62,7 @@ def register(
     _check_register_rate_limit(client_ip)
 
     # ── Check email uniqueness (global — one email = one account) ──────
-    existing = db.conn.execute(
+    existing = db.execute(
         "SELECT id FROM users WHERE email = ?", (email,)
     ).fetchone()
     if existing:
@@ -68,7 +73,7 @@ def register(
 
     # ── Create company ────────────────────────────────────────────────
     try:
-        cursor = db.conn.execute(
+        cursor = db.execute(
             "INSERT INTO companies (company_name, subscription_tier, is_active) "
             "VALUES (?, 'starter', 1)",
             (data.company_name,),
@@ -79,13 +84,13 @@ def register(
         hashed_pw = hash_password(data.password)
 
         # ── Create manager user ───────────────────────────────────────
-        cursor = db.conn.execute(
+        cursor = db.execute(
             "INSERT INTO users (email, password_hash, role, company_id, "
             "display_name, is_active) "
             "VALUES (?, ?, 'manager', ?, ?, 1)",
             (email, hashed_pw, company_id, data.display_name),
         )
-        db.conn.commit()
+        db.commit()
 
         logger.info(
             "Registration: company='%s' (id=%d), manager='%s'",
@@ -105,7 +110,7 @@ def register(
         return tokens
 
     except Exception:
-        db.conn.rollback()
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed. Please try again.",

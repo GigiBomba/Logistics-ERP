@@ -17,9 +17,10 @@ class TestFleetTrucksList:
 
     def test_list_trucks_returns_200_with_items(self, client_with_mocks):
         client, mocks = client_with_mocks
+        # TruckResponse uses plate / brand / is_active fields (not plate_number / model)
         fake = [
-            {"id": 1, "plate_number": "AB123CD", "model": "Volvo FH"},
-            {"id": 2, "plate_number": "XY789EF", "model": "Scania R500"},
+            {"id": 1, "plate": "AB123CD", "brand": "Volvo", "year": 2022, "is_active": True},
+            {"id": 2, "plate": "XY789EF", "brand": "Scania", "year": 2021, "is_active": True},
         ]
         mocks["fleet_service"].get_trucks.return_value = fake
 
@@ -45,7 +46,7 @@ class TestFleetTrucksGet:
 
     def test_get_truck_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        truck = {"id": 1, "plate": "AB123CD", "brand": "Volvo", "year": 2022}
+        truck = {"id": 1, "plate": "AB123CD", "brand": "Volvo", "year": 2022, "is_active": True}
         mocks["fleet_service"].get_truck.return_value = truck
 
         resp = client.get(f"{BASE}/trucks/1")
@@ -177,7 +178,7 @@ class TestFleetHealthScores:
     def test_truck_response_schema(self, client_with_mocks):
         """Verify truck response includes expected fields."""
         client, mocks = client_with_mocks
-        truck = {"id": 1, "plate": "AB123CD", "brand": "Volvo", "year": 2022}
+        truck = {"id": 1, "plate": "AB123CD", "brand": "Volvo", "year": 2022, "is_active": True}
         mocks["fleet_service"].get_truck.return_value = truck
 
         resp = client.get(f"{BASE}/trucks/1")

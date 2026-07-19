@@ -15,6 +15,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from tests.test_api.conftest import StrippedMock
+
 BASE = "/api/v1/payment-profiles"
 
 
@@ -47,7 +49,7 @@ class TestListPaymentProfiles:
     def test_list_success(self):
         """List all payment profiles returns 200 with paginated response."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_all.return_value = [
             {"id": 1, "profile_name": "Standard", "is_active": True},
             {"id": 2, "profile_name": "Premium", "is_active": True},
@@ -70,7 +72,7 @@ class TestListPaymentProfiles:
     def test_list_with_query_search(self):
         """List with search query calls service.search()."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.search.return_value = [
             {"id": 1, "profile_name": "Standard", "is_active": True},
         ]
@@ -89,7 +91,7 @@ class TestListPaymentProfiles:
     def test_list_with_include_inactive(self):
         """include_inactive=True is passed to service.get_all()."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_all.return_value = [
             {"id": 1, "profile_name": "Standard", "is_active": True},
             {"id": 2, "profile_name": "Inactive", "is_active": False},
@@ -107,7 +109,7 @@ class TestListPaymentProfiles:
     def test_list_with_pagination(self):
         """Pagination params are passed to service and response."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_all.return_value = [
             {"id": 3, "profile_name": "Profile 3", "is_active": True},
         ]
@@ -126,7 +128,7 @@ class TestListPaymentProfiles:
     def test_list_service_error_returns_500(self):
         """Service exception propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_all.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
 
@@ -145,7 +147,7 @@ class TestGetPaymentProfile:
     def test_get_success(self):
         """Get single payment profile returns 200 with profile data."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         _override_deps(app, mock_svc)
 
@@ -162,7 +164,7 @@ class TestGetPaymentProfile:
     def test_get_not_found_returns_404(self):
         """Non-existent profile returns 404."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = None
         _override_deps(app, mock_svc)
 
@@ -177,7 +179,7 @@ class TestGetPaymentProfile:
     def test_get_service_error_returns_500(self):
         """Service exception propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
 
@@ -190,7 +192,7 @@ class TestGetPaymentProfile:
     def test_get_invalid_id_returns_422(self):
         """Non-integer profile_id returns 422."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         _override_deps(app, mock_svc)
 
         client = TestClient(app)
@@ -206,7 +208,7 @@ class TestCreatePaymentProfile:
     def test_create_success(self):
         """Create payment profile returns 201 with new id."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.create.return_value = 42
         _override_deps(app, mock_svc)
 
@@ -224,7 +226,7 @@ class TestCreatePaymentProfile:
     def test_create_with_all_fields(self):
         """Create with all optional fields populates data correctly."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.create.return_value = 7
         _override_deps(app, mock_svc)
 
@@ -246,7 +248,7 @@ class TestCreatePaymentProfile:
     def test_create_validation_error_empty_body(self):
         """Sending a non-dict value returns 422."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         _override_deps(app, mock_svc)
 
         client = TestClient(app)
@@ -258,7 +260,7 @@ class TestCreatePaymentProfile:
     def test_create_service_error_returns_500(self):
         """Service exception propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.create.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
 
@@ -278,7 +280,7 @@ class TestUpdatePaymentProfilePartial:
     def test_patch_success(self):
         """PATCH updates profile fields and returns status."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         mock_svc.update.return_value = None
         _override_deps(app, mock_svc)
@@ -295,7 +297,7 @@ class TestUpdatePaymentProfilePartial:
     def test_patch_not_found_returns_404(self):
         """PATCH on non-existent profile returns 404."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = None
         _override_deps(app, mock_svc)
 
@@ -309,7 +311,7 @@ class TestUpdatePaymentProfilePartial:
     def test_patch_empty_update_noop(self):
         """PATCH with no fields to update does not call service.update()."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         _override_deps(app, mock_svc)
 
@@ -325,7 +327,7 @@ class TestUpdatePaymentProfilePartial:
     def test_patch_service_error_on_get_returns_500(self):
         """Service exception on get_by_id propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
 
@@ -338,7 +340,7 @@ class TestUpdatePaymentProfilePartial:
     def test_patch_service_error_on_update_returns_500(self):
         """Service exception on update propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         mock_svc.update.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
@@ -352,7 +354,7 @@ class TestUpdatePaymentProfilePartial:
     def test_patch_validation_error_invalid_data(self):
         """Invalid field in body returns 422 (extra fields forbidden in PaymentProfileUpdate)."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         _override_deps(app, mock_svc)
 
         client = TestClient(app)
@@ -368,7 +370,7 @@ class TestUpdatePaymentProfileDeprecated:
     def test_put_success_with_deprecation_headers(self):
         """PUT returns 200 with Deprecation and Sunset headers."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         mock_svc.update.return_value = None
         _override_deps(app, mock_svc)
@@ -387,7 +389,7 @@ class TestUpdatePaymentProfileDeprecated:
     def test_put_not_found_returns_404(self):
         """PUT on non-existent profile returns 404."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = None
         _override_deps(app, mock_svc)
 
@@ -401,7 +403,7 @@ class TestUpdatePaymentProfileDeprecated:
     def test_put_no_update_fields(self):
         """PUT with no update fields does not call service.update()."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         _override_deps(app, mock_svc)
 
@@ -415,7 +417,7 @@ class TestUpdatePaymentProfileDeprecated:
     def test_put_service_error_on_get_returns_500(self):
         """Service exception on get_by_id propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
 
@@ -428,7 +430,7 @@ class TestUpdatePaymentProfileDeprecated:
     def test_put_service_error_on_update_returns_500(self):
         """Service exception on update propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         mock_svc.update.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
@@ -446,7 +448,7 @@ class TestDeletePaymentProfile:
     def test_delete_success(self):
         """Delete returns 200 with status."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         mock_svc.delete.return_value = None
         _override_deps(app, mock_svc)
@@ -463,7 +465,7 @@ class TestDeletePaymentProfile:
     def test_delete_not_found_returns_404(self):
         """Delete on non-existent profile returns 404."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = None
         _override_deps(app, mock_svc)
 
@@ -477,7 +479,7 @@ class TestDeletePaymentProfile:
     def test_delete_service_error_on_get_returns_500(self):
         """Service exception on get_by_id propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)
 
@@ -490,7 +492,7 @@ class TestDeletePaymentProfile:
     def test_delete_service_error_on_delete_returns_500(self):
         """Service exception on delete propagates as 500."""
         app = _make_app()
-        mock_svc = MagicMock()
+        mock_svc = StrippedMock()
         mock_svc.get_by_id.return_value = {"id": 1, "profile_name": "Standard", "is_active": True}
         mock_svc.delete.side_effect = Exception("DB error")
         _override_deps(app, mock_svc)

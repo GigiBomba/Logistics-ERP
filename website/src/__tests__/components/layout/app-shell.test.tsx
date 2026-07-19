@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
+import * as React from "react"
 import { render, screen } from "@/test-utils"
 import { AppShell } from "@/components/layout/app-shell"
 import { useAuth } from "@/contexts/auth-provider"
@@ -13,25 +14,41 @@ vi.mock("@/contexts/theme-provider", () => ({
   useTheme: vi.fn(),
 }))
 
-vi.mock("@/i18n/locale-context", () => ({
-  useLocale: vi.fn(() => ({
-    locale: "en" as const,
-    setLocale: vi.fn(),
-    t: (key: string) => {
-      const defaults: Record<string, string> = {
-        "nav.features": "Features",
-        "nav.pricing": "Pricing",
-        "footer.product": "Product",
-        "footer.resources": "Resources",
-        "footer.privacy": "Privacy",
-        "footer.terms": "Terms",
-        "footer.tagline": "Enterprise logistics management platform.",
-        "common.search": "Search...",
-      }
-      return defaults[key] || key
-    },
-  })),
-}))
+vi.mock("@/i18n/locale-context", () => {
+  const LocaleProvider = ({ children }: { children: React.ReactNode }) => <>{children}</>
+  return {
+    LocaleProvider,
+    useLocale: vi.fn(() => ({
+      locale: "en" as const,
+      setLocale: vi.fn(),
+      t: (key: string) => {
+        const defaults: Record<string, string> = {
+          "nav.features": "Features",
+          "nav.pricing": "Pricing",
+          "footer.product": "Product",
+          "footer.resources": "Resources",
+          "footer.privacy": "Privacy",
+          "footer.terms": "Terms",
+          "footer.tagline": "Enterprise logistics management platform.",
+          "common.search": "Search...",
+          "common.aria.openSearch": "Search",
+          "common.aria.toggleTheme": "Toggle theme",
+          "common.aria.toggleMenu": "Toggle menu",
+          "common.dashboard": "Dashboard",
+          "common.signIn": "Sign In",
+          "common.getStarted": "Get Started",
+          "common.signOut": "Sign out",
+          "common.profile": "Profile",
+          "common.settings": "Settings",
+          "common.aria.notifications": "Notifications",
+          "footer.status": "Status",
+          "footer.copyright": "All rights reserved.",
+        }
+        return defaults[key] || key
+      },
+    })),
+  }
+})
 
 const mockTheme = createMockThemeContext()
 

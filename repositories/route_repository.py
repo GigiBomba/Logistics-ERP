@@ -47,11 +47,11 @@ class RouteRepository(BaseRepository):
         if include_archived:
             return self._fetchall(
                 f"SELECT * FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                (limit, offset) + self._company_params(),
+                self._company_params() + (limit, offset),
             )
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL AND is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (limit, offset) + self._company_params(),
+            self._company_params() + (limit, offset),
         )
 
     def create(self, data: Dict[str, Any]) -> int:

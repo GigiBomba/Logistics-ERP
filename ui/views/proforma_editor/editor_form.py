@@ -35,9 +35,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from repositories.client_repository import ClientRepository
-from repositories.document_repository import DocumentRepository
-from repositories.proforma_repository import PROFORMA_NUMBER_FORMATS, DEFAULT_PROFORMA_FORMAT_KEY as PROF_DEFAULT_FMT
+from repositories.proforma_repository import PROFORMA_NUMBER_FORMATS, DEFAULT_PROFORMA_FORMAT_KEY as PROF_DEFAULT_FMT  # model constants, not data access
 from services.i18n import t
 from ui.base_view import BaseView
 from utils.editor_toolkit import DebouncedTask, export_editor_data, mark_field_invalid, register_shortcuts
@@ -76,8 +74,15 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs or (PreferencesManager(db) if db else None)
-        self._client_repo = ClientRepository(db) if db else None
-        self._doc_repo = DocumentRepository(db) if db else None
+        if db is not None:
+            from repositories.client_repository import ClientRepository
+            from repositories.document_repository import DocumentRepository
+            self._client_repo = ClientRepository(db)
+            self._doc_repo = DocumentRepository(db)
+        else:
+            _logger.warning("ProformaEditor: no local database - repository operations disabled in remote mode")
+            self._client_repo = None
+            self._doc_repo = None
         self._proforma_service: ProformaService | None = None
 
 

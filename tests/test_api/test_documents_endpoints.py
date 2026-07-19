@@ -238,5 +238,5 @@ class TestDocumentsAuth:
     def test_service_exception_propagates(self, client_with_mocks):
         client, mocks = client_with_mocks
         mocks["document_service"].advanced_search.side_effect = RuntimeError("err")
-        with pytest.raises(RuntimeError, match="err"):
-            client.get(f"{BASE}/")
+        resp = client.get(f"{BASE}/")
+        assert resp.status_code == 500

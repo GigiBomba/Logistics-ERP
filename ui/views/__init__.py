@@ -3,6 +3,7 @@
 from ui.views.analytics import QtAnalyticsView
 from ui.views.automation_view import QtAutomationView
 from ui.views.calculator_view import QtCalculatorView
+from ui.views.copilot_view import CoPilotView as QtCopilotView
 from ui.views.client_manager import QtClientManager
 from ui.views.client_workspace import QtClientWorkspace
 from ui.views.cmr_form_view import QtCmrFormView
@@ -12,6 +13,7 @@ from ui.views.document_center_view import QtDocumentCenterView
 from ui.views.driver_manager import QtDriverManager
 from ui.views.fleet_tab import QtFleetTab
 from ui.views.fleet_tracking_view import QtFleetTrackingView
+from ui.views.freight_exchange.search_view import FreightSearchView
 from ui.views.generators_view import QtGeneratorsView
 from ui.views.history_view import QtHistoryView
 from ui.views.invoice_editor import QtInvoiceEditor
@@ -29,6 +31,7 @@ __all__ = [
     "QtAnalyticsView",
     "QtAutomationView",
     "QtCalculatorView",
+    "QtCopilotView",
     "QtClientManager",
     "QtClientWorkspace",
     "QtCmrFormView",
@@ -38,6 +41,7 @@ __all__ = [
     "QtFleetDashboard",
     "QtFleetTab",
     "QtFleetTrackingView",
+    "FreightSearchView",
     "QtGeneratorsView",
     "QtHistoryView",
     "QtInvoiceEditor",

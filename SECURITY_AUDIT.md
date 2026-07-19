@@ -220,6 +220,8 @@ add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment
 
 All use: `_TEST_JWT_SECRET = "e8f9b23fbc062b8a74c4dbb9dcde99252a13f040b201a056a29df147c216298a"`
 
+> **Note:** This was the test secret from `admin.env` (committed in git history at 41c4eed). It should **NOT** be used anywhere. Generate a new one with `openssl rand -hex 32`.
+
 Risk is low (test-only code, never used in production), but if this value is ever mistakenly copied to a production env, JWT tokens are forgeable.
 
 ---

@@ -5,10 +5,10 @@ import tempfile
 from typing import Any, Dict, List, Optional
 
 from backend.celery_app.celery import celery_app
+from backend.db import DatabaseManager
 from backend.dependencies import set_company_context
-from config import Config
-from database.db_manager import DatabaseManager
-from services.document_service import DocumentService
+from backend.desktop_config import Config
+from backend.services.document_service import DocumentService
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +50,7 @@ def generate_document_pdf(
             from services.document_automation.package_builder import PackageBuilder
             builder = PackageBuilder(db)
             # Fallback: build a combined PDF from the document's trip
-            from repositories.document_repository import DocumentRepository
+            from backend.repositories.document_repository import DocumentRepository
             doc_record = DocumentRepository(db).get_by_id(document_id)
             trip_id = doc_record.get("entity_id") if doc_record else None
             if trip_id:
@@ -110,7 +110,7 @@ def build_email_package(
             )
             if smtp_configured and recipient:
                 try:
-                    from services.document_service import DocumentService as DS
+                    from backend.services.document_service import DocumentService as DS
                     svc = DS(db)
                     svc.email_document(document_ids[0], recipient, prefs=prefs)
                     result["email_sent"] = True

@@ -2,10 +2,10 @@ import logging
 from typing import Any, Dict
 
 from backend.celery_app.celery import celery_app
+from backend.db import DatabaseManager
 from backend.dependencies import set_company_context
-from config import Config
-from database.db_manager import DatabaseManager
-from services.document_service import DocumentService
+from backend.desktop_config import Config
+from backend.services.document_service import DocumentService
 
 logger = logging.getLogger(__name__)
 
@@ -54,13 +54,13 @@ def process_document_ocr(
             "extracted_data_json": __import__("json").dumps(result_fields),
         }
         try:
-            db.conn.execute(
+            db.execute(
                 "UPDATE documents SET ocr_text = ?, ocr_engine = ?, "
                 "ocr_run_at = ?, extracted_data_json = ? WHERE id = ?",
                 (result_text, engine, update_fields["ocr_run_at"],
                  __import__("json").dumps(result_fields), document_id),
             )
-            db.conn.commit()
+            db.commit()
         except Exception as e:
             return {"error": f"DB update failed: {e}", "document_id": document_id}
 
@@ -98,8 +98,8 @@ def flush_gps_batch_to_postgres(company_id: int = 0) -> Dict[str, Any]:
     if company_id:
         set_company_context(company_id)
     from backend.cache import get_cache
-    from config import Config
-    from database.db_manager import DatabaseManager
+    from backend.db import DatabaseManager
+    from backend.desktop_config import Config
 
     cache = get_cache()
     if not cache._enabled:
@@ -114,7 +114,7 @@ def flush_gps_batch_to_postgres(company_id: int = 0) -> Dict[str, Any]:
             if raw is None:
                 break
             ping = json.loads(raw)
-            db.conn.execute(
+            db.execute(
                 "INSERT INTO gps_telemetry "
                 "(truck_id, latitude, longitude, speed_kmh, heading, driver_id, recorded_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?)",
@@ -130,7 +130,7 @@ def flush_gps_batch_to_postgres(company_id: int = 0) -> Dict[str, Any]:
             )
             count += 1
         if count:
-            db.conn.commit()
+            db.commit()
     finally:
         db.close()
     return {"status": "ok", "flushed": count}

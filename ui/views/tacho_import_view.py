@@ -567,19 +567,28 @@ class QtTachoImportView(QWidget):
         QTimer.singleShot(0, self._rebuild_ui)
 
     def _rebuild_ui(self) -> None:
-        """Refresh translations on language change by rebuilding the UI."""
-        # Delete the entire old layout (including its item references) so
-        # that ``_build_ui`` does not create a second layout on the same
-        # widget (which would orphan the first one).
+        """Refresh translations on language change by rebuilding the UI.
+
+        We use ``sip.delete`` to force-destroy the old layout immediately so the
+        widget is guaranteed to have no layout when ``_build_ui`` creates the new
+        one.  Relying on ``deleteLater()`` alone would keep the old layout
+        attached until the next event-loop iteration, which causes
+        ``QHBoxLayout(self)`` inside ``_build_ui`` to silently fail (Qt refuses to
+        install a second layout on a widget that already has one), leaving the
+        entire view blank.
+        """
+        import sip  # PySide6 C++ wrapper — safe import, part of PySide6.
+
         old_layout = self.layout()
         if old_layout is not None:
-            # Remove and delete all child widgets first
+            # Remove and delete all child widgets
             while old_layout.count():
                 item = old_layout.takeAt(0)
                 w = item.widget()
                 if w is not None:
                     w.deleteLater()
-            old_layout.deleteLater()
+            # Force-delete the layout now so the widget is layout-free.
+            sip.delete(old_layout)
         self._build_ui()
         self._refresh_history()
 

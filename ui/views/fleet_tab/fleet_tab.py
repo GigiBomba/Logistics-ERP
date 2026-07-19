@@ -35,6 +35,7 @@ from services.export_service import ExportService
 from services.fleet_service import FleetService
 from services.i18n import t
 from ui.base_view import BaseView
+from ui.mode_guard import ConnectionMode, detect_mode, guard_local_access
 from services.operations.event_bus import (
     ALERT_CREATED,
     ALERT_RESOLVED,
@@ -119,14 +120,29 @@ class QtFleetTab(BaseView):
         )
         self.exporter = ExportService()
         self._dta_service = dta_service if dta_service is not None else (DriverTruckService(db) if db is not None else None)
-        self._fleet_repo = fleet_repo if fleet_repo is not None else (FleetRepository(db) if db is not None else None)
+        if fleet_repo is not None:
+            self._fleet_repo = fleet_repo
+        elif self._api_client is not None:
+            logger.warning("FleetTab: remote mode - skipping local FleetRepository")
+            self._fleet_repo = None
+        elif db is not None:
+            from repositories.fleet_repository import FleetRepository
+            self._fleet_repo = FleetRepository(db)
+        else:
+            self._fleet_repo = None
+
+        # ── Mode guard ───────────────────────────────────────────────────────
+        self._mode = detect_mode(db, api_client)
+        guard_local_access(self._mode, "Fleet tab")
 
         # -- i18n --
         self._language_callback = self._on_language_changed
         self._register_i18n(self._language_callback)
 
         # -- Event subscriptions --
+        self._subscribe(TRUCK_CREATED, self._on_truck_updated_ev)
         self._subscribe(TRUCK_UPDATED, self._on_truck_updated_ev)
+        self._subscribe(TRUCK_DELETED, self._on_truck_updated_ev)
         self._subscribe(ALERT_CREATED, self._on_alert_ev)
         self._subscribe(ALERT_RESOLVED, self._on_alert_ev)
 
@@ -476,6 +492,13 @@ class QtFleetTab(BaseView):
             )
             return
 
+        self._load_table_and_kpis(rows)
+        self._draw_charts(rows)
+        self._refresh_alerts()
+        self._filter_table()
+
+    def _load_table_and_kpis(self, rows: list[dict[str, Any]]) -> None:
+        """Populate the truck table and update KPI cards from *rows*."""
         # Populate table
         table_rows: list[dict[str, Any]] = []
         for r in rows:
@@ -519,7 +542,8 @@ class QtFleetTab(BaseView):
         if "kpi_active" in self._kpi_value_labels:
             self._kpi_value_labels["kpi_active"].setText(str(active))
         if "kpi_leasing" in self._kpi_value_labels:
-            self._kpi_value_labels["kpi_leasing"].setText("")
+            total_rate = sum(float(r.get("monthly_rate") or 0) for r in rows)
+            self._kpi_value_labels["kpi_leasing"].setText(f"{total_rate:,.0f} \u20ac")
 
         alert_count = 0
         if self.ops:
@@ -529,10 +553,6 @@ class QtFleetTab(BaseView):
             self._kpi_value_labels["kpi_alerts"].setText(
                 str(alert_count) if self.ops else "N/A"
             )
-
-        self._refresh_alerts()
-        self._draw_charts(rows)
-        self._filter_table()
 
     # ==================================================================
     # Chart rendering
@@ -655,10 +675,8 @@ class QtFleetTab(BaseView):
                 t("fleet.error_load", default=str(ex)),
             )
             return
-        self._rows = rows
-        self._update_kpis(rows)
-        self._populate_table(rows)
-        self._render_alerts(rows)
+        self._load_table_and_kpis(rows)
+        self._refresh_alerts()
 
     def _filter_table(self) -> None:
         query = self._e_search.text().strip().lower()
@@ -786,7 +804,7 @@ class QtFleetTab(BaseView):
             try:
                 EventBus().publish(TRUCK_CREATED, {
                     "truck_id": int(new_id) if new_id is not None else 0,
-                    "plate": plate,
+                    "plate_number": plate,
                 })
             except Exception:
                 logger.exception("Failed to publish TRUCK_CREATED for %s", plate)
@@ -1267,9 +1285,9 @@ class QtFleetTab(BaseView):
                     )
             QMessageBox.information(
                 self,
-                t("fleet.export_csv_success", default="Exported"),
-                t("fleet.export_csv_success", default="Exported to {path}").format(
-                    path=path
+                t("fleet.export_csv_success_title", default="Exported"),
+                t("fleet.export_csv_success_msg", default="Exported to {path}").format(
+                    path=path,
                 ),
             )
         except Exception as ex:
@@ -1311,9 +1329,9 @@ class QtFleetTab(BaseView):
             )
             QMessageBox.information(
                 self,
-                t("fleet.export_excel_success", default="Exported"),
+                t("fleet.export_excel_success_title", default="Exported"),
                 t(
-                    "fleet.export_excel_success",
+                    "fleet.export_excel_success_msg",
                     default="Exported to {path}",
                 ).format(path=path),
             )
@@ -1350,9 +1368,9 @@ class QtFleetTab(BaseView):
             )
             QMessageBox.information(
                 self,
-                t("fleet.export_pdf_success", default="Exported"),
+                t("fleet.export_pdf_success_title", default="Exported"),
                 t(
-                    "fleet.export_pdf_success",
+                    "fleet.export_pdf_success_msg",
                     default="Exported to {path}",
                 ).format(path=path),
             )
@@ -1411,11 +1429,11 @@ class QtFleetTab(BaseView):
             QMessageBox.information(
                 self,
                 t(
-                    "fleet.export_truck_csv_success",
+                    "fleet.export_truck_csv_success_title",
                     default="Exported",
                 ),
                 t(
-                    "fleet.export_truck_csv_success",
+                    "fleet.export_truck_csv_success_msg",
                     default="Exported to {path}",
                 ).format(path=path),
             )

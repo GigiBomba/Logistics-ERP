@@ -76,9 +76,9 @@ class ShareRouteDialog(QDialog):
 
         self._share_url = share_url
         self._google_maps_url = google_maps_url
-        self._on_export_file = on_export_file
-        self._on_share_via_os = on_share_via_os
-        self._on_open_in_gmaps = on_open_in_gmaps
+        self._on_export_file_cb = on_export_file
+        self._on_share_via_os_cb = on_share_via_os
+        self._on_open_in_gmaps_cb = on_open_in_gmaps
 
         self._build_ui()
 
@@ -293,8 +293,8 @@ class ShareRouteDialog(QDialog):
         self._url_field.setText(self._share_url if self._share_url else "-")
 
     def _on_export_file(self) -> None:
-        if self._on_export_file:
-            path = self._on_export_file()
+        if self._on_export_file_cb:
+            path = self._on_export_file_cb()
             if path:
                 self._url_field.setText(
                     t("route.export_success_file", default="Saved: {path}").format(path=path)
@@ -304,13 +304,13 @@ class ShareRouteDialog(QDialog):
                 QTimer.singleShot(3000, self._restore_url_text)
 
     def _on_open_gmaps(self) -> None:
-        if self._on_open_in_gmaps:
-            self._on_open_in_gmaps()
+        if self._on_open_in_gmaps_cb:
+            self._on_open_in_gmaps_cb()
         self.accept()
 
     def _on_share_via_os(self) -> None:
-        if self._on_share_via_os:
-            self._on_share_via_os()
+        if self._on_share_via_os_cb:
+            self._on_share_via_os_cb()
         self.accept()
 
     # ── QR code generation ──────────────────────────────────────

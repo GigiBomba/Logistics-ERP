@@ -8,8 +8,8 @@ caller is not an authenticated admin user.
 import logging
 import os
 import platform
-import sqlite3
 import time
+from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -25,16 +25,12 @@ from backend.schemas.admin import (
     DocumentStatsResponse,
     HealthDetailedResponse,
     LogTailResponse,
-    RawQueryRequest,
     RedisStatus,
     ServiceHealth,
     SystemEnvResponse,
     SystemInfoResponse,
     TableInfoResponse,
 )
-from config import Config
-from database.db_manager import DatabaseManager
-
 # Whitelist of tables accessible via admin endpoints
 _ADMIN_KNOWN_TABLES = {
     "trips", "invoices", "proforma_invoices", "receipts", "clients", "client_contacts",
@@ -168,7 +164,7 @@ async def list_tables(
 
         for table_name in tables:
             try:
-                cnt = db.conn.execute(
+                cnt = db.execute(
                     f"SELECT COUNT(*) FROM \"{table_name}\""  # nosec B608
                 ).fetchone()[0]
 
@@ -251,7 +247,7 @@ async def get_table_data(
     async for db in get_db():
         try:
             offset = page * page_size
-            cursor = db.conn.execute(
+            cursor = db.execute(
                 f"SELECT * FROM \"{table_name}\" "  # nosec B608
                 f"LIMIT ? OFFSET ?",
                 (page_size, offset),
@@ -267,73 +263,104 @@ async def get_table_data(
     return []
 
 
-@router.post("/db/query", response_model=List[Dict[str, Any]])
-def execute_raw_query(
-    body: RawQueryRequest,
+@router.get("/db/company-row-counts")
+async def get_company_row_counts(
     current_user: Dict[str, Any] = Depends(require_admin),
-) -> List[Dict[str, Any]]:
-    """Execute a raw SQL SELECT statement.
+) -> Dict[str, Any]:
+    """Row counts per company for all major company-scoped tables."""
+    logger.warning(
+        "ADMIN_DIAG user=%s action=%s",
+        current_user.get("email"),
+        "company_row_counts",
+    )
+    tables = [
+        "trips", "invoices", "proforma_invoices", "receipts",
+        "clients", "drivers", "trucks", "documents",
+        "route_history", "alerts", "maintenance_records",
+    ]
+    async for db in get_db():
+        result: Dict[str, Any] = {}
+        for table in tables:
+            try:
+                rows = db.conn.execute(
+                    f"SELECT company_id, COUNT(*) AS cnt FROM {table} GROUP BY company_id ORDER BY company_id"
+                ).fetchall()
+                result[table] = {str(r[0]): r[1] for r in rows}
+            except Exception:
+                result[table] = {}
+        return {"tables": result}
+    return {"tables": {}}
 
-    Safety constraints (enforced before execution):
-        - Only ``SELECT`` statements are permitted.
-        - SQL comments (``--``, ``/* */``) are stripped before checking.
-        - Results are capped at 1000 rows.
-        - A 10-second statement timeout is enforced.
 
-    The ``require_admin`` gate ensures only authenticated admins reach
-    this endpoint.
-    """
-    query: str = body.query.strip()
+@router.get("/db/recent-errors")
+async def get_recent_errors(
+    hours: int = Query(24, ge=1, le=168),
+    limit: int = Query(50, ge=1, le=500),
+    current_user: Dict[str, Any] = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Recent alerts and operation events for diagnostics."""
+    logger.warning(
+        "ADMIN_DIAG user=%s action=%s hours=%d limit=%d",
+        current_user.get("email"),
+        "recent_errors",
+        hours,
+        limit,
+    )
+    cutoff = datetime.utcnow() - timedelta(hours=hours)
+    cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
+    async for db in get_db():
+        alerts = db.conn.execute(
+            "SELECT id, company_id, type, severity, message, created_at "
+            "FROM alerts WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
+            (cutoff_str, limit),
+        ).fetchall()
+        return {
+            "alerts": [
+                {"id": r[0], "company_id": r[1], "type": r[2],
+                 "severity": r[3], "message": r[4], "created_at": r[5]}
+                for r in alerts
+            ],
+        }
+    return {"alerts": []}
 
-    # ── Strip SQL comments ────────────────────────────────────────────
-    import re
-    stripped = re.sub(r"--.*", "", query)
-    stripped = re.sub(r"/\*.*?\*/", "", stripped, flags=re.DOTALL)
-    stripped = stripped.strip().upper()
 
-    # ── Validate: only SELECT allowed ─────────────────────────────────
-    if not stripped.startswith("SELECT"):
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Only SELECT queries are allowed.",
-        )
-
-    # ── Execute via read-only connection (engine-level sandbox) ───────
-    limit = min(body.limit, 1000)
-
-    ro_conn = None
-    try:
-        ro_conn = DatabaseManager.open_readonly_connection(Config.DB_PATH)
-        ro_conn.execute("PRAGMA query_timeout = 10000")  # 10-second timeout as advertised in docstring
-        # Wrap in subquery to enforce row limit
-        wrapped = f"SELECT * FROM ({query}) AS _admin_q LIMIT {limit}"  # nosec B608
-        cursor = ro_conn.execute(wrapped)
-        rows = [dict(row) for row in cursor.fetchall()]
-        return rows
-    except sqlite3.OperationalError as exc:
-        error_msg = str(exc).lower()
-        if "readonly" in error_msg:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Write operations blocked — read-only connection enforced at engine level.",
-            ) from exc
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Query execution failed: {exc}",
-        ) from exc
-    except sqlite3.DatabaseError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid SQL syntax: {exc}",
-        ) from exc
-    except Exception as exc:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Query execution error: {exc}",
-        ) from exc
-    finally:
-        if ro_conn is not None:
-            ro_conn.close()
+@router.get("/db/stats")
+async def get_database_stats(
+    current_user: Dict[str, Any] = Depends(require_admin),
+) -> Dict[str, Any]:
+    """Database file statistics for health monitoring."""
+    logger.warning(
+        "ADMIN_DIAG user=%s action=%s",
+        current_user.get("email"),
+        "db_stats",
+    )
+    async for db in get_db():
+        page_count = db.conn.execute("PRAGMA page_count").fetchone()[0]
+        freelist_count = db.conn.execute("PRAGMA freelist_count").fetchone()[0]
+        page_size = db.conn.execute("PRAGMA page_size").fetchone()[0]
+        db_size_mb = round((page_count * page_size) / (1024 * 1024), 2)
+        try:
+            integrity = db.conn.execute(
+                "PRAGMA quick_check(1)"
+            ).fetchone()[0]
+        except Exception:
+            integrity = "unknown"
+        user_count = db.conn.execute(
+            "SELECT COUNT(*) FROM users"
+        ).fetchone()[0]
+        company_count = db.conn.execute(
+            "SELECT COUNT(*) FROM companies"
+        ).fetchone()[0]
+        return {
+            "page_count": page_count,
+            "freelist_count": freelist_count,
+            "page_size": page_size,
+            "db_size_mb": db_size_mb,
+            "integrity_check": integrity,
+            "user_count": user_count,
+            "company_count": company_count,
+        }
+    return {}
 
 
 @router.get("/documents/stats", response_model=DocumentStatsResponse)
@@ -343,29 +370,29 @@ async def get_document_stats(
     """Aggregate document statistics."""
     async for db in get_db():
         try:
-            total = db.conn.execute(
+            total = db.execute(
                 "SELECT COUNT(*) FROM documents WHERE is_archived = 0"
             ).fetchone()[0]
 
-            storage = db.conn.execute(
+            storage = db.execute(
                 "SELECT COALESCE(SUM(file_size), 0) FROM documents "
                 "WHERE is_archived = 0"
             ).fetchone()[0]
 
-            ocr_done = db.conn.execute(
+            ocr_done = db.execute(
                 "SELECT COUNT(*) FROM documents "
                 "WHERE is_archived = 0 AND ocr_run_at IS NOT NULL"
             ).fetchone()[0]
 
             ocr_pct = round((ocr_done / total * 100), 2) if total else 0.0
 
-            cat_rows = db.conn.execute(
+            cat_rows = db.execute(
                 "SELECT category, COUNT(*) as cnt FROM documents "
                 "WHERE is_archived = 0 GROUP BY category ORDER BY cnt DESC"
             ).fetchall()
             by_category: Dict[str, int] = {r[0]: r[1] for r in cat_rows}
 
-            mime_rows = db.conn.execute(
+            mime_rows = db.execute(
                 "SELECT mime_type, COUNT(*) as cnt FROM documents "
                 "WHERE is_archived = 0 GROUP BY mime_type ORDER BY cnt DESC"
             ).fetchall()
@@ -405,7 +432,7 @@ async def get_orphan_documents(
 
     async for db in get_db():
         try:
-            links = db.conn.execute(
+            links = db.execute(
                 "SELECT dl.id, dl.document_id, dl.linked_entity_type, "
                 "dl.linked_entity_id, d.title, d.doc_number "
                 "FROM document_links dl "
@@ -418,7 +445,7 @@ async def get_orphan_documents(
                 if table is None:
                     continue
 
-                exists = db.conn.execute(
+                exists = db.execute(
                     f"SELECT 1 FROM \"{table}\" WHERE id = ?", (eid,)  # nosec B608
                 ).fetchone()
 
@@ -501,7 +528,7 @@ def tail_logs(
 
     if not os.path.isfile(log_path):
         # Try the default log file from Config
-        from config import Config
+        from backend.desktop_config import Config
         log_path = os.path.join(
             os.path.dirname(Config.LOG_FILE), log_file
         )
@@ -596,7 +623,7 @@ async def get_detailed_health(
     # ── Database ─────────────────────────────────────────────────────
     async for db in get_db():
         try:
-            db.conn.execute("SELECT 1")
+            db.execute("SELECT 1")
             services.append(ServiceHealth(
                 name="database",
                 status="ok",
@@ -653,7 +680,7 @@ async def get_detailed_health(
 
     # ── Disk space ──────────────────────────────────────────────────
     try:
-        from config import Config
+        from backend.desktop_config import Config
         db_dir = os.path.dirname(Config.DB_PATH)
         usage = __import__("shutil").disk_usage(db_dir)
         free_gb = usage.free / (1024 ** 3)

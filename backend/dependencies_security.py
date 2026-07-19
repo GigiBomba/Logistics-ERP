@@ -79,7 +79,8 @@ async def get_current_user(
         )
 
     # ── Admin identity — resolved from env, zero DB access ──────────────
-    if email == settings.admin_email:
+    # NOTE: strip+lower to match login normalization in auth.py:321
+    if email == settings.admin_email.strip().lower():
         user = {
             "id": 0,
             "email": email,
@@ -94,7 +95,7 @@ async def get_current_user(
     # ── Standard user — look up in the database ─────────────────────────
     async for db in get_db():
         try:
-            cursor = db.conn.execute(
+            cursor = db.execute(
                 "SELECT u.id, u.email, u.role, u.company_id, "
                 "c.company_name, c.subscription_tier "
                 "FROM users u "

@@ -24,7 +24,7 @@ class TestChaosSmtp:
     """Simulate SMTP-level failures — email sending should degrade gracefully."""
 
     INVOICE_PAYLOAD = {
-        "recipient": "test@example.com",
+        "recipient_email": "test@example.com",
         "trip_id": 1,
         "trip_data": {
             "id": 1,

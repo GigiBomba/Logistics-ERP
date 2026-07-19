@@ -8,6 +8,9 @@ from unittest.mock import MagicMock, patch
 
 from tests.test_helpers import make_db, InMemoryDB
 
+# Make all fixtures from test_api.conftest available here
+pytest_plugins = ("tests.test_api.conftest",)
+
 
 @pytest.fixture
 def inmemory_db():

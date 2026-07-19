@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CtaBanner } from "@/components/shared/cta-banner"
 import { StatusBadge } from "@/components/shared/status-badge"
+import { useLocale } from "@/i18n/locale-context"
 
 type Category = "All" | "Telematics" | "Accounting" | "Communication" | "Analytics" | "ERP" | "Other"
 
@@ -159,6 +160,7 @@ function statusToBadge(status: Integration["status"]) {
 }
 
 export default function IntegrationsExplorerPage() {
+  const { t } = useLocale()
   const [search, setSearch] = useState("")
   const [activeCategory, setActiveCategory] = useState<Category>("All")
   const [expandedId, setExpandedId] = useState<string | null>(null)
@@ -200,7 +202,7 @@ export default function IntegrationsExplorerPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Search integrations by name or capability..."
+                placeholder={t("integrations.searchPlaceholder")}
                 className="w-full rounded-lg border bg-background py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>

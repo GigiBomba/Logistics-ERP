@@ -11,7 +11,7 @@ from backend.schemas.client import (
     ClientUpdateRequest,
 )
 from backend.schemas.common import PaginatedResponse
-from services.client_service import ClientService
+from backend.services.client_service import ClientService
 
 from backend.dependencies_security import require_dispatcher
 
@@ -32,10 +32,11 @@ def list_clients(
     service: ClientService = Depends(get_client_service),
 ):
     """Return paginated list of clients."""
+    company_id = current_user.get("company_id", 0)
     if query:
-        items = service.search_advanced(query, include_inactive=include_inactive, limit=page_size)
+        items = service.search_advanced(query, company_id=company_id, include_inactive=include_inactive, limit=page_size)
     else:
-        items = service.get_all(include_inactive=include_inactive)
+        items = service.get_all(company_id=company_id, include_inactive=include_inactive)
     return PaginatedResponse.from_items(
         items=[ClientResponse(**c) for c in items],
         total=len(items),
@@ -50,7 +51,8 @@ def get_client(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    client = service.get_by_id(client_id)
+    company_id = current_user.get("company_id", 0)
+    client = service.get_by_id(client_id, company_id=company_id)
     if not client:
         raise HTTPException(status_code=404, detail="Client not found")
     return ClientResponse(**client)
@@ -62,7 +64,8 @@ def create_client(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    client_id = service.create(name=data.name, **data.model_dump(exclude={"name"}))
+    company_id = current_user.get("company_id", 0)
+    client_id = service.create(company_id=company_id, name=data.name, **data.model_dump(exclude={"name"}))
     return {"id": client_id}
 
 
@@ -74,7 +77,8 @@ def update_client_partial(
     service: ClientService = Depends(get_client_service),
 ):
     """Partially update a client (PATCH)."""
-    service.update(client_id, **data.model_dump(exclude_unset=True))
+    company_id = current_user.get("company_id", 0)
+    service.update(client_id, company_id=company_id, **data.model_dump(exclude_unset=True))
     return {"status": "updated"}
 
 
@@ -87,9 +91,10 @@ def update_client(
     response: Response = None,
 ):
     """[DEPRECATED] Use PATCH /{client_id} instead."""
+    company_id = current_user.get("company_id", 0)
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
-    service.update(client_id, **data.model_dump(exclude_unset=True))
+    service.update(client_id, company_id=company_id, **data.model_dump(exclude_unset=True))
     return {"status": "updated"}
 
 
@@ -99,7 +104,8 @@ def get_client_dashboard(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    return service.get_client_dashboard(client_id)
+    company_id = current_user.get("company_id", 0)
+    return service.get_client_dashboard(client_id, company_id=company_id)
 
 
 @router.get("/{client_id}/trips", response_model=PaginatedResponse[dict])
@@ -111,7 +117,8 @@ def get_client_trips(
     service: ClientService = Depends(get_client_service),
 ):
     """Return paginated trips for a client."""
-    items = service.get_client_trips(client_id, limit=page_size, offset=(page - 1) * page_size)
+    company_id = current_user.get("company_id", 0)
+    items = service.get_client_trips(client_id, company_id=company_id, limit=page_size, offset=(page - 1) * page_size)
     return PaginatedResponse.from_items(items=items, total=len(items), page=page, page_size=page_size)
 
 
@@ -124,7 +131,8 @@ def get_client_invoices(
     service: ClientService = Depends(get_client_service),
 ):
     """Return paginated invoices for a client."""
-    items = service.get_client_invoices(client_id, limit=page_size)
+    company_id = current_user.get("company_id", 0)
+    items = service.get_client_invoices(client_id, company_id=company_id, limit=page_size)
     return PaginatedResponse.from_items(items=items, total=len(items), page=page, page_size=page_size)
 
 
@@ -134,7 +142,8 @@ def get_client_trip_count(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    return {"count": service.get_trip_count(client_id)}
+    company_id = current_user.get("company_id", 0)
+    return {"count": service.get_trip_count(client_id, company_id=company_id)}
 
 
 @router.post("/{client_id}/deactivate")
@@ -143,7 +152,8 @@ def deactivate_client(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    service.deactivate(client_id)
+    company_id = current_user.get("company_id", 0)
+    service.deactivate(client_id, company_id=company_id)
     return {"status": "deactivated"}
 
 
@@ -154,7 +164,8 @@ def get_client_contacts(
     service: ClientService = Depends(get_client_service),
 ):
     """Return contacts for a client."""
-    items = service.get_contacts(client_id)
+    company_id = current_user.get("company_id", 0)
+    items = service.get_contacts(client_id, company_id=company_id)
     return PaginatedResponse.from_items(items=items, total=len(items), page=1, page_size=len(items) or 20)
 
 
@@ -165,7 +176,8 @@ def add_client_contact(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    contact_id = service.add_contact(client_id, **data.model_dump())
+    company_id = current_user.get("company_id", 0)
+    contact_id = service.add_contact(client_id, company_id=company_id, **data.model_dump())
     return {"id": contact_id}
 
 
@@ -175,7 +187,8 @@ def get_client_tags(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    tags = service.get_tags(client_id)
+    company_id = current_user.get("company_id", 0)
+    tags = service.get_tags(client_id, company_id=company_id)
     return {"tags": tags}
 
 
@@ -186,8 +199,9 @@ def add_client_tag(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
+    company_id = current_user.get("company_id", 0)
     if data.tag:
-        service.add_tag(client_id, data.tag)
+        service.add_tag(client_id, data.tag, company_id=company_id)
     return {"status": "tag_added"}
 
 
@@ -197,7 +211,8 @@ def get_payment_summary(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: ClientService = Depends(get_client_service),
 ):
-    return service.get_payment_summary(client_id)
+    company_id = current_user.get("company_id", 0)
+    return service.get_payment_summary(client_id, company_id=company_id)
 
 
 @router.get("/{client_id}/revenue-history")
@@ -207,4 +222,5 @@ def get_client_revenue_history(
     months: int = Query(12, ge=1, le=60),
     service: ClientService = Depends(get_client_service),
 ):
-    return service.get_client_revenue_history(client_id, months=months)
+    company_id = current_user.get("company_id", 0)
+    return service.get_client_revenue_history(client_id, company_id=company_id, months=months)

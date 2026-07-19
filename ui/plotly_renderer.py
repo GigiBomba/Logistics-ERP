@@ -123,6 +123,7 @@ def figure_to_svg_bytes(
             width=width,
             height=height,
             scale=scale,
+            timeout=60.0,
         )
     except BaseException:
         _log.exception("Plotly + Choreographer SVG generation failed")

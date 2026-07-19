@@ -1495,7 +1495,7 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
     service = DocumentService(db)
 
     dlg = QDialog(parent)
-    dlg.setWindowTitle(f"Documents — {title}" if title else "Entity Documents")
+    dlg.setWindowTitle(t("docs.entity_documents_title", title=title) if title else t("docs.entity_documents_default"))
     dlg.setMinimumSize(650, 500)
     dlg.setStyleSheet(
         f"QDialog {{ background-color: {COLORS['bg_base']}; }}"
@@ -1512,7 +1512,7 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
     header_layout = QHBoxLayout(header)
     header_layout.setContentsMargins(0, 0, 0, 0)
 
-    count_label = QLabel(f"{title} (0 docs)")
+    count_label = QLabel(t("docs.entity_documents_count", title=title, count=0))
     count_label.setProperty("fontRole", "h3")
     header_layout.addWidget(count_label, 1)
 
@@ -1546,7 +1546,7 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
                 w.deleteLater()
 
         docs = service.get_documents_for_entity(entity_type, entity_id)
-        count_label.setText(f"{title} ({len(docs)} docs)")
+        count_label.setText(t("docs.entity_documents_count", title=title, count=len(docs)))
 
         if not docs:
             empty = QLabel(t("docs.no_documents"))

@@ -160,8 +160,9 @@ class TestQtFleetTab:
         fleet_tab.refresh()
         assert fleet_tab._table.rowCount() == 0
 
-    def test_refresh_handles_service_error(self, fleet_tab, mock_fleet_service):
+    def test_refresh_handles_service_error(self, fleet_tab, mock_fleet_service, monkeypatch):
         """refresh() catches service exceptions and shows dialog."""
+        monkeypatch.setattr("ui.views.fleet_tab.fleet_tab.QMessageBox", MagicMock())
         mock_fleet_service.get_trucks.side_effect = Exception("DB error")
         # Should not crash, should show QMessageBox
         fleet_tab.refresh()

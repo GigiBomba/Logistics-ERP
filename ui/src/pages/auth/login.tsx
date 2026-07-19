@@ -23,8 +23,7 @@ const loginSchema = z.object({
   email: z.string().email("Please enter a valid email"),
   password: z
     .string()
-    .min(1, "Password is required")
-    .max(72, "Password must be at most 72 characters"),
+    .min(1, "Password is required"),
 })
 
 type LoginFormData = z.infer<typeof loginSchema>

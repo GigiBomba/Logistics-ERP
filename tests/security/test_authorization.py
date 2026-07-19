@@ -13,9 +13,18 @@ from fastapi.testclient import TestClient
 # ── Public paths that do NOT require authentication ──────────────────────────
 PUBLIC_PATHS = {
     "/api/v1/health/",
+    "/api/v1/health/live",
+    "/api/v1/health/ready",
     "/api/v1/auth/token",
     "/api/v1/auth/refresh",
     "/api/v1/auth/logout",
+    "/api/v1/auth/forgot-password",
+    "/api/v1/auth/reset-password",
+    "/api/v1/auth/token/client-credentials",
+    "/api/v1/registration/register",
+    "/api/v1/route-demo/calculate",
+    "/api/v1/waitlist/join",
+    "/api/v1/status",
     "/docs",
     "/docs/oauth2-redirect",
     "/redoc",
@@ -30,6 +39,21 @@ PUBLIC_PATHS = {
 class TestAllEndpointsRequireAuth:
     """Every non-public route must reject unauthenticated requests."""
 
+    def _extract_route_paths(self, app) -> set[str]:
+        """Extract all route paths from a FastAPI app, traversing
+        ``_IncludedRouter`` objects (FastAPI >= 0.139.0 stores included
+        routers as ``_IncludedRouter`` instead of expanding them).
+        """
+        paths: set[str] = set()
+        for route in app.routes:
+            if hasattr(route, "path") and route.path:
+                paths.add(route.path)
+            elif hasattr(route, "effective_route_contexts"):
+                for ctx in route.effective_route_contexts():
+                    if hasattr(ctx, "path") and ctx.path:
+                        paths.add(ctx.path)
+        return paths
+
     def test_all_protected_routes_reject_no_token(self, client: TestClient):
         """Dynamically iterate app.routes, hit each without auth, expect 401/403.
 
@@ -39,10 +63,7 @@ class TestAllEndpointsRequireAuth:
         """
         from backend.main import app as fastapi_app
 
-        routes: set[str] = set()
-        for route in fastapi_app.routes:
-            if hasattr(route, "path") and route.path:
-                routes.add(route.path)
+        routes = self._extract_route_paths(fastapi_app)
 
         tested = 0
         errors: list[str] = []

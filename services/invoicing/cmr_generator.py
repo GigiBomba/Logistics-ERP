@@ -347,11 +347,21 @@ class CMRGenerator:
         return ServiceResult(success=True, data=True)
 
     def _generate_legacy(self, trip_data: dict, output_dir: str) -> str:
-        """Legacy single-copy generation (kept for backward compatibility)."""
+        """Legacy single-copy generation (kept for backward compatibility).
+
+        Picks the correct copy color scheme based on generating_role.
+        """
         ctx = self._gather_context(trip_data)
         role = ctx.get("generating_role", "consignor")
         suffix = "Sender" if role == "consignor" else "Consignee"
-        filepath = self._build_single_copy(ctx, suffix, output_dir)
+        # Look up the matching COPY_CONFIGS entry for colour, bar text, etc.
+        copy_config = {c[0]: c for c in COPY_CONFIGS}
+        _, _, color_hex, _, bar_text, desig_text = copy_config.get(
+            suffix, COPY_CONFIGS[0])
+        filepath = self._build_single_copy(
+            ctx, suffix, output_dir,
+            color_hex=color_hex, bar_text=bar_text, desig_text=desig_text,
+        )
         return filepath
 
     def _generate_typed(self, request: CmrGenerateRequest, user_id: int) -> CmrGenerateResult:

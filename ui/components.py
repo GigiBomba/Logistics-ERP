@@ -87,7 +87,7 @@ def FieldLabel(parent, text="") -> QLabel:
 def MonoLabel(parent, text="", size="body") -> QLabel:
     lbl = Label(parent, text, role="mono")
     sizes = {"body": 13, "lg": 20, "xl": 28}
-    font = QFont(FONT_MONO, sizes.get(size, 13))
+    font = QFont(FONT_MONO, max(1, sizes.get(size, 13)))
     font.setWeight(QFont.Weight.Medium)
     lbl.setFont(font)
     return lbl

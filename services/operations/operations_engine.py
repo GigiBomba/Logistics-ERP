@@ -212,7 +212,7 @@ class OperationsEngine:
             self._event_bus.unsubscribe(TRIP_STATUS_CHANGED, self._cmr_generator.on_trip_in_transit)
         logger.info("OperationsEngine stopped")
 
-    def get_active_alerts(self, limit: int = 200) -> list[Alert]:
+    def get_active_alerts(self, company_id: Optional[int] = None, limit: int = 200) -> list[Alert]:
         return self._alert_mgr.get_active_alerts(limit=limit)
 
     def get_alerts(
@@ -231,13 +231,13 @@ class OperationsEngine:
             limit=limit,
         )
 
-    def resolve_alert(self, alert_id: str) -> Optional[Alert]:
+    def resolve_alert(self, alert_id: str, company_id: Optional[int] = None) -> Optional[Alert]:
         return self._alert_mgr.resolve_alert(alert_id)
 
     def get_active_count(self) -> int:
         return self._alert_mgr.get_active_count()
 
-    def get_active_alert_count(self) -> int:
+    def get_active_alert_count(self, company_id: Optional[int] = None) -> int:
         return self.get_active_count()
 
     def evaluate_all(self) -> int:

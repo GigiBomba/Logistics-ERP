@@ -73,9 +73,14 @@ def calculator_view(qtbot, mock_fleet_service, mock_trip_service,
             "ui.views.calculator_view.TripContextService",
             spec=True,
         ),
+        patch("ui.views.calculator_view.QMessageBox"),
     ]
     for p in patchers:
         p.start()
+    # Make TripConflictService.check_conflicts return empty list to avoid
+    # blocking QMessageBox.question dialog
+    from ui.views.calculator_view import QMessageBox as _patched_qmb
+    _patched_qmb.question.return_value = _patched_qmb.Yes
 
     from ui.views.calculator_view import QtCalculatorView
 
@@ -150,8 +155,9 @@ class TestQtCalculatorView:
         assert calculator_view._results_container.isVisible()
         assert calculator_view._empty_state.isHidden()
 
-    def test_validation_prevents_empty_inputs(self, calculator_view, qtbot):
+    def test_validation_prevents_empty_inputs(self, calculator_view, qtbot, monkeypatch):
         """Calculation with empty/zero values shows warning, no crash."""
+        monkeypatch.setattr("ui.views.calculator_view.QMessageBox", MagicMock())
         calculator_view.e_price.setText("0")
         calculator_view._route_distance = 0.0
         # Should not crash, should show warning dialog
@@ -159,8 +165,9 @@ class TestQtCalculatorView:
         # Results should remain hidden
         assert calculator_view._results_container.isHidden()
 
-    def test_validation_prevents_negative_inputs(self, calculator_view, qtbot):
+    def test_validation_prevents_negative_inputs(self, calculator_view, qtbot, monkeypatch):
         """Calculation with negative values shows warning."""
+        monkeypatch.setattr("ui.views.calculator_view.QMessageBox", MagicMock())
         calculator_view.e_price.setText("-100")
         calculator_view._route_distance = 500.0
         calculator_view._handle_calculate()

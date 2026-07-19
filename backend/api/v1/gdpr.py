@@ -55,7 +55,7 @@ async def export_company_data(company_id: int, db=Depends(get_db),
             has_company_id = any(c[1] == "company_id" for c in col_check)
 
             if has_company_id:
-                rows = db.conn.execute(
+                rows = db.execute(
                     f"SELECT * FROM {table} WHERE company_id = ?", (company_id,)  # nosec B608
                 ).fetchall()
             else:
@@ -92,7 +92,7 @@ async def export_company_data(company_id: int, db=Depends(get_db),
 async def export_user_data(user_id: int, db=Depends(get_db),
                            _=Depends(require_admin)):
     """Export all data associated with a user (GDPR data portability)."""
-    user = db.conn.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
     if not user:
         raise HTTPException(404, "User not found")
 
@@ -140,12 +140,12 @@ async def delete_company_data(company_id: int, confirm: str = "",
 
             if has_company_id:
                 if has_is_active:
-                    result = db.conn.execute(
+                    result = db.execute(
                         f"UPDATE {table} SET is_active = 0 WHERE company_id = ?",  # nosec B608
                         (company_id,)
                     )
                 else:
-                    result = db.conn.execute(
+                    result = db.execute(
                         f"DELETE FROM {table} WHERE company_id = ?",  # nosec B608
                         (company_id,)
                     )
@@ -156,14 +156,14 @@ async def delete_company_data(company_id: int, confirm: str = "",
             logger.warning("GDPR delete: failed on table %s: %s", table, e)
 
     # 2. Soft-delete company record
-    db.conn.execute(
+    db.execute(
         "UPDATE companies SET is_active = 0 WHERE id = ?", (company_id,)
     )
-    db.conn.commit()
+    db.commit()
 
     # 3. Audit log
     try:
-        from repositories.audit_repository import AuditRepository
+        from backend.repositories.audit_repository import AuditRepository
         audit = AuditRepository(db)
         audit.log_event(
             event_type="gdpr.deletion",
@@ -189,10 +189,10 @@ async def delete_company_data(company_id: int, confirm: str = "",
 async def delete_user_data(user_id: int, db=Depends(get_db),
                            _=Depends(require_admin)):
     """Deactivate a user account (GDPR right to erasure)."""
-    db.conn.execute(
+    db.execute(
         "UPDATE users SET is_active = 0 WHERE id = ?", (user_id,)
     )
-    db.conn.commit()
+    db.commit()
 
     logger.info("GDPR user deactivation: user_id=%d", user_id)
 

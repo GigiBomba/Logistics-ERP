@@ -362,20 +362,17 @@ def _get_preferred_currency() -> str:
     except (ValueError, RuntimeError, AttributeError):
         pass
     try:
-        import os
-
         from config import Config
         from database.db_manager import DatabaseManager
-        db_path = Config.DB_PATH
-        if os.path.isfile(db_path):
-            db = DatabaseManager(db_path)
-            try:
-                value = SettingsRepository(db).get_setting_value('pref_currency')
-            finally:
-                db.close()
-            if value:
-                _PREFERRED_CURRENCY = value
-                return value
+        db = DatabaseManager(Config.DB_PATH)
+        try:
+            db.execute("SELECT 1").fetchone()
+            value = SettingsRepository(db).get_setting_value('pref_currency')
+        finally:
+            db.close()
+        if value:
+            _PREFERRED_CURRENCY = value
+            return value
     except (ValueError, RuntimeError, OSError, TypeError):
         pass
     _PREFERRED_CURRENCY = "EUR"

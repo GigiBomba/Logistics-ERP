@@ -117,8 +117,8 @@ class ClientRepository(BaseRepository):
     def reassign_trips(self, source_id: int, target_id: int) -> int:
         """Reassign all trips from source client to target client."""
         return self._execute_with_count(
-            "UPDATE trips SET client_id = ? WHERE client_id = ?",
-            (target_id, source_id),
+            f"UPDATE trips SET client_id = ? WHERE client_id = ? {self._company_filter()}",
+            (target_id, source_id) + self._company_params(),
             commit=False,
         )
 
@@ -145,8 +145,8 @@ class ClientRepository(BaseRepository):
     def reassign_tags(self, source_id: int, target_id: int) -> int:
         """Reassign all tags from source client to target client."""
         return self._execute_with_count(
-            "UPDATE client_tags SET client_id = ? WHERE client_id = ?",
-            (target_id, source_id),
+            f"UPDATE client_tags SET client_id = ? WHERE client_id = ? {self._company_filter()}",
+            (target_id, source_id) + self._company_params(),
             commit=False,
         )
 
@@ -216,7 +216,7 @@ class ClientRepository(BaseRepository):
 
     def get_revenue_history(self, client_id: int, months: int = 12) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"""SELECT SUBSTR(start_date, 1, 7) AS month,
+            f"""SELECT SUBSTRING(start_date, 1, 7) AS month,
                       COUNT(*) AS trip_count,
                       COALESCE(SUM(total_price_eur), 0) AS revenue,
                       COALESCE(SUM(net_profit), 0) AS profit,

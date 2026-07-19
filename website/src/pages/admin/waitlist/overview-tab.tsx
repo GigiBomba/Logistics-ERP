@@ -19,6 +19,7 @@ import { Skeleton } from "@/components/ui/loading-spinner"
 import { Callout } from "@/components/ui/callout"
 import { waitlistApi, type WaitlistStatsResponse } from "@/api/endpoints"
 import { extractApiError } from "@/api/client"
+import { useLocale } from "@/i18n/locale-context"
 
 interface OverviewTabProps {
   stats: WaitlistStatsResponse | null
@@ -33,6 +34,7 @@ function BreakdownGrid({
   icon: React.ElementType
   data: Record<string, number>
 }) {
+  const { t } = useLocale()
   const entries = useMemo(() => Object.entries(data).sort((a, b) => b[1] - a[1]), [data])
   const max = entries[0]?.[1] ?? 1
 
@@ -46,7 +48,7 @@ function BreakdownGrid({
       </CardHeader>
       <CardContent className="space-y-3">
         {entries.length === 0 && (
-          <p className="text-sm text-muted-foreground">No data available.</p>
+          <p className="text-sm text-muted-foreground">{t("adminWaitlist.overview.noData")}</p>
         )}
         {entries.map(([key, count]) => (
           <div key={key} className="space-y-1">
@@ -98,6 +100,7 @@ function FunnelBar({
 }
 
 function GrowthChart({ data }: { data?: Array<{ date: string; count: number }> | null }) {
+  const { t } = useLocale()
   const sliced = useMemo(() => (data ?? []).slice(-30), [data])
   const max = useMemo(() => Math.max(...sliced.map((d) => d.count), 1), [sliced])
 
@@ -108,8 +111,8 @@ function GrowthChart({ data }: { data?: Array<{ date: string; count: number }> |
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">Growth (last 30 days)</CardTitle>
-        <CardDescription>Daily signup volume</CardDescription>
+        <CardTitle className="text-base">{t("adminWaitlist.overview.growth")}</CardTitle>
+        <CardDescription>{t("adminWaitlist.overview.growthDesc")}</CardDescription>
       </CardHeader>
       <CardContent>
         <div className="flex items-end gap-1 h-40">
@@ -163,6 +166,7 @@ function TooltipBar({
 }
 
 export default function OverviewTab({ stats }: OverviewTabProps) {
+  const { t } = useLocale()
   const [localStats, setLocalStats] = useState<WaitlistStatsResponse | null>(stats)
   const [loading, setLoading] = useState(!stats)
   const [error, setError] = useState<string | null>(null)
@@ -207,11 +211,11 @@ export default function OverviewTab({ stats }: OverviewTabProps) {
 
   if (error) {
     return (
-      <Callout variant="danger" title="Failed to load overview">
+      <Callout variant="danger" title={t("adminWaitlist.overview.loadFailed")}>
         {error}
         <div className="mt-3">
           <Button size="sm" variant="outline" onClick={() => window.location.reload()}>
-            Retry
+            {t("adminWaitlist.overview.retry")}
           </Button>
         </div>
       </Callout>
@@ -235,28 +239,28 @@ export default function OverviewTab({ stats }: OverviewTabProps) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.05 }}
         >
-          <StatCard value={String(total)} label="Total signups" icon={Users} />
+          <StatCard value={String(total)} label={t("adminWaitlist.overview.totalSignups")} icon={Users} />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 }}
         >
-          <StatCard value={String(invited)} label="Invited" icon={MailOpen} />
+          <StatCard value={String(invited)} label={t("adminWaitlist.overview.invited")} icon={MailOpen} />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.15 }}
         >
-          <StatCard value={String(activated)} label="Activated" icon={Zap} />
+          <StatCard value={String(activated)} label={t("adminWaitlist.overview.activated")} icon={Zap} />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.2 }}
         >
-          <StatCard value={String(converted)} label="Converted" icon={CheckCircle2} />
+          <StatCard value={String(converted)} label={t("adminWaitlist.overview.converted")} icon={CheckCircle2} />
         </motion.div>
       </div>
 
@@ -275,7 +279,7 @@ export default function OverviewTab({ stats }: OverviewTabProps) {
               <p className="text-4xl font-bold tracking-tight">
                 {(localStats.conversion_rate * 100).toFixed(1)}%
               </p>
-              <p className="text-sm text-muted-foreground">Conversion rate (joined → converted)</p>
+              <p className="text-sm text-muted-foreground">{t("adminWaitlist.overview.conversionRate")}</p>
             </div>
           </CardContent>
         </Card>
@@ -289,14 +293,14 @@ export default function OverviewTab({ stats }: OverviewTabProps) {
       >
         <Card>
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Funnel</CardTitle>
-            <CardDescription>Progression from signup to conversion</CardDescription>
+            <CardTitle className="text-base">{t("adminWaitlist.overview.funnel")}</CardTitle>
+            <CardDescription>{t("adminWaitlist.overview.funnelDesc")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-4 max-w-2xl">
-            <FunnelBar label="Joined" count={total} max={total} colorClass="bg-muted-foreground/40" />
-            <FunnelBar label="Invited" count={invited} max={total} colorClass="bg-blue-500" />
-            <FunnelBar label="Activated" count={activated} max={total} colorClass="bg-amber-500" />
-            <FunnelBar label="Converted" count={converted} max={total} colorClass="bg-emerald-500" />
+            <FunnelBar label={t("adminWaitlist.overview.joined")} count={total} max={total} colorClass="bg-muted-foreground/40" />
+            <FunnelBar label={t("adminWaitlist.overview.invited")} count={invited} max={total} colorClass="bg-blue-500" />
+            <FunnelBar label={t("adminWaitlist.overview.activated")} count={activated} max={total} colorClass="bg-amber-500" />
+            <FunnelBar label={t("adminWaitlist.overview.converted")} count={converted} max={total} colorClass="bg-emerald-500" />
           </CardContent>
         </Card>
       </motion.div>
@@ -308,28 +312,28 @@ export default function OverviewTab({ stats }: OverviewTabProps) {
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.35 }}
         >
-          <BreakdownGrid title="By Country" icon={Globe} data={localStats.by_country} />
+          <BreakdownGrid title={t("adminWaitlist.overview.byCountry")} icon={Globe} data={localStats.by_country} />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.4 }}
         >
-          <BreakdownGrid title="By Company Size" icon={Building2} data={localStats.by_company_size} />
+          <BreakdownGrid title={t("adminWaitlist.overview.byCompanySize")} icon={Building2} data={localStats.by_company_size} />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.45 }}
         >
-          <BreakdownGrid title="By Fleet Size" icon={Truck} data={localStats.by_fleet_size} />
+          <BreakdownGrid title={t("adminWaitlist.overview.byFleetSize")} icon={Truck} data={localStats.by_fleet_size} />
         </motion.div>
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.5 }}
         >
-          <BreakdownGrid title="By Source" icon={Link2} data={localStats.by_source} />
+          <BreakdownGrid title={t("adminWaitlist.overview.bySource")} icon={Link2} data={localStats.by_source} />
         </motion.div>
       </div>
 

@@ -25,12 +25,9 @@ describe("EnterprisePage", () => {
     expect(screen.getByText("Operion Enterprise")).toBeInTheDocument()
   })
 
-  it("renders enterprise overview cards", () => {
+  it("renders planned capabilities", () => {
     render(<EnterprisePage />)
-    expect(screen.getAllByText("Dedicated Infrastructure").length).toBeGreaterThanOrEqual(1)
-    expect(screen.getByText("Custom Onboarding")).toBeInTheDocument()
-    expect(screen.getByText("Priority Support")).toBeInTheDocument()
-    expect(screen.getByText("SLA Guarantees")).toBeInTheDocument()
+    expect(screen.getByText("Planned Enterprise Capabilities")).toBeInTheDocument()
   })
 
   it("renders contact information", () => {

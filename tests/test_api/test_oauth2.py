@@ -166,13 +166,13 @@ class TestOAuth2RevokeClient:
         mock_svc.revoke_client.assert_called_once_with("client_123")
 
     def test_revoke_error_propagation(self, client):
-        """Service exception propagates (unhandled in route → 500 via ASGI)."""
+        """Service exception surfaces as 500."""
         with patch("backend.api.v1.oauth2.OAuth2Service") as mock_svc_class:
             mock_svc = MagicMock()
             mock_svc.revoke_client.side_effect = Exception("DB error")
             mock_svc_class.return_value = mock_svc
 
-            # The route does not catch exceptions, so the exception
-            # propagates to the ASGI server and surfaces as a 500.
-            with pytest.raises(Exception, match="DB error"):
-                client.delete(f"{BASE}/clients/client_123")
+            # The route does not catch exceptions; TestClient has
+            # raise_server_exceptions=False so it returns a 500 response.
+            resp = client.delete(f"{BASE}/clients/client_123")
+            assert resp.status_code == 500

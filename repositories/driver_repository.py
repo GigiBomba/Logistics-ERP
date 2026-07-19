@@ -22,19 +22,19 @@ class DriverRepository(BaseRepository):
             (driver_id,) + self._company_params(),
         )
 
-    def get_by_id(self, driver_id: int) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, driver_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
             f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
             (driver_id,) + self._company_params(),
         )
 
-    def get_all(self, limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
+    def get_all(self, limit: int = 200, offset: int = 0, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY name ASC LIMIT ? OFFSET ?",
             self._company_params() + (limit, offset),
         )
 
-    def create(self, data: Dict[str, Any]) -> int:
+    def create(self, data: Dict[str, Any], company_id=None) -> int:
         self._validate_columns(data)
         now = datetime.now().isoformat()
         data = dict(data)
@@ -50,7 +50,7 @@ class DriverRepository(BaseRepository):
             tuple(data.values()),
         )
 
-    def update(self, driver_id: int, data: Dict[str, Any]) -> None:
+    def update(self, driver_id: int, data: Dict[str, Any], company_id=None) -> None:
         self._validate_columns(data)
         data = dict(data)
         data["updated_at"] = datetime.now().isoformat()
@@ -62,7 +62,7 @@ class DriverRepository(BaseRepository):
             tuple(data.values()) + (driver_id,) + self._company_params(),
         )
 
-    def delete(self, driver_id: int) -> None:
+    def delete(self, driver_id: int, company_id=None) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
             (driver_id,) + self._company_params(),
@@ -144,10 +144,14 @@ class DriverRepository(BaseRepository):
             (card_number,) + self._company_params(),
         )
 
+    @staticmethod
+    def _escape_like(s: str) -> str:
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
     def get_by_name_fuzzy(self, name: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE name LIKE ? {self._company_filter()} LIMIT 1",
-            (f"%{name}%",) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE name LIKE ? ESCAPE '\\' {self._company_filter()} LIMIT 1",
+            (f"%{self._escape_like(name)}%",) + self._company_params(),
         )
 
     def update_license_expiry(self, driver_id: int, expiry: str) -> None:

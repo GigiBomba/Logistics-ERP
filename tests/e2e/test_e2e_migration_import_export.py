@@ -69,20 +69,29 @@ class TestMigrationImportExport:
         # Create trucks
         fleet_repo = FleetRepository(db)
         for plate in ["TR-EXP-001", "TR-EXP-002"]:
-            fleet_repo.create({"plate_number": plate, "manufacturer": "Volvo"})
+            fleet_repo.create({
+                "plate_number": plate,
+                "manufacturer": "Volvo",
+                "status": "Active",
+            })
 
         # Create trips
         trip_svc = TripService(db)
         clients = client_repo.get_all()
+        trucks = fleet_repo.get_all()
+        now = datetime.now().isoformat()
         for i, client in enumerate(clients[:2]):
+            truck_plate = trucks[i % len(trucks)]["plate_number"] if trucks else "TR-EXP-001"
             trip_svc.add({
                 "client_id": client["id"],
                 "client_name": client["name"],
+                "truck_plate": truck_plate,
                 "distance_km": 500.0 * (i + 1),
-                "total_price_eur": 2000.0 * (i + 1),
+                "price_eur": 2000.0 * (i + 1),
                 "status": "Delivered",
                 "start_date": "2024-06-01",
                 "end_date": "2024-06-03",
+                "created_at": now,
             })
 
     def _export_all(self, db, tmpdir) -> dict[str, str]:

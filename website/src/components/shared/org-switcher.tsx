@@ -5,6 +5,7 @@ import { ChevronDown, Check, Building2, Plus, Settings } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 import type { Organization } from "@/types"
 
 interface OrgSwitcherProps {
@@ -23,6 +24,7 @@ function getInitials(name: string) {
 }
 
 export function OrgSwitcher({ organizations, activeOrgId, onSwitch }: OrgSwitcherProps) {
+  const { t } = useLocale()
   const [open, setOpen] = useState(false)
   const [highlightedIndex, setHighlightedIndex] = useState(-1)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -147,7 +149,7 @@ export function OrgSwitcher({ organizations, activeOrgId, onSwitch }: OrgSwitche
             transition={{ duration: 0.15 }}
             className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border bg-popover shadow-lg"
             role="listbox"
-            aria-label="Organizations"
+            aria-label={t("common.aria.organizations")}
             ref={listRef}
           >
             {/* Org List */}

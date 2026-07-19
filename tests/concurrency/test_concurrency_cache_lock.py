@@ -16,10 +16,6 @@ pytestmark = pytest.mark.concurrency
 class TestConcurrencyCacheLock:
     """Concurrency tests for cache lock behaviour in various services."""
 
-    @pytest.fixture
-    def db(self):
-        return make_db()
-
     # ── test 1: Analytics lock starvation ──────────────────────────────
 
     def test_analytics_lock_starvation(self, db):

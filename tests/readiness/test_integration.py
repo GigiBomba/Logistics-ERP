@@ -290,6 +290,11 @@ class TestIntegrationEndpoints:
     def app(self):
         from backend.api.v1.integrations import router
         from backend.dependencies import get_db
+        from backend.dependencies_security import (
+            get_current_user,
+            require_admin,
+            require_dispatcher,
+        )
 
         app = FastAPI()
         app.include_router(router, prefix="/api/v1")
@@ -298,6 +303,15 @@ class TestIntegrationEndpoints:
         # database during endpoint tests.
         mock_db = MagicMock()
         app.dependency_overrides[get_db] = lambda: mock_db
+
+        # Override auth so endpoint tests succeed without real tokens.
+        mock_user = {
+            "id": 1, "email": "admin@test.com", "role": "admin",
+            "is_admin": True, "company_id": 1,
+        }
+        app.dependency_overrides[get_current_user] = lambda: mock_user
+        app.dependency_overrides[require_dispatcher] = lambda: mock_user
+        app.dependency_overrides[require_admin] = lambda: mock_user
 
         yield app
         app.dependency_overrides.clear()
@@ -359,7 +373,17 @@ class TestIntegrationEndpoints:
     # POST /api/v1/integrations/status/{name}/check  (auth)
     # ------------------------------------------------------------------
 
-    def test_check_requires_admin(self, client):
+    def test_check_requires_admin(self):
         """POST ``…/check`` returns 401 when no auth token is provided."""
-        response = client.post("/api/v1/integrations/status/graphhopper/check")
+        from backend.api.v1.integrations import router
+        from backend.dependencies import get_db
+
+        app = FastAPI()
+        app.include_router(router, prefix="/api/v1")
+        mock_db = MagicMock()
+        app.dependency_overrides[get_db] = lambda: mock_db
+        # No auth overrides → should fail with 401
+        response = TestClient(app).post(
+            "/api/v1/integrations/status/graphhopper/check",
+        )
         assert response.status_code == status.HTTP_401_UNAUTHORIZED

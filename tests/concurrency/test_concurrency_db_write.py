@@ -15,10 +15,6 @@ pytestmark = pytest.mark.concurrency
 class TestConcurrencyDbWrite:
     """Concurrency tests for database write patterns with SQLite."""
 
-    @pytest.fixture
-    def db(self):
-        return make_db()
-
     def _seed_trip(self, db, trip_id: int = 1) -> dict:
         """Insert a single trip row and return it."""
         from repositories.trip_repository import TripRepository

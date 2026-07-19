@@ -30,8 +30,10 @@ def list_documents(
     page_size: int = Query(20, ge=1, le=100),
     service=Depends(get_document_service),
 ):
+    company_id = current_user.get("company_id", 0)
     result = service.advanced_search(
         query=query,
+        company_id=company_id,
         category=category,
         entity_type=entity_type,
         date_from=date_from,
@@ -54,7 +56,8 @@ def get_document(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    doc = service.get_by_id(doc_id)
+    company_id = current_user.get("company_id", 0)
+    doc = service.get_by_id(doc_id, company_id=company_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return DocumentResponse(**doc)
@@ -66,7 +69,8 @@ def read_document_info(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    doc = service.get_by_id(doc_id)
+    company_id = current_user.get("company_id", 0)
+    doc = service.get_by_id(doc_id, company_id=company_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -149,8 +153,10 @@ def upload_document(
         temp.write(content)
         temp.close()
 
+        company_id = current_user.get("company_id", 0)
         result = service.upload(
             source_path=temp.name,
+            company_id=company_id,
             category=category,
             entity_type=entity_type,
             entity_id=entity_id,
@@ -171,8 +177,9 @@ def update_document_partial(
     service=Depends(get_document_service),
 ):
     """Partially update a document (PATCH)."""
-    service.update(doc_id, **update.model_dump(exclude_none=True))
-    doc = service.get_by_id(doc_id)
+    company_id = current_user.get("company_id", 0)
+    service.update(doc_id, company_id=company_id, **update.model_dump(exclude_none=True))
+    doc = service.get_by_id(doc_id, company_id=company_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return DocumentResponse(**doc)
@@ -187,8 +194,9 @@ def update_document(
     response: Response = None,
 ):
     """[DEPRECATED] Use PATCH /{doc_id} instead."""
-    service.update(doc_id, **update.model_dump(exclude_none=True))
-    doc = service.get_by_id(doc_id)
+    company_id = current_user.get("company_id", 0)
+    service.update(doc_id, company_id=company_id, **update.model_dump(exclude_none=True))
+    doc = service.get_by_id(doc_id, company_id=company_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     response.headers["Deprecation"] = "true"
@@ -202,7 +210,8 @@ def delete_document(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    success = service.delete(doc_id)
+    company_id = current_user.get("company_id", 0)
+    success = service.delete(doc_id, company_id=company_id)
     if not success:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted"}

@@ -6,9 +6,11 @@ DELETE /api/v1/api-keys/{id}    — revoke an API key
 """
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from fastapi.testclient import TestClient
+
+from tests.test_api.conftest import StrippedMock
 
 BASE = "/api/v1/api-keys"
 
@@ -18,8 +20,8 @@ class TestListApiKeys:
 
     def test_list_keys_returns_keys(self, client):
         """Returns 200 with keys and total count."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.list_keys.return_value = [
                 {"id": 1, "name": "Test Key", "partner": "timocom"},
                 {"id": 2, "name": "Prod Key", "partner": "timocom"},
@@ -35,8 +37,8 @@ class TestListApiKeys:
 
     def test_list_keys_empty(self, client):
         """Returns empty keys list when none exist."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.list_keys.return_value = []
             mock_cls.return_value = mock_repo
 
@@ -48,8 +50,8 @@ class TestListApiKeys:
 
     def test_list_keys_with_partner_filter(self, client):
         """Passes the partner query param to list_keys."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.list_keys.return_value = [
                 {"id": 1, "name": "Timocom Key", "partner": "timocom"},
             ]
@@ -62,8 +64,8 @@ class TestListApiKeys:
 
     def test_list_keys_with_unknown_partner_returns_empty(self, client):
         """Unknown partner filter returns empty keys list."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.list_keys.return_value = []
             mock_cls.return_value = mock_repo
 
@@ -83,8 +85,8 @@ class TestCreateApiKey:
 
     def test_create_key_success(self, client):
         """Returns 200 with key, id, and warning."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.create_key.return_value = (
                 "ok_a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f",
                 42,
@@ -121,8 +123,8 @@ class TestCreateApiKey:
 
     def test_create_key_with_optional_fields(self, client):
         """All optional fields are forwarded to create_key."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.create_key.return_value = ("ok_test", 99)
             mock_cls.return_value = mock_repo
 
@@ -157,8 +159,8 @@ class TestRevokeApiKey:
 
     def test_revoke_key_success(self, client):
         """Returns 200 with status 'revoked'."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.revoke_key.return_value = True
             mock_cls.return_value = mock_repo
 
@@ -170,8 +172,8 @@ class TestRevokeApiKey:
 
     def test_revoke_key_not_found_returns_404(self, client):
         """When key not found or already revoked, returns 404."""
-        with patch("repositories.api_key_repository.ApiKeyRepository") as mock_cls:
-            mock_repo = MagicMock()
+        with patch("backend.repositories.api_key_repository.ApiKeyRepository") as mock_cls:
+            mock_repo = StrippedMock()
             mock_repo.revoke_key.return_value = False
             mock_cls.return_value = mock_repo
 

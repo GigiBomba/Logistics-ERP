@@ -7,6 +7,7 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/shared/search-input"
 import { docsConfig } from "@/config/site"
+import { useLocale } from "@/i18n/locale-context"
 
 // ─── Data ───────────────────────────────────────────────────────────
 
@@ -69,6 +70,7 @@ function totalReadingTime(articles: ArticleEntry[]): number {
 // ─── Component ──────────────────────────────────────────────────────
 
 export default function DocsCategoryPage() {
+  const { t } = useLocale()
   const { category } = useParams<{ category?: string }>()
   const [searchQuery, setSearchQuery] = useState("")
 
@@ -113,7 +115,7 @@ export default function DocsCategoryPage() {
           {/* Search */}
           <div className="mt-6 max-w-md">
             <SearchInput
-              placeholder="Search categories and articles..."
+              placeholder={t("docs.searchPlaceholder")}
               value={searchQuery}
               onChange={setSearchQuery}
               onClear={() => setSearchQuery("")}

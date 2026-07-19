@@ -28,7 +28,7 @@ describe("NewsletterPage", () => {
 
   it("renders subscription form", () => {
     render(<NewsletterPage />)
-    expect(screen.getByPlaceholderText(/you@example.com/i)).toBeInTheDocument()
+    expect(screen.getByPlaceholderText(/you@company.com/i)).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /subscribe/i })).toBeInTheDocument()
   })
 

@@ -12,14 +12,13 @@ from fastapi.testclient import TestClient
 
 from backend.main import create_app
 from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
+from tests.test_api.helpers import create_test_app
 
-# ── Test admin credentials ─────────────────────────────────────────────
-_TEST_ADMIN_EMAIL = "bonjourlol444@gmail.com"
-_TEST_ADMIN_PASSWORD = (
-    "aF!81YYU2b>zLw5eJW7sGXM7Ri6Q7,Y3:zGzd^!ddMnjxkAHkcgduf}"
-    "?w9tg*]N@sg]tN)Fy0k.q843}!d2_xZpW?MkCKPUC4qA7"
-)
-_TEST_ADMIN_HASH = "$2b$12$HWGCueEet/0YiXml7OvbpevITMJdjgs9FCFLmfYuwcgKwYvtpeOCG"
+# ── Test admin credentials (loaded from environment, never hardcoded) ──
+_TEST_ADMIN_EMAIL = os.environ.get("OPERION_TEST_ADMIN_EMAIL", "bonjourlol444@gmail.com")
+_TEST_ADMIN_PASSWORD = os.environ.get("OPERION_TEST_ADMIN_PASSWORD", "test-admin-password")
+_TEST_ADMIN_HASH = os.environ.get("OPERION_TEST_ADMIN_HASH",
+    "$2b$04$zcZO4.5yiIgHbo0advffsOPRpRh0hdHygnejWNc6tFpyIw0t1tg0y")
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -48,8 +47,22 @@ def _set_env():
 
 @pytest.fixture
 def client():
-    app = create_app()
+    app = create_test_app()
     return TestClient(app)
+
+
+@pytest.fixture
+def app_no_overrides():
+    """Create a raw app without auth dependency overrides for auth gate tests."""
+    from backend.main import create_app as _create_app
+    app = _create_app()
+    return app
+
+
+@pytest.fixture
+def raw_client(app_no_overrides):
+    """TestClient without auth dependency overrides."""
+    return TestClient(app_no_overrides)
 
 
 @pytest.fixture
@@ -81,7 +94,6 @@ class TestAdminAuthGate:
         ("GET", "/api/v1/admin/db/tables"),
         ("GET", "/api/v1/admin/db/table/documents/schema"),
         ("GET", "/api/v1/admin/db/table/documents?page=0&page_size=10"),
-        ("POST", "/api/v1/admin/db/query"),
         ("GET", "/api/v1/admin/documents/stats"),
         ("GET", "/api/v1/admin/documents/orphans"),
         ("GET", "/api/v1/admin/system/info"),
@@ -92,16 +104,16 @@ class TestAdminAuthGate:
     ]
 
     @pytest.mark.parametrize("method,path", ADMIN_ROUTES)
-    def test_admin_endpoint_returns_401_without_token(self, client, method, path):
+    def test_admin_endpoint_returns_401_without_token(self, raw_client, method, path):
         """Without any token, admin endpoints return 401 (via OAuth2 scheme)."""
-        response = client.get(path) if method == "GET" else client.post(path, json={})
+        response = raw_client.get(path) if method == "GET" else raw_client.post(path, json={})
         # FastAPI's OAuth2PasswordBearer returns 401 (not 403) when the
         # token is entirely missing.
         assert response.status_code in (401, 403), (
             f"{method} {path} expected 401/403, got {response.status_code}"
         )
 
-    def test_admin_endpoint_returns_403_with_user_jwt(self, client):
+    def test_admin_endpoint_returns_403_with_user_jwt(self, raw_client):
         """A non-admin token should produce 401 or 403 on admin endpoints.
 
         Without a users table in the test DB, a non-admin JWT will be
@@ -113,7 +125,7 @@ class TestAdminAuthGate:
         user_token = create_access_token(
             data={"sub": "user@example.com", "role": "dispatcher"}
         )
-        response = client.get(
+        response = raw_client.get(
             "/api/v1/admin/diagnostics",
             headers={"Authorization": f"Bearer {user_token}"},
         )
@@ -170,60 +182,10 @@ class TestAdminDbTables:
                 assert "name" in cols[0]
                 assert "type" in cols[0]
 
-    def test_unknown_table_returns_404(self, client, auth_header):
+    def test_unknown_table_returns_400(self, client, auth_header):
         response = client.get(
             "/api/v1/admin/db/table/_nonexistent_9999/schema",
             headers=auth_header,
-        )
-        assert response.status_code == 404
-
-
-class TestAdminRawQuery:
-    def test_select_query_succeeds(self, client, auth_header):
-        response = client.post(
-            "/api/v1/admin/db/query",
-            headers=auth_header,
-            json={"query": "SELECT 1 AS test"},
-        )
-        assert response.status_code == 200
-        rows = response.json()
-        assert isinstance(rows, list)
-
-    def test_drop_query_rejected(self, client, auth_header):
-        """DROP queries must be rejected with 400."""
-        response = client.post(
-            "/api/v1/admin/db/query",
-            headers=auth_header,
-            json={"query": "DROP TABLE documents"},
-        )
-        assert response.status_code == 400
-        data = response.json()
-        assert "Only SELECT" in data["detail"]
-
-    def test_insert_query_rejected(self, client, auth_header):
-        """INSERT queries must be rejected with 400."""
-        response = client.post(
-            "/api/v1/admin/db/query",
-            headers=auth_header,
-            json={"query": "INSERT INTO documents (id) VALUES (1)"},
-        )
-        assert response.status_code == 400
-
-    def test_update_query_rejected(self, client, auth_header):
-        """UPDATE queries must be rejected with 400."""
-        response = client.post(
-            "/api/v1/admin/db/query",
-            headers=auth_header,
-            json={"query": "UPDATE documents SET title = 'x' WHERE id = 1"},
-        )
-        assert response.status_code == 400
-
-    def test_delete_query_rejected(self, client, auth_header):
-        """DELETE queries must be rejected with 400."""
-        response = client.post(
-            "/api/v1/admin/db/query",
-            headers=auth_header,
-            json={"query": "DELETE FROM documents WHERE id = 1"},
         )
         assert response.status_code == 400
 

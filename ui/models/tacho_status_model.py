@@ -112,6 +112,8 @@ class TachoStatusModel(QAbstractTableModel):
 
     def refresh(self, db) -> None:
         """Fetch all tacho status data through the repository."""
+        if db is None:
+            raise RuntimeError("Tacho status model requires local database access - not available in remote mode")
         self.beginResetModel()
         try:
             repo = TachoVehicleDataRepository(db)

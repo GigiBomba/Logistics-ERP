@@ -18,17 +18,12 @@ class TestAuthTokenEndpoint:
     def test_login_success_admin(self, app):
         """Valid admin login returns 200 with tokens (via env-var gateway)."""
         import os
-        os.environ.setdefault("OPERION_JWT_SECRET_KEY",
-                              "e8f9b23fbc062b8a74c4dbb9dcde99252a13f040b201a056a29df147c216298a")
+        import bcrypt
+        from tests.conftest import OPERION_TEST_JWT_SECRET
+        os.environ.setdefault("OPERION_JWT_SECRET_KEY", OPERION_TEST_JWT_SECRET)
         os.environ["OPERION_ADMIN_EMAIL"] = "admin@test.com"
-        os.environ["OPERION_ADMIN_PASSWORD_HASH"] = \
-            "$2b$12$HWGCueEet/0YiXml7OvbpevITMJdjgs9FCFLmfYuwcgKwYvtpeOCG"
-
-        from backend.security import verify_password
-        from passlib.context import CryptContext
-        # Register a known valid hash for "admin123"
-        pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
-        pw_hash = pwd_ctx.hash("admin123")
+        # Use bcrypt directly instead of passlib
+        pw_hash = bcrypt.hashpw(b"admin123", bcrypt.gensalt(rounds=4)).decode()
         os.environ["OPERION_ADMIN_PASSWORD_HASH"] = pw_hash
 
         client = TestClient(app)
@@ -50,8 +45,8 @@ class TestAuthTokenEndpoint:
     def test_login_wrong_password_returns_401(self, app):
         """Wrong password returns 401."""
         import os
-        os.environ.setdefault("OPERION_JWT_SECRET_KEY",
-                              "e8f9b23fbc062b8a74c4dbb9dcde99252a13f040b201a056a29df147c216298a")
+        from tests.conftest import OPERION_TEST_JWT_SECRET
+        os.environ.setdefault("OPERION_JWT_SECRET_KEY", OPERION_TEST_JWT_SECRET)
         os.environ["OPERION_ADMIN_EMAIL"] = "admin@test.com"
         os.environ["OPERION_ADMIN_PASSWORD_HASH"] = "$2b$12$dummyhashdummyhashdummyhashdummyhashdummy"
         from backend.api.v1.auth import _failed_attempts
@@ -71,8 +66,8 @@ class TestAuthTokenEndpoint:
     def test_login_unknown_user_returns_401(self, app):
         """Unknown user returns 401."""
         import os
-        os.environ.setdefault("OPERION_JWT_SECRET_KEY",
-                              "e8f9b23fbc062b8a74c4dbb9dcde99252a13f040b201a056a29df147c216298a")
+        from tests.conftest import OPERION_TEST_JWT_SECRET
+        os.environ.setdefault("OPERION_JWT_SECRET_KEY", OPERION_TEST_JWT_SECRET)
         os.environ["OPERION_ADMIN_EMAIL"] = "realadmin@test.com"
         os.environ["OPERION_ADMIN_PASSWORD_HASH"] = "$2b$12$dummyhash"
         from backend.api.v1.auth import _failed_attempts
@@ -117,9 +112,9 @@ class TestAuthLogoutEndpoint:
         assert "Max-Age=0" in set_cookie or "expires=" in set_cookie
 
     def test_logout_without_body_still_succeeds(self, app):
-        """Logout succeeds even without a refresh token."""
+        """Logout succeeds even without a stored refresh token."""
         client = TestClient(app)
-        resp = client.post(f"{BASE}/logout")
+        resp = client.post(f"{BASE}/logout", json={"refresh_token": "dummy"})
         assert resp.status_code == 200
         assert resp.json()["status"] == "ok"
 
@@ -139,5 +134,7 @@ class TestAuthMeEndpoint:
         resp = client.get(f"{BASE}/me")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["email"] == "test@test.com"
-        assert data["role"] == "admin"
+        # Response wraps user info under "user" key
+        user = data.get("user", data)
+        assert user["email"] == "test@test.com"
+        assert user["role"] == "admin"

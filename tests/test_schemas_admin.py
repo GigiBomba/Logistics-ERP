@@ -16,7 +16,6 @@ from backend.schemas.admin import (
     DocumentStatsResponse,
     HealthDetailedResponse,
     LogTailResponse,
-    RawQueryRequest,
     RedisStatus,
     ServiceHealth,
     SystemEnvResponse,
@@ -210,45 +209,6 @@ class TestTableInfoResponse:
     def test_extra_field_forbidden(self):
         with pytest.raises(ValidationError):
             TableInfoResponse(name="t", row_count=0, columns=[], bad=1)  # type: ignore[call-arg]
-
-
-# ── RawQueryRequest ───────────────────────────────────────────────────────────
-
-
-class TestRawQueryRequest:
-    """query (required, non-empty?), limit: int = 100."""
-
-    def test_default_limit(self):
-        inst = RawQueryRequest(query="SELECT 1")
-        assert inst.query == "SELECT 1"
-        assert inst.limit == 100
-
-    def test_custom_limit(self):
-        inst = RawQueryRequest(query="SELECT * FROM t", limit=50)
-        assert inst.limit == 50
-
-    def test_min_limit(self):
-        inst = RawQueryRequest(query="SELECT 1", limit=1)
-        assert inst.limit == 1
-
-    def test_missing_query_raises(self):
-        with pytest.raises(ValidationError):
-            RawQueryRequest()  # type: ignore[call-arg]
-
-    def test_empty_query_allowed(self):
-        """query has no native pydantic constraint, so empty string is allowed."""
-        inst = RawQueryRequest(query="")
-        assert inst.query == ""
-
-    @pytest.mark.parametrize("any_limit", [0, -1, 1, 50, 100, 1000])
-    def test_any_integer_limit_accepted(self, any_limit: int):
-        """No ge/gt constraint — any int is accepted."""
-        inst = RawQueryRequest(query="SELECT 1", limit=any_limit)
-        assert inst.limit == any_limit
-
-    def test_extra_field_forbidden(self):
-        with pytest.raises(ValidationError):
-            RawQueryRequest(query="SELECT 1", format="json")  # type: ignore[call-arg]
 
 
 # ── DocumentStatsResponse ─────────────────────────────────────────────────────

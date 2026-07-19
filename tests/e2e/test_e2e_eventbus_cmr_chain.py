@@ -40,8 +40,31 @@ def _dt(days_offset: int = 0) -> str:
 def _create_minimal_trip(db, status="Planned", cargo="Test cargo", **extra) -> int:
     svc = TripService(db)
     now = datetime.now().isoformat()
+    # Seed a minimal client so FK constraints are satisfied
+    db.conn.execute(
+        "INSERT OR IGNORE INTO clients (id, name, email, is_active, created_at, updated_at) "
+        "VALUES (1, 'CMR Chain Client AG', 'cmr@test.com', 1, ?, ?)",
+        (now, now),
+    )
+    db.conn.commit()
+    # Seed truck and driver if IDs provided in extra (or default)
+    if extra.get("truck_id"):
+        db.conn.execute(
+            "INSERT OR IGNORE INTO trucks (id, plate_number, manufacturer, model, year, status) "
+            "VALUES (?, ?, ?, ?, ?, 'active')",
+            (extra["truck_id"], "TR-CMR-001", "MAN", "TGX", 2023),
+        )
+        db.conn.commit()
+    if extra.get("driver_id"):
+        db.conn.execute(
+            "INSERT OR IGNORE INTO drivers (id, name, license_number, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, 1, ?, ?)",
+            (extra["driver_id"], "CMR Driver", "LIC-CMR-001", now, now),
+        )
+        db.conn.commit()
     data = {
         "client_name": "CMR Chain Client AG",
+        "client_id": 1,
         "truck_number": "TR-CMR-001",
         "driver_name": "CMR Driver",
         "start_date": _dt(0),
@@ -96,6 +119,12 @@ class TestEventBusCMRChain:
     def test_cmr_generation_creates_4_document_copies(self, db):
         """Mock CMRGenerator.generate_all_copies, call AutoCMRGenerator.generate(),
         verify 4 document records in DB."""
+        # Seed a company so FK documents.company_id -> companies.id is satisfied
+        db.conn.execute(
+            "INSERT OR IGNORE INTO companies (id, company_name, is_active, created_at, updated_at) "
+            "VALUES (1, 'Test Company', 1, datetime('now'), datetime('now'))"
+        )
+        db.conn.commit()
         trip_id = _create_minimal_trip(db, status="Loading", driver_id=1, truck_id=1)
         alert_mgr = AlertManager(db)
         prefs = MagicMock()

@@ -24,7 +24,6 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from repositories.automail_repository import AutoMailRepository
 from services.automail.history_service import HistoryService
 from services.automail.reminder_service import ReminderService
 from services.automail.template_service import TemplateService
@@ -254,7 +253,14 @@ class _InvoiceTimelineCard(QFrame):
 
         try:
             template_service = TemplateService(self._db)
-            repo = self._automail_repo if self._automail_repo is not None else AutoMailRepository(self._db)
+            if self._automail_repo is not None:
+                repo = self._automail_repo
+            elif self._db is not None:
+                from repositories.automail_repository import AutoMailRepository
+                repo = AutoMailRepository(self._db)
+            else:
+                logger.warning("AutoMailRepository requires local database - not available in remote mode")
+                repo = None
             schedules = repo.get_active_schedules()
             if not schedules:
                 return
@@ -319,8 +325,16 @@ class _InvoiceTimelineCard(QFrame):
 
     def _log_manual_send(self, invoice_id: int, trip_id: int, recipient: str) -> None:
         try:
-            repo = self._automail_repo if self._automail_repo is not None else AutoMailRepository(self._db)
-            repo.log_manual_send(invoice_id, trip_id, recipient)
+            if self._automail_repo is not None:
+                repo = self._automail_repo
+            elif self._db is not None:
+                from repositories.automail_repository import AutoMailRepository
+                repo = AutoMailRepository(self._db)
+            else:
+                logger.warning("AutoMailRepository requires local database - not available in remote mode")
+                repo = None
+            if repo is not None:
+                repo.log_manual_send(invoice_id, trip_id, recipient)
         except Exception as exc:
             logger.error("Failed to log manual send: %s", exc)
 

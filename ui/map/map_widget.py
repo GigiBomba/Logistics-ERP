@@ -72,6 +72,7 @@ class MapWidget(QWebEngineView):
         self._bridge = MapBridge(self)
         self._on_click_callbacks: list[Callable[[float, float], None]] = []
         self._pending_js: list[str] = []
+        self._load_finished_connected = False
 
         channel = QWebChannel(self)
         self.page().setWebChannel(channel)
@@ -120,11 +121,10 @@ class MapWidget(QWebEngineView):
 
         self.setHtml(inner_html, QUrl("about:blank"))
         self._map_ready = False
-        try:
+        if self._load_finished_connected:
             self.loadFinished.disconnect(self._on_load_finished)
-        except (TypeError, RuntimeError):
-            pass
         self.loadFinished.connect(self._on_load_finished)
+        self._load_finished_connected = True
 
     def _on_load_finished(self, ok: bool) -> None:
         if ok:
