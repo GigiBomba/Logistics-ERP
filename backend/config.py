@@ -45,6 +45,11 @@ class BackendSettings(BaseSettings):
     admin_email: str = ""
     admin_password_hash: str = ""
 
+    # ── PostHog analytics ─────────────────────────────────────────────────
+    posthog_project_token: str = ""
+    posthog_host: str = "https://eu.i.posthog.com"
+    posthog_disabled: bool = False
+
     model_config = SettingsConfigDict(
         env_prefix="OPERION_",
         env_file=".env",

@@ -58,6 +58,9 @@ Babel>=2.18.0
 # --- AI / Copilot ---
 google-genai>=1.47.0
 
+# --- Analytics ---
+posthog>=7.0.0
+
 # --- Monitoring ---
 prometheus-client>=0.20.0
 

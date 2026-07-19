@@ -148,6 +148,17 @@ def join_waitlist(
         data.company_name, email, data.source, referral_code,
     )
 
+    from backend.posthog_client import get_posthog
+    _ph = get_posthog()
+    if _ph:
+        _ph.capture("waitlist_joined", distinct_id=email, properties={
+            "$set": {"fleet_size": data.fleet_size, "company_size": data.company_size},
+            "fleet_size": data.fleet_size,
+            "company_size": data.company_size,
+            "country": data.country,
+            "source": data.source,
+        })
+
     # ── TODO Phase 3: Enqueue Welcome email (async, not blocking) ──────
     # Email 1 trigger goes here once EmailProvider is built.
 

@@ -1,5 +1,6 @@
 import logging
 import os
+from contextlib import asynccontextmanager
 from typing import Optional
 
 # Load .env before any config is read
@@ -36,12 +37,23 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
     env_mode = os.environ.get("OPERION_ENV", "development")
     is_production = env_mode == "production"
 
+    @asynccontextmanager
+    async def lifespan(app: FastAPI):
+        from backend.posthog_client import get_posthog, init_posthog
+        if not settings.posthog_disabled and settings.posthog_project_token:
+            init_posthog(settings.posthog_project_token, settings.posthog_host)
+        yield
+        client = get_posthog()
+        if client:
+            client.flush()
+
     app = FastAPI(
         title="Operion ERP API",
         version="1.0.0",
         docs_url="/docs" if not is_production else None,
         redoc_url="/redoc" if not is_production else None,
         openapi_url="/openapi.json" if not is_production else None,
+        lifespan=lifespan,
     )
 
     allowed_origins = os.environ.get(
@@ -109,6 +121,11 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
 
         logger.error("Unhandled error [%s]: %s %s — %s",
                      get_correlation_id(), request.method, request.url.path, exc, exc_info=True)
+
+        from backend.posthog_client import get_posthog
+        _ph = get_posthog()
+        if _ph and status >= 500:
+            _ph.capture_exception(exc)
 
         return JSONResponse(status_code=status, content=problem.to_dict())
 
