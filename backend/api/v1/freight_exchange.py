@@ -272,6 +272,16 @@ async def search_loads(
         provider_ids=body.provider_ids,
     )
 
+    from backend.posthog_client import get_posthog
+    _ph = get_posthog()
+    if _ph:
+        _ph.capture("freight_search_performed", distinct_id=current_user.get("email", ""), properties={
+            "company_id": company_id,
+            "result_count": len(result_set.results),
+            "providers_queried": result_set.total_providers_queried,
+            "loading_country": body.loading_country,
+            "delivery_country": body.delivery_country,
+        })
     return {
         "results": [r.model_dump(mode="json") for r in result_set.results],
         "providers_queried": result_set.total_providers_queried,

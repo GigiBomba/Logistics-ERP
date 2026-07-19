@@ -49,6 +49,13 @@ def export_batch_csv(
         items = [item.model_dump() for item in data.items]
         csv_content = service.build_batch_csv_from_request(items)
         filename = (data.batch_name or "payment_batch").replace(" ", "_")
+        from backend.posthog_client import get_posthog
+        _ph = get_posthog()
+        if _ph:
+            _ph.capture("payment_batch_exported", distinct_id=current_user.get("email", ""), properties={
+                "company_id": current_user.get("company_id", 0),
+                "item_count": len(data.items),
+            })
         return StreamingResponse(
             iter([csv_content]),
             media_type="text/csv",

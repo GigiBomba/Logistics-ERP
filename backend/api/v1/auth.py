@@ -348,6 +348,10 @@ async def login_for_access_token(
 
             _clear_lockout(email)
             logger.info("Admin login successful for %s from %s", email, client_ip)
+            from backend.posthog_client import get_posthog
+            _ph = get_posthog()
+            if _ph:
+                _ph.capture("user_logged_in", distinct_id=email, properties={"role": "admin", "login_method": "password"})
             return _issue_tokens(email, "admin", response, device_id)
         # No admin hash configured — fall through to database check below
 
@@ -403,6 +407,14 @@ async def login_for_access_token(
 
         _clear_lockout(email)
         logger.info("Login successful for %s from %s", email, client_ip)
+        from backend.posthog_client import get_posthog
+        _ph = get_posthog()
+        if _ph:
+            _ph.capture("user_logged_in", distinct_id=user["email"], properties={
+                "$set": {"role": user.get("role", "dispatcher")},
+                "role": user.get("role", "dispatcher"),
+                "login_method": "password",
+            })
         return _issue_tokens(user["email"], user.get("role", "dispatcher"), response, device_id)
 
     raise HTTPException(
@@ -509,8 +521,17 @@ def logout(request: Request, response: Response, body: LogoutRequest) -> Dict[st
     2. The request body ``{"refresh_token": "..."}`` (desktop client, fallback)
     """
     refresh_token: str = request.cookies.get("refresh_token", "") or body.refresh_token
+    _logout_email: Optional[str] = None
     if refresh_token:
-        _delete_refresh(_hash_token(refresh_token))
+        _token_hash = _hash_token(refresh_token)
+        _logout_payload = _get_refresh(_token_hash)
+        if _logout_payload:
+            _logout_email = _logout_payload.get("email")
+        _delete_refresh(_token_hash)
+    from backend.posthog_client import get_posthog
+    _ph = get_posthog()
+    if _ph and _logout_email:
+        _ph.capture("user_logged_out", distinct_id=_logout_email)
     # Clear the cookie regardless
     response.delete_cookie(
         key="refresh_token",

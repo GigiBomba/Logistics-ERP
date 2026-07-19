@@ -58,6 +58,13 @@ def create_driver(
 ):
     company_id = current_user.get("company_id", 0)
     driver_id = repo.create(data.model_dump(), company_id=company_id)
+    from backend.posthog_client import get_posthog
+    _ph = get_posthog()
+    if _ph:
+        _ph.capture("driver_created", distinct_id=current_user.get("email", ""), properties={
+            "company_id": company_id,
+            "driver_id": driver_id,
+        })
     return {"id": driver_id}
 
 

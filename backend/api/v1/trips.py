@@ -66,6 +66,13 @@ def create_trip(
 ):
     company_id = current_user.get("company_id", 0)
     trip_id = service.add(data.model_dump(exclude_unset=True), company_id=company_id)
+    from backend.posthog_client import get_posthog
+    _ph = get_posthog()
+    if _ph:
+        _ph.capture("trip_created", distinct_id=current_user.get("email", ""), properties={
+            "company_id": company_id,
+            "trip_id": trip_id,
+        })
     return {"id": trip_id}
 
 
@@ -79,6 +86,15 @@ def update_trip_partial(
     """Partially update a trip (PATCH)."""
     company_id = current_user.get("company_id", 0)
     service.update(trip_id, data.model_dump(exclude_unset=True), company_id=company_id)
+    from backend.posthog_client import get_posthog
+    _ph = get_posthog()
+    if _ph:
+        _fields = [k for k, v in data.model_dump(exclude_unset=True).items() if v is not None]
+        _ph.capture("trip_updated", distinct_id=current_user.get("email", ""), properties={
+            "company_id": company_id,
+            "trip_id": trip_id,
+            "fields_updated": _fields,
+        })
     return {"status": "updated"}
 
 
