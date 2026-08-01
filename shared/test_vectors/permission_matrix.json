@@ -1,0 +1,622 @@
+[
+  {
+    "role": "admin",
+    "permission": "can_cancel_dispatch",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_cancel_invoice",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_client",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_dispatch",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_driver",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_invoice",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_proforma",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_receipt",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_trip",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_create_vehicle",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_delete_client",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_delete_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_delete_driver",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_delete_trip",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_delete_vehicle",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_email_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_export_data",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_finalize_invoice",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_generate_cmr",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_generate_payments",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_merge_clients",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_schedule_maintenance",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_send_email",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_update_client",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_update_driver",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_update_proforma",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_update_receipt",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_update_trip",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_update_vehicle",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_upload_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_view_analytics",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_cancel_dispatch",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_cancel_invoice",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_client",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_dispatch",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_driver",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_invoice",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_proforma",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_receipt",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_trip",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_create_vehicle",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_delete_client",
+    "expected_allowed": false
+  },
+  {
+    "role": "manager",
+    "permission": "can_delete_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_delete_driver",
+    "expected_allowed": false
+  },
+  {
+    "role": "manager",
+    "permission": "can_delete_trip",
+    "expected_allowed": false
+  },
+  {
+    "role": "manager",
+    "permission": "can_delete_vehicle",
+    "expected_allowed": false
+  },
+  {
+    "role": "manager",
+    "permission": "can_email_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_export_data",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_finalize_invoice",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_generate_cmr",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_generate_payments",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_merge_clients",
+    "expected_allowed": false
+  },
+  {
+    "role": "manager",
+    "permission": "can_schedule_maintenance",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_send_email",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_update_client",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_update_driver",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_update_proforma",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_update_receipt",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_update_trip",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_update_vehicle",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_upload_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_view_analytics",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_cancel_dispatch",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_cancel_invoice",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_client",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_dispatch",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_driver",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_invoice",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_proforma",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_receipt",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_trip",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_create_vehicle",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_delete_client",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_delete_document",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_delete_driver",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_delete_trip",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_delete_vehicle",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_email_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_export_data",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_finalize_invoice",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_generate_cmr",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_generate_payments",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_merge_clients",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_schedule_maintenance",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_send_email",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_update_client",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_update_driver",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_update_proforma",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_update_receipt",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_update_trip",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_update_vehicle",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_upload_document",
+    "expected_allowed": true
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_view_analytics",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_cancel_dispatch",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_cancel_invoice",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_client",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_dispatch",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_driver",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_invoice",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_proforma",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_receipt",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_trip",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_create_vehicle",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_delete_client",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_delete_document",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_delete_driver",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_delete_trip",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_delete_vehicle",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_email_document",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_export_data",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_finalize_invoice",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_generate_cmr",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_generate_payments",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_merge_clients",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_schedule_maintenance",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_send_email",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_update_client",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_update_driver",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_update_proforma",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_update_receipt",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_update_trip",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_update_vehicle",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_upload_document",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_view_analytics",
+    "expected_allowed": false
+  }
+]
