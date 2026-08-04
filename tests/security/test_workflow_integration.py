@@ -298,15 +298,13 @@ class TestMultipleTripsClientDashboard:
 class TestExportEndpoints:
     """Verify that trip export endpoints return the expected file types."""
 
-    @pytest.mark.skip(reason="Pre-existing bug in export_service.py (TypeError on NoneType); not a security regression")
     def test_trip_export_pdf(self, client: TestClient, auth_admin):
-        """GET /api/v1/trips/1/export/pdf as admin — verify endpoint is accessible (known bug in PDF generation)."""
+        """GET /api/v1/trips/1/export/pdf as admin — verify endpoint returns a PDF."""
         resp = client.get("/api/v1/trips/1/export/pdf", headers=auth_admin)
-        assert resp.status_code in (200, 500), (
+        assert resp.status_code == 200, (
             f"PDF export failed: {resp.status_code} - {resp.text[:200]}"
         )
 
-    @pytest.mark.skip(reason="Pre-existing bug in export_service.py (TypeError on NoneType); not a security regression")
     def test_trip_export_xlsx(self, client: TestClient, auth_admin):
         """GET /api/v1/trips/1/export/xlsx as admin — expect 200."""
         resp = client.get("/api/v1/trips/1/export/xlsx", headers=auth_admin)

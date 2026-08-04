@@ -83,7 +83,7 @@ jobs:
           if [ -n "${{ matrix.shard }}" ] && [ -n "${{ matrix.shard-count }}" ]; then
             SHARD_ARGS="--splits ${{ matrix.shard-count }} --group ${{ matrix.shard }}"
           fi
-          coverage run -m pytest -v --tb=short -n auto $SHARD_ARGS
+          coverage run --parallel-mode -m pytest -v --tb=short -n auto $SHARD_ARGS
         env:
           OPERION_DB_ENGINE: postgresql
           OPERION_TEST_POSTGRES_DSN: postgresql://operion:operion_test@localhost:5432/operion_test
@@ -98,7 +98,7 @@ jobs:
       - name: Run tests (Windows/macOS, skip DB-dependent)
         if: runner.os != 'Linux'
         run: |
-          coverage run -m pytest -v --tb=short -n auto -k "not integration and not e2e"
+          coverage run --parallel-mode -m pytest -v --tb=short -n auto -k "not integration and not e2e"
         env:
           OPERION_DB_ENGINE: sqlite
           OPERION_DB_PATH: data/test_ci.db
@@ -111,6 +111,7 @@ jobs:
 
       - name: Generate coverage report
         run: |
+          coverage combine
           coverage report
           coverage json -o coverage.json
           coverage lcov -o coverage.lcov

@@ -38,7 +38,14 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_SUBTLE,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    SP,
+)
 from ui.widgets import ActionButton, StyledLineEdit
 
 logger = logging.getLogger(__name__)
@@ -128,10 +135,10 @@ class _CanvasWidget(QWidget):
         painter.setRenderHint(QPainter.Antialiasing)
 
         # Background
-        bg_color = QColor(COLORS["bg_input"])
+        bg_color = QColor(COLOR_BG_OVERLAY)
         painter.fillRect(self.rect(), bg_color)
 
-        pen_color = QColor(COLORS["text_primary"])
+        pen_color = QColor(COLOR_TEXT_PRIMARY)
         pen = QPen(pen_color, 2, Qt.SolidLine, Qt.RoundCap, Qt.RoundJoin)
         painter.setPen(pen)
 
@@ -190,20 +197,20 @@ class QtSignaturePad(QWidget):
     def _build(self) -> None:
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["1"])
+        layout.setSpacing(SP["1"])
 
         # Optional label
         if self._label_text:
             lbl = QLabel(self._label_text)
             lbl.setProperty("fontRole", "small")
-            lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+            lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             layout.addWidget(lbl)
 
         # ── Toggle row (Draw / Upload / Clear + status) ──────────────────
         toggle_row = QWidget()
         toggle_layout = QHBoxLayout(toggle_row)
         toggle_layout.setContentsMargins(0, 0, 0, 0)
-        toggle_layout.setSpacing(S["1"])
+        toggle_layout.setSpacing(SP["1"])
 
         self._draw_btn = ActionButton(
             toggle_row, "Draw",
@@ -233,7 +240,7 @@ class QtSignaturePad(QWidget):
 
         self._status_lbl = QLabel(t("signature.no_signature", default="No signature"))
         self._status_lbl.setProperty("fontRole", "small")
-        self._status_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        self._status_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         toggle_layout.addWidget(self._status_lbl)
 
         layout.addWidget(toggle_row)
@@ -244,7 +251,7 @@ class QtSignaturePad(QWidget):
         self._canvas_frame.setFrameShape(QFrame.StyledPanel)
         self._canvas_frame.setFixedSize(PAD_WIDTH + 2, PAD_HEIGHT + 2)
         self._canvas_frame.setStyleSheet(
-            f"background-color: {COLORS['border']};"
+            f"background-color: {COLOR_BORDER_SUBTLE};"
         )
 
         canvas_layout = QHBoxLayout(self._canvas_frame)
@@ -260,7 +267,7 @@ class QtSignaturePad(QWidget):
         self._upload_frame = QWidget()
         upload_layout = QHBoxLayout(self._upload_frame)
         upload_layout.setContentsMargins(0, 0, 0, 0)
-        upload_layout.setSpacing(S["1"])
+        upload_layout.setSpacing(SP["1"])
 
         self._browse_btn = ActionButton(
             self._upload_frame, "Browse Image...",
@@ -315,7 +322,7 @@ class QtSignaturePad(QWidget):
         self._canvas_frame.setVisible(False)
         self._upload_frame.setVisible(False)
         self._status_lbl.setText(t("signature.no_signature", default="No signature"))
-        self._status_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        self._status_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
 
     # ── Render to PNG ─────────────────────────────────────────────────────────
 
@@ -360,13 +367,13 @@ class QtSignaturePad(QWidget):
                 png_data = self._render_to_png()
                 self._saved_path = self._save_temp_png(png_data)
                 self._status_lbl.setText(t("signature.accepted", default="Signature accepted"))
-                self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
+                self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
         elif self._mode == "upload":
             path = self._upload_path_edit.text()
             if path and os.path.isfile(path):
                 self._saved_path = path
                 self._status_lbl.setText(t("signature.label_selected", default="Selected: {}").format(os.path.basename(path)))
-                self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
+                self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
         self._mode = "signed"
 
     # ── Upload mode ───────────────────────────────────────────────────────────
@@ -383,7 +390,7 @@ class QtSignaturePad(QWidget):
             self._saved_path = path
             self._mode = "upload"
             self._status_lbl.setText(t("signature.label_selected", default="Selected: {}").format(os.path.basename(path)))
-            self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
+            self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
 
     # ── Public API ────────────────────────────────────────────────────────────
 
@@ -400,7 +407,7 @@ class QtSignaturePad(QWidget):
             self._saved_path = path
             self._upload_path_edit.setText(os.path.basename(path))
             self._status_lbl.setText(t("signature.label_loaded", default="Loaded: {}").format(os.path.basename(path)))
-            self._status_lbl.setStyleSheet(f"color: {COLORS['text_success']};")
+            self._status_lbl.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
 
     def cleanup(self) -> None:
         """Release any Pillow resources held by this widget.
@@ -412,5 +419,5 @@ class QtSignaturePad(QWidget):
         self._canvas.clear_strokes()
         self._saved_path = None
         self._status_lbl.setText(t("signature.cleaned_up", default="Cleaned up"))
-        self._status_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        self._status_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         logger.debug("QtSignaturePad resources released")

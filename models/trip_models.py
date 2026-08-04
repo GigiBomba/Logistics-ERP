@@ -23,6 +23,7 @@ class TripCreate(BaseModel):
     reference: str = ""
     start_date: date
     end_date: Optional[date] = None
+    promised_date: Optional[date] = None
     price_eur: float = 0.0
     currency: str = "EUR"
     distance_km: Optional[float] = None
@@ -71,6 +72,7 @@ class TripUpdate(BaseModel):
     reference: Optional[str] = None
     start_date: Optional[date] = None
     end_date: Optional[date] = None
+    promised_date: Optional[date] = None
     price_eur: Optional[float] = None
     currency: Optional[str] = None
     distance_km: Optional[float] = None
@@ -80,6 +82,9 @@ class TripUpdate(BaseModel):
     source: Optional[str] = None
     source_provider_id: Optional[str] = None
     source_reference_id: Optional[str] = None
+    truck_plate: Optional[str] = None
+    driver_name: Optional[str] = None
+    client_name: Optional[str] = None
 
 
 class TripResult(BaseModel):

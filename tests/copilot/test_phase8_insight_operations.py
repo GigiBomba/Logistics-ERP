@@ -8,6 +8,15 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def _clear_tenant_context():
+    """Insight jobs call set_company_context; reset it after each test so it
+    cannot leak into unrelated tests in the same process."""
+    from database.tenant_context import clear_context
+    yield
+    clear_context()
+
+
 class TestInsightJobContract:
     """All 6 insight jobs must be importable and have correct signatures."""
 
@@ -157,14 +166,20 @@ class TestInsightJobInvocation:
         from backend.celery_app.tasks.insight_tasks import overdue_invoice_job
 
         mock_db = MagicMock()
-        # Simulate one overdue invoice
+        # Simulate one overdue invoice (company 42)
         mock_db.conn.execute.return_value.fetchall.return_value = [
             (1, 42, "Test Client")
         ]
 
-        with patch(
-            "backend.db.DatabaseManager",
-            return_value=mock_db,
+        with (
+            patch(
+                "backend.db.DatabaseManager",
+                return_value=mock_db,
+            ),
+            patch(
+                "repositories.company_repository.CompanyRepository.get_active_ids",
+                return_value=[42],
+            ),
         ):
             result = overdue_invoice_job()
             assert result["insights_created"] == 1, (
@@ -180,6 +195,9 @@ class TestInsightJobInvocation:
         assert "status = 'sent'" in source or 'status = "sent"' in source, (
             "Job must filter by status = 'sent'"
         )
+        assert "company_id = ?" in source, (
+            "Job must scope the invoices query by company_id (tenant isolation)"
+        )
 
     def test_return_load_matcher_job_creates_insights(self):
         """return_load_matcher_job creates insight for cross-country trips."""
@@ -190,9 +208,15 @@ class TestInsightJobInvocation:
             (100, 42, "Poland", "Germany"),
         ]
 
-        with patch(
-            "backend.db.DatabaseManager",
-            return_value=mock_db,
+        with (
+            patch(
+                "backend.db.DatabaseManager",
+                return_value=mock_db,
+            ),
+            patch(
+                "repositories.company_repository.CompanyRepository.get_active_ids",
+                return_value=[42],
+            ),
         ):
             result = return_load_matcher_job()
             assert result["insights_created"] == 1, (
@@ -208,9 +232,15 @@ class TestInsightJobInvocation:
             (100, 42, "Germany", "Germany"),
         ]
 
-        with patch(
-            "backend.db.DatabaseManager",
-            return_value=mock_db,
+        with (
+            patch(
+                "backend.db.DatabaseManager",
+                return_value=mock_db,
+            ),
+            patch(
+                "repositories.company_repository.CompanyRepository.get_active_ids",
+                return_value=[42],
+            ),
         ):
             result = return_load_matcher_job()
             assert result["insights_created"] == 0, (
@@ -226,9 +256,15 @@ class TestInsightJobInvocation:
             (100, 42, None, "Germany"),
         ]
 
-        with patch(
-            "backend.db.DatabaseManager",
-            return_value=mock_db,
+        with (
+            patch(
+                "backend.db.DatabaseManager",
+                return_value=mock_db,
+            ),
+            patch(
+                "repositories.company_repository.CompanyRepository.get_active_ids",
+                return_value=[42],
+            ),
         ):
             result = return_load_matcher_job()
             assert result["insights_created"] == 0, (

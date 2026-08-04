@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from client.api_client import ApiClient
 from services.i18n import t
 from ui.components import Btn
-from ui.theme import S
+from ui.design_tokens import SP
 from ui.widgets import SectionHeader
 
 logger = logging.getLogger(__name__)
@@ -39,8 +39,8 @@ class _StatusCard(QFrame):
         super().__init__(parent)
         self.setProperty("role", "card")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
-        layout.setSpacing(S["1"])
+        layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
+        layout.setSpacing(SP["1"])
 
         self._title = QLabel(title, self)
         self._title.setProperty("fontRole", "label")
@@ -92,14 +92,14 @@ class QtApiDashboardView(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         header = SectionHeader(self, t("api.dashboard_title", default="API Dashboard"))
         layout.addWidget(header)
 
         self._status_grid = QGridLayout()
-        self._status_grid.setSpacing(S["3"])
+        self._status_grid.setSpacing(SP["3"])
         layout.addLayout(self._status_grid)
 
         actions_row = QHBoxLayout()

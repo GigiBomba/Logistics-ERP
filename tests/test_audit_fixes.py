@@ -407,7 +407,8 @@ class TestCostEngineEstimate(unittest.TestCase):
 
     def test_route_details_road_class_overrides(self):
         truck = {"fuel_consumption_l_per_100km": 30.0}
-        result = self.engine.estimate(100.0, truck, route_details={"road_class": 1.0})
+        # "motorway" has ROAD_CLASS_FACTOR of 1.0
+        result = self.engine.estimate(100.0, truck, route_details={"road_class": "motorway"})
         # toll = 100 * 0.22 * 1.0 * 1.0 = 22.0
         self.assertAlmostEqual(result["toll_cost"], 22.0)
 

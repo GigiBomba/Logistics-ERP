@@ -13,7 +13,9 @@ import pytest
 
 @pytest.fixture
 def db():
-    return InMemoryDB()
+    imdb = InMemoryDB()
+    _ensure_payment_profiles_table(imdb)
+    return imdb
 
 
 @pytest.fixture
@@ -24,27 +26,8 @@ def repo(db) -> PaymentProfileRepository:
 # ── helpers ──────────────────────────────────────────────────────────
 
 
-def _profile(db: InMemoryDB, **kw) -> int:
-    now = datetime.utcnow().isoformat()
-    d: Dict[str, Any] = dict(
-        profile_name="Test Supplier Ltd",
-        recipient_type="supplier",
-        bank_name="Test Bank",
-        bank_account="1234567890",
-        bank_code="BARC12345",
-        bank_bic="BARCGB22",
-        iban="GB29NWBK60161331926819",
-        payment_reference="INV-001",
-        contact_name="John Contact",
-        contact_email="john@supplier.com",
-        contact_phone="+44012345678",
-        notes="Test notes",
-        is_active=1,
-        created_at=now,
-        updated_at=now,
-    )
-    d.update(kw)
-    # Schema: payment_profiles might not be created by InMemoryDB yet, so we create it manually
+def _ensure_payment_profiles_table(db: InMemoryDB):
+    """Create payment_profiles table if it doesn't exist in the schema."""
     db.conn.execute("""
         CREATE TABLE IF NOT EXISTS payment_profiles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -67,6 +50,29 @@ def _profile(db: InMemoryDB, **kw) -> int:
             company_id INTEGER
         )
     """)
+    db.conn.commit()
+
+
+def _profile(db: InMemoryDB, **kw) -> int:
+    now = datetime.utcnow().isoformat()
+    d: Dict[str, Any] = dict(
+        profile_name="Test Supplier Ltd",
+        recipient_type="supplier",
+        bank_name="Test Bank",
+        bank_account="1234567890",
+        bank_code="BARC12345",
+        bank_bic="BARCGB22",
+        iban="GB29NWBK60161331926819",
+        payment_reference="INV-001",
+        contact_name="John Contact",
+        contact_email="john@supplier.com",
+        contact_phone="+44012345678",
+        notes="Test notes",
+        is_active=1,
+        created_at=now,
+        updated_at=now,
+    )
+    d.update(kw)
     cols = ", ".join(d.keys())
     vals = ", ".join("?" for _ in d)
     db.conn.execute(f"INSERT INTO payment_profiles ({cols}) VALUES ({vals})", list(d.values()))

@@ -99,7 +99,10 @@ def test_add_truck_deprecated(service):
 def test_update_truck_deprecated(service):
     with pytest.warns(DeprecationWarning):
         service.update_truck(1, {"plate_number": "CD-456"})
-    service._fleet_repo.update.assert_called_with(1, {"plate_number": "CD-456"})
+    # update_truck forwards the tenant-scoped company_id (defaults to None).
+    service._fleet_repo.update.assert_called_with(
+        1, {"plate_number": "CD-456"}, company_id=None
+    )
     service._event_bus.publish.assert_called_with(
         TRUCK_UPDATED, {"truck_id": 1, "changes": {"plate_number": "CD-456"}}
     )
@@ -108,7 +111,8 @@ def test_update_truck_deprecated(service):
 def test_delete_truck_deprecated(service):
     with pytest.warns(DeprecationWarning):
         service.delete_truck(1)
-    service._fleet_repo.delete.assert_called_with(1)
+    # delete_truck forwards the tenant-scoped company_id (defaults to None).
+    service._fleet_repo.delete.assert_called_with(1, company_id=None)
     service._event_bus.publish.assert_called_with(TRUCK_DELETED, {"truck_id": 1})
 
 

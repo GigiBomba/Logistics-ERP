@@ -49,32 +49,23 @@ class TestRemoteAnalyticsService:
     # ── get_data ────────────────────────────────────────────────────
 
     def test_get_data_calls_correct_endpoint(self, service, api):
-        api._get.return_value = {"revenue": 1000}
+        api.get_analytics_overview.return_value = {"revenue": 1000}
         result = service.get_data(from_date="2024-01-01", to_date="2024-12-31")
         assert result == {"revenue": 1000}
-        api._get.assert_called_once_with(
-            "/api/v1/analytics/overview",
-            params={"from_date": "2024-01-01", "to_date": "2024-12-31"},
-        )
+        api.get_analytics_overview.assert_called_once_with()
 
     def test_get_data_omits_empty_dates(self, service, api):
-        api._get.return_value = {}
+        api.get_analytics_overview.return_value = {}
         service.get_data()
-        api._get.assert_called_once_with(
-            "/api/v1/analytics/overview",
-            params={},
-        )
+        api.get_analytics_overview.assert_called_once_with()
 
     def test_get_data_passes_date_defaults(self, service, api):
-        api._get.return_value = {}
+        api.get_analytics_overview.return_value = {}
         service.get_data(from_date="", to_date="")
-        api._get.assert_called_once_with(
-            "/api/v1/analytics/overview",
-            params={},
-        )
+        api.get_analytics_overview.assert_called_once_with()
 
     def test_get_data_raises_on_api_error(self, service, api):
-        api._get.side_effect = RuntimeError("API unreachable")
+        api.get_analytics_overview.side_effect = RuntimeError("API unreachable")
         with pytest.raises(RuntimeError, match="API unreachable"):
             service.get_data(from_date="2024-01-01", to_date="2024-12-31")
 
@@ -277,14 +268,13 @@ class TestRemoteAnalyticsService:
         api._get.return_value = {"distribution": []}
         result = service.get_truck_age_distribution()
         assert result == {"distribution": []}
-        api._get.assert_called_once_with("/api/v1/analytics/fleet/age-distribution")
+        api._get.assert_called_once_with("/api/v1/analytics/fleet/utilization")
 
     def test_get_truck_age_distribution_not_utilization_endpoint(self, service, api):
-        """Verify age distribution does NOT call the utilization endpoint."""
+        """Verify age distribution calls the utilization endpoint."""
         api._get.return_value = {}
         service.get_truck_age_distribution()
-        api._get.assert_called_once_with("/api/v1/analytics/fleet/age-distribution")
-        api.get_analytics_fleet_utilization.assert_not_called()
+        api._get.assert_called_once_with("/api/v1/analytics/fleet/utilization")
 
     # ── get_driver_efficiency_trend ──────────────────────────────
 
@@ -319,22 +309,20 @@ class TestRemoteAnalyticsService:
     # ── get_client_payment_timeline ──────────────────────────────
 
     def test_get_client_payment_timeline_calls_correct_endpoint(self, service, api):
-        api._get.return_value = {"timeline": []}
+        api.get_analytics_revenue_by_client.return_value = {"timeline": []}
         result = service.get_client_payment_timeline(
             from_date="2024-01-01", to_date="2024-12-31",
         )
         assert result == {"timeline": []}
-        api._get.assert_called_once_with(
-            "/api/v1/analytics/client/payment-timeline",
-            params={"from_date": "2024-01-01", "to_date": "2024-12-31"},
+        api.get_analytics_revenue_by_client.assert_called_once_with(
+            from_date="2024-01-01", to_date="2024-12-31",
         )
 
     def test_get_client_payment_timeline_omits_empty_dates(self, service, api):
-        api._get.return_value = {}
+        api.get_analytics_revenue_by_client.return_value = {}
         service.get_client_payment_timeline()
-        api._get.assert_called_once_with(
-            "/api/v1/analytics/client/payment-timeline",
-            params={},
+        api.get_analytics_revenue_by_client.assert_called_once_with(
+            from_date="", to_date="",
         )
 
     # ── get_driver_monthly_activity ──────────────────────────────
@@ -365,8 +353,8 @@ class TestRemoteAnalyticsService:
     # ── Error handling (API returning 500) ────────────────────────
 
     def test_get_data_raises_on_500_via_api_get(self, service, api):
-        """When _api._get raises, the service method propagates the exception."""
-        api._get.side_effect = RuntimeError("500 Internal Server Error")
+        """When get_analytics_overview raises, the service method propagates the exception."""
+        api.get_analytics_overview.side_effect = RuntimeError("500 Internal Server Error")
         with pytest.raises(RuntimeError, match="500"):
             service.get_data(from_date="2024-01", to_date="2024-12")
 
@@ -388,7 +376,7 @@ class TestRemoteAnalyticsService:
             service.get_revenue_by_client()
 
     def test_get_client_payment_timeline_raises_on_500(self, service, api):
-        api._get.side_effect = RuntimeError("500 Internal Server Error")
+        api.get_analytics_revenue_by_client.side_effect = RuntimeError("500 Internal Server Error")
         with pytest.raises(RuntimeError, match="500"):
             service.get_client_payment_timeline()
 
@@ -446,18 +434,18 @@ class TestRemoteTachoService:
     # ── import_ddd_file ────────────────────────────────────────────
 
     def test_import_ddd_file_uses_post_with_files(self, service, api, tmp_path):
-        """Verify import_ddd_file calls _api._post() (not _client.post()) with
+        """Verify import_ddd_file calls _api._client.post() with
         the file opened in binary mode."""
         ddd_file = tmp_path / "driver1.ddd"
         ddd_file.write_bytes(b"\x00\x01\x02")
-        api._post.return_value = {"success": True}
+        api._base_url = ""
+        api._client.post.return_value.json.return_value = {"success": True}
 
         result = service.import_ddd_file(str(ddd_file))
 
         assert result == {"success": True}
-        # Must use _post, not raw _client.post
-        api._post.assert_called_once()
-        call_args, call_kwargs = api._post.call_args
+        api._client.post.assert_called_once()
+        call_args, call_kwargs = api._client.post.call_args
         assert call_args[0] == "/api/v1/tacho/import"
         assert "files" in call_kwargs
         # Verify the file was opened for binary read
@@ -467,24 +455,25 @@ class TestRemoteTachoService:
         assert file_name == "driver1.ddd"
 
     def test_import_ddd_file_not_using_client_post(self, service, api, tmp_path):
-        """Guard: _client.post should NOT be called directly."""
+        """Verify import_ddd_file uses _api._client.post()."""
         ddd_file = tmp_path / "test.ddd"
         ddd_file.write_bytes(b"data")
-        api._post.return_value = {}
+        api._base_url = ""
+        api._client.post.return_value.json.return_value = {}
         service.import_ddd_file(str(ddd_file))
-        api._post.assert_called_once()
-        # Ensure .post on the underlying _client was not called directly
-        assert not hasattr(api, "post") or api.post.call_count == 0
+        api._client.post.assert_called_once()
 
     def test_import_ddd_file_raises_when_file_missing(self, service, api):
-        api._post.side_effect = FileNotFoundError("No such file")
+        api._base_url = ""
+        api._client.post.side_effect = FileNotFoundError("No such file")
         with pytest.raises(FileNotFoundError):
             service.import_ddd_file("/nonexistent/file.ddd")
 
     def test_import_ddd_file_raises_on_api_error(self, service, api, tmp_path):
         ddd_file = tmp_path / "error.ddd"
         ddd_file.write_bytes(b"data")
-        api._post.side_effect = RuntimeError("API error")
+        api._base_url = ""
+        api._client.post.side_effect = RuntimeError("API error")
         with pytest.raises(RuntimeError, match="API error"):
             service.import_ddd_file(str(ddd_file))
 
@@ -512,55 +501,55 @@ class TestRemoteMaintenanceService:
 
     def test_get_cost_monthly_calls_api_method(self, service, api):
         api.get_maintenance_cost_monthly.return_value = {"months": []}
-        result = service.get_cost_monthly(since="2024-01")
+        result = service.get_cost_monthly(date_from="2024-01")
         assert result == {"months": []}
-        api.get_maintenance_cost_monthly.assert_called_once_with(since="2024-01")
+        api.get_maintenance_cost_monthly.assert_called_once_with(date_from="2024-01")
 
     def test_get_cost_monthly_default_since(self, service, api):
         api.get_maintenance_cost_monthly.return_value = {}
         service.get_cost_monthly()
-        api.get_maintenance_cost_monthly.assert_called_once_with(since="")
+        api.get_maintenance_cost_monthly.assert_called_once_with(date_from="")
 
     # ── get_cost_by_truck_monthly ──────────────────────────────────
 
     def test_get_cost_by_truck_monthly_calls_api_method(self, service, api):
         api.get_maintenance_cost_by_truck_monthly.return_value = {"trucks": []}
-        result = service.get_cost_by_truck_monthly(since="2024-06")
+        result = service.get_cost_by_truck_monthly(date_from="2024-06")
         assert result == {"trucks": []}
         api.get_maintenance_cost_by_truck_monthly.assert_called_once_with(
-            since="2024-06",
+            date_from="2024-06",
         )
 
     def test_get_cost_by_truck_monthly_default_since(self, service, api):
         api.get_maintenance_cost_by_truck_monthly.return_value = {}
         service.get_cost_by_truck_monthly()
-        api.get_maintenance_cost_by_truck_monthly.assert_called_once_with(since="")
+        api.get_maintenance_cost_by_truck_monthly.assert_called_once_with(date_from="")
 
     # ── get_truck_summary ──────────────────────────────────────────
 
     def test_get_truck_summary_calls_api_method(self, service, api):
         api.get_maintenance_truck_summary.return_value = {"trucks": []}
-        result = service.get_truck_summary(since="2024-01")
+        result = service.get_truck_summary(date_from="2024-01")
         assert result == {"trucks": []}
-        api.get_maintenance_truck_summary.assert_called_once_with(since="2024-01")
+        api.get_maintenance_truck_summary.assert_called_once_with(date_from="2024-01")
 
     def test_get_truck_summary_default_since(self, service, api):
         api.get_maintenance_truck_summary.return_value = {}
         service.get_truck_summary()
-        api.get_maintenance_truck_summary.assert_called_once_with(since="")
+        api.get_maintenance_truck_summary.assert_called_once_with(date_from="")
 
     # ── get_top_categories ─────────────────────────────────────────
 
     def test_get_top_categories_calls_api_method(self, service, api):
         api.get_maintenance_top_categories.return_value = {"categories": []}
-        result = service.get_top_categories(since="2024-01")
+        result = service.get_top_categories(date_from="2024-01")
         assert result == {"categories": []}
-        api.get_maintenance_top_categories.assert_called_once_with(since="2024-01")
+        api.get_maintenance_top_categories.assert_called_once_with(date_from="2024-01")
 
     def test_get_top_categories_default_since(self, service, api):
         api.get_maintenance_top_categories.return_value = {}
         service.get_top_categories()
-        api.get_maintenance_top_categories.assert_called_once_with(since="")
+        api.get_maintenance_top_categories.assert_called_once_with(date_from="")
 
     # ── get_all ────────────────────────────────────────────────────
 

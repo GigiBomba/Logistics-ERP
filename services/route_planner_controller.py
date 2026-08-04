@@ -181,8 +181,11 @@ class RoutePlannerController:
 
     def estimate_cost(self, truck: Any, distance_km: float) -> dict[str, Any]:
         try:
-            payload = self._truck_cost_payload(truck)
-            return self.cost_engine.estimate(distance_km, payload)
+            from models.cost_models import CostEstimateRequest
+            result = self.cost_engine.estimate(CostEstimateRequest(distance_km=distance_km))
+            if result.success and result.data:
+                return result.data.model_dump()
+            return {}
         except (ValueError, TypeError, RuntimeError):
             logger.warning("Cost estimation failed for truck %s at %.0f km", truck, distance_km, exc_info=True)
             return {}

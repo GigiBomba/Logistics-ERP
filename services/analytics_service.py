@@ -1,4 +1,5 @@
 """Comprehensive analytics service — fleet, financial, client, route, driver, document."""
+from __future__ import annotations
 
 import logging
 import threading
@@ -299,6 +300,18 @@ class AnalyticsService:
             return result
         except (ValueError, RuntimeError, TypeError) as e:
             logger.error("Analytics get_maintenance_alerts failed — %s", e, exc_info=True)
+            raise
+
+    def get_otd_percentage(self, company_id=None, date_from=None, date_to=None, from_date=None, to_date=None):
+        from_date = date_from if date_from is not None else from_date
+        to_date = date_to if date_to is not None else to_date
+        logger.info("Analytics get_otd_percentage: from_date=%s, to_date=%s", from_date, to_date)
+        try:
+            result = self._cached("otd_pct", self._repo.get_otd_percentage, from_date, to_date)
+            logger.info("Analytics get_otd_percentage returned %s", result)
+            return result
+        except (ValueError, RuntimeError, TypeError) as e:
+            logger.error("Analytics get_otd_percentage failed: from_date=%s, to_date=%s — %s", from_date, to_date, e, exc_info=True)
             raise
 
     # ── Driver ────────────────────────────────────────────────────

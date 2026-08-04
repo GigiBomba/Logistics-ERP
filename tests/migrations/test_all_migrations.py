@@ -152,6 +152,22 @@ ALL_REVISIONS: list[dict] = [
             "idx_trans_eu_freight_offers_freight_id",
         ],
     },
+    {
+        "id": "f7b8c9d0e1f8",
+        "down": ("a9b0c1d2e3f4", "a9b0c1d2e3f5"),
+        "doc": "Financial precision — migrate monetary columns to NUMERIC",
+        "creates_tables": [],
+        "adds_columns": {},
+        "indexes": [],
+    },
+    {
+        "id": "g8c9d0e1f2f0",
+        "down": "f7b8c9d0e1f8",
+        "doc": "Datetime integrity — convert TEXT timestamps to TIMESTAMPTZ",
+        "creates_tables": [],
+        "adds_columns": {},
+        "indexes": [],
+    },
 ]
 
 # Base tables that must exist before running migrations (referenced by FK / ADD COLUMN)
@@ -440,8 +456,8 @@ class TestUpgradeAll:
             version = result.scalar()
         engine.dispose()
         assert version is not None, "alembic_version is empty"
-        # The heads are a9b0c1d2e3f4 and a9b0c1d2e3f5; only one is stored
-        assert version in ("a9b0c1d2e3f4", "a9b0c1d2e3f5"), (
+        # The sole head is g8c9d0e1f2f0
+        assert version == "g8c9d0e1f2f0", (
             f"Unexpected alembic_version: {version}"
         )
 
@@ -610,7 +626,10 @@ class TestPerMigrationDowngrade:
             )
 
         # Downgrade one step (to parent revision or base)
-        command.downgrade(alembic_config, rev_info["down"] or "base")
+        target = rev_info["down"] or "base"
+        if isinstance(target, tuple):
+            target = target[0]  # merge revision: use first parent
+        command.downgrade(alembic_config, target)
 
         # ── Verify tables were removed ───────────────────────────────
         tables_after = _tables(db_url)
@@ -847,10 +866,17 @@ class TestRevisionChain:
         rev_map = {r["id"]: r for r in ALL_REVISIONS}
         for rev in ALL_REVISIONS:
             if rev["down"] is not None:
-                assert rev["down"] in rev_map, (
-                    f"Revision {rev['id']} has down_revision "
-                    f"{rev['down']} which is not in the migration set"
-                )
+                down = rev["down"]
+                if isinstance(down, tuple):
+                    assert all(d in rev_map for d in down), (
+                        f"Revision {rev['id']} has down_revision "
+                        f"{down} where not all parents are in the migration set"
+                    )
+                else:
+                    assert down in rev_map, (
+                        f"Revision {rev['id']} has down_revision "
+                        f"{down} which is not in the migration set"
+                    )
 
     def test_revision_ids_are_unique(self) -> None:
         ids = [r["id"] for r in ALL_REVISIONS]
@@ -862,7 +888,7 @@ class TestRevisionChain:
 
         script = ScriptDirectory(ALEMBIC_DIR)
         heads = set(script.get_heads())
-        expected_heads = {"a9b0c1d2e3f4", "a9b0c1d2e3f5"}
+        expected_heads = {"g8c9d0e1f2f0"}
         assert heads == expected_heads, (
             f"Expected heads {expected_heads}, got {heads}"
         )

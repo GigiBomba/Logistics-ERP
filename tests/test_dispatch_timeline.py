@@ -16,10 +16,10 @@ class TestQtDispatchTimeline:
         trips = [
             {"id": 1, "client": "Test Co", "start_date": "2026-01-01", "truck": "AG01ABC"},
         ]
-        timeline.set_trips(trips)
+        timeline.refresh(trips)
 
     def test_clear(self, qt_widget, qtbot):
         from ui.widgets.dispatch_timeline import QtDispatchTimeline
         timeline = QtDispatchTimeline(qt_widget)
         qtbot.addWidget(timeline)
-        timeline.clear()
+        timeline.refresh([])

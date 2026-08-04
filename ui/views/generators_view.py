@@ -16,33 +16,60 @@ from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import (
+    QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
     QMessageBox,
+    QProgressBar,
+    QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QTabWidget,
     QVBoxLayout,
     QWidget,
 )
 
+import qtawesome as qta
+
 from models.cmr_models import CmrGenerateRequest
 from services.client_service import ClientService
 from services.fleet_service import FleetService
 from services.i18n import register_listener, t, unregister_listener
+from ui.performance_timer import PerfTimer
+from ui.worker_pool import WorkerPool
 from services.route_service import RouteService
 from services.trip_service import TripService
 from ui.components import (
     Btn,
     Card,
     Divider,
+    EmptyState,
     FieldLabel,
     Label,
     PageTitle,
     SectionTitle,
 )
-from ui.design_tokens import SP
-from ui.theme import COLORS
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_BG_ELEVATED,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_SUBTLE,
+    COLOR_ERROR_TEXT,
+    COLOR_INFO_DEFAULT,
+    COLOR_INFO_SUBTLE,
+    COLOR_SUCCESS_SUBTLE,
+    COLOR_SUCCESS_TEXT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY,
+    FONT_MONO,
+    FONT_SIZE_LG,
+    FONT_SIZE_SM,
+    SP,
+)
+
 from ui.views.cmr_form_view import QtCmrFormView
 from ui.views.invoice_editor import QtInvoiceEditor
 from ui.views.receipt_editor import QtReceiptEditor
@@ -54,10 +81,10 @@ from ui.widgets import (
 logger = logging.getLogger(__name__)
 
 _COPY_META = {
-    "Sender":        {"color": COLORS["text_danger"],  "bg": COLORS["danger_dim"],  "icon": "\U0001F4E4"},
-    "Consignee":     {"color": COLORS["info"],         "bg": COLORS["info_dim"],     "icon": "\U0001F4E5"},
-    "Carrier":       {"color": COLORS["text_success"], "bg": COLORS["success_dim"],  "icon": "\U0001F69B"},
-    "Administrative": {"color": COLORS["text_secondary"], "bg": COLORS["bg_elevated"], "icon": "\U0001F4C1"},
+    "Sender":        {"color": COLOR_ERROR_TEXT,     "bg": COLOR_ERROR_SUBTLE,   "icon": "\U0001F4E4"},
+    "Consignee":     {"color": COLOR_INFO_DEFAULT,   "bg": COLOR_INFO_SUBTLE,    "icon": "\U0001F4E5"},
+    "Carrier":       {"color": COLOR_SUCCESS_TEXT,   "bg": COLOR_SUCCESS_SUBTLE, "icon": "\U0001F69B"},
+    "Administrative": {"color": COLOR_TEXT_SECONDARY, "bg": COLOR_BG_OVERLAY,    "icon": "\U0001F4C1"},
 }
 
 _COPY_ACCENT_COLORS = {
@@ -112,7 +139,6 @@ class QtGeneratorsView(QWidget):
 
         # ── State ───────────────────────────────────────────────────────
         self._trips_list: list[dict[str, Any]] = []
-        self._trip_map: dict[str, Any] = {}
         self._cmr_last_paths: dict[str, str] = {}
         self._cmr_filled_trip_id: int | None = None
 
@@ -174,12 +200,34 @@ class QtGeneratorsView(QWidget):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Document generators")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
         self._build_header(layout)
-        self._build_tab_content(layout)
+
+        # Stacked widget: page 0 = empty state, page 1 = tab content
+        self._content_stack = QStackedWidget()
+
+        self._empty_state = EmptyState(
+            self,
+            icon_name="fa5s.file-alt",
+            title=t("generators.empty_title", default="Select a trip to generate documents"),
+            subtitle=t("generators.empty_desc", default="Choose a trip from the selector above or create a new trip first."),
+        )
+        self._empty_state.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._content_stack.addWidget(self._empty_state)
+
+        self._tab_content_widget = QWidget()
+        self._tab_content_layout = QVBoxLayout(self._tab_content_widget)
+        self._tab_content_layout.setContentsMargins(0, 0, 0, 0)
+        self._tab_content_layout.setSpacing(0)
+        self._content_stack.addWidget(self._tab_content_widget)
+
+        self._build_tab_content(self._tab_content_layout)
+
+        layout.addWidget(self._content_stack, 1)
         self._refresh_trip_lists()
 
     # ── Header row (title + trip selector) ──────────────────────────────
@@ -247,34 +295,30 @@ class QtGeneratorsView(QWidget):
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
         parent_layout.addWidget(self._tab_widget, 1)
 
-        # Invoice tab
+        # Invoice tab — empty page; content built lazily on first access
         self._invoice_tab = QWidget()
         invoice_layout = QVBoxLayout(self._invoice_tab)
         invoice_layout.setContentsMargins(0, 0, 0, 0)
-        self._build_invoice_tab(invoice_layout)
         self._tab_widget.addTab(self._invoice_tab, "")
 
-        # CMR tab
+        # CMR tab — empty page
         self._cmr_tab = QWidget()
         cmr_layout = QVBoxLayout(self._cmr_tab)
         cmr_layout.setContentsMargins(0, 0, 0, 0)
         cmr_layout.setSpacing(0)
-        self._build_cmr_tab(cmr_layout)
         self._tab_widget.addTab(self._cmr_tab, "")
 
-        # Receipt tab
+        # Receipt tab — empty page
         self._receipt_tab = QWidget()
         receipt_layout = QVBoxLayout(self._receipt_tab)
         receipt_layout.setContentsMargins(0, 0, 0, 0)
-        self._build_receipt_tab(receipt_layout)
         self._tab_widget.addTab(self._receipt_tab, "")
 
-        # Proforma tab
+        # Proforma tab — empty page
         self._proforma_tab = QWidget()
         proforma_layout = QVBoxLayout(self._proforma_tab)
         proforma_layout.setContentsMargins(0, 0, 0, 0)
         proforma_layout.setSpacing(0)
-        self._build_proforma_tab(proforma_layout)
         self._tab_widget.addTab(self._proforma_tab, "")
 
         # Set tab text after construction so refresh_translations can
@@ -371,6 +415,37 @@ class QtGeneratorsView(QWidget):
         card.layout().addWidget(title_lbl)
         self._i18n_sections["generators.cmr_actions_title"] = title_lbl
         card.layout().addWidget(Divider(card))
+
+        # ── Progress bar (hidden by default) ──────────────────────────
+        self._cmr_progress_bar = QProgressBar()
+        self._cmr_progress_bar.setRange(0, 0)  # indeterminate
+        self._cmr_progress_bar.setFixedHeight(4)
+        self._cmr_progress_bar.setTextVisible(False)
+        self._cmr_progress_bar.setVisible(False)
+        self._cmr_progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {COLOR_BORDER_SUBTLE};
+                border: none;
+                border-radius: 2px;
+            }}
+            QProgressBar::chunk {{
+                background: {COLOR_ACCENT_PRIMARY};
+                border-radius: 2px;
+            }}
+        """)
+        card.layout().addWidget(self._cmr_progress_bar)
+
+        # ── Preview button ────────────────────────────────────────────
+        btn_preview = Btn(
+            card,
+            t("cmr.preview", "Preview"),
+            command=self._preview_cmr,
+            variant="secondary",
+            icon_name="fa5s.eye",
+        )
+        btn_preview.setFixedHeight(38)
+        card.layout().addWidget(btn_preview)
+        self._i18n_buttons.append((btn_preview, "cmr.preview"))
 
         btn_single = Btn(
             card,
@@ -503,8 +578,8 @@ class QtGeneratorsView(QWidget):
     @staticmethod
     def _copy_meta(suffix: str) -> dict[str, Any]:
         return _COPY_META.get(suffix, {
-            "color": COLORS["text_secondary"],
-            "bg": COLORS["bg_surface"],
+            "color": COLOR_TEXT_SECONDARY,
+            "bg": COLOR_BG_ELEVATED,
             "icon": "\U0001F4C4",
         })
 
@@ -531,29 +606,32 @@ class QtGeneratorsView(QWidget):
                 self._proforma_tab, db=self.db, prefs=self.prefs,
             )
             layout.addWidget(self._proforma_editor, 1)
-            self._proforma_built = False
         except Exception:
             logger.exception("Failed to construct QtProformaEditor")
 
     # ── Tab switching ──────────────────────────────────────────────────
 
     def _on_tab_changed(self, index: int) -> None:
-        """Lazy initialisation when a tab is first shown."""
+        """Lazy init: build tab content on first access, then wakeup."""
         if index == 0 and not self._invoice_built:
             self._invoice_built = True
+            self._build_invoice_tab(self._invoice_tab.layout())
             if self._full_invoice_editor:
                 self._full_invoice_editor.wakeup()
             self._refresh_trip_lists()
         elif index == 1 and not self._cmr_built:
             self._cmr_built = True
+            self._build_cmr_tab(self._cmr_tab.layout())
             self._refresh_trip_lists()
         elif index == 2 and not self._receipt_built:
             self._receipt_built = True
+            self._build_receipt_tab(self._receipt_tab.layout())
             if self._receipt_editor:
                 self._receipt_editor.wakeup()
             self._refresh_trip_lists()
         elif index == 3 and not self._proforma_built:
             self._proforma_built = True
+            self._build_proforma_tab(self._proforma_tab.layout())
             if hasattr(self, "_proforma_editor") and self._proforma_editor:
                 self._proforma_editor.wakeup()
             self._refresh_trip_lists()
@@ -562,43 +640,56 @@ class QtGeneratorsView(QWidget):
     #  Trip handling
     # ──────────────────────────────────────────────────────────────────────────
 
+    def _format_trip_label(self, trip: dict[str, Any]) -> str:
+        """Build a display label for a trip."""
+        return t("invoice.trip_list_format").format(
+            id=trip["id"],
+            truck_number=trip.get("truck_number", ""),
+            client_name=trip.get("client_name", ""),
+            created_at=trip.get("created_at", "")[:10] if trip.get("created_at") else "",
+        )
+
     def _refresh_trip_lists(self) -> None:
-        """Fetch trips from the database and populate the trip combo."""
-        try:
-            trips = self._trip_svc.get_all()
-            self._trips_list = trips
-            self._trip_map = {}
-            labels: list[str] = []
-            for trip in trips:
-                label = t("invoice.trip_list_format").format(
-                    id=trip["id"],
-                    truck_number=trip.get("truck_number", ""),
-                    client_name=trip.get("client_name", ""),
-                    created_at=trip.get("created_at", "")[:10] if trip.get("created_at") else "",
-                )
-                self._trip_map[label] = trip["id"]
-                labels.append(label)
+        """Fetch trips from the database and populate the trip combo in-place."""
+        with PerfTimer("generators.refresh_trip_lists"):
+            WorkerPool.run(
+                fn=self._trip_svc.get_all,
+                on_result=self._on_trips_loaded,
+                on_error=self._on_trips_error,
+            )
 
-            current_text = self._trip_combo.currentText()
+    def _on_trips_loaded(self, trips: list[dict[str, Any]]) -> None:
+        self._trips_list = trips
+
+        # Toggle empty state vs tab content
+        if not trips:
+            self._content_stack.setCurrentIndex(0)
             self._trip_combo.clear()
-            self._trip_combo.addItems(labels)
-
-            if labels:
-                if current_text in labels:
-                    self._trip_combo.setCurrentText(current_text)
-                else:
-                    self._trip_combo.setCurrentIndex(0)
-                    self._on_global_trip_selected(labels[0])
-            else:
-                self._trip_combo.setCurrentText("")
-
-        except Exception as e:
-            logger.warning("Could not refresh trip lists: %s", e)
-
-    def _on_global_trip_selected(self, choice: str) -> None:
-        if not choice or choice not in self._trip_map:
             return
-        trip_id = self._trip_map[choice]
+        else:
+            self._content_stack.setCurrentIndex(1)
+
+        # Build lookup of current combo items and new items keyed by trip id
+        current = {self._trip_combo.itemData(i): i for i in range(self._trip_combo.count())}
+        new = {trip["id"]: self._format_trip_label(trip) for trip in trips}
+
+        # Remove combo items whose trip was deleted
+        for vid in list(current.keys()):
+            if vid not in new:
+                self._trip_combo.removeItem(current[vid])
+
+        # Add combo items for new trips
+        for vid, label in new.items():
+            if vid not in current:
+                self._trip_combo.addItem(label, vid)
+
+    def _on_trips_error(self, msg: str) -> None:
+        logger.warning("Could not refresh trip lists: %s", msg)
+
+    def _on_global_trip_selected(self, choice: str = "") -> None:
+        trip_id = self._trip_combo.currentData()
+        if trip_id is None:
+            return
         trip = self._trip_svc.get_by_id(trip_id)
         if not trip:
             return
@@ -710,10 +801,9 @@ class QtGeneratorsView(QWidget):
 
     def _collect_cmr_data(self) -> dict[str, Any] | None:
         """Collect CMR form data from the embedded CMRFormView + language selections."""
-        sel = self._trip_combo.currentText()
-        if not sel or sel not in self._trip_map:
+        trip_id = self._trip_combo.currentData()
+        if trip_id is None:
             return None
-        trip_id = self._trip_map[sel]
         trip = self._trip_svc.get_by_id(trip_id)
         if not trip:
             return None
@@ -762,6 +852,7 @@ class QtGeneratorsView(QWidget):
                 t("generators.cmr_select_trip"),
             )
             return
+        self._cmr_progress_bar.setVisible(True)
         trip_id = trip_data["trip_id"]
         try:
             from services.invoicing.cmr_generator import CMRGenerator
@@ -786,6 +877,7 @@ class QtGeneratorsView(QWidget):
             filepath = result.data.file_path
 
         except Exception as e:
+            self._cmr_progress_bar.setVisible(False)
             QMessageBox.critical(
                 self,
                 t("generators.cmr_generate"),
@@ -816,7 +908,125 @@ class QtGeneratorsView(QWidget):
         self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
         self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
         self._update_copy_status(copy_suffix, filepath)
+        self._cmr_progress_bar.setVisible(False)
         logger.info("CMR generated for trip %d: %s", trip_id, filepath)
+
+    def _preview_cmr(self) -> None:
+        """Generate a single CMR and show in an in-app preview modal."""
+        if self._cmr_status_lbl is None:
+            return
+        trip_data = self._collect_cmr_data()
+        if trip_data is None:
+            QMessageBox.warning(
+                self,
+                t("generators.cmr_generate"),
+                t("generators.cmr_select_trip"),
+            )
+            return
+
+        self._cmr_progress_bar.setVisible(True)
+        trip_id = trip_data["trip_id"]
+        try:
+            from services.invoicing.cmr_generator import CMRGenerator
+            gen = CMRGenerator(db=self.db, prefs=self.prefs)
+
+            request = CmrGenerateRequest(
+                trip_id=trip_id,
+                language=trip_data.get("cmr_language", "ro"),
+                copies=1,
+                sender_name=trip_data.get("consignor_name", ""),
+                sender_address=trip_data.get("consignor_address", ""),
+                carrier_name=trip_data.get("carrier_name", ""),
+                carrier_license=trip_data.get("carrier_license", ""),
+                remarks=trip_data.get("carrier_instructions", ""),
+            )
+            result = gen.generate(request, user_id=0)
+            if not result.success:
+                err_msg = result.errors[0].message if result.errors else "Unknown error"
+                raise Exception(err_msg)
+            filepath = result.data.file_path
+        except Exception as e:
+            self._cmr_progress_bar.setVisible(False)
+            QMessageBox.critical(
+                self,
+                t("generators.cmr_generate"),
+                t("generators.cmr_error").format(error=str(e)),
+            )
+            return
+
+        self._cmr_progress_bar.setVisible(False)
+
+        # Show in-app preview modal
+        if filepath and os.path.isfile(filepath):
+            self._preview_modal(filepath)
+
+    def _preview_modal(self, filepath: str) -> None:
+        """Show a preview dialog for a generated document.
+
+        Falls back to a summary dialog with an Open button when PDF
+        rendering is not available.
+        """
+        dialog = QDialog(self)
+        dialog.setWindowTitle(t("cmr.preview", "Document Preview"))
+        dialog.setFixedSize(480, 280)
+        dialog.setModal(True)
+
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(SP["8"], SP["6"], SP["8"], SP["6"])
+        layout.setSpacing(SP["4"])
+        layout.setAlignment(Qt.AlignCenter)
+
+        # Icon
+        icon_lbl = QLabel()
+        pdf_icon = qta.icon("fa5s.file-pdf", color=COLOR_ACCENT_PRIMARY)
+        icon_lbl.setPixmap(pdf_icon.pixmap(64, 64))
+        icon_lbl.setAlignment(Qt.AlignCenter)
+        layout.addWidget(icon_lbl)
+
+        # Message
+        msg_lbl = QLabel(t("generators.cmr_generated", "Document generated successfully"))
+        msg_lbl.setAlignment(Qt.AlignCenter)
+        msg_lbl.setStyleSheet(
+            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_LG}px; font-weight: 600;"
+        )
+        layout.addWidget(msg_lbl)
+
+        # File path
+        path_lbl = QLabel(os.path.basename(filepath))
+        path_lbl.setAlignment(Qt.AlignCenter)
+        path_lbl.setStyleSheet(
+            f"color: {COLOR_TEXT_TERTIARY}; "
+            f"font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_SM}px;"
+        )
+        path_lbl.setWordWrap(True)
+        layout.addWidget(path_lbl)
+
+        layout.addStretch()
+
+        # Buttons
+        btn_layout = QHBoxLayout()
+        btn_layout.setSpacing(SP["3"])
+        btn_layout.addStretch()
+
+        close_btn = Btn(dialog, t("common.close", "Close"), variant="ghost", command=dialog.close)
+        close_btn.setFixedWidth(100)
+        btn_layout.addWidget(close_btn)
+
+        open_btn = Btn(
+            dialog,
+            t("generators.open_pdf", "Open in Viewer"),
+            variant="primary",
+            command=lambda: (
+                os.startfile(os.path.abspath(filepath)),
+                dialog.close(),
+            ),
+        )
+        open_btn.setFixedWidth(140)
+        btn_layout.addWidget(open_btn)
+
+        layout.addLayout(btn_layout)
+
+        dialog.exec()
 
     def _generate_all_copies(self) -> None:
         """Generate all CMR copies (Sender, Consignee, Carrier, Administrative).
@@ -838,6 +1048,7 @@ class QtGeneratorsView(QWidget):
             return
         trip_id = trip_data["trip_id"]
 
+        self._cmr_progress_bar.setVisible(True)
         self._cmr_status_lbl.setText(
             t("generators.cmr_status_generating")
         )
@@ -892,6 +1103,8 @@ class QtGeneratorsView(QWidget):
                         self._cmr_status_lbl.setProperty("role", "danger")
                         self._cmr_status_lbl.style().unpolish(self._cmr_status_lbl)
                         self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
+                    if hasattr(self, "_cmr_progress_bar"):
+                        self._cmr_progress_bar.setVisible(False)
                 QTimer.singleShot(0, _err)
                 logger.error("CMR generation failed: %s", err_msg)
                 return
@@ -932,6 +1145,8 @@ class QtGeneratorsView(QWidget):
                 self._cmr_status_lbl.style().polish(self._cmr_status_lbl)
                 for suffix, path in registered_paths.items():
                     self._update_copy_status(suffix, path)
+                if hasattr(self, "_cmr_progress_bar"):
+                    self._cmr_progress_bar.setVisible(False)
 
             QTimer.singleShot(0, _register)
 
@@ -1020,34 +1235,20 @@ class QtGeneratorsView(QWidget):
         """Rebuild trip combo display labels when the language changes."""
         if not self._trips_list:
             return
-        current_id = None
-        current_text = self._trip_combo.currentText()
-        if current_text in self._trip_map:
-            current_id = self._trip_map[current_text]
+        current_id = self._trip_combo.currentData()
 
-        self._trip_map.clear()
-        labels: list[str] = []
         for trip in self._trips_list:
-            label = t("invoice.trip_list_format").format(
-                id=trip["id"],
-                truck_number=trip.get("truck_number", ""),
-                client_name=trip.get("client_name", ""),
-                created_at=trip.get("created_at", "")[:10] if trip.get("created_at") else "",
-            )
-            self._trip_map[label] = trip["id"]
-            labels.append(label)
+            vid = trip["id"]
+            label = self._format_trip_label(trip)
+            idx = self._trip_combo.findData(vid)
+            if idx >= 0:
+                self._trip_combo.setItemText(idx, label)
 
-        self._trip_combo.clear()
-        self._trip_combo.addItems(labels)
-
-        # Restore selection
+        # Restore selection by id
         if current_id is not None:
-            for label, tid in self._trip_map.items():
-                if tid == current_id:
-                    self._trip_combo.setCurrentText(label)
-                    break
-        elif labels:
-            self._trip_combo.setCurrentIndex(0)
+            idx = self._trip_combo.findData(current_id)
+            if idx >= 0:
+                self._trip_combo.setCurrentIndex(idx)
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Lifecycle
@@ -1061,18 +1262,25 @@ class QtGeneratorsView(QWidget):
         self._refresh_trip_lists()
 
     def handle_nav_data(self, data: dict[str, Any]) -> None:
-        """Auto-select a trip from navigation data (e.g. alert click)."""
+        """Auto-select a trip from navigation data (e.g. alert click, quick document action).
+
+        Supported data keys:
+            ``trip_id`` (int) — pre-select this trip in the combo.
+            ``tab`` (int) — switch to this tab index (0=Invoice, 1=CMR, 2=Receipt, 3=Proforma).
+        """
         trip_id = data.get("trip_id")
-        if not trip_id:
-            return
-        # Ensure trip list is loaded
-        if not self._trips_list:
-            self._refresh_trip_lists()
-        # Find the label for this trip_id
-        for label, tid in self._trip_map.items():
-            if tid == int(trip_id):
-                QTimer.singleShot(100, lambda lab=label: self._trip_combo.setCurrentText(lab))
-                return
+        if trip_id:
+            # Ensure trip list is loaded
+            if not self._trips_list:
+                self._refresh_trip_lists()
+            # Find the item index for this trip_id
+            idx = self._trip_combo.findData(int(trip_id))
+            if idx >= 0:
+                QTimer.singleShot(100, lambda i=idx: self._trip_combo.setCurrentIndex(i))
+
+        tab_index = data.get("tab")
+        if tab_index is not None and isinstance(tab_index, int) and 0 <= tab_index < self._tab_widget.count():
+            QTimer.singleShot(150, lambda ti=tab_index: self._tab_widget.setCurrentIndex(ti))
 
     def shutdown(self) -> None:
         """Clean up resources when the view is destroyed / hidden."""

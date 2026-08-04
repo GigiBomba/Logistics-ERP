@@ -19,7 +19,7 @@ import logging
 from typing import Optional
 
 from client.auth import Auth
-from services.i18n import t
+from services.i18n import set_language, t
 
 logger = logging.getLogger(__name__)
 
@@ -139,6 +139,8 @@ def require_admin_async(parent: object = None) -> bool:
         dlg = QtLoginDialog(parent)  # type: ignore[arg-type]
         result = dlg.exec()
         if result == 1:  # QDialog.Accepted
+            # Reset language to English on each fresh login
+            set_language("en")
             return is_admin()
         return False
     except Exception as exc:
@@ -193,6 +195,8 @@ def require_auth_async(parent: object = None) -> bool:
                 logger.warning("Driver authenticated but is denied access to the app.")
                 _show_driver_denied(parent)
                 return False
+            # Reset language to English on each fresh login
+            set_language("en")
             return True
         return False
     except Exception as exc:

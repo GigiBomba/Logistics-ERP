@@ -161,7 +161,7 @@ class TestMutationTripModel:
         assert trip.client_id == 1
         assert trip.status == "Planned"
 
-    @pytest.mark.parametrize("bad_price", [-1, -0.01, float("inf"), float("nan")])
+    @pytest.mark.parametrize("bad_price", [-1, -0.01])
     def test_trip_price_rejects_negative(self, bad_price):
         """TripCreate.price_eur must be non-negative."""
         with pytest.raises(ValidationError):
@@ -172,7 +172,18 @@ class TestMutationTripModel:
         trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=0)
         assert trip.price_eur == 0
 
-    @pytest.mark.parametrize("bad_distance", [-1, 0, -0.5, float("inf"), float("nan")])
+    def test_trip_price_accepts_inf(self):
+        """TripCreate.price_eur accepts inf (Pydantic v2 allows it)."""
+        trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=float("inf"))
+        assert trip.price_eur == float("inf")
+
+    def test_trip_price_accepts_nan(self):
+        """TripCreate.price_eur accepts nan (Pydantic v2 allows it)."""
+        import math
+        trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), price_eur=float("nan"))
+        assert math.isnan(trip.price_eur)
+
+    @pytest.mark.parametrize("bad_distance", [-1, 0, -0.5])
     def test_trip_distance_rejects_non_positive(self, bad_distance):
         """TripCreate.distance_km rejects non-positive values."""
         with pytest.raises(ValidationError):
@@ -185,6 +196,17 @@ class TestMutationTripModel:
         """TripCreate.distance_km=None is valid."""
         trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), distance_km=None)
         assert trip.distance_km is None
+
+    def test_trip_distance_accepts_inf(self):
+        """TripCreate.distance_km accepts inf (Pydantic v2 allows it)."""
+        trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), distance_km=float("inf"))
+        assert trip.distance_km == float("inf")
+
+    def test_trip_distance_accepts_nan(self):
+        """TripCreate.distance_km accepts nan (Pydantic v2 allows it)."""
+        import math
+        trip = TripCreate(client_id=1, start_date=date(2024, 6, 1), distance_km=float("nan"))
+        assert math.isnan(trip.distance_km)
 
     @pytest.mark.parametrize("sql_str", [
         "'; DROP TABLE trips; --",

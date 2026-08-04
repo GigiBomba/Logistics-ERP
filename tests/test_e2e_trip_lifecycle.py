@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from models.trip_models import TripCreate
 from repositories.client_repository import ClientRepository
 from repositories.driver_repository import DriverRepository
 from repositories.driver_truck_assignment_repository import DriverTruckAssignmentRepository
@@ -21,7 +22,7 @@ from services.invoicing.cmr_generator import CMRGenerator
 from services.invoicing.service import InvoiceService
 from services.operations.trip_status_engine import TripStatusEngine
 from services.trip_service import TripService
-from tests.test_helpers import make_db
+from tests.test_helpers import make_db, seed_client
 
 pytestmark = pytest.mark.slow
 
@@ -30,6 +31,12 @@ pytestmark = pytest.mark.slow
 
 def _dt(days_offset: int = 0) -> str:
     return (datetime.now() + timedelta(days=days_offset)).strftime("%Y-%m-%d")
+
+
+def _create_trip(trip_svc, **kwargs):
+    """Create a trip via the typed API and return its ID."""
+    result = trip_svc.create(TripCreate(**kwargs))
+    return result.data.id
 
 
 # ── Fixtures ──────────────────────────────────────────────────────────────
@@ -166,35 +173,26 @@ class TestTripLifecycle:
         assert assignment["truck_id"] == truck_id
 
         # ── Step 5: Create a trip ────────────────────────────────────
-        trip_data = {
-            "client_name": "Acme Logistics GmbH",
-            "client_id": client_id,
-            "truck_number": "B-BC-1234",
-            "truck_id": truck_id,
-            "driver_name": "Jan Kowalski",
-            "driver_id": driver_id,
-            "start_date": _dt(1),
-            "end_date": _dt(3),
-            "distance_km": 850.0,
-            "total_price_eur": 3400.0,
-            "rate_per_km": 4.0,
-            "fuel_cost": 680.0,
-            "toll_cost": 120.0,
-            "salary_cost": 350.0,
-            "extra_costs": 50.0,
-            "net_profit": 2200.0,
-            "currency": "EUR",
-            "status": "Planned",
-            "loading_country": "DE",
-            "delivery_country": "PL",
-            "created_at": now,
-            "cargo_description": "Electronic components",
-            "package_count": 24,
-            "package_type": "Pallets",
-            "gross_weight_kg": 12000.0,
-            "volume_m3": 45.0,
-        }
-        trip_id = trip_service.add(trip_data)
+        trip_id = _create_trip(trip_service,
+            client_name="Acme Logistics GmbH",
+            client_id=client_id,
+            truck_plate="B-BC-1234",
+            truck_id=truck_id,
+            driver_name="Jan Kowalski",
+            driver_id=driver_id,
+            start_date=_dt(1),
+            end_date=_dt(3),
+            distance_km=850.0,
+            price_eur=3400.0,
+            rate_per_km=4.0,
+            fuel_cost=680.0,
+            toll_cost=120.0,
+            salary_cost=350.0,
+            extra_costs=50.0,
+            net_profit=2200.0,
+            currency="EUR",
+            status="Planned",
+        )
         assert trip_id > 0
         trip = trip_service.get_by_id(trip_id)
         assert trip is not None
@@ -335,11 +333,14 @@ class TestTripLifecycle:
     def test_trip_history_rejects_invalid_transition(self, db):
         """Creating a trip with an invalid transition should not record history."""
         now = datetime.now().isoformat()
-        trip_id = TripService(db).add({
-            "client_name": "Test Client",
-            "status": "Planned",
-            "created_at": now,
-        })
+        # TripCreate.client_id must reference an existing client
+        client_id = seed_client(db, name="Test Client")
+        trip_id = TripService(db).create(TripCreate(
+            client_id=client_id,
+            client_name="Test Client",
+            status="Planned",
+            start_date=datetime.now().date(),
+        )).data.id
         engine = TripStatusEngine(db)
         # Attempt invalid transition: Planned → Delivered (skip Loading and In Transit)
         with pytest.raises(ValueError, match="Cannot transition from Planned to Delivered"):
@@ -358,20 +359,31 @@ class TestTripLifecycle:
 
         old_date = (datetime.now() - timedelta(days=14)).strftime("%Y-%m-%d %H:%M:%S")
 
-        # Create a trip stuck in "pending" for 14 days
+        # Create a trip stuck in "Planned" for 14 days.
+        # NOTE: the delay detector in TripStatusEngine.evaluate_trip only
+        # alerts for statuses in ("Planned", "Loading"), so we use "Planned"
+        # (the legacy lowercase "pending" value was never alerted on).
         trip_service = TripService(db)
-        trip_id = trip_service.add({
-            "client_name": "Delayed Client",
-            "truck_number": "TR-001",
-            "status": "pending",
-            "created_at": old_date,
-        })
+        client_id = seed_client(db, name="Delayed Client")
+        trip_id = trip_service.create(TripCreate(
+            client_id=client_id,
+            client_name="Delayed Client",
+            truck_plate="TR-001",
+            status="Planned",
+            start_date=datetime.now().date(),
+        )).data.id
         assert trip_id > 0
+
+        # Backdate created_at so the trip looks 14 days old
+        db.conn.execute(
+            "UPDATE trips SET created_at = ? WHERE id = ?", (old_date, trip_id)
+        )
+        db.conn.commit()
 
         # Verify trip was stored correctly
         trip = trip_service.get_by_id(trip_id)
         assert trip is not None
-        assert trip["status"] == "pending"
+        assert trip["status"] == "Planned"
         assert trip["created_at"] == old_date
 
         engine = TripStatusEngine(db)

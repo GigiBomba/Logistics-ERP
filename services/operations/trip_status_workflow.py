@@ -7,6 +7,7 @@ Handles force_trip_status, get_valid_transitions, and truck odometer updates.
 import logging
 from typing import Any
 
+from models.trip_models import TripUpdate
 from services.operations.event_bus import (
     TRIP_STATUS_CHANGED,
     TRUCK_ODOMETER_UPDATED,
@@ -66,7 +67,7 @@ class TripStatusWorkflow:
                 )
                 return False
 
-            self._trip_service.update(trip_id, {"status": normalized_new})
+            self._trip_service.update(trip_id, TripUpdate(status=normalized_new))
 
             if normalized_new in ("Delivered", "Completed"):
                 self._update_truck_odometer_on_completion(trip)

@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from models.trip_models import TripUpdate
 from repositories.tacho_driver_activity_repository import TachoDriverActivityRepository
 from services.i18n import t
 from services.operations.alert_manager import AlertType, Severity
@@ -34,24 +35,48 @@ class BoardActionsMixin:
     """Mixin providing board actions: drag-drop, bulk ops, assignment, transitions."""
 
     # ══════════════════════════════════════════════════════════════════════════
-    # Detail panel
+    # Detail panel (side drawer)
     # ══════════════════════════════════════════════════════════════════════════
 
     def _on_card_click(self, trip_data: dict) -> None:
-        if self._detail_panel is not None:
-            with contextlib.suppress(Exception):
-                self._detail_panel.close()
-            self._detail_panel = None
-        from ui.dialogs.dispatch_detail_panel import QtDispatchDetailPanel
-        self._detail_panel = QtDispatchDetailPanel(
-            self, trip_data, self._db,
-            ops=self.ops,
-            on_close=self._on_detail_close,
-        )
-        self._detail_panel.show()
+        """Open the detail side drawer when a card is clicked."""
+        self._open_detail_drawer(trip_data)
 
     def _on_detail_close(self) -> None:
-        self._detail_panel = None
+        """Called when the detail drawer is dismissed."""
+        pass
+
+    def _on_status_change_card(self, card, target_status: str) -> None:
+        """Handle quick-action status change from a trip card."""
+        trip_id = card.trip_data.get("trip_id_num") or card.trip_data.get("trip_id")
+        if not trip_id:
+            return
+        try:
+            trip_id = int(trip_id)
+        except (ValueError, TypeError):
+            return
+
+        source_col = self._find_column_for_card(card)
+        if source_col is None:
+            return
+        source_status = source_col.status_key
+        target_col = self._columns.get(target_status)
+        if target_col is None:
+            return
+
+        self._handle_transition(
+            trip_id,
+            source_status,
+            target_status,
+            card,
+            source_col,
+            target_col,
+        )
+
+    def _on_navigate_to_generators(self, trip_id: int, tab_index: int) -> None:
+        """Navigate to the Generators view with the trip pre-selected and the correct tab active."""
+        if hasattr(self, "_on_navigate") and self._on_navigate is not None:
+            self._on_navigate("invoices", {"trip_id": trip_id, "tab": tab_index})
 
     # ══════════════════════════════════════════════════════════════════════════
     # Quick Assign (from Alerts panel)
@@ -193,7 +218,7 @@ class BoardActionsMixin:
             for card in list(self._selected_cards):
                 try:
                     trip_id = card.trip_data.get("trip_id_num")
-                    self._trip_service.update(trip_id, {"truck_number": plate, "truck_id": truck_id})
+                    self._trip_service.update(trip_id, TripUpdate(truck_plate=plate, truck_id=truck_id))
                     card.update_truck(plate, truck_id)
                     self._event_bus.publish(TRIP_ASSIGNED, {"trip_id": trip_id, "truck_id": truck_id})
                     ok_count += 1
@@ -218,7 +243,7 @@ class BoardActionsMixin:
             for card in list(self._selected_cards):
                 try:
                     trip_id = card.trip_data.get("trip_id_num")
-                    self._trip_service.update(trip_id, {"driver_id": driver_id, "driver_name": name})
+                    self._trip_service.update(trip_id, TripUpdate(driver_id=driver_id, driver_name=name))
                     card.update_driver(name, driver_id)
                     self._event_bus.publish(TRIP_ASSIGNED, {"trip_id": trip_id, "driver_id": driver_id})
                     ok_count += 1
@@ -425,8 +450,6 @@ class BoardActionsMixin:
 
         card_backup = dict(card.trip_data)
 
-        from ui.widgets.trip_card import QtTripCard
-
         new_card = QtTripCard(
             target_col,
             {**card_backup, "status": new_status},
@@ -436,6 +459,8 @@ class BoardActionsMixin:
             on_assign_driver=self._on_assign_driver,
             on_select_changed=self._on_card_select_changed,
             on_assign_both=self._on_assign_both,
+            on_status_change=self._on_status_change_card,
+            on_navigate_to_generators=self._on_navigate_to_generators,
         )
         target_col.add_card(new_card)
 
@@ -456,7 +481,7 @@ class BoardActionsMixin:
             else:
                 # Fallback: use TripService directly when no OperationsEngine.
                 # Previously this used TripStatusEngine.transition() directly.
-                self._trip_service.update(trip_id, {"status": new_status})
+                self._trip_service.update(trip_id, TripUpdate(status=new_status))
                 self._event_bus.publish(TRIP_STATUS_CHANGED, {
                     "trip_id": trip_id,
                     "old_status": old_status,
@@ -482,6 +507,8 @@ class BoardActionsMixin:
                 on_assign_driver=self._on_assign_driver,
                 on_select_changed=self._on_card_select_changed,
                 on_assign_both=self._on_assign_both,
+                on_status_change=self._on_status_change_card,
+                on_navigate_to_generators=self._on_navigate_to_generators,
             )
             if source_col:
                 source_col.add_card(restored)
@@ -982,7 +1009,7 @@ class BoardActionsMixin:
                 raise ValueError(t("dispatch_board.truck_not_found"))
             plate = truck.get("plate_number", "")
             trip_id = card.trip_data.get("trip_id_num")
-            self._trip_service.update(trip_id, {"truck_number": plate, "truck_id": truck_id})
+            self._trip_service.update(trip_id, TripUpdate(truck_plate=plate, truck_id=truck_id))
             card.update_truck(plate, truck_id)
             self._event_bus.publish(TRIP_ASSIGNED, {
                 "trip_id": trip_id,
@@ -1000,7 +1027,7 @@ class BoardActionsMixin:
                 raise ValueError(t("dispatch_board.driver_not_found"))
             name = driver.get("name", "")
             trip_id = card.trip_data.get("trip_id_num")
-            self._trip_service.update(trip_id, {"driver_id": driver_id, "driver_name": name})
+            self._trip_service.update(trip_id, TripUpdate(driver_id=driver_id, driver_name=name))
             card.update_driver(name, driver_id)
             self._event_bus.publish(TRIP_ASSIGNED, {
                 "trip_id": trip_id,
@@ -1014,7 +1041,7 @@ class BoardActionsMixin:
     def _clear_truck_assignment(self, card) -> None:
         try:
             trip_id = card.trip_data.get("trip_id_num")
-            self._trip_service.update(trip_id, {"truck_number": "", "truck_id": None})
+            self._trip_service.update(trip_id, TripUpdate(truck_plate="", truck_id=None))
             card.update_truck("", None)
             logger.info("Cleared truck assignment for trip %d", trip_id)
         except Exception as e:
@@ -1024,7 +1051,7 @@ class BoardActionsMixin:
     def _clear_driver_assignment(self, card) -> None:
         try:
             trip_id = card.trip_data.get("trip_id_num")
-            self._trip_service.update(trip_id, {"driver_id": None, "driver_name": ""})
+            self._trip_service.update(trip_id, TripUpdate(driver_id=None, driver_name=""))
             card.update_driver("", None)
             logger.info("Cleared driver assignment for trip %d", trip_id)
         except Exception as e:

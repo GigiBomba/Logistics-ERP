@@ -5,6 +5,7 @@ All tests use InMemoryDB with seeded data.
 
 from __future__ import annotations
 
+from database.tenant_context import clear_context, set_request_context
 from repositories.route_event_repository import RouteEventRepository
 from tests.test_helpers import InMemoryDB
 
@@ -19,6 +20,13 @@ def db():
 @pytest.fixture
 def repo(db) -> RouteEventRepository:
     return RouteEventRepository(db)
+
+
+@pytest.fixture(autouse=True)
+def _clean_tenant_context():
+    """Clear tenant context after each test so state does not leak."""
+    yield
+    clear_context()
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -114,7 +122,9 @@ class TestCreate:
 class TestDeleteOrphans:
     def test_delete_orphans_admin_removes_stale_refs(self, db, repo):
         """Events referencing a non-existent route_history_v2 row are removed."""
+        db.conn.execute("PRAGMA foreign_keys=OFF")
         _route_event(db, route_id=999, event_type="orphan")
+        db.conn.execute("PRAGMA foreign_keys=ON")
         count = repo.delete_orphans()
         assert count == 1
         remaining = db.conn.execute(
@@ -145,15 +155,17 @@ class TestDeleteOrphans:
         rh_id = _route_history(db)
 
         # Set scoped context
-        db.user_company_id = 10
-        db.user_role = "user"
+        set_request_context(company_id=10, role="user")
 
+        # Disable FK checks so orphan route_ids can be inserted
+        db.conn.execute("PRAGMA foreign_keys=OFF")
         # Event with company_id=10 (matches scope) and route_id=999 (orphan)
         _route_event(db, route_id=999, event_type="orphan-scoped", company_id=10)
         # Event with company_id=20 (different company) and route_id=999 (orphan)
         _route_event(db, route_id=999, event_type="orphan-other", company_id=20)
         # Event with company_id=10 and valid route_id (should be preserved)
         _route_event(db, route_id=rh_id, event_type="valid-scoped", company_id=10)
+        db.conn.execute("PRAGMA foreign_keys=ON")
 
         count = repo.delete_orphans()
         # Only the orphan event with company_id=10 should be deleted

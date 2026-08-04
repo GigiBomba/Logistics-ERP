@@ -3,15 +3,13 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 import pytest
 
+from ui.dialogs.share_route_dialog import ShareRouteDialog
+
 @pytest.fixture
 def share_route(qt_widget, qtbot):
-    route_data = {
-        "route_id": "abc123",
-        "share_url": "https://example.com/route/abc123",
-        "stops": [{"lat": 44.4, "lng": 26.1, "address": "Bucharest"}],
-    }
-    dlg = __import__("ui.dialogs.share_route_dialog", fromlist=["QtShareRouteDialog"]).QtShareRouteDialog(
-        parent=qt_widget, route_data=route_data,
+    dlg = ShareRouteDialog(
+        parent=qt_widget,
+        share_url="https://example.com/route/abc123",
     )
     qtbot.addWidget(dlg)
     yield dlg
@@ -19,20 +17,20 @@ def share_route(qt_widget, qtbot):
 
 class TestQtShareRouteDialog:
     def test_creation(self, share_route):
-        assert share_route._route_data is not None
+        assert share_route._share_url is not None
 
     def test_copy_link_button_exists(self, share_route):
-        assert hasattr(share_route, "_btn_copy_url")
+        assert hasattr(share_route, "_url_field")
 
     def test_export_button_exists(self, share_route):
-        assert hasattr(share_route, "_btn_export_file")
+        assert hasattr(share_route, "_on_export_file_cb")
 
     def test_google_maps_button_exists(self, share_route):
-        assert hasattr(share_route, "_btn_google_maps")
+        assert hasattr(share_route, "_on_open_in_gmaps_cb")
 
     def test_url_displayed(self, share_route):
-        assert hasattr(share_route, "_url_label")
-        assert len(share_route._url_label.text()) > 0
+        assert hasattr(share_route, "_url_field")
+        assert len(share_route._url_field.text()) > 0
 
     def test_dialog_is_modal(self, share_route):
         assert share_route.isModal()

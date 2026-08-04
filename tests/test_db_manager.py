@@ -295,19 +295,94 @@ class TestErrorHandling:
         assert "expenses" in tables
 
 
+class TestFailedWriteReleasesLock:
+    """Regression guard: a failed DML statement must NOT leak the WAL write lock.
+
+    Python's ``sqlite3`` (legacy isolation level) auto-issues ``BEGIN`` before
+    the first INSERT/UPDATE/DELETE.  If that statement raises (UNIQUE
+    constraint, ``database is locked``, …) the implicit transaction stays open
+    and — in WAL mode — the connection keeps the DB write lock indefinitely,
+    wedging every other connection's writes (see Gate-18 mobile RBAC hang:
+    ``POST /fleet`` with a duplicate plate leaked a lock that later blocked the
+    CMR / maintenance write paths for 30s each, escalating to a hard hang).
+    The repository/DatabaseManager write helpers must roll back the implicit
+    transaction so the lock is released.
+    """
+
+    def test_failed_insert_rolls_back_implicit_transaction(self, db_path):
+        from repositories import BaseRepository
+
+        db = DatabaseManager(db_path)
+        try:
+            # UNIQUE-plate table (mirrors trucks.plate_number UNIQUE).
+            db.conn.execute(
+                "CREATE TABLE guards (id INTEGER PRIMARY KEY, plate TEXT UNIQUE)"
+            )
+            db.conn.commit()
+
+            repo = BaseRepository(db)
+            repo._execute_insert(
+                "INSERT INTO guards (plate) VALUES ('RBAC-01')", commit=True
+            )
+            with pytest.raises(sqlite3.IntegrityError):
+                repo._execute_insert(
+                    "INSERT INTO guards (plate) VALUES ('RBAC-01')", commit=True
+                )
+
+            # The implicit transaction must have been rolled back — otherwise
+            # this connection would hold the WAL write lock indefinitely.
+            assert not db.conn.in_transaction
+
+            # A write on a SECOND connection must succeed immediately
+            # (no 30s busy-wait, no "database is locked").
+            other = DatabaseManager(db_path)
+            try:
+                other._pool.conn.execute("INSERT INTO guards (plate) VALUES ('OTHER-01')")
+                other._pool.conn.commit()
+            finally:
+                other.close()
+        finally:
+            db.close()
+
+    def test_failed_db_execute_rolls_back_implicit_transaction(self, db_path):
+        db = DatabaseManager(db_path)
+        try:
+            db.conn.execute(
+                "CREATE TABLE guards2 (id INTEGER PRIMARY KEY, plate TEXT UNIQUE)"
+            )
+            db.conn.commit()
+            db.execute("INSERT INTO guards2 (plate) VALUES ('RBAC-01')")
+            db.commit()
+            with pytest.raises(sqlite3.IntegrityError):
+                db.execute("INSERT INTO guards2 (plate) VALUES ('RBAC-01')")
+            assert not db.conn.in_transaction
+        finally:
+            db.close()
+
+
 # ── User / Company attributes ───────────────────────────────────────────────
 
 
 class TestUserCompany:
-    def test_default_attributes(self, db):
-        assert db.user_company_id is None
-        assert db.user_role == ""
+    """Tenant context is managed via the tenant_context module, not mutable
+    attributes on the shared DatabaseManager singleton (see
+    tests/test_hardening_coverage.py::TestDatabaseManagerCleanup)."""
 
-    def test_set_attributes(self, db):
-        db.user_company_id = 42
-        db.user_role = "admin"
-        assert db.user_company_id == 42
-        assert db.user_role == "admin"
+    def test_tenant_context_defaults(self):
+        from database.tenant_context import clear_context, get_company_id, get_user_role
+        clear_context()
+        assert get_company_id() is None
+        assert get_user_role() == ""
+
+    def test_tenant_context_set_and_clear(self):
+        from database.tenant_context import clear_context, get_company_id, get_user_role, set_request_context
+        clear_context()
+        set_request_context(company_id=42, role="admin")
+        assert get_company_id() == 42
+        assert get_user_role() == "admin"
+        clear_context()
+        assert get_company_id() is None
+        assert get_user_role() == ""
 
 
 # ── Unique lists helper ──────────────────────────────────────────────────────

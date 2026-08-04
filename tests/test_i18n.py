@@ -119,19 +119,19 @@ class TestLoadFile:
         assert result == {"count": "5", "ratio": "0.5"}
 
     def test_file_not_found_returns_empty(self):
-        """Missing file returns {}."""
+        """Missing file returns None."""
         with patch("os.path.isfile", return_value=False):
             result = i18n._load_file("nonexistent")
-        assert result == {}
+        assert result is None  # _load_file returns None, not {}
 
     def test_invalid_json_returns_empty(self):
-        """Invalid JSON content returns {} and logs a warning."""
+        """Invalid JSON content returns None and logs a warning."""
         m = mock_open(read_data="{invalid json}")
         with patch("builtins.open", m), \
              patch("os.path.isfile", return_value=True), \
              patch.object(i18n.logger, "warning") as mock_warn:
             result = i18n._load_file("fr")
-        assert result == {}
+        assert result is None
         mock_warn.assert_called_once()
         # The logger receives a format string as first arg, then value args
         call_args = mock_warn.call_args[0]
@@ -145,7 +145,7 @@ class TestLoadFile:
              patch("os.path.isfile", return_value=True), \
              patch.object(i18n.logger, "warning") as mock_warn:
             result = i18n._load_file("de")
-        assert result == {}
+        assert result is None
         mock_warn.assert_called_once()
         call_args = mock_warn.call_args[0]
         assert "Skipping" in call_args[0]
@@ -155,12 +155,12 @@ class TestLoadFile:
         assert call_args[3] is not None
 
     def test_generic_exception_returns_empty(self):
-        """An OSError (e.g. permission denied) returns {}."""
+        """An OSError (e.g. permission denied) returns None."""
         with patch("os.path.isfile", return_value=True), \
              patch("builtins.open", side_effect=PermissionError("denied")), \
              patch.object(i18n.logger, "warning") as mock_warn:
             result = i18n._load_file("es")
-        assert result == {}
+        assert result is None
         mock_warn.assert_called_once()
         call_args = mock_warn.call_args[0]
         assert "Skipping" in call_args[0]

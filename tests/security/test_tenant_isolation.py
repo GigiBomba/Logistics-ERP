@@ -11,6 +11,34 @@ from repositories import BaseRepository
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# Static-scan exemptions — repositories that legitimately do not use the
+# context-based ``_company_filter`` / ``_set_company_from_context`` helpers.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# company_repository.py  — manages the ``companies`` (tenant) table itself;
+#                          a company_id filter on the tenant table is
+#                          meaningless (there is no parent tenant).
+# copilot_repository.py  — scopes every query inline with an explicit
+#                          ``company_id = ?`` bind (equivalent behaviour to
+#                          ``_company_filter``, different spelling).
+# sent_email_repository.py — global dedup ledger (roadmap 12) keyed by
+#                          ``document_id`` (AUTOINCREMENT PK of the
+#                          company-scoped ``documents`` table). The table has
+#                          NO ``company_id`` column, so ``_company_filter`` /
+#                          ``_set_company_from_context`` cannot be applied;
+#                          isolation is inherited from the globally-unique
+#                          ``document_id`` FK. Reachable only from the
+#                          ``build_email_package`` Celery task, which already
+#                          resolves ``document_ids`` via company-scoped
+#                          ``DocumentService.get_by_id``.
+STATIC_SCAN_EXEMPT = frozenset({
+    "company_repository.py",
+    "copilot_repository.py",
+    "sent_email_repository.py",
+})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # Repository static-analysis checks
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -21,6 +49,10 @@ class TestCompanyFilterPresent:
         """Scan all ``repositories/*.py`` files (excluding ``__init__.py``)
         and verify each non-analytics file contains a reference to
         ``_company_filter`` or ``_set_company_from_context``.
+
+        Exemptions (``STATIC_SCAN_EXEMPT``) are limited to repositories that
+        either own the tenant table itself or scope inline with an explicit
+        ``company_id = ?`` bind.
         """
         import repositories as repos_pkg
 
@@ -29,6 +61,8 @@ class TestCompanyFilterPresent:
 
         for fname in sorted(os.listdir(repo_dir)):
             if not fname.endswith(".py") or fname == "__init__.py":
+                continue
+            if fname in STATIC_SCAN_EXEMPT:
                 continue
             filepath = os.path.join(repo_dir, fname)
             with open(filepath, encoding="utf-8") as f:

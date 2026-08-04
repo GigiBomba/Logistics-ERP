@@ -321,8 +321,11 @@ class TestEventBusFailures:
         result = service.transition_status(42, "Loading")
 
         assert result.success is True
-        # Manual update still happened
-        self.trip_service.update.assert_called_once_with(42, {"status": "Loading"})
+        # Manual update still happened (TripUpdate object, not raw dict)
+        self.trip_service.update.assert_called_once()
+        args, _ = self.trip_service.update.call_args
+        assert args[0] == 42
+        assert args[1].status == "Loading"
 
 
 # ======================================================================
@@ -424,7 +427,10 @@ class TestMissingOptionalDependencies:
         result = service.transition_status(42, "Loading")
 
         assert result.success is True
-        self.trip_service.update.assert_called_once_with(42, {"status": "Loading"})
+        self.trip_service.update.assert_called_once()
+        args, _ = self.trip_service.update.call_args
+        assert args[0] == 42
+        assert args[1].status == "Loading"
 
     def test_no_dta_service_assign_both_still_works(self):
         """No dta_service → assign_both still works."""

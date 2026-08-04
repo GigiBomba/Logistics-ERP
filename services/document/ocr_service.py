@@ -15,6 +15,7 @@ from typing import Any
 
 from database.db_manager import DatabaseManager
 from repositories.document_repository import DocumentRepository
+from services.document_automation.sanitizer import sanitize_ocr_text_safe
 
 logger = logging.getLogger("document_ocr_service")
 
@@ -259,16 +260,20 @@ class OcrService:
             return ""
         try:
             if mime_type == "application/pdf":
-                return self._extract_pdf_text(file_path)
+                raw = self._extract_pdf_text(file_path)
             elif mime_type.startswith("image/"):
-                return self._extract_image_text(file_path)
+                raw = self._extract_image_text(file_path)
+            else:
+                raw = ""
+            # Sanitize extracted text before it reaches any LLM context.
+            return sanitize_ocr_text_safe(raw) if raw else ""
         except Exception as e:
             logger.debug("OCR extraction skipped for %s: %s", file_path, e)
         return ""
 
     def _extract_pdf_text(self, file_path: str) -> str:
         try:
-            from PyPDF2 import PdfReader
+            from pypdf import PdfReader
             reader = PdfReader(file_path)
             parts = []
             for page in reader.pages[:5]:

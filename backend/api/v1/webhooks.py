@@ -3,6 +3,9 @@
 Partners such as TIMOCOM, Wialon, Frotcom push events (shipment status,
 document availability, GPS telemetry) to Operion via HTTP POST webhooks.
 """
+
+from __future__ import annotations
+
 import hashlib
 import hmac
 import json

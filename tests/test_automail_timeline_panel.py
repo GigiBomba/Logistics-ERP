@@ -473,3 +473,349 @@ class TestTimelinePanelStats:
             panel._load_data()
             assert "25" in panel._stats_sent.text()
             assert "3" in panel._stats_failed.text()
+
+
+# ── SP workaround (if needed) ─────────────────────────────────────────
+
+import ui.widgets as _ui_widgets
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
+
+
+# ── Test data ─────────────────────────────────────────────────────────
+
+
+SAMPLE_TIMELINE_ENTRY: dict = {
+    "invoice_id": 1001,
+    "trip_id": 42,
+    "client_name": "Acme Corp",
+    "client_email": "billing@acme.com",
+    "client_contact": "John",
+    "due_date": "2026-07-15",
+    "invoice_number": "INV-2026-001",
+    "total_amount": 4500.00,
+    "timeline": [
+        {"name": "Day 27", "scheduled_date": "2026-06-18",
+         "sent_at": None, "status": "pending"},
+        {"name": "Day 20", "scheduled_date": "2026-06-25",
+         "sent_at": None, "status": "pending"},
+        {"name": "Day 10", "scheduled_date": "2026-07-05",
+         "sent_at": "2026-07-05T10:00:00", "status": "sent"},
+        {"name": "Day 3", "scheduled_date": "2026-07-12",
+         "sent_at": None, "status": "pending"},
+        {"name": "Day 0", "scheduled_date": "2026-07-15",
+         "sent_at": None, "status": "pending"},
+    ],
+    "schedule_id": 1,
+    "total_reminders": 5,
+    "reminders_sent": 1,
+    "status": "active",
+    "last_sent": None,
+}
+
+
+# ── InvoiceTimelineCard action tests ──────────────────────────────────
+
+
+class TestInvoiceTimelineCardActions:
+    """Tests for the manual action methods on _InvoiceTimelineCard."""
+
+    def test_send_now_consented_full_flow(self, qt_widget, qtbot):
+        """Send Now: consent given, email sent → information box."""
+        ops = MagicMock()
+        ops.notification_center = MagicMock()
+        ops.notification_center.send_email.return_value = True
+        db = MagicMock()
+        card = _InvoiceTimelineCard(qt_widget, SAMPLE_TIMELINE_ENTRY, ops, db)
+        qtbot.addWidget(card)
+
+        # Pre-set the automail repo so _on_send_now uses it directly
+        mock_repo = MagicMock()
+        mock_repo.get_active_schedules.return_value = [
+            {"id": 1, "template_id": 10},
+        ]
+        mock_repo.get_template_by_id.return_value = {
+            "id": 10, "name": "Test", "subject": "Subj",
+            "body_text": "Body", "body_html": "",
+        }
+        card._automail_repo = mock_repo
+
+        with patch.object(
+            QMessageBox, "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), patch(
+            "ui.views.automail.timeline_panel.TemplateService",
+        ) as mock_ts_cls, patch(
+            "ui.views.automail.timeline_panel.load_company_config",
+            return_value={"company_name": "Operion"},
+        ), patch(
+            "services.document_automation.package_builder.PackageBuilder",
+        ) as mock_pb_cls, patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            mock_ts = MagicMock()
+            mock_ts.render_email.return_value = (
+                "Payment Reminder", "Body text", "<p>Body html</p>",
+            )
+            mock_ts_cls.return_value = mock_ts
+
+            mock_pb = MagicMock()
+            mock_pb.list_trip_documents.return_value = []
+            mock_pb_cls.return_value = mock_pb
+
+            card._on_send_now()
+            mock_info.assert_called_once()
+            mock_warn.assert_not_called()
+            # Verify email was sent to the right address
+            args, _ = mock_info.call_args
+            assert "success" in str(args).lower()
+
+    def test_send_now_consented_send_fails(self, qt_widget, qtbot):
+        """Send Now: nc.send_email returns False → warning box."""
+        ops = MagicMock()
+        ops.notification_center = MagicMock()
+        ops.notification_center.send_email.return_value = False
+        db = MagicMock()
+        card = _InvoiceTimelineCard(qt_widget, SAMPLE_TIMELINE_ENTRY, ops, db)
+        qtbot.addWidget(card)
+
+        mock_repo = MagicMock()
+        mock_repo.get_active_schedules.return_value = [
+            {"id": 1, "template_id": 10},
+        ]
+        mock_repo.get_template_by_id.return_value = {
+            "id": 10, "name": "Test", "subject": "Subj",
+            "body_text": "Body", "body_html": "",
+        }
+        card._automail_repo = mock_repo
+
+        with patch.object(
+            QMessageBox, "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), patch(
+            "ui.views.automail.timeline_panel.TemplateService",
+        ) as mock_ts_cls, patch(
+            "ui.views.automail.timeline_panel.load_company_config",
+            return_value={"company_name": "Operion"},
+        ), patch(
+            "services.document_automation.package_builder.PackageBuilder",
+        ) as mock_pb_cls, patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            mock_ts = MagicMock()
+            mock_ts.render_email.return_value = (
+                "Payment Reminder", "Body text", "<p>Body html</p>",
+            )
+            mock_ts_cls.return_value = mock_ts
+
+            mock_pb = MagicMock()
+            mock_pb.list_trip_documents.return_value = []
+            mock_pb_cls.return_value = mock_pb
+
+            card._on_send_now()
+            mock_warn.assert_called_once()
+            mock_info.assert_not_called()
+
+    def test_send_now_exception_handling(self, qt_widget, qtbot):
+        """Send Now: nc.send_email raises → warning box with exception."""
+        ops = MagicMock()
+        ops.notification_center = MagicMock()
+        ops.notification_center.send_email.side_effect = Exception("Connection timeout")
+        db = MagicMock()
+        card = _InvoiceTimelineCard(qt_widget, SAMPLE_TIMELINE_ENTRY, ops, db)
+        qtbot.addWidget(card)
+
+        mock_repo = MagicMock()
+        mock_repo.get_active_schedules.return_value = [
+            {"id": 1, "template_id": 10},
+        ]
+        mock_repo.get_template_by_id.return_value = {
+            "id": 10, "name": "Test", "subject": "Subj",
+            "body_text": "Body", "body_html": "",
+        }
+        card._automail_repo = mock_repo
+
+        with patch.object(
+            QMessageBox, "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), patch(
+            "ui.views.automail.timeline_panel.TemplateService",
+        ) as mock_ts_cls, patch(
+            "ui.views.automail.timeline_panel.load_company_config",
+            return_value={"company_name": "Operion"},
+        ), patch(
+            "services.document_automation.package_builder.PackageBuilder",
+        ) as mock_pb_cls, patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            mock_ts = MagicMock()
+            mock_ts.render_email.return_value = (
+                "Payment Reminder", "Body text", "<p>Body html</p>",
+            )
+            mock_ts_cls.return_value = mock_ts
+
+            mock_pb = MagicMock()
+            mock_pb.list_trip_documents.return_value = []
+            mock_pb_cls.return_value = mock_pb
+
+            card._on_send_now()
+            mock_warn.assert_called_once()
+            mock_info.assert_not_called()
+            # Verify warning contains the exception message
+            args, _ = mock_warn.call_args
+            assert "Connection timeout" in str(args)
+
+    def test_skip_consented_full_flow(self, qt_widget, qtbot):
+        """Skip: consent given, skip succeeds → information box."""
+        db = MagicMock()
+        card = _InvoiceTimelineCard(qt_widget, SAMPLE_TIMELINE_ENTRY, MagicMock(), db)
+        qtbot.addWidget(card)
+
+        with patch.object(
+            QMessageBox, "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), patch(
+            "ui.views.automail.timeline_panel.ReminderService",
+        ) as mock_rs_cls, patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            mock_rs = MagicMock()
+            mock_rs.skip_next_reminder.return_value = True
+            mock_rs_cls.return_value = mock_rs
+
+            card._on_skip()
+            mock_info.assert_called_once()
+            mock_warn.assert_not_called()
+
+    def test_skip_consented_fails(self, qt_widget, qtbot):
+        """Skip: skip_next_reminder returns False → warning box."""
+        db = MagicMock()
+        card = _InvoiceTimelineCard(qt_widget, SAMPLE_TIMELINE_ENTRY, MagicMock(), db)
+        qtbot.addWidget(card)
+
+        with patch.object(
+            QMessageBox, "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), patch(
+            "ui.views.automail.timeline_panel.ReminderService",
+        ) as mock_rs_cls, patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            mock_rs = MagicMock()
+            mock_rs.skip_next_reminder.return_value = False
+            mock_rs_cls.return_value = mock_rs
+
+            card._on_skip()
+            mock_warn.assert_called_once()
+            mock_info.assert_not_called()
+
+    def test_cancel_all_consented_full_flow(self, qt_widget, qtbot):
+        """Cancel All: consent given, cancel succeeds → information box."""
+        db = MagicMock()
+        card = _InvoiceTimelineCard(qt_widget, SAMPLE_TIMELINE_ENTRY, MagicMock(), db)
+        qtbot.addWidget(card)
+
+        with patch.object(
+            QMessageBox, "question",
+            return_value=QMessageBox.StandardButton.Yes,
+        ), patch(
+            "ui.views.automail.timeline_panel.ReminderService",
+        ) as mock_rs_cls, patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            mock_rs = MagicMock()
+            mock_rs.cancel_all_reminders.return_value = True
+            mock_rs_cls.return_value = mock_rs
+
+            card._on_cancel_all()
+            mock_info.assert_called_once()
+            mock_warn.assert_not_called()
+
+
+class TestTimelinePanelEdgeCases:
+    """Edge-case tests for TimelinePanel pagination."""
+
+    def test_pagination_label_correct(self, qt_widget, qtbot):
+        """Page 1 of 45 total with 20 entries shows 'Showing 21-40 of 45'."""
+        db = MagicMock()
+        panel = TimelinePanel(qt_widget, db=db)
+        qtbot.addWidget(panel)
+        panel._page = 1
+
+        with patch(
+            "ui.views.automail.timeline_panel.ReminderService",
+        ) as mock_rs, patch(
+            "ui.views.automail.timeline_panel.HistoryService",
+        ) as mock_hs:
+            mock_rs_instance = MagicMock()
+            entries = [
+                {
+                    "invoice_id": i, "trip_id": i,
+                    "invoice_number": f"INV-{i:03d}",
+                    "client_name": f"Client {i}",
+                    "total_amount": 1000,
+                    "due_date": "2026-07-15",
+                    "client_email": f"c{i}@test.com",
+                    "timeline": [],
+                }
+                for i in range(20)
+            ]
+            mock_rs_instance.get_reminder_status_for_all_active.return_value = (
+                entries, 45,
+            )
+            mock_rs.return_value = mock_rs_instance
+            mock_hs_instance = MagicMock()
+            mock_hs_instance.get_stats.return_value = {}
+            mock_hs.return_value = mock_hs_instance
+
+            panel._load_data()
+            label = panel._page_label.text()
+            assert "21" in label and "40" in label and "45" in label
+
+    def test_pagination_single_page_disables_next(self, qt_widget, qtbot):
+        """When total ≤ _PAGE_SIZE, both prev and next buttons are disabled."""
+        db = MagicMock()
+        panel = TimelinePanel(qt_widget, db=db)
+        qtbot.addWidget(panel)
+
+        with patch(
+            "ui.views.automail.timeline_panel.ReminderService",
+        ) as mock_rs, patch(
+            "ui.views.automail.timeline_panel.HistoryService",
+        ) as mock_hs:
+            mock_rs_instance = MagicMock()
+            entries = [
+                {
+                    "invoice_id": i, "trip_id": i,
+                    "invoice_number": f"INV-{i:03d}",
+                    "client_name": f"Client {i}",
+                    "total_amount": 1000,
+                    "due_date": "2026-07-15",
+                    "client_email": f"c{i}@test.com",
+                    "timeline": [],
+                }
+                for i in range(15)
+            ]
+            mock_rs_instance.get_reminder_status_for_all_active.return_value = (
+                entries, 15,
+            )
+            mock_rs.return_value = mock_rs_instance
+            mock_hs_instance = MagicMock()
+            mock_hs_instance.get_stats.return_value = {}
+            mock_hs.return_value = mock_hs_instance
+
+            panel._load_data()
+            assert panel._prev_btn.isEnabled() is False
+            assert panel._next_btn.isEnabled() is False

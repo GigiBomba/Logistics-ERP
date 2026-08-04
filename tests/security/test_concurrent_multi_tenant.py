@@ -172,9 +172,8 @@ class TestConcurrentReadIsolation:
 class TestConcurrentUpdateIsolation:
     """Company A creates a resource; Company B must not be able to update it.
 
-    Known gap: the repository UPDATE method does not check company_id,
-    so the update currently succeeds (200).  A proper fix must add a
-    company_id filter to the UPDATE SQL.
+    Fixed (F6): the repository UPDATE is now company-scoped, so a
+    cross-company update surfaces as 404.
     """
 
     def test_cross_company_update_blocked(
@@ -182,7 +181,7 @@ class TestConcurrentUpdateIsolation:
     ) -> None:
         """Company A creates a trip, Company B tries to PUT it.
 
-        Accept 200 (known gap — UPDATE lacks company_id check) or 404.
+        Expected: 404 (company_id scoping on UPDATE).
         """
         # Company A creates a trip
         trip = create_test_trip(client, auth_a, {
@@ -202,10 +201,9 @@ class TestConcurrentUpdateIsolation:
                 json={"status": "Delivered"},
                 headers=auth_b,
             )
-            # Accept 200 (known gap: UPDATE lacks company_id scope) or 404
-            assert resp.status_code in (200, 404), (
+            assert resp.status_code == 404, (
                 f"Company B updating Company A's trip {trip_id} "
-                f"expected 200 or 404, got {resp.status_code}: {resp.text}"
+                f"expected 404, got {resp.status_code}: {resp.text}"
             )
         except ValueError:
             # Repository validation error may propagate as an exception
@@ -219,9 +217,8 @@ class TestConcurrentUpdateIsolation:
 class TestConcurrentDeleteIsolation:
     """Company A creates a resource; Company B must not be able to delete it.
 
-    Known gap: the repository DELETE method does not check company_id,
-    so the delete currently succeeds (200).  A proper fix must add a
-    company_id filter to the DELETE SQL.
+    Fixed (F6): the repository DELETE is now company-scoped, so a
+    cross-company delete surfaces as 404.
     """
 
     def test_cross_company_delete_blocked(
@@ -229,7 +226,7 @@ class TestConcurrentDeleteIsolation:
     ) -> None:
         """Company A creates a trip, Company B tries to DELETE it.
 
-        Accept 200 (known gap — DELETE lacks company_id check) or 404.
+        Expected: 404 (company_id scoping on DELETE).
         """
         # Company A creates a trip
         trip = create_test_trip(client, auth_a, {
@@ -248,10 +245,9 @@ class TestConcurrentDeleteIsolation:
                 f"/api/v1/trips/{trip_id}",
                 headers=auth_b,
             )
-            # Accept 200 (known gap: DELETE lacks company_id scope) or 404
-            assert resp.status_code in (200, 404), (
+            assert resp.status_code == 404, (
                 f"Company B deleting Company A's trip {trip_id} "
-                f"expected 200 or 404, got {resp.status_code}: {resp.text}"
+                f"expected 404, got {resp.status_code}: {resp.text}"
             )
         except ValueError:
             # Repository validation error may propagate as an exception

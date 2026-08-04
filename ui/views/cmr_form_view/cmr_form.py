@@ -8,8 +8,11 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from typing import Any
 
+import qtawesome as qta
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -17,14 +20,36 @@ from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QProgressBar,
+    QPushButton,
     QSizePolicy,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
 
 from services.i18n import t
-from ui.components import Btn, Card, CardHeader, Divider, Label, PageTitle
-from ui.theme import COLORS, S
+from ui.components import Btn, Card, CardHeader, Divider, EmptyState, Label, PageTitle
+from ui.design_tokens import (
+    ACCENT_TEXT,
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ACCENT_SUBTLE,
+    COLOR_BG_HOVER,
+    COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_TEXT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_SUCCESS_SUBTLE,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+    COLOR_WARNING_SUBTLE,
+    FONT_SIZE_SM,
+    FONT_WEIGHT_SEMIBOLD,
+    SP,
+    SPACE_1,
+)
+from ui.form_utils import add_required_indicator
 from ui.widgets import (
     ScrollableFormContainer,
     StyledComboBox,
@@ -63,6 +88,7 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         self._successive_carrier_rows: list[QWidget] = []
         self._financial_rows: list[tuple[str, str]] = []
         self._cmr_entries: dict[str, Any] = {}
+        self._cmr_error_labels: list[tuple[QWidget, QLabel, bool]] = []
 
         self._consignor_role_active: bool = True
         self._last_trip_data: dict | None = None
@@ -79,26 +105,49 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
 
+        # Stacked widget: page 0 = empty state, page 1 = form
+        self._cmr_stack = QStackedWidget()
+        layout.addWidget(self._cmr_stack, 1)
+
+        # Page 0: Empty state (shown when no trip is selected)
+        self._cmr_empty_page = QWidget()
+        empty_layout = QVBoxLayout(self._cmr_empty_page)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        self._cmr_empty_state = EmptyState(
+            parent=self._cmr_empty_page,
+            icon_name="fa5s.file-alt",
+            title=t("cmr.empty_title", "Select a trip"),
+            subtitle=t("cmr.empty_desc", "Choose a trip to generate CMR documents."),
+        )
+        empty_layout.addWidget(self._cmr_empty_state)
+        self._cmr_stack.addWidget(self._cmr_empty_page)
+
+        # Page 1: Form
+        self._cmr_form_page = QWidget()
+        form_layout = QVBoxLayout(self._cmr_form_page)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(0)
+
         # Scrollable form container holds everything
-        self._scroll_container = ScrollableFormContainer(self, max_width=1200)
+        self._scroll_container = ScrollableFormContainer(self._cmr_form_page, max_width=1200)
         self._scroll_container.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
-        layout.addWidget(self._scroll_container, 1)
+        form_layout.addWidget(self._scroll_container, 1)
 
         # Shortcut to the content widget inside the scroll container
         self._content = self._scroll_container.content
 
         self._build_page_heading()
         self._build_role_selector()
-        self._build_parties_card()            # Boxes 1–2
-        self._build_route_card()              # Boxes 3–5
-        self._build_vehicle_card()            # Vehicle & driver
-        self._build_cargo_card()              # Boxes 6–12
-        self._build_instructions_card()       # Boxes 13–17
-        self._build_carrier_card()            # Boxes 18–19
-        self._build_charges_card()            # Box 20
-        self._build_issue_signatures_card()   # Boxes 21–24
+
+        # ── 5 collapsible sections ──────────────────────────────────────
+        # Sections 1-3 expanded by default, 4-5 collapsed
+        self._build_section_parties()        # Boxes 1–2, 18–19
+        self._build_section_goods()          # Boxes 6–12
+        self._build_section_route()          # Boxes 3–5 + vehicle/driver
+        self._build_section_instructions()   # Boxes 13–17 + Box 20
+        self._build_section_signatures()     # Boxes 21–24
 
         # Bottom action bar (inside the scroll so it scrolls with the form)
         self._build_action_bar()
@@ -106,6 +155,9 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         # Initialize navigator state after all fields are built
         self._update_box_navigator()
         self._connect_box_signals()
+
+        self._cmr_stack.addWidget(self._cmr_form_page)
+        self._cmr_stack.setCurrentIndex(0)  # Start at empty state
 
     # ── Box navigator state ─────────────────────────────────────────────────
 
@@ -146,20 +198,20 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
             )
             if has_content:
                 badge.setStyleSheet(
-                    f"background-color: {COLORS['success_dim']};"
-                    f"color: {COLORS['success']};"
+                    f"background-color: {COLOR_SUCCESS_SUBTLE};"
+                    f"color: {COLOR_SUCCESS_DEFAULT};"
                     f"border-radius: 4px; font-size: 7px; font-weight: bold;"
                 )
             elif field_keys:
                 badge.setStyleSheet(
-                    f"background-color: {COLORS['warning_dim']};"
-                    f"color: {COLORS['warning']};"
+                    f"background-color: {COLOR_WARNING_SUBTLE};"
+                    f"color: {COLOR_WARNING_DEFAULT};"
                     f"border-radius: 4px; font-size: 7px; font-weight: bold;"
                 )
             else:
                 badge.setStyleSheet(
-                    f"background-color: {COLORS['accent_dim']};"
-                    f"color: {COLORS['accent_text']};"
+                    f"background-color: {COLOR_ACCENT_SUBTLE};"
+                    f"color: {ACCENT_TEXT};"
                     f"border-radius: 4px; font-size: 7px; font-weight: bold;"
                 )
 
@@ -195,8 +247,8 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
     def _build_page_heading(self):
         heading = QWidget()
         heading_layout = QVBoxLayout(heading)
-        heading_layout.setContentsMargins(0, 0, 0, S["3"])
-        heading_layout.setSpacing(S["1"])
+        heading_layout.setContentsMargins(0, 0, 0, SP["3"])
+        heading_layout.setSpacing(SP["1"])
 
         self._page_title = PageTitle(
             heading, t("cmr.title", "CMR International Consignment Note")
@@ -213,7 +265,7 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         # Mini box navigator
         nav = QWidget()
         nav_layout = QHBoxLayout(nav)
-        nav_layout.setContentsMargins(0, S["1"], 0, 0)
+        nav_layout.setContentsMargins(0, SP["1"], 0, 0)
         nav_layout.setSpacing(2)
         self._box_badges = {}
         for i in range(1, 25):
@@ -222,8 +274,8 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
             badge.setAlignment(Qt.AlignCenter)
             badge.setProperty("role", "box-badge")
             badge.setStyleSheet(
-                f"background-color: {COLORS['accent_dim']};"
-                f"color: {COLORS['accent_text']};"
+                f"background-color: {COLOR_ACCENT_SUBTLE};"
+                f"color: {ACCENT_TEXT};"
                 f"border-radius: 4px; font-size: 7px; font-weight: bold;"
             )
             nav_layout.addWidget(badge)
@@ -238,7 +290,7 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         active = primary (filled indigo), inactive = secondary (outlined).
         Reuse this pattern for any binary either/or choice."""
         card = Card()
-        card.layout().setSpacing(S["2"])
+        card.layout().setSpacing(SP["2"])
 
         label = Label(card, t("cmr.select_role", "SELECT YOUR ROLE"), role="section-title")
         card.layout().addWidget(label)
@@ -247,7 +299,7 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setSpacing(SP["2"])
 
         self._role_consignor_btn = Btn(
             row,
@@ -278,6 +330,8 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         """Create a themed card with CardHeader and return the content widget.
 
         Callers pack form fields into the returned widget's layout.
+        NOTE: This is an alias kept for the mixin; new code should use
+        ``_make_collapsible_section`` for collapsible behavior.
         """
         card = Card()
         CardHeader(card.layout(), title=title, subtitle=subtitle)
@@ -285,36 +339,161 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(S["3"])
+        content_layout.setSpacing(SP["3"])
         card.layout().addWidget(content)
 
         self._scroll_container.add_widget(card)
         return content
+
+    def _make_collapsible_section(
+        self, title: str, subtitle: str, expanded: bool = True
+    ) -> tuple[QFrame, QWidget]:
+        """Create a Card with a clickable collapsible header.
+
+        Returns ``(card_frame, content_widget)``.  The content widget's
+        visibility is toggled when the header is clicked.
+        """
+        card = Card()
+
+        # ── Clickable header button ───────────────────────────────────
+        icon_char = "\u25BC" if expanded else "\u25B6"
+        header_btn = QPushButton(f"{icon_char}  {title}")
+        header_btn.setFlat(True)
+        header_btn.setCursor(Qt.PointingHandCursor)
+        header_btn.setFixedHeight(32)
+        header_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        header_btn.setStyleSheet(f"""
+            QPushButton {{
+                text-align: left;
+                font-size: {FONT_SIZE_SM}px;
+                font-weight: {FONT_WEIGHT_SEMIBOLD};
+                color: {COLOR_TEXT_PRIMARY};
+                padding: 0;
+                border: none;
+                background: transparent;
+                letter-spacing: 0.5px;
+            }}
+            QPushButton:hover {{
+                color: {COLOR_ACCENT_PRIMARY};
+            }}
+        """)
+
+        # Subtitle label
+        sub_lbl = QLabel(subtitle)
+        sub_lbl.setProperty("role", "muted")
+        sub_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 10px;")
+
+        # ── Divider ───────────────────────────────────────────────────
+        div = Divider()
+
+        # ── Collapsible content container ─────────────────────────────
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(SP["3"])
+        content_widget.setVisible(expanded)
+
+        # Assemble card
+        card.layout().addWidget(header_btn)
+        if subtitle:
+            card.layout().addWidget(sub_lbl)
+        card.layout().addWidget(div)
+        card.layout().addWidget(content_widget)
+
+        self._scroll_container.add_widget(card)
+
+        # ── Toggle logic ──────────────────────────────────────────────
+        def _toggle():
+            new_expanded = not content_widget.isVisible()
+            content_widget.setVisible(new_expanded)
+            new_icon = "\u25BC" if new_expanded else "\u25B6"
+            header_btn.setText(f"{new_icon}  {title}")
+
+        header_btn.clicked.connect(_toggle)
+
+        return card, content_widget
+
+    # ── 5 consolidated section builders ─────────────────────────────
+
+    def _build_section_parties(self):
+        """Section 1: Parties — Consignor, Consignee, Carrier (Boxes 1-2, 18-19)."""
+        _card, content = self._make_collapsible_section(
+            t("cmr.section_parties", "Parties"),
+            t("cmr.section_parties_sub",
+              "Boxes 1, 2, 18, 19 — Sender, Receiver & Carrier"),
+            expanded=True,
+        )
+        # Sub-section: Sender & Consignee
+        self._build_parties_card(content=content)
+        # Sub-section: Carrier info
+        self._build_carrier_card(content=content)
+
+    def _build_section_goods(self):
+        """Section 2: Goods — Cargo details (Boxes 6-12)."""
+        _card, content = self._make_collapsible_section(
+            t("cmr.section_cargo", "Goods Specifications"),
+            t("cmr.section_cargo_sub",
+              "Boxes 6 to 12 — Cargo marks, packages, weight, volume, HS code"),
+            expanded=True,
+        )
+        self._build_cargo_card(content=content)
+
+    def _build_section_route(self):
+        """Section 3: Route — Route details & transport means (Boxes 3-5 + vehicle)."""
+        _card, content = self._make_collapsible_section(
+            t("cmr.section_route_title", "Route & Transport"),
+            t("cmr.section_route_sub",
+              "Boxes 3, 4, 5 — Place of loading, delivery, vehicle & driver"),
+            expanded=True,
+        )
+        self._build_route_card(content=content)
+        self._build_vehicle_card(content=content)
+
+    def _build_section_instructions(self):
+        """Section 4: Instructions — Special instructions, charges (Boxes 13-17, 20)."""
+        _card, content = self._make_collapsible_section(
+            t("cmr.section_instructions_title", "Instructions & Charges"),
+            t("cmr.section_instructions_sub",
+              "Boxes 13 to 17, 20 — Instructions, payment, COD, charges"),
+            expanded=False,
+        )
+        self._build_instructions_card(content=content)
+        self._build_charges_card(content=content)
+
+    def _build_section_signatures(self):
+        """Section 5: Signatures — Issue place, date & signatures (Boxes 21-24)."""
+        _card, content = self._make_collapsible_section(
+            t("cmr.section_signatures_title", "Issue & Signatures"),
+            t("cmr.section_signatures_sub",
+              "Boxes 21 to 24 — Place, date of issue and party signatures"),
+            expanded=False,
+        )
+        self._build_issue_signatures_card(content=content)
 
     def _two_col_pane(self, parent: QWidget) -> tuple[QWidget, QWidget]:
         """Return (left, right) widgets with a vertical divider between them."""
         wrapper = QWidget()
         wrapper_layout = QHBoxLayout(wrapper)
         wrapper_layout.setContentsMargins(0, 0, 0, 0)
-        wrapper_layout.setSpacing(S["3"])
+        wrapper_layout.setSpacing(SP["3"])
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["3"])
+        left_layout.setSpacing(SP["3"])
         wrapper_layout.addWidget(left, 1)
 
         vline = QFrame()
         vline.setFrameShape(QFrame.VLine)
         vline.setFrameShadow(QFrame.Plain)
         vline.setFixedWidth(1)
-        vline.setStyleSheet(f"background-color: {COLORS['border']};")
+        vline.setStyleSheet(f"background-color: {COLOR_BORDER_SUBTLE};")
         wrapper_layout.addWidget(vline)
 
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["3"])
+        right_layout.setSpacing(SP["3"])
         wrapper_layout.addWidget(right, 1)
 
         parent_layout = parent.layout()
@@ -333,6 +512,7 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         label_en: str,
         label_ro: str,
         kind: str = "entry",
+        required: bool = False,
         **kwargs,
     ) -> QWidget:
         """Themed field with accent badge + bilingual label.
@@ -348,38 +528,44 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         kind : str
             ``"entry"`` (single-line), ``"textbox"`` (multi-line),
             ``"combobox"`` (dropdown).
+        required : bool
+            If True, a red asterisk is added to the label.
         **kwargs
             Forwarded to the underlying widget constructor.
         """
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(S["1"])
+        container_layout.setSpacing(SP["1"])
 
         # Label row with optional badge
         lbl_row = QWidget()
         lbl_layout = QHBoxLayout(lbl_row)
         lbl_layout.setContentsMargins(0, 0, 0, 0)
-        lbl_layout.setSpacing(S["2"])
+        lbl_layout.setSpacing(SP["2"])
 
         if box_num is not None:
             badge = QLabel(str(box_num))
             badge.setFixedSize(30, 20)
             badge.setAlignment(Qt.AlignCenter)
             badge.setStyleSheet(
-                f"background-color: {COLORS['accent_dim']};"
-                f"color: {COLORS['accent_text']};"
+                f"background-color: {COLOR_ACCENT_SUBTLE};"
+                f"color: {ACCENT_TEXT};"
                 f"border-radius: 4px; font-weight: bold; font-size: 10px;"
             )
             lbl_layout.addWidget(badge)
 
         label = QLabel(f"{label_en} / {label_ro}")
         label.setProperty("fontRole", "label")
-        label.setStyleSheet(f"color: {COLORS['text_muted']};")
+        label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         lbl_layout.addWidget(label)
         lbl_layout.addStretch(1)
 
         container_layout.addWidget(lbl_row)
+
+        # Required indicator
+        if required:
+            add_required_indicator(label)
 
         # Input widget
         placeholder = kwargs.pop("placeholder", None)
@@ -396,12 +582,21 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
 
         container_layout.addWidget(w)
 
+        # Error label (hidden by default) — only for required fields
+        if required:
+            err_lbl = QLabel()
+            err_lbl.setProperty("role", "field-error")
+            err_lbl.setVisible(False)
+            err_lbl.setWordWrap(True)
+            container_layout.addWidget(err_lbl)
+            self._cmr_error_labels.append((w, err_lbl, required))
+
         # Add to parent layout
         parent_layout = parent.layout()
         if parent_layout is None:
             parent_layout = QVBoxLayout(parent)
             parent_layout.setContentsMargins(0, 0, 0, 0)
-            parent_layout.setSpacing(S["3"])
+            parent_layout.setSpacing(SP["3"])
             parent.setLayout(parent_layout)
         parent_layout.addWidget(container)
 
@@ -417,25 +612,25 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         container = QWidget()
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(0, 0, 0, 0)
-        container_layout.setSpacing(S["1"])
+        container_layout.setSpacing(SP["1"])
 
         lbl_row = QWidget()
         lbl_layout = QHBoxLayout(lbl_row)
         lbl_layout.setContentsMargins(0, 0, 0, 0)
-        lbl_layout.setSpacing(S["1"])
+        lbl_layout.setSpacing(SP["1"])
 
         badge = QLabel(str(box_num))
         badge.setFixedSize(26, 18)
         badge.setAlignment(Qt.AlignCenter)
         badge.setStyleSheet(
-            f"background-color: {COLORS['accent_dim']};"
-            f"color: {COLORS['accent_text']};"
+            f"background-color: {COLOR_ACCENT_SUBTLE};"
+            f"color: {ACCENT_TEXT};"
             f"border-radius: 3px; font-weight: bold; font-size: 8px;"
         )
         lbl_layout.addWidget(badge)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {COLORS['text_muted']}; font-size: 10px;")
+        lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 10px;")
         lbl_layout.addWidget(lbl)
         lbl_layout.addStretch(1)
 
@@ -456,37 +651,74 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
     # ── Bottom action bar ────────────────────────────────────────────────
 
     def _build_action_bar(self):
-        """Action buttons for Generate, Print, Save."""
+        """Action buttons for Preview, Generate, Print, Save + progress bar."""
         bar = QWidget()
-        bar_layout = QHBoxLayout(bar)
-        bar_layout.setContentsMargins(0, S["4"], 0, 0)
-        bar_layout.setSpacing(S["3"])
+        bar_layout = QVBoxLayout(bar)
+        bar_layout.setContentsMargins(0, SP["4"], 0, 0)
+        bar_layout.setSpacing(SP["2"])
+
+        # ── Progress bar (hidden by default) ──────────────────────────
+        self._progress_bar = QProgressBar()
+        self._progress_bar.setRange(0, 0)  # indeterminate
+        self._progress_bar.setFixedHeight(4)
+        self._progress_bar.setTextVisible(False)
+        self._progress_bar.setVisible(False)
+        self._progress_bar.setStyleSheet(f"""
+            QProgressBar {{
+                background: {COLOR_BORDER_SUBTLE};
+                border: none;
+                border-radius: 2px;
+            }}
+            QProgressBar::chunk {{
+                background: {COLOR_ACCENT_PRIMARY};
+                border-radius: 2px;
+            }}
+        """)
+        bar_layout.addWidget(self._progress_bar)
+
+        # ── Button row ────────────────────────────────────────────────
+        btn_row = QWidget()
+        btn_layout = QHBoxLayout(btn_row)
+        btn_layout.setContentsMargins(0, 0, 0, 0)
+        btn_layout.setSpacing(SP["3"])
+
+        self._btn_preview = Btn(
+            btn_row,
+            t("cmr.preview", "Preview"),
+            variant="secondary",
+            icon_name="fa5s.eye",
+        )
+        self._btn_preview.setFixedHeight(38)
+        btn_layout.addWidget(self._btn_preview)
 
         self._btn_generate = Btn(
-            bar,
+            btn_row,
             t("cmr.generate", "Generate CMR"),
             variant="primary",
+            command=self._on_generate_clicked,
         )
         self._btn_generate.setFixedHeight(38)
-        bar_layout.addWidget(self._btn_generate)
+        btn_layout.addWidget(self._btn_generate)
 
         self._btn_print = Btn(
-            bar,
+            btn_row,
             t("cmr.print", "Print"),
             variant="secondary",
         )
         self._btn_print.setFixedHeight(38)
-        bar_layout.addWidget(self._btn_print)
+        btn_layout.addWidget(self._btn_print)
 
-        bar_layout.addStretch(1)
+        btn_layout.addStretch(1)
 
         self._btn_save = Btn(
-            bar,
+            btn_row,
             t("cmr.save", "Save"),
             variant="secondary",
         )
         self._btn_save.setFixedHeight(38)
-        bar_layout.addWidget(self._btn_save)
+        btn_layout.addWidget(self._btn_save)
+
+        bar_layout.addWidget(btn_row)
 
         self._bottom_bar = bar
         self._scroll_container.add_widget(bar)
@@ -513,6 +745,56 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         self._role_consignor_btn.style().polish(self._role_consignor_btn)
         self._role_consignee_btn.style().unpolish(self._role_consignee_btn)
         self._role_consignee_btn.style().polish(self._role_consignee_btn)
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Validation
+    # ══════════════════════════════════════════════════════════════════════
+
+    def validate_required_fields(self) -> bool:
+        """Validate all required CMR fields.
+
+        Shows inline error messages for empty required fields.
+        Returns True if all required fields are filled.
+        """
+        has_errors = False
+        for widget, err_lbl, _required in self._cmr_error_labels:
+            value = ""
+            if hasattr(widget, "toPlainText"):
+                value = widget.toPlainText().strip()
+            elif hasattr(widget, "text"):
+                value = widget.text().strip()
+
+            if not value:
+                err_lbl.setText(t("common.field_required", default="This field is required"))
+                err_lbl.setVisible(True)
+                if hasattr(widget, "setProperty"):
+                    widget.setProperty("validation", "error")
+                    widget.style().unpolish(widget)
+                    widget.style().polish(widget)
+                has_errors = True
+            else:
+                err_lbl.setVisible(False)
+                if hasattr(widget, "setProperty"):
+                    widget.setProperty("validation", "")
+                    widget.style().unpolish(widget)
+                    widget.style().polish(widget)
+
+        return not has_errors
+
+    def _on_generate_clicked(self) -> None:
+        """Validate required fields before generating the CMR."""
+        if not self.validate_required_fields():
+            # Scroll to first error
+            for widget, err_lbl, _required in self._cmr_error_labels:
+                if err_lbl.isVisible():
+                    # Focus the first field with an error
+                    if hasattr(widget, "setFocus"):
+                        widget.setFocus()
+                    break
+            return
+        # Validation passed — the external caller handles generation.
+        # If the caller connected a callback via command, it would fire here.
+        # Otherwise, emit a signal or call a stored callback.
 
     # ══════════════════════════════════════════════════════════════════════
     # Data collection
@@ -582,7 +864,10 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
             "driver_data": driver_data,
         }
         if not trip:
+            self._cmr_stack.setCurrentIndex(0)
             return
+
+        self._cmr_stack.setCurrentIndex(1)
 
         conf = company_conf or {}
         client = client_data or {}
@@ -801,6 +1086,26 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
     # ══════════════════════════════════════════════════════════════════════
     # Helpers
     # ══════════════════════════════════════════════════════════════════════
+
+    # ── Progress helpers ──────────────────────────────────────────────
+
+    def show_progress(self):
+        """Show the indeterminate progress bar."""
+        if hasattr(self, "_progress_bar"):
+            self._progress_bar.setVisible(True)
+
+    def hide_progress(self):
+        """Hide the progress bar."""
+        if hasattr(self, "_progress_bar"):
+            self._progress_bar.setVisible(False)
+
+    def get_preview_button(self):
+        """Return the preview button for external connection."""
+        return getattr(self, "_btn_preview", None)
+
+    def get_progress_bar(self):
+        """Return the progress bar for external visibility control."""
+        return getattr(self, "_progress_bar", None)
 
     def get_bottom_frame(self) -> QWidget | None:
         """Return the bottom action bar for adding additional controls.

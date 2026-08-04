@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
+import time
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -41,6 +42,8 @@ class ApiClient:
             follow_redirects=True,
         )
         self._online: Optional[bool] = None
+        self._consecutive_transient_failures: int = 0
+        self._circuit_open_until: float = 0.0
 
     def update_auth(self, auth: Auth) -> None:
         """Update or set the auth token after construction.
@@ -91,27 +94,91 @@ class ApiClient:
             clear_auth()
         return False
 
+    _TRANSIENT_STATUSES = {502, 503, 504}
+    _CIRCUIT_BREAKER_THRESHOLD = 5   # consecutive transient failures before opening
+    _CIRCUIT_BREAKER_COOLDOWN = 30   # seconds to stay open before half-open probe
+
     def _request_with_retry(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Make an HTTP request with exponential backoff retry (up to 3 attempts).
 
-        Catches ``httpx.ConnectError``, ``httpx.TimeoutException``,
-        ``httpx.RemoteProtocolError``, and ``httpx.ReadError``.
+        Retries on connection errors AND transient server errors (502, 503, 504).
+
+        Includes a circuit breaker: after N consecutive transient failures,
+        the client enters an open state and fails fast for a cooldown period
+        instead of blocking the caller with repeated retries.
         """
         max_attempts = 3
         last_exc: Optional[Exception] = None
+        last_resp: Optional[httpx.Response] = None
+
+        # ── Circuit breaker: fail fast if the API is known to be down ──
+        if self._circuit_open_until > time.monotonic():
+            remaining = int(self._circuit_open_until - time.monotonic())
+            logger.debug(
+                "Circuit breaker OPEN — skipping %s %s (cooldown %ds remaining)",
+                method.upper(), url, remaining,
+            )
+            raise RuntimeError(
+                f"API server is down (circuit breaker open, "
+                f"{remaining}s remaining)"
+            )
+
         for attempt in range(max_attempts):
             try:
                 resp = self._client.request(method, url, **kwargs)
                 if self._check_response(resp):
                     resp = self._client.request(method, url, **kwargs)
+
+                # Retry on transient server errors (gateway timeouts, etc.)
+                if resp.status_code in self._TRANSIENT_STATUSES and attempt < max_attempts - 1:
+                    last_resp = resp
+                    self._consecutive_transient_failures += 1
+                    # Open circuit breaker after too many consecutive transient failures
+                    if self._consecutive_transient_failures >= self._CIRCUIT_BREAKER_THRESHOLD:
+                        self._circuit_open_until = time.monotonic() + self._CIRCUIT_BREAKER_COOLDOWN
+                        logger.warning(
+                            "Circuit breaker OPEN after %d consecutive transient failures "
+                            "— API server appears down, skipping retries for %ds",
+                            self._consecutive_transient_failures,
+                            self._CIRCUIT_BREAKER_COOLDOWN,
+                        )
+                        if last_resp is not None:
+                            return last_resp
+                        raise RuntimeError(
+                            "API server is down (circuit breaker open)"
+                        )
+                    logger.warning(
+                        "Transient server error %s on %s %s — retrying (%d/%d)",
+                        resp.status_code, method.upper(), url, attempt + 1, max_attempts,
+                    )
+                    time.sleep(2 ** attempt)
+                    continue
+
+                # Successful response — reset circuit breaker
+                self._consecutive_transient_failures = 0
+                self._circuit_open_until = 0.0
                 return resp
+
             except (httpx.ConnectError, httpx.TimeoutException,
                     httpx.RemoteProtocolError, httpx.ReadError) as exc:
                 last_exc = exc
+                self._consecutive_transient_failures += 1
+                if self._consecutive_transient_failures >= self._CIRCUIT_BREAKER_THRESHOLD:
+                    self._circuit_open_until = time.monotonic() + self._CIRCUIT_BREAKER_COOLDOWN
+                    logger.warning(
+                        "Circuit breaker OPEN after %d consecutive connection failures — "
+                        "cooldown for %ds",
+                        self._consecutive_transient_failures,
+                        self._CIRCUIT_BREAKER_COOLDOWN,
+                    )
+                    raise RuntimeError(
+                        "API server is down (circuit breaker open)"
+                    ) from last_exc
                 if attempt < max_attempts - 1:
-                    import time
-                    time.sleep(2 ** attempt)  # 1s, 2s, 4s
+                    time.sleep(2 ** attempt)
                 continue
+        if last_resp is not None:
+            return last_resp  # Allow raise_for_status to propagate the final 502
         raise RuntimeError(
             f"API server unreachable at {self._base_url}: {last_exc}"
         ) from last_exc
@@ -119,7 +186,11 @@ class ApiClient:
     def _get(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
         resp = self._request_with_retry("GET", f"{self._base_url}{path}", params=params)
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except Exception:
+            logger.warning("Non-JSON response from %s: %s", path, getattr(resp, "text", ""))
+            return {"detail": "Invalid JSON response from server"}
 
     def _post(
         self, path: str, json_data: Optional[Dict] = None,
@@ -130,17 +201,38 @@ class ApiClient:
             json=json_data, files=files, data=data,
         )
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except Exception:
+            logger.warning("Non-JSON response from POST %s: %s", path, getattr(resp, "text", ""))
+            return {"detail": "Invalid JSON response from server"}
 
     def _put(self, path: str, json_data: Dict) -> Dict[str, Any]:
         resp = self._request_with_retry("PUT", f"{self._base_url}{path}", json=json_data)
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except Exception:
+            logger.warning("Non-JSON response from PUT %s: %s", path, getattr(resp, "text", ""))
+            return {"detail": "Invalid JSON response from server"}
+
+    def _patch(self, path: str, json_data: Dict) -> Dict[str, Any]:
+        resp = self._request_with_retry("PATCH", f"{self._base_url}{path}", json=json_data)
+        resp.raise_for_status()
+        try:
+            return resp.json()
+        except Exception:
+            logger.warning("Non-JSON response from PATCH %s: %s", path, getattr(resp, "text", ""))
+            return {"detail": "Invalid JSON response from server"}
 
     def _delete(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
         resp = self._request_with_retry("DELETE", f"{self._base_url}{path}", params=params)
         resp.raise_for_status()
-        return resp.json()
+        try:
+            return resp.json()
+        except Exception:
+            logger.warning("Non-JSON response from DELETE %s: %s", path, getattr(resp, "text", ""))
+            return {"detail": "Invalid JSON response from server"}
 
     def _download(self, path: str, params: Optional[Dict] = None) -> bytes:
         """GET a binary response (PDF, XLSX) and return raw bytes."""
@@ -242,6 +334,11 @@ class ApiClient:
             search=search, status=status, limit=limit,
         ))
 
+    def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4) -> Dict[str, Any]:
+        return self._get("/api/v1/trips/top-trucks", params=self._clean_params(
+            month_start=month_start, month_end=month_end, limit=limit,
+        ))
+
     def get_trip(self, trip_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/trips/{trip_id}")
 
@@ -265,8 +362,16 @@ class ApiClient:
 
     # ── Client endpoints ──────────────────────────────────────────────
 
-    def list_clients(self, query: str = "", limit: int = 200) -> Dict[str, Any]:
-        return self._get("/api/v1/clients/", params=self._clean_params(query=query, limit=limit))
+    def list_clients(self, query: str = "", limit: int = 200,
+                     include_inactive: bool = False,
+                     page: int = 1) -> Dict[str, Any]:
+        # The backend caps page_size at 200; send it explicitly so search
+        # results respect the requested limit (the backend ignores `limit`).
+        page_size = min(limit, 200) if limit else 200
+        return self._get("/api/v1/clients/", params=self._clean_params(
+            query=query, limit=limit, page_size=page_size,
+            include_inactive=include_inactive, page=page,
+        ))
 
     def get_client(self, client_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/clients/{client_id}")
@@ -295,11 +400,21 @@ class ApiClient:
     def deactivate_client(self, client_id: int) -> Dict[str, Any]:
         return self._post(f"/api/v1/clients/{client_id}/deactivate")
 
+    def merge_clients(self, from_id: int, to_id: int) -> Dict[str, Any]:
+        return self._post("/api/v1/clients/merge",
+                          json_data={"from_id": from_id, "to_id": to_id})
+
     def get_client_contacts(self, client_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/clients/{client_id}/contacts")
 
     def add_client_contact(self, client_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
         return self._post(f"/api/v1/clients/{client_id}/contacts", json_data=data)
+
+    def update_client_contact(self, contact_id: int, data: Dict[str, Any]) -> Dict[str, Any]:
+        return self._patch(f"/api/v1/clients/contacts/{contact_id}", json_data=data)
+
+    def delete_client_contact(self, contact_id: int) -> Dict[str, Any]:
+        return self._delete(f"/api/v1/clients/contacts/{contact_id}")
 
     def get_client_tags(self, client_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/clients/{client_id}/tags")
@@ -581,6 +696,38 @@ class ApiClient:
 
     def save_setting(self, key: str, value: str) -> Dict[str, Any]:
         return self._put(f"/api/v1/settings/{key}", json_data={"value": value})
+
+    # ── Support endpoints ─────────────────────────────────────────────
+
+    def report_issue(
+        self, subject: str, description: str,
+        severity: str = "medium",
+        screenshot_bytes: bytes | None = None,
+        screenshot_filename: str = "screenshot.png",
+    ) -> Dict[str, Any]:
+        """Send a support ticket via POST to the backend proxy.
+
+        Args:
+            subject: Short summary of the issue.
+            description: Detailed description.
+            severity: One of ``"low"``, ``"medium"``, ``"high"``, ``"critical"``.
+            screenshot_bytes: Optional raw PNG/JPEG bytes to attach.
+            screenshot_filename: Filename for the attached screenshot
+                                 (default ``screenshot.png``).
+
+        Returns:
+            Server response as a dict (e.g. ``{"id": ..., "status": ...}``).
+        """
+        body: Dict[str, Any] = {
+            "subject": subject,
+            "description": description,
+            "severity": severity,
+        }
+        if screenshot_bytes is not None:
+            import base64
+            body["screenshot"] = base64.b64encode(screenshot_bytes).decode("ascii")
+            body["screenshot_filename"] = screenshot_filename
+        return self._post("/api/v1/support/messages", json_data=body)
 
     # ── Tacho endpoints ───────────────────────────────────────────────
 

@@ -20,6 +20,7 @@ class TestOcrRouter:
             "ocr_text": "extracted invoice text",
             "ocr_engine": "tesseract",
             "extracted_data_json": {"total": "1500.00"},
+            "ocr_run_at": "2026-07-02T10:00:00Z",
         }
 
         resp = client.post(f"{BASE}/run", json={"document_id": 1})
@@ -29,6 +30,8 @@ class TestOcrRouter:
         assert data["ocr_text"] == "extracted invoice text"
         assert data["engine_used"] == "tesseract"
         assert data["extracted_fields"] == {"total": "1500.00"}
+        assert data["status"] == "done"
+        assert "error" in data and data["error"] is None
 
     def test_run_ocr_document_not_found(self, client_with_mocks):
         client, mocks = client_with_mocks
@@ -46,6 +49,7 @@ class TestOcrRouter:
             "ocr_text": "status text",
             "ocr_engine": "tesseract",
             "extracted_data_json": {"field": "value"},
+            "ocr_run_at": "2026-07-02T10:00:00Z",
         }
 
         resp = client.get(f"{BASE}/status/1")
@@ -53,6 +57,37 @@ class TestOcrRouter:
         data = resp.json()
         assert data["document_id"] == 1
         assert data["ocr_text"] == "status text"
+        assert data["status"] == "done"
+
+    def test_get_ocr_status_pending_when_not_started(self, client_with_mocks):
+        """No ocr_run_at → derived status 'pending' (not started / queued)."""
+        client, mocks = client_with_mocks
+        mocks["document_service"].get_by_id.return_value = {
+            "ocr_text": "",
+            "ocr_engine": "none",
+            "extracted_data_json": {},
+        }
+
+        resp = client.get(f"{BASE}/status/1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "pending"
+        assert data["error"] is None
+
+    def test_get_ocr_status_empty_when_ran_but_no_text(self, client_with_mocks):
+        """ocr_run_at set but no text → derived status 'empty' (ran but empty)."""
+        client, mocks = client_with_mocks
+        mocks["document_service"].get_by_id.return_value = {
+            "ocr_text": "",
+            "ocr_engine": "tesseract",
+            "extracted_data_json": {},
+            "ocr_run_at": "2026-07-02T10:00:00Z",
+        }
+
+        resp = client.get(f"{BASE}/status/1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "empty"
 
     def test_get_ocr_status_not_found(self, client_with_mocks):
         client, mocks = client_with_mocks
@@ -77,6 +112,7 @@ class TestOcrRouter:
         assert len(data) == 2
         assert data[0]["ocr_text"] == "doc1"
         assert data[1]["ocr_text"] == "doc2"
+        assert data[0]["status"] == "pending"
 
     def test_run_ocr_batch_empty_list(self, client_with_mocks):
         client, mocks = client_with_mocks

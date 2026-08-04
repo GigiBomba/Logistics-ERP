@@ -31,7 +31,13 @@ def mock_instance(client, mock_httpx_cls):
 
 
 class TestApiClientInit:
-    def test_default_headers_no_auth(self, mock_httpx_cls):
+    def test_default_headers_no_auth(self, mock_httpx_cls, monkeypatch):
+        monkeypatch.delenv("OPERION_API_KEY", raising=False)
+        monkeypatch.delenv("OPERION_ADMIN_EMAIL", raising=False)
+        monkeypatch.delenv("OPERION_ADMIN_PASSWORD_HASH", raising=False)
+        # Reset ClientConfig singleton so it re-reads clean env
+        import client.config
+        client.config._CONFIG = None
         ApiClient(base_url="http://test.local", verify_ssl=False)
         _, kwargs = mock_httpx_cls.call_args
         assert "headers" in kwargs
@@ -106,13 +112,13 @@ class TestCrudMethods:
     """Verify CRUD methods construct correct HTTP requests."""
 
     def test_get_document(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(status_code=200, json=lambda: {"id": 1})
+        mock_instance.request.return_value = MagicMock(status_code=200, json=lambda: {"id": 1})
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.get_document(42)
         assert result == {"id": 1}
 
     def test_list_documents(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: [{"id": 1}]
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -120,21 +126,21 @@ class TestCrudMethods:
         assert result == [{"id": 1}]
 
     def test_create_trip(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(status_code=201, json=lambda: {"id": 99})
+        mock_instance.request.return_value = MagicMock(status_code=201, json=lambda: {"id": 99})
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         payload = {"origin": "Berlin", "destination": "Paris"}
         result = client.create_trip(data=payload)
         assert result == {"id": 99}
 
     def test_update_trip(self, mock_instance):
-        mock_instance.put.return_value = MagicMock(status_code=200, json=lambda: {"id": 1})
+        mock_instance.request.return_value = MagicMock(status_code=200, json=lambda: {"id": 1})
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         payload = {"status": "completed"}
         result = client.update_trip(trip_id=1, data=payload)
         assert result == {"id": 1}
 
     def test_delete_trip(self, mock_instance):
-        mock_instance.delete.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"success": True}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -153,7 +159,8 @@ class TestDualModeDocumentService:
         return svc
 
     def test_get_by_id_delegates_to_api(self, service, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"id": 5, "name": "doc.pdf"}
         )
         result = service.get_by_id(5)
@@ -166,7 +173,8 @@ class TestDualModeDocumentService:
         assert result == {"id": 5, "name": "cached.pdf"}
 
     def test_list_documents_delegates_to_api(self, service, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"items": [{"id": 1}], "total": 1}
         )
         result = service.list_documents(page=1)
@@ -179,7 +187,7 @@ class TestDualModeDocumentService:
         assert result["total"] == 0
 
     def test_health(self, service, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"status": "healthy"}
         )
         result = service.health()
@@ -223,25 +231,25 @@ class TestCrudErrors:
     """Verify CRUD error handling (ConnectError, non-2xx)."""
 
     def test_get_raises_runtime_error_on_connect_error(self, mock_instance):
-        mock_instance.get.side_effect = httpx.ConnectError("connection refused")
+        mock_instance.request.side_effect = httpx.ConnectError("connection refused")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(RuntimeError, match="unreachable"):
             client.get_document(1)
 
     def test_post_raises_runtime_error_on_connect_error(self, mock_instance):
-        mock_instance.post.side_effect = httpx.ConnectError("connection refused")
+        mock_instance.request.side_effect = httpx.ConnectError("connection refused")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(RuntimeError, match="unreachable"):
             client.create_trip(data={})
 
     def test_put_raises_runtime_error_on_connect_error(self, mock_instance):
-        mock_instance.put.side_effect = httpx.ConnectError("connection refused")
+        mock_instance.request.side_effect = httpx.ConnectError("connection refused")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(RuntimeError, match="unreachable"):
             client._put("/test", json_data={})
 
     def test_delete_raises_runtime_error_on_connect_error(self, mock_instance):
-        mock_instance.delete.side_effect = httpx.ConnectError("connection refused")
+        mock_instance.request.side_effect = httpx.ConnectError("connection refused")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(RuntimeError, match="unreachable"):
             client._delete("/test")
@@ -251,7 +259,7 @@ class TestCrudErrors:
         resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Server error", request=MagicMock(), response=resp
         )
-        mock_instance.get.return_value = resp
+        mock_instance.request.return_value = resp
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(httpx.HTTPStatusError):
             client.get_document(1)
@@ -261,7 +269,7 @@ class TestCrudErrors:
         resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Bad request", request=MagicMock(), response=resp
         )
-        mock_instance.post.return_value = resp
+        mock_instance.request.return_value = resp
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(httpx.HTTPStatusError):
             client.create_trip(data={})
@@ -271,7 +279,7 @@ class TestCrudErrors:
         resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Forbidden", request=MagicMock(), response=resp
         )
-        mock_instance.put.return_value = resp
+        mock_instance.request.return_value = resp
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(httpx.HTTPStatusError):
             client._put("/test", json_data={})
@@ -281,7 +289,7 @@ class TestCrudErrors:
         resp.raise_for_status.side_effect = httpx.HTTPStatusError(
             "Not found", request=MagicMock(), response=resp
         )
-        mock_instance.delete.return_value = resp
+        mock_instance.request.return_value = resp
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(httpx.HTTPStatusError):
             client._delete("/test")
@@ -291,7 +299,7 @@ class TestBinaryMethods:
     """Verify _download and _post_binary return raw bytes."""
 
     def test_download_returns_bytes(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, content=b"PDF content"
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -299,7 +307,7 @@ class TestBinaryMethods:
         assert result == b"PDF content"
 
     def test_post_binary_returns_bytes(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, content=b"XLSX content"
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -307,30 +315,30 @@ class TestBinaryMethods:
         assert result == b"XLSX content"
 
     def test_download_raises_runtime_error_on_connect_error(self, mock_instance):
-        mock_instance.get.side_effect = httpx.ConnectError("connection refused")
+        mock_instance.request.side_effect = httpx.ConnectError("connection refused")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         with pytest.raises(RuntimeError, match="unreachable"):
             client._download("/test")
 
     def test_export_trip_pdf_delegates_to_download(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, content=b"%PDF-1.4"
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.export_trip_pdf(42)
         assert result == b"%PDF-1.4"
         # Verify the correct URL was called
-        call_url = mock_instance.get.call_args[0][0]
+        call_url = mock_instance.request.call_args[0][1]
         assert "/api/v1/trips/42/export/pdf" in call_url
 
     def test_export_trip_xlsx_delegates_to_download(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, content=b"PK\x03\x04"
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.export_trip_xlsx(42)
         assert result == b"PK\x03\x04"
-        call_url = mock_instance.get.call_args[0][0]
+        call_url = mock_instance.request.call_args[0][1]
         assert "/api/v1/trips/42/export/xlsx" in call_url
 
 
@@ -388,27 +396,27 @@ class TestClose:
 
 class TestFleetEndpoints:
     def test_list_trucks(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"items": [{"id": 1, "plate": "AB-123"}]}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.list_trucks()
         assert result == {"items": [{"id": 1, "plate": "AB-123"}]}
-        call_url = mock_instance.get.call_args[0][0]
+        call_url = mock_instance.request.call_args[0][1]
         assert "/api/v1/fleet/trucks" in call_url
 
     def test_get_truck(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"id": 7, "plate": "CD-456"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.get_truck(7)
         assert result["plate"] == "CD-456"
-        call_url = mock_instance.get.call_args[0][0]
+        call_url = mock_instance.request.call_args[0][1]
         assert "/api/v1/fleet/trucks/7" in call_url
 
     def test_create_truck(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=201, json=lambda: {"id": 10}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -416,7 +424,7 @@ class TestFleetEndpoints:
         assert result["id"] == 10
 
     def test_update_truck(self, mock_instance):
-        mock_instance.put.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"id": 10, "plate": "EF-789"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -424,7 +432,7 @@ class TestFleetEndpoints:
         assert result["plate"] == "EF-789"
 
     def test_delete_truck(self, mock_instance):
-        mock_instance.delete.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"success": True}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -432,7 +440,7 @@ class TestFleetEndpoints:
         assert result == {"success": True}
 
     def test_get_live_position(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"truck_id": 1, "lat": 52.52, "lng": 13.40}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -442,7 +450,7 @@ class TestFleetEndpoints:
 
 class TestDriverEndpoints:
     def test_list_drivers(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"items": [{"id": 1, "name": "John"}]}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -450,7 +458,7 @@ class TestDriverEndpoints:
         assert len(result["items"]) == 1
 
     def test_get_driver(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"id": 5, "name": "Jane"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -458,7 +466,7 @@ class TestDriverEndpoints:
         assert result["name"] == "Jane"
 
     def test_create_driver(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=201, json=lambda: {"id": 20}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -466,7 +474,7 @@ class TestDriverEndpoints:
         assert result["id"] == 20
 
     def test_assign_driver_to_truck(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"success": True}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -476,7 +484,7 @@ class TestDriverEndpoints:
 
 class TestHealthCheck:
     def test_health_check_returns_status(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"status": "healthy"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -486,7 +494,7 @@ class TestHealthCheck:
 
 class TestDocumentListEndpoints:
     def test_get_document_links_returns_list(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: [{"doc_id": 1, "entity_type": "trip"}]
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -495,7 +503,7 @@ class TestDocumentListEndpoints:
         assert result[0]["doc_id"] == 1
 
     def test_get_document_links_returns_empty_list_when_not_list(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -503,7 +511,7 @@ class TestDocumentListEndpoints:
         assert result == []
 
     def test_get_document_versions_returns_list(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: [{"id": 1, "version": 2}]
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -512,7 +520,7 @@ class TestDocumentListEndpoints:
         assert result[0]["version"] == 2
 
     def test_get_document_categories_returns_list(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: [{"name": "Invoice"}, {"name": "Contract"}]
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -529,55 +537,55 @@ class TestRetryOn401:
         # First call returns 401, second returns 200
         resp_401 = MagicMock(status_code=401)
         resp_200 = MagicMock(status_code=200, json=lambda: {"id": 42})
-        mock_instance.get.side_effect = [resp_401, resp_200]
+        mock_instance.request.side_effect = [resp_401, resp_200]
         with patch.object(client._auth, "refresh", return_value=True):
             result = client.get_document(42)
         assert result == {"id": 42}
-        assert mock_instance.get.call_count == 2
+        assert mock_instance.request.call_count == 2
 
     def test_post_retries_on_401(self, mock_instance):
         auth = Auth(token="expired", refresh_token="rtok")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False, auth=auth)
         resp_401 = MagicMock(status_code=401)
         resp_201 = MagicMock(status_code=201, json=lambda: {"id": 99})
-        mock_instance.post.side_effect = [resp_401, resp_201]
+        mock_instance.request.side_effect = [resp_401, resp_201]
         with patch.object(client._auth, "refresh", return_value=True):
             result = client.create_trip(data={"origin": "Berlin"})
         assert result["id"] == 99
-        assert mock_instance.post.call_count == 2
+        assert mock_instance.request.call_count == 2
 
     def test_put_retries_on_401(self, mock_instance):
         auth = Auth(token="expired", refresh_token="rtok")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False, auth=auth)
         resp_401 = MagicMock(status_code=401)
         resp_200 = MagicMock(status_code=200, json=lambda: {"id": 1})
-        mock_instance.put.side_effect = [resp_401, resp_200]
+        mock_instance.request.side_effect = [resp_401, resp_200]
         with patch.object(client._auth, "refresh", return_value=True):
             result = client.update_trip(1, data={"status": "done"})
         assert result["id"] == 1
-        assert mock_instance.put.call_count == 2
+        assert mock_instance.request.call_count == 2
 
     def test_delete_retries_on_401(self, mock_instance):
         auth = Auth(token="expired", refresh_token="rtok")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False, auth=auth)
         resp_401 = MagicMock(status_code=401)
         resp_200 = MagicMock(status_code=200, json=lambda: {"success": True})
-        mock_instance.delete.side_effect = [resp_401, resp_200]
+        mock_instance.request.side_effect = [resp_401, resp_200]
         with patch.object(client._auth, "refresh", return_value=True):
             result = client.delete_trip(5)
         assert result["success"] is True
-        assert mock_instance.delete.call_count == 2
+        assert mock_instance.request.call_count == 2
 
     def test_download_retries_on_401(self, mock_instance):
         auth = Auth(token="expired", refresh_token="rtok")
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False, auth=auth)
         resp_401 = MagicMock(status_code=401)
         resp_200 = MagicMock(status_code=200, content=b"binary data")
-        mock_instance.get.side_effect = [resp_401, resp_200]
+        mock_instance.request.side_effect = [resp_401, resp_200]
         with patch.object(client._auth, "refresh", return_value=True):
             result = client.export_trip_pdf(1)
         assert result == b"binary data"
-        assert mock_instance.get.call_count == 2
+        assert mock_instance.request.call_count == 2
 
 
 class TestDualModeDocumentServiceExtended:
@@ -596,7 +604,8 @@ class TestDualModeDocumentServiceExtended:
             "ocr_text": "sample text",
             "extracted_fields": {},
         }
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: api_response
         )
         result = service.read_document_info(1)
@@ -621,7 +630,8 @@ class TestDualModeDocumentServiceExtended:
         assert result == {}
 
     def test_get_categories_delegates_to_api(self, service, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: [{"name": "Invoice"}]
         )
         result = service.get_categories()
@@ -641,7 +651,8 @@ class TestDualModeDocumentServiceExtended:
         assert result == []
 
     def test_get_links_delegates_to_api(self, service, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: [{"doc_id": 1}]
         )
         result = service.get_links(1)
@@ -661,7 +672,8 @@ class TestDualModeDocumentServiceExtended:
         assert result == []
 
     def test_get_versions_delegates_to_api(self, service, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.get.return_value = MagicMock(status_code=200)
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: [{"id": 1, "version": 2}]
         )
         result = service.get_versions(1)
@@ -683,18 +695,18 @@ class TestDualModeDocumentServiceExtended:
 
 class TestListTrips:
     def test_list_trips_passes_params(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"items": [{"id": 1}]}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         client.list_trips(search="Berlin", status="active", limit=50)
-        call_kwargs = mock_instance.get.call_args[1]
+        call_kwargs = mock_instance.request.call_args[1]
         assert call_kwargs["params"]["search"] == "Berlin"
         assert call_kwargs["params"]["status"] == "active"
         assert call_kwargs["params"]["limit"] == 50
 
     def test_get_trip(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"id": 1, "origin": "Berlin"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -702,7 +714,7 @@ class TestListTrips:
         assert result["origin"] == "Berlin"
 
     def test_check_trip_conflicts(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"conflicts": []}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -712,15 +724,33 @@ class TestListTrips:
 
 class TestClientEndpoints:
     def test_list_clients(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"items": [{"id": 1, "name": "Acme"}]}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.list_clients()
         assert result["items"][0]["name"] == "Acme"
 
+    def test_list_clients_sends_include_inactive_true(self, mock_instance):
+        mock_instance.request.return_value = MagicMock(
+            status_code=200, json=lambda: {"items": []}
+        )
+        client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
+        client.list_clients(include_inactive=True)
+        call_kwargs = mock_instance.request.call_args[1]
+        assert call_kwargs["params"]["include_inactive"] is True
+
+    def test_list_clients_sends_include_inactive_false(self, mock_instance):
+        mock_instance.request.return_value = MagicMock(
+            status_code=200, json=lambda: {"items": []}
+        )
+        client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
+        client.list_clients()
+        call_kwargs = mock_instance.request.call_args[1]
+        assert call_kwargs["params"]["include_inactive"] is False
+
     def test_get_client(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"id": 3, "name": "Beta"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -728,7 +758,7 @@ class TestClientEndpoints:
         assert result["name"] == "Beta"
 
     def test_create_client(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=201, json=lambda: {"id": 7}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -736,7 +766,7 @@ class TestClientEndpoints:
         assert result["id"] == 7
 
     def test_get_client_dashboard(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"revenue": 50000, "trip_count": 12}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -744,15 +774,40 @@ class TestClientEndpoints:
         assert result["revenue"] == 50000
 
     def test_deactivate_client(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"success": True}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         result = client.deactivate_client(1)
         assert result["success"] is True
 
+    def test_update_client_contact(self, mock_instance):
+        mock_instance.request.return_value = MagicMock(
+            status_code=200, json=lambda: {"status": "updated"}
+        )
+        client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
+        result = client.update_client_contact(
+            5, {"full_name": "Jane Smith", "phone": "+40123"}
+        )
+        assert result["status"] == "updated"
+        call_args, call_kwargs = mock_instance.request.call_args
+        assert call_args[0] == "PATCH"
+        assert "/api/v1/clients/contacts/5" in call_args[1]
+        assert call_kwargs["json"] == {"full_name": "Jane Smith", "phone": "+40123"}
+
+    def test_delete_client_contact(self, mock_instance):
+        mock_instance.request.return_value = MagicMock(
+            status_code=200, json=lambda: {"status": "deleted"}
+        )
+        client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
+        result = client.delete_client_contact(5)
+        assert result["status"] == "deleted"
+        call_args, _ = mock_instance.request.call_args
+        assert call_args[0] == "DELETE"
+        assert "/api/v1/clients/contacts/5" in call_args[1]
+
     def test_upload_document(self, mock_instance, tmp_path):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=201, json=lambda: {"id": 99}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -764,7 +819,7 @@ class TestClientEndpoints:
 
 class TestSettingsAndAlertEndpoints:
     def test_get_company_config(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"company_name": "Operion"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -772,7 +827,7 @@ class TestSettingsAndAlertEndpoints:
         assert result["company_name"] == "Operion"
 
     def test_list_alerts(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"items": [{"id": "alert-1"}]}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -780,7 +835,7 @@ class TestSettingsAndAlertEndpoints:
         assert len(result["items"]) == 1
 
     def test_resolve_alert(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"success": True}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -788,7 +843,7 @@ class TestSettingsAndAlertEndpoints:
         assert result["success"] is True
 
     def test_get_admin_diagnostics(self, mock_instance):
-        mock_instance.get.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"status": "all good"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -798,16 +853,16 @@ class TestSettingsAndAlertEndpoints:
 
 class TestPostWithDataAndFiles:
     def test_add_document_tag_uses_data(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"success": True}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
         client.add_document_tag(1, "important")
-        call_kwargs = mock_instance.post.call_args[1]
+        call_kwargs = mock_instance.request.call_args[1]
         assert call_kwargs["data"] == {"tag": "important"}
 
     def test_run_ocr(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"job_id": "ocr-123"}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -815,7 +870,7 @@ class TestPostWithDataAndFiles:
         assert result["job_id"] == "ocr-123"
 
     def test_generate_invoice_via_post_binary(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, content=b"PDF invoice"
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)
@@ -823,7 +878,7 @@ class TestPostWithDataAndFiles:
         assert result == b"PDF invoice"
 
     def test_send_invoice_email(self, mock_instance):
-        mock_instance.post.return_value = MagicMock(
+        mock_instance.request.return_value = MagicMock(
             status_code=200, json=lambda: {"sent": True}
         )
         client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False)

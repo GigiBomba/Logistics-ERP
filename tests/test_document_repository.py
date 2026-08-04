@@ -527,8 +527,17 @@ class TestDeleteVersions:
 # COLUMNS (a production bug). We use direct SQL for contract setup.
 
 
+def _client(db: InMemoryDB, client_id: int) -> None:
+    """Ensure a minimal client row exists so contracts FK constraints pass."""
+    db.conn.execute(
+        "INSERT OR IGNORE INTO clients (id, name, created_at) VALUES (?, ?, '2026-01-01')",
+        (client_id, f"Client-{client_id}"),
+    )
+
+
 def _contract(db: InMemoryDB, document_id: int, client_id: int = 1,
               contract_type: str = "transport", value_eur: float = 10000.0) -> int:
+    _client(db, client_id)  # contracts.client_id -> clients(id) FK
     db.conn.execute(
         "INSERT INTO contracts (document_id, client_id, contract_type, start_date, end_date, "
         "value_eur, payment_terms, auto_renewal, renewal_notice_days, notes, status, created_at, updated_at) "

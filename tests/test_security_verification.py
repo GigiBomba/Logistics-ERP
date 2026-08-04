@@ -20,16 +20,53 @@ from fastapi.testclient import TestClient
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
 
+_OPERION_KEYS = [
+    "OPERION_ENV", "OPERION_API_KEY", "OPERION_ENCRYPTION_KEY",
+    "OPERION_RATE_LIMIT", "OPERION_ADMIN_EMAIL",
+    "OPERION_ADMIN_PASSWORD_HASH", "OPERION_JWT_SECRET_KEY",
+    "OPERION_DB_PATH", "OPERION_DB_ENGINE",
+]
+
+
+def _save_env(*keys):
+    """Save current values of env *keys* and return a restore-callable."""
+    saved = {k: os.environ.get(k) for k in keys}
+    def _restore():
+        for k, v in saved.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+    return _restore
+
+
 @pytest.fixture(scope="module")
-def client():
-    """Create a fresh TestClient per module run."""
-    from backend.main import app
+def client(request):
+    """Create a fresh TestClient per module run.
+
+    Sets env vars before calling ``create_app()`` so that middleware
+    and config pick up test-friendly values (high rate limit, etc.).
+    Restores originals at module teardown.
+    """
+    restore = _save_env("OPERION_API_KEY", "OPERION_ENCRYPTION_KEY", "OPERION_RATE_LIMIT")
+    request.addfinalizer(restore)
+    os.environ["OPERION_API_KEY"] = "test-api-key-for-testing"
+    os.environ["OPERION_ENCRYPTION_KEY"] = "test-encryption-key-32-chars-long-for-aes!!"
+    # High rate limit so the full test suite doesn't trigger 429
+    os.environ["OPERION_RATE_LIMIT"] = "10000"
+    from backend.main import create_app
+    app = create_app()
     return TestClient(app)
 
 
 @pytest.fixture
-def auth_headers(client):
+def auth_headers(client, request):
     """Log in as admin and return Authorization headers."""
+    restore = _save_env(
+        "OPERION_ADMIN_EMAIL", "OPERION_ADMIN_PASSWORD_HASH",
+        "OPERION_JWT_SECRET_KEY", "OPERION_ENV",
+    )
+    request.addfinalizer(restore)
     os.environ["OPERION_ADMIN_EMAIL"] = "test-admin@operion.dev"
     os.environ["OPERION_ADMIN_PASSWORD_HASH"] = bcrypt.hashpw(
         b"test-password-123", bcrypt.gensalt(rounds=4)
@@ -80,17 +117,34 @@ class TestFinding3_EndpointAuth:
         "/api/v1/auth/refresh",
         "/api/v1/auth/logout",
         "/api/v1/registration/register",
+        "/api/v1/status",
         "/docs",
         "/docs/oauth2-redirect",
         "/redoc",
         "/openapi.json",
     }
 
+    # Prefixes the AuthMiddleware treats as public (SKIP_PREFIXES).
+    PUBLIC_PREFIXES = (
+        "/docs", "/redoc", "/openapi.json", "/api/v1/health",
+        "/api/v1/auth", "/api/v1/registration", "/api/v1/route-demo",
+        "/api/v1/waitlist",
+    )
+
     def _get_all_routes(self, app):
-        """Return the set of route paths registered on the FastAPI app."""
+        """Return the set of route paths registered on the FastAPI app.
+
+        Recurses into ``_IncludedRouter`` entries so nested routers
+        (``prefix /api/v1`` → sub-routers) are resolved.
+        """
+        from fastapi.routing import _IncludedRouter, _EffectiveRouteContext
         routes = set()
         for route in app.routes:
-            if hasattr(route, "path") and route.path:
+            if isinstance(route, _IncludedRouter):
+                for ctx in route.effective_route_contexts():
+                    if isinstance(ctx, _EffectiveRouteContext) and ctx.path:
+                        routes.add(ctx.path)
+            elif hasattr(route, "path") and route.path:
                 routes.add(route.path)
         return routes
 
@@ -102,6 +156,9 @@ class TestFinding3_EndpointAuth:
         tested = 0
         for path in sorted(routes):
             if path in self.PUBLIC_PATHS:
+                continue
+            # Also skip paths under public prefixes (matching AuthMiddleware.SKIP_PREFIXES).
+            if any(path.startswith(p) for p in self.PUBLIC_PREFIXES):
                 continue
             # Routes with path params like {trip_id} don't resolve with literal braces.
             if "{" in path:
@@ -206,6 +263,7 @@ class TestFinding7_RefreshRotation:
 
     def test_refresh_token_replay_rejected(self, client):
         """Obtain a token pair, use refresh once (succeeds), reuse (fails)."""
+        restore = _save_env("OPERION_ADMIN_EMAIL", "OPERION_ADMIN_PASSWORD_HASH", "OPERION_JWT_SECRET_KEY")
         os.environ["OPERION_ADMIN_EMAIL"] = "refresh-test@operion.dev"
         os.environ["OPERION_ADMIN_PASSWORD_HASH"] = bcrypt.hashpw(
             b"test-pw", bcrypt.gensalt(rounds=4)
@@ -227,9 +285,12 @@ class TestFinding7_RefreshRotation:
 
         # Second refresh with the SAME token — should fail (rotated)
         r2 = client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
-        assert r2.status_code == 401, (
-            f"Expected 401 for replayed refresh token, got {r2.status_code}: {r2.text}"
-        )
+        try:
+            assert r2.status_code == 401, (
+                f"Expected 401 for replayed refresh token, got {r2.status_code}: {r2.text}"
+            )
+        finally:
+            restore()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -312,11 +373,22 @@ class TestFinding11_DocsDisabledInProd:
     def test_docs_return_404_in_production(self):
         """Set env to production, recreate app, hit docs endpoints."""
         original_env = os.environ.get("OPERION_ENV", "")
+        original_api_key = os.environ.get("OPERION_API_KEY", "")
+        original_internal_auth = os.environ.get("OPERION_SUPPORT_INTERNAL_AUTH", "")
         os.environ["OPERION_ENV"] = "production"
+        os.environ["OPERION_API_KEY"] = "test-api-key-for-docs-test"
+        os.environ["OPERION_SUPPORT_INTERNAL_AUTH"] = "test-internal-auth"
         try:
-            # Reimport to trigger create_app with production env
+            # Reload modules in dependency order so Config.API_KEY etc.
+            # pick up the new env var values.
             import importlib
+            import config as root_config
+            import backend.desktop_config
+            import backend.middleware.auth_middleware
             import backend.main
+            importlib.reload(root_config)
+            importlib.reload(backend.desktop_config)
+            importlib.reload(backend.middleware.auth_middleware)
             importlib.reload(backend.main)
             from backend.main import app as prod_app
             prod_client = TestClient(prod_app)
@@ -327,7 +399,25 @@ class TestFinding11_DocsDisabledInProd:
                     f"{path} returned {resp.status_code} in production (expected 404)"
                 )
         finally:
-            os.environ["OPERION_ENV"] = original_env or "test"
+            if original_env:
+                os.environ["OPERION_ENV"] = original_env
+            else:
+                os.environ.pop("OPERION_ENV", None)
+            if original_api_key:
+                os.environ["OPERION_API_KEY"] = original_api_key
+            else:
+                os.environ.pop("OPERION_API_KEY", None)
+            if original_internal_auth:
+                os.environ["OPERION_SUPPORT_INTERNAL_AUTH"] = original_internal_auth
+            else:
+                os.environ.pop("OPERION_SUPPORT_INTERNAL_AUTH", None)
+            import config as root_config
+            import backend.desktop_config
+            import backend.middleware.auth_middleware
+            import backend.main
+            importlib.reload(root_config)
+            importlib.reload(backend.desktop_config)
+            importlib.reload(backend.middleware.auth_middleware)
             importlib.reload(backend.main)
 
 
@@ -340,6 +430,7 @@ class TestFinding12_Lockout:
 
     def test_lockout_blocks_after_5_failures(self, client):
         """6 failed logins → 6th blocked even with correct password."""
+        _restore_env = _save_env("OPERION_ADMIN_EMAIL", "OPERION_ADMIN_PASSWORD_HASH", "OPERION_JWT_SECRET_KEY")
         os.environ["OPERION_ADMIN_EMAIL"] = "lockout-test@operion.dev"
         os.environ["OPERION_ADMIN_PASSWORD_HASH"] = bcrypt.hashpw(
             b"real-pw", bcrypt.gensalt(rounds=4)
@@ -369,6 +460,7 @@ class TestFinding12_Lockout:
 
         # Cleanup
         _clear_lockout("lockout-test@operion.dev")
+        _restore_env()
 
 
 # ═════════════════════════════════════════════════════════════════════════════

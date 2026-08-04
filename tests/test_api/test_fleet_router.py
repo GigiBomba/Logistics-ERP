@@ -90,6 +90,7 @@ class TestFleetRouter:
         client, mocks = client_with_mocks
         mock_cache = MagicMock()
         mock_get_cache.return_value = mock_cache
+        mocks["fleet_service"].get_truck.return_value = {"id": 1, "company_id": 1}
 
         payload = {
             "truck_id": 1,
@@ -113,6 +114,7 @@ class TestFleetRouter:
         client, mocks = client_with_mocks
         mock_cache = MagicMock()
         mock_get_cache.return_value = mock_cache
+        mocks["fleet_service"].get_truck.return_value = {"id": 1, "company_id": 1}
         mock_cache.get.return_value = {
             "truck_id": 1,
             "latitude": 48.8566,
@@ -136,9 +138,10 @@ class TestFleetRouter:
         client, mocks = client_with_mocks
         mock_cache = MagicMock()
         mock_get_cache.return_value = mock_cache
+        mocks["fleet_service"].get_truck.return_value = {"id": 1, "company_id": 1}
         mock_cache.get.return_value = None
 
-        resp = client.get(f"{BASE}/gps/live/999")
+        resp = client.get(f"{BASE}/gps/live/1")
         assert resp.status_code == 404
         assert resp.json()["detail"] == "No live data for this truck"
 
@@ -149,6 +152,7 @@ class TestFleetRouter:
         client, mocks = client_with_mocks
         mock_cache = MagicMock()
         mock_get_cache.return_value = mock_cache
+        mocks["fleet_service"].get_trucks_by_ids.return_value = [{"id": 1}, {"id": 2}]
 
         payload = [
             {"truck_id": 1, "latitude": 48.8566, "longitude": 2.3522,
@@ -166,10 +170,14 @@ class TestFleetRouter:
 
     def test_get_gps_history_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
+        mocks["fleet_service"].get_truck.return_value = {"id": 1, "company_id": 1}
         fake_rows = [
             {"truck_id": 1, "latitude": 48.8566, "longitude": 2.3522,
              "speed_kmh": 65, "recorded_at": "2024-01-15T10:30:00Z"},
         ]
+        # The conftest mock_db fixture sets rows_to_dicts with a side_effect
+        # that transforms its argument.  Clear it so our return_value is used.
+        mocks["db"].rows_to_dicts.side_effect = None
         mocks["db"].rows_to_dicts.return_value = fake_rows
 
         resp = client.get(f"{BASE}/gps/history/1?limit=10")

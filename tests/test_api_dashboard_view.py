@@ -7,6 +7,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PySide6.QtWidgets import QLabel, QPushButton
 
+# SP workaround: ui.widgets.SP may not exist since it re-exports SP as S
+import ui.widgets as _ui_widgets
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
+
 
 # =========================================================================
 # Fixtures
@@ -170,6 +175,75 @@ class TestQtApiDashboardView:
         api_dashboard.shutdown()
         assert api_dashboard._refresh_timer.isActive() is False
 
+    # ── Status refresh edge cases ────────────────────────────────────
+
+    def test_refresh_status_partial_health_data(self, api_dashboard, mock_api_client):
+        """_refresh_status handles health_check returning only 'database' key."""
+        mock_api_client.is_online.return_value = True
+        mock_api_client.health_check.return_value = {"database": "connected"}
+        api_dashboard._refresh_status()
+        # Should have API Server (0,0) + Database (0,1) + API Version (1,0)
+        assert api_dashboard._status_grid.count() == 3
+
+    def test_refresh_status_clears_previous_cards(self, api_dashboard):
+        """_refresh_status removes old cards before adding new ones."""
+        api_dashboard._refresh_status()
+        old_widgets = []
+        for i in range(api_dashboard._status_grid.count()):
+            item = api_dashboard._status_grid.itemAt(i)
+            if item and item.widget():
+                old_widgets.append(item.widget())
+
+        api_dashboard._refresh_status()
+
+        new_widgets = set()
+        for i in range(api_dashboard._status_grid.count()):
+            item = api_dashboard._status_grid.itemAt(i)
+            if item and item.widget():
+                new_widgets.add(item.widget())
+
+        for w in old_widgets:
+            assert w not in new_widgets
+
+    # ── Log overflow ─────────────────────────────────────────────────
+
+    def test_add_log_overflow_exact_boundary(self, api_dashboard):
+        """_add_log keeps exactly 100 entries, removing the oldest when full."""
+        for i in range(100):
+            api_dashboard._add_log(f"Log {i}")
+        assert api_dashboard._log_layout.count() == 100
+
+        api_dashboard._add_log("overflow")
+        assert api_dashboard._log_layout.count() == 100
+        # Oldest entry removed — first item should now be "Log 1"
+        first_item = api_dashboard._log_layout.itemAt(0)
+        assert first_item is not None
+        assert "Log 1" in first_item.widget().text()
+
+    # ── Scroll behaviour ─────────────────────────────────────────────
+
+    def test_scroll_to_bottom_sets_maximum(self, api_dashboard):
+        """_add_log triggers scroll-to-bottom that sets scrollbar to maximum value."""
+        mock_scrollbar = MagicMock()
+        mock_scrollbar.maximum.return_value = 500
+        with patch.object(api_dashboard._log_scroll, "verticalScrollBar", return_value=mock_scrollbar):
+            with patch("ui.views.api_dashboard_view.QTimer.singleShot") as mock_timer:
+                mock_timer.side_effect = lambda delay, cb: cb()
+                api_dashboard._add_log("test")
+                mock_scrollbar.setValue.assert_called_once_with(500)
+
+    # ── Timer lifecycle ──────────────────────────────────────────────
+
+    def test_timer_restarts_after_shutdown_wakeup(self, api_dashboard, mock_api_client):
+        """wakeup after shutdown restarts the refresh cycle."""
+        api_dashboard.shutdown()
+        assert api_dashboard._refresh_timer.isActive() is False
+
+        mock_api_client.is_online.reset_mock()
+        api_dashboard.wakeup()
+        # wakeup calls _refresh_status which calls is_online
+        mock_api_client.is_online.assert_called()
+
 
 # =========================================================================
 # Tests — _StatusCard
@@ -200,3 +274,19 @@ class TestStatusCard:
         """update_status changes the detail label."""
         status_card.update_status("online", "New detail")
         assert "New detail" in status_card._detail.text()
+
+    # ── Status styles ────────────────────────────────────────────────
+
+    def test_status_card_initial_style(self, status_card):
+        """_StatusCard applies the correct stylesheet for 'online' status."""
+        from ui.views.api_dashboard_view import _STATUS_STYLES
+        expected = _STATUS_STYLES["online"]
+        assert expected in status_card._status.styleSheet()
+
+    def test_status_card_unknown_status_default_style(self, qtbot):
+        """_StatusCard uses 'unknown' style for unrecognised status values."""
+        from ui.views.api_dashboard_view import _StatusCard, _STATUS_STYLES
+        card = _StatusCard(None, "Test", "unknown", "")
+        qtbot.addWidget(card)
+        expected = _STATUS_STYLES["unknown"]
+        assert expected in card._status.styleSheet()

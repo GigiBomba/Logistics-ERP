@@ -102,6 +102,8 @@ class ChatInputWidget(QFrame):
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
+        self.setAccessibleName("Chat input")
+        self.setAccessibleDescription("Text input bar for Co-Pilot chat")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
         self.setStyleSheet("background: transparent; border: none;")
 
@@ -114,6 +116,7 @@ class ChatInputWidget(QFrame):
 
         # Text input
         self._input = QLineEdit()
+        self._input.setAccessibleName("Chat message input")
         self._input.setPlaceholderText(
             t("copilot.input.placeholder", default="Ask me anything about your fleet...")
         )
@@ -142,6 +145,7 @@ class ChatInputWidget(QFrame):
 
         # Microphone button — push-to-talk
         self._mic_btn = QPushButton("\U0001f3a4")  # 🎤
+        self._mic_btn.setAccessibleName("Microphone")
         self._mic_btn.setToolTip(
             t("copilot.voice.ptt_tooltip", default="Hold to record — release to send")
         )
@@ -153,6 +157,7 @@ class ChatInputWidget(QFrame):
 
         # Send button
         self._send_btn = QPushButton(t("copilot.input.send", default="Send"))
+        self._send_btn.setAccessibleName("Send message")
         self._send_btn.setStyleSheet(
             f"""
             QPushButton {{
@@ -181,7 +186,14 @@ class ChatInputWidget(QFrame):
         """Emit the trimmed text and clear the input."""
         text = self._input.text().strip()
         if text:
-            self.send_clicked.emit(text)
+            # Client-side pre-sanitization: strip control characters
+            # and zero-width characters before the text reaches the
+            # API.  This is defense-in-depth — the server also
+            # sanitizes via InputSanitizationMiddleware.
+            import re as _re
+            text = _re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f\u200b\u200c\u200d\ufeff]', '', text)
+            if text:
+                self.send_clicked.emit(text)
             self._input.clear()
 
     def set_text(self, text: str) -> None:

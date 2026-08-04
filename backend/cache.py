@@ -21,7 +21,7 @@ class RedisCache:
             )
             self._redis.ping()
             self._enabled = True
-        except (redis.ConnectionError, redis.TimeoutError):
+        except (redis.ConnectionError, redis.TimeoutError, ValueError):
             self._enabled = False
 
     def get(self, key: str) -> Optional[Any]:
@@ -79,6 +79,15 @@ class RedisCache:
             return self._redis.lpop(key)
         except Exception:
             return None
+
+    def lrange(self, key: str, start: int = 0, end: int = -1) -> list:
+        """Return a slice of a Redis list (used by the GPS batch flush)."""
+        if not self._enabled or self._redis is None:
+            return []
+        try:
+            return self._redis.lrange(key, start, end)
+        except Exception:
+            return []
 
     def ltrim(self, key: str, start: int, end: int) -> bool:
         if not self._enabled or self._redis is None:

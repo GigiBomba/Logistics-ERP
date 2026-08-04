@@ -4,11 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 @pytest.fixture
-def automation_view(qt_widget, qtbot, monkeypatch):
-    monkeypatch.setattr(
-        "ui.views.automation_view.QtAutomationView._load_pipelines",
-        lambda self: None,
-    )
+def automation_view(qt_widget, qtbot):
     db = MagicMock()
     prefs = MagicMock()
     ops = MagicMock()
@@ -25,14 +21,14 @@ class TestQtAutomationView:
     def test_creation(self, automation_view):
         assert automation_view.db is not None
 
-    def test_pipeline_list_created(self, automation_view):
-        assert hasattr(automation_view, "_pipeline_list")
+    def test_drop_zone_exists(self, automation_view):
+        assert hasattr(automation_view, "_drop_zone")
 
-    def test_control_buttons_exist(self, automation_view):
-        assert hasattr(automation_view, "_btn_run")
+    def test_detail_panel_exists(self, automation_view):
+        assert hasattr(automation_view, "_detail")
 
-    def test_queue_widget_exists(self, automation_view):
-        assert hasattr(automation_view, "_queue_widget")
+    def test_run_list_layout_exists(self, automation_view):
+        assert hasattr(automation_view, "_run_list_layout")
 
     def test_shutdown_cleanup(self, automation_view):
         automation_view.shutdown()
@@ -40,8 +36,9 @@ class TestQtAutomationView:
     def test_wakeup_does_not_crash(self, automation_view):
         automation_view.wakeup()
 
-    def test_stop_button_exists(self, automation_view):
-        assert hasattr(automation_view, "_btn_stop")
+    def test_mode_radios_exist(self, automation_view):
+        assert hasattr(automation_view, "_radio_simple")
+        assert hasattr(automation_view, "_radio_advanced")
 
-    def test_refresh_button_exists(self, automation_view):
-        assert hasattr(automation_view, "_btn_refresh")
+    def test_refresh_does_not_crash(self, automation_view):
+        automation_view._refresh_from_db()

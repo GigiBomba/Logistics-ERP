@@ -14,7 +14,7 @@ widgets do not need inline stylesheets.
 
 from __future__ import annotations
 
-from PySide6.QtGui import QFont
+from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 from ui.design_tokens import (
@@ -29,6 +29,9 @@ from ui.design_tokens import (
     COLOR_BORDER_MEDIUM,
     COLOR_BORDER_STRONG,
     COLOR_BORDER_SUBTLE,
+    ELEVATION_FLAT,
+    ELEVATION_RAISED,
+    ELEVATION_OVERLAY,
     COLOR_ERROR_DEFAULT,
     COLOR_ERROR_SUBTLE,
     COLOR_ERROR_TEXT,
@@ -49,12 +52,15 @@ from ui.design_tokens import (
     COLOR_WARNING_SUBTLE,
     COLOR_WARNING_TEXT,
     TEXT_WHITE,
+    HOVER_MS,
     RADIUS_SM as RADIUS_CHIP,
     RADIUS_MD as RADIUS_INPUT,
     RADIUS_LG as RADIUS_CARD,
     RADIUS_MD as RADIUS_BUTTON,
     SPACE_2 as _P2,
     SPACE_4 as _P4,
+    FONT_SIZE_SM,
+    SPACE_1,
 )
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -95,7 +101,16 @@ class QtTheme:
     def apply(cls, app: QApplication) -> None:
         """Apply the global dark theme to a QApplication instance."""
         app.setStyleSheet(cls.qss())
-        app.setFont(QFont("IBM Plex Sans", FONT_SIZES["body"]))
+
+        # Check font availability to avoid Qt font substitution warnings
+        families = QFontDatabase.families()
+        preferred = "IBM Plex Sans"
+        fallback = "Segoe UI"
+        family = preferred if preferred in families else fallback
+        font = QFont(family, FONT_SIZES["body"])
+        if font.pointSize() <= 0:
+            font.setPointSize(13)
+        app.setFont(font)
 
     @classmethod
     def qss(cls) -> str:
@@ -174,6 +189,10 @@ class QtTheme:
             background-color: {COLOR_BG_BASE};
         }}
 
+        QWidget:focus {{
+            outline: none;
+        }}
+
         QWidget:disabled {{
             color: {COLOR_TEXT_TERTIARY};
         }}
@@ -226,6 +245,12 @@ class QtTheme:
         QLabel[fontRole="helper"] {{
             color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("small")}px;
+        }}
+
+        QLabel[role="field-error"] {{
+            color: {COLOR_ERROR_TEXT};
+            font-size: {FONT_SIZE_SM}px;
+            padding-top: {SPACE_1}px;
         }}
 
         QLabel[fontRole="h1"] {{
@@ -336,6 +361,16 @@ class QtTheme:
             font-size: {cls._fs("body")}px;
             font-weight: bold;
             min-height: 38px;
+            /* Transition for smooth hover */
+        }}
+
+        QPushButton:focus {{
+            border: 1px solid {COLOR_ACCENT_PRIMARY};
+        }}
+
+        QPushButton:focus:!hover {{
+            /* Subtle inner glow on focus */
+            border: 2px solid {COLOR_ACCENT_PRIMARY};
         }}
 
         QPushButton:hover {{
@@ -377,6 +412,11 @@ class QtTheme:
             border: none;
         }}
 
+        QPushButton[variant="ghost"]:focus {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_ACCENT_PRIMARY};
+        }}
+
         QPushButton[variant="ghost"]:hover {{
             background-color: {COLOR_BG_OVERLAY};
             color: {COLOR_TEXT_SECONDARY};
@@ -409,6 +449,7 @@ class QtTheme:
             font-size: {cls._fs("body")}px;
             selection-background-color: {COLOR_ACCENT_PRIMARY};
             selection-color: {TEXT_WHITE};
+            /* Transition for smooth border change */
         }}
 
         QLineEdit:focus, QPlainTextEdit:focus, QTextEdit:focus,
@@ -447,6 +488,15 @@ class QtTheme:
             width: 0px;
             height: 0px;
         }}
+
+        /* Validation states */
+        QLineEdit[validation="error"], QPlainTextEdit[validation="error"] {{
+            border-color: {COLOR_ERROR_DEFAULT};
+        }}
+
+        QLineEdit[validation="success"], QPlainTextEdit[validation="success"] {{
+            border-color: {COLOR_SUCCESS_DEFAULT};
+        }}
         """
 
     # ── Checkboxes / Radio buttons ──────────────────────────────────────────────
@@ -467,6 +517,11 @@ class QtTheme:
             border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: 4px;
             background-color: {COLOR_BG_OVERLAY};
+            /* Transition for smooth state changes */
+        }}
+
+        QCheckBox:focus::indicator {{
+            border-color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QCheckBox::indicator:hover {{
@@ -501,6 +556,10 @@ class QtTheme:
             border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: 9px;
             background-color: {COLOR_BG_OVERLAY};
+        }}
+
+        QRadioButton:focus::indicator {{
+            border-color: {COLOR_ACCENT_PRIMARY};
         }}
 
         QRadioButton::indicator:hover {{
@@ -609,15 +668,16 @@ class QtTheme:
         QTableWidget::item, QTableView::item {{
             padding: 6px 8px;
             border: none;
+            /* Transition for smooth hover */
         }}
 
         QTableWidget::item:selected, QTableView::item:selected {{
-            background-color: {COLOR_ACCENT_SUBTLE};
+            background-color: {COLOR_BG_SELECTED};
             color: {COLOR_TEXT_PRIMARY};
         }}
 
         QTableWidget::item:hover, QTableView::item:hover {{
-            background-color: {COLOR_BG_OVERLAY};
+            background-color: {COLOR_BG_HOVER};
         }}
 
         QHeaderView {{
@@ -629,7 +689,7 @@ class QtTheme:
             color: {COLOR_TEXT_TERTIARY};
             padding: 8px 12px;
             border: none;
-            border-bottom: 1px solid {COLOR_BORDER_MEDIUM};
+            border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
             font-weight: 600;
             font-size: {cls._fs("label")}px;
             text-transform: uppercase;
@@ -638,6 +698,20 @@ class QtTheme:
 
         QHeaderView::section:hover {{
             background-color: {COLOR_BG_OVERLAY};
+        }}
+
+        QHeaderView::down-arrow {{
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-top: 6px solid {COLOR_TEXT_TERTIARY};
+        }}
+
+        QHeaderView::up-arrow {{
+            image: none;
+            border-left: 5px solid transparent;
+            border-right: 5px solid transparent;
+            border-bottom: 6px solid {COLOR_TEXT_TERTIARY};
         }}
 
         QTableCornerButton::section {{
@@ -702,18 +776,23 @@ class QtTheme:
         return f"""
         QScrollBar:vertical {{
             background-color: {COLOR_BG_BASE};
+            width: 6px;
+            border-radius: 3px;
+        }}
+
+        QScrollBar:vertical:hover {{
             width: 8px;
-            border-radius: 4px;
         }}
 
         QScrollBar::handle:vertical {{
             background-color: {COLOR_BORDER_MEDIUM};
-            min-height: 40px;
-            border-radius: 4px;
+            min-height: 36px;
+            border-radius: 3px;
         }}
 
         QScrollBar::handle:vertical:hover {{
             background-color: {COLOR_BORDER_STRONG};
+            min-height: 40px;
         }}
 
         QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
@@ -727,18 +806,23 @@ class QtTheme:
 
         QScrollBar:horizontal {{
             background-color: {COLOR_BG_BASE};
+            height: 6px;
+            border-radius: 3px;
+        }}
+
+        QScrollBar:horizontal:hover {{
             height: 8px;
-            border-radius: 4px;
         }}
 
         QScrollBar::handle:horizontal {{
             background-color: {COLOR_BORDER_MEDIUM};
-            min-width: 40px;
-            border-radius: 4px;
+            min-width: 36px;
+            border-radius: 3px;
         }}
 
         QScrollBar::handle:horizontal:hover {{
             background-color: {COLOR_BORDER_STRONG};
+            min-width: 40px;
         }}
 
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
@@ -758,24 +842,30 @@ class QtTheme:
             top: -1px;
         }}
 
+        QTabBar {{
+            background-color: transparent;
+            border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+
         QTabBar::tab {{
-            background-color: {COLOR_BG_OVERLAY};
+            background-color: transparent;
             color: {COLOR_TEXT_SECONDARY};
             border: none;
-            border-top-left-radius: {RADIUS_CHIP}px;
-            border-top-right-radius: {RADIUS_CHIP}px;
-            padding: 10px 18px;
+            border-bottom: 2px solid transparent;
+            padding: 8px 16px;
             margin-right: 2px;
-            font-weight: bold;
+            font-size: {cls._fs("label")}px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            /* Transition for smooth state changes */
         }}
 
         QTabBar::tab:selected {{
-            background-color: {COLOR_ACCENT_PRIMARY};
-            color: {TEXT_WHITE};
+            color: {COLOR_ACCENT_PRIMARY};
+            border-bottom: 2px solid {COLOR_ACCENT_PRIMARY};
         }}
 
         QTabBar::tab:hover:!selected {{
-            background-color: {COLOR_BG_OVERLAY};
             color: {COLOR_TEXT_PRIMARY};
         }}
 
@@ -796,6 +886,7 @@ class QtTheme:
             text-align: center;
             color: {COLOR_TEXT_PRIMARY};
             font-size: {cls._fs("small")}px;
+            /* Hint: animate chunk width for subtle progress pulse */
         }}
 
         QProgressBar::chunk {{
@@ -840,12 +931,22 @@ class QtTheme:
             background-color: {COLOR_BG_ELEVATED};
             border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
+            /* Transition for smooth hover elevation */
+        }}
+
+        QFrame[role="card"]:hover {{
+            border-color: {ELEVATION_RAISED};
         }}
 
         QFrame[role="card-elevated"] {{
             background-color: {COLOR_BG_OVERLAY};
             border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
+            /* Transition for smooth hover elevation */
+        }}
+
+        QFrame[role="card-elevated"]:hover {{
+            border-color: {ELEVATION_RAISED};
         }}
 
         QFrame[role="input"] {{
@@ -877,6 +978,11 @@ class QtTheme:
             background-color: {COLOR_BG_ELEVATED};
             border: 1px solid {COLOR_BORDER_MEDIUM};
             border-radius: {RADIUS_CARD}px;
+            /* Transition for smooth hover elevation */
+        }}
+
+        QFrame[role="kpi-card"]:hover {{
+            border-color: {ELEVATION_RAISED};
         }}
 
         QFrame[role="chip-critical"] {{
@@ -985,8 +1091,21 @@ class QtTheme:
             color: {COLOR_TEXT_PRIMARY};
         }}
 
+        QMessageBox QSpacerItem {{
+            width: 0px;
+            height: 0px;
+        }}
+
         QDialogButtonBox QPushButton {{
             min-width: 80px;
+        }}
+
+        QDialog {{
+            background-color: {COLOR_BG_ELEVATED};
+        }}
+
+        QDialog[modal="true"] {{
+            background-color: {COLOR_BG_ELEVATED};
         }}
         """
 
@@ -1034,6 +1153,7 @@ class QtTheme:
             background-color: transparent;
             border: none;
             border-radius: 6px;
+            /* Transition for smooth state changes */
         }}
 
         QFrame[role="nav-item"]:hover {{
@@ -1042,6 +1162,7 @@ class QtTheme:
 
         QFrame[role="nav-item"][state="active"] {{
             background-color: {COLOR_BG_OVERLAY};
+            border-left: 3px solid {COLOR_ACCENT_PRIMARY};
         }}
 
         QFrame[role="nav-accent"] {{
@@ -1136,20 +1257,13 @@ class QtTheme:
         QFrame[role="top-bar"] {{
             background-color: {COLOR_BG_BASE};
             border: none;
-            border-bottom: 1px solid {COLOR_BORDER_MEDIUM};
+            border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
         }}
 
         QFrame[role="top-bar-divider"] {{
             background-color: {COLOR_BORDER_MEDIUM};
             max-height: 1px;
             min-height: 1px;
-        }}
-
-        QLabel[role="breadcrumb"] {{
-            background-color: transparent;
-            color: {COLOR_TEXT_PRIMARY};
-            font-size: {cls._fs("body")}px;
-            font-weight: bold;
         }}
 
         QLabel[role="fuel-status"] {{

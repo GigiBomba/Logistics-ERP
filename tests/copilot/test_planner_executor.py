@@ -827,15 +827,25 @@ class TestLLMProviderBase:
         from backend.copilot.llm.routing import RoutingRule, LLMRoutingConfig
         rule = RoutingRule(
             task="intent_extraction",
-            provider_id="google",
-            fallback_provider_id="self_hosted_ollama",
+            provider_id="self_hosted",
+            fallback_provider_id="google",
         )
         assert rule.task == "intent_extraction"
-        assert rule.provider_id == "google"
-        assert rule.fallback_provider_id == "self_hosted_ollama"
+        assert rule.provider_id == "self_hosted"
+        assert rule.fallback_provider_id == "google"
 
         config = LLMRoutingConfig(rules=[rule])
         assert len(config.rules) == 1
+
+    def test_default_routing_config(self):
+        """Default routing uses self_hosted primary with google fallback."""
+        from backend.copilot.llm.routing import default_routing_config
+        config = default_routing_config()
+        assert config.company_id is None
+        assert len(config.rules) == 4
+        for rule in config.rules:
+            assert rule.provider_id == "self_hosted"
+            assert rule.fallback_provider_id == "google"
 
     def test_registry_functions_exist(self):
         """Registry functions should be importable and callable."""

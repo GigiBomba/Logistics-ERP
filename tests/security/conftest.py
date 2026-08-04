@@ -27,6 +27,7 @@ os.environ.pop("OPERION_API_KEY", None)  # Ensure API key middleware stays disab
 
 import bcrypt
 import json
+import sys
 import pytest
 import tempfile
 from datetime import datetime
@@ -255,9 +256,18 @@ def app(request):
     dbu = DatabaseManager(_db_path)
     dbu.close()
 
+    # Reset the global DatabaseManager singleton so init_db() creates a
+    # fresh connection to *our* DB (not a stale one from a prior module).
+    if "backend.dependencies" in sys.modules:
+        _bd = sys.modules["backend.dependencies"]
+        if _bd._db_instance is not None:
+            _bd._db_instance.close()
+            _bd._db_instance = None
     # Force Config.DB_PATH to our unique DB file
     from config import Config
     Config.DB_PATH = _db_path
+
+
 
     # Prevent background threads from OcrService and ai_fallback that would
     # leak across test modules and cause timeouts (daemon threads from OCR

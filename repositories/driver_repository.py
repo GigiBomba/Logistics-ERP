@@ -24,14 +24,30 @@ class DriverRepository(BaseRepository):
 
     def get_by_id(self, driver_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (driver_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (driver_id,) + self._company_params_for(company_id),
+        )
+
+    def get_drivers_by_ids(self, driver_ids: List[int], company_id=None) -> List[Dict[str, Any]]:
+        """Return the subset of *driver_ids* belonging to the given company.
+
+        Single ``id IN (...)`` query so the dispatch board can resolve driver
+        names for a batch of trips in one lookup instead of N sequential
+        ``get_by_id`` calls (mirrors ``FleetRepository.get_trucks_by_ids``).
+        """
+        if not driver_ids:
+            return []
+        placeholders = ", ".join("?" for _ in driver_ids)
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) "
+            f"{self._company_filter_for(company_id)}",
+            tuple(driver_ids) + self._company_params_for(company_id),
         )
 
     def get_all(self, limit: int = 200, offset: int = 0, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY name ASC LIMIT ? OFFSET ?",
-            self._company_params() + (limit, offset),
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} ORDER BY name ASC LIMIT ? OFFSET ?",
+            self._company_params_for(company_id) + (limit, offset),
         )
 
     def create(self, data: Dict[str, Any], company_id=None) -> int:
@@ -39,6 +55,8 @@ class DriverRepository(BaseRepository):
         now = datetime.now().isoformat()
         data = dict(data)
         data = self._set_company_from_context(data)
+        if company_id:
+            data["company_id"] = company_id
         data.setdefault("created_at", now)
         data.setdefault("updated_at", now)
         if "id" in data:
@@ -48,7 +66,7 @@ class DriverRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def update(self, driver_id: int, data: Dict[str, Any], company_id=None) -> None:
         self._validate_columns(data)
@@ -58,15 +76,15 @@ class DriverRepository(BaseRepository):
             del data["id"]
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (driver_id,) + self._company_params(),
-        )
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter_for(company_id)}",
+            tuple(data.values()) + (driver_id,) + self._company_params_for(company_id),
+        commit=True)
 
     def delete(self, driver_id: int, company_id=None) -> None:
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (driver_id,) + self._company_params(),
-        )
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (driver_id,) + self._company_params_for(company_id),
+        commit=True)
 
     # ── Domain-specific queries ───────────────────────────────────────
 
@@ -158,7 +176,7 @@ class DriverRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET license_expiry = ? WHERE id = ? {self._company_filter()}",
             (expiry, driver_id) + self._company_params(),
-        )
+        commit=True)
 
     def count_active(self) -> int:
         row = self._fetchone(

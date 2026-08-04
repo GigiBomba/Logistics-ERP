@@ -269,7 +269,7 @@ class TestRemoteModeGuardIntegration:
         with patch("ui.mode_guard.logger") as mock_logger:
             mode = detect_mode(None, None)
         assert mode == ConnectionMode.UNKNOWN
-        mock_logger.error.assert_called_once()
+        mock_logger.warning.assert_called_once()
         guard_local_access(mode, "test")  # must not raise
 
     def test_guard_uses_feature_name_in_error(self):

@@ -2,7 +2,7 @@
 
 Uses ``create_test_app()`` + ``TestClient`` with real JWT authentication via the
 admin-gateway env-var path.  Test data is seeded once per session into a
-dedicated SQLite database (``data/test_mobile_int.db``).
+dedicated unique UUID-per-file SQLite database in ``data/``.
 
 Test matrix (27 tests covering 23 endpoint routes):
   - Driver endpoints (5): my-day, transports list, transport detail,
@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import glob
 import os
+import uuid
 from datetime import datetime, timezone
 
 import bcrypt
@@ -33,8 +34,9 @@ from typing import Any, Dict, List
 # Environment setup — MUST happen before any backend imports that read Config
 # ═══════════════════════════════════════════════════════════════════════════════
 
+_TEST_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 _TEST_DB_PATH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "test_mobile_int.db",
+    _TEST_DB_DIR, f"test_mobile_endpoints_{uuid.uuid4().hex[:12]}.db",
 )
 
 # Set env vars BEFORE any backend imports so BackendSettings picks them up.
@@ -219,12 +221,15 @@ def _seed_test_db() -> None:
     db.close()
 
 
-def _clean_test_db() -> None:
-    """Remove the test database files so we start fresh."""
-    for suffix in ("", "-wal", "-shm"):
-        p = _TEST_DB_PATH + suffix
+def _cleanup_stale_db_files(path: str) -> None:
+    """Remove stale WAL/SHM files that can cause FTS5 creation hangs on Windows."""
+    for suffix in ("-wal", "-shm"):
+        p = path + suffix
         if os.path.isfile(p):
-            os.remove(p)
+            try:
+                os.remove(p)
+            except PermissionError:
+                pass
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -234,12 +239,17 @@ def _seed_db():
     from config import Config
     Config.DB_PATH = _TEST_DB_PATH
     import backend.dependencies as deps
-    # Ensure dbs are cleaned.
-    for f in glob.glob(os.path.join(os.path.dirname(_TEST_DB_PATH), "test_mobile_int.db*")):
+    # Remove ONLY this worker's own DB file.  Under pytest-xdist the same
+    # module runs in several worker processes, each with its own UUID-based
+    # DB file; globbing the module prefix would delete the DB file another
+    # worker is actively using (spurious "unknown user" logins).
+    for suffix in ("", "-wal", "-shm"):
+        p = _TEST_DB_PATH + suffix
         try:
-            os.remove(f)
-        except Exception:
+            os.remove(p)
+        except (PermissionError, FileNotFoundError):
             pass
+    _cleanup_stale_db_files(_TEST_DB_PATH)
     deps._db_instance = None  # type: ignore[attr-defined]
     deps.init_db()
     _seed_test_db()
@@ -266,6 +276,7 @@ def _create_real_app_and_client():
         except Exception:
             pass
         deps._db_instance = None  # type: ignore[attr-defined]
+    _cleanup_stale_db_files(_TEST_DB_PATH)
     deps.init_db()
     from backend.main import create_app
     app = create_app()
@@ -288,6 +299,7 @@ def _create_app_and_client():
         except Exception:
             pass
         deps._db_instance = None  # type: ignore[attr-defined]
+    _cleanup_stale_db_files(_TEST_DB_PATH)
     deps.init_db()
     from backend.main import create_app
     app = create_test_app()
@@ -715,6 +727,69 @@ class TestMobileTransportCreateEndpoint:
         assert jobs_resp.status_code == 200
         job_ids = {j["id"] for j in jobs_resp.json()}
         assert new_id in job_ids, f"New transport {new_id} not found in jobs {job_ids}"
+
+    def test_create_transport_mobile_rejects_non_iso_start_date(self):
+        """POST with a non-ISO start_date is rejected with 422."""
+        client = _create_app_and_client()
+        token = _dispatcher_token(client)
+        create_resp = client.post(
+            "/api/v1/mobile/dispatcher/transports",
+            json={
+                "reference": "E2E-Bad-Date",
+                "loading_city": "E2E Origin",
+                "delivery_city": "E2E Dest",
+                "start_date": "31/07/2026",
+            },
+            headers=_headers(token),
+        )
+        assert create_resp.status_code == 422, (
+            f"Expected 422, got {create_resp.status_code}: {create_resp.text}"
+        )
+        assert "start_date" in create_resp.json().get("detail", "")
+
+    def test_create_transport_mobile_accepts_iso_start_date(self):
+        """POST with a valid ISO start_date succeeds."""
+        client = _create_app_and_client()
+        token = _dispatcher_token(client)
+        create_resp = client.post(
+            "/api/v1/mobile/dispatcher/transports",
+            json={
+                "reference": "E2E-Good-Date",
+                "loading_city": "E2E Origin",
+                "delivery_city": "E2E Dest",
+                "start_date": "2026-07-31",
+            },
+            headers=_headers(token),
+        )
+        assert create_resp.status_code == 201, (
+            f"Expected 201, got {create_resp.status_code}: {create_resp.text}"
+        )
+        assert "id" in create_resp.json()
+
+    def test_create_transport_mobile_missing_start_date_falls_back_to_now(self):
+        """POST without start_date still falls back to _now_iso()."""
+        client = _create_app_and_client()
+        token = _dispatcher_token(client)
+        create_resp = client.post(
+            "/api/v1/mobile/dispatcher/transports",
+            json={"reference": "E2E-No-Date", "loading_city": "E2E Origin", "delivery_city": "E2E Dest"},
+            headers=_headers(token),
+        )
+        assert create_resp.status_code == 201, (
+            f"Expected 201, got {create_resp.status_code}: {create_resp.text}"
+        )
+        new_id = create_resp.json()["id"]
+        import sqlite3
+        conn = sqlite3.connect(_TEST_DB_PATH)
+        try:
+            row = conn.execute(
+                "SELECT start_date FROM trips WHERE id = ?", (new_id,),
+            ).fetchone()
+        finally:
+            conn.close()
+        assert row is not None and row[0], (
+            f"Expected start_date to be populated by _now_iso(), got {row}"
+        )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

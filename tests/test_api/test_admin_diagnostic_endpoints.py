@@ -31,6 +31,8 @@ def mock_get_db():
     ``client_with_mocks`` fixture (which correctly overrides ``Depends``).
     """
     mock_db = MagicMock()
+    mock_db.row_to_dict = lambda row: dict(row) if isinstance(row, (tuple, list)) else (row if row else None)
+    mock_db.rows_to_dicts = lambda rows: [dict(r) for r in rows] if rows else []
 
     async def _gen():
         yield mock_db
@@ -104,9 +106,11 @@ class TestRecentErrors:
 
     def test_returns_200_with_alerts_list(self, client_with_mocks, mock_get_db):
         client, _ = client_with_mocks
-        mock_get_db.conn.execute.return_value.fetchall.return_value = [
-            (1, 42, "test", "medium", "Something failed", "2025-01-01 00:00:00"),
-        ]
+        # Repo _fetchall wraps results in rows_to_dicts — use dict keys
+        mock_get_db.conn.execute.return_value.fetchall.return_value = [{
+            "id": 1, "company_id": 42, "type": "test", "severity": "medium",
+            "message": "Something failed", "created_at": "2025-01-01 00:00:00",
+        }]
         resp = client.get(f"{BASE}/db/recent-errors")
         assert resp.status_code == 200
         data = resp.json()
@@ -192,9 +196,10 @@ class TestDatabaseStats:
             elif "quick_check" in sql or "integrity" in sql:
                 mock.fetchone.return_value = ("ok",)
             elif "FROM users" in sql:
-                mock.fetchone.return_value = (10,)
+                # Repo _fetchone wraps result in row_to_dict
+                mock.fetchone.return_value = {"cnt": 10}
             elif "FROM companies" in sql:
-                mock.fetchone.return_value = (3,)
+                mock.fetchone.return_value = {"cnt": 3}
             else:
                 mock.fetchone.return_value = (0,)
             return mock
@@ -219,6 +224,9 @@ class TestDatabaseStats:
                 mock.fetchone.return_value = (100,)
             elif "page_size" in sql:
                 mock.fetchone.return_value = (4096,)
+            elif "FROM users" in sql or "FROM companies" in sql:
+                # Repo _fetchone wraps result in row_to_dict
+                mock.fetchone.return_value = {"cnt": 0}
             else:
                 mock.fetchone.return_value = (0,)
             return mock
@@ -241,6 +249,9 @@ class TestDatabaseStats:
                 mock.fetchone.return_value = (4096,)
             elif sql.startswith("PRAGMA quick_check") or "integrity" in sql:
                 raise Exception("no such table")
+            elif "FROM users" in sql or "FROM companies" in sql:
+                # Repo _fetchone wraps result in row_to_dict
+                mock.fetchone.return_value = {"cnt": 0}
             else:
                 mock.fetchone.return_value = (0,)
             return mock

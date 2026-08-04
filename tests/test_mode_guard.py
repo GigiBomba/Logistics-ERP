@@ -47,11 +47,12 @@ class TestDetectMode:
         assert "Both db and api_client" in caplog.text
         assert "data leakage" in caplog.text
 
-    def test_neither_logs_error_and_returns_unknown(self, caplog):
-        with caplog.at_level(logging.ERROR):
+    def test_neither_logs_warning_and_returns_unknown(self, caplog):
+        with caplog.at_level(logging.WARNING):
             mode = detect_mode(None, None)
         assert mode == ConnectionMode.UNKNOWN
         assert "Neither db nor api_client" in caplog.text
+        assert "degraded mode" in caplog.text
 
     def test_db_is_none_with_api_returns_remote(self):
         api = MagicMock()

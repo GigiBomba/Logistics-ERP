@@ -1,6 +1,10 @@
 """Tests for the automail ConfigPanel, _MasterToggle, _ScheduleCard, _InlineScheduleEditor."""
 from __future__ import annotations
 
+import ui.widgets as _ui_widgets
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
+
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -909,3 +913,205 @@ class TestConfigPanelHandlers:
             panel._on_apply_preset()
             repo.create_template.assert_called_once()
             repo.create_schedule.assert_called_once()
+
+
+# ── ConfigPanel Edge Cases ──────────────────────────────────────────────
+
+
+class TestConfigPanelEdgeCases:
+    """Edge cases for ConfigPanel handlers."""
+
+    def test_add_reminder_creates_default_template_when_none_exist(
+        self, qt_widget, qtbot
+    ):
+        """_on_add_reminder creates a default template when none exist."""
+        db = MagicMock()
+        repo = MagicMock()
+        repo.get_all_settings.return_value = {}
+        repo.get_all_schedules.return_value = []
+        repo.get_all_templates.return_value = []  # No templates exist
+        repo.create_template.return_value = 99
+        repo.create_schedule.return_value = 1
+
+        with patch(
+            "ui.views.automail.config_panel.AutoMailRepository",
+            return_value=repo,
+        ):
+            panel = ConfigPanel(qt_widget, db=db)
+            qtbot.addWidget(panel)
+            panel._on_add_reminder()
+            repo.create_template.assert_called_once()
+            repo.create_schedule.assert_called_once()
+
+    def test_add_reminder_exception_shows_toast(self, qt_widget, qtbot):
+        """_on_add_reminder shows a toast on exception."""
+        db = MagicMock()
+        repo = MagicMock()
+        repo.get_all_settings.return_value = {}
+        repo.get_all_schedules.return_value = []
+        repo.get_all_templates.return_value = [{"id": 10, "name": "Default"}]
+        repo.create_schedule.side_effect = Exception("DB error")
+
+        with patch(
+            "ui.views.automail.config_panel.AutoMailRepository",
+            return_value=repo,
+        ), patch("ui.views.automail.config_panel.Toast") as mock_toast:
+            panel = ConfigPanel(qt_widget, db=db)
+            qtbot.addWidget(panel)
+            panel._on_add_reminder()
+            mock_toast.show_error.assert_called_once()
+
+    def test_apply_preset_declined_noop(self, qt_widget, qtbot):
+        """No repo writes occur when user declines preset confirmation."""
+        db = MagicMock()
+        repo = MagicMock()
+        repo.get_all_settings.return_value = {}
+        repo.get_all_schedules.return_value = []
+        repo.get_all_templates.return_value = []
+
+        with patch(
+            "ui.views.automail.config_panel.AutoMailRepository",
+            return_value=repo,
+        ), patch(
+            "ui.views.automail.presets.get_preset_names",
+            return_value=["Standard"],
+        ), patch(
+            "ui.views.automail.presets.get_preset",
+            return_value={
+                "template": {
+                    "name": "Standard",
+                    "subject": "Payment Notice",
+                    "body_text": "Dear {{client}}",
+                    "body_html": "<p>Dear {{client}}</p>",
+                },
+                "schedules": [
+                    {
+                        "name": "Reminder 1",
+                        "trigger_type": "days_before_due",
+                        "days_offset": 3,
+                        "is_active": 1,
+                        "sort_order": 0,
+                    },
+                ],
+            },
+        ), patch.object(
+            QMessageBox, "question", return_value=QMessageBox.StandardButton.No
+        ):
+            panel = ConfigPanel(qt_widget, db=db)
+            qtbot.addWidget(panel)
+            panel._preset_combo.setCurrentText("Standard")
+            panel._on_apply_preset()
+            repo.create_template.assert_not_called()
+            repo.delete_schedule.assert_not_called()
+            repo.create_schedule.assert_not_called()
+
+    def test_apply_preset_with_no_name_selected(self, qt_widget, qtbot):
+        """_on_apply_preset returns early when combo has empty text."""
+        db = MagicMock()
+        repo = MagicMock()
+        repo.get_all_settings.return_value = {}
+        repo.get_all_schedules.return_value = []
+        repo.get_all_templates.return_value = []
+
+        with patch(
+            "ui.views.automail.config_panel.AutoMailRepository",
+            return_value=repo,
+        ), patch.object(
+            QMessageBox, "question", return_value=QMessageBox.StandardButton.No
+        ):
+            panel = ConfigPanel(qt_widget, db=db)
+            qtbot.addWidget(panel)
+            panel._preset_combo.setCurrentText("")
+            panel._on_apply_preset()
+            repo.create_template.assert_not_called()
+
+    def test_apply_preset_exception_shows_warning(self, qt_widget, qtbot):
+        """QMessageBox.warning is called when repo.create_template raises."""
+        db = MagicMock()
+        repo = MagicMock()
+        repo.get_all_settings.return_value = {}
+        repo.get_all_schedules.return_value = []
+        repo.get_all_templates.return_value = []
+        repo.create_template.side_effect = Exception("Template error")
+
+        with patch(
+            "ui.views.automail.config_panel.AutoMailRepository",
+            return_value=repo,
+        ), patch(
+            "ui.views.automail.presets.get_preset_names",
+            return_value=["Standard"],
+        ), patch(
+            "ui.views.automail.presets.get_preset",
+            return_value={
+                "template": {
+                    "name": "Standard",
+                    "subject": "Payment Notice",
+                    "body_text": "Dear {{client}}",
+                    "body_html": "<p>Dear {{client}}</p>",
+                },
+                "schedules": [
+                    {
+                        "name": "Reminder 1",
+                        "trigger_type": "days_before_due",
+                        "days_offset": 3,
+                        "is_active": 1,
+                        "sort_order": 0,
+                    },
+                ],
+            },
+        ), patch.object(
+            QMessageBox, "question", return_value=QMessageBox.StandardButton.Yes
+        ), patch.object(QMessageBox, "warning") as mock_warn:
+            panel = ConfigPanel(qt_widget, db=db)
+            qtbot.addWidget(panel)
+            panel._preset_combo.setCurrentText("Standard")
+            panel._on_apply_preset()
+            mock_warn.assert_called_once()
+
+    def test_inline_save_all_with_no_schedules(self, qt_widget, qtbot):
+        """_on_inline_save_all handles empty schedule list gracefully."""
+        db = MagicMock()
+        repo = MagicMock()
+        repo.get_all_settings.return_value = {}
+        repo.get_all_schedules.return_value = []
+        repo.get_all_templates.return_value = []
+
+        with patch(
+            "ui.views.automail.config_panel.AutoMailRepository",
+            return_value=repo,
+        ):
+            panel = ConfigPanel(qt_widget, db=db)
+            qtbot.addWidget(panel)
+            panel._on_inline_save_all(
+                {"trigger_type": "on_due_date", "days_offset": 0}
+            )
+            repo.update_schedule.assert_not_called()
+
+    def test_inline_save_without_repo(self, qt_widget, qtbot):
+        """_on_inline_save returns without error when _repo is None."""
+        panel = ConfigPanel(qt_widget, db=None)
+        qtbot.addWidget(panel)
+        # Should not crash
+        panel._on_inline_save(1, {"name": "Test"})
+
+    def test_preset_combo_populated_from_presets_module(self, qt_widget, qtbot):
+        """_load_data populates _preset_combo with preset names."""
+        db = MagicMock()
+        repo = MagicMock()
+        repo.get_all_settings.return_value = {}
+        repo.get_all_schedules.return_value = []
+        repo.get_all_templates.return_value = []
+        expected_names = ["Friendly", "Professional", "Strict"]
+
+        with patch(
+            "ui.views.automail.config_panel.AutoMailRepository",
+            return_value=repo,
+        ), patch(
+            "ui.views.automail.presets.get_preset_names",
+            return_value=expected_names,
+        ):
+            panel = ConfigPanel(qt_widget, db=db)
+            qtbot.addWidget(panel)
+            assert panel._preset_combo.count() == len(expected_names)
+            for i, name in enumerate(expected_names):
+                assert panel._preset_combo.itemText(i) == name

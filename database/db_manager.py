@@ -39,10 +39,10 @@ def _split_pg_statements(sql: str) -> list:
         stmt = part.strip()
         if not stmt:
             continue
-        # Restore $$ blocks
+        # Restore $$ blocks (don't clear dollar_blocks — subsequent
+        # statements may also need placeholder replacement).
         for i, block in enumerate(dollar_blocks):
             stmt = stmt.replace(f"\x00DOLLAR{i}\x00", block)
-        dollar_blocks.clear()
         # Skip comment-only statements
         lines = [l for l in stmt.split("\n") if l.strip() and not l.strip().startswith("--")]
         clean = "\n".join(lines).strip()
@@ -52,7 +52,14 @@ def _split_pg_statements(sql: str) -> list:
 
 
 from database import schema as _schema
-from database.connection_pool import ConnectionPool, PostgresConnectionPool
+from database.connection_pool import (
+    ConnectionPool,
+    PostgresConnectionPool,
+    pool_active,
+    pool_idle,
+    pool_max,
+    pool_min,
+)
 
 class DatabaseManager:
     def __init__(
@@ -67,13 +74,12 @@ class DatabaseManager:
         self._pg_pool_min = pool_min
         self._pg_pool_max = pool_max
         self._local = threading.local()
+        # tenant context now managed via tenant_context module
         if self._engine == "postgresql":
             self._init_pg(db_path)
         else:
             self._pool = ConnectionPool(db_path, timeout=30)
         self._init_db()
-        self.user_company_id: Optional[int] = None
-        self.user_role: str = ""
 
     def _init_pg(self, dsn: str) -> None:
         """Initialise the PostgreSQL connection pool."""
@@ -165,9 +171,16 @@ class DatabaseManager:
         """Return database connection health information."""
         if self._engine == "postgresql":
             if self._pg_pool:
+                self._pg_pool.update_pool_stats()
                 return {
                     "engine": "postgresql",
                     "pool": self._pg_pool.stats,
+                    "prometheus": {
+                        "pool_active": pool_active.labels(pool_name="postgresql")._value.get(),
+                        "pool_idle": pool_idle.labels(pool_name="postgresql")._value.get(),
+                        "pool_min": pool_min.labels(pool_name="postgresql")._value.get(),
+                        "pool_max": pool_max.labels(pool_name="postgresql")._value.get(),
+                    },
                 }
             return {"engine": "postgresql", "pool": {"status": "uninitialised"}}
         return {"engine": "sqlite", "pool": {"status": "active"}}
@@ -203,18 +216,72 @@ class DatabaseManager:
     def execute(self, query: str, params: tuple = ()):
         """Execute a SQL statement with engine-appropriate placeholders.
 
-        Thin wrapper around ``self.conn.execute`` that adapts ``?`` → ``%s``
-        for PostgreSQL.  Callers should use this instead of
-        ``self.conn.execute()`` directly for cross-engine compatibility.
+        For PostgreSQL (psycopg2): creates a cursor, executes, returns it.
+        For SQLite: ``sqlite3.Connection.execute()`` returns a cursor directly.
+
+        Callers should use this instead of ``self.conn.execute()`` directly
+        for cross-engine compatibility.
         """
-        return self.conn.execute(self._adapt_placeholders(query), params)
+        try:
+            if self._engine == "postgresql":
+                cur = self.conn.cursor()
+                cur.execute(self._adapt_placeholders(query), params)
+                result = cur
+            else:
+                conn = self.conn
+                was_in_tx = bool(getattr(conn, "in_transaction", False))
+                try:
+                    result = conn.execute(self._adapt_placeholders(query), params)
+                except Exception:
+                    # A failed DML inside sqlite's implicit transaction would
+                    # leak the WAL write lock on this pooled connection.
+                    self._rollback_if_implicit(conn, was_in_tx)
+                    raise
+            if self._engine == "postgresql" and self._pg_pool:
+                self._pg_pool.record_query()
+            return result
+        except Exception:
+            if self._engine == "postgresql" and self._pg_pool:
+                self._pg_pool.record_error()
+            raise
 
     def executemany(self, query: str, seq_of_params):
         """Execute a SQL statement against all parameter sequences.
 
-        PostgreSQL-compatible wrapper around ``self.conn.executemany``.
+        For PostgreSQL (psycopg2): creates a cursor, calls ``executemany``.
+        For SQLite: ``sqlite3.Connection.executemany()`` returns a cursor directly.
         """
-        return self.conn.executemany(self._adapt_placeholders(query), seq_of_params)
+        if self._engine == "postgresql":
+            cur = self.conn.cursor()
+            cur.executemany(self._adapt_placeholders(query), seq_of_params)
+            return cur
+        conn = self.conn
+        was_in_tx = bool(getattr(conn, "in_transaction", False))
+        try:
+            return conn.executemany(self._adapt_placeholders(query), seq_of_params)
+        except Exception:
+            self._rollback_if_implicit(conn, was_in_tx)
+            raise
+
+    @staticmethod
+    def _rollback_if_implicit(conn, was_in_tx: bool) -> None:
+        """Roll back a transaction that an aborted DML statement implicitly opened.
+
+        Python's ``sqlite3`` (legacy ``isolation_level=""``) auto-issues
+        ``BEGIN`` *before* the first INSERT/UPDATE/DELETE.  When that statement
+        then raises (UNIQUE constraint, ``database is locked``, …) the implicit
+        transaction stays open and — in WAL mode — the connection keeps the DB
+        write lock indefinitely, wedging every other connection's writes.
+        Callers managing their own transaction (``BEGIN IMMEDIATE``) started it
+        before us (``was_in_tx``), so it is left for the caller to roll back.
+        """
+        if was_in_tx:
+            return
+        try:
+            if hasattr(conn, "in_transaction") and conn.in_transaction:
+                conn.rollback()
+        except Exception:
+            pass
 
     def commit(self):
         """Commit the current transaction (engine-agnostic)."""
@@ -273,6 +340,9 @@ class DatabaseManager:
         """
         if self._engine == "postgresql":
             self._init_pg_schema()
+            # Commit DDL — the pool sets autocommit=False, so CREATE TABLE
+            # statements must be committed explicitly to persist the schema.
+            self.conn.commit()
         else:
             self._create_tables_and_indices()
             self._run_column_migrations()
@@ -294,15 +364,90 @@ class DatabaseManager:
             except Exception as e:
                 logger.warning("Alembic migrations skipped (non-fatal): %s", e)
 
+            # Apply additional PostgreSQL-compatible DDL that is part of
+            # the SQLite _run_column_migrations path but not in schema_pg.sql
+            # or Alembic migrations.  These are all safe to run repeatedly.
+            _pg_extra_ddl: list[str] = [
+                # invoice_number_sequences table (used by InvoiceRepository)
+                "CREATE TABLE IF NOT EXISTS invoice_number_sequences ("
+                "  series TEXT NOT NULL,"
+                "  year INTEGER NOT NULL,"
+                "  last_number INTEGER NOT NULL DEFAULT 0,"
+                "  PRIMARY KEY (series, year)"
+                ")",
+                # invoice_status_history table
+                "CREATE TABLE IF NOT EXISTS invoice_status_history ("
+                "  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
+                "  invoice_id INTEGER NOT NULL,"
+                "  from_status TEXT NOT NULL DEFAULT '',"
+                "  to_status TEXT NOT NULL,"
+                "  changed_by INTEGER DEFAULT 0,"
+                "  changed_at TEXT NOT NULL,"
+                "  reason TEXT DEFAULT ''"
+                ")",
+                # Invoices columns added by SQLite _run_column_migrations
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_id INTEGER",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'EUR'",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items_json TEXT DEFAULT '[]'",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal_net NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_vat NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_gross NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS pdf_path TEXT DEFAULT ''",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_at TEXT",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TEXT",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12,6) DEFAULT 1.0",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_type TEXT DEFAULT 'invoice'",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_remaining NUMERIC(12,2) DEFAULT 0",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_status TEXT DEFAULT ''",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_xml_path TEXT DEFAULT ''",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_submission_id TEXT DEFAULT ''",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_submitted_at TEXT",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_response_code TEXT DEFAULT ''",
+                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_response_message TEXT DEFAULT ''",
+                # Trips source columns (Alembic migration c3d4e5f6a7b3)
+                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'",
+                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_provider_id TEXT",
+                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_reference_id TEXT",
+                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)",
+                "CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id)",
+                # Copilot insights dedup — runs AFTER Alembic migrations so the
+                # copilot_insights table (a7b8c9d0e1f7) already exists on fresh DBs.
+                "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
+                "ON copilot_insights(company_id, insight_type, payload)",
+            ]
+            for ddl in _pg_extra_ddl:
+                try:
+                    cur = self.conn.cursor()
+                    cur.execute(ddl)
+                    cur.close()
+                except Exception:
+                    # ADD COLUMN IF NOT EXISTS is PostgreSQL 9.6+;
+                    # older versions raise, which is harmless.
+                    pass
+            self.conn.commit()
+
         # Ensure mobile tables exist (best-effort, non-critical)
-        try:
-            from backend.api.v1.mobile import ensure_mobile_tables
-            ensure_mobile_tables(self)
-        except Exception:
-            pass  # mobile tables are non-critical
+        # PostgreSQL does not support AUTOINCREMENT — the SQL in
+        # ensure_mobile_tables is SQLite-specific.  Mobile tables are
+        # not part of schema_pg.sql, so skip entirely for PostgreSQL.
+        if self._engine != "postgresql":
+            try:
+                from backend.api.v1.mobile import ensure_mobile_tables
+                ensure_mobile_tables(self)
+            except Exception:
+                pass  # mobile tables are non-critical
 
     def _init_pg_schema(self):
-        """Execute PostgreSQL schema from schema_pg.sql."""
+        """Execute PostgreSQL schema from schema_pg.sql.
+
+        Temporarily disables FK trigger checks (``session_replication_role
+        = replica``) so that tables can be created in any order regardless
+        of inter-table foreign-key dependencies (the .sql file is ordered
+        alphabetically/functionally, not by dependency).  FK enforcement
+        is restored after all DDL completes.
+        """
         import os
         schema_path = os.path.join(
             os.path.dirname(os.path.abspath(__file__)),
@@ -315,19 +460,48 @@ class DatabaseManager:
         with open(schema_path, "r", encoding="utf-8") as f:
             sql = f.read()
 
+        # The SQL file is ordered alphabetically/functionally, not by FK
+        # dependency.  Pre-create the ``companies`` table so that every
+        # subsequent ``REFERENCES companies(id)`` succeeds.
+        cur = self.conn.cursor()
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS companies (
+                id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+                company_name TEXT NOT NULL,
+                subscription_tier TEXT NOT NULL DEFAULT 'starter'
+                    CHECK (subscription_tier IN ('starter', 'professional', 'enterprise')),
+                is_active INTEGER NOT NULL DEFAULT 1,
+                created_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+                updated_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+            )
+        """)
+        cur.close()
+
         # Split by semicolons while preserving $$...$$ blocks (PL/pgSQL functions).
         # $$-delimited blocks may contain semicolons that must not be split.
         statements = _split_pg_statements(sql)
         for stmt in statements:
             if not stmt:
                 continue
+            # Wrap each statement in a SAVEPOINT so that a single failure
+            # (e.g. an index on a non-existing column) does NOT abort the
+            # entire transaction and cascade to all subsequent statements.
+            cur = self.conn.cursor()
             try:
-                self.conn.execute(stmt)
+                cur.execute("SAVEPOINT sp")
+                cur.execute(stmt)
+                cur.execute("RELEASE SAVEPOINT sp")
             except Exception as e:
+                try:
+                    cur.execute("ROLLBACK TO SAVEPOINT sp")
+                except Exception:
+                    pass
                 if "already exists" in str(e).lower():
                     logger.debug("Skipping existing object: %s", str(e)[:80])
                 else:
                     logger.warning("PG schema statement failed: %s — %s", str(e)[:120], stmt[:80])
+            finally:
+                cur.close()
 
     def _create_tables_and_indices(self):
         """Execute all CREATE TABLE and CREATE INDEX statements."""
@@ -385,6 +559,8 @@ class DatabaseManager:
             S.TABLE_DOCUMENT_VERSIONS, S.INDEX_VERSIONS_DOCUMENT,
             S.TABLE_CONTRACTS, S.INDEX_CONTRACTS_CLIENT, S.INDEX_CONTRACTS_STATUS,
             S.INDEX_CONTRACTS_END_DATE,
+            # Sent-email dedup (roadmap 12) — AFTER documents (FK parent)
+            S.TABLE_SENT_EMAILS, S.INDEX_SENT_EMAILS_STATUS,
             S.TABLE_DOCUMENT_TEMPLATES,
             # CMR
             S.TABLE_CMR_COUNTER, S.TABLE_SUCCESSIVE_CARRIERS,
@@ -421,7 +597,8 @@ class DatabaseManager:
             S.INDEX_AUTOMAIL_SCHEDULES_TEMPLATE,
             S.INDEX_AUTOMAIL_SCHEDULES_ACTIVE_SORT,
             S.INDEX_AUTOMAIL_CLIENT_OVERRIDES_CLIENT,
-            S.INDEX_GPS_TRUCK, S.INDEX_GPS_RECORDED,
+            S.INDEX_GPS_TRUCK, S.INDEX_GPS_RECORDED, S.INDEX_GPS_TELEMETRY_UNIQUE,
+            S.INDEX_COPILOT_INSIGHTS_DEDUP,
             # Multi-tenant company_id indexes
             S.INDEX_TRIPS_COMPANY, S.INDEX_INVOICES_COMPANY,
             S.INDEX_TRUCKS_COMPANY, S.INDEX_DRIVERS_COMPANY,
@@ -433,9 +610,13 @@ class DatabaseManager:
             S.INDEX_GPS_TELEMETRY_COMPANY, S.INDEX_PIPELINE_RUNS_COMPANY,
             S.INDEX_DOCUMENT_PACKAGE_COMPANY, S.INDEX_PROFORMA_COMPANY,
             S.INDEX_CONTRACTS_COMPANY, S.INDEX_TACHO_IMPORTS_COMPANY,
+            # Composite multi-tenant indexes
+            S.INDEX_TRIPS_COMPANY_STATUS, S.INDEX_TRIPS_COMPANY_CREATED,
+            S.INDEX_TRIPS_COMPANY_START_DATE,
+            S.INDEX_TRUCKS_COMPANY_STATUS, S.INDEX_INVOICES_COMPANY_STATUS,
             # Additional performance indexes
             S.INDEX_INVOICES_STATUS, S.INDEX_GPS_TRUCK_TIME,
-            S.INDEX_CMR_AUDIT_EVENT_TYPE, S.INDEX_CMR_AUDIT_CREATED,
+            S.INDEX_CMR_AUDIT_EVENT_TYPE,
             S.INDEX_EMAIL_LOGS_TRIP, S.INDEX_EMAIL_LOGS_STATUS,
             # API Keys (per-partner authentication)
             S.TABLE_API_KEYS,
@@ -448,6 +629,11 @@ class DatabaseManager:
             S.INDEX_WEBHOOK_EVENTS_PARTNER,
             S.INDEX_WEBHOOK_EVENTS_RECEIVED,
             S.INDEX_WEBHOOK_EVENTS_COMPANY,
+            # Auth Sessions — active login session tracking
+            S.TABLE_AUTH_SESSIONS,
+            S.INDEX_AUTH_SESSIONS_COMPANY,
+            S.INDEX_AUTH_SESSIONS_EMAIL,
+            S.INDEX_AUTH_SESSIONS_TOKEN,
             # Waitlist — pre-launch marketing capture
             S.TABLE_WAITLIST_ENTRIES,
             S.INDEX_WAITLIST_EMAIL, S.INDEX_WAITLIST_STATUS,
@@ -461,6 +647,10 @@ class DatabaseManager:
             S.TABLE_SAVED_SEARCHES,
             S.INDEX_SAVED_SEARCHES_COMPANY,
             S.INDEX_SAVED_SEARCHES_USER,
+            # Mobile Phase 2: async export jobs
+            S.TABLE_EXPORT_JOBS,
+            S.INDEX_EXPORT_JOBS_COMPANY,
+            S.INDEX_EXPORT_JOBS_STATUS,
         ]
         for stmt in exec_stmts:
             try:
@@ -683,6 +873,7 @@ class DatabaseManager:
             ("cmr_remarks", "ALTER TABLE trips ADD COLUMN cmr_remarks TEXT"),
             ("transport_order_number", "ALTER TABLE trips ADD COLUMN transport_order_number TEXT DEFAULT ''"),
             ("dispatch_reference", "ALTER TABLE trips ADD COLUMN dispatch_reference TEXT DEFAULT ''"),
+            ("promised_date", "ALTER TABLE trips ADD COLUMN promised_date TEXT"),
         ])
         try:
             self.conn.execute(S.INDEX_TRIPS_TRUCK_ID)
@@ -939,6 +1130,7 @@ class DatabaseManager:
             ("client_tags", "ALTER TABLE client_tags ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("document_links", "ALTER TABLE document_links ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("document_versions", "ALTER TABLE document_versions ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("export_jobs", "ALTER TABLE export_jobs ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
         ]
         for table, alter_sql in _tenant_tables:
             self._ensure_column(table, "company_id", alter_sql)
@@ -990,10 +1182,12 @@ class DatabaseManager:
         for idx_stmt in (
             S.INDEX_INVOICES_STATUS,
             S.INDEX_GPS_TRUCK_TIME,
+            S.INDEX_GPS_TELEMETRY_UNIQUE,
+            S.INDEX_COPILOT_INSIGHTS_DEDUP,
             S.INDEX_CMR_AUDIT_EVENT_TYPE,
-            S.INDEX_CMR_AUDIT_CREATED,
             S.INDEX_EMAIL_LOGS_TRIP,
             S.INDEX_EMAIL_LOGS_STATUS,
+            S.INDEX_TRIPS_COMPANY_START_DATE,
         ):
             try:
                 self.conn.execute(idx_stmt)
@@ -1031,6 +1225,16 @@ class DatabaseManager:
             self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V7)
         except Exception as e:
             logger.warning("Schema migration V7 record failed: %s", e)
+
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V8)
+        except Exception as e:
+            logger.warning("Schema migration V8 record failed: %s", e)
+
+        try:
+            self.conn.execute(S.INSERT_SCHEMA_MIGRATION_V9)
+        except Exception as e:
+            logger.warning("Schema migration V9 record failed: %s", e)
 
         # ── Migration: settings table → composite PK (key, company_id) ──
         try:
@@ -1085,6 +1289,8 @@ class DatabaseManager:
         # Driver-truck assignments → cascade with both sides
         self._ensure_foreign_key("driver_truck_assignments", "truck_id", "trucks", on_delete="CASCADE")
         self._ensure_foreign_key("driver_truck_assignments", "driver_id", "drivers", on_delete="CASCADE")
+        self._ensure_column("driver_truck_assignments", "active",
+                            "ALTER TABLE driver_truck_assignments ADD COLUMN active INTEGER NOT NULL DEFAULT 1")
         # Alerts and status history → cascade with trip
         self._ensure_foreign_key("alerts", "trip_id", "trips", on_delete="CASCADE")
         self._ensure_foreign_key("trip_status_history", "trip_id", "trips", on_delete="CASCADE")
@@ -1284,11 +1490,13 @@ class DatabaseManager:
     # ── SETTINGS (canonical API, not deprecated) ─────────────────────
 
     def get_settings(self, keys: List[str]) -> Dict[str, str]:
+        from database.tenant_context import get_company_id
+        cid = get_company_id()
         company_filter = ""
         params: List[Any] = list(keys)
-        if self.user_company_id is not None:
+        if cid is not None:
             company_filter = " AND company_id = ?"
-            params.append(self.user_company_id)
+            params.append(cid)
         rows = self.conn.execute(
             f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(keys))}){company_filter}",
             params,
@@ -1296,10 +1504,12 @@ class DatabaseManager:
         return {r[0]: r[1] for r in rows}
 
     def save_setting(self, key: str, value: str) -> None:
-        if self.user_company_id is not None:
+        from database.tenant_context import get_company_id
+        cid = get_company_id()
+        if cid is not None:
             self.conn.execute(
                 "INSERT OR REPLACE INTO settings (key, value, company_id) VALUES (?, ?, ?)",
-                (key, value, self.user_company_id),
+                (key, value, cid),
             )
         else:
             self.conn.execute(

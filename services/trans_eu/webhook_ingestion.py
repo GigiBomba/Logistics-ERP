@@ -4,6 +4,9 @@ Validates, stores, and routes incoming webhook events from Trans.eu.
 Uses IP whitelisting + URL secret for verification (no HMAC).
 Idempotent — duplicate events (by trans_eu_event_id) are skipped.
 """
+
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timezone

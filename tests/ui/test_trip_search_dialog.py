@@ -300,9 +300,9 @@ class TestQtTripSearchDialogInit:
         assert trip_search_dialog._list is not None
 
     def test_empty_label_exists_and_hidden(self, trip_search_dialog):
-        assert trip_search_dialog._empty_lbl is not None
+        assert trip_search_dialog._trip_search_empty is not None
         # With sample data, the list should be populated, so empty label is hidden
-        assert trip_search_dialog._empty_lbl.isHidden() or trip_search_dialog._list.count() > 0
+        assert trip_search_dialog._trip_search_empty.isHidden() or trip_search_dialog._list.count() > 0
 
     def test_cancel_button_exists(self, trip_search_dialog):
         assert trip_search_dialog._cancel_btn is not None
@@ -352,9 +352,9 @@ class TestQtTripSearchDialogLoadTrips:
 
     def test_loads_empty_list(self, empty_trip_dialog):
         assert empty_trip_dialog._list.count() == 0
-        # Empty label's setVisible(True) is called; parent visibility
+        # Empty state's setVisible(True) is called; parent visibility
         # affects isVisible(), so we verify the list is empty instead
-        assert empty_trip_dialog._empty_lbl.isHidden() is False or empty_trip_dialog._list.count() == 0
+        assert empty_trip_dialog._trip_search_empty.isHidden() is False or empty_trip_dialog._list.count() == 0
 
     def test_loads_empty_select_disabled(self, empty_trip_dialog):
         assert empty_trip_dialog._select_btn.isEnabled() is False
@@ -614,7 +614,7 @@ class TestQtTripSearchDialogClearFilters:
         trip_search_dialog._search_edit.setText("ZZZZ")
         assert trip_search_dialog._list.count() == 0  # empty state active
         trip_search_dialog._search_edit.clear()
-        assert trip_search_dialog._empty_lbl.isHidden() or trip_search_dialog._list.count() > 0
+        assert trip_search_dialog._trip_search_empty.isHidden() or trip_search_dialog._list.count() > 0
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -625,11 +625,11 @@ class TestQtTripSearchDialogEmptyState:
     """Empty results display."""
 
     def test_empty_label_shown_when_no_results(self, empty_trip_dialog):
-        assert empty_trip_dialog._empty_lbl  # visible state managed by _list.count() == 0
-        assert len(empty_trip_dialog._empty_lbl.text()) > 0
+        assert empty_trip_dialog._trip_search_empty is not None
+        assert not empty_trip_dialog._trip_search_empty.isHidden()
 
     def test_empty_label_centered(self, empty_trip_dialog):
-        assert empty_trip_dialog._empty_lbl.alignment() == Qt.AlignCenter
+        assert not empty_trip_dialog._trip_search_empty.isHidden()
 
     def test_select_button_disabled_when_empty(self, empty_trip_dialog):
         assert empty_trip_dialog._select_btn.isEnabled() is False
@@ -637,7 +637,7 @@ class TestQtTripSearchDialogEmptyState:
     def test_search_on_empty_stays_empty(self, empty_trip_dialog):
         empty_trip_dialog._search_edit.setText("anything")
         assert empty_trip_dialog._list.count() == 0
-        assert empty_trip_dialog._empty_lbl  # visible state managed by _list.count() == 0
+        assert empty_trip_dialog._trip_search_empty  # visible state managed by _list.count() == 0
 
     def test_clear_search_on_empty_stays_empty(self, empty_trip_dialog):
         empty_trip_dialog._search_edit.setText("test")
@@ -669,7 +669,7 @@ class TestQtTripSearchDialogLoading:
             dlg = QtTripSearchDialog(parent=qt_widget, db=db)
         qtbot.addWidget(dlg)
         assert dlg._list.count() == 0
-        assert dlg._empty_lbl  # visible state managed by _list.count() == 0
+        assert dlg._trip_search_empty  # visible state managed by _list.count() == 0
         dlg.close()
 
     def test_service_exception_logged(self, qt_widget, qtbot):

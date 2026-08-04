@@ -200,6 +200,25 @@ class TestDocumentActionsMixin:
         mock_host._email_document(sample_doc)
         mock_critical.assert_called_once()
 
+    def test_email_document_service_signature_accepts_prefs(self):
+        """C1 regression: ``_email_document`` calls ``email_document(...,
+        prefs=self.prefs)``; the real ``DocumentService.email_document``
+        signature must accept the kwarg.
+
+        Fails on the pre-fix code where ``email_document`` had no ``prefs``
+        parameter (a TypeError at runtime) — invisible to the existing tests
+        because they mock ``_service.email_document`` with a MagicMock.
+        """
+        import inspect
+
+        from services.document_service import DocumentService
+
+        sig = inspect.signature(DocumentService.email_document)
+        assert "prefs" in sig.parameters, (
+            "email_document must accept a prefs kwarg (DocumentActionsMixin "
+            "passes prefs=); found params: %s" % list(sig.parameters)
+        )
+
     @patch("ui.views.document_center.document_actions.QInputDialog.getText",
            return_value=("", True))
     def test_email_document_empty_recipient(self, mock_input, mock_host, sample_doc):

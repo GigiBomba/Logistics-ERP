@@ -2,6 +2,7 @@ import logging
 from datetime import datetime
 from typing import Any
 
+from models.trip_models import TripUpdate
 from services.operations.alert_manager import AlertManager, AlertType, Severity
 from services.operations.event_bus import (
     TRIP_CREATED,
@@ -115,7 +116,7 @@ class TripStatusEngine:
             if new_status not in valid:
                 raise ValueError(f"Cannot transition from {old_status} to {new_status}")
 
-            self._trip_service.update(trip_id, {"status": new_status})
+            self._trip_service.update(trip_id, TripUpdate(status=new_status))
 
             # Record trip status history
             try:

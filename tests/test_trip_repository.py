@@ -28,6 +28,9 @@ def repo(db) -> TripRepository:
 
 
 def _trip(db: InMemoryDB, **kw) -> int:
+    """Seed a trip row, bypassing FK enforcement so we don't need parent
+    rows (trucks, drivers, clients) for every test that doesn't test FK."""
+    db.conn.execute("PRAGMA foreign_keys=OFF")
     d: Dict[str, Any] = dict(
         created_at="2026-06-01",
         truck_number="TRK-100",
@@ -49,6 +52,7 @@ def _trip(db: InMemoryDB, **kw) -> int:
     vals = ", ".join("?" for _ in d)
     db.conn.execute(f"INSERT INTO trips ({cols}) VALUES ({vals})", list(d.values()))
     db.conn.commit()
+    db.conn.execute("PRAGMA foreign_keys=ON")
     return db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
@@ -192,6 +196,20 @@ class TestGetByStatuses:
         _trip(db, status="in_transit")
         results = repo.get_by_statuses(["completed", "planned"])
         assert len(results) == 2
+
+
+class TestGetByStatusesLimit:
+    def test_limit_caps_rows(self, db, repo):
+        for _ in range(5):
+            _trip(db, status="planned")
+        results = repo.get_by_statuses(["planned"], limit=2)
+        assert len(results) == 2
+
+    def test_no_limit_returns_all(self, db, repo):
+        for _ in range(3):
+            _trip(db, status="planned")
+        results = repo.get_by_statuses(["planned"])
+        assert len(results) == 3
 
 
 class TestGetByDateRange:

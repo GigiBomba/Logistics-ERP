@@ -1,4 +1,5 @@
 """Invoice service — PDF generation, email, and typed CRUD operations."""
+from __future__ import annotations
 
 import json
 import logging
@@ -315,10 +316,15 @@ class InvoiceService:
         self,
         request: "InvoiceCreate | dict[str, Any]",
         user_id: int = 0,
+        company_id: Optional[int] = None,
     ) -> InvoiceCreateResult:
         """Create a new invoice.
 
         Accepts ``InvoiceCreate`` (preferred) or a plain dict (deprecated).
+
+        ``company_id`` (JWT-derived, mobile path) is injected into the insert
+        when provided; when omitted the request-context tenant scoping applies
+        (desktop behaviour — unchanged).
         """
         if isinstance(request, dict):
             warnings.warn(
@@ -367,6 +373,8 @@ class InvoiceService:
             data["line_items_json"] = json.dumps(
                 [li.model_dump() for li in calculated_items]
             )
+        if company_id is not None:
+            data["company_id"] = company_id
 
         try:
             invoice_id = self._invoice_repo.create(data)
@@ -444,11 +452,12 @@ class InvoiceService:
             )
             request = InvoiceUpdate(**request)
 
-        # Permission check
-        perm = self._get_permission_service()
-        err = self._check(perm.can_create_invoice(user_id))
-        if err:
-            return err
+        # Permission check (skip for system/internal user_id=0, matching TripService behaviour)
+        if user_id:
+            perm = self._get_permission_service()
+            err = self._check(perm.can_create_invoice(user_id))
+            if err:
+                return err
 
         # Fetch existing
         row = self._invoice_repo.get_by_id(invoice_id)
@@ -621,11 +630,12 @@ class InvoiceService:
         user_id: int,
     ) -> InvoiceCreateResult:
         """Finalize (approve) an invoice."""
-        # Permission check
-        perm = self._get_permission_service()
-        err = self._check(perm.can_finalize_invoice(user_id))
-        if err:
-            return err
+        # Permission check (skip for system/internal user_id=0, matching TripService behaviour)
+        if user_id:
+            perm = self._get_permission_service()
+            err = self._check(perm.can_finalize_invoice(user_id))
+            if err:
+                return err
 
         invoice_id = request.invoice_id
         row = self._invoice_repo.get_by_id(invoice_id)
@@ -688,11 +698,12 @@ class InvoiceService:
 
     def cancel(self, invoice_id: int, user_id: int) -> InvoiceCreateResult:
         """Cancel an invoice."""
-        # Permission check
-        perm = self._get_permission_service()
-        err = self._check(perm.can_cancel_invoice(user_id))
-        if err:
-            return err
+        # Permission check (skip for system/internal user_id=0, matching TripService behaviour)
+        if user_id:
+            perm = self._get_permission_service()
+            err = self._check(perm.can_cancel_invoice(user_id))
+            if err:
+                return err
 
         row = self._invoice_repo.get_by_id(invoice_id)
         if not row:
@@ -938,11 +949,12 @@ class InvoiceService:
 
     def delete(self, invoice_id: int, user_id: int) -> InvoiceCreateResult:
         """Delete an invoice."""
-        # Permission check — use can_cancel_invoice as proxy for delete
-        perm = self._get_permission_service()
-        err = self._check(perm.can_cancel_invoice(user_id))
-        if err:
-            return err
+        # Permission check — use can_cancel_invoice as proxy for delete (skip for user_id=0)
+        if user_id:
+            perm = self._get_permission_service()
+            err = self._check(perm.can_cancel_invoice(user_id))
+            if err:
+                return err
 
         row = self._invoice_repo.get_by_id(invoice_id)
         if not row:

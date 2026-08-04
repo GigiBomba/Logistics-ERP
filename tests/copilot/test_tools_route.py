@@ -18,6 +18,8 @@ Tests cover:
 Blueprint: §9.1 — Route tools, Level 0 SAFE.
 """
 
+from __future__ import annotations
+
 import asyncio
 import math
 from typing import Any
@@ -397,13 +399,19 @@ class TestRouteEstimateCostExecute:
     def test_execute_without_truck_id_uses_legacy_path(self):
         """When no truck_id, uses the legacy estimate() path."""
         with patch("services.cost_engine.CostEngineService") as mock_cost_engine_class:
+            cost_data = MagicMock()
+            cost_data.success = True
+            cost_data.errors = []
+            cost_data.data.breakdown.fuel_cost = 100.0
+            cost_data.data.breakdown.toll_cost = 20.0
+            cost_data.data.breakdown.driver_cost = 0.0
+            cost_data.data.breakdown.extra_costs = {}
+            cost_data.data.breakdown.total_cost = 120.0
+            cost_data.data.breakdown.cost_per_km = 0.24
+            cost_data.data.breakdown.currency = "EUR"
+
             mock_engine = MagicMock()
-            mock_engine.estimate.return_value = {
-                "fuel_cost": 100.0,
-                "toll_cost": 20.0,
-                "total_cost": 120.0,
-                "fuel_liters": 40.0,
-            }
+            mock_engine.estimate.return_value = cost_data
             mock_cost_engine_class.return_value = mock_engine
 
             tool = get_tool(COST_TOOL)
@@ -413,17 +421,24 @@ class TestRouteEstimateCostExecute:
 
             assert result.status == "success"
             assert result.data["total_cost"] == 120.0
-            assert result.data["breakdown"]["fuel_liters"] == 40.0
+            assert result.data["breakdown"]["total_cost"] == 120.0
 
     def test_execute_with_cost_engine_in_services(self):
         """CostEngineService in ctx.services is preferred over fresh instance."""
         with patch("services.cost_engine.CostEngineService") as mock_cost_engine_class:
+            cost_data = MagicMock()
+            cost_data.success = True
+            cost_data.errors = []
+            cost_data.data.breakdown.fuel_cost = 50.0
+            cost_data.data.breakdown.toll_cost = 10.0
+            cost_data.data.breakdown.driver_cost = 0.0
+            cost_data.data.breakdown.extra_costs = {}
+            cost_data.data.breakdown.total_cost = 60.0
+            cost_data.data.breakdown.cost_per_km = 0.30
+            cost_data.data.breakdown.currency = "EUR"
+
             mock_engine = MagicMock()
-            mock_engine.estimate.return_value = {
-                "fuel_cost": 50.0,
-                "toll_cost": 10.0,
-                "total_cost": 60.0,
-            }
+            mock_engine.estimate.return_value = cost_data
 
             tool = get_tool(COST_TOOL)
             params = tool.parameters_schema(distance_km=200.0)

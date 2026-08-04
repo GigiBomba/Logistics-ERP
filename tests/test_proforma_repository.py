@@ -77,6 +77,12 @@ class TestGetNextNumber:
 
     def test_get_next_number_increments_with_rows(self, db, repo):
         _proforma(db, proforma_number="PROF-2026-0001")
+        # Seed the sequence table to simulate existing proforma
+        db.conn.execute(
+            "INSERT OR REPLACE INTO invoice_number_sequences (series, year, last_number) VALUES (?, ?, ?)",
+            ("prof_year_seq", 2026, 1),
+        )
+        db.conn.commit()
         result = repo.get_next_number()
         year = datetime.now().year
         assert result == f"PROF-{year}-0002"

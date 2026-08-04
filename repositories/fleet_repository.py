@@ -3,6 +3,56 @@ from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
+
+def schedule_is_overdue(row: Dict[str, Any], today: Optional[str] = None) -> bool:
+    """Return whether an active maintenance schedule is overdue.
+
+    This is the SINGLE source of truth for the overdue thresholds — both
+    ``count_overdue_schedules`` and the mobile maintenance schedule list
+    compute overdue through it (no drift between the health-score count and
+    the per-schedule ``overdue`` flag):
+      - km: current mileage (trucks.mileage) >= last_done_km + interval_km
+      - months: last_done_date + interval_months <= today
+      - fixed expiry: fixed_expiry_date <= today
+    """
+    from datetime import datetime
+    import calendar
+
+    if today is None:
+        today = datetime.now().strftime("%Y-%m-%d")
+
+    def _add_months(source_date, months):
+        total_months = source_date.month - 1 + months
+        year = source_date.year + total_months // 12
+        month = total_months % 12 + 1
+        max_day = calendar.monthrange(year, month)[1]
+        day = min(source_date.day, max_day)
+        return source_date.replace(year=year, month=month, day=day)
+
+    # Check km-based overdue
+    current_km = row.get("current_km") or 0
+    last_done_km = row.get("last_done_km")
+    interval_km = row.get("interval_km")
+    if interval_km is not None and last_done_km is not None and current_km >= last_done_km + interval_km:
+        return True
+    # Check month-based overdue
+    interval_months = row.get("interval_months")
+    last_done_date = row.get("last_done_date")
+    if interval_months is not None and last_done_date:
+        try:
+            last_done = datetime.strptime(last_done_date[:10], "%Y-%m-%d")
+            due_date = _add_months(last_done, int(interval_months))
+            if due_date.strftime("%Y-%m-%d") <= today:
+                return True
+        except (ValueError, TypeError):
+            pass
+    # Check fixed expiry
+    fixed_expiry = row.get("fixed_expiry_date")
+    if fixed_expiry and fixed_expiry <= today:
+        return True
+    return False
+
+
 class FleetRepository(BaseRepository):
     TABLE = "trucks"
     TABLE_MAINT_RECORDS = "maintenance_records"
@@ -14,7 +64,7 @@ class FleetRepository(BaseRepository):
         "insurance_expiry", "inspection_expiry", "maintenance_due",
         "tachograph_expiry", "active_status", "tracking_device_id",
         "trailer_plate", "max_payload_kg", "cmr_insurance_number", "cmr_insurance_expiry",
-        "odometer_km",
+        "odometer_km", "company_id",
     ]
     COLUMNS_MAINT_RECORDS = [
         "id", "truck_id", "maintenance_type", "date", "km", "cost", "notes",
@@ -32,42 +82,59 @@ class FleetRepository(BaseRepository):
 
     # ── Truck CRUD ───────────────────────────────────────────────────
 
-    def get_by_id(self, truck_id: int) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, truck_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (truck_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (truck_id,) + self._company_params_for(company_id),
         )
 
-    def get_all(self, limit: int = 200, offset: int = 0) -> List[Dict[str, Any]]:
+    def get_trucks_by_ids(self, truck_ids: List[int], company_id=None) -> List[Dict[str, Any]]:
+        """Return the subset of *truck_ids* that belong to the given company.
+
+        Single ``id IN (...)`` query so the GPS batch endpoint can verify
+        ownership of every truck in one lookup instead of N sequential ones.
+        """
+        if not truck_ids:
+            return []
+        placeholders = ", ".join("?" for _ in truck_ids)
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY plate_number ASC LIMIT ? OFFSET ?",
-            self._company_params() + (limit, offset),
+            f"SELECT id FROM {self.TABLE} WHERE id IN ({placeholders}) "
+            f"{self._company_filter_for(company_id)}",
+            tuple(truck_ids) + self._company_params_for(company_id),
         )
 
-    def create(self, data: Dict[str, Any]) -> int:
+    def get_all(self, limit: int = 200, offset: int = 0, company_id=None) -> List[Dict[str, Any]]:
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} ORDER BY plate_number ASC LIMIT ? OFFSET ?",
+            self._company_params_for(company_id) + (limit, offset),
+        )
+
+    def create(self, data: Dict[str, Any], company_id=None) -> int:
         self._validate_columns(data)
         data = self._set_company_from_context(data)
+        if company_id:
+            data["company_id"] = company_id
         filtered = {k: v for k, v in data.items() if k != "id"}
         cols = ", ".join(filtered.keys())
         vals = ", ".join("?" for _ in filtered)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
             tuple(filtered.values()),
-        )
+        commit=True)
 
-    def update(self, truck_id: int, data: Dict[str, Any]) -> None:
+    def update(self, truck_id: int, data: Dict[str, Any], company_id=None) -> None:
         self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (truck_id,) + self._company_params(),
-        )
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter_for(company_id)}",
+            tuple(data.values()) + (truck_id,) + self._company_params_for(company_id),
+        commit=True)
 
-    def delete(self, truck_id: int) -> None:
+    def delete(self, truck_id: int, company_id=None) -> None:
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (truck_id,) + self._company_params(),
-        )
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (truck_id,) + self._company_params_for(company_id),
+        commit=True)
 
     # ── Truck domain queries ─────────────────────────────────────────
 
@@ -115,7 +182,7 @@ class FleetRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
             tuple(fields.values()) + (truck_id,) + self._company_params(),
-        )
+        commit=True)
 
     def get_by_driver_id(self, driver_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
@@ -163,7 +230,7 @@ class FleetRepository(BaseRepository):
         self, truck_id: int, maint_type: str, date: str,
         km: Optional[float] = None, cost: Optional[float] = None,
         notes: str = "", provider: str = "", attachment: str = "",
-        created_at: str = "",
+        created_at: str = "", company_id=None,
     ) -> int:
         data = {
             "truck_id": truck_id,
@@ -176,6 +243,8 @@ class FleetRepository(BaseRepository):
             "attachment_path": attachment,
             "created_at": created_at,
         }
+        if company_id:
+            data["company_id"] = company_id
         self._validate_columns(data, extra_allowed=set(self.COLUMNS_MAINT_RECORDS))
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
@@ -183,7 +252,7 @@ class FleetRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE_MAINT_RECORDS} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def get_maintenance_records(
         self, truck_id: Optional[int] = None, maint_type: Optional[str] = None,
@@ -249,13 +318,13 @@ class FleetRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE_MAINT_RECORDS} SET maintenance_type=?, date=?, km=?, cost=?, service_provider=?, notes=? WHERE id=? {self._company_filter()}",
             (maint_type, date, km, cost, provider, notes, record_id) + self._company_params(),
-        )
+        commit=True)
 
     def delete_maintenance_record(self, record_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE_MAINT_RECORDS} WHERE id = ? {self._company_filter()}",
             (record_id,) + self._company_params(),
-        )
+        commit=True)
 
     def get_maintenance_type_counts(self, truck_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
@@ -305,6 +374,7 @@ class FleetRepository(BaseRepository):
         interval_km: Optional[float] = None, interval_months: Optional[int] = None,
         fixed_expiry_date: str = "", last_done_km: Optional[float] = None,
         last_done_date: str = "", created_at: str = "",
+        company_id: Optional[int] = None,
     ) -> int:
         data = {
             "truck_id": truck_id,
@@ -317,6 +387,8 @@ class FleetRepository(BaseRepository):
             "active": 1,
             "created_at": created_at,
         }
+        if company_id:
+            data["company_id"] = company_id
         self._validate_columns(data, extra_allowed=set(self.COLUMNS_MAINT_SCHEDULES))
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
@@ -324,7 +396,28 @@ class FleetRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE_MAINT_SCHEDULES} ({cols}) VALUES ({vals})",
             tuple(data.values()),
+        commit=True)
+
+    def get_maintenance_schedules_with_overdue(
+        self, company_id: Optional[int] = None
+    ) -> List[Dict[str, Any]]:
+        """All active schedules (with truck plate + mileage) flagged ``overdue``.
+
+        ``overdue`` is computed via the shared :func:`schedule_is_overdue`
+        thresholds — the same ones the health-score ``count_overdue_schedules``
+        uses, so the mobile list can never disagree with the desktop count.
+        """
+        rows = self._fetchall(
+            f"""SELECT s.*, t.plate_number, t.mileage AS current_km
+                FROM {self.TABLE_MAINT_SCHEDULES} s
+                LEFT JOIN trucks t ON t.id = s.truck_id
+                WHERE s.active = 1 {self._company_filter_for(company_id, "s")}
+                ORDER BY s.truck_id, s.maintenance_type""",
+            self._company_params_for(company_id),
         )
+        for r in rows:
+            r["overdue"] = schedule_is_overdue(r)
+        return rows
 
     def get_maintenance_schedules(self, truck_id: Optional[int] = None) -> List[Dict[str, Any]]:
         if truck_id is not None:
@@ -356,13 +449,13 @@ class FleetRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE_MAINT_SCHEDULES} SET {sets} WHERE id = ? {self._company_filter()}",
             tuple(fields.values()) + (schedule_id,) + self._company_params(),
-        )
+        commit=True)
 
     def delete_maintenance_schedule(self, schedule_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ? {self._company_filter()}",
             (schedule_id,) + self._company_params(),
-        )
+        commit=True)
 
     def count_active_maintenance_schedules(self) -> int:
         row = self._fetchone(
@@ -383,11 +476,11 @@ class FleetRepository(BaseRepository):
         )
 
     def count_overdue_schedules(self) -> int:
-        """Return count of active schedules that are overdue based on km, months, or fixed expiry."""
-        from datetime import datetime, timedelta
-        import calendar
-        today = datetime.now().strftime("%Y-%m-%d")
+        """Return count of active schedules that are overdue based on km, months, or fixed expiry.
 
+        Delegates each row to the shared :func:`schedule_is_overdue` thresholds
+        (behaviour-identical to the historical inline logic).
+        """
         rows = self._fetchall(
             f"""SELECT s.*, t.mileage AS current_km
                 FROM {self.TABLE_MAINT_SCHEDULES} s
@@ -395,42 +488,7 @@ class FleetRepository(BaseRepository):
                 WHERE s.active = 1 {self._company_filter("s")}""",
             self._company_params(),
         )
-
-        def _add_months(source_date, months):
-            total_months = source_date.month - 1 + months
-            year = source_date.year + total_months // 12
-            month = total_months % 12 + 1
-            max_day = calendar.monthrange(year, month)[1]
-            day = min(source_date.day, max_day)
-            return source_date.replace(year=year, month=month, day=day)
-
-        count = 0
-        for r in rows:
-            # Check km-based overdue
-            current_km = r.get("current_km") or 0
-            last_done_km = r.get("last_done_km")
-            interval_km = r.get("interval_km")
-            if interval_km is not None and last_done_km is not None and current_km >= last_done_km + interval_km:
-                count += 1
-                continue
-            # Check month-based overdue
-            interval_months = r.get("interval_months")
-            last_done_date = r.get("last_done_date")
-            if interval_months is not None and last_done_date:
-                try:
-                    last_done = datetime.strptime(last_done_date[:10], "%Y-%m-%d")
-                    due_date = _add_months(last_done, int(interval_months))
-                    if due_date.strftime("%Y-%m-%d") <= today:
-                        count += 1
-                        continue
-                except (ValueError, TypeError):
-                    pass
-            # Check fixed expiry
-            fixed_expiry = r.get("fixed_expiry_date")
-            if fixed_expiry and fixed_expiry <= today:
-                count += 1
-                continue
-        return count
+        return sum(1 for r in rows if schedule_is_overdue(r))
 
     # ── Analytics Queries ────────────────────────────────────────────
 
@@ -510,7 +568,7 @@ class FleetRepository(BaseRepository):
         self._execute(
             f"INSERT OR REPLACE INTO {self.TABLE_HEALTH_SCORES} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def get_truck_health(self, truck_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(

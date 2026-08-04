@@ -37,6 +37,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from models.document_models import DocumentUpload
 from services.document_service import IMAGE_MIME, DocumentService
 from services.i18n import t
 from ui.base_view import BaseView
@@ -47,8 +48,15 @@ from services.operations.event_bus import (
     PROFORMA_CREATED,
     RECEIPT_CREATED,
 )
-from ui.components import Btn, FieldLabel
-from ui.theme import COLORS, S
+from ui.components import Btn, EmptyState, FieldLabel
+from ui.design_tokens import (
+    COLOR_BG_BASE,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_MEDIUM,
+    COLOR_BORDER_SUBTLE,
+    COLOR_TEXT_PRIMARY,
+    SP,
+)
 from ui.widgets import (
     SectionHeader,
     StyledComboBox,
@@ -108,11 +116,21 @@ class _DocRow(QFrame):
 
         self.setProperty("role", "doc-row")
         self.setCursor(Qt.PointingHandCursor)
-        self.setMinimumHeight(80)
+        self.setMinimumHeight(76)
+        self.setStyleSheet(f"""
+            _DocRow {{
+                border: 1px solid {COLOR_BORDER_SUBTLE};
+                border-radius: 6px;
+                background: {COLOR_BG_OVERLAY};
+            }}
+            _DocRow:hover {{
+                border-color: {COLOR_BORDER_MEDIUM};
+            }}
+        """)
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
+        layout.setSpacing(SP["2"])
         # ── Checkbox ──────────────────────────────────────────────────────
         self._cb = QCheckBox(self)
         self._cb.setChecked(self._doc_id in selected_ids)
@@ -356,7 +374,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
     def shutdown(self) -> None:
         """Clean up listeners and resources."""
         self._stop_ocr_worker()
-        if hasattr(self, "_api_dashboard_view") and self._api_dashboard_view is not None:
+        if self._api_dashboard_view is not None:
             if hasattr(self._api_dashboard_view, "shutdown"):
                 with contextlib.suppress(Exception):
                     self._api_dashboard_view.shutdown()
@@ -433,6 +451,8 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
             * **Automation** — the Operion Document Automation
               pipeline (drop-zone + run list + detail panel)
         """
+        self.setAccessibleName("Document center")
+        self.setAccessibleDescription("Document management with sidebar, list and detail panels")
         main_layout = QVBoxLayout(self)
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
@@ -468,32 +488,42 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
             self._automation_layout.addWidget(self._automation_view, 1)
         self._tab_widget.addTab(self._automation_page, "")
 
-        # ── Tab 3: API Dashboard (admin only) ────────────────────────────
+        # ── Tab 3: API Dashboard (admin only) — lazily created ──────────
         self._api_dashboard_page = QWidget()
         self._api_dashboard_layout = QVBoxLayout(self._api_dashboard_page)
         self._api_dashboard_layout.setContentsMargins(0, 0, 0, 0)
         self._api_dashboard_layout.setSpacing(0)
         self._api_dashboard_view = None
         self._admin_api_dashboard_tab = False
-        try:
-            from client.auth_manager import get_auth
-            _auth = get_auth()
-            if _auth is not None and _auth.is_admin:
-                self._admin_api_dashboard_tab = True
-                from ui.views.api_dashboard_view import QtApiDashboardView
-                self._api_dashboard_view = QtApiDashboardView(
-                    self._api_dashboard_page,
-                    db=self.db,
-                    api_client=getattr(self, '_api_client', None),
-                )
-                self._api_dashboard_layout.addWidget(self._api_dashboard_view, 1)
-        except Exception:
-            logger.exception("Failed to construct QtApiDashboardView")
-        if self._admin_api_dashboard_tab:
-            self._tab_widget.addTab(self._api_dashboard_page, "")
+        self._api_dashboard_tab_index = -1
 
         self._refresh_tab_titles()
-        self.refresh()
+        QTimer.singleShot(100, self._safe_refresh)
+
+    # ── Lazy API dashboard accessor ──────────────────────────────
+
+    @property
+    def _api_dashboard(self):
+        """Lazy accessor for the API dashboard view — created on first access."""
+        if self._api_dashboard_view is None:
+            try:
+                from client.auth_manager import get_auth
+                _auth = get_auth()
+                if _auth is not None and _auth.is_admin:
+                    from ui.views.api_dashboard_view import QtApiDashboardView
+                    self._api_dashboard_view = QtApiDashboardView(
+                        self._api_dashboard_page,
+                        db=self.db,
+                        api_client=getattr(self, '_api_client', None),
+                    )
+                    self._api_dashboard_layout.addWidget(self._api_dashboard_view, 1)
+                    self._admin_api_dashboard_tab = True
+                    self._tab_widget.addTab(self._api_dashboard_page, "")
+                    self._api_dashboard_tab_index = self._tab_widget.count() - 1
+                    self._refresh_tab_titles()
+            except Exception:
+                logger.exception("Failed to construct QtApiDashboardView")
+        return self._api_dashboard_view
 
     # ── Automation sub-tab ─────────────────────────────────────────────
 
@@ -627,10 +657,11 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._tab_widget.setTabText(
             1, t("automation.tab_title", default="Automation")
         )
-        # API Dashboard tab (index 2) — only if admin
-        if self._admin_api_dashboard_tab:
+        # API Dashboard tab — only if admin (added lazily)
+        if self._admin_api_dashboard_tab and self._api_dashboard_tab_index >= 0:
             self._tab_widget.setTabText(
-                2, t("api.tab_title", default="API Dashboard")
+                self._api_dashboard_tab_index,
+                t("api.tab_title", default="API Dashboard"),
             )
         # Admin tab — only update if injected
         if self._admin_tab_injected and self._admin_tab_index >= 0:
@@ -649,12 +680,14 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
                     self._automation_view._refresh_from_db()
             except Exception:
                 logger.exception("Failed to wake automation view")
-        elif index == 2 and self._api_dashboard_view is not None:
-            try:
-                if hasattr(self._api_dashboard_view, "wakeup"):
-                    self._api_dashboard_view.wakeup()
-            except Exception:
-                logger.exception("Failed to wake API dashboard view")
+        elif getattr(self, '_admin_api_dashboard_tab', False) and index == self._api_dashboard_tab_index:
+            dashboard = self._api_dashboard
+            if dashboard is not None:
+                try:
+                    if hasattr(dashboard, "wakeup"):
+                        dashboard.wakeup()
+                except Exception:
+                    logger.exception("Failed to wake API dashboard view")
         elif (
             self._admin_tab_injected
             and index == self._admin_tab_index
@@ -672,8 +705,8 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._sidebar = QWidget(self)
         self._sidebar.setProperty("role", "sidebar")
         layout = QVBoxLayout(self._sidebar)
-        layout.setContentsMargins(S["3"], S["4"], S["3"], S["4"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["3"], SP["4"], SP["3"], SP["4"])
+        layout.setSpacing(SP["2"])
 
         # Header
         self._sidebar_header = SectionHeader(self._sidebar, t("docs.title"))
@@ -697,7 +730,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._filter_panel = QWidget(self._sidebar)
         self._filter_panel_layout = QVBoxLayout(self._filter_panel)
         self._filter_panel_layout.setContentsMargins(0, 0, 0, 0)
-        self._filter_panel_layout.setSpacing(S["2"])
+        self._filter_panel_layout.setSpacing(SP["2"])
         self._filter_panel.setVisible(False)
         layout.addWidget(self._filter_panel)
 
@@ -773,7 +806,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         btn_row = QWidget(self._filter_panel)
         btn_row_layout = QHBoxLayout(btn_row)
         btn_row_layout.setContentsMargins(0, 0, 0, 0)
-        btn_row_layout.setSpacing(S["2"])
+        btn_row_layout.setSpacing(SP["2"])
 
         apply_btn = Btn(
             btn_row, text=t("docs.filter_apply"), command=self._apply_filters,
@@ -834,14 +867,14 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._center_panel = QWidget(self)
         self._center_panel.setProperty("role", "center-panel")
         layout = QVBoxLayout(self._center_panel)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["2"])
 
         # ── Toolbar ───────────────────────────────────────────────────────
         toolbar = QWidget(self._center_panel)
         toolbar_layout = QHBoxLayout(toolbar)
         toolbar_layout.setContentsMargins(0, 0, 0, 0)
-        toolbar_layout.setSpacing(S["3"])
+        toolbar_layout.setSpacing(SP["3"])
 
         # Sort combo
         sort_vals = [
@@ -882,7 +915,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._batch_bar.setVisible(False)
         batch_layout = QHBoxLayout(self._batch_bar)
         batch_layout.setContentsMargins(0, 0, 0, 0)
-        batch_layout.setSpacing(S["2"])
+        batch_layout.setSpacing(SP["2"])
 
         self._batch_zip_btn = Btn(
             self._batch_bar, text=t("docs.download_zip"),
@@ -908,7 +941,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._list_content = QWidget(self._list_scroll)
         self._list_layout = QVBoxLayout(self._list_content)
         self._list_layout.setContentsMargins(0, 0, 0, 0)
-        self._list_layout.setSpacing(S["2"])
+        self._list_layout.setSpacing(SP["2"])
         self._list_layout.setAlignment(Qt.AlignTop)
         self._list_scroll.setWidget(self._list_content)
 
@@ -946,8 +979,8 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._detail_panel = QWidget(self)
         self._detail_panel.setProperty("role", "detail-sidebar")
         layout = QVBoxLayout(self._detail_panel)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["2"])
 
         # Header
         self._detail_header = SectionHeader(self._detail_panel, t("docs.details"))
@@ -961,7 +994,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._detail_content = QWidget(self._detail_scroll)
         self._detail_content_layout = QVBoxLayout(self._detail_content)
         self._detail_content_layout.setContentsMargins(0, 0, 0, 0)
-        self._detail_content_layout.setSpacing(S["2"])
+        self._detail_content_layout.setSpacing(SP["2"])
         self._detail_content_layout.setAlignment(Qt.AlignTop)
         self._detail_scroll.setWidget(self._detail_content)
 
@@ -971,7 +1004,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._detail_actions = QWidget(self._detail_panel)
         self._detail_actions_layout = QVBoxLayout(self._detail_actions)
         self._detail_actions_layout.setContentsMargins(0, 0, 0, 0)
-        self._detail_actions_layout.setSpacing(S["2"])
+        self._detail_actions_layout.setSpacing(SP["2"])
         layout.addWidget(self._detail_actions)
 
         self._show_detail(None)
@@ -1032,11 +1065,19 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         self._batch_bar.setVisible(bool(self._selected_ids))
 
         if not self._docs:
-            empty_lbl = QLabel(t("docs.no_documents"), self._list_content)
-            empty_lbl.setProperty("fontRole", "body")
-            empty_lbl.setProperty("role", "empty-label")
-            empty_lbl.setAlignment(Qt.AlignCenter)
-            self._list_layout.addWidget(empty_lbl, 0, Qt.AlignCenter)
+            empty = EmptyState(
+                self._list_content,
+                icon_name="fa5s.file-alt",
+                title=t("docs.empty_title", default="No documents found"),
+                subtitle=t("docs.empty_desc", default="Upload a document or generate your first invoice or CMR to get started."),
+                cta_button=Btn(
+                    self._list_content,
+                    text=t("docs.upload_first", default="Upload a Document"),
+                    variant="primary",
+                    command=self._upload_dialog,
+                ),
+            )
+            self._list_layout.addWidget(empty, 0, Qt.AlignCenter)
             self._show_detail(None)
             return
 
@@ -1200,7 +1241,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         add_tag_row = QWidget(c)
         add_tag_layout = QHBoxLayout(add_tag_row)
         add_tag_layout.setContentsMargins(0, 0, 0, 0)
-        add_tag_layout.setSpacing(S["2"])
+        add_tag_layout.setSpacing(SP["2"])
 
         self._tag_entry = StyledLineEdit(add_tag_row, placeholder=t("docs.add_tag"))
         add_tag_layout.addWidget(self._tag_entry, 1)
@@ -1238,7 +1279,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
         exp_row = QWidget(c)
         exp_layout = QHBoxLayout(exp_row)
         exp_layout.setContentsMargins(0, 0, 0, 0)
-        exp_layout.setSpacing(S["2"])
+        exp_layout.setSpacing(SP["2"])
 
         self._expiry_entry = StyledLineEdit(
             exp_row, text=expiry, placeholder="YYYY-MM-DD",
@@ -1264,7 +1305,7 @@ class QtDocumentCenterView(BaseView, DocumentActionsMixin):
                 vframe = QWidget(c)
                 vlayout = QHBoxLayout(vframe)
                 vlayout.setContentsMargins(0, 0, 0, 0)
-                vlayout.setSpacing(S["2"])
+                vlayout.setSpacing(SP["2"])
 
                 vtext = (
                     f"v{v['version_number']}: "
@@ -1498,13 +1539,13 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
     dlg.setWindowTitle(t("docs.entity_documents_title", title=title) if title else t("docs.entity_documents_default"))
     dlg.setMinimumSize(650, 500)
     dlg.setStyleSheet(
-        f"QDialog {{ background-color: {COLORS['bg_base']}; }}"
-        f"QLabel {{ color: {COLORS['text_primary']}; }}"
+        f"QDialog {{ background-color: {COLOR_BG_BASE}; }}"
+        f"QLabel {{ color: {COLOR_TEXT_PRIMARY}; }}"
     )
 
     layout = QVBoxLayout(dlg)
-    layout.setContentsMargins(S["5"], S["5"], S["5"], S["5"])
-    layout.setSpacing(S["3"])
+    layout.setContentsMargins(SP["5"], SP["5"], SP["5"], SP["5"])
+    layout.setSpacing(SP["3"])
 
     # ── Header ────────────────────────────────────────────────────────────
     header = QFrame()
@@ -1525,13 +1566,13 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
     scroll.setWidgetResizable(True)
     scroll.setFrameShape(QFrame.NoFrame)
     scroll.setStyleSheet(
-        f"QScrollArea {{ background-color: {COLORS['bg_base']}; border: none; }}"
+        f"QScrollArea {{ background-color: {COLOR_BG_BASE}; border: none; }}"
     )
     list_container = QWidget()
-    list_container.setStyleSheet(f"QWidget {{ background-color: {COLORS['bg_base']}; }}")
+    list_container.setStyleSheet(f"QWidget {{ background-color: {COLOR_BG_BASE}; }}")
     list_layout = QVBoxLayout(list_container)
     list_layout.setContentsMargins(0, 0, 0, 0)
-    list_layout.setSpacing(S["2"])
+    list_layout.setSpacing(SP["2"])
     list_layout.setAlignment(Qt.AlignTop)
     scroll.setWidget(list_container)
     layout.addWidget(scroll, 1)
@@ -1559,8 +1600,8 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
             row = QFrame()
             row.setProperty("role", "card")
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-            row_layout.setSpacing(S["3"])
+            row_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+            row_layout.setSpacing(SP["3"])
 
             # Icon
             mime = doc.get("mime_type", "")
@@ -1621,11 +1662,13 @@ def open_entity_documents(parent: QWidget, db, entity_type: str, entity_id: int,
             return
         for src in paths:
             with contextlib.suppress(Exception):
-                service.upload(
-                    source_path=src,
-                    entity_type=entity_type,
-                    entity_id=entity_id,
-                    uploaded_by="user",
+                service.upload_document(
+                    DocumentUpload(
+                        source_path=src,
+                        entity_type=entity_type,
+                        entity_id=entity_id,
+                    ),
+                    user_id=0,
                 )
         _refresh()
 

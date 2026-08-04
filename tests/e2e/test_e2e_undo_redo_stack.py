@@ -16,6 +16,7 @@ import pytest
 from repositories.driver_repository import DriverRepository
 from repositories.driver_truck_assignment_repository import DriverTruckAssignmentRepository
 from repositories.fleet_repository import FleetRepository
+from models.trip_models import TripCreate
 from services.fleet_service import FleetService
 from services.operations.event_bus import EventBus
 from services.operations.trip_status_workflow import TripStatusWorkflow
@@ -68,19 +69,33 @@ def _create_driver(db) -> int:
     })
 
 
+def _ensure_client(db, client_id: int = 1, name: str = "Undo Client GmbH") -> None:
+    """Ensure a client record exists in the test DB."""
+    existing = db.conn.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if not existing:
+        db.conn.execute(
+            "INSERT INTO clients (id, name, email, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))",
+            (client_id, name, "undo@example.com"),
+        )
+        db.conn.commit()
+
+
 def _create_trip(db, truck_id, driver_id) -> int:
     svc = TripService(db)
-    now = datetime.now().isoformat()
-    return svc.add({
+    _ensure_client(db)
+    model_fields = TripCreate.model_fields
+    raw = {
+        "client_id": 1,
         "client_name": "Undo Client GmbH",
-        "truck_number": "TR-UNDO-01",
+        "truck_plate": "TR-UNDO-01",
         "truck_id": truck_id,
         "driver_name": "Undo Test Driver",
         "driver_id": driver_id,
         "start_date": _dt(),
         "end_date": _dt(),
         "distance_km": 500.0,
-        "total_price_eur": 2000.0,
+        "price_eur": 2000.0,
         "rate_per_km": 4.0,
         "fuel_cost": 400.0,
         "toll_cost": 80.0,
@@ -89,14 +104,10 @@ def _create_trip(db, truck_id, driver_id) -> int:
         "net_profit": 1190.0,
         "currency": "EUR",
         "status": "Planned",
-        "loading_country": "DE",
-        "delivery_country": "RO",
-        "created_at": now,
-        "cargo_description": "Test cargo",
-        "package_count": 10,
-        "package_type": "Pallets",
-        "gross_weight_kg": 5000.0,
-    })
+    }
+    trip_data = {k: v for k, v in raw.items() if k in model_fields}
+    result = svc.create(TripCreate(**trip_data))
+    return result.data.id
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────

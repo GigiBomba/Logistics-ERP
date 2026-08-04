@@ -92,6 +92,63 @@ class TestSettingsRouter:
         assert resp.json() == {"status": "saved", "key": "my_key", "value": "new_value"}
         mocks["db"].save_setting.assert_called_once_with("my_key", "new_value")
 
+    # ── sensitive-key encryption via API ──────────────────────────────────
+
+    @patch("backend.api.v1.settings.encrypt_value", side_effect=lambda v: f"enc:{v}")
+    def test_patch_sensitive_key_encrypts_before_save(
+        self, mock_enc, client_with_mocks
+    ):
+        client, mocks = client_with_mocks
+
+        resp = client.patch(f"{BASE}/smtp_password", json={"value": "secret123"})
+        assert resp.status_code == 200
+        mock_enc.assert_called_once_with("secret123")
+        # Stored value must NOT be the plaintext.
+        mocks["db"].save_setting.assert_called_once_with("smtp_password", "enc:secret123")
+
+    @patch("backend.api.v1.settings.encrypt_value", side_effect=lambda v: f"enc:{v}")
+    def test_put_tracking_password_encrypts_before_save(
+        self, mock_enc, client_with_mocks
+    ):
+        client, mocks = client_with_mocks
+
+        resp = client.put(f"{BASE}/tracking.password", json={"value": "track-secret"})
+        assert resp.status_code == 200
+        # Stored value must NOT be the plaintext.
+        mocks["db"].save_setting.assert_called_once_with("tracking.password", "enc:track-secret")
+
+    def test_patch_non_sensitive_key_not_encrypted(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        with patch("backend.api.v1.settings.encrypt_value") as mock_enc:
+            resp = client.patch(f"{BASE}/pref_language", json={"value": "ro"})
+            assert resp.status_code == 200
+            mock_enc.assert_not_called()
+            mocks["db"].save_setting.assert_called_once_with("pref_language", "ro")
+
+    @patch("backend.api.v1.settings.decrypt_value", side_effect=lambda v: v.replace("enc:", ""))
+    def test_get_sensitive_key_returns_decrypted_value(
+        self, mock_dec, client_with_mocks
+    ):
+        client, mocks = client_with_mocks
+        mocks["db"].get_setting.return_value = "enc:secret123"
+
+        resp = client.get(f"{BASE}/smtp_password")
+        assert resp.status_code == 200
+        assert resp.json()["value"] == "secret123"
+        mock_dec.assert_called_once_with("enc:secret123")
+
+    @patch("backend.api.v1.settings.decrypt_value", side_effect=lambda v: v)
+    def test_get_sensitive_key_legacy_plaintext_unchanged(
+        self, mock_dec, client_with_mocks
+    ):
+        client, mocks = client_with_mocks
+        mocks["db"].get_setting.return_value = "legacy-plaintext"
+
+        resp = client.get(f"{BASE}/tracking.password")
+        assert resp.status_code == 200
+        assert resp.json()["value"] == "legacy-plaintext"
+        mock_dec.assert_called_once_with("legacy-plaintext")
+
     # ── error handling ─────────────────────────────────────────────────────
 
     def test_service_exception_propagates(self, client_with_mocks):

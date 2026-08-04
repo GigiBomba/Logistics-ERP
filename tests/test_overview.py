@@ -11,6 +11,27 @@ from PySide6.QtWidgets import QLabel, QFrame
 from ui.views.overview_view import QtOverviewView
 
 
+@pytest.fixture(autouse=True)
+def run_workers_sync(monkeypatch):
+    """Run WorkerPool tasks synchronously so refresh() data lands inline.
+
+    ``QtOverviewView.refresh`` delegates to ``WorkerPool.run``, which would
+    otherwise deliver ``_fetch_all_data`` results asynchronously on a
+    background thread — racing the synchronous assertions in these tests.
+    Executing the callback inline makes every refresh deterministic.
+    """
+
+    def _run_sync(fn, on_result=None, on_error=None, **kwargs):
+        if on_result is not None:
+            on_result(fn())
+        return None
+
+    monkeypatch.setattr(
+        "ui.views.overview_view.WorkerPool.run",
+        _run_sync,
+    )
+
+
 @pytest.fixture
 def overview_view(qt_widget, qtbot, monkeypatch):
     monkeypatch.setattr(
@@ -76,16 +97,18 @@ def overview_view(qt_widget, qtbot, monkeypatch):
     fake_analytics_svc.get_client_retention.return_value = []
     fake_analytics_svc.get_profit_vs_distance.return_value = []
 
-    with patch("ui.views.overview_view.TripRepository", return_value=fake_trip_repo), \
-         patch("ui.views.overview_view.FleetRepository", return_value=fake_fleet_repo), \
-         patch("ui.views.overview_view.AnalyticsService", return_value=fake_analytics_svc):
-        view = QtOverviewView(qt_widget, db=MagicMock(), ops=None)
-        qtbot.addWidget(view)
-        yield view
-        try:
-            view.shutdown()
-        except Exception:
-            pass
+    view = QtOverviewView(
+        qt_widget, db=MagicMock(), ops=None,
+        trip_service=fake_trip_repo,
+        fleet_service=fake_fleet_repo,
+        analytics_svc=fake_analytics_svc,
+    )
+    qtbot.addWidget(view)
+    yield view
+    try:
+        view.shutdown()
+    except Exception:
+        pass
 
 
 class TestQtOverviewView:

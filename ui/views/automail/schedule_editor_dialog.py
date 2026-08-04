@@ -25,8 +25,15 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.design_tokens import SPACE_4, SPACE_5, SPACE_6
-from ui.theme import COLORS, S, RADIUS_CARD
+from ui.design_tokens import (
+    COLOR_BG_ELEVATED,
+    COLOR_TEXT_SECONDARY,
+    RADIUS_LG,
+    SP,
+    SPACE_4,
+    SPACE_5,
+    SPACE_6,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -65,7 +72,7 @@ class ScheduleEditorDialog(QDialog):
         self.setMinimumWidth(480)
         self.setModal(True)
         self.setStyleSheet(
-            f"QDialog {{ background: {COLORS['bg_surface']}; border-radius: {RADIUS_CARD}px; }}"
+            f"QDialog {{ background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px; }}"
         )
 
         self._build_ui()
@@ -97,11 +104,12 @@ class ScheduleEditorDialog(QDialog):
         self._days_spin = QSpinBox(self)
         self._days_spin.setRange(0, 365)
         self._days_spin.setValue(3)
+        self._days_spin.valueChanged.connect(self._update_preview)
         form.addRow(t("automail.days_offset", "Days") + ":", self._days_spin)
 
         # Preview label (shows human-readable timing)
         self._preview_label = QLabel("", self)
-        self._preview_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-style: italic; font-size: 11px;")
+        self._preview_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-style: italic; font-size: 11px;")
         form.addRow("", self._preview_label)
         self._update_preview()
 
@@ -113,7 +121,7 @@ class ScheduleEditorDialog(QDialog):
 
         # Attachments
         attach_label = QLabel(t("automail.attachments", "Attachments"))
-        attach_label.setStyleSheet(f"color: {COLORS['text_secondary']}; font-size: 12px;")
+        attach_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 12px;")
         layout.addWidget(attach_label)
 
         attach_layout = QHBoxLayout()

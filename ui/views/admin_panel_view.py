@@ -32,7 +32,14 @@ from PySide6.QtWidgets import (
 from client.api_client import ApiClient
 from services.i18n import t
 from ui.components import Btn
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_SUBTLE,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    SP,
+)
 from ui.widgets import SectionHeader, StyledComboBox
 
 logger = logging.getLogger(__name__)
@@ -62,8 +69,8 @@ def _card(parent: QWidget, title: str, value: str, color: str = "") -> QFrame:
     frame = QFrame(parent)
     frame.setProperty("role", "card")
     layout = QVBoxLayout(frame)
-    layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
-    layout.setSpacing(S["1"])
+    layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
+    layout.setSpacing(SP["1"])
 
     lbl = QLabel(title, frame)
     lbl.setProperty("fontRole", "small")
@@ -160,6 +167,7 @@ class QtAdminPanelView(QWidget):
     # ── UI construction ───────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Admin panel")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -191,14 +199,14 @@ class QtAdminPanelView(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         header = SectionHeader(content, t("admin.diagnostics", default="Diagnostics"))
         layout.addWidget(header)
 
         self._diag_grid = QGridLayout()
-        self._diag_grid.setSpacing(S["3"])
+        self._diag_grid.setSpacing(SP["3"])
         layout.addLayout(self._diag_grid)
 
         # Latency
@@ -334,8 +342,8 @@ class QtAdminPanelView(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         header = SectionHeader(content, t("admin.db_inspector", default="Database Inspector"))
         layout.addWidget(header)
@@ -373,9 +381,9 @@ class QtAdminPanelView(QWidget):
         self._sql_input.setPlaceholderText(t("admin.query_placeholder", default="SELECT * FROM table LIMIT 100"))
         self._sql_input.setMaximumHeight(80)
         self._sql_input.setStyleSheet(
-            f"QTextEdit {{ padding: 4px; border: 1px solid {COLORS['border']}; "
-            f"border-radius: 4px; background: {COLORS['bg_input']}; "
-            f"color: {COLORS['text_primary']}; font-family: monospace; }}"
+            f"QTextEdit {{ padding: 4px; border: 1px solid {COLOR_BORDER_SUBTLE}; "
+            f"border-radius: 4px; background: {COLOR_BG_OVERLAY}; "
+            f"color: {COLOR_TEXT_PRIMARY}; font-family: monospace; }}"
         )
         layout.addWidget(self._sql_input)
 
@@ -459,14 +467,14 @@ class QtAdminPanelView(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         header = SectionHeader(content, t("admin.doc_stats", default="Document Statistics"))
         layout.addWidget(header)
 
         self._doc_grid = QGridLayout()
-        self._doc_grid.setSpacing(S["3"])
+        self._doc_grid.setSpacing(SP["3"])
         layout.addLayout(self._doc_grid)
 
         self._doc_total = _card(content, t("admin.total_docs", default="Total Documents"), "—")
@@ -539,8 +547,8 @@ class QtAdminPanelView(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         header = SectionHeader(content, t("admin.system_info", default="System Info"))
         layout.addWidget(header)
@@ -569,9 +577,9 @@ class QtAdminPanelView(QWidget):
         self._log_text = QTextEdit(content)
         self._log_text.setReadOnly(True)
         self._log_text.setStyleSheet(
-            f"QTextEdit {{ padding: 4px; border: 1px solid {COLORS['border']}; "
-            f"border-radius: 4px; background: {COLORS['bg_input']}; "
-            f"color: {COLORS['text_primary']}; font-family: monospace; font-size: 11px; }}"
+            f"QTextEdit {{ padding: 4px; border: 1px solid {COLOR_BORDER_SUBTLE}; "
+            f"border-radius: 4px; background: {COLOR_BG_OVERLAY}; "
+            f"color: {COLOR_TEXT_PRIMARY}; font-family: monospace; font-size: 11px; }}"
         )
         layout.addWidget(self._log_text, 1)
 
@@ -583,7 +591,7 @@ class QtAdminPanelView(QWidget):
         )
         btn_row.addWidget(sys_refresh_btn)
         log_refresh_btn = Btn(
-            content, text="Refresh Log", command=self._fetch_logs, variant="ghost",
+            content, text=t("admin.refresh_log", default="Refresh Log"), command=self._fetch_logs, variant="ghost",
         )
         btn_row.addWidget(log_refresh_btn)
         btn_row.addStretch()
@@ -637,14 +645,14 @@ class QtAdminPanelView(QWidget):
         scroll.setFrameShape(QFrame.NoFrame)
         content = QWidget()
         layout = QVBoxLayout(content)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         header = SectionHeader(content, t("admin.health", default="Health"))
         layout.addWidget(header)
 
         self._health_grid = QGridLayout()
-        self._health_grid.setSpacing(S["3"])
+        self._health_grid.setSpacing(SP["3"])
         layout.addLayout(self._health_grid)
 
         layout.addStretch()
@@ -698,7 +706,11 @@ class QtAdminPanelView(QWidget):
         status = data.get("status", "error")
         detail = data.get("detail", "")
         from ui.widgets.toast import Toast
-        Toast.show_success(self, f"Cache: {status} — {detail}", anchor=self)
+        Toast.show_success(
+            self,
+            t("admin.cache_result", default="Cache: {status} — {detail}", status=status, detail=detail),
+            anchor=self,
+        )
 
     # ═══════════════════════════════════════════════════════════════════
     # Async worker runner

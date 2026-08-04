@@ -11,9 +11,17 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from typing import Any
+from typing import Any, Callable
 
-from PySide6.QtCore import QPoint, Qt, QTimer, Signal
+from PySide6.QtCore import (
+    QEasingCurve,
+    Property,
+    QPoint,
+    QPropertyAnimation,
+    Qt,
+    QTimer,
+    Signal,
+)
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
@@ -24,9 +32,11 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
     QWidget,
 )
+from ui.widgets.flow_layout import FlowLayout
 
 from services.client_service import ClientService
 from services.conflict_service import TripConflictService
+from ui.performance_timer import PerfTimer
 from services.dispatch_service.dispatch_service import DispatchService
 from services.driver_truck_service import DriverTruckService
 from services.fleet_service import FleetService
@@ -49,7 +59,19 @@ from services.operations.event_bus import (
 )
 from services.trip_service import TripService
 from ui.components import Btn, EmptyState, Label, PageTitle
-from ui.design_tokens import BORDER_DEFAULT, COLOR_NEUTRAL_DEFAULT, INFO, SP, SUCCESS, WARNING
+from ui.design_tokens import (
+    BORDER_DEFAULT,
+    COLOR_BG_BASE,
+    COLOR_BG_ELEVATED,
+    COLOR_BORDER_SUBTLE,
+    COLOR_NEUTRAL_DEFAULT,
+    INFO,
+    SLIDE_MS,
+    SP,
+    SUCCESS,
+    WARNING,
+)
+from ui.dialogs.dispatch_detail_panel import QtDispatchDetailPanel
 from ui.widgets.dispatch_alerts_panel import QtDispatchAlertsPanel
 from ui.widgets.dispatch_search_bar import STATUS_OPTIONS, QtDispatchSearchBar
 from ui.widgets.dispatch_tabs import QtDispatchTabs
@@ -92,6 +114,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         ops=None,
         tacho_repo=None,
         api_client=None,
+        on_navigate: Callable[[str, dict | None], None] | None = None,
     ) -> None:
         super().__init__(parent)
         self.db = db
@@ -154,6 +177,17 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         # ── Mode guard ───────────────────────────────────────────────────────
         self._mode = detect_mode(db, api_client)
         guard_local_access(self._mode, "Dispatch board")
+        if self._mode == ConnectionMode.REMOTE:
+            layout = QVBoxLayout(self)
+            layout.setAlignment(Qt.AlignCenter)
+            msg = QLabel(
+                "Dispatch board is not available in remote mode.\n"
+                "This feature requires local database access."
+            )
+            msg.setAlignment(Qt.AlignCenter)
+            msg.setWordWrap(True)
+            layout.addWidget(msg)
+            return
 
         # Caches
         self._driver_cache: dict[int, dict | None] = {}
@@ -166,7 +200,6 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._conflict_alerts: dict[int, list] = {}
 
         # Selection / bulk
-        self._detail_panel = None
         self._selected_cards: list[QtTripCard] = []
 
         # Drag-drop state
@@ -178,6 +211,9 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._refresh_timer: QTimer | None = None
         self._delay_timer: QTimer | None = None
         self._live_timer: QTimer | None = None
+
+        # Navigation callback (used to switch to other views)
+        self._on_navigate = on_navigate
 
         # i18n
         self._language_callback = self._on_language_changed
@@ -208,6 +244,8 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             "Cancelled": "#6B7280",
         }
 
+        self.setAccessibleName("Dispatch board")
+        self.setAccessibleDescription("Kanban dispatch board for trip management")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -253,16 +291,22 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
 
         # ── Tab: Board ───────────────────────────────────────────────────────
         self._board_tab = QWidget()
-        board_layout = QVBoxLayout(self._board_tab)
-        board_layout.setContentsMargins(0, 0, 0, 0)
-        board_layout.setSpacing(SP["2"])
+        board_h_layout = QHBoxLayout(self._board_tab)
+        board_h_layout.setContentsMargins(0, 0, 0, 0)
+        board_h_layout.setSpacing(0)
+
+        # ── Board content (left side) ─────────────────────────────────────
+        self._board_content = QWidget()
+        board_content_layout = QVBoxLayout(self._board_content)
+        board_content_layout.setContentsMargins(0, 0, 0, 0)
+        board_content_layout.setSpacing(SP["2"])
 
         # Search / filter bar
         self._search_bar = QtDispatchSearchBar(
-            self._board_tab,
+            self._board_content,
             on_search=self._on_search_filter,
         )
-        board_layout.addWidget(self._search_bar)
+        board_content_layout.addWidget(self._search_bar)
 
         # ── Bulk toolbar (hidden by default) ──────────────────────────────
         self._bulk_toolbar = QFrame()
@@ -303,7 +347,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         bulk_layout.addWidget(self._bulk_assign_truck_btn)
 
         self._bulk_toolbar.hide()
-        board_layout.addWidget(self._bulk_toolbar)
+        board_content_layout.addWidget(self._bulk_toolbar)
 
         # ── Kanban columns + EmptyState (stacked) ─────────────────────────
         self._board_stack = QStackedWidget()
@@ -312,15 +356,14 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         scroll_area = QScrollArea()
         scroll_area.setWidgetResizable(True)
         scroll_area.setFrameShape(QFrame.NoFrame)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarAsNeeded)
         scroll_area.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
         columns_container = QWidget()
         columns_container.setProperty("role", "kanban-columns-container")
-        columns_layout = QHBoxLayout(columns_container)
+        columns_layout = FlowLayout(columns_container, margin=SP["3"], spacing=SP["3"])
         columns_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
-        columns_layout.setSpacing(SP["3"])
 
         for _i, (status_key, title_key, accent_color) in enumerate(COLUMN_DEFS):
             is_delivered = status_key == "Delivered"
@@ -335,12 +378,14 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                 on_assign_driver=self._on_assign_driver,
                 on_select_changed=self._on_card_select_changed,
                 on_assign_both=self._on_assign_both,
+                on_status_change=self._on_status_change_card,
                 show_load_older=is_delivered,
                 on_load_older=self._on_load_older_delivered,
                 on_retry=lambda sk=status_key: self._start_load(),
             )
             columns_layout.addWidget(col)
             self._columns[status_key] = col
+            col.setAccessibleName(f"{status_key} column" if status_key else "Kanban column")
             col.tripDropped.connect(self._on_card_dropped_on_column)
 
         scroll_area.setWidget(columns_container)
@@ -348,16 +393,33 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
 
         # Page 1: Empty state
         self._board_empty = EmptyState(
-            parent=self._board_tab,
+            parent=self._board_content,
             icon_name="mdi6.truck",
             title=t("dispatch_board.no_results_title", default="No trips found"),
             subtitle=t("dispatch_board.no_results_subtitle", default="Try adjusting your search or filter criteria"),
         )
         self._board_stack.addWidget(self._board_empty)  # index 1
 
-        board_layout.addWidget(self._board_stack, 1)
+        board_content_layout.addWidget(self._board_stack, 1)
 
-        # ── Tab: Alerts ──────────────────────────────────────────────────────
+        # Add content to horizontal layout (stretch to fill)
+        board_h_layout.addWidget(self._board_content, 1)
+
+        # ── Detail drawer backdrop + drawer (initially hidden) ────────────
+        self._detail_backdrop = QFrame(self._board_tab)
+        self._detail_backdrop.setStyleSheet(
+            f"background-color: rgba(12, 12, 14, 128);"
+        )
+        self._detail_backdrop.hide()
+
+        self._detail_drawer = QtDispatchDetailPanel(self._board_tab)
+        self._detail_drawer.hide()
+
+        # ── Drawer animation ──────────────────────────────────────────────────
+        self._drawer_animation: QPropertyAnimation | None = None
+
+        # ── Secondary tabs (Alerts, Timeline) — built once here ──────────
+        # Alerts tab
         self._alerts_tab = QWidget()
         alerts_layout = QVBoxLayout(self._alerts_tab)
         alerts_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
@@ -371,7 +433,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         )
         alerts_layout.addWidget(self._alerts_panel)
 
-        # ── Tab: Timeline ────────────────────────────────────────────────────
+        # Timeline tab
         self._timeline_tab = QWidget()
         timeline_layout = QVBoxLayout(self._timeline_tab)
         timeline_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
@@ -379,13 +441,105 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         self._timeline = QtDispatchTimeline(self._timeline_tab)
         timeline_layout.addWidget(self._timeline)
 
-        # Register tabs
+        # Register all three tabs
         self._tabs.add_tab("board", t("dispatch_board.tabs_board"), self._board_tab)
         self._tabs.add_tab("alerts", t("dispatch_board.tabs_alerts"), self._alerts_tab)
         self._tabs.add_tab("timeline", t("dispatch_board.tabs_timeline"), self._timeline_tab)
 
         self._tabs.on_switch(self._on_tab_switch)
         self._tabs.switch_to("board")
+
+    # ══════════════════════════════════════════════════════════════════════════
+    # Detail drawer — open / close
+    # ══════════════════════════════════════════════════════════════════════════
+
+    def _open_detail_drawer(self, trip_data: dict) -> None:
+        """Open the side drawer with trip detail data."""
+        # Stop any running animation
+        if self._drawer_animation is not None and self._drawer_animation.state() == QPropertyAnimation.Running:
+            self._drawer_animation.stop()
+
+        # Load trip data into the drawer
+        self._detail_drawer.load_trip(
+            trip_data,
+            db=self._db,
+            ops=self._ops,
+            on_save=self._on_detail_save,
+            on_close=self._close_detail_drawer,
+        )
+
+        # Position backdrop to cover the board content area
+        content_rect = self._board_content.rect()
+        backdrop_geometry = self._board_content.geometry()
+        backdrop_geometry.moveTopLeft(self._board_content.mapTo(self._board_tab, QPoint(0, 0)))
+        self._detail_backdrop.setGeometry(backdrop_geometry)
+        self._detail_backdrop.show()
+        self._detail_backdrop.raise_()
+
+        # Position drawer at the right edge of the board_tab, initially off-screen to the right
+        board_width = self._board_tab.width()
+        drawer_width = self._detail_drawer.width()  # 480
+        self._detail_drawer.setFixedHeight(self._board_tab.height())
+        self._detail_drawer.move(board_width, 0)  # off-screen right
+        self._detail_drawer.show()
+        self._detail_drawer.raise_()
+
+        # Slide-in animation
+        self._drawer_animation = QPropertyAnimation(self._detail_drawer, b"pos")
+        self._drawer_animation.setDuration(SLIDE_MS)
+        start_x = board_width
+        end_x = board_width - drawer_width
+        self._drawer_animation.setStartValue(QPoint(start_x, 0))
+        self._drawer_animation.setEndValue(QPoint(end_x, 0))
+        self._drawer_animation.setEasingCurve(QEasingCurve.OutCubic)
+        self._drawer_animation.start()
+
+    def _close_detail_drawer(self) -> None:
+        """Close the drawer with slide-out animation."""
+        if not self._detail_drawer.isVisible():
+            self._detail_backdrop.hide()
+            return
+
+        if self._drawer_animation is not None and self._drawer_animation.state() == QPropertyAnimation.Running:
+            self._drawer_animation.stop()
+
+        board_width = self._board_tab.width()
+        drawer_width = self._detail_drawer.width()
+
+        self._drawer_animation = QPropertyAnimation(self._detail_drawer, b"pos")
+        self._drawer_animation.setDuration(SLIDE_MS)
+        self._drawer_animation.setStartValue(self._detail_drawer.pos())
+        self._drawer_animation.setEndValue(QPoint(board_width, 0))  # off-screen right
+        self._drawer_animation.setEasingCurve(QEasingCurve.InCubic)
+        self._drawer_animation.finished.connect(self._on_drawer_closed)
+        self._drawer_animation.start()
+
+    def _on_drawer_closed(self) -> None:
+        """Clean up after drawer slide-out animation completes."""
+        self._detail_drawer.hide()
+        self._detail_backdrop.hide()
+        if self._drawer_animation is not None:
+            try:
+                self._drawer_animation.finished.disconnect(self._on_drawer_closed)
+            except (TypeError, RuntimeError):
+                pass
+
+    def _on_detail_save(self, trip_data: dict) -> None:
+        """Called when the detail panel saves changes."""
+        # Refresh the card that was being edited
+        trip_id_num = trip_data.get("trip_id_num")
+        if trip_id_num:
+            self._refresh_card_in_place(trip_id_num)
+
+        # Refresh side panels (they are built once in _build_ui)
+        try:
+            self._alerts_panel.refresh(self._all_card_data)
+        except Exception:
+            logger.warning("Failed to refresh alerts panel after save", exc_info=True)
+        try:
+            self._timeline.refresh(self._all_card_data)
+        except Exception:
+            logger.warning("Failed to refresh timeline after save", exc_info=True)
 
     # ══════════════════════════════════════════════════════════════════════════
     # Event Bus subscription
@@ -479,6 +633,8 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                     on_assign_driver=self._on_assign_driver,
                     on_select_changed=self._on_card_select_changed,
                     on_assign_both=self._on_assign_both,
+                    on_status_change=self._on_status_change_card,
+                    on_navigate_to_generators=self._on_navigate_to_generators,
                 )
                 target_col.add_card(card, index=0)
                 if target_column_key == "Cancelled":
@@ -529,6 +685,8 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
                 on_assign_driver=self._on_assign_driver,
                 on_select_changed=self._on_card_select_changed,
                 on_assign_both=self._on_assign_both,
+                on_status_change=self._on_status_change_card,
+                on_navigate_to_generators=self._on_navigate_to_generators,
             )
             target.add_card(new_card, index=0)
             if column_key == "Cancelled":
@@ -695,6 +853,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             card.trip_data["driver_id"] = trip.get("driver_id")
             card.trip_data["eta"] = trip.get("end_date", "")
             card.trip_data["departure_date"] = trip.get("start_date", "")
+            card.trip_data["promised_date"] = trip.get("promised_date", "")
             card.update_truck(trip.get("truck_number", ""), trip.get("truck_id"))
             card.update_driver(trip.get("driver_name", ""), trip.get("driver_id"))
             card.trip_data["alerts_count"] = self._alert_counts.get(trip_id, 0)
@@ -813,10 +972,10 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             self._live_timer.stop()
             self._live_timer = None
 
-        if self._detail_panel is not None:
+        if self._detail_drawer is not None and self._detail_drawer.isVisible():
             with contextlib.suppress(Exception):
-                self._detail_panel.close()
-            self._detail_panel = None
+                self._detail_drawer.hide()
+            self._detail_backdrop.hide()
 
         # TripStatusEngine no longer instantiated directly in the view;
         # status transitions are handled via TripService / DispatchService.

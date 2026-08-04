@@ -12,14 +12,31 @@ class TachoVehicleDataRepository(BaseRepository):
     ]
 
     def create(self, data: Dict[str, Any]) -> int:
+        # ``tacho_vehicle_data`` has NO ``company_id`` column in the base
+        # schema (database/schema.py ``TABLE_TACHO_VEHICLE_DATA``), so
+        # ``company_id`` is injected ONLY when a scoped deployment actually
+        # has the column (detected at runtime) — otherwise the INSERT would
+        # fail in production.  Rows are import/truck-scoped; callers
+        # company-verify the truck first.
         self._validate_columns(data)
-        data = self._set_company_from_context(data)
+        if self._scoped and self._has_column("company_id"):
+            data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
+
+    def _has_column(self, column: str) -> bool:
+        """Return True if the table has *column* (runtime schema detection)."""
+        try:
+            cols = [r[1] for r in self.db.conn.execute(
+                f"PRAGMA table_info({self.TABLE})"
+            ).fetchall()]
+            return column in cols
+        except Exception:
+            return False
 
     def get_by_truck(self, truck_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(

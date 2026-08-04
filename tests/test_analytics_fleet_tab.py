@@ -115,7 +115,24 @@ class TestFleetAnalyticsTabRender:
         tab._render()
         # KPI strip exists — check for kpi-value labels
         kpi_values = tab.findChildren(QLabel, "kpi-value")
-        assert len(kpi_values) == 5
+        assert len(kpi_values) == 6
+
+    def test_render_shows_otd_kpi(self, qt_widget, qtbot, fleet_svc):
+        fleet_svc.get_otd_percentage.return_value = 94.2
+        tab = FleetAnalyticsTab(parent=qt_widget, service=fleet_svc)
+        qtbot.addWidget(tab)
+        tab._render()
+        kpi_values = [lbl.text() for lbl in tab.findChildren(QLabel, "kpi-value")]
+        assert any(v == "94.2%" for v in kpi_values)
+
+    def test_render_otd_missing_service_value_defaults_zero(self, qt_widget, qtbot, fleet_svc):
+        # When the service returns None/absent data, the card still renders 0.0%.
+        fleet_svc.get_otd_percentage.return_value = None
+        tab = FleetAnalyticsTab(parent=qt_widget, service=fleet_svc)
+        qtbot.addWidget(tab)
+        tab._render()
+        kpi_values = [lbl.text() for lbl in tab.findChildren(QLabel, "kpi-value")]
+        assert any(v == "0.0%" for v in kpi_values)
 
     def test_render_adds_profitability_chart(self, qt_widget, qtbot, fleet_svc):
         tab = FleetAnalyticsTab(parent=qt_widget, service=fleet_svc)
@@ -214,9 +231,9 @@ class TestFleetAnalyticsTabKpiColors:
         tab = FleetAnalyticsTab(parent=qt_widget, service=svc)
         qtbot.addWidget(tab)
         tab._render()
-        # KPI strip should render 5 values
+        # KPI strip should render 6 values
         kpi_values = tab.findChildren(QLabel, "kpi-value")
-        assert len(kpi_values) == 5
+        assert len(kpi_values) == 6
 
     def test_high_maintenance_count_yellow(self, qt_widget, qtbot):
         svc = MagicMock()
@@ -234,9 +251,9 @@ class TestFleetAnalyticsTabKpiColors:
         tab = FleetAnalyticsTab(parent=qt_widget, service=svc)
         qtbot.addWidget(tab)
         tab._render()
-        # 1 alert: should still render 5 KPI cards
+        # 1 alert: should still render 6 KPI cards
         kpi_values = tab.findChildren(QLabel, "kpi-value")
-        assert len(kpi_values) == 5
+        assert len(kpi_values) == 6
 
 
 class TestFleetAnalyticsTabRefresh:

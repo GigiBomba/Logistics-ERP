@@ -25,6 +25,12 @@ def _insert_trip(db, trip_id=1, status="Planned", created_at=None,
     """Insert a minimal trip row for testing."""
     if created_at is None:
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    # Ensure parent FK records exist
+    if truck_id is not None:
+        db.conn.execute(
+            "INSERT OR IGNORE INTO trucks (id, plate_number, active_status) VALUES (?, ?, 1)",
+            (truck_id, truck_number or f"TRUCK-{truck_id}"),
+        )
     db.conn.execute(
         "INSERT INTO trips (id, status, created_at, truck_number, truck_id) "
         "VALUES (?, ?, ?, ?, ?)",

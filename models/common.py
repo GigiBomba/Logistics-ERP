@@ -1,4 +1,5 @@
 from pydantic import BaseModel, ConfigDict
+from decimal import Decimal
 from typing import Optional, Generic, TypeVar
 from datetime import datetime
 
@@ -59,6 +60,12 @@ class OperationLog(BaseModel):
 
 class Money(BaseModel):
     """Shared currency+amount value type used across Invoices/Receipts/Analytics
-    and the Freight Exchange subsystem."""
-    amount: float
+    and the Freight Exchange subsystem.
+
+    ``amount`` is ``Decimal`` to prevent floating-point rounding errors
+    in financial calculations.  The DB stores monetary columns as
+    ``NUMERIC(12,2)`` (PostgreSQL) with application-layer precision
+    for SQLite.
+    """
+    amount: Decimal
     currency: str = "EUR"

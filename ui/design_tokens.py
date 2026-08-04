@@ -82,6 +82,14 @@ FONT_SIZE_XL   = 22  # KPI metric values (large)
 FONT_SIZE_2XL  = 32  # Hero numbers (main dashboard KPIs)
 FONT_SIZE_3XL  = 26  # StatCard value (between XL and 2XL)
 
+# === ANIMATION DURATIONS ===
+FADE_MS       = 150   # Fade in/out
+SLIDE_MS      = 200   # Panel slide, collapse/expand
+HOVER_MS      = 100   # Hover state transitions
+PRESS_MS      = 50    # Press feedback
+TOAST_FADE_MS = 250   # Toast notification fade
+SPINNER_MS    = 800   # Spinner rotation cycle
+
 # Font weights
 FONT_WEIGHT_REGULAR  = 400
 FONT_WEIGHT_MEDIUM   = 500
@@ -121,6 +129,42 @@ STATUS_STYLES = {
     "invoiced":    ("Facturat",    COLOR_INFO_TEXT, COLOR_INFO_SUBTLE),
     "paid":        ("Plătit",      COLOR_SUCCESS_TEXT, COLOR_SUCCESS_SUBTLE),
 }
+
+# === UNIFIED STATUS COLORS (single source of truth) ===
+# Use this everywhere instead of redefining status color maps in individual files.
+STATUS_COLORS = {
+    "good":       COLOR_SUCCESS_DEFAULT,
+    "success":    COLOR_SUCCESS_DEFAULT,
+    "warning":    COLOR_WARNING_DEFAULT,
+    "critical":   COLOR_ERROR_DEFAULT,
+    "error":      COLOR_ERROR_DEFAULT,
+    "danger":     COLOR_ERROR_DEFAULT,
+    "neutral":    COLOR_NEUTRAL_DEFAULT,
+    "info":       COLOR_INFO_DEFAULT,
+    "blue":       COLOR_INFO_DEFAULT,
+    "grey":       COLOR_NEUTRAL_DEFAULT,
+    "planned":    COLOR_ACCENT_PRIMARY,
+    "in_progress": COLOR_WARNING_DEFAULT,
+    "in_transit": COLOR_WARNING_DEFAULT,
+    "delivered":  COLOR_SUCCESS_DEFAULT,
+    "cancelled":  COLOR_NEUTRAL_DEFAULT,
+    "overdue":    COLOR_ERROR_DEFAULT,
+    "maintenance": COLOR_INFO_DEFAULT,
+    "invoiced":   COLOR_INFO_DEFAULT,
+    "paid":       COLOR_SUCCESS_DEFAULT,
+}
+
+# === ELEVATION / SHADOW (opacity overlays for hover elevation) ===
+# QSS border-brightness for "raised" state — we use border color shifts
+# instead of real shadows since Qt shadow performance is poor.
+ELEVATION_FLAT   = COLOR_BORDER_SUBTLE   # Default card border
+ELEVATION_RAISED = COLOR_BORDER_STRONG   # Hovered card border
+ELEVATION_OVERLAY = COLOR_BORDER_MEDIUM  # Dropdown/dialog border
+
+# === TRANSITION SHORTHAND ===
+# For use in QSS: %s %s ease
+TRANSITION_DEFAULT = f"all {FADE_MS}ms ease"
+TRANSITION_COLOR   = f"color {FADE_MS}ms ease, background-color {FADE_MS}ms ease, border-color {FADE_MS}ms ease"
 
 # ═════════════════════════════════════════════════════════════════
 #  BACKWARD-COMPATIBILITY ALIASES — existing modules rely on these
@@ -223,3 +267,5 @@ ROW_HEIGHT        = 38
 INPUT_HEIGHT      = 32
 BTN_HEIGHT        = 32
 BTN_HEIGHT_SM     = 28
+BTN_HEIGHT_MD     = 32
+BTN_HEIGHT_LG     = 38

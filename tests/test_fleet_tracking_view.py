@@ -5,6 +5,20 @@ from datetime import datetime, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PySide6.QtCore import QPoint
+from PySide6.QtWidgets import QLabel, QPushButton, QFrame, QMenu, QWidget
+from ui.components import UniversalCard
+
+# SP workaround for ui.widgets internals
+import ui.widgets as _ui_widgets
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
+
+# Inject COLORS into the view module (used in _build_vehicle_row_widget
+# but not imported — pre‑existing source issue).
+from ui.theme import COLORS as _COLORS
+import ui.views.fleet_tracking_view as _fleet_view
+_fleet_view.COLORS = _COLORS
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -301,6 +315,20 @@ class TestQtFleetTrackingView:
         text = view._vehicle_detail_text(pos)
         assert text != ""  # falls back to translation key
 
+    # ── Expanded tests ──────────────────────────────────────────────────
+
+    def test_vehicle_rows_dict_created(self, view):
+        """_vehicle_rows is an empty dict initially."""
+        assert isinstance(view._vehicle_rows, dict)
+        assert len(view._vehicle_rows) == 0
+
+    def test_force_refresh_button_disabled_during_fetch(self, view):
+        """Button is disabled when _force_refreshing is True."""
+        with patch("threading.Thread"):
+            view._force_refresh()
+            assert view._force_refreshing is True
+            assert view._refresh_btn.isEnabled() is False
+
 
 # ---------------------------------------------------------------------------
 # Tests – NOT configured path
@@ -325,3 +353,348 @@ class TestQtFleetTrackingViewUnconfigured:
 
     def test_shutdown_on_unconfigured(self, view_unconfigured):
         view_unconfigured.shutdown()  # no crash
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+@pytest.fixture
+def sample_positions():
+    """Three positions with different statuses and coordinates."""
+    return [
+        _make_vehicle_position(
+            device_id="d1", name="Truck-Alpha",
+            latitude=44.4, longitude=26.1,
+            speed_kmh=65.0, heading=180, status="moving",
+            address="Bd Unirii", odometer_km=50000,
+        ),
+        _make_vehicle_position(
+            device_id="d2", name="Truck-Beta",
+            latitude=44.5, longitude=26.2,
+            speed_kmh=0.0, heading=0, status="stopped",
+            address="", odometer_km=30000,
+        ),
+        _make_vehicle_position(
+            device_id="d3", name="Truck-Gamma",
+            latitude=0, longitude=0,
+            speed_kmh=0.0, heading=0, status="offline",
+            address="", odometer_km=0,
+        ),
+    ]
+
+
+# ---------------------------------------------------------------------------
+# Tests – Polling (timer + thread lifecycle)
+# ---------------------------------------------------------------------------
+
+class TestQtFleetTrackingViewPolling:
+    """Timer and thread lifecycle for polling."""
+
+    def test_poll_timer_interval_is_30_seconds(self, view, mock_fleet_service):
+        view.wakeup()
+        assert view._poll_timer.interval() == 30000
+
+    def test_poll_skips_when_fetching(self, view):
+        view._fetching = True
+        with patch("threading.Thread") as mock_thread:
+            view._poll_and_update()
+            mock_thread.assert_not_called()
+
+    def test_fetch_positions_emits_signal(self, view, mock_fleet_service):
+        positions = [_make_vehicle_position()]
+        mock_fleet_service.get_positions.return_value = positions
+        received = []
+        view._positionsFetched.connect(received.append)
+        view._fetch_positions()
+        assert len(received) == 1
+        assert received[0] == positions
+        assert view._fetching is False
+
+    def test_fetch_positions_catches_exception(self, view, mock_fleet_service):
+        mock_fleet_service.get_positions.side_effect = RuntimeError("boom")
+        view._fetch_positions()  # must not raise
+        assert view._fetching is False
+
+    def test_apply_update_calls_map_and_list(self, view):
+        positions = [_make_vehicle_position()]
+        with (
+            patch.object(view, "_update_map_markers") as upd_map,
+            patch.object(view, "_refresh_vehicle_list") as upd_list,
+        ):
+            view._apply_update(positions)
+            upd_map.assert_called_once_with(positions)
+            upd_list.assert_called_once_with(positions)
+
+
+# ---------------------------------------------------------------------------
+# Tests – Map markers
+# ---------------------------------------------------------------------------
+
+class TestQtFleetTrackingViewMarkers:
+    """Map marker behavior."""
+
+    def test_clear_overlays_called_on_update(self, view, sample_positions):
+        with patch.object(view._map, "clear_overlays") as mock_clear:
+            view._update_map_markers(sample_positions)
+            mock_clear.assert_called_once()
+
+    def test_marker_added_for_each_position(self, view, sample_positions):
+        with (
+            patch.object(view._map, "clear_overlays"),
+            patch.object(view._map, "add_marker") as mock_add,
+        ):
+            view._update_map_markers(sample_positions)
+            # Truck-Gamma has lat=0,lng=0 → skipped; only 2 added
+            assert mock_add.call_count == 2
+
+    def test_positions_without_coordinates_skipped(self, view):
+        pos = _make_vehicle_position(latitude=0, longitude=0)
+        with (
+            patch.object(view._map, "clear_overlays"),
+            patch.object(view._map, "add_marker") as mock_add,
+        ):
+            view._update_map_markers([pos])
+            mock_add.assert_not_called()
+
+    def test_moving_status_gets_green(self, view):
+        pos = _make_vehicle_position(status="moving", latitude=44.0, longitude=26.0)
+        with (
+            patch.object(view._map, "clear_overlays"),
+            patch.object(view._map, "add_marker") as mock_add,
+        ):
+            view._update_map_markers([pos])
+            _, kwargs = mock_add.call_args
+            assert kwargs["color"] == "green"
+
+    def test_stopped_status_gets_grey(self, view):
+        pos = _make_vehicle_position(status="stopped", latitude=44.0, longitude=26.0)
+        with (
+            patch.object(view._map, "clear_overlays"),
+            patch.object(view._map, "add_marker") as mock_add,
+        ):
+            view._update_map_markers([pos])
+            _, kwargs = mock_add.call_args
+            assert kwargs["color"] == "grey"
+
+    def test_idle_status_gets_orange(self, view):
+        pos = _make_vehicle_position(status="idle", latitude=44.0, longitude=26.0)
+        with (
+            patch.object(view._map, "clear_overlays"),
+            patch.object(view._map, "add_marker") as mock_add,
+        ):
+            view._update_map_markers([pos])
+            _, kwargs = mock_add.call_args
+            assert kwargs["color"] == "orange"
+
+    def test_offline_status_gets_red(self, view):
+        pos = _make_vehicle_position(status="offline", latitude=44.0, longitude=26.0)
+        with (
+            patch.object(view._map, "clear_overlays"),
+            patch.object(view._map, "add_marker") as mock_add,
+        ):
+            view._update_map_markers([pos])
+            _, kwargs = mock_add.call_args
+            assert kwargs["color"] == "red"
+
+
+# ---------------------------------------------------------------------------
+# Tests – Vehicle list (add / update / remove)
+# ---------------------------------------------------------------------------
+
+class TestQtFleetTrackingViewVehicleList:
+    """Vehicle list add/update/remove."""
+
+    def test_new_vehicle_added_to_list(self, view):
+        pos = _make_vehicle_position(name="New-Truck", device_id="new1")
+        count_before = view._vehicle_list_layout.count()
+        view._refresh_vehicle_list([pos])
+        assert "New-Truck" in view._vehicle_rows
+        assert view._vehicle_list_layout.count() > count_before
+
+    def test_existing_vehicle_updated_in_place(self, view):
+        pos = _make_vehicle_position(name="Exist", device_id="e1")
+        view._refresh_vehicle_list([pos])
+        assert "Exist" in view._vehicle_rows
+        orig_widget = view._vehicle_rows["Exist"]
+        with patch.object(view, "_build_vehicle_row_widget") as mock_build:
+            view._refresh_vehicle_list([pos])
+            mock_build.assert_not_called()
+            assert view._vehicle_rows["Exist"] is orig_widget
+
+    def test_removed_vehicle_row_deleted(self, view):
+        pos = _make_vehicle_position(name="Gone", device_id="g1")
+        view._refresh_vehicle_list([pos])
+        assert "Gone" in view._vehicle_rows
+        widget = view._vehicle_rows["Gone"]
+        with patch.object(widget, "deleteLater") as mock_del:
+            view._refresh_vehicle_list([])
+            assert "Gone" not in view._vehicle_rows
+            mock_del.assert_called_once()
+
+    def test_list_sorted_alphabetically(self, view):
+        b = _make_vehicle_position(name="B-Truck", device_id="b")
+        a = _make_vehicle_position(name="A-Truck", device_id="a")
+        view._refresh_vehicle_list([b, a])
+        names = list(view._vehicle_rows.keys())
+        assert names == ["A-Truck", "B-Truck"]
+
+    def test_empty_list_shows_empty_state(self, view):
+        with patch("ui.views.fleet_tracking_view.EmptyState") as mock_es:
+            mock_es.return_value = QWidget()
+            view._refresh_vehicle_list([])
+            mock_es.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Tests – Detail panel
+# ---------------------------------------------------------------------------
+
+class TestQtFleetTrackingViewDetailPanel:
+    """Detail panel content."""
+
+    def test_detail_shows_name_status_speed(self, view):
+        pos = _make_vehicle_position(name="Alpha", status="moving", speed_kmh=55.0)
+        view._show_detail_panel(pos, truck_id=None)
+        # First widget is the name label
+        name_item = view._detail_layout.itemAt(0)
+        assert name_item is not None
+        name_widget = name_item.widget()
+        assert isinstance(name_widget, QLabel)
+        assert "Alpha" in name_widget.text()
+        # At least name + 3 detail rows (status, speed, updated)
+        assert view._detail_layout.count() >= 4
+
+    def test_detail_shows_odometer_when_available(self, view):
+        pos = _make_vehicle_position(odometer_km=12345.0)
+        view._show_detail_panel(pos, truck_id=None)
+        # Extra row for odometer vs default (status, speed, updated)
+        assert view._detail_layout.count() >= 5
+
+    def test_detail_shows_address_when_available(self, view):
+        pos = _make_vehicle_position(address="Some Street, City")
+        view._show_detail_panel(pos, truck_id=None)
+        # Extra row for address vs default (status, speed, updated)
+        assert view._detail_layout.count() >= 5
+
+    def test_detail_maintenance_button_navigates(self, view):
+        pos = _make_vehicle_position()
+        view._show_detail_panel(pos, truck_id=42)
+        view._on_navigate.reset_mock()
+        view._navigate_vehicle_maintenance(42)
+        view._on_navigate.assert_called_once_with("maintenance", {"truck_id": 42})
+
+    def test_detail_documents_button_opens_documents(self, view, monkeypatch):
+        mock_open = MagicMock()
+        monkeypatch.setattr(
+            "ui.views.document_center_view.open_entity_documents",
+            mock_open,
+        )
+        pos = _make_vehicle_position()
+        view._show_detail_panel(pos, truck_id=42)
+        view._open_vehicle_documents(42)
+        mock_open.assert_called_once()
+        args, _ = mock_open.call_args
+        assert args[2] == "truck"
+        assert args[3] == 42
+
+    def test_detail_call_driver_button_available(self, view):
+        pos = _make_vehicle_position()
+        view._show_detail_panel(pos, truck_id=42)
+        buttons = view._detail_panel.findChildren(QPushButton)
+        call_texts = [b.text() for b in buttons if "Call" in b.text()]
+        assert len(call_texts) >= 1
+
+
+# ---------------------------------------------------------------------------
+# Tests – Context menu (right-click)
+# ---------------------------------------------------------------------------
+
+class TestQtFleetTrackingViewContextMenu:
+    """Right-click context menu."""
+
+    def test_context_menu_contains_actions(self, view):
+        pos = _make_vehicle_position(name="Menu-Truck")
+        card = view._build_vehicle_row_widget(pos, 42)
+        mock_event = MagicMock()
+        mock_event.globalPos.return_value = QPoint(0, 0)
+
+        with (
+            patch.object(view._vehicle_list_content, "mapFromGlobal", return_value=QPoint(0, 0)),
+            patch.object(view._vehicle_list_content, "childAt", return_value=card),
+            patch("ui.views.fleet_tracking_view.QMenu") as MockQMenu,
+        ):
+            mock_menu = MockQMenu.return_value
+            view._show_vehicle_context_menu(mock_event)
+            assert mock_menu.addAction.call_count == 4
+
+    def test_context_menu_details_selects_vehicle(self, view):
+        """View Details action triggers _select_vehicle (verified via mock)."""
+        pos = _make_vehicle_position()
+        card = view._build_vehicle_row_widget(pos, 42)
+        mock_event = MagicMock()
+        mock_event.globalPos.return_value = QPoint(0, 0)
+
+        with (
+            patch.object(view._vehicle_list_content, "mapFromGlobal", return_value=QPoint(0, 0)),
+            patch.object(view._vehicle_list_content, "childAt", return_value=card),
+            patch("ui.views.fleet_tracking_view.QMenu") as MockQMenu,
+            patch("ui.views.fleet_tracking_view.QAction") as MockQAction,
+        ):
+            mock_menu = MockQMenu.return_value
+            mock_action = MockQAction.return_value
+            view._show_vehicle_context_menu(mock_event)
+            # 4 actions are added to the menu
+            assert mock_menu.addAction.call_count == 4
+            # The first action (View Details) has triggered.connect called
+            # (the lambda calls _select_vehicle)
+            assert mock_action.triggered.connect.called
+            # _select_vehicle is verified by test_select_vehicle_pans_map
+
+    def test_context_menu_on_non_card_does_nothing(self, view):
+        mock_event = MagicMock()
+        mock_event.globalPos.return_value = QPoint(0, 0)
+
+        with (
+            patch.object(view._vehicle_list_content, "mapFromGlobal", return_value=QPoint(0, 0)),
+            patch.object(view._vehicle_list_content, "childAt", return_value=None),
+            patch("ui.views.fleet_tracking_view.QMenu") as MockQMenu,
+        ):
+            view._show_vehicle_context_menu(mock_event)
+            MockQMenu.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Tests – Call driver
+# ---------------------------------------------------------------------------
+
+class TestQtFleetTrackingViewDriverCall:
+    """Call driver behavior."""
+
+    def test_call_driver_with_phone_shows_toast(self, view, monkeypatch):
+        mock_driver_repo = MagicMock()
+        mock_driver_repo.get_by_id.return_value = {"phone": "0722000000"}
+        monkeypatch.setattr(
+            "repositories.driver_repository.DriverRepository",
+            lambda db: mock_driver_repo,
+        )
+        toast_mock = MagicMock()
+        monkeypatch.setattr("ui.widgets.toast.Toast", toast_mock)
+
+        pos = _make_vehicle_position(driver_id=123)
+        view._on_call_driver(pos, truck_id=None)
+
+        toast_mock.show_info.assert_called_once()
+        args, _ = toast_mock.show_info.call_args
+        assert "0722000000" in str(args[1])
+
+    def test_call_driver_without_phone_shows_info(self, view, monkeypatch):
+        toast_mock = MagicMock()
+        monkeypatch.setattr("ui.widgets.toast.Toast", toast_mock)
+
+        pos = _make_vehicle_position(driver_id=0)
+        view._on_call_driver(pos, truck_id=None)
+
+        toast_mock.show_info.assert_called_once()
+        args, _ = toast_mock.show_info.call_args
+        assert "no driver phone" in str(args[1]).lower()

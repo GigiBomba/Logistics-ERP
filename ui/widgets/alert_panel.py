@@ -26,11 +26,16 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import TEXT_WHITE
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 
 _SEVERITY_COLORS: dict[str, str] = {
-    "CRITICAL": COLORS["danger"],
-    "WARNING": COLORS["warning"],
+    "CRITICAL": COLOR_ERROR_DEFAULT,
+    "WARNING": COLOR_WARNING_DEFAULT,
 }
 
 _NAV_DESTINATIONS: dict[str, str] = {
@@ -116,7 +121,7 @@ class QtAlertPanel(QFrame):
         header.setFixedHeight(42)
 
         hdr_layout = QHBoxLayout(header)
-        hdr_layout.setContentsMargins(S["4"], 0, S["2"], 0)
+        hdr_layout.setContentsMargins(SP["4"], 0, SP["2"], 0)
         hdr_layout.setSpacing(0)
 
         title = QLabel(t("alerts.panel_title"))
@@ -185,12 +190,12 @@ class QtAlertPanel(QFrame):
         row.setFixedHeight(48)
 
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(S["2"], 0, S["3"], 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setContentsMargins(SP["2"], 0, SP["3"], 0)
+        row_layout.setSpacing(SP["2"])
 
         # -- Severity chip ---------------------------------------------------
         sev = str(getattr(alert.severity, "value", alert.severity)).upper()
-        sev_color = _SEVERITY_COLORS.get(sev, COLORS["info"])
+        sev_color = _SEVERITY_COLORS.get(sev, COLOR_INFO_DEFAULT)
         sev_key = f"alerts.severity_{sev.lower()}"
         chip = QLabel(t(sev_key))
         chip.setProperty("role", "alert-chip")

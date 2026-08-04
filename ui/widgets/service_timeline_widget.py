@@ -28,18 +28,23 @@ from services.fleet_maintenance_service import (
     MaintType,
 )
 from services.i18n import t
+from ui.design_tokens import (
+    COLOR_BG_OVERLAY,
+    COLOR_ERROR_DEFAULT,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.icons import iconed
-from ui.styles import Theme
-from ui.theme import COLORS, S
 from ui.widgets import ActionButton
 
 NODE_COLORS = {
-    MaintType.TIRE_REPLACEMENT: COLORS["text_muted"],
-    MaintType.OIL_CHANGE: COLORS["warning"],
-    MaintType.BRAKES: COLORS["danger"],
+    MaintType.TIRE_REPLACEMENT: COLOR_TEXT_TERTIARY,
+    MaintType.OIL_CHANGE: COLOR_WARNING_DEFAULT,
+    MaintType.BRAKES: COLOR_ERROR_DEFAULT,
 }
-DEFAULT_NODE_COLOR = COLORS["text_muted"]
-LINE_COLOR = Theme.SURFACE2
+DEFAULT_NODE_COLOR = COLOR_TEXT_TERTIARY
+LINE_COLOR = COLOR_BG_OVERLAY
 NODE_RADIUS = 7
 
 
@@ -87,7 +92,7 @@ class QtServiceTimelineWidget(QWidget):
         # -- Header -----------------------------------------------------------
         header = QWidget()
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(S["2"], S["2"], S["2"], S["2"])
+        header_layout.setContentsMargins(SP["2"], SP["2"], SP["2"], SP["2"])
         header_layout.setSpacing(0)
 
         self._header_title_label = QLabel(iconed("maint_timeline.title"))
@@ -110,7 +115,7 @@ class QtServiceTimelineWidget(QWidget):
 
         self._scroll_content = QWidget()
         self._scroll_layout = QVBoxLayout(self._scroll_content)
-        self._scroll_layout.setContentsMargins(S["2"], 0, S["2"], 0)
+        self._scroll_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
         self._scroll_layout.setSpacing(0)
         self._scroll_layout.setAlignment(Qt.AlignTop)
 
@@ -160,7 +165,7 @@ class QtServiceTimelineWidget(QWidget):
         node_frame = QWidget()
         node_layout = QHBoxLayout(node_frame)
         node_layout.setContentsMargins(0, 0, 0, 0)
-        node_layout.setSpacing(S["2"])
+        node_layout.setSpacing(SP["2"])
 
         # -- Left column: coloured dot ----------------------------------------
         left_col = QWidget()
@@ -176,7 +181,7 @@ class QtServiceTimelineWidget(QWidget):
         # Outer wrapper to give the dot a little top breathing room
         dot_wrapper = QWidget()
         dot_wrapper_layout = QVBoxLayout(dot_wrapper)
-        dot_wrapper_layout.setContentsMargins(0, S["1"], 0, 0)
+        dot_wrapper_layout.setContentsMargins(0, SP["1"], 0, 0)
         dot_wrapper_layout.setSpacing(0)
         dot_wrapper_layout.setAlignment(Qt.AlignCenter)
 
@@ -184,7 +189,7 @@ class QtServiceTimelineWidget(QWidget):
         dot.setFixedSize(dot_size, dot_size)
         dot.setStyleSheet(
             f"background-color: {color}; border-radius: {NODE_RADIUS}px;"
-            f"border: 1px solid {Theme.SURFACE2};"
+            f"border: 1px solid {COLOR_BG_OVERLAY};"
         )
         dot_wrapper_layout.addWidget(dot)
         left_layout.addWidget(dot_wrapper)
@@ -196,7 +201,7 @@ class QtServiceTimelineWidget(QWidget):
         content.setCursor(Qt.PointingHandCursor)
         content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(0, S["1"], 0, S["1"])
+        content_layout.setContentsMargins(0, SP["1"], 0, SP["1"])
         content_layout.setSpacing(2)
 
         # Date
@@ -296,8 +301,8 @@ class QtServiceTimelineWidget(QWidget):
         self._detail_dialog = dlg
 
         layout = QVBoxLayout(dlg)
-        layout.setContentsMargins(S["5"], S["4"], S["5"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["5"], SP["4"], SP["5"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         date_str = rec.get("date", "")[:10] if rec.get("date") else t("common.na")
         try:
@@ -335,7 +340,7 @@ class QtServiceTimelineWidget(QWidget):
             row = QWidget()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(S["2"])
+            row_layout.setSpacing(SP["2"])
 
             label_w = QLabel(label)
             label_w.setProperty("fontRole", "muted")

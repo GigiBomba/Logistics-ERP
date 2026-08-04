@@ -71,13 +71,13 @@ data/test_*.db
 
 # Test artifacts
 test-results/
-website/test-results/
 
 # Generated report files
 route_planner_improvement_plan.md
 operion_analytics_audit_and_plan.md
 
 # Runtime data (caches, databases, generated files)
+data/prefs.json
 data/cashflow.db
 data/fuel_prices_cache.json
 data/company_config.json

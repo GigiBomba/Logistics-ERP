@@ -78,9 +78,10 @@ def _call_with_retry(url: str, json_payload: dict, timeout_s: int, retries: int 
     Retries with exponential backoff (1s, 2s, 4s).  Returns the response
     on success, ``None`` after all retries are exhausted.
     """
+    headers = _auth_headers()
     for attempt in range(retries):
         try:
-            resp = _get_session().post(url, json=json_payload, timeout=timeout_s)
+            resp = _get_session().post(url, json=json_payload, headers=headers, timeout=timeout_s)
             if resp.status_code in (408, 429, 502, 503, 504) and attempt < retries - 1:
                 time.sleep(2 ** attempt)
                 continue
@@ -120,14 +121,26 @@ def init_from_db(db) -> None:
     """Read AI Vision settings from the ``settings`` table.
 
     Call once at startup and after the user saves AI settings.
+    Safe to call during test initialization — returns early if the
+    ``settings`` table hasn't been created yet.
     """
+    # Guard: settings table must exist (may not during test init)
+    try:
+        has_table = db.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table' AND name='settings'"
+        ).fetchone()
+        if not has_table:
+            return
+    except Exception:
+        return
     try:
         with _db_lock:
             global _db_overrides
             _db_overrides = SettingsRepository(db).get_settings_by_keys(
                 ["qwen_endpoint", "qwen_model", "qwen_api_mode",
                  "qwen_max_pages", "qwen_rpm_limit",
-                 "qwen_timeout_s", "ai_confidence_threshold"]
+                 "qwen_timeout_s", "ai_confidence_threshold",
+                 "qwen_api_key"]
             )
         # Migrate stale localhost endpoints to the cloud URL.
         stored = _db_overrides.get("qwen_endpoint", "")
@@ -151,6 +164,24 @@ def _setting(key: str, default: str = "") -> str:
     """Return DB override *key* if set, otherwise *default*."""
     with _db_lock:
         return _db_overrides.get(key, default) or default
+
+
+def _api_key() -> str:
+    """Return the configured API key for endpoint auth (env-first).
+
+    Prefers ``OPERION_QWEN_API_KEY``; falls back to the DB/prefs-stored
+    ``qwen_api_key``. Returns ``""`` when neither is configured.
+    """
+    from services.preferences import get_ai_api_key
+    return get_ai_api_key("qwen", _setting("qwen_api_key", "")) or ""
+
+
+def _auth_headers() -> dict[str, str]:
+    """Return auth headers for the self-hosted endpoint."""
+    key = _api_key()
+    if key:
+        return {"Authorization": f"Bearer {key}"}
+    return {}
 
 
 # ── Keep-alive refresher ─────────────────────────────────────────────
@@ -251,6 +282,7 @@ def _call_ollama(images_b64: list[str], endpoint: str, model: str,
     long as tokens keep flowing.
     """
     url = endpoint.rstrip("/") + "/api/generate"
+    headers = _auth_headers()
     payload = {
         "model": model,
         "prompt": _build_prompt(user_company),
@@ -264,7 +296,7 @@ def _call_ollama(images_b64: list[str], endpoint: str, model: str,
         try:
             chunk_timeout = max(60, timeout_s // 2)  # generous first-token window
             resp = _get_session().post(
-                url, json=payload,
+                url, json=payload, headers=headers,
                 timeout=(timeout_s, chunk_timeout),
                 stream=True,
             )
@@ -343,6 +375,7 @@ def _call_openai_compat(images_b64: list[str], endpoint: str, model: str,
     accumulated until the ``[DONE]`` sentinel.
     """
     url = endpoint.rstrip("/") + "/v1/chat/completions"
+    headers = _auth_headers()
     content_parts: list[dict] = []
     for b64 in images_b64:
         content_parts.append({
@@ -364,7 +397,7 @@ def _call_openai_compat(images_b64: list[str], endpoint: str, model: str,
         try:
             chunk_timeout = max(60, timeout_s // 2)
             resp = _get_session().post(
-                url, json=payload,
+                url, json=payload, headers=headers,
                 timeout=(timeout_s, chunk_timeout),
                 stream=True,
             )

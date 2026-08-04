@@ -69,6 +69,8 @@ from ui.widgets import (
 from ui.widgets.toast import Toast
 from utils.formatters import fmt_currency, fmt_distance, fmt_percentage, fmt_rate
 
+from ui.performance_timer import PerfTimer
+
 logger = logging.getLogger(__name__)
 
 
@@ -126,9 +128,11 @@ class QtCalculatorView(QWidget):
         self._current_route_history_id: int | None = None
 
         self._build_ui()
-        self._load_trucks()
-        self._load_clients()
-        self._sync_from_trip_context()
+        # Defer DB queries to avoid blocking the UI thread during warmup.
+        # Trucks and clients are loaded asynchronously after construction.
+        QTimer.singleShot(0, self._load_trucks)
+        QTimer.singleShot(0, self._load_clients)
+        QTimer.singleShot(0, self._sync_from_trip_context)
 
         # Subscribe to truck / client events so changes elsewhere
         # refresh the dropdowns without an app restart.
@@ -148,6 +152,7 @@ class QtCalculatorView(QWidget):
     # ── UI build ───────────────────────────────────────────────────────────────
 
     def _build_ui(self):
+        self.setAccessibleName("Route calculator")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(SP["10"], 0, SP["10"], SP["10"])
         outer.setSpacing(SP["6"])
@@ -546,135 +551,136 @@ class QtCalculatorView(QWidget):
     # ── Calculation & save ─────────────────────────────────────────────────────
 
     def _handle_calculate(self):
-        try:
-            # Use manually entered km, or fall back to route planner distance
+        with PerfTimer("calculator.refresh"):
             try:
-                km = float(self.e_km.text().strip() or self._route_distance or 0)
-            except ValueError:
-                km = float(self._route_distance or 0)
-            price_raw = float(self.e_price.text() or 0)
-            if km <= 0 or price_raw <= 0:
-                QMessageBox.warning(self, t("main.warning_title"), t("main.fields_required"))
-                return
-
-            vat_enabled = self._vat_check.isChecked()
-            vat_pct = 0.0
-            price_pre_vat = price_raw
-            if vat_enabled:
+                # Use manually entered km, or fall back to route planner distance
                 try:
-                    vat_pct = float(self._vat_percent.text() or 0)
-                    price_pre_vat = float(self._e_price_pre.text() or price_raw)
-                    price = float(self._e_price_post.text() or price_raw)
+                    km = float(self.e_km.text().strip() or self._route_distance or 0)
                 except ValueError:
+                    km = float(self._route_distance or 0)
+                price_raw = float(self.e_price.text() or 0)
+                if km <= 0 or price_raw <= 0:
+                    QMessageBox.warning(self, t("main.warning_title"), t("main.fields_required"))
+                    return
+
+                vat_enabled = self._vat_check.isChecked()
+                vat_pct = 0.0
+                price_pre_vat = price_raw
+                if vat_enabled:
+                    try:
+                        vat_pct = float(self._vat_percent.text() or 0)
+                        price_pre_vat = float(self._e_price_pre.text() or price_raw)
+                        price = float(self._e_price_post.text() or price_raw)
+                    except ValueError:
+                        price = price_raw
+                        vat_pct = 0
+                else:
                     price = price_raw
-                    vat_pct = 0
-            else:
-                price = price_raw
 
-            rates = self.api.get_rates() if self.api else {"EUR": 1.0}
-            currency = self.prefs.get_currency() if self.prefs else "EUR"
-            rate_eur = rates.get(currency, 1.0)
-            pret_eur = price / rate_eur
-            pret_eur_pre_vat = price_pre_vat / rate_eur if vat_enabled else pret_eur
+                rates = self.api.get_rates() if self.api else {"EUR": 1.0}
+                currency = self.prefs.get_currency() if self.prefs else "EUR"
+                rate_eur = rates.get(currency, 1.0)
+                pret_eur = price / rate_eur
+                pret_eur_pre_vat = price_pre_vat / rate_eur if vat_enabled else pret_eur
 
-            cons = self._selected_truck_fuel
+                cons = self._selected_truck_fuel
 
-            fuel_price = self.fuel_service.get_price("DEFAULT", currency) if self.fuel_service else 1.55
+                fuel_price = self.fuel_service.get_price("DEFAULT", currency) if self.fuel_service else 1.55
 
-            fuel_cost_from_route = None
-            if self._route_fuel_liters > 0:
-                fuel_cost_from_route = self._route_fuel_liters * fuel_price
+                fuel_cost_from_route = None
+                if self._route_fuel_liters > 0:
+                    fuel_cost_from_route = self._route_fuel_liters * fuel_price
 
-            extra_val = float(self.e_extra.text()) if self.e_extra.text().strip() else None
-            # Delegated: use typed CalculationRequest via TripCalculator.calculate()
-            req = CalculationRequest(
-                km=km,
-                price_eur=pret_eur,
-                fuel_price=fuel_price,
-                days=int(self.e_days.text() or 1),
-                consum_litri=cons,
-                extra_in=extra_val,
-                sal_in=float(self.e_sal.text() or 0),
-                taxa_in=float(self._route_toll or 0),
-                fuel_cost_override=fuel_cost_from_route,
-            )
-            calc_result = self.calculator.calculate(req)
-            if not calc_result.success:
-                errors = "; ".join(e.message for e in (calc_result.errors or []))
-                raise ValueError(errors or "Calculation failed")
-            res = calc_result.data  # TripCalculationResult
-            if res is None:
-                raise ValueError("Calculation returned no data")
-
-            try:
-                dt_s = datetime.strptime(self.e_start.text(), "%d/%m/%Y")
-            except Exception:
-                dt_s = datetime.now()
-            dt_end = dt_s + timedelta(days=int(self.e_days.text() or 1))
-            dt_inc = dt_end + timedelta(days=int(self.e_term.text() or 0))
-
-            self._display_result(res, dt_inc)
-
-            truck_plate = self._selected_truck.get("plate_number") if self._selected_truck else None
-            driver_id = self._selected_truck.get("driver_id") if self._selected_truck else None
-            driver_name = self._selected_truck.get("driver_name") if self._selected_truck else None
-
-            # Delegated: conflict checking lives in services/conflict_service.py
-            if self.conflict_service:
-                conflict_msgs = self.conflict_service.check_conflicts_for_trip(
-                    truck_plate=truck_plate or "",
-                    driver_id=driver_id,
-                    start_date=dt_s.strftime("%Y-%m-%d"),
-                    end_date=dt_end.strftime("%Y-%m-%d"),
-                    distance_km=km,
+                extra_val = float(self.e_extra.text()) if self.e_extra.text().strip() else None
+                # Delegated: use typed CalculationRequest via TripCalculator.calculate()
+                req = CalculationRequest(
+                    km=km,
+                    price_eur=pret_eur,
+                    fuel_price=fuel_price,
+                    days=int(self.e_days.text() or 1),
+                    consum_litri=cons,
+                    extra_in=extra_val,
+                    sal_in=float(self.e_sal.text() or 0),
+                    taxa_in=float(self._route_toll or 0),
+                    fuel_cost_override=fuel_cost_from_route,
                 )
-                if conflict_msgs:
-                    msg = t("dispatch_board.conflict_warning_title") + "\n\n" + "\n".join(conflict_msgs)
-                    if QMessageBox.question(self, t("dispatch_board.conflict_warning_title"), msg) != QMessageBox.Yes:
-                        return
+                calc_result = self.calculator.calculate(req)
+                if not calc_result.success:
+                    errors = "; ".join(e.message for e in (calc_result.errors or []))
+                    raise ValueError(errors or "Calculation failed")
+                res = calc_result.data  # TripCalculationResult
+                if res is None:
+                    raise ValueError("Calculation returned no data")
 
-            client_name = self.e_client.currentText().strip()
-            client_id = None
-            if client_name:
-                cid = self.e_client.currentData()
-                if cid is not None:
-                    client_id = int(cid)
+                try:
+                    dt_s = datetime.strptime(self.e_start.text(), "%d/%m/%Y")
+                except Exception:
+                    dt_s = datetime.now()
+                dt_end = dt_s + timedelta(days=int(self.e_days.text() or 1))
+                dt_inc = dt_end + timedelta(days=int(self.e_term.text() or 0))
 
-            # Delegated: use typed TripCreate + TripService.create()
-            trip_create = TripCreate(
-                client_id=client_id or 0,
-                route_id=self._current_route_history_id,
-                truck_plate=truck_plate or "",
-                driver_name=driver_name or "",
-                driver_id=driver_id,
-                client_name=client_name or "",
-                start_date=dt_s.date(),
-                end_date=dt_end.date(),
-                payment_date=dt_inc.date(),
-                price_eur=round(pret_eur, 2),
-                currency=currency,
-                distance_km=km,
-                status="Planned",
-                net_profit=res.net_profit,
-                rate_per_km=res.profit_per_km,
-                gross_per_km=res.gross_per_km,
-                fuel_cost=res.fuel_cost,
-                toll_cost=res.toll_cost,
-                salary_cost=res.salary_cost,
-                extra_costs=res.extra_costs,
-                truck_consumption_l_per_100km=self._selected_truck_fuel,
-                price_pre_vat=round(pret_eur_pre_vat, 2) if vat_enabled else None,
-                vat_percent=round(vat_pct, 2) if vat_enabled else None,
-            )
-            if self.trip_service:
-                self.trip_service.create(trip_create, user_id=0)
-            Toast.show_success(self, f"✅ {t('main.save_success')}")
+                self._display_result(res, dt_inc)
 
-        except Exception as e:
-            logger.exception("Calculator save failed")
-            QMessageBox.critical(
-                self, t("main.error_title"), f"{t('main.check_data').format(str(e))}"
-            )
+                truck_plate = self._selected_truck.get("plate_number") if self._selected_truck else None
+                driver_id = self._selected_truck.get("driver_id") if self._selected_truck else None
+                driver_name = self._selected_truck.get("driver_name") if self._selected_truck else None
+
+                # Delegated: conflict checking lives in services/conflict_service.py
+                if self.conflict_service:
+                    conflict_msgs = self.conflict_service.check_conflicts_for_trip(
+                        truck_plate=truck_plate or "",
+                        driver_id=driver_id,
+                        start_date=dt_s.strftime("%Y-%m-%d"),
+                        end_date=dt_end.strftime("%Y-%m-%d"),
+                        distance_km=km,
+                    )
+                    if conflict_msgs:
+                        msg = t("dispatch_board.conflict_warning_title") + "\n\n" + "\n".join(conflict_msgs)
+                        if QMessageBox.question(self, t("dispatch_board.conflict_warning_title"), msg) != QMessageBox.Yes:
+                            return
+
+                client_name = self.e_client.currentText().strip()
+                client_id = None
+                if client_name:
+                    cid = self.e_client.currentData()
+                    if cid is not None:
+                        client_id = int(cid)
+
+                # Delegated: use typed TripCreate + TripService.create()
+                trip_create = TripCreate(
+                    client_id=client_id or 0,
+                    route_id=self._current_route_history_id,
+                    truck_plate=truck_plate or "",
+                    driver_name=driver_name or "",
+                    driver_id=driver_id,
+                    client_name=client_name or "",
+                    start_date=dt_s.date(),
+                    end_date=dt_end.date(),
+                    payment_date=dt_inc.date(),
+                    price_eur=round(pret_eur, 2),
+                    currency=currency,
+                    distance_km=km,
+                    status="Planned",
+                    net_profit=res.net_profit,
+                    rate_per_km=res.profit_per_km,
+                    gross_per_km=res.gross_per_km,
+                    fuel_cost=res.fuel_cost,
+                    toll_cost=res.toll_cost,
+                    salary_cost=res.salary_cost,
+                    extra_costs=res.extra_costs,
+                    truck_consumption_l_per_100km=self._selected_truck_fuel,
+                    price_pre_vat=round(pret_eur_pre_vat, 2) if vat_enabled else None,
+                    vat_percent=round(vat_pct, 2) if vat_enabled else None,
+                )
+                if self.trip_service:
+                    self.trip_service.create(trip_create, user_id=0)
+                Toast.show_success(self, f"✅ {t('main.save_success')}")
+
+            except Exception as e:
+                logger.exception("Calculator save failed")
+                QMessageBox.critical(
+                    self, t("main.error_title"), f"{t('main.check_data').format(str(e))}"
+                )
 
     def _display_result(self, res: TripCalculationResult, dt_inc: datetime):
         """Display calculation results from the service.

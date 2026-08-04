@@ -22,6 +22,7 @@ import numpy as np  # type: ignore
 from repositories.settings_repository import SettingsRepository
 
 from .field_extractors import extract_fields, normalize_date
+from .sanitizer import sanitize_ocr_text
 from .types import ExtractionResult, OcrLine
 
 logger = logging.getLogger("document_automation.ocr")
@@ -530,4 +531,14 @@ class OcrExtractor:
         else:
             extracted.setdefault("doc_type", "other")
         result.extracted = extracted
+
+        # ── Sanitize OCR text before returning — prevents prompt ──
+        # injection, template injection, and delimiter hijacking from
+        # propagating into AI prompt contexts.
+        sanitized_full, sanitize_report = sanitize_ocr_text(result.full_text)
+        if sanitize_report.was_modified:
+            result.full_text = sanitized_full
+            # Also update raw_text in extracted fields if present.
+            if "raw_text" in result.extracted:
+                result.extracted["raw_text"] = sanitized_full
         return result

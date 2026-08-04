@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from models.trip_models import TripUpdate
 from services.operations.trip_status_workflow import TripStatusWorkflow
 
 
@@ -55,7 +56,7 @@ def test_force_trip_status_valid_transition(mock_odo, workflow):
     }
     result = workflow.force_trip_status(1, "Delivered")
     assert result is True
-    workflow._trip_service.update.assert_called_with(1, {"status": "Delivered"})
+    workflow._trip_service.update.assert_called_with(1, TripUpdate(status="Delivered"))
     workflow._event_bus.publish.assert_called_once()
     mock_odo.assert_called_once()
 

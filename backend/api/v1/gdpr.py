@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from backend.dependencies import get_db
 from backend.dependencies_security import require_admin
+from repositories.user_repository import UserRepository
 
 logger = logging.getLogger(__name__)
 
@@ -50,11 +51,12 @@ async def export_company_data(company_id: int, db=Depends(get_db),
 
     for table in EXPORT_TABLES:
         try:
-            # Check if table has company_id column
+            # GDPR dynamic export — cannot migrate to repo
             col_check = db.conn.execute(f"PRAGMA table_info({table})").fetchall()
             has_company_id = any(c[1] == "company_id" for c in col_check)
 
             if has_company_id:
+                # GDPR dynamic export — cannot migrate to repo
                 rows = db.execute(
                     f"SELECT * FROM {table} WHERE company_id = ?", (company_id,)  # nosec B608
                 ).fetchall()
@@ -92,11 +94,12 @@ async def export_company_data(company_id: int, db=Depends(get_db),
 async def export_user_data(user_id: int, db=Depends(get_db),
                            _=Depends(require_admin)):
     """Export all data associated with a user (GDPR data portability)."""
-    user = db.execute("SELECT * FROM users WHERE id = ?", (user_id,)).fetchone()
+    user_repo = UserRepository(db)
+    user = user_repo.get_by_id(user_id)
     if not user:
         raise HTTPException(404, "User not found")
 
-    user_data = _row_to_dict(user)
+    user_data = user
     # Remove sensitive fields from export
     user_data.pop("password_hash", None)
 
@@ -134,11 +137,13 @@ async def delete_company_data(company_id: int, confirm: str = "",
     # 1. Soft-delete all child records
     for table in EXPORT_TABLES:
         try:
+            # GDPR dynamic export — cannot migrate to repo
             col_check = db.conn.execute(f"PRAGMA table_info({table})").fetchall()
             has_company_id = any(c[1] == "company_id" for c in col_check)
             has_is_active = any(c[1] == "is_active" for c in col_check)
 
             if has_company_id:
+                # GDPR dynamic export — cannot migrate to repo
                 if has_is_active:
                     result = db.execute(
                         f"UPDATE {table} SET is_active = 0 WHERE company_id = ?",  # nosec B608
@@ -156,10 +161,8 @@ async def delete_company_data(company_id: int, confirm: str = "",
             logger.warning("GDPR delete: failed on table %s: %s", table, e)
 
     # 2. Soft-delete company record
-    db.execute(
-        "UPDATE companies SET is_active = 0 WHERE id = ?", (company_id,)
-    )
-    db.commit()
+    from repositories.company_repository import CompanyRepository
+    CompanyRepository(db).update(company_id, {"is_active": 0})
 
     # 3. Audit log
     try:
@@ -189,10 +192,7 @@ async def delete_company_data(company_id: int, confirm: str = "",
 async def delete_user_data(user_id: int, db=Depends(get_db),
                            _=Depends(require_admin)):
     """Deactivate a user account (GDPR right to erasure)."""
-    db.execute(
-        "UPDATE users SET is_active = 0 WHERE id = ?", (user_id,)
-    )
-    db.commit()
+    UserRepository(db).deactivate_user(user_id)
 
     logger.info("GDPR user deactivation: user_id=%d", user_id)
 

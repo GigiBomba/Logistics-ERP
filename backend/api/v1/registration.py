@@ -14,6 +14,8 @@ from backend.schemas.registration import RegistrationRequest
 from backend.security import hash_password
 from backend.api.v1.auth import _issue_tokens
 from backend.db import DatabaseManager
+from repositories.user_repository import UserRepository
+from repositories.company_repository import CompanyRepository
 
 logger = logging.getLogger(__name__)
 
@@ -62,9 +64,7 @@ def register(
     _check_register_rate_limit(client_ip)
 
     # ── Check email uniqueness (global — one email = one account) ──────
-    existing = db.execute(
-        "SELECT id FROM users WHERE email = ?", (email,)
-    ).fetchone()
+    existing = UserRepository(db).get_by_email(email)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -73,24 +73,23 @@ def register(
 
     # ── Create company ────────────────────────────────────────────────
     try:
-        cursor = db.execute(
-            "INSERT INTO companies (company_name, subscription_tier, is_active) "
-            "VALUES (?, 'starter', 1)",
-            (data.company_name,),
-        )
-        company_id = cursor.lastrowid
+        company_id = CompanyRepository(db).create({
+            "company_name": data.company_name,
+            "subscription_tier": "starter",
+            "is_active": 1,
+        })
 
         # ── Hash password ─────────────────────────────────────────────
         hashed_pw = hash_password(data.password)
 
         # ── Create manager user ───────────────────────────────────────
-        cursor = db.execute(
-            "INSERT INTO users (email, password_hash, role, company_id, "
-            "display_name, is_active) "
-            "VALUES (?, ?, 'manager', ?, ?, 1)",
-            (email, hashed_pw, company_id, data.display_name),
+        user_id = UserRepository(db).create_user(
+            email=email,
+            password_hash=hashed_pw,
+            role="manager",
+            display_name=data.display_name,
+            company_id=company_id,
         )
-        db.commit()
 
         logger.info(
             "Registration: company='%s' (id=%d), manager='%s'",
@@ -100,7 +99,7 @@ def register(
         # ── Issue tokens ──────────────────────────────────────────────
         tokens = _issue_tokens(email, "manager", response)
         tokens["user"] = {
-            "id": cursor.lastrowid,
+            "id": user_id,
             "email": email,
             "role": "manager",
             "company_id": company_id,

@@ -59,14 +59,14 @@ class TestQtBulkPaymentsView:
     def test_batch_panel_created(self, bulk_payments):
         """Batch panel title, empty-label, and table exist."""
         assert hasattr(bulk_payments, "_batch_title")
-        assert hasattr(bulk_payments, "_batch_empty_label")
+        assert hasattr(bulk_payments, "_batch_empty_state")
         assert hasattr(bulk_payments, "_batch_table")
 
     def test_batch_empty_state(self, bulk_payments):
         """Batch starts empty: empty label visible, table hidden after refresh."""
         assert bulk_payments._batch_items == []
         bulk_payments._refresh_batch_table()
-        assert not bulk_payments._batch_empty_label.isHidden()
+        assert not bulk_payments._batch_empty_state.isHidden()
         assert bulk_payments._batch_table.isHidden()
 
     def test_services_initialized(self, bulk_payments):
@@ -133,5 +133,5 @@ class TestQtBulkPaymentsView:
         bulk_payments._batch_items.append(item)
         bulk_payments._refresh_batch_table()
         assert len(bulk_payments._batch_items) == 1
-        assert bulk_payments._batch_empty_label.isHidden()
+        assert bulk_payments._batch_empty_state.isHidden()
         assert not bulk_payments._batch_table.isHidden()

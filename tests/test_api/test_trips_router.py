@@ -67,12 +67,12 @@ class TestTripsRouter:
     def test_create_trip_returns_id(self, client_with_mocks):
         client, mocks = client_with_mocks
         payload = {"client_id": 1, "loading_city": "Paris"}
-        mocks["trip_service"].add.return_value = 42
+        mocks["trip_service"].create.return_value = type('R', (), {'success': True, 'data': type('D', (), {'id': 42})()})()
 
         resp = client.post(f"{BASE}/", json=payload)
         assert resp.status_code == 200
         assert resp.json() == {"id": 42}
-        mocks["trip_service"].add.assert_called_once()
+        mocks["trip_service"].create.assert_called_once()
 
     # ── update ────────────────────────────────────────────────────────────
 
@@ -101,10 +101,6 @@ class TestTripsRouter:
         """The conflict endpoint instantiates TripConflictService internally
         using the mocked DB. We verify the endpoint runs without error."""
         client, mocks = client_with_mocks
-        # Configure the mock DB so row_to_dict works for queries done
-        # inside TripConflictService.
-        mocks["db"].row_to_dict.side_effect = lambda row: None if row is None else dict(row)
-
         resp = client.post(f"{BASE}/conflicts/check", json={"date": "2024-01-01"})
         # Allow 200, 422 (validation), or 500 (runtime error).
         assert resp.status_code in (200, 422, 500)
@@ -128,3 +124,45 @@ class TestTripsRouter:
         client = TestClient(app)
         resp = client.get(f"{BASE}/")
         assert resp.status_code == 401
+
+
+class TestTripsRouterPromisedDate:
+    """The OTD ``promised_date`` field on create/update (ISO ok, non-ISO 422)."""
+
+    def test_create_accepts_promised_date(self, client_with_mocks):
+        from datetime import date
+
+        client, mocks = client_with_mocks
+        mocks["trip_service"].create.return_value = type(
+            "R", (), {"success": True, "data": type("D", (), {"id": 7})()}
+        )()
+
+        resp = client.post(f"{BASE}/", json={"client_id": 1, "promised_date": "2026-01-15"})
+        assert resp.status_code == 200
+        assert resp.json() == {"id": 7}
+        created = mocks["trip_service"].create.call_args[0][0]
+        assert created.promised_date == date(2026, 1, 15)
+
+    def test_create_rejects_invalid_promised_date(self, client_with_mocks):
+        client, _ = client_with_mocks
+
+        resp = client.post(f"{BASE}/", json={"client_id": 1, "promised_date": "15/01/2026"})
+        assert resp.status_code == 422
+        assert "promised_date" in resp.json()["detail"]
+
+    def test_patch_accepts_promised_date(self, client_with_mocks):
+        from datetime import date
+
+        client, mocks = client_with_mocks
+
+        resp = client.patch(f"{BASE}/1", json={"promised_date": "2026-02-01"})
+        assert resp.status_code == 200
+        updated = mocks["trip_service"].update.call_args[0][1]
+        assert updated.promised_date == date(2026, 2, 1)
+
+    def test_patch_rejects_invalid_promised_date(self, client_with_mocks):
+        client, _ = client_with_mocks
+
+        resp = client.patch(f"{BASE}/1", json={"promised_date": "not-a-date"})
+        assert resp.status_code == 422
+        assert "promised_date" in resp.json()["detail"]

@@ -7,14 +7,18 @@ client-form, merge, and other dialogs used for client management.
 from __future__ import annotations
 
 import contextlib
+import logging
 from typing import Any
 
-from PySide6.QtGui import QColor
+import qtawesome as qta
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QSizePolicy,
     QTabWidget,
@@ -22,16 +26,25 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+logger = logging.getLogger(__name__)
+
 from services.client_service import ClientService
 from services.i18n import register_listener, t, unregister_listener
+from ui.performance_timer import PerfTimer
+from ui.worker_pool import WorkerPool
 from ui.components import (
     Btn,
+    IconButton,
     KPICard,
     PageTitle,
     SectionTitle,
 )
-from ui.design_tokens import SP
-from ui.theme import COLORS
+from ui.design_tokens import (
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.widgets import (
     ScrollableFormContainer,
     StyledComboBox,
@@ -101,6 +114,8 @@ def _invoice_columns_for_table() -> list[tuple]:
 class QtClientWorkspace(QWidget):
     """Client management workspace with tabbed detail views."""
 
+    CHART_STALENESS_SECONDS = 300
+
     def __init__(
         self,
         parent: QWidget | None = None,
@@ -116,10 +131,13 @@ class QtClientWorkspace(QWidget):
         self.service = client_service
         self._selected_id: int | None = None
         self._all_clients: list[dict[str, Any]] = []
+        self._last_chart_ts: float = 0.0
+        self._last_chart_client_id: int | None = None
 
         self._language_callback = self._on_language_changed
         register_listener(self._language_callback)
 
+        self.setAccessibleName("Client workspace")
         self._build_ui()
         self._load_data()
 
@@ -254,7 +272,11 @@ class QtClientWorkspace(QWidget):
 
         # ── Client table ─────────────────────────────────────────────
         columns = _client_columns_for_table()
-        self._table = StyledTableWidget(self, columns=columns)
+        self._table = StyledTableWidget(
+            self, columns=columns, prefs_key="client_workspace",
+        )
+        self._table.setAccessibleName("Clients table")
+        self._table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
         self._table.rowSelected.connect(self._on_row_selected)
         self._table.rowDoubleClicked.connect(self._on_row_double_clicked)
         self._table.setMaximumHeight(500)
@@ -281,6 +303,19 @@ class QtClientWorkspace(QWidget):
         bar_layout.addWidget(self._deact_btn)
 
         bar_layout.addStretch()
+
+        # Density toggle
+        density_btn = IconButton(
+            self,
+            icon_name="fa5s.table",
+            tooltip=t("client.density_toggle", default="Row density"),
+            variant="ghost",
+            size=32,
+        )
+        density_menu = self._table._build_density_menu(density_btn)
+        density_btn.setMenu(density_menu)
+        bar_layout.addWidget(density_btn)
+
         split_layout.addWidget(bar)
 
         # ── Per-client detail tabs ───────────────────────────────────
@@ -294,12 +329,24 @@ class QtClientWorkspace(QWidget):
 
         # Trips tab
         trips_cols = _trips_columns_for_table()
-        self._trips_table = StyledTableWidget(self._client_tabs, columns=trips_cols)
+        self._trips_table = StyledTableWidget(
+            self._client_tabs, columns=trips_cols, prefs_key="client_trips",
+        )
+        self._trips_table.setSortingEnabled(True)
+        self._trips_table.horizontalHeader().setSortIndicatorShown(True)
+        self._trips_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._trips_table.customContextMenuRequested.connect(self._show_trip_context_menu)
         self._client_tabs.addTab(self._trips_table, t("client.tab_trips", "Trips"))
 
         # Invoices tab
         inv_cols = _invoice_columns_for_table()
-        self._invoices_table = StyledTableWidget(self._client_tabs, columns=inv_cols)
+        self._invoices_table = StyledTableWidget(
+            self._client_tabs, columns=inv_cols, prefs_key="client_invoices",
+        )
+        self._invoices_table.setSortingEnabled(True)
+        self._invoices_table.horizontalHeader().setSortIndicatorShown(True)
+        self._invoices_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._invoices_table.customContextMenuRequested.connect(self._show_invoice_context_menu)
         self._client_tabs.addTab(self._invoices_table, t("client.tab_invoices", "Invoices"))
 
         # Revenue tab
@@ -323,45 +370,127 @@ class QtClientWorkspace(QWidget):
         self._load_data()
 
     # ------------------------------------------------------------------
+    # Skeleton loading helpers
+    # ------------------------------------------------------------------
+
+    def _show_table_skeleton(self) -> None:
+        """Replace the real client table with a skeleton placeholder."""
+        from ui.skeleton_widgets import SkeletonTable
+
+        self._table.hide()
+        if hasattr(self, '_client_table_skel') and self._client_table_skel is not None:
+            self._client_table_skel.deleteLater()
+            self._client_table_skel = None
+
+        skel = SkeletonTable(self._table.parent(), rows=5, columns=5)
+        skel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        skel.setMaximumHeight(500)
+        parent_layout = self._table.parent().layout()
+        if parent_layout is not None:
+            idx = parent_layout.indexOf(self._table)
+            parent_layout.insertWidget(idx, skel)
+        self._client_table_skel = skel
+
+    def _hide_table_skeleton(self) -> None:
+        """Remove skeleton table and show the real table."""
+        if hasattr(self, '_client_table_skel') and self._client_table_skel is not None:
+            self._client_table_skel.deleteLater()
+            self._client_table_skel = None
+        self._table.show()
+
+    # ------------------------------------------------------------------
     # Data loading
     # ------------------------------------------------------------------
 
     def _load_data(self) -> None:
-        if self.service is None:
-            return
+        with PerfTimer("client_workspace.load_data"):
+            if self.service is None:
+                return
 
-        query = self._search_entry.text().strip()
-        if query:
-            self._all_clients = self.service.search_advanced(
-                query, include_inactive=True, limit=200,
-            )
-        else:
-            self._all_clients = self.service.get_all_with_revenue(
+            self._show_table_skeleton()
+            if getattr(self.service, "_repo", None) is None:
+                # Remote mode: the list load may make many HTTP calls
+                # (get_all_with_revenue is 1 list + N dashboard requests), so
+                # run it off the GUI thread and render via the callback.
+                # Capture the search text on the GUI thread — Qt widgets must
+                # not be touched from the worker thread.
+                query = self._search_entry.text().strip()
+                WorkerPool.run(
+                    fn=lambda q=query: self._do_load_data_bg(q),
+                    on_result=self._on_client_data_loaded,
+                    on_error=lambda err: self._hide_table_skeleton(),
+                )
+            else:
+                # Local mode: one fast SQL query — keep the sync path.
+                QTimer.singleShot(0, self._do_load_data)
+
+    def _do_load_data_bg(self, query: str) -> list:
+        """Background (remote) fetch — returns the client list only.
+
+        Runs on a WorkerPool thread; never touches widgets (the search
+        query is captured on the GUI thread and passed in).
+        """
+        try:
+            if query:
+                return self.service.search_advanced(
+                    query, include_inactive=True, limit=200,
+                )
+            return self.service.get_all_with_revenue(
                 include_inactive=True,
             )
+        except Exception:
+            logger.exception("client_workspace: background load failed")
+            return []
 
-        rows: list[dict[str, Any]] = []
-        for c in self._all_clients:
-            rows.append({
-                "id":         c["id"],
-                "name":       c.get("name", ""),
-                "contact":    c.get("contact_person") or "",
-                "phone":      c.get("phone") or "",
-                "email":      c.get("email") or "",
-                "trips":      c.get("trip_count", 0) or 0,
-                "_is_active": c.get("is_active", 1),
-            })
+    def _do_load_data(self) -> None:
+        """Local-mode synchronous load — fetch and render inline."""
+        try:
+            query = self._search_entry.text().strip()
+            if query:
+                clients = self.service.search_advanced(
+                    query, include_inactive=True, limit=200,
+                )
+            else:
+                clients = self.service.get_all_with_revenue(
+                    include_inactive=True,
+                )
+            self._on_client_data_loaded(clients)
+        except Exception as ex:
+            logger.exception("_do_load_data failed")
+            self._hide_table_skeleton()
 
-        self._table.set_data(rows)
+    def _on_client_data_loaded(self, clients: list) -> None:
+        """Main-thread callback — build rows and render the client table."""
+        try:
+            self._all_clients = clients
 
-        # Gray out inactive rows.
-        muted = QColor(COLORS["text_muted"])
-        for r, row in enumerate(rows):
-            if not row.get("_is_active", 1):
-                for c in range(self._table.columnCount()):
-                    item = self._table.item(r, c)
-                    if item is not None:
-                        item.setForeground(muted)
+            rows: list[dict[str, Any]] = []
+            for c in clients:
+                rows.append({
+                    "id":         c["id"],
+                    "name":       c.get("name", ""),
+                    "contact":    c.get("contact_person") or "",
+                    "phone":      c.get("phone") or "",
+                    "email":      c.get("email") or "",
+                    "trips":      c.get("trip_count", 0) or 0,
+                    "_is_active": c.get("is_active", 1),
+                })
+
+            self._hide_table_skeleton()
+            self._table.set_data(rows)
+            self._table.restore_column_widths()
+
+            # Gray out inactive rows.
+            muted = QColor(COLOR_TEXT_TERTIARY)
+            for r, row in enumerate(rows):
+                if not row.get("_is_active", 1):
+                    for c in range(self._table.columnCount()):
+                        item = self._table.item(r, c)
+                        if item is not None:
+                            item.setForeground(muted)
+        except Exception as ex:
+            self._hide_table_skeleton()
+            logger.exception("client_workspace: render failed")
 
     # ------------------------------------------------------------------
     # Selection
@@ -386,16 +515,19 @@ class QtClientWorkspace(QWidget):
 
     def _on_client_tab_changed(self, index: int) -> None:
         """Refresh active client detail tab content when switching tabs."""
-        if self._selected_id is None or self.service is None:
-            return
-        if index == 0:
-            self._details_tab.refresh(self.service, self._selected_id)
-        elif index == 1:
-            self._load_trips()
-        elif index == 2:
-            self._load_invoices()
-        elif index == 3:
-            self._load_revenue_chart()
+        with PerfTimer("client_workspace.tab_changed"):
+            if self._selected_id is None or self.service is None:
+                return
+            if index == 0:
+                # Clear cache when switching back to details tab to force fresh data
+                self._details_tab.clear_cache()
+                self._details_tab.refresh(self.service, self._selected_id)
+            elif index == 1:
+                self._load_trips()
+            elif index == 2:
+                self._load_invoices()
+            elif index == 3:
+                self._load_revenue_chart()
 
     def _show_detail(self, client_id: int | None) -> None:
         """Populate all tabs with the selected client's data."""
@@ -417,68 +549,83 @@ class QtClientWorkspace(QWidget):
 
     def _load_trips(self) -> None:
         """Load trips into the trips table."""
-        if self._selected_id is None or self.service is None:
-            return
-        trips = self.service.get_client_trips(self._selected_id, limit=100)
-        rows = []
-        for t_row in trips:
-            rows.append({
-                "start_date":      (t_row.get("start_date") or t_row.get("created_at", ""))[:10],
-                "truck_number":    t_row.get("truck_number", ""),
-                "distance_km":     f"{t_row.get('distance_km', 0) or 0:,.0f}",
-                "total_price_eur": f"\u20ac {t_row.get('total_price_eur', 0) or 0:,.0f}",
-                "net_profit":      f"\u20ac {t_row.get('net_profit', 0) or 0:,.0f}",
-                "status":          t_row.get("status", ""),
-            })
-        self._trips_table.set_data(rows)
+        with PerfTimer("client_workspace.load_trips"):
+            if self._selected_id is None or self.service is None:
+                return
+            trips = self.service.get_client_trips(self._selected_id, limit=100)
+            rows = []
+            for t_row in trips:
+                rows.append({
+                    "start_date":      (t_row.get("start_date") or t_row.get("created_at", ""))[:10],
+                    "truck_number":    t_row.get("truck_number", ""),
+                    "distance_km":     f"{t_row.get('distance_km', 0) or 0:,.0f}",
+                    "total_price_eur": f"\u20ac {t_row.get('total_price_eur', 0) or 0:,.0f}",
+                    "net_profit":      f"\u20ac {t_row.get('net_profit', 0) or 0:,.0f}",
+                    "status":          t_row.get("status", ""),
+                })
+            self._trips_table.set_data(rows)
+            self._trips_table.restore_column_widths()
 
     def _load_invoices(self) -> None:
         """Load invoices into the invoices table with colour-coded status."""
-        if self._selected_id is None or self.service is None:
-            return
-        invoices = self.service.get_client_invoices(self._selected_id, limit=100)
-        rows = []
-        for inv in invoices:
-            status = inv.get("status", "")
-            rows.append({
-                "invoice_number": inv.get("invoice_number", ""),
-                "total_amount":   f"\u20ac {inv.get('total_amount', 0) or 0:,.0f}",
-                "due_date":       inv.get("due_date", ""),
-                "status":         status,
-            })
-        self._invoices_table.set_data(rows)
+        with PerfTimer("client_workspace.load_invoices"):
+            if self._selected_id is None or self.service is None:
+                return
+            invoices = self.service.get_client_invoices(self._selected_id, limit=100)
+            rows = []
+            for inv in invoices:
+                status = inv.get("status", "")
+                rows.append({
+                    "invoice_number": inv.get("invoice_number", ""),
+                    "total_amount":   f"\u20ac {inv.get('total_amount', 0) or 0:,.0f}",
+                    "due_date":       inv.get("due_date", ""),
+                    "status":         status,
+                })
+            self._invoices_table.set_data(rows)
+            self._invoices_table.restore_column_widths()
 
-        green = QColor(COLORS["success"])
-        amber = QColor(COLORS["warning"])
-        for r, row in enumerate(rows):
-            status = row.get("status", "")
-            item = self._invoices_table.item(r, 3)
-            if item is not None:
-                item.setForeground(green if status == "Paid" else amber)
+            green = QColor(COLOR_SUCCESS_DEFAULT)
+            amber = QColor(COLOR_WARNING_DEFAULT)
+            for r, row in enumerate(rows):
+                status = row.get("status", "")
+                item = self._invoices_table.item(r, 3)
+                if item is not None:
+                    item.setForeground(green if status == "Paid" else amber)
 
-    def _load_revenue_chart(self) -> None:
+    def _load_revenue_chart(self, force: bool = False) -> None:
         """Build or refresh the revenue chart tab."""
-        if self._selected_id is None or self.service is None:
-            return
+        with PerfTimer("client_workspace.revenue_chart"):
+            if self._selected_id is None or self.service is None:
+                return
 
-        if self._revenue_chart is not None:
-            self._revenue_chart.deleteLater()
-            self._revenue_chart = None
+            # Staleness check — skip re-render if chart is still fresh
+            import time as _time
+            now = _time.time()
+            if not force and self._last_chart_client_id == self._selected_id:
+                if self._last_chart_ts and (now - self._last_chart_ts) < self.CHART_STALENESS_SECONDS:
+                    return
 
-        from ui.widgets.client_revenue_chart import QtClientRevenueChart
+            self._last_chart_ts = now
+            self._last_chart_client_id = self._selected_id
 
-        self._revenue_chart = QtClientRevenueChart(
-            self._revenue_tab,
-            service=self.service,
-            client_id=self._selected_id,
-        )
-        tab_layout = self._revenue_tab.layout()
-        if tab_layout is not None:
-            tab_layout.addWidget(self._revenue_chart)
-        else:
-            from PySide6.QtWidgets import QVBoxLayout
-            tab_layout = QVBoxLayout(self._revenue_tab)
-            tab_layout.addWidget(self._revenue_chart)
+            if self._revenue_chart is not None:
+                self._revenue_chart.deleteLater()
+                self._revenue_chart = None
+
+            from ui.widgets.client_revenue_chart import QtClientRevenueChart
+
+            self._revenue_chart = QtClientRevenueChart(
+                self._revenue_tab,
+                service=self.service,
+                client_id=self._selected_id,
+            )
+            tab_layout = self._revenue_tab.layout()
+            if tab_layout is not None:
+                tab_layout.addWidget(self._revenue_chart)
+            else:
+                from PySide6.QtWidgets import QVBoxLayout
+                tab_layout = QVBoxLayout(self._revenue_tab)
+                tab_layout.addWidget(self._revenue_chart)
 
     # ------------------------------------------------------------------
     # CRUD actions
@@ -504,6 +651,7 @@ class QtClientWorkspace(QWidget):
         dialog.exec()
 
     def _on_form_saved(self) -> None:
+        self._details_tab.clear_cache()
         self._load_data()
         if self._selected_id is not None:
             self._show_detail(self._selected_id)
@@ -531,6 +679,136 @@ class QtClientWorkspace(QWidget):
             self._selected_id = None
             self._client_tabs.setEnabled(False)
             self._load_data()
+
+
+    # ── Context menus (right-click) ───────────────────────────────────
+
+    def _get_row_data_at(self, table, pos) -> dict | None:
+        """Return the record dict at *pos* in *table*, or ``None``."""
+        index = table.indexAt(pos)
+        if not index.isValid():
+            return None
+        row = index.row()
+        if 0 <= row < len(table._data):
+            return table._data[row]
+        return None
+
+    def _show_trip_context_menu(self, pos) -> None:
+        """Right-click context menu on the trips table."""
+        record = self._get_row_data_at(self._trips_table, pos)
+        if record is None:
+            return
+
+        menu = QMenu(self)
+
+        edit_action = QAction(qta.icon("fa5s.edit"), t("client.edit_trip", "Edit Trip"), self)
+        edit_action.triggered.connect(lambda: self._edit_trip(record))
+        menu.addAction(edit_action)
+
+        route_action = QAction(qta.icon("fa5s.route"), t("client.view_route", "View Route"), self)
+        route_action.triggered.connect(lambda: self._view_trip_route(record))
+        menu.addAction(route_action)
+
+        inv_action = QAction(qta.icon("fa5s.file-invoice"), t("client.generate_invoice", "Generate Invoice"), self)
+        inv_action.triggered.connect(lambda: self._generate_trip_invoice(record))
+        menu.addAction(inv_action)
+
+        menu.exec(self._trips_table.viewport().mapToGlobal(pos))
+
+    def _show_invoice_context_menu(self, pos) -> None:
+        """Right-click context menu on the invoices table."""
+        record = self._get_row_data_at(self._invoices_table, pos)
+        if record is None:
+            return
+
+        menu = QMenu(self)
+
+        edit_action = QAction(qta.icon("fa5s.edit"), t("client.edit_invoice", "Edit Invoice"), self)
+        edit_action.triggered.connect(lambda: self._edit_invoice(record))
+        menu.addAction(edit_action)
+
+        view_action = QAction(qta.icon("fa5s.eye"), t("common.view", "View"), self)
+        view_action.triggered.connect(lambda: self._view_invoice(record))
+        menu.addAction(view_action)
+
+        download_action = QAction(qta.icon("fa5s.download"), t("client.download_invoice", "Download"), self)
+        download_action.triggered.connect(lambda: self._download_invoice(record))
+        menu.addAction(download_action)
+
+        menu.exec(self._invoices_table.viewport().mapToGlobal(pos))
+
+    # ── Trip context actions ──────────────────────────────────────────
+
+    def _edit_trip(self, record: dict) -> None:
+        """Open the trip editor dialog for the selected trip."""
+        trip_id = record.get("id") or record.get("start_date", "")
+        if not trip_id:
+            return
+        try:
+            from PySide6.QtWidgets import QApplication
+            parent_window = QApplication.activeWindow() or self
+            from ui.dialogs.edit_window import QtEditWindow
+            dialog = QtEditWindow(parent_window, self.db, trip_id, callback=lambda: None)
+            dialog.exec()
+        except Exception:
+            logger.exception("Failed to open trip editor")
+
+    def _view_trip_route(self, record: dict) -> None:
+        """Navigate to the route planner for this trip."""
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "_switch_module"):
+                parent._switch_module("route_planner")
+                return
+            parent = parent.parent()
+
+    def _generate_trip_invoice(self, record: dict) -> None:
+        """Navigate to the generators / invoices view."""
+        trip_id = record.get("id")
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "_switch_module"):
+                nav_data = {"trip_id": trip_id} if trip_id else None
+                parent._switch_module("invoices", nav_data)
+                return
+            parent = parent.parent()
+
+    # ── Invoice context actions ───────────────────────────────────────
+
+    def _edit_invoice(self, record: dict) -> None:
+        """Open the invoice editor dialog."""
+        try:
+            from PySide6.QtWidgets import QApplication
+            parent_window = QApplication.activeWindow() or self
+            from ui.views.invoice_editor import InvoiceEditorDialog
+            dlg = InvoiceEditorDialog(db=self.db, prefs=getattr(self, "prefs", None), parent=parent_window)
+            dlg.exec()
+        except Exception:
+            logger.exception("Failed to open invoice editor")
+
+    def _view_invoice(self, record: dict) -> None:
+        """Preview the selected invoice."""
+        inv_number = record.get("invoice_number", "")
+        if not inv_number:
+            return
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "_switch_module"):
+                parent._switch_module("invoices", {"invoice": inv_number})
+                return
+            parent = parent.parent()
+
+    def _download_invoice(self, record: dict) -> None:
+        """Navigate to the invoices tab to facilitate PDF download."""
+        inv_number = record.get("invoice_number", "")
+        if not inv_number:
+            return
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "_switch_module"):
+                parent._switch_module("invoices", {"invoice": inv_number, "action": "download"})
+                return
+            parent = parent.parent()
 
 
 # ======================================================================
@@ -663,14 +941,18 @@ class _QtClientFormDialog(QDialog):
         if self._editing and self.client_data is not None:
             self.service.update(self.client_data["id"], **data)
         else:
-            existing = self.service._repo.get_by_name(name)
-            if existing:
-                QMessageBox.warning(
-                    self,
-                    t("common.warning"),
-                    t("client.already_exists").format(name=name),
-                )
-                return
+            # Duplicate-name check is repo-backed (local DB only); remote
+            # services expose no `_repo`, so skip the check there.
+            repo = getattr(self.service, "_repo", None)
+            if repo is not None:
+                existing = repo.get_by_name(name)
+                if existing:
+                    QMessageBox.warning(
+                        self,
+                        t("common.warning"),
+                        t("client.already_exists").format(name=name),
+                    )
+                    return
             self.service.create(**data)
 
         if self.on_save is not None:

@@ -8,6 +8,8 @@ Undo — dispatch.create.undo() reverses state, UNDO_WINDOW_MINUTES enforced
 system.undo tool — validation, delegation, edge cases
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 from datetime import datetime, timedelta
@@ -30,6 +32,12 @@ _ensure_tools_loaded()
 _validation_errors = run_startup_validation()
 _prod_errors = [e for e in _validation_errors if "test." not in e]
 assert len(_prod_errors) == 0, f"Production tool registry errors: {_prod_errors}"
+
+
+# Phase 3 tests do NOT use Qt, but stale QTimer callbacks from
+# test_guided_overlay_widget can leak into this module's event loop.
+# Mark the whole module to ignore those phantom Qt exceptions.
+pytestmark = pytest.mark.qt_no_exception_capture
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
@@ -657,6 +665,8 @@ class TestDispatchCreateUndoIntegration:
 
     def test_undo_calls_trip_service_update(self):
         """dispatch.create.undo() should call trip_service.update() with previous_state."""
+        from models.trip_models import TripUpdate
+
         tool = get_tool("dispatch.create")
 
         # Mock trip_service to verify the call — must return a success-like result
@@ -674,7 +684,14 @@ class TestDispatchCreateUndoIntegration:
         result = asyncio.run(tool.undo(token, ctx))
 
         assert result.status == "success", f"Expected success, got {result.status}"
-        mock_trip_service.update.assert_called_once_with(42, {"status": "planned", "driver_id": None})
+        # The service now receives a typed TripUpdate object instead of a raw dict
+        mock_trip_service.update.assert_called_once()
+        args = mock_trip_service.update.call_args
+        assert args[0][0] == 42, f"Expected trip_id=42, got {args[0][0]}"
+        update_obj = args[0][1]
+        assert isinstance(update_obj, TripUpdate), f"Expected TripUpdate, got {type(update_obj)}"
+        assert update_obj.status == "planned"
+        assert update_obj.driver_id is None
 
     def test_undo_missing_service_returns_unavailable(self):
         """dispatch.create.undo() without trip_service or db returns unavailable."""

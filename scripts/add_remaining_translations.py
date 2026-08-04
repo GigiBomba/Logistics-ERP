@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Add remaining German translations to the translation map."""
+from __future__ import annotations
+
 import json
 
 # Load current map and missing values

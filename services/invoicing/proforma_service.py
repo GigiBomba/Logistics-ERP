@@ -3,6 +3,7 @@
 Provides both typed (Pydantic) and backward-compatible dict-based methods.
 All write operations include permission checks via ``PermissionService``.
 """
+from __future__ import annotations
 
 import json
 import logging

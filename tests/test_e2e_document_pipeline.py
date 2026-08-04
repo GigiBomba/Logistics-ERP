@@ -11,6 +11,8 @@ from unittest.mock import patch
 
 import pytest
 
+from models.document_models import DocumentUpload
+from models.trip_models import TripCreate
 from repositories.client_repository import ClientRepository
 from repositories.document_repository import DocumentRepository
 from repositories.pipeline_repository import PipelineRepository
@@ -19,7 +21,7 @@ from services.document_automation.package_builder import PackageBuilder
 from services.document_automation.pipeline import run_for_existing_document
 from services.document_service import DocumentService
 from services.trip_service import TripService
-from tests.test_helpers import make_db
+from tests.test_helpers import make_db, seed_admin_user, seed_client
 
 pytestmark = pytest.mark.slow
 
@@ -123,17 +125,24 @@ class TestDocumentPipeline:
             with open(src_path, "wb") as f:
                 f.write(_fake_pdf_content())
 
-            # Register the document via DocumentService
+            # Register the document via DocumentService.
+            # DocumentService.upload_document runs a permission check, so an
+            # active user (admin) must exist.
+            seed_admin_user(db)
             doc_service = DocumentService(db)
-            doc_id = doc_service.upload(
-                source_path=src_path,
-                title="Test Document",
-                category="invoices",
-                entity_type="trip",
-                tags=["test", "e2e"],
-                uploaded_by="test_user",
+            upload_result = doc_service.upload_document(
+                DocumentUpload(
+                    source_path=src_path,
+                    title="Test Document",
+                    category="invoices",
+                    entity_type="trip",
+                    tags=["test", "e2e"],
+                ),
+                user_id=1,
             )
-            assert doc_id is not None and doc_id > 0
+            assert upload_result.success
+            doc_id = upload_result.data.id
+            assert doc_id > 0
 
             doc = doc_repo.get_by_id(doc_id)
             assert doc is not None
@@ -189,15 +198,16 @@ class TestDocumentPipeline:
         trip_service = TripService(db)
 
         # ── Create a trip first ──
-        now = datetime.now().isoformat()
-        trip_id = trip_service.add({
-            "client_name": "Acme Logistics GmbH",
-            "truck_number": "B-BC-1234",
-            "driver_name": "Jan Kowalski",
-            "status": "In Transit",
-            "start_date": (datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d"),
-            "created_at": now,
-        })
+        # TripCreate.client_id must reference an existing client
+        client_id = seed_client(db, name="Acme Logistics GmbH")
+        trip_id = trip_service.create(TripCreate(
+            client_id=client_id,
+            client_name="Acme Logistics GmbH",
+            truck_plate="B-BC-1234",
+            driver_name="Jan Kowalski",
+            status="In Transit",
+            start_date=(datetime.now() - timedelta(days=2)).strftime("%Y-%m-%d"),
+        )).data.id
         assert trip_id > 0
 
         # ── Create a fake document (simulating an uploaded invoice) ──
@@ -207,14 +217,19 @@ class TestDocumentPipeline:
             with open(src_path, "wb") as f:
                 f.write(_fake_pdf_content())
 
+            seed_admin_user(db)
             doc_service = DocumentService(db)
-            doc_id = doc_service.upload(
-                source_path=src_path,
-                title="INV-2026-0042",
-                category="invoices",
-                uploaded_by="test_user",
+            upload_result = doc_service.upload_document(
+                DocumentUpload(
+                    source_path=src_path,
+                    title="INV-2026-0042",
+                    category="invoices",
+                ),
+                user_id=1,
             )
-            assert doc_id is not None and doc_id > 0
+            assert upload_result.success
+            doc_id = upload_result.data.id
+            assert doc_id > 0
 
             # ── Create pipeline run with extracted data matching the trip ──
             run_id = pipe_repo.create_run(
@@ -277,14 +292,16 @@ class TestDocumentPipeline:
         pipe_repo = PipelineRepository(db)
 
         # ── Create a trip ──
-        now = datetime.now().isoformat()
-        trip_id = trip_service.add({
-            "client_name": "Package Test Client",
-            "status": "Delivered",
-            "created_at": now,
-        })
+        client_id = seed_client(db, name="Package Test Client")
+        trip_id = trip_service.create(TripCreate(
+            client_id=client_id,
+            client_name="Package Test Client",
+            status="Delivered",
+            start_date=datetime.now().date(),
+        )).data.id
 
         # ── Create documents and link them to the trip ──
+        seed_admin_user(db, user_id=1)
         doc_ids = []
         tmp_dir = tempfile.mkdtemp(prefix="pkg_e2e_")
         try:
@@ -297,13 +314,16 @@ class TestDocumentPipeline:
                     f.write(pdf_body)
 
                 doc_service = DocumentService(db)
-                doc_id = doc_service.upload(
-                    source_path=src_path,
-                    title=f"Document {i}",
-                    category="invoices" if i == 0 else "documents",
-                    uploaded_by="test_user",
+                result = doc_service.upload_document(
+                    DocumentUpload(
+                        source_path=src_path,
+                        title=f"Document {i}",
+                        category="invoices" if i == 0 else "documents",
+                    ),
+                    user_id=1,
                 )
-                assert doc_id is not None and doc_id > 0
+                assert result.success and result.data is not None and result.data.id > 0
+                doc_id = result.data.id
 
                 # Link via raw SQL due to DocumentRepository COLUMNS mismatch
                 db.conn.execute(

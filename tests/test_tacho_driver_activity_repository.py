@@ -26,6 +26,31 @@ def repo(db) -> TachoDriverActivityRepository:
 # ── helpers ──────────────────────────────────────────────────────────
 
 
+def _ensure_parents(db: InMemoryDB, import_id: int = 1, driver_id: int = 1) -> None:
+    """Create parent records needed for FK constraints."""
+    db.conn.execute(
+        "INSERT OR IGNORE INTO tacho_imports (id, file_name, file_type, file_hash, imported_at, parse_status) "
+        "VALUES (?, 'test.ddd', 'DDD', 'abc', datetime('now'), 'ok')",
+        (import_id,),
+    )
+    db.conn.execute(
+        "INSERT OR IGNORE INTO drivers (id, name, is_active, created_at, updated_at) "
+        "VALUES (?, 'Test Driver', 1, datetime('now'), datetime('now'))",
+        (driver_id,),
+    )
+    db.conn.commit()
+
+
+def _ensure_import(db: InMemoryDB, import_id: int = 1) -> None:
+    """Create a parent tacho_imports record for FK constraints."""
+    db.conn.execute(
+        "INSERT OR IGNORE INTO tacho_imports (id, file_name, file_type, file_hash, imported_at, parse_status) "
+        "VALUES (?, 'test.ddd', 'DDD', 'abc', datetime('now'), 'ok')",
+        (import_id,),
+    )
+    db.conn.commit()
+
+
 def _activity(db: InMemoryDB, **kw) -> int:
     d = dict(
         import_id=1,
@@ -54,7 +79,8 @@ def _activity(db: InMemoryDB, **kw) -> int:
 
 
 class TestCreate:
-    def test_create_returns_id(self, repo):
+    def test_create_returns_id(self, db, repo):
+        _ensure_parents(db, import_id=1, driver_id=42)
         aid = repo.create(
             {
                 "import_id": 1,
@@ -98,28 +124,33 @@ class TestCreate:
         except Exception:
             pass  # already exists
 
-        db.user_company_id = 5
-        db.user_role = "user"
+        from database.tenant_context import set_request_context, clear_context
 
-        aid = repo.create(
-            {
-                "import_id": 1,
-                "driver_id": 7,
-                "activity_date": "2026-06-15",
-                "driving_minutes": 200,
-                "work_minutes": 0,
-                "rest_minutes": 600,
-                "avail_minutes": 0,
-                "distance_km": 250.0,
-                "violations": None,
-                "country_codes": "DE",
-            }
-        )
-        assert aid > 0
-        row = db.conn.execute(
-            "SELECT * FROM tacho_driver_activity WHERE id = ?", (aid,)
-        ).fetchone()
-        assert row["company_id"] == 5
+        _ensure_parents(db, import_id=1, driver_id=7)
+        set_request_context(company_id=5, role="user")
+
+        try:
+            aid = repo.create(
+                {
+                    "import_id": 1,
+                    "driver_id": 7,
+                    "activity_date": "2026-06-15",
+                    "driving_minutes": 200,
+                    "work_minutes": 0,
+                    "rest_minutes": 600,
+                    "avail_minutes": 0,
+                    "distance_km": 250.0,
+                    "violations": None,
+                    "country_codes": "DE",
+                }
+            )
+            assert aid > 0
+            row = db.conn.execute(
+                "SELECT * FROM tacho_driver_activity WHERE id = ?", (aid,)
+            ).fetchone()
+            assert row["company_id"] == 5
+        finally:
+            clear_context()
 
 
 # ── Get by driver ────────────────────────────────────────────────────
@@ -127,6 +158,8 @@ class TestCreate:
 
 class TestGetByDriver:
     def test_get_by_driver_returns_correct_rows(self, db, repo):
+        _ensure_parents(db, driver_id=10, import_id=1)
+        _ensure_parents(db, driver_id=20, import_id=1)
         _activity(db, driver_id=10, activity_date="2026-07-01", driving_minutes=400)
         _activity(db, driver_id=10, activity_date="2026-07-02", driving_minutes=450)
         _activity(db, driver_id=20, activity_date="2026-07-01", driving_minutes=300)
@@ -136,6 +169,7 @@ class TestGetByDriver:
         assert all(r["driver_id"] == 10 for r in rows)
 
     def test_get_by_driver_respects_from_date(self, db, repo):
+        _ensure_parents(db, driver_id=10, import_id=1)
         _activity(db, driver_id=10, activity_date="2026-06-01", driving_minutes=100)
         _activity(db, driver_id=10, activity_date="2026-07-01", driving_minutes=200)
         _activity(db, driver_id=10, activity_date="2026-08-01", driving_minutes=300)
@@ -155,6 +189,9 @@ class TestGetByDriver:
 
 class TestGetByImport:
     def test_get_by_import_returns_correct_rows(self, db, repo):
+        _ensure_parents(db, import_id=100, driver_id=1)
+        _ensure_parents(db, import_id=100, driver_id=2)
+        _ensure_parents(db, import_id=200, driver_id=1)
         _activity(db, import_id=100, driver_id=1, activity_date="2026-07-01")
         _activity(db, import_id=100, driver_id=2, activity_date="2026-07-02")
         _activity(db, import_id=200, driver_id=1, activity_date="2026-07-01")
@@ -169,6 +206,9 @@ class TestGetByImport:
 
 class TestDeleteByImport:
     def test_delete_by_import_removes_all(self, db, repo):
+        _ensure_parents(db, import_id=300, driver_id=1)
+        _ensure_parents(db, import_id=300, driver_id=2)
+        _ensure_parents(db, import_id=301, driver_id=1)
         _activity(db, import_id=300, driver_id=1, activity_date="2026-07-01")
         _activity(db, import_id=300, driver_id=2, activity_date="2026-07-02")
         _activity(db, import_id=301, driver_id=1, activity_date="2026-07-03")

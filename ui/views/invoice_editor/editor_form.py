@@ -36,6 +36,7 @@ from PySide6.QtWidgets import (
     QInputDialog,
     QLabel,
     QMessageBox,
+    QStackedWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -53,9 +54,9 @@ from services.invoicing.service import InvoiceService
 from services.operations.event_bus import SETTINGS_UPDATED
 from services.preferences import PreferencesManager
 from services.trip_service import TripService
-from ui.components import Btn, Card, Divider, Label, PageTitle, SectionTitle
+from ui.components import Btn, Card, Divider, EmptyState, Label, PageTitle, SectionTitle
 from ui.views.invoice_editor.line_items import LineItemsMixin
-from ui.theme import COLORS, S
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, SP
 from ui.widgets import (
     ScrollableFormContainer,
     StyledCheckBox,
@@ -113,7 +114,9 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._trip_map: dict[str, dict[str, Any]] = {}
 
         # Invoice data (replaces tk.StringVar with plain attributes)
-        self._invoice_number: str = self._gen_invoice_number()
+        # Use a fast placeholder; defer the DB-backed generation to after init
+        self._invoice_number: str = self._fallback_invoice_number()
+        QTimer.singleShot(0, self._deferred_gen_invoice_number)
         self._issue_date: str = datetime.now().strftime("%Y-%m-%d")
         self._due_date: str = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
         self._payment_terms: str = "Net 30"
@@ -151,7 +154,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._logo_path: str = ""
         self._signature_path: str = ""
         self._stamp_path: str = ""
-        self._company_color: str = COLORS["accent"]
+        self._company_color: str = COLOR_ACCENT_PRIMARY
 
         # Client info (editable, auto-filled)
         self._client_name: str = ""
@@ -210,6 +213,9 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             self._load_trips()
             self._data_loaded = True
         self._recalc_all()
+        # Show form if we have data, otherwise show empty state
+        has_data = bool(self._clients) or bool(self._trips)
+        self._inv_stack.setCurrentIndex(1 if has_data else 0)
 
     def shutdown(self) -> None:
         """Clean up resources."""
@@ -295,6 +301,11 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             self._invoice_service = InvoiceService(self.db, prefs=self.prefs)
         return self._invoice_service
 
+    def _fallback_invoice_number(self) -> str:
+        """Return a placeholder invoice number (no DB query)."""
+        year = datetime.now().year
+        return f"INV-{year}-{datetime.now().strftime('%m%d')}-001"
+
     def _gen_invoice_number(self) -> str:
         """Generate an invoice number via NumberingService."""
         if self._numbering_service:
@@ -303,8 +314,16 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             except Exception:
                 pass
         # Fallback if numbering service is unavailable
-        year = datetime.now().year
-        return f"INV-{year}-{datetime.now().strftime('%m%d')}-001"
+        return self._fallback_invoice_number()
+
+    def _deferred_gen_invoice_number(self) -> None:
+        """Generate the real invoice number after init completes (deferred from __init__)."""
+        self._invoice_number = self._gen_invoice_number()
+        # If the UI widgets already exist, update them in-place
+        if hasattr(self, "_inv_num_edit"):
+            self._inv_num_edit.setText(self._invoice_number)
+        if hasattr(self, "_inv_num_label"):
+            self._inv_num_label.setText(self._invoice_number)
 
     def _on_settings_updated(self, ev: Any) -> None:
         data = ev.get("data", {}) if isinstance(ev, dict) else {}
@@ -325,9 +344,32 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._build_top_bar()
         main_layout.addWidget(self._top_bar)
 
+        # Stacked widget: page 0 = empty state, page 1 = form
+        self._inv_stack = QStackedWidget()
+        main_layout.addWidget(self._inv_stack, 1)
+
+        # Page 0: Empty state
+        empty_page = QWidget()
+        empty_layout = QVBoxLayout(empty_page)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        self._inv_empty_state = EmptyState(
+            parent=empty_page,
+            icon_name="fa5s.file-invoice-dollar",
+            title=t("invoice_editor.empty_title", "No invoice data"),
+            subtitle=t("invoice_editor.empty_desc", "Select or create an invoice."),
+        )
+        empty_layout.addWidget(self._inv_empty_state)
+        self._inv_stack.addWidget(empty_page)
+
+        # Page 1: Form
+        form_page = QWidget()
+        form_layout = QVBoxLayout(form_page)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(0)
+
         # Scrollable form container
-        self._scroll = ScrollableFormContainer(self, max_width=1400)
-        main_layout.addWidget(self._scroll, 1)
+        self._scroll = ScrollableFormContainer(form_page, max_width=1400)
+        form_layout.addWidget(self._scroll, 1)
 
         # View header (PageTitle + secondary label)
         self._build_view_header()
@@ -343,7 +385,10 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
 
         # Bottom bar
         self._build_bottom_bar()
-        main_layout.addWidget(self._bottom_bar)
+        form_layout.addWidget(self._bottom_bar)
+
+        self._inv_stack.addWidget(form_page)
+        self._inv_stack.setCurrentIndex(0)  # Start at empty state
 
     # ── Top Bar ──────────────────────────────────────────────────────────────
 
@@ -353,8 +398,8 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._top_bar.setFixedHeight(56)
 
         layout = QHBoxLayout(self._top_bar)
-        layout.setContentsMargins(S["4"], S["2"], S["4"], S["2"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
+        layout.setSpacing(SP["3"])
 
         # Client selector
         self._client_label = Label(self._top_bar, t("invoice_editor.select_client"), role="field-label")
@@ -407,8 +452,8 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         """Build the page header with title and description."""
         header = QWidget()
         layout = QVBoxLayout(header)
-        layout.setContentsMargins(0, 0, 0, S["3"])
-        layout.setSpacing(S["1"])
+        layout.setContentsMargins(0, 0, 0, SP["3"])
+        layout.setSpacing(SP["1"])
 
         self._page_title = PageTitle(header, t("invoice_editor.title"))
         layout.addWidget(self._page_title)
@@ -428,7 +473,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         # Section header
         header = SectionTitle(container, t("invoice_editor.client_info"))
@@ -438,13 +483,13 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         cols = QWidget()
         cols_layout = QHBoxLayout(cols)
         cols_layout.setContentsMargins(0, 0, 0, 0)
-        cols_layout.setSpacing(S["4"])
+        cols_layout.setSpacing(SP["4"])
 
         # ── From (Company) ────────────────────────────────────────────────
         from_card = self._make_card()
         from_layout = from_card.layout()
-        from_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        from_layout.setSpacing(S["2"])
+        from_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        from_layout.setSpacing(SP["2"])
 
         self._from_header = QLabel(t("invoice_editor.from").upper())
         self._from_header.setProperty("fontRole", "section")
@@ -474,8 +519,8 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         # ── Bill To (Client) ──────────────────────────────────────────────
         to_card = self._make_card()
         to_layout = to_card.layout()
-        to_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        to_layout.setSpacing(S["2"])
+        to_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        to_layout.setSpacing(SP["2"])
 
         self._bill_to_header = QLabel(t("invoice_editor.bill_to").upper())
         self._bill_to_header.setProperty("fontRole", "section")
@@ -548,21 +593,21 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         header = SectionTitle(container, t("invoice_editor.invoice_details"))
         layout.addWidget(header)
 
         card = self._make_card()
         card_layout = card.layout()
-        card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        card_layout.setSpacing(S["3"])
+        card_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        card_layout.setSpacing(SP["3"])
 
         # Two-row grid for invoice metadata
         grid = QWidget()
         grid_layout = QGridLayout(grid)
         grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setSpacing(S["3"])
+        grid_layout.setSpacing(SP["3"])
 
         # Row 0: Invoice Number, Issue Date
         self._inv_num_edit = StyledLineEdit(text=self._invoice_number)
@@ -612,7 +657,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         meta_card = QFrame()
         meta_card.setProperty("role", "card-inner")
         meta_layout = QHBoxLayout(meta_card)
-        meta_layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
+        meta_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
 
         self._inv_meta_header = QLabel(t("invoice_editor.invoice_metadata").upper())
         self._inv_meta_header.setProperty("fontRole", "section")
@@ -714,21 +759,21 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         header = SectionTitle(container, t("invoice_editor.trip_details"))
         layout.addWidget(header)
 
         card = self._make_card()
         card_layout = card.layout()
-        card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        card_layout.setSpacing(S["3"])
+        card_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        card_layout.setSpacing(SP["3"])
 
         # Vehicle info row
         trip_grid = QWidget()
         trip_grid_layout = QHBoxLayout(trip_grid)
         trip_grid_layout.setContentsMargins(0, 0, 0, 0)
-        trip_grid_layout.setSpacing(S["4"])
+        trip_grid_layout.setSpacing(SP["4"])
 
         # Truck plate
         self._truck_plate_edit = StyledLineEdit(
@@ -778,8 +823,8 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         # Stops section
         self._stops_container = QWidget()
         self._stops_layout = QVBoxLayout(self._stops_container)
-        self._stops_layout.setContentsMargins(0, S["2"], 0, 0)
-        self._stops_layout.setSpacing(S["2"])
+        self._stops_layout.setContentsMargins(0, SP["2"], 0, 0)
+        self._stops_layout.setSpacing(SP["2"])
         card_layout.addWidget(self._stops_container)
         self._rebuild_stops_ui()
 
@@ -846,7 +891,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setSpacing(SP["2"])
 
         label_text = f"{t('invoice_editor.loading_label') if stop_type == 'loading' else t('invoice_editor.unloading_label')} {idx + 1}"
         label = QLabel(label_text)
@@ -897,15 +942,15 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         self._branding_header = SectionTitle(container, t("invoice_editor.branding"))
         layout.addWidget(self._branding_header)
 
         card = self._make_card()
         card_layout = card.layout()
-        card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        card_layout.setSpacing(S["3"])
+        card_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        card_layout.setSpacing(SP["3"])
 
         # Logo
         self._brand_row(card_layout, t("invoice_editor.logo"), self._logo_path,
@@ -915,7 +960,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         color_row = QWidget()
         color_row_layout = QHBoxLayout(color_row)
         color_row_layout.setContentsMargins(0, 0, 0, 0)
-        color_row_layout.setSpacing(S["2"])
+        color_row_layout.setSpacing(SP["2"])
 
         self._color_label = QLabel(t("invoice_editor.company_color"))
         self._color_label.setProperty("fontRole", "label")
@@ -952,13 +997,17 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setSpacing(SP["2"])
 
         lbl = QLabel(label)
         lbl.setProperty("fontRole", "label")
         lbl.setFixedWidth(70)
         if tag == "logo":
             self._logo_label = lbl
+        elif tag == "sig":
+            self._sig_label = lbl
+        elif tag == "stamp":
+            self._stamp_label = lbl
         row_layout.addWidget(lbl)
 
         entry = StyledLineEdit(text=path_value, height=28)
@@ -1017,7 +1066,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
 
     def _pick_color(self) -> None:
         color = QColorDialog.getColor(
-            initial=self._company_color if hasattr(self, '_company_color') else COLORS["accent"],
+            initial=self._company_color if hasattr(self, '_company_color') else COLOR_ACCENT_PRIMARY,
             parent=self,
             title=t("invoice_editor.pick_color_title"),
         )
@@ -1032,15 +1081,15 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         header = SectionTitle(container, t("invoice_editor.notes_section"))
         layout.addWidget(header)
 
         card = self._make_card()
         card_layout = card.layout()
-        card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        card_layout.setSpacing(S["2"])
+        card_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        card_layout.setSpacing(SP["2"])
 
         self._notes_label = QLabel(t("invoice_editor.notes"))
         self._notes_label.setProperty("fontRole", "label")
@@ -1064,8 +1113,8 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         self._bottom_bar.setFixedHeight(52)
 
         layout = QHBoxLayout(self._bottom_bar)
-        layout.setContentsMargins(S["4"], S["2"], S["4"], S["2"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
+        layout.setSpacing(SP["2"])
 
         actions = [
             ("\U0001F50D " + t("invoice_editor.preview_pdf"), self._preview_pdf, "secondary"),
@@ -1125,7 +1174,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             self._logo_path = logo
             if hasattr(self, '_logo_entry'):
                 self._logo_entry.setText(logo)
-        color = conf.get("company_color", COLORS["accent"])
+        color = conf.get("company_color", COLOR_ACCENT_PRIMARY)
         if color:
             self._company_color = color
             if hasattr(self, '_color_swatch'):
@@ -1812,7 +1861,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
             self._stamp_path = data.get("stamp_path", "")
             if hasattr(self, '_stamp_entry'):
                 self._stamp_entry.setText(self._stamp_path)
-            self._company_color = data.get("company_color", COLORS["accent"])
+            self._company_color = data.get("company_color", COLOR_ACCENT_PRIMARY)
             if hasattr(self, '_color_swatch'):
                 self._color_swatch.setStyleSheet(f"background-color: {self._company_color};")
 
@@ -1876,8 +1925,8 @@ class CompanyEditorQtDialog(QDialog):
         self.setMinimumSize(400, 380)
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["6"], S["6"], S["6"], S["6"])
-        layout.setSpacing(S["4"])
+        layout.setContentsMargins(SP["6"], SP["6"], SP["6"], SP["6"])
+        layout.setSpacing(SP["4"])
 
         header = QLabel(t("invoice.section_company"))
         header.setProperty("fontRole", "h2")
@@ -1887,7 +1936,7 @@ class CompanyEditorQtDialog(QDialog):
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(S["2"])
+        content_layout.setSpacing(SP["2"])
 
         fields = [
             (t("invoice.field_company_name"), "name", company_name),
@@ -1914,7 +1963,7 @@ class CompanyEditorQtDialog(QDialog):
         btn_frame = QWidget()
         btn_frame_layout = QHBoxLayout(btn_frame)
         btn_frame_layout.setContentsMargins(0, 0, 0, 0)
-        btn_frame_layout.setSpacing(S["2"])
+        btn_frame_layout.setSpacing(SP["2"])
 
         save_btn = Btn(btn_frame, t("invoice.save_company"),
                                  variant="primary")

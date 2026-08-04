@@ -100,6 +100,14 @@ class TestInvoiceServiceRecord(unittest.TestCase):
         from tests.test_helpers import make_db
         self.db = make_db()
         self.svc = InvoiceService(self.db)
+        # Insert a trip so FK constraints on invoices.trip_id are satisfied
+        self.db.conn.execute(
+            "INSERT INTO trips (id, created_at, truck_number, driver_name, client_name, "
+            "distance_km, total_price_eur, net_profit, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (1, "2025-01-01", "TRK-1", "Alice", "Client A", 500, 2500, 800, "completed"),
+        )
+        self.db.conn.commit()
 
     def test_create_record_persists(self):
         self.svc.create_record(
@@ -121,6 +129,14 @@ class TestInvoiceServiceRecord(unittest.TestCase):
         self.svc.create_record(1, "INV-B", 200.0, "2025-01-02")
 
     def test_generate_and_record_creates_record(self):
+        # Insert trip for the generate_and_record flow
+        self.db.conn.execute(
+            "INSERT INTO trips (id, created_at, truck_number, driver_name, client_name, "
+            "distance_km, total_price_eur, net_profit, status) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (10, "2025-01-01", "TRK-10", "Bob", "Client B", 300, 900, 400, "completed"),
+        )
+        self.db.conn.commit()
         trip = {"id": 10, "total_price_eur": 900.0}
         self.svc.generate_and_record(trip, mode="client")
         row = self.db.conn.execute(

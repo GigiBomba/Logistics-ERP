@@ -14,7 +14,11 @@ from tests.test_helpers import InMemoryDB
 
 @pytest.fixture
 def db():
-    return InMemoryDB()
+    from database.tenant_context import clear_context
+    d = InMemoryDB()
+    yield d
+    clear_context()
+    d.close()
 
 
 @pytest.fixture
@@ -25,7 +29,7 @@ def freight_tables(db):
         access_token_encrypted TEXT, refresh_token_encrypted TEXT,
         scope TEXT, expires_at TEXT, api_key_encrypted TEXT,
         client_id TEXT, client_secret_encrypted TEXT,
-        status TEXT, last_refreshed_at TEXT
+        status TEXT, last_refreshed_at TEXT, updated_at TEXT
     )""")
     db.conn.execute("""CREATE TABLE IF NOT EXISTS trans_eu_freight_offers (
         id TEXT PRIMARY KEY, company_id INTEGER, user_id INTEGER,
@@ -37,7 +41,7 @@ def freight_tables(db):
         id TEXT PRIMARY KEY, company_id INTEGER,
         trans_eu_event_id TEXT UNIQUE, event_name TEXT,
         occurred_at TEXT, payload TEXT, status TEXT,
-        created_at TEXT
+        created_at TEXT, received_at TEXT
     )""")
     db.conn.execute("""CREATE TABLE IF NOT EXISTS trans_eu_webhook_events_failed (
         id TEXT PRIMARY KEY, company_id INTEGER,
@@ -70,7 +74,7 @@ class TestRefreshTokensTask:
         expires_soon = datetime.fromtimestamp(now.timestamp() + 600, tz=timezone.utc)  # 10 min from now
         db.conn.execute(
             "INSERT INTO trans_eu_user_tokens VALUES "
-            "('tok1', 1, 42, 'old_access', 'old_refresh', '', ?, 'key_enc', '', '', 'active', NULL)",
+            "('tok1', 1, 42, 'old_access', 'old_refresh', '', ?, 'key_enc', '', '', 'active', NULL, NULL)",
             (expires_soon.isoformat(),),
         )
         db.conn.commit()
@@ -98,8 +102,8 @@ class TestCleanupExpiredSessionsTask:
         )
         db.conn.execute(
             "INSERT INTO trans_eu_user_tokens VALUES "
-            "('old_tok', 1, 42, 'enc', 'enc', '', '2000-01-01', 'enc', '', '', 'revoked', ?)",
-            (past.isoformat(),),
+            "('old_tok', 1, 42, 'enc', 'enc', '', '2000-01-01', 'enc', '', '', 'revoked', ?, ?)",
+            (past.isoformat(), past.isoformat()),
         )
         db.conn.commit()
 
@@ -114,8 +118,8 @@ class TestCleanupExpiredSessionsTask:
         now = datetime.now(timezone.utc)
         db.conn.execute(
             "INSERT INTO trans_eu_user_tokens VALUES "
-            "('active_tok', 1, 42, 'enc', 'enc', '', ?, 'enc', '', '', 'active', ?)",
-            (now.isoformat(), now.isoformat()),
+            "('active_tok', 1, 42, 'enc', 'enc', '', ?, 'enc', '', '', 'active', ?, ?)",
+            (now.isoformat(), now.isoformat(), now.isoformat()),
         )
         db.conn.commit()
 
@@ -173,6 +177,19 @@ class TestSyncActiveFreightsTask:
             MockDB.return_value = db
             result = trans_eu_sync_active_freights()
             assert "synced" in result
+
+    def test_logs_request_id_when_provided(self, db, freight_tables, caplog):
+        """The entry task accepts a request_id and logs it for tracing."""
+        import logging
+        from backend.celery_app.tasks.trans_eu_tasks import trans_eu_sync_active_freights
+        with patch("backend.celery_app.tasks.trans_eu_tasks.DatabaseManager") as MockDB:
+            MockDB.return_value = db
+            with caplog.at_level(logging.INFO):
+                result = trans_eu_sync_active_freights(request_id="req-sync-1")
+        assert "synced" in result
+        assert any(
+            "request_id=req-sync-1" in r.getMessage() for r in caplog.records
+        )
 
 
 class TestCeleryTaskImports:

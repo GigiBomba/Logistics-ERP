@@ -21,10 +21,32 @@ from __future__ import annotations
 import logging
 import sqlite3
 import threading
-from typing import TYPE_CHECKING, Optional
+from contextlib import contextmanager
+from time import perf_counter
+from typing import TYPE_CHECKING, Iterator, Optional
 
 if TYPE_CHECKING:
     from psycopg2.pool import ThreadedConnectionPool
+
+from prometheus_client import Counter, Gauge, Histogram
+
+# Pool metrics
+pool_active = Gauge("db_pool_active_connections", "Active DB connections", ["pool_name"])
+pool_idle = Gauge("db_pool_idle_connections", "Idle DB connections", ["pool_name"])
+pool_max = Gauge("db_pool_max_connections", "Max DB connections", ["pool_name"])
+pool_min = Gauge("db_pool_min_connections", "Min DB connections", ["pool_name"])
+
+# Performance metrics
+checkout_duration = Histogram(
+    "db_checkout_duration_seconds", "Time to get connection from pool",
+    buckets=[.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5],
+)
+tx_duration = Histogram(
+    "db_transaction_duration_seconds", "Transaction duration",
+    buckets=[.001, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 5, 10, 30],
+)
+query_count = Counter("db_queries_total", "Total SQL queries executed", ["engine"])
+query_errors = Counter("db_query_errors_total", "SQL query errors", ["engine"])
 
 logger = logging.getLogger(__name__)
 
@@ -142,9 +164,53 @@ class PostgresConnectionPool:
                 "PostgreSQL pool created: min=%d max=%d dsn=%s",
                 self._min, self._max, self._dsn.replace("password=", "password=*** "),
             )
+            self.update_pool_stats()
         except Exception as e:
             logger.error("Failed to create PostgreSQL pool: %s", e)
             raise
+
+    # ── Prometheus metrics ──────────────────────────────────────────
+
+    @contextmanager
+    def record_checkout(self) -> Iterator[None]:
+        """Context manager that records the duration of a pool checkout."""
+        start = perf_counter()
+        try:
+            yield
+        finally:
+            checkout_duration.observe(perf_counter() - start)
+
+    @contextmanager
+    def checkout_time(self) -> Iterator[None]:
+        """Context manager that records ``get_connection()`` call duration.
+
+        Wraps ``get_connection()`` so callers can time the checkout::
+
+            with pool.checkout_time():
+                conn = pool.get_connection()
+        """
+        with self.record_checkout():
+            yield
+
+    def record_query(self, engine: str = "postgresql") -> None:
+        """Increment the total query counter."""
+        query_count.labels(engine=engine).inc()
+
+    def record_error(self, engine: str = "postgresql") -> None:
+        """Increment the query error counter."""
+        query_errors.labels(engine=engine).inc()
+
+    def update_pool_stats(self) -> None:
+        """Set pool capacity gauges from current configuration.
+
+        :attr:`pool_active` and :attr:`pool_idle` are best-effort since
+        ``psycopg2.pool.ThreadedConnectionPool`` does not expose those
+        counts directly — they are reported as 0 / unavailable.
+        """
+        pool_min.labels(pool_name="postgresql").set(self._min)
+        pool_max.labels(pool_name="postgresql").set(self._max)
+        # ThreadedConnectionPool does not expose active/idle counts,
+        # so we leave those at 0 (default).
 
     def get_connection(self):
         """Get a connection from the pool (uncached, one-time borrow).
@@ -160,7 +226,7 @@ class PostgresConnectionPool:
         if not self._pool:
             raise RuntimeError("Connection pool not initialized")
         conn = self._pool.getconn()
-        conn.autocommit = True
+        conn.autocommit = False
         import psycopg2.extras
         conn.cursor_factory = psycopg2.extras.RealDictCursor
         return conn
@@ -179,7 +245,7 @@ class PostgresConnectionPool:
             or self._local.conn is None
         ):
             conn = self._pool.getconn()
-            conn.autocommit = True
+            conn.autocommit = False
             import psycopg2.extras
             conn.cursor_factory = psycopg2.extras.RealDictCursor
             self._local.conn = conn
@@ -227,6 +293,28 @@ class PostgresConnectionPool:
                 logger.warning("Error closing PostgreSQL pool: %s", e)
             finally:
                 self._pool = None
+
+    def health_check(self) -> bool:
+        """Check if the database is reachable by executing a simple query.
+
+        Returns ``True`` if PostgreSQL responds to ``SELECT 1``,
+        ``False`` otherwise.
+        """
+        conn = None
+        try:
+            conn = self.get_connection()
+            cur = conn.cursor()
+            cur.execute("SELECT 1")
+            cur.close()
+            return True
+        except Exception:
+            return False
+        finally:
+            if conn is not None:
+                try:
+                    self.return_connection(conn)
+                except Exception:
+                    pass
 
     @property
     def stats(self) -> dict:

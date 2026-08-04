@@ -13,10 +13,10 @@ class ClientRepository(BaseRepository):
         "consignee_contact_phone", "company_id",
     ]
 
-    def get_by_id(self, client_id: int) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, client_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (client_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (client_id,) + self._company_params_for(company_id),
         )
 
     def get_client_email_by_name(self, name: str) -> Optional[str]:
@@ -61,13 +61,13 @@ class ClientRepository(BaseRepository):
                     results.append(r)
         return results[:limit]
 
-    def get_all(self, include_inactive: bool = False, limit: int = 500) -> List[Dict[str, Any]]:
+    def get_all(self, include_inactive: bool = False, limit: int = 500, company_id=None) -> List[Dict[str, Any]]:
         where = "" if include_inactive else "WHERE is_active = 1"
         if not where:
             where = "WHERE 1=1"
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} {where} {self._company_filter()} ORDER BY name ASC LIMIT ?",
-            self._company_params() + (limit,),
+            f"SELECT * FROM {self.TABLE} {where} {self._company_filter_for(company_id)} ORDER BY name ASC LIMIT ?",
+            self._company_params_for(company_id) + (limit,),
         )
 
     @staticmethod
@@ -92,7 +92,7 @@ class ClientRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def update(self, client_id: int, data: Dict[str, Any]) -> None:
         self._validate_columns(data)
@@ -103,7 +103,7 @@ class ClientRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
             tuple(data.values()) + (client_id,) + self._company_params(),
-        )
+        commit=True)
 
     def deactivate(self, client_id: int, commit: bool = True) -> None:
         self._execute(
@@ -167,6 +167,143 @@ class ClientRepository(BaseRepository):
             self.rollback_transaction()
             raise
 
+    # ── Multi-source merge (mobile, blueprint §6.3) ─────────────────────────
+
+    def merge_clients_multi(
+        self, target_id: int, source_ids: list[int], company_id=None
+    ) -> dict[str, int]:
+        """Merge multiple source clients into one target — atomic.
+
+        Moves trips, contacts and tags from every source client onto
+        *target_id*, then deletes the source client rows — all inside ONE
+        transaction with dialect-aware locking:
+
+          - SQLite:      ``BEGIN IMMEDIATE`` takes the write lock up front, so a
+                         concurrent merge blocks until the first commits.
+          - PostgreSQL:  the transaction is implicit (``autocommit=False``); the
+                         target and all source rows are locked with
+                         ``SELECT ... FOR UPDATE`` before any mutation.
+
+        The target + source rows are re-validated inside the lock, so a
+        concurrently-merged (already deleted) source aborts the transaction.
+
+        Returns ``{"merged_trip_count", "merged_invoice_count",
+        "merged_contact_count"}``.
+        """
+        source_ids = [int(s) for s in source_ids]
+        if not source_ids:
+            raise ValueError("source_ids must not be empty")
+        if target_id in source_ids:
+            raise ValueError("target_id must not appear in source_ids")
+        engine = getattr(self.db, "_engine", "sqlite")
+        all_ids = [target_id] + source_ids
+        all_placeholders = ", ".join(["?"] * len(all_ids))
+        src_placeholders = ", ".join(["?"] * len(source_ids))
+        params_all = tuple(all_ids) + self._company_params_for(company_id)
+
+        try:
+            # 1. Begin transaction + row-level locking ────────────────────────
+            if engine == "postgresql":
+                lock_sql = (
+                    f"SELECT id FROM {self.TABLE} WHERE id IN ({all_placeholders}) "
+                    f"{self._company_filter_for(company_id)} FOR UPDATE"
+                )
+                cur = self.db.conn.cursor()
+                try:
+                    cur.execute(self._adapt_query(lock_sql), params_all)
+                    cur.fetchall()
+                finally:
+                    cur.close()
+            else:
+                self.db.conn.execute("BEGIN IMMEDIATE")
+
+            # 2. Re-validate target + sources exist (inside the lock) ─────────
+            rows = self._fetchall(
+                f"SELECT id FROM {self.TABLE} WHERE id IN ({all_placeholders}) "
+                f"{self._company_filter_for(company_id)}",
+                params_all,
+            )
+            found = {r["id"] for r in rows}
+            missing = [i for i in all_ids if i not in found]
+            if missing:
+                raise ValueError(f"Clients no longer available: {missing}")
+
+            # 3. Move trips (and count invoices linked to the moved trips) ────
+            trip_rows = self._fetchall(
+                f"SELECT id FROM trips WHERE client_id IN ({src_placeholders}) "
+                f"{self._company_filter_for(company_id)}",
+                tuple(source_ids) + self._company_params_for(company_id),
+            )
+            moved_trip_ids = [r["id"] for r in trip_rows]
+            moved_trips = self._execute_with_count(
+                f"UPDATE trips SET client_id = ? WHERE client_id IN ({src_placeholders}) "
+                f"{self._company_filter_for(company_id)}",
+                (target_id,) + tuple(source_ids) + self._company_params_for(company_id),
+                commit=False,
+            )
+            if moved_trip_ids:
+                in_trips = ", ".join(["?"] * len(moved_trip_ids))
+                inv_row = self._fetchone(
+                    f"SELECT COUNT(*) AS cnt FROM invoices WHERE trip_id IN ({in_trips})",
+                    tuple(moved_trip_ids),
+                )
+                moved_invoices = inv_row["cnt"] if inv_row else 0
+            else:
+                moved_invoices = 0
+
+            # 4. Move contacts ─────────────────────────────────────────────────
+            moved_contacts = self._execute_with_count(
+                f"UPDATE client_contacts SET client_id = ? WHERE client_id IN ({src_placeholders}) "
+                f"{self._company_filter_for(company_id)}",
+                (target_id,) + tuple(source_ids) + self._company_params_for(company_id),
+                commit=False,
+            )
+
+            # 5. Merge tags (deduplicate against the target) ───────────────────
+            tag_rows = self._fetchall(
+                f"SELECT tag FROM client_tags WHERE client_id IN ({src_placeholders}) "
+                f"{self._company_filter_for(company_id)}",
+                tuple(source_ids) + self._company_params_for(company_id),
+            )
+            for r in tag_rows:
+                existing = self._fetchone(
+                    "SELECT id FROM client_tags WHERE client_id = ? AND tag = ?",
+                    (target_id, r["tag"]),
+                )
+                if existing:
+                    continue
+                self.db.execute(
+                    "INSERT INTO client_tags (client_id, tag, company_id) VALUES (?, ?, ?)",
+                    (target_id, r["tag"], company_id or 0),
+                )
+            self._execute(
+                f"DELETE FROM client_tags WHERE client_id IN ({src_placeholders}) "
+                f"{self._company_filter_for(company_id)}",
+                tuple(source_ids) + self._company_params_for(company_id),
+                commit=False,
+            )
+
+            # 6. Delete source client rows ────────────────────────────────────
+            self._execute(
+                f"DELETE FROM {self.TABLE} WHERE id IN ({src_placeholders}) "
+                f"{self._company_filter_for(company_id)}",
+                tuple(source_ids) + self._company_params_for(company_id),
+                commit=False,
+            )
+
+            self.db.conn.commit()
+            return {
+                "merged_trip_count": moved_trips,
+                "merged_invoice_count": moved_invoices,
+                "merged_contact_count": moved_contacts,
+            }
+        except Exception:
+            try:
+                self.db.conn.rollback()
+            except Exception:
+                pass
+            raise
+
     def get_trip_count(self, client_id: int) -> int:
         row = self._fetchone(
             f"SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? {self._company_filter()}",
@@ -187,10 +324,10 @@ class ClientRepository(BaseRepository):
             self._company_params() + (limit,),
         )
 
-    def get_trips(self, client_id: int, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+    def get_trips(self, client_id: int, limit: int = 100, offset: int = 0, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM trips WHERE client_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            (client_id,) + self._company_params() + (limit, offset),
+            f"SELECT * FROM trips WHERE client_id = ? {self._company_filter_for(company_id)} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            (client_id,) + self._company_params_for(company_id) + (limit, offset),
         )
 
     def get_trips_status_counts(self, client_id: int) -> Dict[str, int]:
@@ -254,17 +391,17 @@ class ClientRepository(BaseRepository):
         )
         return float(row["balance"]) if row else 0.0
 
-    def get_invoices(self, client_id: int, limit: int = 100) -> List[Dict[str, Any]]:
+    def get_invoices(self, client_id: int, limit: int = 100, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"""SELECT i.*, t.client_name, t.truck_number, t.distance_km,
                       t.total_price_eur AS trip_revenue, t.start_date, t.status AS trip_status
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
                WHERE t.client_id = ?
-               {self._company_filter("t")}
+               {self._company_filter_for(company_id, "t")}
                ORDER BY i.issue_date DESC
                LIMIT ?""",
-            (client_id,) + self._company_params() + (limit,),
+            (client_id,) + self._company_params_for(company_id) + (limit,),
         )
 
     def get_trip_count_in_range(self, client_id: int, days: int = 30) -> int:
@@ -330,7 +467,7 @@ class ClientRepository(BaseRepository):
             "status_counts": status_counts,
         }
 
-    def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200) -> List[Dict[str, Any]]:
+    def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200, company_id=None) -> List[Dict[str, Any]]:
         q = f"%{self._escape_like(query)}%"
         active_clause = "" if include_inactive else "AND c.is_active = 1"
         return self._fetchall(
@@ -339,10 +476,10 @@ class ClientRepository(BaseRepository):
                 WHERE (c.name LIKE ? ESCAPE '\\' OR c.contact_person LIKE ? ESCAPE '\\' OR c.phone LIKE ? ESCAPE '\\'
                        OR c.email LIKE ? ESCAPE '\\' OR c.address LIKE ? ESCAPE '\\' OR c.notes LIKE ? ESCAPE '\\')
                       {active_clause}
-                      {self._company_filter("c")}
+                      {self._company_filter_for(company_id, "c")}
                 ORDER BY c.name ASC
                 LIMIT ?""",
-            (q, q, q, q, q, q) + self._company_params() + (limit,),
+            (q, q, q, q, q, q) + self._company_params_for(company_id) + (limit,),
         )
 
     def get_all_with_revenue(self, include_inactive: bool = False, limit: int = 500) -> List[Dict[str, Any]]:

@@ -19,7 +19,7 @@ def upgrade() -> None:
     op.create_table(
         'copilot_reasoning_graphs',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
         sa.Column('conversation_id', sa.UUID(), nullable=False),
         sa.Column('plan_id', sa.UUID(), nullable=True),
         sa.Column('status', sa.Text(), nullable=False, server_default='building'),

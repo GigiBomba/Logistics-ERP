@@ -43,6 +43,7 @@ class TripCreateRequest(BaseModel):
     reference: str = ""
     start_date: str = ""
     end_date: Optional[str] = None
+    promised_date: Optional[str] = None
     price_eur: float = 0.0
     currency: str = "EUR"
     distance_km: Optional[float] = None
@@ -74,6 +75,7 @@ class TripUpdateRequest(BaseModel):
     reference: Optional[str] = None
     start_date: Optional[str] = None
     end_date: Optional[str] = None
+    promised_date: Optional[str] = None
     price_eur: Optional[float] = None
     currency: Optional[str] = None
     distance_km: Optional[float] = None

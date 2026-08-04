@@ -13,11 +13,14 @@ logger = logging.getLogger(__name__)
 
 import contextlib
 
-from PySide6.QtGui import QColor
+import qtawesome as qta
+from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction, QColor
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
     QHBoxLayout,
+    QMenu,
     QMessageBox,
     QSizePolicy,
     QVBoxLayout,
@@ -33,12 +36,14 @@ from services.operations.event_bus import (
 )
 from ui.components import (
     Btn,
+    EmptyState,
+    IconButton,
     PageTitle,
 )
 from ui.design_tokens import (
+    COLOR_TEXT_TERTIARY,
     SP,
 )
-from ui.theme import COLORS
 from ui.widgets import (
     ScrollableFormContainer,
     StyledLineEdit,
@@ -136,6 +141,7 @@ class QtClientManager(QWidget):
     # ── UI construction ────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Client manager")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SP["4"])
@@ -176,10 +182,24 @@ class QtClientManager(QWidget):
 
     def _build_table(self, parent_layout: QVBoxLayout) -> None:
         columns = _columns_for_table()
-        self.table = StyledTableWidget(self, columns=columns)
+        self.table = StyledTableWidget(self, columns=columns, prefs_key="client_manager")
+        self.table.setAccessibleName("Clients table")
+        self.table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
         self.table.rowSelected.connect(self._on_row_selected)
         self.table.rowDoubleClicked.connect(self._on_row_double_clicked)
         parent_layout.addWidget(self.table, 1)
+
+        # Empty state (hidden by default)
+        self._empty_state = EmptyState(
+            parent=self,
+            icon_name="fa5s.user-tie",
+            title=t("client.empty_title", "No clients yet"),
+            subtitle=t("client.empty_desc", "Add your first client to get started."),
+        )
+        self._empty_state.setVisible(False)
+        parent_layout.addWidget(self._empty_state)
 
     def _build_action_bar(self, parent_layout: QVBoxLayout) -> None:
         bar = QFrame()
@@ -200,6 +220,17 @@ class QtClientManager(QWidget):
             variant="danger",
         )
         bar_layout.addWidget(self._deact_btn)
+
+        # Density toggle
+        self._density_btn = IconButton(
+            self,
+            icon_name="fa5s.table",
+            tooltip=t("table.density", "Row density"),
+            variant="ghost",
+            size=32,
+        )
+        self._density_btn.clicked.connect(self._show_density_menu)
+        bar_layout.addWidget(self._density_btn)
 
         bar_layout.addStretch()
         parent_layout.addWidget(bar)
@@ -231,10 +262,19 @@ class QtClientManager(QWidget):
                 "_is_active": c.get("is_active", 1),
             })
 
+        has_rows = bool(rows)
+        self.table.setVisible(has_rows)
+        self._empty_state.setVisible(not has_rows)
+        if not has_rows:
+            return
+
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.set_data(rows)
+        self.table.restore_column_widths()
 
         # Gray out inactive rows.
-        muted = QColor(COLORS["text_muted"])
+        muted = QColor(COLOR_TEXT_TERTIARY)
         for r, row in enumerate(rows):
             if not row.get("_is_active", 1):
                 for c in range(self.table.columnCount()):
@@ -307,6 +347,88 @@ class QtClientManager(QWidget):
                     "Failed to publish CLIENT_UPDATED for deactivation"
                 )
             self._load_data()
+
+
+    # ── Density menu ──────────────────────────────────────────────────────
+
+    def _show_density_menu(self):
+        """Show row density menu for the client table."""
+        menu = self.table._build_density_menu(self._density_btn)
+        if menu:
+            menu.exec_(self._density_btn.mapToGlobal(
+                self._density_btn.rect().bottomLeft()
+            ))
+
+    # ── Context menu (right-click) ─────────────────────────────────────────
+
+    def _show_context_menu(self, pos) -> None:
+        """Right-click context menu for the client table."""
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+
+        row = index.row()
+        row_data = self.table._data[row] if 0 <= row < len(self.table._data) else None
+        if row_data is None:
+            return
+
+        self._selected_id = row_data.get("id")
+
+        menu = QMenu(self)
+
+        edit_action = QAction(qta.icon("fa5s.edit"), t("client.edit_button"), self)
+        edit_action.triggered.connect(self._open_form_edit)
+        menu.addAction(edit_action)
+
+        trips_action = QAction(qta.icon("fa5s.route"), t("client.view_trips", "View Trips"), self)
+        trips_action.triggered.connect(self._view_trips)
+        menu.addAction(trips_action)
+
+        menu.addSeparator()
+
+        deact_action = QAction(qta.icon("fa5s.user-slash"), t("client.deactivate_button"), self)
+        deact_action.triggered.connect(self._deactivate)
+        menu.addAction(deact_action)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _view_trips(self) -> None:
+        """Switch to client workspace with this client pre-selected."""
+        if self._selected_id is None:
+            return
+
+        # Try to navigate via parent chain (main_window._switch_module)
+        parent = self.parent()
+        while parent is not None:
+            if hasattr(parent, "_switch_module"):
+                parent._switch_module("clients", {"client_id": self._selected_id})
+                return
+            parent = parent.parent()
+
+    def contextMenuEvent(self, event) -> None:
+        """Show a context menu on right-click over the table."""
+        row_data = self.table.selected_row_data()
+        if row_data is None:
+            return
+        self._selected_id = row_data.get("id")
+
+        menu = QMenu(self)
+
+        edit_action = QAction(qta.icon("fa5s.edit"), t("client.edit_button"), self)
+        edit_action.triggered.connect(self._open_form_edit)
+        menu.addAction(edit_action)
+
+        trips_action = QAction(qta.icon("fa5s.eye"), t("client.view_trips", "View Trips"), self)
+        trips_action.triggered.connect(self._view_trips)
+        menu.addAction(trips_action)
+
+        menu.addSeparator()
+
+        deact_action = QAction(qta.icon("fa5s.toggle-off"), t("client.deactivate_button"), self)
+        deact_action.triggered.connect(self._deactivate)
+        menu.addAction(deact_action)
+
+        menu.exec(event.globalPos())
 
 
 # ── Form dialog ────────────────────────────────────────────────────────────────

@@ -25,8 +25,12 @@ def svc(db) -> PaymentBatchService:
 
 def _ensure_tables(db: InMemoryDB):
     """Create required tables and seed test data."""
+    # Drop default tables and recreate with bank_account columns for testing
     db.conn.executescript("""
-        CREATE TABLE IF NOT EXISTS clients (
+        DROP TABLE IF EXISTS clients;
+        DROP TABLE IF EXISTS drivers;
+        DROP TABLE IF EXISTS payment_profiles;
+        CREATE TABLE clients (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, phone TEXT, email TEXT, is_active INTEGER DEFAULT 1,
             bank_name TEXT DEFAULT '', bank_account TEXT DEFAULT '',
@@ -34,7 +38,7 @@ def _ensure_tables(db: InMemoryDB):
             payment_reference TEXT DEFAULT '',
             created_at TEXT NOT NULL, updated_at TEXT
         );
-        CREATE TABLE IF NOT EXISTS drivers (
+        CREATE TABLE drivers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, phone TEXT, email TEXT, is_active INTEGER DEFAULT 1,
             bank_account TEXT DEFAULT '', bank_code TEXT DEFAULT '',

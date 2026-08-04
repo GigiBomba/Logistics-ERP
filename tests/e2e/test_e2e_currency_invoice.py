@@ -15,6 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from models.trip_models import TripCreate
 from repositories.invoice_repository import InvoiceRepository
 from services.currency_service import CurrencyService
 from services.exchange_rate_service import ExchangeRateService
@@ -126,18 +127,23 @@ class TestCurrencyInvoiceFlow:
 
     def test_multi_currency_invoice_generation(self, db):
         """Create trip with currency, mock PDF, generate invoice, verify DB record."""
+        from repositories.client_repository import ClientRepository
         trip_service = TripService(db)
         invoice_repo = InvoiceRepository(db)
 
-        now = datetime.now().isoformat()
-        trip_id = trip_service.add({
+        # Seed a client
+        client_repo = ClientRepository(db)
+        client_id = client_repo.create({"name": "Currency Client SRL"})
+
+        trip_data = {
+            "client_id": client_id,
             "client_name": "Currency Client SRL",
-            "truck_number": "TR-CUR-001",
+            "truck_plate": "TR-CUR-001",
             "driver_name": "Currency Driver",
             "start_date": _dt(-5),
             "end_date": _dt(-3),
             "distance_km": 1000.0,
-            "total_price_eur": 5000.0,
+            "price_eur": 5000.0,
             "rate_per_km": 5.0,
             "fuel_cost": 800.0,
             "toll_cost": 150.0,
@@ -146,11 +152,9 @@ class TestCurrencyInvoiceFlow:
             "net_profit": 3600.0,
             "currency": "RON",
             "status": "Delivered",
-            "created_at": now,
-            "cargo_description": "Currency test cargo",
-            "package_count": 20,
-            "gross_weight_kg": 10000.0,
-        })
+        }
+        trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+        trip_id = trip_service.create(TripCreate(**trip_fields)).data.id
         assert trip_id > 0
 
         trip = trip_service.get_by_id(trip_id)

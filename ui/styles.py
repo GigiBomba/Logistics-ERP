@@ -9,7 +9,23 @@ This file is meant to be imported by PySide6 view modules in place of
 remains untouched so the legacy ``main.py`` continues to work.
 """
 
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ACCENT_SUBTLE,
+    COLOR_BG_BASE,
+    COLOR_BG_ELEVATED,
+    COLOR_BG_HOVER,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_STRONG,
+    COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.theme_engine import QtTheme
 
 class Theme:
@@ -22,45 +38,45 @@ class Theme:
     """
 
     # ── Backgrounds ────────────────────────────────────────────────────────────
-    BG = COLORS["bg_base"]
-    SURFACE = COLORS["bg_surface"]
-    SURFACE2 = COLORS["bg_elevated"]
-    SURFACE3 = COLORS["bg_elevated"]  # Intentionally same as SURFACE2 per current design
-    INPUT_BG = COLORS["bg_input"]
-    INPUT_HOVER = COLORS.get("bg_hover", COLORS["bg_elevated"])
+    BG = COLOR_BG_BASE
+    SURFACE = COLOR_BG_ELEVATED
+    SURFACE2 = COLOR_BG_OVERLAY
+    SURFACE3 = COLOR_BG_OVERLAY  # Intentionally same as SURFACE2 per current design
+    INPUT_BG = COLOR_BG_OVERLAY
+    INPUT_HOVER = COLOR_BG_HOVER
 
     # ── Text ───────────────────────────────────────────────────────────────────
-    TEXT = COLORS["text_primary"]
-    MUTED = COLORS["text_secondary"]
+    TEXT = COLOR_TEXT_PRIMARY
+    MUTED = COLOR_TEXT_SECONDARY
 
     # ── Accents ────────────────────────────────────────────────────────────────
-    ACCENT = COLORS["accent"]
-    ACCENT_HOVER = COLORS["accent_hover"]
-    ACCENT_SUCCESS = COLORS["success"]
+    ACCENT = COLOR_ACCENT_PRIMARY
+    ACCENT_HOVER = COLOR_ACCENT_PRIMARY  # hover approximates to primary
+    ACCENT_SUCCESS = COLOR_SUCCESS_DEFAULT
     ACCENT_PRIMARY = ACCENT
     ACCENT_SECONDARY = ACCENT_HOVER
     HOVER = ACCENT_HOVER
 
     # ── Borders ────────────────────────────────────────────────────────────────
-    BORDER = COLORS["border"]
-    BORDER_FOCUS = COLORS["border_focus"]
+    BORDER = COLOR_BORDER_SUBTLE
+    BORDER_FOCUS = COLOR_ACCENT_PRIMARY
 
     # ── Semantic colors ────────────────────────────────────────────────────────
-    DANGER = COLORS["danger"]
-    WARNING = COLORS["warning"]
-    SUCCESS = COLORS["success"]
-    GREEN = COLORS["success"]
-    BLUE = COLORS["info"]
+    DANGER = COLOR_ERROR_DEFAULT
+    WARNING = COLOR_WARNING_DEFAULT
+    SUCCESS = COLOR_SUCCESS_DEFAULT
+    GREEN = COLOR_SUCCESS_DEFAULT
+    BLUE = COLOR_INFO_DEFAULT
     INFO = BLUE
-    ORANGE = COLORS["warning"]
-    YELLOW = COLORS["warning"]
-    PURPLE_SOFT = COLORS["accent_dim"]
-    EXCEL = COLORS["success"]
+    ORANGE = COLOR_WARNING_DEFAULT
+    YELLOW = COLOR_WARNING_DEFAULT
+    PURPLE_SOFT = COLOR_ACCENT_SUBTLE
+    EXCEL = COLOR_SUCCESS_DEFAULT
 
     # ── Cards / effects ────────────────────────────────────────────────────────
-    CARD_BG = COLORS["bg_surface"]
-    CARD_ACCENT = COLORS["accent"]
-    GLOW = COLORS["accent"]
+    CARD_BG = COLOR_BG_ELEVATED
+    CARD_ACCENT = COLOR_ACCENT_PRIMARY
+    GLOW = COLOR_ACCENT_PRIMARY
 
     # ── Fonts (CSS string form for Qt) ─────────────────────────────────────────
     # NOTE: These are hardcoded CSS strings because ui.theme.FONTS stores
@@ -71,8 +87,8 @@ class Theme:
     FONT_TITLE = "bold 20px 'IBM Plex Sans', 'Segoe UI', sans-serif"
 
     # ── Spacing ────────────────────────────────────────────────────────────────
-    PAD_X = S["4"]
-    PAD_Y = S["2"]
+    PAD_X = SP["4"]
+    PAD_Y = SP["2"]
 
     _applied = False
 

@@ -119,10 +119,10 @@ class TestInit:
     def test_totals_labels_start_with_currency(self, qtbot) -> None:
         host = ProformaLineItemsHost()
         qtbot.addWidget(host)
-        assert "0.00 EUR" in host._canvas_subtotal_label.text()
-        assert "0.00 EUR" in host._canvas_tax_label.text()
-        assert "0.00 EUR" in host._canvas_discount_label.text()
-        assert "0.00 EUR" in host._canvas_grand_label.text()
+        assert "common.zero_eur" in host._canvas_subtotal_label.text()
+        assert "common.zero_eur" in host._canvas_tax_label.text()
+        assert "common.zero_eur" in host._canvas_discount_label.text()
+        assert "common.zero_eur" in host._canvas_grand_label.text()
 
     def test_desc_text_edit_created(self, qtbot) -> None:
         host = ProformaLineItemsHost()

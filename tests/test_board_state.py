@@ -320,8 +320,10 @@ class _QtBoardStateTestWidget(BoardStateMixin, QWidget):
         self._search_query: str = ""
         self._search_statuses: list[str] = []
         self._delivered_days: int = 30
+        self._delivered_show_all: bool = False
         self._destroyed: bool = False
         self._status_cards: dict[str, Any] = {}
+        self._start_load = MagicMock()
 
         # Service references (kept as None / mocked)
         self.ops = None
@@ -379,13 +381,11 @@ class TestBoardStateMixinWithQt:
             col.show_error.assert_called_once_with("Test error")
         assert qt_board_state._loading is False
 
-    def test_on_load_older_increases_days(self, qt_board_state):
-        """``_on_load_older_delivered`` increments delivered_days by 30."""
-        old = qt_board_state._delivered_days
+    def test_on_load_older_sets_show_all(self, qt_board_state):
+        """``_on_load_older_delivered`` sets delivered_show_all and starts load."""
         qt_board_state._on_load_older_delivered()
-        assert qt_board_state._delivered_days == old + 30
-        # Loading flag is immediately cleared because the synchronous
-        # ``_dispatch`` mock runs ``_populate_columns`` inline.
+        assert qt_board_state._delivered_show_all is True
+        qt_board_state._start_load.assert_called_once()
 
     def test_tab_switch_alerts(self, qt_board_state):
         """Switching to the alerts tab calls alerts_panel.refresh."""

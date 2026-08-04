@@ -15,6 +15,9 @@ Usage::
     if code:
         # exchange code for tokens via backend API
 """
+
+from __future__ import annotations
+
 import logging
 import threading
 import uuid

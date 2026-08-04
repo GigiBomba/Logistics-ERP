@@ -13,10 +13,14 @@ import pytest
 
 @pytest.fixture
 def db():
+    from database.tenant_context import set_request_context
     db = InMemoryDB()
+    # Seed a company row so FK constraints pass
+    db.conn.execute("INSERT OR IGNORE INTO companies (id, company_name) VALUES (1, 'Test Company')")
+    db.conn.commit()
     # Simulate a company-scoped user so that repository methods behave
     # like production (company_id is always set in the composite PK).
-    db.user_company_id = 1
+    set_request_context(1, "")
     return db
 
 
@@ -29,7 +33,8 @@ def repo(db) -> SettingsRepository:
 
 
 def _setting(db: InMemoryDB, key: str, value: str) -> None:
-    cid = getattr(db, "user_company_id", None)
+    from database.tenant_context import get_company_id
+    cid = get_company_id()
     if cid is not None:
         db.conn.execute(
             "INSERT OR REPLACE INTO settings (key, value, company_id) VALUES (?, ?, ?)",

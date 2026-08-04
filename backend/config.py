@@ -32,6 +32,19 @@ class BackendSettings(BaseSettings):
     jwt_algorithm: str = "HS256"
     access_token_expire_minutes: int = 15
 
+    # ── Local Download signed-URL tokens (blueprint §5.3) ────────────────
+    # HMAC secret used to sign short-lived download tokens embedded in the
+    # manifest's ``download_url``.  Falls back to ``jwt_secret_key`` when
+    # left empty (single-secret deployments).
+    local_download_token_secret: str = ""
+    local_download_token_ttl_seconds: int = 900  # 15 minutes
+
+    # ── Mobile Phase 2: generated export files (analytics/history exports) ─
+    export_dir: str = "data/exports"
+
+    # ── Mobile Phase 4: uploaded tachograph files (before async parse) ─────
+    tacho_upload_dir: str = "data/tacho_uploads"
+
     # ── Refresh token ─────────────────────────────────────────────────────
     refresh_token_expire_days: int = 7
 
@@ -44,6 +57,10 @@ class BackendSettings(BaseSettings):
     # ── Admin gateway (bcrypt hash, never plaintext) ──────────────────────
     admin_email: str = ""
     admin_password_hash: str = ""
+
+    # ── operion-ops support-service proxy ─────────────────────────────────
+    support_internal_auth: str = "dev-insecure-replace-in-production"
+    support_service_url: str = "http://host.docker.internal:8100"
 
     model_config = SettingsConfigDict(
         env_prefix="OPERION_",
@@ -101,3 +118,14 @@ class BackendSettings(BaseSettings):
                     "Rate limiting, refresh token storage, and caching will fail: %s",
                     self.redis_url, exc,
                 )
+
+        # ── Support service internal auth ─────────────────────────────
+        if not self.support_internal_auth or self.support_internal_auth == "dev-insecure-replace-in-production":
+            msg = (
+                "OPERION_SUPPORT_INTERNAL_AUTH is not set to a real secret. "
+                "The support-service proxy has no internal auth. "
+                "Generate a key with: openssl rand -hex 32"
+            )
+            if env == "production":
+                raise RuntimeError(msg)
+            logger.warning(msg)

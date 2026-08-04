@@ -1,4 +1,5 @@
 import os
+from datetime import date, datetime
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -15,10 +16,29 @@ from backend.schemas.trip import (
 from backend.db import DatabaseManager
 from backend.desktop_config import Config
 from backend.services.trip_service import TripService
+from models.trip_models import TripCreate
 
 from backend.dependencies_security import require_dispatcher
 
 router = APIRouter(prefix="/trips", tags=["trips"])
+
+
+def _validate_promised_date(value: Any) -> None:
+    """Validate a client-supplied ``promised_date`` is a strict ISO date.
+
+    Rejects malformed values with 422 so raw garbage never reaches
+    ``trips.promised_date``.  Mirrors the mobile ``_validate_start_date``
+    pattern (``backend/api/v1/mobile.py``) but requires YYYY-MM-DD only.
+    """
+    if not value:
+        return
+    try:
+        datetime.strptime(str(value), "%Y-%m-%d")
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid promised_date — expected ISO date (YYYY-MM-DD).",
+        )
 
 
 class TripListResponse(PaginatedResponse[TripResponse]):
@@ -45,6 +65,23 @@ def list_trips(
     )
 
 
+@router.get("/top-trucks")
+def top_trucks(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    month_start: str = Query(..., description="Month start (YYYY-MM-DD)"),
+    month_end: str = Query(..., description="Month end (YYYY-MM-DD)"),
+    limit: int = Query(4, ge=1, le=50, description="Maximum number of trucks to return"),
+    service: TripService = Depends(get_trip_service),
+):
+    """Return the top trucks by revenue for a date range (company-scoped).
+
+    Registered before ``GET /{trip_id}`` so the literal ``top-trucks``
+    segment is not captured by the integer path parameter.
+    """
+    company_id = current_user.get("company_id", 0)
+    return {"items": service.get_top_trucks_by_revenue(month_start, month_end, limit=limit, company_id=company_id)}
+
+
 @router.get("/{trip_id}", response_model=TripResponse)
 def get_trip(
     trip_id: int,
@@ -64,9 +101,18 @@ def create_trip(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: TripService = Depends(get_trip_service),
 ):
+    trip_data = data.model_dump(exclude_unset=True)
+    _validate_promised_date(trip_data.get("promised_date"))
+    trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+    if "start_date" not in trip_fields:
+        trip_fields["start_date"] = str(date.today())
     company_id = current_user.get("company_id", 0)
-    trip_id = service.add(data.model_dump(exclude_unset=True), company_id=company_id)
-    return {"id": trip_id}
+    result = service.create(TripCreate(**trip_fields), company_id=company_id)
+    if not result.success:
+        code = result.errors[0].code if result.errors else "unknown"
+        status = 500 if code in ("internal_error",) else 400
+        raise HTTPException(status_code=status, detail=result.errors[0].message)
+    return {"id": result.data.id}
 
 
 @router.patch("/{trip_id}")
@@ -77,8 +123,18 @@ def update_trip_partial(
     service: TripService = Depends(get_trip_service),
 ):
     """Partially update a trip (PATCH)."""
+    from models.trip_models import TripUpdate
     company_id = current_user.get("company_id", 0)
-    service.update(trip_id, data.model_dump(exclude_unset=True), company_id=company_id)
+    trip_data = data.model_dump(exclude_unset=True)
+    _validate_promised_date(trip_data.get("promised_date"))
+    trip_fields = {k: v for k, v in trip_data.items() if k in TripUpdate.model_fields}
+    result = service.update(trip_id, TripUpdate(**trip_fields), company_id=company_id)
+    if not result.success:
+        code = result.errors[0].code if result.errors else "unknown"
+        if code == "not_found":
+            raise HTTPException(status_code=404, detail="Trip not found")
+        status = 500 if code in ("internal_error",) else 400
+        raise HTTPException(status_code=status, detail=result.errors[0].message)
     return {"status": "updated"}
 
 
@@ -92,7 +148,13 @@ def update_trip(
 ):
     """[DEPRECATED] Use PATCH /{trip_id} instead."""
     company_id = current_user.get("company_id", 0)
-    service.update(trip_id, data.model_dump(exclude_unset=True), company_id=company_id)
+    trip_data = data.model_dump(exclude_unset=True)
+    _validate_promised_date(trip_data.get("promised_date"))
+    result = service.update(trip_id, trip_data, company_id=company_id)
+    if not getattr(result, "success", True):
+        code = result.errors[0].code if result.errors else "unknown"
+        if code == "not_found":
+            raise HTTPException(status_code=404, detail="Trip not found")
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
     return {"status": "updated"}
@@ -105,7 +167,13 @@ def delete_trip(
     service: TripService = Depends(get_trip_service),
 ):
     company_id = current_user.get("company_id", 0)
-    service.delete(trip_id, company_id=company_id)
+    result = service.delete(trip_id, company_id=company_id)
+    if not result.success:
+        code = result.errors[0].code if result.errors else "unknown"
+        if code == "not_found":
+            raise HTTPException(status_code=404, detail="Trip not found")
+        status = 500 if code in ("internal_error",) else 400
+        raise HTTPException(status_code=status, detail=result.errors[0].message)
     return {"status": "deleted"}
 
 

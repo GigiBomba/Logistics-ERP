@@ -27,7 +27,9 @@ from PySide6.QtWidgets import (
     QLabel,
     QMenu,
     QMessageBox,
+    QPushButton,
     QSizePolicy,
+    QTableWidgetItem,
     QVBoxLayout,
     QWidget,
 )
@@ -50,15 +52,26 @@ from ui.base_view import BaseView
 from ui.components import (
     Btn,
     Card,
+    IconButton,
     KPICard,
     MonoLabel,
     PageTitle,
     SectionTitle,
 )
 from ui.design_tokens import (
+    COLOR_ACCENT_SUBTLE,
+    COLOR_BG_ELEVATED,
+    COLOR_BG_HOVER,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+    RADIUS_SM,
     SP,
 )
-from ui.theme import COLORS
 from ui.widgets import (
     StyledComboBox,
     StyledLineEdit,
@@ -66,6 +79,8 @@ from ui.widgets import (
     field,
 )
 from ui.widgets.debounced_line_edit import DebouncedLineEdit
+
+from ui.performance_timer import PerfTimer
 
 logger = logging.getLogger(__name__)
 
@@ -403,7 +418,7 @@ class QtDriverManager(BaseView):
         self._add_btn.setText("+ " + t("driver_manager.add_driver"))
         self._edit_btn.setText(t("driver_manager.edit_driver"))
         self._delete_btn.setText(t("driver_manager.delete_driver"))
-        self._documents_btn.setText("\U0001f4c2 " + t("driver_manager.documents_button"))
+        self._documents_btn.setText(t("driver_manager.documents_button"))
         self._import_btn.setText(t("driver_manager.import_csv"))
 
         # KPIs are rebuilt on full refresh; title is set at construction time
@@ -413,6 +428,7 @@ class QtDriverManager(BaseView):
     # ── UI construction ────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Driver manager")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SP["4"])
@@ -494,7 +510,18 @@ class QtDriverManager(BaseView):
         card = Card(None)
         title = SectionTitle(None, t("driver_manager.title"))
         card.layout().addWidget(title)
-        self.table = StyledTableWidget(self, columns=columns)
+        self.table = StyledTableWidget(
+            self, columns=columns, prefs_key="driver_manager",
+        )
+        self.table.setAccessibleName("Drivers table")
+        self.table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
+        self.table.setSortingEnabled(True)
+        self.table.horizontalHeader().setSortIndicatorShown(True)
+        # Add an extra column for inline action buttons
+        extra_col = self.table.columnCount()
+        self.table.setColumnCount(extra_col + 1)
+        self.table.setHorizontalHeaderItem(extra_col, QTableWidgetItem(""))
+        self.table.setColumnWidth(extra_col, 70)
         self.table.rowSelected.connect(self._on_row_selected)
         self.table.rowDoubleClicked.connect(self._on_row_double_clicked)
         card.layout().addWidget(self.table, 1)
@@ -523,10 +550,23 @@ class QtDriverManager(BaseView):
 
         bar_layout.addStretch()
 
+        # Density toggle
+        density_btn = IconButton(
+            self,
+            icon_name="fa5s.table",
+            tooltip=t("driver_manager.density_toggle", default="Row density"),
+            variant="ghost",
+            size=32,
+        )
+        density_menu = self.table._build_density_menu(density_btn)
+        density_btn.setMenu(density_menu)
+        bar_layout.addWidget(density_btn)
+
         self._documents_btn = Btn(
             self,
-            "\U0001f4c2 " + t("driver_manager.documents_button"),
+            t("driver_manager.documents_button"),
             variant="secondary",
+            icon_name="fa5s.folder-open",
             command=self._open_driver_documents,
         )
         bar_layout.addWidget(self._documents_btn)
@@ -575,98 +615,236 @@ class QtDriverManager(BaseView):
     # ── Data loading ───────────────────────────────────────────────────────
 
     def refresh(self) -> None:
-        """Reload driver data from the database and update the UI."""
+        """Reload driver data from the database and update the UI.
+
+        Shows a skeleton table placeholder immediately, then schedules
+        the actual data load on the next event loop iteration.
+        """
         if self._driver_repo is None or self._trip_repo is None:
             return
 
-        try:
-            drivers = self._driver_repo.get_all(limit=500)
-            active_trips = self._trip_repo.get_by_statuses(["Loading", "In Transit"])
+        self._show_table_skeleton()
+        QTimer.singleShot(0, self._load_data)
 
-            driver_trip_ids: set = set()
-            for trip in active_trips:
-                did = trip.get("driver_id")
-                if did:
-                    driver_trip_ids.add(did)
+    def _show_table_skeleton(self) -> None:
+        """Replace the real table with a skeleton table placeholder."""
+        from ui.skeleton_widgets import SkeletonTable
 
-            rows: list[dict[str, Any]] = []
-            unassigned_count = 0
-            for d in drivers:
-                did = d["id"]
-                truck_plate = (
-                    self._dta_service.get_truck_plate_for_driver(did)
-                    if self._dta_service
-                    else ""
+        # Hide real table
+        self.table.hide()
+
+        # Remove old skeleton if present
+        if hasattr(self, '_table_skel') and self._table_skel is not None:
+            self._table_skel.deleteLater()
+            self._table_skel = None
+
+        # Find the card that contains the table and insert skeleton
+        parent_card = self.table.parent()
+        if parent_card is not None and parent_card.layout() is not None:
+            skel = SkeletonTable(parent_card, rows=5, columns=7)
+            skel.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+            # Insert before the table in the card's layout
+            idx = parent_card.layout().indexOf(self.table)
+            parent_card.layout().insertWidget(idx, skel, 1)
+            self._table_skel = skel
+
+    def _hide_table_skeleton(self) -> None:
+        """Remove skeleton table and show the real table."""
+        if hasattr(self, '_table_skel') and self._table_skel is not None:
+            self._table_skel.deleteLater()
+            self._table_skel = None
+        self.table.show()
+
+    def _load_data(self) -> None:
+        """Fetch driver data and populate the real table."""
+        with PerfTimer("driver_manager.refresh"):
+            try:
+                drivers = self._driver_repo.get_all(limit=500)
+                active_trips = self._trip_repo.get_by_statuses(["Loading", "In Transit"])
+
+                driver_trip_ids: set = set()
+                for trip in active_trips:
+                    did = trip.get("driver_id")
+                    if did:
+                        driver_trip_ids.add(did)
+
+                rows: list[dict[str, Any]] = []
+                unassigned_count = 0
+
+                # Single batched lookup for every driver's truck plate instead
+                # of N sequential JOIN queries (``get_truck_plate_for_driver``).
+                # Falls back to "all unassigned" if the batch call is unavailable
+                # or fails — identical to the legacy per-row empty result.
+                plates_by_driver: dict[int, str] = {}
+                if self._dta_service:
+                    try:
+                        result = self._dta_service.get_plates_by_driver_ids(
+                            [d["id"] for d in drivers]
+                        )
+                        plates_by_driver = result if isinstance(result, dict) else {}
+                    except Exception:
+                        logger.warning(
+                            "Batched driver-truck plate lookup failed; treating all as unassigned",
+                            exc_info=True,
+                        )
+                        plates_by_driver = {}
+
+                for d in drivers:
+                    did = d["id"]
+                    truck_plate = plates_by_driver.get(did, "") if self._dta_service else ""
+                    is_unassigned = not truck_plate
+                    if is_unassigned:
+                        unassigned_count += 1
+                    truck_text = truck_plate or t("driver_manager.unassigned")
+
+                    salary = float(d.get("monthly_salary") or 0)
+                    is_active = d.get("is_active", 1)
+
+                    rows.append({
+                        "id":             did,
+                        "name":           d.get("name", ""),
+                        "phone":          d.get("phone", ""),
+                        "license":        d.get("license_category", ""),
+                        "license_expiry": d.get("license_expiry", ""),
+                        "medical_expiry": d.get("medical_expiry", ""),
+                        "hire_date":      d.get("hire_date", ""),
+                        "salary":         f"{salary:.2f}",
+                        "active":         t("common.yes") if is_active else t("common.no"),
+                        "truck":          truck_text,
+                    })
+
+                # Hide skeleton before populating real data
+                self._hide_table_skeleton()
+
+                self.table.set_data(rows)
+                self.table.restore_column_widths()
+
+                # ── Inline action buttons ─────────────────────────────────────
+                actions_col = self.table.columnCount() - 1
+                for r in range(self.table.rowCount()):
+                    container = QWidget()
+                    container.setContentsMargins(0, 0, 0, 0)
+                    row_layout = QHBoxLayout(container)
+                    row_layout.setContentsMargins(2, 0, 2, 0)
+                    row_layout.setSpacing(2)
+
+                    edit_btn = QPushButton("\u270E")  # pencil
+                    edit_btn.setFixedSize(28, 28)
+                    edit_btn.setToolTip(t("driver_manager.edit_driver"))
+                    edit_btn.setCursor(Qt.PointingHandCursor)
+                    edit_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: transparent; border: none;
+                            color: {COLOR_TEXT_TERTIARY};
+                            font-size: 13px;
+                            border-radius: {RADIUS_SM}px;
+                        }}
+                        QPushButton:hover {{
+                            color: {COLOR_TEXT_PRIMARY};
+                            background: {COLOR_BG_HOVER};
+                        }}
+                    """)
+                    driver_id = rows[r].get("id") if r < len(rows) else None
+                    if driver_id is not None:
+                        edit_btn.clicked.connect(
+                            lambda checked, did=driver_id: self._edit_driver_by_id(did)
+                        )
+                    row_layout.addWidget(edit_btn)
+
+                    docs_btn = QPushButton("\U0001F4C2")  # folder-open
+                    docs_btn.setFixedSize(28, 28)
+                    docs_btn.setToolTip(t("driver_manager.documents_button"))
+                    docs_btn.setCursor(Qt.PointingHandCursor)
+                    docs_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: transparent; border: none;
+                            color: {COLOR_TEXT_TERTIARY};
+                            font-size: 13px;
+                            border-radius: {RADIUS_SM}px;
+                        }}
+                        QPushButton:hover {{
+                            color: {COLOR_TEXT_PRIMARY};
+                            background: {COLOR_BG_HOVER};
+                        }}
+                    """)
+                    if driver_id is not None:
+                        docs_btn.clicked.connect(
+                            lambda checked, did=driver_id: self._open_driver_documents_by_id(did)
+                        )
+                    row_layout.addWidget(docs_btn)
+
+                    # Assign Truck button
+                    assign_btn = QPushButton("\U0001F69A")  # truck-moving
+                    assign_btn.setFixedSize(28, 28)
+                    assign_btn.setToolTip(t("driver_manager.assign_truck", default="Assign Truck"))
+                    assign_btn.setCursor(Qt.PointingHandCursor)
+                    assign_btn.setStyleSheet(f"""
+                        QPushButton {{
+                            background: transparent; border: none;
+                            color: {COLOR_TEXT_TERTIARY};
+                            font-size: 13px;
+                            border-radius: {RADIUS_SM}px;
+                        }}
+                        QPushButton:hover {{
+                            color: {COLOR_TEXT_PRIMARY};
+                            background: {COLOR_BG_HOVER};
+                        }}
+                    """)
+                    if driver_id is not None:
+                        assign_btn.clicked.connect(
+                            lambda checked, did=driver_id: self._assign_truck(did)
+                        )
+                    row_layout.addWidget(assign_btn)
+
+                    self.table.setCellWidget(r, actions_col, container)
+
+                # ── KPI updates ───────────────────────────────────────────────
+                total = len(drivers)
+                active_count = sum(1 for d in drivers if d.get("is_active", 1))
+
+                if "driver_manager.kpi_total" in self._kpi_value_labels:
+                    self._kpi_value_labels["driver_manager.kpi_total"].setText(str(total))
+                if "driver_manager.kpi_on_trip" in self._kpi_value_labels:
+                    self._kpi_value_labels["driver_manager.kpi_on_trip"].setText(str(len(driver_trip_ids)))
+
+                cutoff = datetime.now() + timedelta(days=30)
+                expiring = 0
+                for d in drivers:
+                    if d.get("is_active", 1):
+                        for field_name in ("license_expiry", "medical_expiry"):
+                            val = d.get(field_name, "")
+                            if val:
+                                try:
+                                    dt_val = datetime.strptime(val, "%Y-%m-%d")
+                                    if dt_val <= cutoff:
+                                        expiring += 1
+                                        break
+                                except ValueError:
+                                    pass
+                if "driver_manager.kpi_expiring" in self._kpi_value_labels:
+                    self._kpi_value_labels["driver_manager.kpi_expiring"].setText(str(expiring))
+                if "driver_manager.kpi_unassigned" in self._kpi_value_labels:
+                    self._kpi_value_labels["driver_manager.kpi_unassigned"].setText(str(unassigned_count))
+
+                # ── Grey out inactive rows ────────────────────────────────────
+                muted = QColor(COLOR_TEXT_TERTIARY)
+                for r, row in enumerate(rows):
+                    if row.get("active") == t("common.no"):
+                        for c in range(self.table.columnCount()):
+                            item = self.table.item(r, c)
+                            if item is not None:
+                                item.setForeground(muted)
+
+                self._filter_table()
+
+            except Exception as ex:
+                logger.exception("refresh drivers failed")
+                self._hide_table_skeleton()
+                QMessageBox.critical(
+                    self,
+                    t("main.error_title"),
+                    str(ex),
                 )
-                is_unassigned = not truck_plate
-                if is_unassigned:
-                    unassigned_count += 1
-                truck_text = truck_plate or t("driver_manager.unassigned")
-
-                salary = float(d.get("monthly_salary") or 0)
-                is_active = d.get("is_active", 1)
-
-                rows.append({
-                    "id":             did,
-                    "name":           d.get("name", ""),
-                    "phone":          d.get("phone", ""),
-                    "license":        d.get("license_category", ""),
-                    "license_expiry": d.get("license_expiry", ""),
-                    "medical_expiry": d.get("medical_expiry", ""),
-                    "hire_date":      d.get("hire_date", ""),
-                    "salary":         f"{salary:.2f}",
-                    "active":         t("common.yes") if is_active else t("common.no"),
-                    "truck":          truck_text,
-                })
-
-            self.table.set_data(rows)
-
-            # ── KPI updates ───────────────────────────────────────────────
-            total = len(drivers)
-            active_count = sum(1 for d in drivers if d.get("is_active", 1))
-
-            if "driver_manager.kpi_total" in self._kpi_value_labels:
-                self._kpi_value_labels["driver_manager.kpi_total"].setText(str(total))
-            if "driver_manager.kpi_on_trip" in self._kpi_value_labels:
-                self._kpi_value_labels["driver_manager.kpi_on_trip"].setText(str(len(driver_trip_ids)))
-
-            cutoff = datetime.now() + timedelta(days=30)
-            expiring = 0
-            for d in drivers:
-                if d.get("is_active", 1):
-                    for field_name in ("license_expiry", "medical_expiry"):
-                        val = d.get(field_name, "")
-                        if val:
-                            try:
-                                dt_val = datetime.strptime(val, "%Y-%m-%d")
-                                if dt_val <= cutoff:
-                                    expiring += 1
-                                    break
-                            except ValueError:
-                                pass
-            if "driver_manager.kpi_expiring" in self._kpi_value_labels:
-                self._kpi_value_labels["driver_manager.kpi_expiring"].setText(str(expiring))
-            if "driver_manager.kpi_unassigned" in self._kpi_value_labels:
-                self._kpi_value_labels["driver_manager.kpi_unassigned"].setText(str(unassigned_count))
-
-            # ── Grey out inactive rows ────────────────────────────────────
-            muted = QColor(COLORS["text_muted"])
-            for r, row in enumerate(rows):
-                if row.get("active") == t("common.no"):
-                    for c in range(self.table.columnCount()):
-                        item = self.table.item(r, c)
-                        if item is not None:
-                            item.setForeground(muted)
-
-            self._filter_table()
-
-        except Exception as ex:
-            logger.exception("refresh drivers failed")
-            QMessageBox.critical(
-                self,
-                t("main.error_title"),
-                str(ex),
-            )
 
     def _filter_table(self) -> None:
         """Filter visible rows based on search text."""
@@ -702,6 +880,12 @@ class QtDriverManager(BaseView):
             return
         driver_id = self._get_selected_id()
         if driver_id is None:
+            return
+        self._edit_driver_by_id(driver_id)
+
+    def _edit_driver_by_id(self, driver_id: int) -> None:
+        """Open the edit dialog for a specific driver ID."""
+        if self._driver_repo is None:
             return
         row = self._driver_repo.get_by_id(driver_id)
         if row is None:
@@ -766,6 +950,111 @@ class QtDriverManager(BaseView):
             {"driver_id": driver_id, "is_active": new_active},
         )
         self.refresh()
+
+    # ── Assign Truck ───────────────────────────────────────────────────────
+
+    def _assign_truck(self, driver_id: int) -> None:
+        """Show a truck selection dialog and assign the chosen truck to the driver."""
+        if self._dta_service is None:
+            QMessageBox.information(
+                self,
+                t("driver_manager.assign_truck", default="Assign Truck"),
+                t("driver_manager.no_dta_service", default="Truck assignment is not available."),
+            )
+            return
+        try:
+            from repositories.fleet_repository import FleetRepository
+            fleet_repo = FleetRepository(self.db)
+            trucks = fleet_repo.get_active_trucks()
+        except Exception as ex:
+            logger.exception("Failed to load trucks")
+            QMessageBox.critical(
+                self,
+                t("main.error_title"),
+                str(ex),
+            )
+            return
+
+        if not trucks:
+            QMessageBox.information(
+                self,
+                t("driver_manager.assign_truck", default="Assign Truck"),
+                t("driver_manager.no_trucks_available", default="No active trucks available."),
+            )
+            return
+
+        # Build a list of truck display strings
+        truck_names = []
+        truck_ids = []
+        for t in trucks:
+            label = t.get("plate_number", f"Truck #{t['id']}")
+            truck_names.append(label)
+            truck_ids.append(t["id"])
+
+        # Pre-select current assignment
+        current_plate = self._dta_service.get_truck_plate_for_driver(driver_id)
+        default_idx = 0
+        if current_plate:
+            try:
+                default_idx = truck_names.index(current_plate) + 1  # +1 for empty option
+            except ValueError:
+                default_idx = 0
+
+        # Add an "Unassign" option at the top
+        unassign_label = t("driver_manager.unassign_truck", default="— Unassign —")
+        truck_names.insert(0, unassign_label)
+        truck_ids.insert(0, None)
+
+        from PySide6.QtWidgets import QDialog, QDialogButtonBox, QVBoxLayout, QLabel
+        from ui.widgets import StyledComboBox
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(t("driver_manager.assign_truck", default="Assign Truck"))
+        dlg.setMinimumWidth(320)
+        layout = QVBoxLayout(dlg)
+        layout.setSpacing(SP["3"])
+        layout.setContentsMargins(SP["5"], SP["4"], SP["5"], SP["4"])
+
+        lbl = QLabel(
+            t("driver_manager.select_truck", default="Select a truck to assign:")
+        )
+        layout.addWidget(lbl)
+
+        combo = StyledComboBox(dlg, values=truck_names)
+        combo.setCurrentIndex(default_idx)
+        layout.addWidget(combo)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Ok | QDialogButtonBox.Cancel
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        layout.addWidget(buttons)
+
+        if dlg.exec() == QDialog.Accepted:
+            idx = combo.currentIndex()
+            if 0 <= idx < len(truck_ids):
+                selected_id = truck_ids[idx]
+                try:
+                    if selected_id is None:
+                        self._dta_service.unassign_driver(driver_id)
+                    else:
+                        self._dta_service.assign_driver_to_truck(
+                            driver_id, int(selected_id)
+                        )
+                    from services.operations.event_bus import (
+                        DRIVER_UPDATED,
+                        EventBus,
+                    )
+                    EventBus().publish(DRIVER_UPDATED, {"driver_id": driver_id})
+                    self.refresh()
+                except Exception as ex:
+                    logger.exception("Failed to assign truck")
+                    QMessageBox.critical(
+                        self,
+                        t("main.error_title"),
+                        str(ex),
+                    )
 
     # ── CSV import / export ────────────────────────────────────────────────
 
@@ -879,6 +1168,30 @@ class QtDriverManager(BaseView):
 
     # ── Documents ──────────────────────────────────────────────────────────
 
+    def _open_driver_documents_by_id(self, driver_id: int) -> None:
+        """Open the document centre for a specific driver ID."""
+        if self._driver_repo is None:
+            return
+        try:
+            from ui.views.document_center_view import open_entity_documents
+
+            driver = self._driver_repo.get_by_id(driver_id)
+            name = driver.get("name", "Unknown") if driver else "Unknown"
+            open_entity_documents(
+                self,
+                self.db,
+                "driver",
+                driver_id,
+                t("driver_manager.driver_title", default="Driver {}").format(name),
+            )
+        except Exception as ex:
+            logger.exception("Open driver documents failed")
+            QMessageBox.critical(
+                self,
+                t("main.error_title"),
+                str(ex),
+            )
+
     def _open_driver_documents(self) -> None:
         """Open the document centre for the selected driver."""
         driver_id = self._get_selected_id()
@@ -964,7 +1277,7 @@ class QtDriverManager(BaseView):
             (t("tacho.avg_daily"), f"{avg_daily:.1f}h",
              None),
             (t("tacho.violations"), str(total_violations),
-             COLORS["danger"] if total_violations > 0 else COLORS["success"]),
+             COLOR_ERROR_DEFAULT if total_violations > 0 else COLOR_SUCCESS_DEFAULT),
         ]
         for label_text, value_text, color in summary_items:
             chip = self._summary_chip(summary_frame, label_text, value_text, color)
@@ -994,11 +1307,11 @@ class QtDriverManager(BaseView):
         for i, r in enumerate(reversed(last_14)):
             driving_h = (r.get("driving_minutes", 0) or 0) / 60
             if driving_h <= 9:
-                bar_color = COLORS["success"]
+                bar_color = COLOR_SUCCESS_DEFAULT
             elif driving_h <= 10:
-                bar_color = COLORS["warning"]
+                bar_color = COLOR_WARNING_DEFAULT
             else:
-                bar_color = COLORS["danger"]
+                bar_color = COLOR_ERROR_DEFAULT
 
             bar_h = min(int(driving_h * 6), chart_height)
             x = i * (bar_width + spacing)
@@ -1010,7 +1323,7 @@ class QtDriverManager(BaseView):
 
             date_str = str(r.get("activity_date", ""))[5:]  # mm-dd
             text_item = scene.addText(date_str)
-            text_item.setDefaultTextColor(QColor(COLORS["text_muted"]))
+            text_item.setDefaultTextColor(QColor(COLOR_TEXT_TERTIARY))
             text_item.setPos(x, chart_height + 2)
 
         view = QGraphicsView(scene)
@@ -1046,7 +1359,7 @@ class QtDriverManager(BaseView):
 
                 viol_lbl = QLabel(v)
                 viol_lbl.setProperty("fontRole", "small")
-                viol_lbl.setStyleSheet(f"color: {COLORS['danger']};")
+                viol_lbl.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT};")
                 viol_lbl.setWordWrap(True)
                 row_layout.addWidget(viol_lbl, 1)
 
@@ -1091,12 +1404,12 @@ class QtDriverManager(BaseView):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background-color: {COLORS['bg_elevated']};
-                color: {COLORS['text_primary']};
-                border: 1px solid {COLORS['border']};
+                background-color: {COLOR_BG_ELEVATED};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER_SUBTLE};
             }}
             QMenu::item:selected {{
-                background-color: {COLORS['accent_dim']};
+                background-color: {COLOR_ACCENT_SUBTLE};
             }}
         """)
 

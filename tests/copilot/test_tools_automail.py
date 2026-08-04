@@ -662,4 +662,6 @@ class TestSendBulkExecution:
         result = asyncio.run(tool.execute(params, ctx))
 
         assert result.status == "failed"
-        assert result.message_key == "copilot.error.unexpected"
+        # Individual send failures are aggregated; the tool returns
+        # bulk_failed since all recipients failed (sent_count == 0).
+        assert result.message_key == "copilot.email.bulk_failed"

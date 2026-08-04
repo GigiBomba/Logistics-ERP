@@ -8,6 +8,7 @@ disconnect flow, and edge cases (port conflict, timeout, access denied).
 
 from __future__ import annotations
 
+import io
 import threading
 from unittest.mock import MagicMock, patch
 
@@ -21,6 +22,7 @@ from ui.views.freight_exchange.oauth_loopback import (
     OAuthLoopbackServer,
     OAUTH_PORT_START,
     OAUTH_CALLBACK_PATH,
+    _SUCCESS_HTML,
 )
 
 # =========================================================================
@@ -257,9 +259,11 @@ class TestExpiryTimer:
 
     def test_expiry_label_updated(self, view):
         """_update_status_display updates the expiry label text."""
+        from datetime import datetime, timedelta, timezone
+        expires_at = (datetime.now(timezone.utc) + timedelta(hours=2)).isoformat()
         view.update_status({
             "status": "connected",
-            "expires_at": "2026-07-20T12:00:00+00:00",
+            "expires_at": expires_at,
         })
         # Call directly to test the display logic
         view._update_status_display()
@@ -681,6 +685,25 @@ class TestOAuthLoopbackStartStop:
         assert server._state is not None
         assert server._state in url
 
+    def test_start_all_ports_occupied(self):
+        """When all ports are occupied, start returns False."""
+        with patch("ui.views.freight_exchange.oauth_loopback.HTTPServer",
+                   side_effect=OSError("Port in use")):
+            server = OAuthLoopbackServer()
+            result = server.start()
+        assert result is False
+        assert server._server is None
+
+    def test_start_port_fallback_on_second(self):
+        """When first port is occupied, server falls back to next port."""
+        httpserver_mock = MagicMock()
+        httpserver_mock.side_effect = [OSError("Port in use"), MagicMock()]
+        with patch("ui.views.freight_exchange.oauth_loopback.HTTPServer", httpserver_mock):
+            server = OAuthLoopbackServer()
+            result = server.start()
+        assert result is True
+        assert server._port == 19998
+
 
 # =========================================================================
 # OAuthCallbackHandler — Request Handling
@@ -776,6 +799,70 @@ class TestOAuthCallbackHandler:
         assert OAuthCallbackHandler.auth_code == "abc123"
         assert OAuthCallbackHandler.error == "access_denied"
 
+    def test_callback_empty_query_string(self):
+        """Handler handles path with no query string."""
+        OAuthCallbackHandler.auth_code = None
+        OAuthCallbackHandler.error = None
+        received = threading.Event()
+        OAuthCallbackHandler.received = received
+
+        handler = _make_handler("/trans-eu/callback")
+        handler.do_GET()
+
+        assert OAuthCallbackHandler.auth_code is None
+        assert received.is_set()
+
+    def test_callback_with_state_only(self):
+        """Handler handles path with state param but no code/error."""
+        OAuthCallbackHandler.auth_code = None
+        OAuthCallbackHandler.error = None
+        received = threading.Event()
+        OAuthCallbackHandler.received = received
+
+        handler = _make_handler("/trans-eu/callback?state=abc")
+        handler.do_GET()
+
+        assert OAuthCallbackHandler.auth_code is None
+        assert OAuthCallbackHandler.error is None
+        assert received.is_set()
+
+    def test_log_message_suppressed(self):
+        """log_message is overridden to suppress output."""
+        handler = _make_handler("/trans-eu/callback")
+        captured = io.StringIO()
+        import sys
+        old_stdout = sys.stdout
+        sys.stdout = captured
+        try:
+            handler.log_message("GET %s", "/")
+        finally:
+            sys.stdout = old_stdout
+        assert captured.getvalue() == ""
+
+    def test_respond_400_status(self):
+        """_respond sends 400 with Content-Type header."""
+        handler = _make_handler("/trans-eu/callback")
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+        handler.wfile = io.BytesIO()
+
+        handler._respond(400, "Body")
+        handler.send_response.assert_called_once_with(400)
+        handler.send_header.assert_any_call("Content-Type", "text/html; charset=utf-8")
+
+    def test_respond_200_html(self):
+        """_respond writes SUCCESS_HTML body to wfile."""
+        handler = _make_handler("/trans-eu/callback")
+        handler.send_response = MagicMock()
+        handler.send_header = MagicMock()
+        handler.end_headers = MagicMock()
+        handler.wfile = io.BytesIO()
+
+        handler._respond(200, _SUCCESS_HTML)
+        written = handler.wfile.getvalue().decode("utf-8")
+        assert "Authentication successful" in written
+
 
 # =========================================================================
 # OAuthLoopbackServer — wait_for_code
@@ -861,6 +948,25 @@ class TestOAuthLoopbackIntegration:
                 redirect_uri="http://localhost:19999/trans-eu/callback",
             )
         assert "redirect_uri=http" in url
+
+
+# =========================================================================
+# OAuthLoopbackServer — Class State Reset
+# =========================================================================
+
+
+class TestOAuthClassStateReset:
+    """Class-level state reset on server lifecycle."""
+
+    def test_class_state_reset_on_second_start(self):
+        """Calling start() resets class-level auth_code to None."""
+        server = OAuthLoopbackServer()
+        with patch("ui.views.freight_exchange.oauth_loopback.HTTPServer") as MockServer:
+            MockServer.return_value = MagicMock()
+            server.start()
+            OAuthCallbackHandler.auth_code = "stale_code"
+            server.start()
+        assert OAuthCallbackHandler.auth_code is None
 
 
 # =========================================================================

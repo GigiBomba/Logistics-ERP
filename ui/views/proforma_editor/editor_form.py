@@ -30,6 +30,7 @@ from PySide6.QtWidgets import (
     QListWidget,
     QListWidgetItem,
     QMessageBox,
+    QStackedWidget,
     QTableWidgetItem,
     QVBoxLayout,
     QWidget,
@@ -43,8 +44,8 @@ from services.invoicing.config_manager import load_company_config
 from services.invoicing.proforma_service import ProformaService
 from services.operations.event_bus import SETTINGS_UPDATED, EventBus
 from services.preferences import PreferencesManager
-from ui.components import Btn, Card, Label, PageTitle, SectionTitle
-from ui.theme import COLORS, S
+from ui.components import Btn, Card, EmptyState, Label, PageTitle, SectionTitle
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, SP
 from ui.views.proforma_editor.line_items import LineItemsMixin
 from ui.widgets import (
     ScrollableFormContainer,
@@ -115,7 +116,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._logo_path: str = ""
         self._signature_path: str = ""
         self._stamp_path: str = ""
-        self._company_color: str = COLORS["accent"]
+        self._company_color: str = COLOR_ACCENT_PRIMARY
 
         # Client info
         self._client_name: str = ""
@@ -180,6 +181,9 @@ class QtProformaEditor(BaseView, LineItemsMixin):
             self._load_clients()
             self._data_loaded = True
         self._recalc_all()
+        # Show form if we have clients, otherwise show empty state
+        has_data = bool(self._clients)
+        self._prof_stack.setCurrentIndex(1 if has_data else 0)
 
     def shutdown(self) -> None:
         """Clean up resources."""
@@ -292,9 +296,32 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._build_top_bar()
         main_layout.addWidget(self._top_bar)
 
+        # Stacked widget: page 0 = empty state, page 1 = form
+        self._prof_stack = QStackedWidget()
+        main_layout.addWidget(self._prof_stack, 1)
+
+        # Page 0: Empty state
+        empty_page = QWidget()
+        empty_layout = QVBoxLayout(empty_page)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        self._prof_empty_state = EmptyState(
+            parent=empty_page,
+            icon_name="fa5s.file-invoice",
+            title=t("proforma_editor.empty_title", "No proforma data"),
+            subtitle=t("proforma_editor.empty_desc", "Select or create a proforma."),
+        )
+        empty_layout.addWidget(self._prof_empty_state)
+        self._prof_stack.addWidget(empty_page)
+
+        # Page 1: Form
+        form_page = QWidget()
+        form_layout = QVBoxLayout(form_page)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(0)
+
         # Scrollable form container
-        self._scroll = ScrollableFormContainer(self, max_width=1400)
-        main_layout.addWidget(self._scroll, 1)
+        self._scroll = ScrollableFormContainer(form_page, max_width=1400)
+        form_layout.addWidget(self._scroll, 1)
 
         # View header
         self._build_view_header()
@@ -310,7 +337,10 @@ class QtProformaEditor(BaseView, LineItemsMixin):
 
         # Bottom bar
         self._build_bottom_bar()
-        main_layout.addWidget(self._bottom_bar)
+        form_layout.addWidget(self._bottom_bar)
+
+        self._prof_stack.addWidget(form_page)
+        self._prof_stack.setCurrentIndex(0)  # Start at empty state
 
     # ── Top Bar ──────────────────────────────────────────────────────────────
 
@@ -320,8 +350,8 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._top_bar.setFixedHeight(56)
 
         layout = QHBoxLayout(self._top_bar)
-        layout.setContentsMargins(S["4"], S["2"], S["4"], S["2"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
+        layout.setSpacing(SP["3"])
 
         # Client selector
         self._client_label = Label(self._top_bar, t("proforma_editor.select_client"), role="field-label")
@@ -349,8 +379,8 @@ class QtProformaEditor(BaseView, LineItemsMixin):
     def _build_view_header(self) -> None:
         header = QWidget()
         layout = QVBoxLayout(header)
-        layout.setContentsMargins(0, 0, 0, S["3"])
-        layout.setSpacing(S["1"])
+        layout.setContentsMargins(0, 0, 0, SP["3"])
+        layout.setSpacing(SP["1"])
 
         self._page_title = PageTitle(header, t("proforma_editor.title"))
         layout.addWidget(self._page_title)
@@ -370,7 +400,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         header = SectionTitle(container, t("proforma_editor.client_info"))
         layout.addWidget(header)
@@ -378,13 +408,13 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         cols = QWidget()
         cols_layout = QHBoxLayout(cols)
         cols_layout.setContentsMargins(0, 0, 0, 0)
-        cols_layout.setSpacing(S["4"])
+        cols_layout.setSpacing(SP["4"])
 
         # From (Company)
         from_card = self._make_card()
         from_layout = from_card.layout()
-        from_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        from_layout.setSpacing(S["2"])
+        from_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        from_layout.setSpacing(SP["2"])
 
         self._from_header = QLabel(t("proforma_editor.from").upper())
         self._from_header.setProperty("fontRole", "section")
@@ -414,8 +444,8 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         # Bill To (Client)
         to_card = self._make_card()
         to_layout = to_card.layout()
-        to_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        to_layout.setSpacing(S["2"])
+        to_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        to_layout.setSpacing(SP["2"])
 
         self._bill_to_header = QLabel(t("proforma_editor.bill_to").upper())
         self._bill_to_header.setProperty("fontRole", "section")
@@ -468,7 +498,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         self._details_header = SectionTitle(container, t("proforma_editor.proforma_details"))
         layout.addWidget(self._details_header)
@@ -476,13 +506,13 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         form = QFrame()
         form_layout = QHBoxLayout(form)
         form_layout.setContentsMargins(0, 0, 0, 0)
-        form_layout.setSpacing(S["4"])
+        form_layout.setSpacing(SP["4"])
 
         # Proforma number (read-only)
         pf_col = QWidget()
         pf_layout = QVBoxLayout(pf_col)
         pf_layout.setContentsMargins(0, 0, 0, 0)
-        pf_layout.setSpacing(S["1"])
+        pf_layout.setSpacing(SP["1"])
         self._proforma_number_label = QLabel(t("proforma_editor.proforma_number"))
         self._proforma_number_label.setProperty("fontRole", "label")
         pf_layout.addWidget(self._proforma_number_label)
@@ -495,7 +525,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         date_col = QWidget()
         date_layout = QVBoxLayout(date_col)
         date_layout.setContentsMargins(0, 0, 0, 0)
-        date_layout.setSpacing(S["1"])
+        date_layout.setSpacing(SP["1"])
         self._issue_date_label = QLabel(t("proforma_editor.issue_date"))
         self._issue_date_label.setProperty("fontRole", "label")
         date_layout.addWidget(self._issue_date_label)
@@ -508,7 +538,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         vu_col = QWidget()
         vu_layout = QVBoxLayout(vu_col)
         vu_layout.setContentsMargins(0, 0, 0, 0)
-        vu_layout.setSpacing(S["1"])
+        vu_layout.setSpacing(SP["1"])
         self._valid_until_label = QLabel(t("proforma_editor.valid_until"))
         self._valid_until_label.setProperty("fontRole", "label")
         vu_layout.addWidget(self._valid_until_label)
@@ -521,7 +551,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         pt_col = QWidget()
         pt_layout = QVBoxLayout(pt_col)
         pt_layout.setContentsMargins(0, 0, 0, 0)
-        pt_layout.setSpacing(S["1"])
+        pt_layout.setSpacing(SP["1"])
         self._payment_terms_label = QLabel(t("proforma_editor.payment_terms"))
         self._payment_terms_label.setProperty("fontRole", "label")
         pt_layout.addWidget(self._payment_terms_label)
@@ -536,7 +566,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         br_col = QWidget()
         br_layout = QVBoxLayout(br_col)
         br_layout.setContentsMargins(0, 0, 0, 0)
-        br_layout.setSpacing(S["1"])
+        br_layout.setSpacing(SP["1"])
         self._branch_label = QLabel(t("proforma_editor.branch", "Branch / Office"))
         self._branch_label.setProperty("fontRole", "label")
         br_layout.addWidget(self._branch_label)
@@ -550,7 +580,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         nf_col = QWidget()
         nf_layout = QVBoxLayout(nf_col)
         nf_layout.setContentsMargins(0, 0, 0, 0)
-        nf_layout.setSpacing(S["1"])
+        nf_layout.setSpacing(SP["1"])
         nf_label = QLabel(t("proforma_editor.number_format", "Number Format"))
         nf_label.setProperty("fontRole", "label")
         nf_layout.addWidget(nf_label)
@@ -570,15 +600,15 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         self._branding_header = SectionTitle(container, t("proforma_editor.branding"))
         layout.addWidget(self._branding_header)
 
         branding_card = self._make_card()
         b_layout = branding_card.layout()
-        b_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        b_layout.setSpacing(S["2"])
+        b_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        b_layout.setSpacing(SP["2"])
 
         # Logo
         logo_row = QWidget()
@@ -651,7 +681,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["2"])
+        layout.setSpacing(SP["2"])
 
         self._notes_label = QLabel(t("proforma_editor.notes"))
         self._notes_label.setProperty("fontRole", "label")
@@ -670,7 +700,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["2"])
+        layout.setSpacing(SP["2"])
 
         self._linked_docs_header = SectionTitle(container, t("proforma_editor.linked_documents"))
         layout.addWidget(self._linked_docs_header)
@@ -685,7 +715,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         btn_row = QWidget()
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(0, 0, 0, 0)
-        btn_layout.setSpacing(S["2"])
+        btn_layout.setSpacing(SP["2"])
 
         self._link_doc_btn = Btn(btn_row, t("proforma_editor.link_document"), variant="ghost")
         self._link_doc_btn.clicked.connect(self._link_document)
@@ -716,8 +746,8 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._bottom_bar.setFixedHeight(56)
 
         layout = QHBoxLayout(self._bottom_bar)
-        layout.setContentsMargins(S["4"], S["2"], S["4"], S["2"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
+        layout.setSpacing(SP["3"])
 
         self._preview_btn = Btn(self._bottom_bar, "\U0001F50D " + t("proforma_editor.preview_pdf"),
                                 variant="ghost")
@@ -804,7 +834,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._logo_path = conf.get("logo_path", "")
         self._signature_path = conf.get("signature_path", "")
         self._stamp_path = conf.get("stamp_path", "")
-        self._company_color = conf.get("company_color", COLORS["accent"])
+        self._company_color = conf.get("company_color", COLOR_ACCENT_PRIMARY)
         self._update_canvas_labels()
 
     def _load_clients(self) -> None:
@@ -1424,7 +1454,7 @@ class QtProformaEditor(BaseView, LineItemsMixin):
         self._logo_path = str(draft.get("logo_path", "") or "")
         self._signature_path = str(draft.get("signature_path", "") or "")
         self._stamp_path = str(draft.get("stamp_path", "") or "")
-        self._company_color = str(draft.get("company_color", COLORS["accent"]) or COLORS["accent"])
+        self._company_color = str(draft.get("company_color", COLOR_ACCENT_PRIMARY) or COLOR_ACCENT_PRIMARY)
         mode = draft.get("mode", "client")
         self._is_client_mode = mode == "client"
         self._is_internal_mode = mode == "internal"
@@ -1513,8 +1543,8 @@ class CompanyEditorQtDialog(QDialog):
         conf = load_company_config()
 
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["6"], S["6"], S["6"], S["6"])
-        layout.setSpacing(S["4"])
+        layout.setContentsMargins(SP["6"], SP["6"], SP["6"], SP["6"])
+        layout.setSpacing(SP["4"])
 
         header = QLabel(t("proforma_editor.company_editor"))
         header.setProperty("fontRole", "h2")
@@ -1523,7 +1553,7 @@ class CompanyEditorQtDialog(QDialog):
         content = QWidget()
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(0, 0, 0, 0)
-        content_layout.setSpacing(S["2"])
+        content_layout.setSpacing(SP["2"])
 
         fields = [
             ("Company Name", "name", conf.get("company_name", "")),
@@ -1548,7 +1578,7 @@ class CompanyEditorQtDialog(QDialog):
         btn_frame = QWidget()
         btn_frame_layout = QHBoxLayout(btn_frame)
         btn_frame_layout.setContentsMargins(0, 0, 0, 0)
-        btn_frame_layout.setSpacing(S["2"])
+        btn_frame_layout.setSpacing(SP["2"])
 
         save_btn = Btn(btn_frame, t("proforma_editor.save"), variant="primary")
         save_btn.clicked.connect(self._save_and_close)

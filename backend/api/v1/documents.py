@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Respon
 
 from backend.dependencies import get_document_service
 from backend.dependencies_security import require_dispatcher
+from backend.middleware.input_sanitizer import sanitize_filename, sanitize_free_text
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.document import (
     DocumentLinkResponse,
@@ -139,10 +140,18 @@ def upload_document(
 ):
     _validate_upload(file)
 
+    # Sanitize user-supplied filename before any use — prevents path
+    # traversal, injection via filename metadata, and control characters.
+    raw_filename = file.filename or "upload.bin"
+    safe_filename = sanitize_filename(raw_filename)
+    # Also sanitize form-supplied metadata fields.
+    safe_category = sanitize_free_text(category, max_length=100)
+    safe_entity_type = sanitize_free_text(entity_type, max_length=50)
+
     import os
     import tempfile
 
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.filename or ".bin")[1])  # noqa: SIM115
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(safe_filename)[1])  # noqa: SIM115
     try:
         content = file.file.read()
         if len(content) > MAX_UPLOAD_SIZE:
@@ -153,17 +162,20 @@ def upload_document(
         temp.write(content)
         temp.close()
 
-        company_id = current_user.get("company_id", 0)
-        result = service.upload(
-            source_path=temp.name,
-            company_id=company_id,
-            category=category,
-            entity_type=entity_type,
-            entity_id=entity_id,
-            uploaded_by=uploaded_by,
+        from models.document_models import DocumentUpload
+        user_id = current_user.get("id", 0)
+        result = service.upload_document(
+            DocumentUpload(
+                source_path=temp.name,
+                title=sanitize_free_text(os.path.splitext(safe_filename)[0], max_length=255),
+                category=safe_category,
+                entity_type=safe_entity_type,
+                entity_id=entity_id,
+            ),
+            user_id=user_id,
         )
-        if result:
-            return DocumentResponse(**result)
+        if result.success:
+            return DocumentResponse(**result.data.model_dump())
         raise HTTPException(status_code=500, detail="Upload failed")
     finally:
         os.unlink(temp.name)

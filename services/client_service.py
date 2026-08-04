@@ -40,10 +40,23 @@ class ClientService:
 
     @staticmethod
     def _dict_to_client_result(d: Optional[dict]) -> Optional[ClientResult]:
-        """Convert a raw repo dict to a typed ClientResult (or None)."""
+        """Convert a raw repo dict to a typed ClientResult (or None).
+
+        Ensures defaults for fields that exist in ``ClientResult`` but
+        not in the database schema (e.g. ``company_code``, ``city``,
+        ``county``), or that may be ``None`` in the DB (``notes``).
+        """
         if d is None:
             return None
-        return ClientResult(**d)
+        # Provide safe defaults for fields that may be missing or NULL
+        safe = dict(d)
+        safe.setdefault("company_code", "")
+        safe.setdefault("city", "")
+        safe.setdefault("county", "")
+        safe.setdefault("contacts", [])
+        if safe.get("notes") is None:
+            safe["notes"] = ""
+        return ClientResult(**safe)
 
     def _check_permission(self, perm_check: str, user_id: int) -> None:
         """Resolve a PermissionService method by name and raise on denial."""
@@ -74,7 +87,9 @@ class ClientService:
                 raise ValueError("user_id is required for the typed create() API")
             self._check_permission("can_create_client", user_id)
 
-            data = request.model_dump()  # includes defaults for all optional fields
+            # Only pass fields that exist as DB columns
+            allowed = set(self._repo.COLUMNS)
+            data = {k: v for k, v in request.model_dump().items() if k in allowed}
             client_id = self._repo.create(data)
             client_dict = self._repo.get_by_id(client_id)
             return ClientCreateResult(
@@ -101,6 +116,9 @@ class ClientService:
             data.update((k, v) for k, v in kwargs.items() if k in allowed)
         else:
             data.update(kwargs)
+        # Stamp the caller's tenant on the row — never a client-supplied value.
+        if company_id:
+            data["company_id"] = company_id
         return self._repo.create(data)
 
     def update(self, client_id, request=None, user_id=None, company_id=None, **kwargs):
@@ -243,12 +261,16 @@ class ClientService:
     # ── Existing methods (kept as-is) ───────────────────────────────────────
 
     def get_by_id(self, client_id: int, company_id=None) -> Optional[dict[str, Any]]:
-        """Legacy: returns a raw dict. Prefer :meth:`get` for typed results."""
-        return self._repo.get_by_id(client_id)
+        """Legacy: returns a raw dict. Prefer :meth:`get` for typed results.
+
+        ``company_id`` (from the JWT) scopes the read — cross-tenant reads
+        return ``None`` (the endpoint then 404s).
+        """
+        return self._repo.get_by_id(client_id, company_id=company_id)
 
     def get_all(self, include_inactive: bool = False, company_id=None) -> list[dict[str, Any]]:
         """Legacy: returns raw dicts. Prefer :meth:`list_all` for typed results."""
-        return self._repo.get_all(include_inactive=include_inactive)
+        return self._repo.get_all(include_inactive=include_inactive, company_id=company_id)
 
     def get_all_with_revenue(self, include_inactive: bool = False) -> list[dict[str, Any]]:
         return self._repo.get_all_with_revenue(include_inactive=include_inactive)
@@ -257,7 +279,7 @@ class ClientService:
         return self._repo.search(query, limit=limit)
 
     def search_advanced(self, query: str, include_inactive: bool = False, limit: int = 200, company_id=None) -> list[dict[str, Any]]:
-        return self._repo.search_advanced(query, include_inactive=include_inactive, limit=limit)
+        return self._repo.search_advanced(query, include_inactive=include_inactive, limit=limit, company_id=company_id)
 
     def deactivate(self, client_id: int, company_id=None) -> None:
         self._repo.deactivate(client_id)
@@ -313,10 +335,10 @@ class ClientService:
         }
 
     def get_client_trips(self, client_id: int, company_id=None, limit: int = 100, offset: int = 0) -> list[dict[str, Any]]:
-        return self._repo.get_trips(client_id, limit=limit, offset=offset)
+        return self._repo.get_trips(client_id, limit=limit, offset=offset, company_id=company_id)
 
     def get_client_invoices(self, client_id: int, company_id=None, limit: int = 100) -> list[dict[str, Any]]:
-        return self._repo.get_invoices(client_id, limit=limit)
+        return self._repo.get_invoices(client_id, limit=limit, company_id=company_id)
 
     def get_client_revenue_history(self, client_id: int, company_id=None, months: int = 12) -> list[dict[str, Any]]:
         return self._repo.get_revenue_history(client_id, months=months)
@@ -331,6 +353,9 @@ class ClientService:
 
     def get_contacts(self, client_id: int, company_id=None) -> list[dict[str, Any]]:
         return self._contact_repo.get_by_client(client_id)
+
+    def get_contact_by_id(self, contact_id: int, company_id=None) -> Optional[dict[str, Any]]:
+        return self._contact_repo.get_by_id(contact_id, company_id=company_id)
 
     def update_contact(self, contact_id: int, **kwargs) -> None:
         self._contact_repo.update(contact_id, kwargs)
@@ -440,6 +465,45 @@ class ClientService:
             self._repo.rollback_transaction()
             logger.exception("merge_clients failed for client %s → %s", from_id, to_id)
             return {"trips": 0, "invoices": 0, "contacts": 0}
+
+    # ── Multi-source merge (mobile, blueprint §6.3) ──────────────────────
+
+    def merge_clients_multi(
+        self,
+        target_id: int,
+        source_ids: list[int],
+        user_id: Optional[int] = None,
+        company_id=None,
+    ) -> dict[str, int]:
+        """Merge multiple source clients into one target (mobile, §6.3).
+
+        Admin-only gate (``can_merge_clients``).  All moves and source-row
+        deletes happen in ONE dialect-aware transaction with row-level locking
+        — see ``ClientRepository.merge_clients_multi``.
+
+        New API (preferred)::
+
+            svc.merge_clients_multi(target_id, [a, b], user_id=42, company_id=1)
+
+        Raises:
+            PermissionError: if ``user_id`` is provided and lacks the merge
+                permission (the endpoint converts this to HTTP 403).
+            ValueError: if a target/source row is missing inside the lock
+                (the endpoint converts this to HTTP 404/409).
+        """
+        if user_id is not None:
+            self._check_permission("can_merge_clients", user_id)
+        else:
+            warnings.warn(
+                "merge_clients_multi(target_id, source_ids) without user_id is "
+                "deprecated — add user_id for permission checking",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if not self.db:
+            logger.error("ClientService: no database, cannot merge")
+            return {"merged_trip_count": 0, "merged_invoice_count": 0, "merged_contact_count": 0}
+        return self._repo.merge_clients_multi(target_id, list(source_ids), company_id=company_id)
 
     # ── Export ──────────────────────────────────────────────────────────
 

@@ -1,8 +1,8 @@
 """Tabbed analytics view for Operion ERP.
 
 Hosts 6 analytics tabs (Financial, Fleet, Route, Client, Driver, Document).
-All tabs are loaded eagerly on startup (not lazy-loaded), with a full-window
-loading overlay shown until all charts are ready.
+Tabs are lazy-loaded on demand — only the first (visible) tab is loaded on
+startup; remaining tabs load when the user clicks them.
 """
 
 from __future__ import annotations
@@ -22,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import register_listener, t, unregister_listener
 from ui.components import Label, PageTitle
+from ui.performance_timer import PerfTimer
 from ui.design_tokens import (
     ACCENT,
     BG_ELEVATED,
@@ -65,11 +66,9 @@ DEFAULT_PERIOD_INDEX = 0
 
 
 class QtAnalyticsView(QWidget):
-    """Analytics dashboard — eager-loaded tabs with startup overlay."""
+    """Analytics dashboard — lazy-loaded tabs with startup overlay."""
 
     STALENESS_SECONDS = 300
-
-    _tab_load_delay = 50  # ms between tab loads to keep UI responsive
 
     def __init__(
         self,
@@ -106,23 +105,21 @@ class QtAnalyticsView(QWidget):
         self._start_loading()
 
     def _start_loading(self) -> None:
-        """Start staggered tab loading and show the overlay."""
+        """Load only the first (visible) tab — rest are lazy-loaded on demand."""
         if self._load_started:
             return
         self._load_started = True
+        # Load only the initially visible tab (index 0)
         self._loading_overlay.show()
-        for timer in getattr(self, "_load_timers", []):
-            with contextlib.suppress(Exception):
-                timer.stop()
-        self._load_timers = []
-        for idx in range(self._total_tabs):
-            timer = QTimer(self)
-            timer.setSingleShot(True)
-            timer.timeout.connect(lambda i=idx: self._load_tab(i))
-            timer.start(idx * self._tab_load_delay)
-            self._load_timers.append(timer)
+        self._loading_overlay.set_progress(0, 1)
+        self._load_tab(0)
+        self._tabs_loaded = 1
+        self._loading_overlay.set_progress(self._tabs_loaded, self._total_tabs)
+        self._loading_overlay.mark_done()
+        self._loading_overlay.hide()
 
     def _build_ui(self):
+        self.setAccessibleName("Analytics")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -158,23 +155,26 @@ class QtAnalyticsView(QWidget):
 
     def _load_tab(self, index: int) -> None:
         """Create and render tab *index*."""
-        if getattr(self, "_shutting_down", False):
-            return
-        if index >= len(TAB_DEFS) or index in self._tabs:
-            return
-        cls, _ = TAB_DEFS[index]
-        tab = cls(self._tab_widget, service=self._svc)
-        placeholder = self._tab_widget.widget(index)
-        layout = QVBoxLayout(placeholder)
-        layout.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(tab)
-        self._tabs[index] = tab
-        tab.refresh()
-        self._tabs_loaded += 1
-        self._loading_overlay.set_progress(self._tabs_loaded, self._total_tabs)
-        if self._tabs_loaded >= self._total_tabs:
-            self._loading_overlay.mark_done()
-            self._loading_overlay.hide()
+        with PerfTimer(f"analytics.load_tab_{index}"):
+            if getattr(self, "_shutting_down", False):
+                return
+            if index >= len(TAB_DEFS) or index in self._tabs:
+                return
+            cls, _ = TAB_DEFS[index]
+            tab = cls(self._tab_widget, service=self._svc)
+            placeholder = self._tab_widget.widget(index)
+            layout = QVBoxLayout(placeholder)
+            layout.setContentsMargins(0, 0, 0, 0)
+            layout.addWidget(tab)
+            self._tabs[index] = tab
+            tab.refresh()
+            self._tabs_loaded += 1
+            overlay = getattr(self, '_loading_overlay', None)
+            if overlay is not None:
+                overlay.set_progress(self._tabs_loaded, self._total_tabs)
+                if self._tabs_loaded >= self._total_tabs:
+                    overlay.mark_done()
+                    overlay.hide()
 
     # ── Period strip ─────────────────────────────────────────────────
 
@@ -286,13 +286,26 @@ class QtAnalyticsView(QWidget):
         _key, days, quarters, months = PERIOD_DEFS[self._period_index]
         return days, months, quarters
 
-    # ── Tab switching (pre-loaded tabs are instant, no lazy init) ────
+    # ── Tab switching (lazy-loads tabs on demand via currentChanged) ──
 
-    def _on_tab_changed(self, index: int):
-        if index < 0 or index >= len(TAB_DEFS):
-            return
-        # Tab was already created in _load_tab; no lazy init needed.
-        pass
+    def _on_tab_changed(self, index: int) -> None:
+        """Lazy-load tab when user clicks it — only load what's visible."""
+        with PerfTimer(f"analytics.tab_changed_{index}"):
+            if index < 0 or index >= len(TAB_DEFS):
+                return
+            # Load tab if not yet created
+            if index not in self._tabs:
+                overlay = getattr(self, '_loading_overlay', None)
+                if overlay is not None:
+                    overlay.show()
+                    overlay.set_progress(self._tabs_loaded, self._total_tabs)
+                self._load_tab(index)
+                self._tabs_loaded += 1
+                if overlay is not None:
+                    overlay.set_progress(self._tabs_loaded, self._total_tabs)
+                    if self._tabs_loaded >= self._total_tabs:
+                        overlay.mark_done()
+                    overlay.hide()
 
     def _refresh_tab_labels(self):
         for i, (_, label_key) in enumerate(TAB_DEFS):
@@ -317,12 +330,6 @@ class QtAnalyticsView(QWidget):
 
     def shutdown(self):
         self._shutting_down = True
-        # Cancel any pending tab-load timers so they don't fire after
-        # the view is destroyed (causing ``RuntimeError: Internal C++
-        # object already deleted``).
-        for timer in getattr(self, "_load_timers", []):
-            with contextlib.suppress(Exception):
-                timer.stop()
         with contextlib.suppress(Exception):
             unregister_listener(self._language_callback)
         for tab in self._tabs.values():

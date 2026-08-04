@@ -13,10 +13,11 @@ Database tables required (created by ``_ensure_mobile_tables``):
 """
 
 import logging
-from datetime import datetime, timezone
+import os
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 
 from backend.dependencies import get_db
 from backend.dependencies_security import get_current_user, require_dispatcher
@@ -28,9 +29,13 @@ from backend.schemas.mobile import (
     DispatcherJobResponse,
     DispatcherOverviewResponse,
     DriverMyDayResponse,
+    DriverTripOverviewResponse,
     DriverTransportDetailResponse,
     DriverTransportResponse,
     DriverVehicleResponse,
+    DownloadCategory,
+    DownloadManifestEntry,
+    DownloadRequest,
     FleetPositionResponse,
     MobileExpenseCreateRequest,
     MobileExpenseResponse,
@@ -133,6 +138,31 @@ def _company_filter(params: Dict[str, Any], company_id: Any) -> str:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+# Contract status values for the mobile trip-overview screen.  The backend
+# stores display statuses ('Planned', 'In Transit', ...) while the mobile
+# contract (DriverTripOverview) uses the lowercase enum values below.
+_TRIP_STATUS_TO_CONTRACT: Dict[str, Optional[str]] = {
+    "planned": "planned",
+    "loading": "loading",
+    "in transit": "in_transit",
+    "in_transit": "in_transit",
+    "intransit": "in_transit",
+    "delivered": "delivered",
+    "completed": "delivered",
+    "done": "delivered",
+    "paid": "delivered",
+    "cancelled": "cancelled",
+    "canceled": "cancelled",
+}
+
+
+def _map_trip_status(status: Any) -> Optional[str]:
+    """Map a backend trip status string to the mobile contract enum value."""
+    if not status:
+        return None
+    return _TRIP_STATUS_TO_CONTRACT.get(str(status).strip().lower())
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -271,6 +301,69 @@ def driver_my_day(
     )
 
 
+@router.get("/driver/trip-overview", response_model=DriverTripOverviewResponse)
+def driver_trip_overview(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Overview of the driver's currently assigned trip.
+
+    Returns HTTP 200 with every field null when the driver has no current
+    trip assigned — the mobile app renders its empty state on that.
+    ``company_id`` always comes from the JWT, never from client input.
+    """
+    user_id = current_user["id"]
+    company_id = current_user["company_id"]
+    driver_id = _resolve_driver_id(db, user_id, company_id)
+
+    if not driver_id:
+        return DriverTripOverviewResponse()
+
+    # Current trip = most recent non-terminal trip assigned to this driver.
+    # Terminal status list mirrors TripRepository.get_active_for_driver.
+    row = db.execute(
+        """SELECT t.id, t.cmr_number, t.place_of_loading, t.delivery_country,
+                  t.status, t.start_date, t.end_date, t.created_at
+           FROM trips t
+           WHERE t.driver_id = ? AND t.company_id = ?
+             AND (t.status IS NULL OR t.status = ''
+                  OR UPPER(t.status) NOT IN ('DELIVERED', 'COMPLETED', 'DONE', 'CANCELLED', 'PAID'))
+           ORDER BY t.created_at DESC
+           LIMIT 1""",
+        (driver_id, company_id),
+    ).fetchone()
+
+    if not row:
+        return DriverTripOverviewResponse()
+
+    r = dict(row)
+
+    # status_since — most recent recorded status transition; falls back to
+    # the trip's creation time when no status history has been recorded.
+    status_changed_at = None
+    try:
+        hist = db.execute(
+            "SELECT MAX(created_at) AS changed_at FROM trip_status_history WHERE trip_id = ?",
+            (r["id"],),
+        ).fetchone()
+        status_changed_at = hist["changed_at"] if hist else None
+    except Exception:
+        pass  # trip_status_history may not exist in every deployment
+
+    return DriverTripOverviewResponse(
+        transport_id=str(r["id"]),
+        load_info=(r.get("cmr_number") or "").strip() or None,
+        origin=(r.get("place_of_loading") or "").strip() or None,
+        destination=(r.get("delivery_country") or "").strip() or None,
+        status=_map_trip_status(r.get("status")),
+        status_since=status_changed_at or r.get("created_at"),
+        eta=(r.get("end_date") or "").strip() or None,
+        # end_date is a planned ETA (stale, not live telemetry) — "stale"
+        # keeps it truthful while letting the app surface the value.
+        eta_confidence="stale" if (r.get("end_date") or "").strip() else None,
+    )
+
+
 @router.get("/driver/transports", response_model=List[DriverTransportResponse])
 def driver_transports(
     current_user: Dict[str, Any] = Depends(get_current_user),
@@ -353,8 +446,6 @@ def get_route_share(
     Return route geometry and turn-by-turn instructions for a transport.
     Geometry is computed on-demand via GraphHopper; not persisted.
     """
-    from backend.services.route_service import RouteService
-
     company_id = current_user["company_id"]
 
     # 1. Verify the transport exists and belongs to this user's company
@@ -368,6 +459,60 @@ def get_route_share(
 
     if not row:
         raise HTTPException(status_code=404, detail="Transport not found")
+
+    return _build_route_share_response(db, row, transport_id)
+
+
+@router.get("/driver/route-share", response_model=RouteShareResponse)
+def get_driver_route_share(
+    current_user: dict = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Route share for the driver's CURRENT transport — no ``transport_id``
+    in the path.
+
+    The server resolves the driver from the JWT (``_resolve_driver_id``) and
+    uses the same current-trip query as ``/driver/trip-overview``, so the
+    client can never influence which transport is shared (no IDOR surface).
+
+    Empty behavior mirrors ``/driver/transports/{id}/route-share``: when the
+    driver has no current transport the endpoint returns HTTP 404.
+    """
+    user_id = current_user["id"]
+    company_id = current_user["company_id"]
+    driver_id = _resolve_driver_id(db, user_id, company_id)
+
+    if not driver_id:
+        raise HTTPException(status_code=404, detail="Transport not found")
+
+    # Current trip = most recent non-terminal trip assigned to this driver.
+    # Terminal status list mirrors TripRepository.get_active_for_driver /
+    # the mobile trip-overview endpoint.
+    row = db.execute(
+        """SELECT t.id, t.place_of_loading, t.delivery_country,
+                  t.loading_country
+           FROM trips t
+           WHERE t.driver_id = ? AND t.company_id = ?
+             AND (t.status IS NULL OR t.status = ''
+                  OR UPPER(t.status) NOT IN ('DELIVERED', 'COMPLETED', 'DONE', 'CANCELLED', 'PAID'))
+           ORDER BY t.created_at DESC
+           LIMIT 1""",
+        (driver_id, company_id),
+    ).fetchone()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="Transport not found")
+
+    return _build_route_share_response(db, row, row["id"])
+
+
+def _build_route_share_response(db, row, transport_id: int) -> RouteShareResponse:
+    """Compute on-demand route geometry and build a ``RouteShareResponse``.
+
+    Shared by ``/driver/transports/{id}/route-share`` and
+    ``/driver/route-share`` so both return identical payloads.
+    """
+    from backend.services.route_service import RouteService
 
     # 2. Build origin/destination addresses
     origin_address = (row.get("place_of_loading") or "").strip()
@@ -789,6 +934,32 @@ def delta_sync(
                        ORDER BY created_at LIMIT 100"""
             params = (company_id, user_id, user_id, since)
 
+    elif entity == "fleet":
+        # Trucks have no created_at/updated_at columns, so ``since`` is a
+        # monotonic id cursor (the endpoint returns ``cursor=str(max_id)``).
+        if is_full or not since or not since.isdigit():
+            query = "SELECT * FROM trucks WHERE company_id = ? ORDER BY id ASC LIMIT 200"
+            params = (company_id,)
+        else:
+            query = "SELECT * FROM trucks WHERE company_id = ? AND id > ? ORDER BY id ASC LIMIT 200"
+            params = (company_id, int(since))
+
+    elif entity == "drivers":
+        if is_full or not since:
+            query = "SELECT * FROM drivers WHERE company_id = ? ORDER BY updated_at DESC LIMIT 200"
+            params = (company_id,)
+        else:
+            query = "SELECT * FROM drivers WHERE company_id = ? AND updated_at > ? ORDER BY updated_at LIMIT 200"
+            params = (company_id, since)
+
+    elif entity == "clients":
+        if is_full or not since:
+            query = "SELECT * FROM clients WHERE company_id = ? ORDER BY updated_at DESC LIMIT 200"
+            params = (company_id,)
+        else:
+            query = "SELECT * FROM clients WHERE company_id = ? AND updated_at > ? ORDER BY updated_at LIMIT 200"
+            params = (company_id, since)
+
     if query:
         try:
             rows = db.execute(query, params).fetchall()
@@ -797,19 +968,28 @@ def delta_sync(
             logger.warning("Sync query failed for %s: %s", entity, exc)
             records = []
 
+        # Fleet uses an id cursor (no timestamps); everything else uses the
+        # request timestamp cursor.  Keep the fleet cursor monotonic even on
+        # empty results so the client never re-syncs the whole fleet.
+        if entity == "fleet":
+            prev_id = int(since) if since.isdigit() else 0
+            cursor = str(max((r["id"] for r in records), default=prev_id))
+        else:
+            cursor = new_cursor
+
         # Persist the cursor
         try:
             db.execute(
                 """INSERT OR REPLACE INTO sync_cursors
                    (user_id, company_id, entity_type, cursor, updated_at)
                    VALUES (?, ?, ?, ?, ?)""",
-                (current_user["id"], company_id, entity, new_cursor, new_cursor),
+                (current_user["id"], company_id, entity, cursor, cursor),
             )
             db.commit()
         except Exception:
             pass
 
-        return SyncResponse(records=records, cursor=new_cursor, has_more=len(records) >= 100)
+        return SyncResponse(records=records, cursor=cursor, has_more=len(records) >= 100)
 
     return SyncResponse(records=[], cursor=new_cursor)
 
@@ -861,11 +1041,27 @@ def dispatcher_overview(
     ).fetchone()
     vehicles_on_road = trucks["cnt"] if trucks else 0
 
+    # Revenue to date — sum of trip prices with start_date in the current
+    # calendar month (month-to-date).  trips.start_date is ISO TEXT; the
+    # lexicographic comparison with 'YYYY-MM-01' is valid for both date-only
+    # and datetime-with-timezone values.  NULL/empty start_date is excluded.
+    first_of_month = datetime.now().strftime("%Y-%m-01")
+    rev = db.execute(
+        """SELECT COALESCE(SUM(total_price_eur), 0) AS revenue
+           FROM trips
+           WHERE company_id = ?
+             AND start_date IS NOT NULL AND start_date != ''
+             AND start_date >= ?""",
+        (company_id, first_of_month),
+    ).fetchone()
+    revenue_to_date = float(rev["revenue"]) if rev and rev["revenue"] is not None else 0.0
+
     return DispatcherOverviewResponse(
         active_jobs=active_jobs,
         active_drivers=active_drivers,
         open_alerts=alerts,
         vehicles_on_road=vehicles_on_road,
+        revenue_to_date=revenue_to_date,
     )
 
 
@@ -922,15 +1118,19 @@ def dispatcher_jobs(
         (company_id,),
     ).fetchall()
 
+    def _safe(val):
+        """Convert None to empty string, pass through everything else."""
+        return "" if val is None else val
+
     return [
         DispatcherJobResponse(
             id=r["id"],
-            load_info=r.get("reference", ""),
-            driver_name=r.get("driver_name", ""),
-            vehicle_plate=r.get("truck_number", ""),
-            status=r.get("status", ""),
-            origin=r.get("loading_city", ""),
-            destination=r.get("delivery_city", ""),
+            load_info=_safe(r.get("reference")),
+            driver_name=_safe(r.get("driver_name")),
+            vehicle_plate=_safe(r.get("truck_number")),
+            status=_safe(r.get("status")),
+            origin=_safe(r.get("loading_city")),
+            destination=_safe(r.get("delivery_city")),
             last_updated=r.get("updated_at"),
         )
         for r in (dict(r) for r in rows)
@@ -1077,6 +1277,8 @@ def create_transport_mobile(
     """Create a new transport from mobile (simplified)."""
     company_id = current_user["company_id"]
     now = _now_iso()
+    if body.get("start_date"):
+        _validate_start_date(str(body["start_date"]))
     cursor = db.execute(
         """INSERT INTO trips (company_id, cmr_number, place_of_loading, delivery_country,
            driver_id, driver_name, truck_number, status, start_date, created_at, updated_at)
@@ -1093,6 +1295,386 @@ def create_transport_mobile(
     )
     db.commit()
     return {"id": cursor.lastrowid}
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  LOCAL DOWNLOAD — signed short-lived URL manifest (blueprint §5.3)
+# ══════════════════════════════════════════════════════════════════════
+
+# Category mapping from the blueprint's 5 download categories onto the real
+# data model.  Documents are the general bucket; invoices/receipts map to the
+# document categories the invoicing pipeline writes; ocr_results are
+# documents that have actually been OCR-processed (regardless of category);
+# trip_history maps to the trips table (exported as JSON on demand).
+_DOCUMENT_QUERIES = {
+    DownloadCategory.documents: "category NOT IN ('invoice', 'invoices', 'receipt', 'receipts')",
+    DownloadCategory.invoices: "category IN ('invoice', 'invoices')",
+    DownloadCategory.receipts: "category IN ('receipt', 'receipts')",
+    DownloadCategory.ocr_results: (
+        "((ocr_run_at IS NOT NULL AND ocr_run_at != '') "
+        "OR (ocr_text IS NOT NULL AND ocr_text != ''))"
+    ),
+}
+
+
+def _build_download_url(token: str) -> str:
+    """Return the absolute signed download URL for a token.
+
+    The path is API-relative; the scheme/host are taken from the incoming
+    request (or fall back to a relative URL for non-HTTP contexts).
+    """
+    return f"/api/v1/mobile/company/export/download/{token}"
+
+
+@router.post("/company/export/manifest", response_model=List[DownloadManifestEntry])
+def company_export_manifest(
+    body: DownloadRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return the company-scoped file list for pull-on-demand local download.
+
+    Blueprint §5.3: the response is a list of ``DownloadManifestEntry``
+    whose ``download_url`` values carry an HMAC-signed, short-lived token
+    (default 15 minutes) over ``{record_id, company_id, expiry}``.  Raw file
+    bytes are never returned by this endpoint — the mobile client downloads
+    each entry individually from the companion fetch endpoint.
+
+    ``company_id`` always comes from the JWT — never from the client body.
+    ``date_from``/``date_to`` filter on the record's upload/creation date
+    (ISO YYYY-MM-DD).
+
+    Pull-on-demand only — there is no background sync machinery behind this
+    endpoint; OCR results stay server-side until the client explicitly pulls
+    them.
+    """
+    from backend.services.local_download_service import (
+        KIND_DOCUMENT,
+        KIND_TRIP,
+        create_download_token,
+        download_token_ttl_seconds,
+    )
+
+    company_id = current_user["company_id"]
+
+    if body.category is DownloadCategory.trip_history:
+        return _trip_history_manifest(db, company_id, body)
+
+    # ── Documents (documents / invoices / receipts / ocr_results) ──────
+    category_clause = _DOCUMENT_QUERIES[body.category]
+    params: list = [company_id]
+    clauses = ["company_id = ?", "is_archived = 0", category_clause]
+
+    if body.date_from:
+        _validate_date_from(body.date_from)
+        clauses.append("uploaded_at >= ?")
+        params.append(body.date_from)
+    if body.date_to:
+        _validate_date_to(body.date_to)
+        clauses.append("uploaded_at <= ?")
+        if "T" not in body.date_to and " " not in body.date_to:
+            params.append(f"{body.date_to}T23:59:59")
+        else:
+            params.append(body.date_to)
+
+    where = " AND ".join(clauses)
+    try:
+        rows = db.execute(
+            f"""SELECT id, category, file_name, file_size,
+                       COALESCE(NULLIF(updated_at, ''), uploaded_at) AS modified_at
+                FROM documents
+                WHERE {where}
+                ORDER BY modified_at DESC
+                LIMIT 500""",
+            tuple(params),
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("company_export_manifest query failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Manifest query failed")
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=download_token_ttl_seconds())
+
+    entries: List[DownloadManifestEntry] = []
+    for row in rows:
+        r = dict(row)
+        record_id = str(r["id"])
+        token = create_download_token(
+            record_id=record_id,
+            company_id=company_id,
+            kind=KIND_DOCUMENT,
+            expires_at=expires_at,
+        )
+        entries.append(
+            DownloadManifestEntry(
+                record_id=record_id,
+                filename=r.get("file_name", "") or "",
+                size_bytes=int(r.get("file_size") or 0),
+                download_url=_build_download_url(token),
+                url_expires_at=expires_at.isoformat(),
+            )
+        )
+    return entries
+
+
+def _validate_date_param(value: str, field: str) -> None:
+    """Strictly validate an ISO-8601 date-filter value before it reaches SQL."""
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Invalid {field} — expected ISO-8601 "
+                "(e.g. 2026-07-31 or 2026-07-31T23:59:59)"
+            ),
+        )
+
+
+def _validate_date_to(date_to: str) -> None:
+    """Strictly validate an ISO-8601 ``to_date`` before it reaches SQL."""
+    _validate_date_param(date_to, "to_date")
+
+
+def _validate_date_from(date_from: str) -> None:
+    """Strictly validate an ISO-8601 ``from_date`` before it reaches SQL."""
+    _validate_date_param(date_from, "from_date")
+
+
+def _validate_start_date(value: str) -> None:
+    """Validate a client-supplied ``start_date`` is a valid ISO date.
+
+    Rejects malformed values with 422 so raw garbage never reaches
+    ``trips.start_date``.  Mirrors ``_validate_date_param`` but returns 422.
+    """
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        raise HTTPException(
+            status_code=422,
+            detail="Invalid start_date — expected ISO date (YYYY-MM-DD).",
+        )
+
+
+def _trip_history_manifest(
+    db: DatabaseManager,
+    company_id: Any,
+    body: DownloadRequest,
+) -> List[DownloadManifestEntry]:
+    """Build manifest entries for the ``trip_history`` category (trips table).
+
+    Trip history has no stored file — the fetch endpoint synthesizes a JSON
+    export on demand, so ``size_bytes`` here is the serialized JSON length.
+    """
+    from backend.services.local_download_service import (
+        KIND_TRIP,
+        create_download_token,
+        download_token_ttl_seconds,
+    )
+
+    params: list = [company_id]
+    clauses = ["company_id = ?"]
+
+    if body.date_from:
+        _validate_date_from(body.date_from)
+        clauses.append("COALESCE(NULLIF(created_at, ''), start_date) >= ?")
+        params.append(body.date_from)
+    if body.date_to:
+        _validate_date_to(body.date_to)
+        clauses.append("COALESCE(NULLIF(created_at, ''), start_date) <= ?")
+        if "T" not in body.date_to and " " not in body.date_to:
+            params.append(f"{body.date_to}T23:59:59")
+        else:
+            params.append(body.date_to)
+
+    where = " AND ".join(clauses)
+    try:
+        rows = db.execute(
+            f"""SELECT id, created_at, status, client_name, driver_name, truck_number,
+                       place_of_loading, delivery_country, distance_km, total_price_eur,
+                       currency
+                FROM trips
+                WHERE {where}
+                ORDER BY created_at DESC
+                LIMIT 500""",
+            tuple(params),
+        ).fetchall()
+    except Exception as exc:
+        logger.warning("company_export_manifest trip_history query failed: %s", exc)
+        raise HTTPException(status_code=500, detail="Manifest query failed")
+
+    now = datetime.now(timezone.utc)
+    expires_at = now + timedelta(seconds=download_token_ttl_seconds())
+
+    entries: List[DownloadManifestEntry] = []
+    for row in rows:
+        r = dict(row)
+        record_id = str(r["id"])
+        payload = _serialize_trip(r)
+        token = create_download_token(
+            record_id=record_id,
+            company_id=company_id,
+            kind=KIND_TRIP,
+            expires_at=expires_at,
+        )
+        entries.append(
+            DownloadManifestEntry(
+                record_id=record_id,
+                filename=f"trip-{record_id}.json",
+                size_bytes=len(payload.encode("utf-8")),
+                download_url=_build_download_url(token),
+                url_expires_at=expires_at.isoformat(),
+            )
+        )
+    return entries
+
+
+def _serialize_trip(row: Dict[str, Any]) -> str:
+    """Serialize a trips-table row into the JSON bytes the download endpoint streams."""
+    import json as _json
+
+    payload = {
+        "record_id": str(row.get("id")),
+        "trip_id": row.get("id"),
+        "status": row.get("status"),
+        "client_name": row.get("client_name"),
+        "driver_name": row.get("driver_name"),
+        "truck_number": row.get("truck_number"),
+        "origin": row.get("place_of_loading"),
+        "destination": row.get("delivery_country"),
+        "created_at": row.get("created_at"),
+        "distance_km": row.get("distance_km"),
+        "total_price": row.get("total_price_eur"),
+        "currency": row.get("currency"),
+    }
+    return _json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+@router.get("/company/export/download/{token}")
+def company_export_download(
+    token: str,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Fetch the raw bytes for a manifest entry.
+
+    Validates, in order:
+      1. the HMAC signature (tampered tokens → 403),
+      2. the embedded expiry (expired tokens → 403),
+      3. the tenant at **fetch time**: the JWT's ``company_id`` must equal
+         the token's embedded ``company_id`` — a signed URL minted for
+         company Y cannot be replayed under company X's JWT (→ 403).
+
+    Streams the stored document file (``FileResponse``, document MIME type)
+    for ``document`` records, or a synthesized JSON export (``application/json``)
+    for ``trip`` records.
+    """
+    from fastapi.responses import FileResponse, JSONResponse
+
+    from backend.services.local_download_service import (
+        KIND_DOCUMENT,
+        KIND_EXPORT_FILE,
+        KIND_TRIP,
+        is_token_expired,
+        verify_download_token,
+    )
+
+    payload = verify_download_token(token)
+    if payload is None:
+        raise HTTPException(status_code=403, detail="Invalid download token")
+    if is_token_expired(payload):
+        raise HTTPException(status_code=403, detail="Download token expired")
+
+    # Tenant check at fetch time — never trust the URL alone.
+    token_company_id = payload.get("company_id")
+    if current_user.get("company_id") != token_company_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Download token does not belong to this company",
+        )
+
+    record_id = payload.get("record_id")
+    kind = payload.get("kind")
+
+    if kind == KIND_TRIP:
+        row = db.execute(
+            """SELECT id, created_at, status, client_name, driver_name, truck_number,
+                      place_of_loading, delivery_country, distance_km, total_price_eur,
+                      currency
+               FROM trips
+               WHERE id = ? AND company_id = ?""",
+            (int(record_id), token_company_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Trip not found")
+        content = _serialize_trip(dict(row))
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="trip-{record_id}.json"'},
+        )
+
+    if kind == KIND_DOCUMENT:
+        row = db.execute(
+            """SELECT id, file_path, file_name, mime_type
+               FROM documents
+               WHERE id = ? AND company_id = ? AND is_archived = 0""",
+            (int(record_id), token_company_id),
+        ).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Document not found")
+        r = dict(row)
+        file_path = r.get("file_path") or ""
+        if not file_path or not os.path.isfile(file_path):
+            raise HTTPException(status_code=404, detail="Document file not found")
+        media_type = r.get("mime_type") or "application/octet-stream"
+        return FileResponse(
+            file_path,
+            filename=r.get("file_name") or os.path.basename(file_path),
+            media_type=media_type,
+        )
+
+    if kind == KIND_EXPORT_FILE:
+        # Phase 2A: generated analytics/history export files.  The token's
+        # record_id is the export_jobs row id; the file is resolved from the
+        # company-scoped job row (never from the raw token value alone).
+        job = db.execute(
+            """SELECT id, status, result_path, company_id
+               FROM export_jobs
+               WHERE id = ? AND company_id = ?""",
+            (int(record_id), token_company_id),
+        ).fetchone()
+        if not job:
+            raise HTTPException(status_code=404, detail="Export not found")
+        j = dict(job)
+        if j.get("status") != "success" or not j.get("result_path"):
+            raise HTTPException(status_code=404, detail="Export not ready")
+        export_path = j["result_path"]
+        if not os.path.isfile(export_path):
+            raise HTTPException(status_code=404, detail="Export file not found")
+        # Defense-in-depth: the result_path lives in the export_jobs row, but
+        # a corrupted/foreign row must never serve a file outside the export
+        # directory (path-traversal guard; resolves symlinks first).
+        from services.mobile_export_service import get_export_dir
+
+        export_root = os.path.realpath(get_export_dir())
+        try:
+            inside_export_dir = os.path.commonpath(
+                [os.path.realpath(export_path), export_root]
+            ) == export_root
+        except ValueError:  # different drives (Windows) → not inside
+            inside_export_dir = False
+        if not inside_export_dir:
+            raise HTTPException(status_code=404, detail="Export file not found")
+        ext = os.path.splitext(export_path)[1].lower()
+        media_types = {".csv": "text/csv", ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", ".pdf": "application/pdf"}
+        return FileResponse(
+            export_path,
+            filename=os.path.basename(export_path),
+            media_type=media_types.get(ext, "application/octet-stream"),
+        )
+
+    raise HTTPException(status_code=404, detail="Unknown record type")
 
 
 # ══════════════════════════════════════════════════════════════════════

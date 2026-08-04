@@ -3,6 +3,7 @@ import logging
 from datetime import date, datetime, timedelta
 from typing import Any
 
+from repositories.fleet_repository import FleetRepository
 from repositories.trip_repository import TripRepository
 from services.fleet_maintenance_service import (
     FleetMaintenanceService,
@@ -86,7 +87,7 @@ class MaintenanceEngine:
     def evaluate_truck(self, truck_id: int) -> int:
         count = 0
         try:
-            truck = self._db.get_truck_by_id(truck_id)
+            truck = FleetRepository(self._db).get_by_id(truck_id)
             if truck:
                 count = self._evaluate_single(truck)
         except Exception as e:

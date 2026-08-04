@@ -8,10 +8,12 @@ import threading
 from datetime import datetime, timedelta
 from typing import Any
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
+from PySide6.QtWidgets import QFrame, QHBoxLayout, QScrollArea, QSizePolicy, QVBoxLayout, QWidget
 
 from services.i18n import t
-from ui.design_tokens import BORDER_DEFAULT, COLOR_NEUTRAL_DEFAULT, INFO, SUCCESS, WARNING
+from ui.design_tokens import BORDER_DEFAULT, COLOR_NEUTRAL_DEFAULT, INFO, SP, SUCCESS, WARNING
+from ui.performance_timer import PerfTimer
 from utils.dates import parse_date
 
 logger = logging.getLogger(__name__)
@@ -49,6 +51,14 @@ DELIVERED_DEFAULT_DAYS = 30
 CANCELLED_MAX = 3
 DELIVERED_INITIAL_MAX = 4
 
+# Max trips fetched per board load (``get_by_statuses`` orders by
+# created_at DESC).  The board displays all active trips plus a bounded
+# recent window of Delivered/Cancelled — 500 is ample for SME fleets and
+# keeps the background load bounded at ~12k trips/year.  ``_on_load_older_delivered``
+# (the "show all delivered" path) bumps the cap so it can reach further back.
+TRIP_LOAD_LIMIT = 500
+TRIP_LOAD_LIMIT_SHOW_ALL = 2000
+
 
 class BoardStateMixin:
     """Mixin providing data loading, filtering, search, and cache logic."""
@@ -58,72 +68,162 @@ class BoardStateMixin:
     # ── Data loading ──────────────────────────────────────────────────────────
 
     def _start_load(self) -> None:
-        if self._loading:
-            return
-        self._loading = True
-        self._alert_counts.clear()
-        if self.ops:
-            pass  # Keep undo stack intact across refreshes
+        with PerfTimer("dispatch_board.start_load"):
+            if self._loading:
+                return
+            self._loading = True
+            self._alert_counts.clear()
+            if self.ops:
+                pass  # Keep undo stack intact across refreshes
+            self._show_dispatch_skeleton()
+            self._load_thread = threading.Thread(target=self._load_data_background, daemon=True)
+            self._load_thread.start()
+
+    def _show_dispatch_skeleton(self) -> None:
+        """Replace kanban columns with skeleton column placeholders."""
+        from ui.skeleton_widgets import SkeletonWidget
+
+        # Hide the real board stack content
         for col in self._columns.values():
-            col.show_loading()
-        self._load_thread = threading.Thread(target=self._load_data_background, daemon=True)
-        self._load_thread.start()
+            col.hide()
+
+        # Remove old skeleton if present
+        if hasattr(self, '_skeleton_container') and self._skeleton_container is not None:
+            self._skeleton_container.deleteLater()
+            self._skeleton_container = None
+        if hasattr(self, '_skeleton_scroll') and self._skeleton_scroll is not None:
+            self._skeleton_scroll.deleteLater()
+
+        # Create skeleton columns in a scroll area matching the board layout
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.NoFrame)
+        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAsNeeded)
+        scroll.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        scroll.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+
+        container = QWidget()
+        container.setProperty("role", "kanban-columns-container")
+        layout = QHBoxLayout(container)
+        layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        layout.setSpacing(SP["3"])
+
+        # 5 skeleton columns matching COLUMN_DEFS (Planned, Loading, In Transit, Delivered, Cancelled)
+        for _ in range(5):
+            col_frame = QFrame()
+            col_frame.setFixedWidth(280)
+            col_layout = QVBoxLayout(col_frame)
+            col_layout.setContentsMargins(0, 0, 0, 0)
+            col_layout.setSpacing(SP["2"])
+
+            # Column header skeleton
+            header = SkeletonWidget(col_frame, height=32, rounded=True)
+            header.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+            col_layout.addWidget(header)
+
+            # Card skeletons (4-5 cards per column)
+            for _ in range(5):
+                card = SkeletonWidget(col_frame, height=100, rounded=True)
+                card.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+                col_layout.addWidget(card)
+
+            col_layout.addStretch()
+            layout.addWidget(col_frame)
+
+        scroll.setWidget(container)
+        self._skeleton_container = container
+        self._skeleton_scroll = scroll
+
+        # Insert skeleton at index 0 in the board stack (replace kanban)
+        self._board_stack.insertWidget(2, scroll)
+        self._board_stack.setCurrentIndex(2)
+
+    def _hide_dispatch_skeleton(self) -> None:
+        """Remove skeleton columns and show real kanban columns."""
+        if hasattr(self, '_skeleton_scroll') and self._skeleton_scroll is not None:
+            idx = self._board_stack.indexOf(self._skeleton_scroll)
+            if idx >= 0:
+                self._board_stack.removeWidget(self._skeleton_scroll)
+            self._skeleton_scroll.deleteLater()
+            self._skeleton_scroll = None
+            self._skeleton_container = None
+
+        for col in self._columns.values():
+            col.show()
+
+        # Explicitly show the kanban columns (index 0) after removing skeleton
+        # to avoid QStackedWidget clamping the current index to the last widget.
+        self._board_stack.setCurrentIndex(0)
 
     def _load_data_background(self) -> None:
-        try:
-            self._preload_alerts()
+        with PerfTimer("dispatch_board.load_data"):
+            try:
+                self._preload_alerts()
 
-            all_statuses = list(STATUS_TO_COLUMN.keys())
-            all_trips = []
-            if self._trip_service is not None:
-                all_trips = self._trip_service.get_by_statuses(all_statuses)
+                all_statuses = list(STATUS_TO_COLUMN.keys())
+                all_trips = []
+                if self._trip_service is not None:
+                    # Cap each load so the board never drags every trip row
+                    # (12k+) into memory; the load-more ("show all delivered")
+                    # path uses a higher cap.
+                    limit = (
+                        TRIP_LOAD_LIMIT_SHOW_ALL
+                        if self._delivered_show_all
+                        else TRIP_LOAD_LIMIT
+                    )
+                    all_trips = self._trip_service.get_by_statuses(all_statuses, limit=limit)
 
-            column_trips: dict[str, list[dict[str, Any]]] = {
-                col: [] for col, _, _ in COLUMN_DEFS
-            }
+                # Batch-resolve driver names and route stops into the caches so
+                # ``_build_card_data`` performs zero per-card DB queries (N+1
+                # eliminated) while building cards below.
+                self._preload_drivers_and_routes(all_trips)
 
-            cutoff = (datetime.now() - timedelta(days=self._delivered_days)).strftime("%Y-%m-%d")
+                column_trips: dict[str, list[dict[str, Any]]] = {
+                    col: [] for col, _, _ in COLUMN_DEFS
+                }
 
-            for trip in all_trips:
-                raw_status = trip.get("status", "")
-                column = STATUS_TO_COLUMN.get(raw_status)
-                if not column:
-                    continue
+                cutoff = (datetime.now() - timedelta(days=self._delivered_days)).strftime("%Y-%m-%d")
 
-                if column in ("Delivered", "Cancelled"):
-                    trip_date = trip.get("end_date", "") or trip.get("created_at", "")
-                    trip_date = trip_date[:10] if len(trip_date) >= 10 else trip_date
-                    if trip_date and trip_date < cutoff:
+                for trip in all_trips:
+                    raw_status = trip.get("status", "")
+                    column = STATUS_TO_COLUMN.get(raw_status)
+                    if not column:
                         continue
 
-                card_data = self._build_card_data(trip)
-                column_trips[column].append(card_data)
+                    if column in ("Delivered", "Cancelled"):
+                        trip_date = trip.get("end_date", "") or trip.get("created_at", "")
+                        trip_date = trip_date[:10] if len(trip_date) >= 10 else trip_date
+                        if trip_date and trip_date < cutoff:
+                            continue
 
-            # ── Limit recent completed/cancelled trips ─────────────────────────
-            # Cancelled: show only the last CANCELLED_MAX
-            cancelled_trips = column_trips.get("Cancelled", [])
-            cancelled_trips.sort(
-                key=lambda t: t.get("eta", "") or t.get("departure_date", "") or "",
-                reverse=True,
-            )
-            if len(cancelled_trips) > CANCELLED_MAX:
-                column_trips["Cancelled"] = cancelled_trips[:CANCELLED_MAX]
+                    card_data = self._build_card_data(trip)
+                    column_trips[column].append(card_data)
 
-            # Delivered: show only the last DELIVERED_INITIAL_MAX unless "show all"
-            if not self._delivered_show_all:
-                delivered_trips = column_trips.get("Delivered", [])
-                delivered_trips.sort(
+                # ── Limit recent completed/cancelled trips ─────────────────────────
+                # Cancelled: show only the last CANCELLED_MAX
+                cancelled_trips = column_trips.get("Cancelled", [])
+                cancelled_trips.sort(
                     key=lambda t: t.get("eta", "") or t.get("departure_date", "") or "",
                     reverse=True,
                 )
-                if len(delivered_trips) > DELIVERED_INITIAL_MAX:
-                    column_trips["Delivered"] = delivered_trips[:DELIVERED_INITIAL_MAX]
+                if len(cancelled_trips) > CANCELLED_MAX:
+                    column_trips["Cancelled"] = cancelled_trips[:CANCELLED_MAX]
 
-            self._dispatch(lambda ct=column_trips: self._populate_columns(ct))
+                # Delivered: show only the last DELIVERED_INITIAL_MAX unless "show all"
+                if not self._delivered_show_all:
+                    delivered_trips = column_trips.get("Delivered", [])
+                    delivered_trips.sort(
+                        key=lambda t: t.get("eta", "") or t.get("departure_date", "") or "",
+                        reverse=True,
+                    )
+                    if len(delivered_trips) > DELIVERED_INITIAL_MAX:
+                        column_trips["Delivered"] = delivered_trips[:DELIVERED_INITIAL_MAX]
 
-        except Exception as e:
-            logger.warning("Dispatch board data load failed: %s", e)
-            self._dispatch(lambda err=str(e): self._show_error_all(err))
+                self._dispatch(lambda ct=column_trips: self._populate_columns(ct))
+
+            except Exception as e:
+                logger.warning("Dispatch board data load failed: %s", e)
+                self._dispatch(lambda err=str(e): self._show_error_all(err))
 
     def _preload_alerts(self) -> None:
         if not self.ops:
@@ -156,6 +256,7 @@ class BoardStateMixin:
 
         departure = trip.get("start_date", "") or ""
         eta = trip.get("end_date", "") or ""
+        promised_date = trip.get("promised_date", "") or ""
 
         alerts_count = self._alert_counts.get(trip_id, 0)
 
@@ -171,8 +272,58 @@ class BoardStateMixin:
             "destination": destination,
             "departure_date": departure,
             "eta": eta,
+            "promised_date": promised_date,
             "alerts_count": alerts_count,
         }
+
+    def _preload_drivers_and_routes(self, trips: list[dict[str, Any]]) -> None:
+        """Batch-resolve driver names and route stops in two ``IN (...)`` queries.
+
+        The per-card ``_resolve_driver_name`` / ``_resolve_route`` helpers hit
+        the DB once per missing driver / route (N+1).  Instead, collect every
+        missing driver id and route id from the loaded trips, fetch each set
+        with a single query, and prime the per-load caches so card building
+        becomes cache-only.  Missing ids are cached as ``None`` / ``""`` so no
+        query repeats for trips referencing deleted rows.
+        """
+        missing_driver_ids: set[int] = set()
+        for trip in trips:
+            did = trip.get("driver_id")
+            if did and not trip.get("driver_name") and did not in self._driver_cache:
+                missing_driver_ids.add(did)
+
+        if missing_driver_ids and self._driver_repo is not None:
+            try:
+                drivers = self._driver_repo.get_drivers_by_ids(list(missing_driver_ids))
+                for d in drivers or []:
+                    self._driver_cache[d["id"]] = d
+            except Exception:
+                logger.debug("Batch driver preload failed", exc_info=True)
+            for did in missing_driver_ids:
+                self._driver_cache.setdefault(did, None)
+
+        missing_route_ids: set[int] = set()
+        for trip in trips:
+            rid = trip.get("route_history_v2_id")
+            if rid and str(rid) not in self._route_cache:
+                try:
+                    missing_route_ids.add(int(rid))
+                except (TypeError, ValueError):
+                    continue
+
+        if missing_route_ids and self._route_repo is not None:
+            try:
+                routes = self._route_repo.get_routes_by_ids(list(missing_route_ids))
+                for r in routes or []:
+                    origin, destination = self._extract_stops(r)
+                    self._route_cache[str(r["id"])] = {
+                        "origin": origin,
+                        "destination": destination,
+                    }
+            except Exception:
+                logger.debug("Batch route preload failed", exc_info=True)
+            for rid in missing_route_ids:
+                self._route_cache.setdefault(str(rid), None)
 
     def _resolve_driver_name(self, driver_id: int) -> str:
         if driver_id in self._driver_cache:
@@ -248,22 +399,27 @@ class BoardStateMixin:
         return origin, destination
 
     def _populate_columns(self, column_trips: dict[str, list[dict[str, Any]]]) -> None:
-        self._loading = False
-        all_cards = []
-        for status_key, col in self._columns.items():
-            trips = column_trips.get(status_key, [])
-            col.set_trips(trips)
-            all_cards.extend(trips)
-        self._all_card_data = all_cards
-        self._update_status_counts(column_trips)
+        with PerfTimer("dispatch_board.populate_columns"):
+            self._loading = False
+            self._hide_dispatch_skeleton()
+            all_cards = []
+            for status_key, col in self._columns.items():
+                trips = column_trips.get(status_key, [])
+                col.set_trips(trips)
+                all_cards.extend(trips)
+            self._all_card_data = all_cards
+            self._update_status_counts(column_trips)
 
-        QTimer.singleShot(100, self._evaluate_all_delays)
-        QTimer.singleShot(200, self._refresh_live_indicators)
-        QTimer.singleShot(500, self._run_conflict_scan)
-        QTimer.singleShot(600, self._refresh_side_panels)
-        QTimer.singleShot(700, self._apply_filters)
+            QTimer.singleShot(100, self._evaluate_all_delays)
+            QTimer.singleShot(200, self._refresh_live_indicators)
+            QTimer.singleShot(500, self._run_conflict_scan)
+            QTimer.singleShot(600, self._refresh_side_panels)
+            QTimer.singleShot(700, self._apply_filters)
 
     def _update_status_counts(self, column_trips: dict[str, list[dict[str, Any]]]) -> None:
+        # TODO: _status_cards is never populated — the status count summary
+        # feature was outlined but not finished.  The guard below keeps this
+        # a silent no-op until the feature is wired in.
         if not hasattr(self, "_status_cards") or self._status_cards is None:
             return
         for status_key, card in self._status_cards.items():
@@ -272,6 +428,7 @@ class BoardStateMixin:
 
     def _show_error_all(self, error_msg: str) -> None:
         self._loading = False
+        self._hide_dispatch_skeleton()
         for col in self._columns.values():
             col.show_error(error_msg)
 
@@ -386,8 +543,27 @@ class BoardStateMixin:
     # ── Conflict scan ─────────────────────────────────────────────────────────
 
     def _run_conflict_scan(self) -> None:
+        """Scan active trips for resource conflicts off the GUI thread.
+
+        Previously ran ``get_all(limit=2000)`` + N x ``check_conflicts`` on
+        the main thread after every render, freezing the UI at ~12k trips.
+        Now the heavy work happens on a daemon ``threading.Thread`` (the same
+        background pattern ``_start_load`` uses) and the result is marshalled
+        back to the GUI thread via ``_dispatch``.
+        """
         if getattr(self, '_destroyed', False):
             return
+        if self._trip_service is None or self._conflict_service is None:
+            return
+        if getattr(self, "_conflict_scan_running", False):
+            return
+        self._conflict_scan_running = True
+        thread = threading.Thread(target=self._conflict_scan_background, daemon=True)
+        thread.start()
+
+    def _conflict_scan_background(self) -> None:
+        trip_conflict_map: dict[int, list] = {}
+        conflict_found = False
         try:
             all_trips = self._trip_service.get_all(limit=2000)
             active_trips = [
@@ -396,23 +572,31 @@ class BoardStateMixin:
                     "Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced"
                 )
             ]
-            conflict_found = False
-            trip_conflict_map: dict[int, list] = {}
 
-            for trip in active_trips:
-                conflicts = self._conflict_service.check_conflicts(trip)
-                if conflicts:
-                    tid = trip.get("id")
-                    if tid not in trip_conflict_map:
-                        trip_conflict_map[tid] = []
-                    trip_conflict_map[tid] = conflicts
+            if active_trips:
+                # One batched pass — a single reference-data query for the whole
+                # board instead of N x ``check_conflicts`` (each of which issued
+                # up to two per-trip queries).
+                batch_result = self._conflict_service.check_conflicts_batch(active_trips)
+                if batch_result:
+                    trip_conflict_map = batch_result
                     conflict_found = True
-
-            self._conflict_alerts = trip_conflict_map
-            if conflict_found:
-                logger.info("Conflict scan: %d trips with resource conflicts", len(trip_conflict_map))
         except Exception:
             logger.debug("Conflict scan failed", exc_info=True)
+
+        self._dispatch(
+            lambda m=trip_conflict_map, found=conflict_found:
+                self._apply_conflict_scan(m, found)
+        )
+
+    def _apply_conflict_scan(self, trip_conflict_map: dict[int, list], conflict_found: bool) -> None:
+        """Main-thread sink for the background conflict scan."""
+        self._conflict_scan_running = False
+        if getattr(self, '_destroyed', False):
+            return
+        self._conflict_alerts = trip_conflict_map
+        if conflict_found:
+            logger.info("Conflict scan: %d trips with resource conflicts", len(trip_conflict_map))
 
     def _refresh_side_panels(self) -> None:
         if getattr(self, '_destroyed', False):

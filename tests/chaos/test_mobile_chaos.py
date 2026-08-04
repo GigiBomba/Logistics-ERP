@@ -34,12 +34,13 @@ _TEST_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 _TEST_DB = os.path.join(
     _TEST_DIR, f"test_chaos_{uuid.uuid4().hex[:12]}.db"
 )
-os.environ.setdefault("OPERION_DB_PATH", _TEST_DB)
+os.environ["OPERION_DB_PATH"] = _TEST_DB
 os.environ["OPERION_JWT_SECRET_KEY"] = "chaos-test-jwt-secret"
 os.environ["OPERION_ENV"] = "test"
 os.environ["OPERION_RATE_LIMIT"] = "10000"
-# Disable API key middleware for tests
-os.environ.setdefault("OPERION_API_KEY", "test-api-key-for-chaos-tests")
+# Don't set OPERION_API_KEY — auth is overridden by create_test_app()
+# and if set, it pollutes subsequent test modules via os.environ. The
+# security conftest's app fixture handles its own cleanup.
 
 import pytest
 from fastapi.testclient import TestClient

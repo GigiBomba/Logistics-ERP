@@ -36,15 +36,24 @@ class TestStressTempfileExhaustion:
         app.dependency_overrides[require_admin] = lambda: self.MOCK_USER
 
         from backend.dependencies import get_document_service
+        from models.common import ServiceResult, ErrorDetail
+
         mock_service = MagicMock()
-        mock_service.upload.return_value = {
+        mock_doc_data = {
             "id": 1, "file_name": "test.pdf", "file_size": 1024, "doc_number": "DOC-001",
             "category": "", "entity_type": "", "entity_id": None,
             "uploaded_by": "user", "mime_type": "application/pdf",
             "uploaded_at": "2026-07-09T12:00:00", "updated_at": "2026-07-09T12:00:00",
-            "tags": "[]", "expiry_date": "", "is_archived": False,
+            "tags": [], "expiry_date": "", "is_archived": False,
             "is_signed": False, "cmr_number": "",
         }
+
+        class _FakeData:
+            def model_dump(self):
+                return dict(mock_doc_data)
+
+        mock_result = ServiceResult(success=True, data=_FakeData())
+        mock_service.upload_document.return_value = mock_result
         app.dependency_overrides[get_document_service] = lambda: mock_service
 
         yield TestClient(app)
@@ -57,40 +66,51 @@ class TestStressTempfileExhaustion:
 
     # ── test 1: Upload flood 100 concurrent 1KB files — no temp leaks ──
 
-    def test_upload_flood_no_temp_leak(self, client):
-        """100 concurrent 1KB file uploads — verify no temp files left after requests."""
-        temp_dir = tempfile.gettempdir()
-        before = set(os.listdir(temp_dir))
+    def test_upload_flood_no_temp_leak(self, client, tmp_path):
+        """100 concurrent 1KB file uploads — verify no temp files left after requests.
 
-        content = b"x" * 1024  # 1KB
+        Uses a private temp directory (``tmp_path``) so concurrent pytest-xdist
+        workers writing their own SQLite/upload temp files into the shared OS
+        temp dir cannot be mistaken for leaks from *this* test.
+        """
+        # Route spooled uploads into the private dir for the duration of the test.
+        old_tempdir = tempfile.tempdir
+        tempfile.tempdir = str(tmp_path)
+        try:
+            temp_dir = tempfile.gettempdir()
+            before = set(os.listdir(temp_dir))
 
-        def upload_file():
-            files = {"file": ("test.pdf", io.BytesIO(content), "application/pdf")}
-            data = {"category": "test", "entity_type": "trip", "entity_id": "1", "uploaded_by": "tester"}
-            resp = client.post("/api/v1/documents/upload", files=files, data=data)
-            return resp.status_code
+            content = b"x" * 1024  # 1KB
 
-        with ThreadPoolExecutor(max_workers=100) as pool:
-            futs = [pool.submit(upload_file) for _ in range(100)]
-            for fut in as_completed(futs):
-                fut.result()
+            def upload_file():
+                files = {"file": ("test.pdf", io.BytesIO(content), "application/pdf")}
+                data = {"category": "test", "entity_type": "trip", "entity_id": "1", "uploaded_by": "tester"}
+                resp = client.post("/api/v1/documents/upload", files=files, data=data)
+                return resp.status_code
 
-        after = set(os.listdir(temp_dir))
-        new_files = after - before
-        temp_leaks = [f for f in new_files if f.startswith("tmp") or f.endswith(".tmp")]
+            with ThreadPoolExecutor(max_workers=100) as pool:
+                futs = [pool.submit(upload_file) for _ in range(100)]
+                for fut in as_completed(futs):
+                    fut.result()
 
-        # Retry up to 3 times to allow pending framework cleanup to finish
-        for attempt in range(3):
-            if not temp_leaks:
-                break
-            time.sleep(1)
             after = set(os.listdir(temp_dir))
             new_files = after - before
             temp_leaks = [f for f in new_files if f.startswith("tmp") or f.endswith(".tmp")]
 
-        assert len(temp_leaks) == 0, (
-            f"Found {len(temp_leaks)} leaked temp files after upload flood: {temp_leaks}"
-        )
+            # Retry up to 3 times to allow pending framework cleanup to finish
+            for attempt in range(3):
+                if not temp_leaks:
+                    break
+                time.sleep(1)
+                after = set(os.listdir(temp_dir))
+                new_files = after - before
+                temp_leaks = [f for f in new_files if f.startswith("tmp") or f.endswith(".tmp")]
+
+            assert len(temp_leaks) == 0, (
+                f"Found {len(temp_leaks)} leaked temp files after upload flood: {temp_leaks}"
+            )
+        finally:
+            tempfile.tempdir = old_tempdir
 
     # ── test 2: Upload flood 20 concurrent 10MB files — no crashes ─────
 

@@ -45,13 +45,17 @@ def _expected_outer_to_inner() -> list[type]:
     )
     from backend.middleware.idempotency_middleware import IdempotencyMiddleware
     from backend.middleware.rate_limit_middleware import RateLimitMiddleware
+    from backend.middleware.input_sanitization_middleware import (
+        InputSanitizationMiddleware,
+    )
     from backend.middleware.webhook_middleware import WebhookBodyMiddleware
     from backend.metrics import PrometheusMiddleware
 
     # This must match the order in which create_app() calls add_middleware,
-    # which is also the outermost-first execution order.
+    # which is also the outermost-first execution order (last added = index 0).
     return [
-        PrometheusMiddleware,       # last added = outermost
+        InputSanitizationMiddleware,  # last added = outermost
+        PrometheusMiddleware,
         WebhookBodyMiddleware,
         RateLimitMiddleware,
         IdempotencyMiddleware,
@@ -59,7 +63,7 @@ def _expected_outer_to_inner() -> list[type]:
         AuthMiddleware,
         LoggingMiddleware,
         CorrelationMiddleware,
-        CORSMiddleware,             # first added = innermost
+        CORSMiddleware,               # first added = innermost
     ]
 
 
@@ -158,7 +162,7 @@ class TestMiddlewareWiring:
 
     def test_middleware_outermost_order(self, app: FastAPI):
         """The user_middleware list (outermost-first) matches the
-        expected execution order: Prometheus outermost, CORS innermost."""
+        expected execution order: InputSanitization outermost, CORS innermost."""
         expected = _expected_outer_to_inner()
         registered = [m.cls for m in app.user_middleware]
 
@@ -168,11 +172,11 @@ class TestMiddlewareWiring:
                 f"got {registered[i].__name__}"
             )
 
-    def test_prometheus_is_outermost(self, app: FastAPI):
-        """PrometheusMiddleware must be index 0 (outermost / last added)."""
+    def test_input_sanitization_is_outermost(self, app: FastAPI):
+        """InputSanitizationMiddleware must be index 0 (outermost / last added)."""
         registered = [m.cls.__name__ for m in app.user_middleware]
-        assert registered[0] == "PrometheusMiddleware", (
-            f"Expected PrometheusMiddleware at index 0, got {registered[0]}"
+        assert registered[0] == "InputSanitizationMiddleware", (
+            f"Expected InputSanitizationMiddleware at index 0, got {registered[0]}"
         )
 
     def test_cors_is_innermost(self, app: FastAPI):
@@ -286,6 +290,7 @@ class TestCorsConfiguration:
         """In production mode, explicit origins are set (not wildcard)."""
         monkeypatch.setenv("OPERION_ENV", "production")
         monkeypatch.setenv("OPERION_API_KEY", "test-prod-key")
+        monkeypatch.setenv("OPERION_SUPPORT_INTERNAL_AUTH", "test-internal-auth")
 
         import importlib
         import backend.main as main_module
@@ -629,6 +634,20 @@ class TestProblemDetailFormat:
 
 class TestProblemDetailViaCreateApp:
     """Smoke-test that the real create_app() produces JSON error responses."""
+
+    @pytest.fixture(autouse=True)
+    def _clean_qt(self):
+        """Clean up orphan Qt widgets left by prior test modules."""
+        from PySide6.QtWidgets import QApplication
+        app = QApplication.instance()
+        if app:
+            for w in app.topLevelWidgets():
+                try:
+                    w.close()
+                    w.deleteLater()
+                except RuntimeError:
+                    pass
+        yield
 
     def test_real_app_unknown_route_returns_json(
         self, app: FastAPI, monkeypatch: pytest.MonkeyPatch

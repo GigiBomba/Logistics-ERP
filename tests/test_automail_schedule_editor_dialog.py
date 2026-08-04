@@ -42,6 +42,11 @@ def sample_schedule():
     }
 
 
+@pytest.fixture
+def partial_schedule():
+    return {"name": "Minimal", "is_active": 0}
+
+
 # ── Creation ────────────────────────────────────────────────────────────
 
 
@@ -335,3 +340,62 @@ class TestScheduleEditorDialogLifecycle:
             idx = dlg._trigger_combo.findData("days_after_due")
             dlg._trigger_combo.setCurrentIndex(idx)
             mock_update.assert_called_once()
+
+
+# ── Edge Cases ─────────────────────────────────────────────────────────
+
+
+class TestScheduleEditorDialogEdgeCases:
+    """Edge-case tests for ScheduleEditorDialog."""
+
+    def test_days_spin_changed_updates_preview(self, qt_widget, qtbot):
+        dlg = ScheduleEditorDialog(qt_widget)
+        qtbot.addWidget(dlg)
+        dlg._days_spin.setValue(10)
+        text = dlg._preview_label.text()
+        assert "10" in text
+
+    def test_accept_with_whitespace_name_fails(self, qt_widget, qtbot):
+        dlg = ScheduleEditorDialog(qt_widget)
+        qtbot.addWidget(dlg)
+        dlg._name_edit.setText("   ")
+        with patch.object(QMessageBox, "warning") as mock_warn:
+            dlg._on_accept()
+            mock_warn.assert_called_once()
+        assert dlg.result() != QDialog.DialogCode.Accepted
+
+    def test_populate_with_partial_data_uses_defaults(
+        self, qt_widget, qtbot, partial_schedule
+    ):
+        dlg = ScheduleEditorDialog(qt_widget, schedule=partial_schedule)
+        qtbot.addWidget(dlg)
+        assert dlg._trigger_combo.currentData() == "days_before_due"
+        assert dlg._days_spin.value() == 3
+
+    def test_template_combo_empty_no_crash(self, qt_widget, qtbot):
+        dlg = ScheduleEditorDialog(qt_widget, templates=[])
+        qtbot.addWidget(dlg)
+        assert dlg._template_combo.count() == 0
+
+    def test_get_data_roundtrip_complete(self, qt_widget, qtbot, sample_templates):
+        dlg = ScheduleEditorDialog(qt_widget, templates=sample_templates)
+        qtbot.addWidget(dlg)
+        dlg._name_edit.setText("Test Roundtrip")
+        idx = dlg._trigger_combo.findData("days_after_due")
+        dlg._trigger_combo.setCurrentIndex(idx)
+        dlg._days_spin.setValue(14)
+        dlg._template_combo.setCurrentIndex(1)
+        dlg._attach_invoice.setChecked(False)
+        dlg._attach_cmr.setChecked(False)
+        dlg._attach_all.setChecked(True)
+        dlg._active_cb.setChecked(False)
+
+        data = dlg.get_data()
+        assert data["name"] == "Test Roundtrip"
+        assert data["trigger_type"] == "days_after_due"
+        assert data["days_offset"] == 14
+        assert data["template_id"] == 2
+        assert data["is_active"] == 0
+        assert data["attach_invoice"] == 0
+        assert data["attach_cmr"] == 0
+        assert data["attach_all_docs"] == 1

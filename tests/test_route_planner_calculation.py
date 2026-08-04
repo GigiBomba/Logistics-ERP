@@ -8,6 +8,7 @@ forever.  The fix uses a ``Signal`` (which Qt marshals across
 threads) connected to ``_on_route_result``.
 """
 
+import contextlib
 import os
 import tempfile
 import threading
@@ -84,7 +85,8 @@ class _RoutePlannerHarness:
         try:
             self.db.close()
         finally:
-            os.unlink(self.path)
+            with contextlib.suppress(PermissionError):
+                os.unlink(self.path)
         self.view.deleteLater()
 
 

@@ -101,6 +101,16 @@
   },
   {
     "role": "admin",
+    "permission": "can_manage_company_settings",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_manage_users",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
     "permission": "can_merge_clients",
     "expected_allowed": true
   },
@@ -152,6 +162,11 @@
   {
     "role": "admin",
     "permission": "can_view_analytics",
+    "expected_allowed": true
+  },
+  {
+    "role": "admin",
+    "permission": "can_view_company_settings",
     "expected_allowed": true
   },
   {
@@ -256,6 +271,16 @@
   },
   {
     "role": "manager",
+    "permission": "can_manage_company_settings",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_manage_users",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
     "permission": "can_merge_clients",
     "expected_allowed": false
   },
@@ -307,6 +332,11 @@
   {
     "role": "manager",
     "permission": "can_view_analytics",
+    "expected_allowed": true
+  },
+  {
+    "role": "manager",
+    "permission": "can_view_company_settings",
     "expected_allowed": true
   },
   {
@@ -411,6 +441,16 @@
   },
   {
     "role": "dispatcher",
+    "permission": "can_manage_company_settings",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_manage_users",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
     "permission": "can_merge_clients",
     "expected_allowed": false
   },
@@ -462,6 +502,11 @@
   {
     "role": "dispatcher",
     "permission": "can_view_analytics",
+    "expected_allowed": false
+  },
+  {
+    "role": "dispatcher",
+    "permission": "can_view_company_settings",
     "expected_allowed": false
   },
   {
@@ -566,6 +611,16 @@
   },
   {
     "role": "driver",
+    "permission": "can_manage_company_settings",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_manage_users",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
     "permission": "can_merge_clients",
     "expected_allowed": false
   },
@@ -617,6 +672,11 @@
   {
     "role": "driver",
     "permission": "can_view_analytics",
+    "expected_allowed": false
+  },
+  {
+    "role": "driver",
+    "permission": "can_view_company_settings",
     "expected_allowed": false
   }
 ]

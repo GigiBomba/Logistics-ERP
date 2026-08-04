@@ -44,8 +44,12 @@ class TestPlaceholder(unittest.TestCase):
     def setUp(self) -> None:
         _ensure_qapp()
         self.db, self.path = _new_db()
+        from repositories.pipeline_repository import PipelineRepository
         from ui.views.automation_view import QtAutomationView
-        self.view = QtAutomationView(None, db=self.db, prefs=None, ops=None)
+        self.view = QtAutomationView(
+            None, db=self.db, prefs=None, ops=None,
+            pipeline_repo=PipelineRepository(self.db),
+        )
 
     def tearDown(self) -> None:
         try:

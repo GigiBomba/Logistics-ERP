@@ -31,9 +31,11 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.components import EmptyState
+
 from services.i18n import t
 from services.trip_service import TripService
-from ui.theme import S
+from ui.design_tokens import SP
 
 logger = logging.getLogger(__name__)
 
@@ -75,8 +77,8 @@ class QtTripSearchDialog(QDialog):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["2"])
 
         # Search row
         search_row = QHBoxLayout()
@@ -115,20 +117,28 @@ class QtTripSearchDialog(QDialog):
 
         layout.addLayout(date_row)
 
+        # Date range error label
+        self._date_error = QLabel(self)
+        self._date_error.setProperty("role", "field-error")
+        self._date_error.setVisible(False)
+        self._date_error.setWordWrap(True)
+        layout.addWidget(self._date_error)
+
         # Trip list
         self._list = QListWidget(self)
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self._list, 1)
 
-        # Empty-state label
-        self._empty_lbl = QLabel(
-            t("docs.pick_trip_empty", default="No trips match your filter."),
-            self,
+        # Empty-state
+        self._trip_search_empty = EmptyState(
+            parent=self,
+            icon_name="fa5s.search",
+            title=t("trip_search.empty_title", "No trips found"),
+            subtitle=t("trip_search.empty_desc", "Adjust your search criteria."),
         )
-        self._empty_lbl.setAlignment(Qt.AlignCenter)
-        self._empty_lbl.hide()
-        layout.addWidget(self._empty_lbl)
+        self._trip_search_empty.setVisible(False)
+        layout.addWidget(self._trip_search_empty)
 
         # Action row
         button_row = QHBoxLayout()
@@ -150,6 +160,15 @@ class QtTripSearchDialog(QDialog):
 
         layout.addLayout(button_row)
 
+        # Set tab order: search → from date → to date → list → Cancel → Select
+        self.setTabOrder(self._search_edit, self._from_date)
+        self.setTabOrder(self._from_date, self._to_date)
+        self.setTabOrder(self._to_date, self._list)
+        self.setTabOrder(self._list, self._cancel_btn)
+        self.setTabOrder(self._cancel_btn, self._select_btn)
+
+        # Escape key dismisses (default QDialog behavior)
+
     # ── Data ──────────────────────────────────────────────────────────
 
     def _load_trips(self) -> None:
@@ -164,6 +183,31 @@ class QtTripSearchDialog(QDialog):
         query = self._search_edit.text().strip().lower()
         from_date = self._from_date.date().toString("yyyy-MM-dd")
         to_date = self._to_date.date().toString("yyyy-MM-dd")
+
+        # Validate date range
+        if self._from_date.date() > self._to_date.date():
+            self._date_error.setText("\"From\" date must be before \"To\" date")
+            self._date_error.setVisible(True)
+            self._from_date.setProperty("validation", "error")
+            self._from_date.style().unpolish(self._from_date)
+            self._from_date.style().polish(self._from_date)
+            self._to_date.setProperty("validation", "error")
+            self._to_date.style().unpolish(self._to_date)
+            self._to_date.style().polish(self._to_date)
+            self._list.clear()
+            self._list.setVisible(True)
+            self._trip_search_empty.setVisible(True)
+            self._select_btn.setEnabled(False)
+            self._selected = None
+            return
+        else:
+            self._date_error.setVisible(False)
+            self._from_date.setProperty("validation", "")
+            self._from_date.style().unpolish(self._from_date)
+            self._from_date.style().polish(self._from_date)
+            self._to_date.setProperty("validation", "")
+            self._to_date.style().unpolish(self._to_date)
+            self._to_date.style().polish(self._to_date)
 
         # Fetch via service layer — delegates to TripRepository internally
         # but goes through TripService so company filters, logging, and
@@ -195,7 +239,9 @@ class QtTripSearchDialog(QDialog):
             item.setData(Qt.UserRole, int(trow.get("id") or 0))
             self._list.addItem(item)
 
-        self._empty_lbl.setVisible(self._list.count() == 0)
+        has_items = self._list.count() > 0
+        self._list.setVisible(has_items)
+        self._trip_search_empty.setVisible(not has_items)
         self._select_btn.setEnabled(False)
         self._selected = None
 

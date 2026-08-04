@@ -16,6 +16,7 @@ from typing import Any, Dict, Generator, List
 import pytest
 
 from database.db_manager import DatabaseManager
+from database.tenant_context import clear_context, set_request_context
 from repositories.client_repository import ClientRepository
 from repositories.driver_repository import DriverRepository
 from repositories.fleet_repository import FleetRepository
@@ -37,6 +38,13 @@ def db_path() -> Generator[str, None, None]:
         os.unlink(tmp.name)
     except OSError:
         pass
+
+
+@pytest.fixture(autouse=True)
+def _clear_tenant_context():
+    """Reset tenant context before every test to prevent cross-test pollution."""
+    clear_context()
+    yield
 
 
 @pytest.fixture
@@ -540,13 +548,12 @@ class TestMultiTenantIsolation:
         cid_b = _create_company(db, "Company B")
 
         # Create data for company A — scoped user
-        db.user_company_id = cid_a
-        db.user_role = "dispatcher"
+        set_request_context(company_id=cid_a, role="dispatcher")
         trip_repo = TripRepository(db)
         trip_a_id = trip_repo.create(_sample_trip(client_name="Company A Client"))
 
         # Create data for company B — scoped user
-        db.user_company_id = cid_b
+        set_request_context(company_id=cid_b, role="dispatcher")
         trip_b_id = trip_repo.create(_sample_trip(client_name="Company B Client"))
 
         return cid_a, cid_b, trip_a_id, trip_b_id
@@ -556,8 +563,7 @@ class TestMultiTenantIsolation:
         _, _, trip_a_id, trip_b_id = self._setup_companies_and_data(db)
 
         # Act as admin
-        db.user_company_id = None
-        db.user_role = "admin"
+        set_request_context(company_id=None, role="admin")
         trip_repo = TripRepository(db)
 
         all_trips = trip_repo.get_all(limit=100)
@@ -570,8 +576,7 @@ class TestMultiTenantIsolation:
         cid_a, _, trip_a_id, trip_b_id = self._setup_companies_and_data(db)
 
         # Act as company A user
-        db.user_company_id = cid_a
-        db.user_role = "dispatcher"
+        set_request_context(company_id=cid_a, role="dispatcher")
         trip_repo = TripRepository(db)
 
         all_trips = trip_repo.get_all(limit=100)
@@ -586,8 +591,7 @@ class TestMultiTenantIsolation:
         cid_a, cid_b, _, trip_b_id = self._setup_companies_and_data(db)
 
         # Act as company A user — switch to company A's scope
-        db.user_role = "dispatcher"
-        db.user_company_id = cid_a
+        set_request_context(company_id=cid_a, role="dispatcher")
         trip_repo = TripRepository(db)
 
         # Try to access trip B directly — should be blocked by company filter
@@ -601,13 +605,12 @@ class TestMultiTenantIsolation:
         cid_a, cid_b = _create_company(db, "Company A"), _create_company(db, "Company B")
 
         # Create client in company B
-        db.user_company_id = cid_b
-        db.user_role = "dispatcher"
+        set_request_context(company_id=cid_b, role="dispatcher")
         client_repo = ClientRepository(db)
         client_b_id = client_repo.create({"name": "B-Client", "created_at": _now()})
 
         # Switch to company A and try to read it
-        db.user_company_id = cid_a
+        set_request_context(company_id=cid_a, role="dispatcher")
         client_b = client_repo.get_by_id(client_b_id)
         assert client_b is None, "Should not see other company's client"
 
@@ -788,8 +791,7 @@ class TestDataConsistency:
         repo = TripRepository(dm)
 
         # Create a trip (admin mode — no company_id injected)
-        dm.user_role = "admin"
-        dm.user_company_id = None
+        set_request_context(company_id=None, role="admin")
         tid = repo.create(_sample_trip(client_name="Backfill Test"))
         # Verify company_id was not set by the repo (admin mode)
         trip = repo.get_by_id(tid)
@@ -887,8 +889,7 @@ class TestScopedFilterEndToEnd:
         cid_b = _create_company(db, "Scope E2E B")
 
         # ── Populate company A ──────────────────────────────────────
-        db.user_company_id = cid_a
-        db.user_role = "dispatcher"
+        set_request_context(company_id=cid_a, role="dispatcher")
 
         client_repo = ClientRepository(db)
         ca = client_repo.create({"name": "A-Client", "created_at": _now()})
@@ -913,7 +914,7 @@ class TestScopedFilterEndToEnd:
         db.conn.commit()
 
         # ── Populate company B ──────────────────────────────────────
-        db.user_company_id = cid_b
+        set_request_context(company_id=cid_b, role="dispatcher")
 
         cb = client_repo.create({"name": "B-Client", "created_at": _now()})
         tb = fleet_repo.create({"plate_number": "B-TRUCK", "active_status": 1})
@@ -930,8 +931,7 @@ class TestScopedFilterEndToEnd:
         db.conn.commit()
 
         # ── Verify admin sees all ───────────────────────────────────
-        db.user_role = "admin"
-        db.user_company_id = None
+        set_request_context(company_id=None, role="admin")
 
         inv_repo = InvoiceRepository(db)
         assert len(trip_repo.get_all(limit=100)) == 2
@@ -941,8 +941,7 @@ class TestScopedFilterEndToEnd:
         assert len(inv_repo.get_all()) == 2
 
         # ── Verify scoped to A sees only A ──────────────────────────
-        db.user_role = "dispatcher"
-        db.user_company_id = cid_a
+        set_request_context(company_id=cid_a, role="dispatcher")
 
         a_trips = trip_repo.get_all(limit=100)
         assert len(a_trips) == 1
@@ -962,7 +961,7 @@ class TestScopedFilterEndToEnd:
         assert len(a_invs) == 1
 
         # ── Verify scoped to B sees only B ──────────────────────────
-        db.user_company_id = cid_b
+        set_request_context(company_id=cid_b, role="dispatcher")
 
         b_trips = trip_repo.get_all(limit=100)
         assert len(b_trips) == 1

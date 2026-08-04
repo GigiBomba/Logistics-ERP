@@ -120,8 +120,9 @@ class TestEncryptionService:
         return EncryptionService(master_key=encryption_key)
 
     @pytest.fixture
-    def service_no_key(self) -> EncryptionService:
-        """Service initialised without a master key (empty string)."""
+    def service_no_key(self, monkeypatch) -> EncryptionService:
+        """Service initialised without a master key."""
+        monkeypatch.delenv("OPERION_ENCRYPTION_KEY", raising=False)
         return EncryptionService(master_key="")
 
     # ── Tests ────────────────────────────────────────────────────────
@@ -170,6 +171,43 @@ class TestEncryptionService:
     def test_decrypt_empty_string(self, service: EncryptionService) -> None:
         """Decrypting an empty string returns empty (no crash)."""
         assert service.decrypt("") == ""
+
+    # ── Fernet heuristic / corrupt-data path ──────────────────────────
+
+    def test_looks_encrypted_rejects_legacy_plaintext(
+        self, service: EncryptionService
+    ) -> None:
+        """A legacy plaintext value is not mistaken for Fernet ciphertext."""
+        assert service._looks_encrypted("legacy_plaintext_setting") is False
+        assert service._looks_encrypted("") is False
+
+    def test_looks_encrypted_accepts_real_fernet_token(
+        self, service: EncryptionService
+    ) -> None:
+        """A correctly-padded Fernet token is recognised as encrypted."""
+        token = service.encrypt("sensitive_value")
+        assert len(token) % 4 == 0  # correctly base64-padded
+        assert service._looks_encrypted(token) is True
+
+    def test_correctly_padded_fernet_token_decrypts(
+        self, service: EncryptionService
+    ) -> None:
+        """Primary decrypt path works for a correctly-padded token."""
+        plaintext = "padding_check_secret_123"
+        token = service.encrypt(plaintext)
+        assert service.decrypt(token) == plaintext
+
+    def test_corrupted_fernet_token_warns_and_returns_raw(
+        self, service: EncryptionService, caplog
+    ) -> None:
+        """A corrupt Fernet token reaches the warning path and returns as-is."""
+        token = service.encrypt("sensitive_value")
+        corrupted = token[:-5] + ("A" if token[-5] != "A" else "B") + token[-4:]
+        assert service._looks_encrypted(corrupted) is True
+        with caplog.at_level("WARNING", logger="services.encryption_service"):
+            result = service.decrypt(corrupted)
+        assert result == corrupted
+        assert "Failed to decrypt Fernet ciphertext" in caplog.text
 
 
 # ── ApiKeyRepository Tests ──────────────────────────────────────────────

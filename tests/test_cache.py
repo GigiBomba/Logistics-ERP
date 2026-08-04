@@ -6,7 +6,7 @@ from backend.config import BackendSettings
 
 class TestRedisCache:
     def test_cache_disabled_when_redis_unavailable(self):
-        settings = BackendSettings()
+        settings = BackendSettings(redis_url="redis://127.0.0.1:1/0")
         cache = RedisCache(settings)
         cache.connect()
         assert cache._enabled is False

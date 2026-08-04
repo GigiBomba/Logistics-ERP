@@ -10,7 +10,7 @@ class TripRepository(BaseRepository):
     COLUMNS = [
         "id", "created_at", "truck_number", "driver_name", "client_name",
         "distance_km", "total_price_eur", "rate_per_km", "gross_per_km", "net_profit",
-        "start_date", "end_date", "payment_date", "extra_costs", "fuel_cost", "toll_cost",
+        "start_date", "end_date", "promised_date", "payment_date", "extra_costs", "fuel_cost", "toll_cost",
         "salary_cost", "currency", "status", "loading_country", "delivery_country",
         "driver_id", "route_history_v2_id", "truck_consumption_l_per_100km", "context_json",
         "client_id", "truck_id", "price_pre_vat", "vat_percent", "cmr_number", "cmr_sequence",
@@ -54,10 +54,10 @@ class TripRepository(BaseRepository):
                 continue
         return out
 
-    def get_by_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, trip_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (trip_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (trip_id,) + self._company_params_for(company_id),
         )
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
@@ -74,15 +74,15 @@ class TripRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
-    def update(self, trip_id: int, data: Dict[str, Any]) -> None:
+    def update(self, trip_id: int, data: Dict[str, Any], company_id=None) -> None:
         self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (trip_id,) + self._company_params(),
-        )
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter_for(company_id)}",
+            tuple(data.values()) + (trip_id,) + self._company_params_for(company_id),
+        commit=True)
 
     def get_next_cmr_sequence(self, year: int) -> tuple[str, int]:
         import time
@@ -144,13 +144,13 @@ class TripRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ? {self._company_filter()}",
             (cmr_number, cmr_seq, trip_id) + self._company_params(),
-        )
+        commit=True)
 
-    def delete(self, trip_id: int) -> None:
+    def delete(self, trip_id: int, company_id=None) -> None:
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (trip_id,) + self._company_params(),
-        )
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (trip_id,) + self._company_params_for(company_id),
+        commit=True)
 
     # ── Status history ──────────────────────────────────────────────
 
@@ -161,7 +161,7 @@ class TripRepository(BaseRepository):
             "INSERT INTO trip_status_history (trip_id, old_status, new_status, trigger, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (trip_id, old_status, new_status, trigger, datetime.now().isoformat()),
-        )
+        commit=True)
 
     # ── Domain-specific queries ───────────────────────────────────────
 
@@ -171,10 +171,15 @@ class TripRepository(BaseRepository):
             (driver_id,) + self._company_params() + (limit,),
         )
 
-    def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
-        """Dynamic filter for trip history with pagination."""
-        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()}"
-        params: list = list(self._company_params())
+    def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200, company_id=None) -> List[Dict[str, Any]]:
+        """Dynamic filter for trip history with pagination.
+
+        ``company_id`` (resolved from the JWT by the API layer) scopes the
+        query explicitly — without it the context filter is a no-op in the
+        HTTP request path.
+        """
+        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)}"
+        params: list = list(self._company_params_for(company_id))
         if search:
             query += " AND (client_name LIKE ? OR driver_name LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%"])
@@ -191,12 +196,17 @@ class TripRepository(BaseRepository):
     def get_by_status(self, status: str) -> List[Dict[str, Any]]:
         return self.get_by_statuses([status])
 
-    def get_by_statuses(self, statuses: List[str]) -> List[Dict[str, Any]]:
+    def get_by_statuses(self, statuses: List[str], limit: Optional[int] = None) -> List[Dict[str, Any]]:
         placeholders = ", ".join("?" for _ in statuses)
-        return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status IN ({placeholders}) {self._company_filter()} ORDER BY created_at DESC",
-            tuple(statuses) + self._company_params(),
+        query = (
+            f"SELECT * FROM {self.TABLE} WHERE status IN ({placeholders}) "
+            f"{self._company_filter()} ORDER BY created_at DESC"
         )
+        params: list = list(tuple(statuses) + self._company_params())
+        if limit is not None:
+            query += " LIMIT ?"
+            params.append(limit)
+        return self._fetchall(query, tuple(params))
 
     def get_by_date_range(self, start: str, end: str) -> List[Dict[str, Any]]:
         return self._fetchall(
@@ -235,8 +245,7 @@ class TripRepository(BaseRepository):
                            - COALESCE(toll_cost,0) - COALESCE(salary_cost,0)
                            - COALESCE(extra_costs,0), 0)) AS profit
                 FROM {self.TABLE}
-                WHERE LENGTH(start_date) >= 10
-                  AND start_date >= ?
+                WHERE start_date >= ?
                   AND start_date <= ?
                   AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
                   {self._company_filter()}
@@ -246,24 +255,28 @@ class TripRepository(BaseRepository):
         )
         return [(r["day"], float(r["profit"] or 0)) for r in rows]
 
-    def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4) -> List[Dict[str, Any]]:
-        """Return top trucks by revenue for a date range (canonical truck_id grouping)."""
+    def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4, company_id=None) -> List[Dict[str, Any]]:
+        """Return top trucks by revenue for a date range (canonical truck_id grouping).
+
+        ``company_id`` (resolved from the JWT by the API layer) scopes the
+        query explicitly — without it the context filter is a no-op in the
+        HTTP request path (mirrors ``get_filtered``).
+        """
         month_start = month_start.strip()
         month_end = month_end.strip()
         return self._fetchall(
-            f"""SELECT COALESCE(t.plate_number, tr.truck_number) AS truck_number,
+            f"""SELECT COALESCE(MAX(t.plate_number), MAX(tr.truck_number)) AS truck_number,
                        SUM(COALESCE(tr.total_price_eur, 0)) AS revenue
                  FROM {self.TABLE} tr
                  LEFT JOIN trucks t ON tr.truck_id = t.id
-                 WHERE LENGTH(tr.start_date) >= 10
-                   AND tr.start_date >= ?
+                 WHERE tr.start_date >= ?
                    AND tr.start_date <= ?
                    AND LOWER(tr.status) IN ('delivered', 'completed', 'done', 'paid')
-                   {self._company_filter("tr")}
+                   {self._company_filter_for(company_id, "tr")}
                  GROUP BY COALESCE(tr.truck_id, tr.truck_number)
                  ORDER BY revenue DESC
                  LIMIT ?""",
-            (month_start, month_end, limit) + self._company_params(),
+            (month_start, month_end, limit) + self._company_params_for(company_id),
         )
 
     # ── Document Automation matchers ─────────────────────────────────────
@@ -419,7 +432,7 @@ class TripRepository(BaseRepository):
         start = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
-            "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
+            "WHERE start_date >= ? AND start_date <= ? "
             f"{self._company_filter()} "
             "ORDER BY id DESC LIMIT ?",
             (start, end) + self._company_params() + (limit,),
@@ -444,7 +457,7 @@ class TripRepository(BaseRepository):
         end = (anchor + timedelta(days=window_days)).strftime("%Y-%m-%d")
         rows = self._fetchall(
             f"SELECT * FROM {self.TABLE} "
-            "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
+            "WHERE start_date >= ? AND start_date <= ? "
             f"{self._company_filter()} "
             "ORDER BY id DESC",
             (start, end) + self._company_params(),

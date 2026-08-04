@@ -1,0 +1,7 @@
+{
+  "reportAttributeAccessIssue": "none",
+  "reportOptionalMemberAccess": "information",
+  "reportArgumentType": "information",
+  "reportGeneralTypeIssues": "information",
+  "reportPrivateImportUsage": "none"
+}

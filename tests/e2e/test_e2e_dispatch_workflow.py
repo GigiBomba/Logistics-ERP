@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from models.trip_models import TripCreate, TripUpdate
 from services.operations.trip_status_engine import TripStatusEngine
 from services.trip_service import TripService
 from tests.test_helpers import make_db
@@ -19,6 +20,12 @@ pytestmark = pytest.mark.e2e
 
 def _dt(days_offset: int = 0) -> str:
     return (datetime.now() + timedelta(days=days_offset)).strftime("%Y-%m-%d")
+
+
+def _create_trip(trip_svc, **kwargs):
+    """Create a trip via the typed API and return its ID."""
+    result = trip_svc.create(TripCreate(**kwargs))
+    return result.data.id
 
 
 # ── Fixtures ────────────────────────────────────────────────────────────────
@@ -80,18 +87,15 @@ class TestDispatchWorkflow:
         client_id = self._seed_client(db)
 
         # Create trip with basic info
-        trip_id = trip_svc.add({
-            "client_id": client_id,
-            "client_name": "Dispatch Client GmbH",
-            "distance_km": 800.0,
-            "total_price_eur": 3200.0,
-            "status": "Planned",
-            "start_date": _dt(1),
-            "end_date": _dt(3),
-            "cargo_description": "Auto parts",
-            "package_count": 24,
-            "gross_weight_kg": 12000.0,
-        })
+        trip_id = _create_trip(trip_svc,
+            client_id=client_id,
+            client_name="Dispatch Client GmbH",
+            distance_km=800.0,
+            price_eur=3200.0,
+            status="Planned",
+            start_date=_dt(1),
+            end_date=_dt(3),
+        )
         assert trip_id > 0
 
         # Verify trip in DB
@@ -109,21 +113,21 @@ class TestDispatchWorkflow:
         truck_id = self._seed_truck(db)
         driver_id = self._seed_driver(db)
 
-        trip_id = trip_svc.add({
-            "client_id": client_id,
-            "client_name": "Dispatch Client GmbH",
-            "distance_km": 500.0,
-            "total_price_eur": 2000.0,
-            "status": "Planned",
-            "start_date": _dt(1),
-            "end_date": _dt(2),
-        })
+        trip_id = _create_trip(trip_svc,
+            client_id=client_id,
+            client_name="Dispatch Client GmbH",
+            distance_km=500.0,
+            price_eur=2000.0,
+            status="Planned",
+            start_date=_dt(1),
+            end_date=_dt(2),
+        )
 
         # Update trip with truck/driver assignment
-        trip_svc.update(trip_id, {
-            "truck_id": truck_id,
-            "driver_id": driver_id,
-        })
+        trip_svc.update(trip_id, TripUpdate(
+            truck_id=truck_id,
+            driver_id=driver_id,
+        ))
 
         # Verify assignment
         trip = db.conn.execute(
@@ -217,28 +221,28 @@ class TestDispatchWorkflow:
         truck_id = self._seed_truck(db)
 
         # Create first trip with truck assigned
-        trip1_id = trip_svc.add({
-            "client_id": client_id,
-            "client_name": "Dispatch Client GmbH",
-            "distance_km": 300.0,
-            "total_price_eur": 1200.0,
-            "status": "In Transit",
-            "start_date": _dt(1),
-            "end_date": _dt(3),
-            "truck_id": truck_id,
-        })
+        trip1_id = _create_trip(trip_svc,
+            client_id=client_id,
+            client_name="Dispatch Client GmbH",
+            distance_km=300.0,
+            price_eur=1200.0,
+            status="In Transit",
+            start_date=_dt(1),
+            end_date=_dt(3),
+            truck_id=truck_id,
+        )
 
         # Create second trip with same truck, overlapping dates
-        trip2_id = trip_svc.add({
-            "client_id": client_id,
-            "client_name": "Dispatch Client GmbH",
-            "distance_km": 400.0,
-            "total_price_eur": 1600.0,
-            "status": "Planned",
-            "start_date": _dt(2),  # overlaps with trip1
-            "end_date": _dt(4),
-            "truck_id": truck_id,
-        })
+        trip2_id = _create_trip(trip_svc,
+            client_id=client_id,
+            client_name="Dispatch Client GmbH",
+            distance_km=400.0,
+            price_eur=1600.0,
+            status="Planned",
+            start_date=_dt(2),  # overlaps with trip1
+            end_date=_dt(4),
+            truck_id=truck_id,
+        )
 
         # Both trips should be creatable (the system allows it at this level)
         assert trip1_id > 0
@@ -278,20 +282,20 @@ class TestDispatchWorkflow:
         """Completed trip can be invoiced."""
         client_id = self._seed_client(db)
 
-        trip_id = trip_svc.add({
-            "client_id": client_id,
-            "client_name": "Dispatch Client GmbH",
-            "distance_km": 750.0,
-            "total_price_eur": 3000.0,
-            "status": "Delivered",
-            "start_date": _dt(-3),
-            "end_date": _dt(-1),
-            "net_profit": 1500.0,
-            "fuel_cost": 348.75,
-            "toll_cost": 165.0,
-            "salary_cost": 200.0,
-            "extra_costs": 46.5,
-        })
+        trip_id = _create_trip(trip_svc,
+            client_id=client_id,
+            client_name="Dispatch Client GmbH",
+            distance_km=750.0,
+            price_eur=3000.0,
+            status="Delivered",
+            start_date=_dt(-3),
+            end_date=_dt(-1),
+            net_profit=1500.0,
+            fuel_cost=348.75,
+            toll_cost=165.0,
+            salary_cost=200.0,
+            extra_costs=46.5,
+        )
 
         # Create invoice for the completed trip
         inv_number = f"INV-DSP-{trip_id:04d}"
@@ -338,7 +342,7 @@ class TestDispatchWorkflowViaAPI:
             "start_date": _dt(0),
             "end_date": _dt(1),
         }
-        mocks["trip_service"].add.return_value = 201
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=201))
 
         resp = client.post(f"{self.BASE_TRIPS}/", json=create_payload)
         # TripCreateRequest requires client_id (gt=0); accept 200 or 422

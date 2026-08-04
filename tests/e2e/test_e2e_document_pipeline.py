@@ -258,7 +258,7 @@ class TestDocumentPipelineViaAPI:
             "uploaded_at": "2024-01-15T10:00:00", "updated_at": "2024-01-15T10:00:00",
             "is_archived": False, "tags": "[]", "description": "",
         }
-        mocks["document_service"].upload.return_value = mock_result
+        mocks["document_service"].upload_document.return_value = MagicMock(success=True, data=MagicMock(model_dump=lambda: mock_result))
 
         resp = client.post(
             f"{self.BASE}/upload",

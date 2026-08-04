@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from backend.api.v1.router import api_v1_router
+from database.db_manager import DatabaseManager
 
 BASE = "/api/v1"
 
@@ -289,8 +290,10 @@ class TestGdprEndpoints:
         self.mock_user_row = {"id": 1, "email": "user@test.com",
                               "role": "driver", "company_id": 1,
                               "is_active": 1}
-        self.mock_db.execute.return_value.fetchone.return_value = \
+        self.mock_db.conn.execute.return_value.fetchone.return_value = \
             self.mock_user_row
+        # Wire the real row_to_dict so the repo layer gets correct None-vs-dict
+        self.mock_db.row_to_dict.side_effect = DatabaseManager.row_to_dict
         self.client = TestClient(self.app)
         yield
         self.app.dependency_overrides.clear()
@@ -313,7 +316,7 @@ class TestGdprEndpoints:
 
     def test_export_user_not_found(self):
         """POST /gdpr/export/user/{id} returns 404 for unknown user."""
-        self.mock_db.execute.return_value.fetchone.return_value = None
+        self.mock_db.conn.execute.return_value.fetchone.return_value = None
         resp = self.client.post(f"{BASE}/gdpr/export/user/999")
         assert resp.status_code == 404
 
@@ -349,7 +352,7 @@ class TestGdprEndpoints:
         self.client.post(f"{BASE}/gdpr/delete/user/1")
         update_calls = [
             c
-            for c in self.mock_db.execute.call_args_list
+            for c in self.mock_db.conn.execute.call_args_list
             if "UPDATE users SET is_active" in str(c)
         ]
         assert len(update_calls) >= 1

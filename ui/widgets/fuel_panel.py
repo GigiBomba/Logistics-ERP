@@ -20,7 +20,14 @@ from PySide6.QtWidgets import (
 
 from services.fuel_price_service import FuelPriceService
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_ERROR_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Constants (mirror the original FuelPricePanel layout values)
@@ -70,13 +77,15 @@ class _BarChartWidget(QFrame):
 
         # Font for labels and price text
         font = QFont("Segoe UI", 11)
+        if font.pointSize() <= 0:
+            font.setPointSize(11)
         painter.setFont(font)
 
         for i, (code, price) in enumerate(self._prices):
             y = _TOP_MARGIN + i * (_BAR_HEIGHT + _BAR_GAP)
 
             # ── Country code label (left-aligned, right of the left edge) ──
-            painter.setPen(QColor(COLORS["text_primary"]))
+            painter.setPen(QColor(COLOR_TEXT_PRIMARY))
             painter.drawText(
                 4, y, _LABEL_WIDTH - 4, _BAR_HEIGHT,
                 Qt.AlignLeft | Qt.AlignVCenter,
@@ -86,16 +95,16 @@ class _BarChartWidget(QFrame):
             # ── Bar ───────────────────────────────────────────────────────
             bw = int((price / max_price) * bar_area_w) if max_price > 0 else 0
             color_str = (
-                COLORS["danger"] if price > 1.8
-                else COLORS["warning"] if price > 1.4
-                else COLORS["success"]
+                COLOR_ERROR_DEFAULT if price > 1.8
+                else COLOR_WARNING_DEFAULT if price > 1.4
+                else COLOR_SUCCESS_DEFAULT
             )
             painter.setBrush(QColor(color_str))
             painter.setPen(Qt.NoPen)
             painter.drawRect(_LABEL_WIDTH, y, bw, _BAR_HEIGHT)
 
             # ── Price label (to the right of the bar) ─────────────────────
-            painter.setPen(QColor(COLORS["text_secondary"]))
+            painter.setPen(QColor(COLOR_TEXT_SECONDARY))
             painter.drawText(
                 _LABEL_WIDTH + bw + 4, y, 100, _BAR_HEIGHT,
                 Qt.AlignLeft | Qt.AlignVCenter,
@@ -141,8 +150,8 @@ class QtFuelPricePanel(QFrame):
         header = QFrame()
         header.setProperty("role", "fuel-panel-header")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        header_layout.setSpacing(S["2"])
+        header_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        header_layout.setSpacing(SP["2"])
 
         title_lbl = QLabel(t("fuel.section_title"))
         title_lbl.setProperty("role", "section-header")
@@ -170,7 +179,7 @@ class QtFuelPricePanel(QFrame):
         self._body = QFrame()
         self._body.setProperty("role", "fuel-panel-body")
         body_layout = QVBoxLayout(self._body)
-        body_layout.setContentsMargins(S["3"], S["1"], S["3"], S["2"])
+        body_layout.setContentsMargins(SP["3"], SP["1"], SP["3"], SP["2"])
         body_layout.setSpacing(0)
 
         self._chart = _BarChartWidget(self._body)

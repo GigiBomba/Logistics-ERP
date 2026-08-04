@@ -22,6 +22,7 @@ class TestQtLoginDialog:
         assert login_dialog._stack.currentIndex() == 0
 
     def test_empty_email_shows_error(self, login_dialog):
+        login_dialog.show()
         login_dialog._on_next_clicked()
         assert login_dialog._error_label.isVisible()
 
@@ -31,6 +32,7 @@ class TestQtLoginDialog:
         assert login_dialog._stack.currentIndex() == 1
 
     def test_invalid_email_format_shows_error(self, login_dialog):
+        login_dialog.show()
         login_dialog._email_input.setText("not-an-email")
         login_dialog._on_next_clicked()
         assert login_dialog._error_label.isVisible()
@@ -42,6 +44,7 @@ class TestQtLoginDialog:
         assert login_dialog._stack.currentIndex() == 0
 
     def test_empty_password_shows_error(self, login_dialog):
+        login_dialog.show()
         login_dialog._email_input.setText("admin@example.com")
         login_dialog._on_next_clicked()
         login_dialog._password_input.setText("")

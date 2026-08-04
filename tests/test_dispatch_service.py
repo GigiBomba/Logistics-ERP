@@ -156,10 +156,12 @@ class TestAssignTruck:
         assert "ABC-123" in result.message
         assert result.details["truck_plate"] == "ABC-123"
 
-        # Trip update called with plate and id
-        self.mock_trip_service.update.assert_called_once_with(
-            42, {"truck_number": "ABC-123", "truck_id": 7},
-        )
+        # Trip update called with plate and id (as TripUpdate model)
+        self.mock_trip_service.update.assert_called_once()
+        args, _ = self.mock_trip_service.update.call_args
+        assert args[0] == 42
+        assert args[1].truck_plate == "ABC-123"
+        assert args[1].truck_id == 7
 
         # Event published
         self.mock_event_bus.publish.assert_called_once_with(
@@ -227,9 +229,11 @@ class TestAssignTruck:
         truck_no_plate = {"id": 7, "truck_number": "TRK-99"}
         self.mock_fleet_repo.get_by_id.return_value = truck_no_plate
         result = self.service.assign_truck(42, 7)
-        self.mock_trip_service.update.assert_called_once_with(
-            42, {"truck_number": "TRK-99", "truck_id": 7},
-        )
+        self.mock_trip_service.update.assert_called_once()
+        args, _ = self.mock_trip_service.update.call_args
+        assert args[0] == 42
+        assert args[1].truck_plate == "TRK-99"
+        assert args[1].truck_id == 7
         assert "TRK-99" in result.message
         assert result.details["truck_plate"] == "TRK-99"
 
@@ -237,9 +241,11 @@ class TestAssignTruck:
         truck_no_plate_no_number = {"id": 7}
         self.mock_fleet_repo.get_by_id.return_value = truck_no_plate_no_number
         result = self.service.assign_truck(42, 7)
-        self.mock_trip_service.update.assert_called_once_with(
-            42, {"truck_number": "7", "truck_id": 7},
-        )
+        self.mock_trip_service.update.assert_called_once()
+        args, _ = self.mock_trip_service.update.call_args
+        assert args[0] == 42
+        assert args[1].truck_plate == "7"
+        assert args[1].truck_id == 7
 
     def test_validate_trip_called(self):
         self.service.assign_truck(42, 7)
@@ -296,9 +302,11 @@ class TestAssignDriver:
         assert result.details["driver_name"] == "John Doe"
         assert result.details["driver_id"] == 5
 
-        self.mock_trip_service.update.assert_called_once_with(
-            42, {"driver_id": 5, "driver_name": "John Doe"},
-        )
+        self.mock_trip_service.update.assert_called_once()
+        args, _ = self.mock_trip_service.update.call_args
+        assert args[0] == 42
+        assert args[1].driver_id == 5
+        assert args[1].driver_name == "John Doe"
 
         self.mock_event_bus.publish.assert_called_once_with(
             TRIP_ASSIGNED,
@@ -433,10 +441,11 @@ class TestAssignBoth:
         with pytest.raises(DispatchError, match="Driver unavailable"):
             self.service.assign_both(42, 7, 5)
 
-        # Truck should be rolled back
-        self.mock_trip_service.update.assert_called_with(
-            42, {"truck_number": None, "truck_id": None},
-        )
+        # Truck should be rolled back (last call is the rollback)
+        assert self.mock_trip_service.update.call_count >= 2
+        last_update = self.mock_trip_service.update.call_args[0][1]
+        assert last_update.truck_plate == "" or last_update.truck_plate is None
+        assert last_update.truck_id is None
 
     def test_truck_succeeds_driver_fails_no_undo_if_no_truck_assigned(self):
         self._patch_driver.stop()
@@ -755,7 +764,10 @@ class TestTransitionStatus:
         result = service.transition_status(42, "Loading")
 
         assert result.success is True
-        service._trip_service.update.assert_called_once_with(42, {"status": "Loading"})
+        service._trip_service.update.assert_called_once()
+        args, _ = service._trip_service.update.call_args
+        assert args[0] == 42
+        assert args[1].status == "Loading"
         self.mock_event_bus.publish.assert_called_once_with(
             TRIP_STATUS_CHANGED,
             {"trip_id": 42, "old_status": "Planned", "new_status": "Loading"},
@@ -1629,3 +1641,145 @@ class TestConstants:
 
     def test_column_keys(self):
         assert COLUMN_KEYS == ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
+
+
+# ══════════════════════════════════════════════════════════════════════
+# Silent-swallow regression: former logger.debug / `except: pass` sites now
+# log a warning while keeping identical return values and control flow.
+# ══════════════════════════════════════════════════════════════════════
+
+
+class TestSwallowSitesLogWarnings:
+    """Regression tests for observability: silent swallow sites log warnings."""
+
+    def setup_method(self):
+        self.mock_trip_service = MagicMock()
+        self.mock_fleet_repo = MagicMock()
+        self.mock_driver_repo = MagicMock()
+        self.mock_conflict_service = MagicMock()
+        self.mock_event_bus = MagicMock()
+        self.mock_dta_service = MagicMock()
+
+        self.service = DispatchService(
+            trip_service=self.mock_trip_service,
+            fleet_repo=self.mock_fleet_repo,
+            driver_repo=self.mock_driver_repo,
+            conflict_service=self.mock_conflict_service,
+            event_bus=self.mock_event_bus,
+            dta_service=self.mock_dta_service,
+        )
+
+        self.mock_trip = {"id": 42, "truck_number": None, "truck_id": None,
+                          "driver_id": None, "driver_name": None, "status": "Planned"}
+        self.mock_trip_service.get_by_id.return_value = self.mock_trip
+        self.mock_truck = {"id": 7, "plate": "ABC-123"}
+        self.mock_fleet_repo.get_by_id.return_value = self.mock_truck
+        self.mock_driver = {"id": 5, "name": "John Doe"}
+        self.mock_driver_repo.get_by_id.return_value = self.mock_driver
+
+        self._patch_truck = patch.object(
+            self.service._availability, "check_truck",
+            return_value=MagicMock(available=True, status_text="Available"),
+        )
+        self._patch_truck.start()
+        self._patch_driver = patch.object(
+            self.service._availability, "check_driver",
+            return_value=MagicMock(available=True, status_text="Available"),
+        )
+        self._patch_driver.start()
+
+    def teardown_method(self):
+        self._patch_truck.stop()
+        self._patch_driver.stop()
+
+    def test_assign_truck_event_publish_failure_logs_warning(self):
+        self.mock_event_bus.publish.side_effect = RuntimeError("Bus down")
+        with patch("services.dispatch_service.dispatch_service.logger") as mock_logger:
+            result = self.service.assign_truck(42, 7)
+        assert result.success is True  # behaviour unchanged — still no raise
+        assert mock_logger.warning.call_count == 1
+        args = mock_logger.warning.call_args[0]
+        assert any("TRIP_ASSIGNED" in str(a) for a in args)
+        assert any("42" in str(a) for a in args)
+
+    def test_assign_driver_event_publish_failure_logs_warning(self):
+        self.mock_event_bus.publish.side_effect = RuntimeError("Bus down")
+        with patch("services.dispatch_service.dispatch_service.logger") as mock_logger:
+            result = self.service.assign_driver(42, 5)
+        assert result.success is True
+        assert mock_logger.warning.call_count == 1
+        args = mock_logger.warning.call_args[0]
+        assert any("TRIP_ASSIGNED" in str(a) for a in args)
+
+    def test_dta_pairing_failure_logs_warning(self):
+        self.mock_dta_service.assign_driver_to_truck.side_effect = RuntimeError("DTA down")
+        with patch("services.dispatch_service.dispatch_service.logger") as mock_logger:
+            result = self.service.assign_both(42, 7, 5)
+        assert result.success is True
+        assert mock_logger.warning.call_count == 1
+        args = mock_logger.warning.call_args[0]
+        assert any("DTA pairing failed" in str(a) for a in args)
+
+    def test_transition_status_event_publish_failure_logs_warning(self):
+        self.mock_event_bus.publish.side_effect = RuntimeError("Bus down")
+        service = DispatchService(
+            trip_service=self.mock_trip_service,
+            fleet_repo=self.mock_fleet_repo,
+            driver_repo=self.mock_driver_repo,
+            conflict_service=self.mock_conflict_service,
+            event_bus=self.mock_event_bus,
+            ops_engine=None,
+        )
+        service._trip_service.get_by_id.return_value = self.mock_trip
+        with patch("services.dispatch_service.dispatch_service.logger") as mock_logger:
+            result = service.transition_status(42, "Loading")
+        assert result.success is True
+        assert mock_logger.warning.call_count == 1
+        args = mock_logger.warning.call_args[0]
+        assert any("TRIP_STATUS_CHANGED" in str(a) for a in args)
+
+    def test_route_resolution_failure_logs_warning(self):
+        mock_route_repo = MagicMock()
+        self.mock_trip_service._route_repo = mock_route_repo
+        mock_route_repo.get_by_id.side_effect = ValueError("DB error")
+        trips = [{"id": 42, "status": "Planned", "route_history_v2_id": 99,
+                  "start_date": "2026-01-01"}]
+        self.mock_trip_service._trip_repo.get_by_statuses.return_value = trips
+        with patch("services.dispatch_service.dispatch_service.logger") as mock_logger:
+            response = self.service.get_dispatch_board_data()
+        card = response.column_trips["Planned"][0]
+        assert card["origin"] == ""
+        assert card["destination"] == ""
+        assert mock_logger.warning.call_count == 1
+        args = mock_logger.warning.call_args[0]
+        assert any("Failed to resolve route" in str(a) for a in args)
+
+    def test_delay_parse_error_logs_warning_and_returns_same_default(self):
+        """evaluate_trip_delay still returns (False, 0) but logs a warning."""
+        trip = {"status": "In Transit", "eta": "bad"}
+        now = datetime(2026, 7, 13, 12, 0, 0)
+        with patch.object(
+            DispatchService, "_parse_trip_date", side_effect=ValueError("bad date"),
+        ) as mock_parse, patch(
+            "services.dispatch_service.dispatch_service.logger",
+        ) as mock_logger:
+            delayed, minutes = DispatchService.evaluate_trip_delay(trip, now=now)
+        assert delayed is False
+        assert minutes == 0
+        mock_parse.assert_called_once()
+        assert mock_logger.warning.call_count == 1
+        args = mock_logger.warning.call_args[0]
+        assert any("Failed to evaluate delay" in str(a) for a in args)
+
+    def test_delay_parse_error_logs_trip_id_context_when_present(self):
+        trip = {"status": "Loading", "departure_date": "bad", "trip_id_num": 99}
+        now = datetime(2026, 7, 13, 12, 0, 0)
+        with patch.object(
+            DispatchService, "_parse_trip_date", side_effect=ValueError("bad date"),
+        ), patch("services.dispatch_service.dispatch_service.logger") as mock_logger:
+            delayed, minutes = DispatchService.evaluate_trip_delay(trip, now=now)
+        assert delayed is False
+        assert minutes == 0
+        assert mock_logger.warning.call_count == 1
+        args = mock_logger.warning.call_args[0]
+        assert any("99" in str(a) for a in args)

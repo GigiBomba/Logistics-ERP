@@ -65,6 +65,12 @@ DOCUMENT_MATCHED = "document.automation.matched"
 DOCUMENT_GROUPED = "document.automation.grouped"
 PACKAGE_SENT = "package.sent"
 
+# ── Telemetry / recovery events ──────────────────────────────────────
+RETRY_TRIGGERED = "retry.triggered"
+ROLLBACK_EXECUTED = "rollback.executed"
+EXTERNAL_API_FAILED = "external_api.failed"
+OCR_LOW_CONFIDENCE = "ocr.low_confidence"
+
 VALID_TRANSITIONS = {
     "Planned": ["Loading", "Cancelled"],
     "Loading": ["Planned", "In Transit", "Cancelled"],
@@ -94,6 +100,8 @@ ALL_EVENTS = [
     DOCUMENT_IMPORTED, DOCUMENT_PROCESSED, DOCUMENT_OCR_COMPLETE,
     DOCUMENT_MATCHED, DOCUMENT_GROUPED, PACKAGE_SENT,
     DOCUMENT_OCR_RAN,
+    RETRY_TRIGGERED, ROLLBACK_EXECUTED,
+    EXTERNAL_API_FAILED, OCR_LOW_CONFIDENCE,
 ]
 
 

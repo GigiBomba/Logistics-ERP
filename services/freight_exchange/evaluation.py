@@ -174,8 +174,8 @@ class EvaluationEngineService:
                     toll_cost = float(getattr(result.data, "toll_cost", 0) or 0)
                     driver_salary = float(getattr(result.data, "salary_cost", 0) or 0)
             else:
-                kwargs = {"distance_km": distance_km}
-                result = cost_svc.estimate(**kwargs)
+                from models.cost_models import CostEstimateRequest
+                result = cost_svc.estimate(CostEstimateRequest(distance_km=distance_km))
                 if result is None:
                     raise ValueError("Cost engine returned no result")
                 if isinstance(result, dict):
@@ -212,7 +212,7 @@ class EvaluationEngineService:
 
         Returns (revenue, profit, margin_pct).
         """
-        revenue = load.price.amount
+        revenue = float(load.price.amount)
         total_cost = fuel_cost + toll_cost + driver_salary
         profit = revenue - total_cost
         margin = (profit / revenue * 100.0) if revenue != 0 else 0.0

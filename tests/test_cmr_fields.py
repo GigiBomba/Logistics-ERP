@@ -20,6 +20,9 @@ from PySide6.QtWidgets import (
 
 from ui.views.cmr_form_view.cmr_fields import CmrFieldsMixin
 
+import ui.widgets as _ui_widgets
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
 
 # ── Test host ──────────────────────────────────────────────────────────────────
 

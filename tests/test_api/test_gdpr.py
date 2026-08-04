@@ -36,6 +36,10 @@ def _mock_row(keys_values: dict) -> MagicMock:
 def _make_db(**conn_attrs) -> MagicMock:
     """Create a bare MagicMock DatabaseManager with a conn attached."""
     mock_db = MagicMock()
+    # Prevent auto-creation of user_company_id/user_role (which would make
+    # BaseRepository._scoped truthy); set admin scope explicitly.
+    mock_db.user_company_id = None
+    mock_db.user_role = "admin"
     mock_conn = MagicMock(**conn_attrs)
     type(mock_db).conn = PropertyMock(return_value=mock_conn)
     # Wire db.execute() → db.conn.execute() so production code works via either path
@@ -44,6 +48,19 @@ def _make_db(**conn_attrs) -> MagicMock:
     mock_db.commit = MagicMock(side_effect=lambda: mock_conn.commit())
     # Fake engine so repository code does not try to adapt queries
     mock_db._engine = "sqlite"
+    # Support repository _fetchone/_fetchall calls
+    def _row_to_dict(row):
+        if row is None:
+            return None
+        if hasattr(row, 'keys'):
+            return {k: row[k] for k in row.keys()}
+        return row
+    def _rows_to_dicts(rows):
+        if not rows:
+            return []
+        return [_row_to_dict(r) for r in rows]
+    mock_db.row_to_dict = _row_to_dict
+    mock_db.rows_to_dicts = _rows_to_dicts
     return mock_db
 
 

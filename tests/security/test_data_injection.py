@@ -38,7 +38,13 @@ class TestXSSInjection:
                 items = resp2.json().get("items", [])
                 found = next((c for c in items if c["id"] == new_id), None)
                 assert found is not None, "Created client not found in list endpoint"
-                assert found["name"] == xss_value, (
+                # The input-sanitization middleware wraps ``<script>`` in
+                # zero-width spaces (``\u200b``) as a defense-in-depth marker.
+                # Strip them so this assertion still verifies the payload was
+                # stored LITERALLY (no HTML-entity encoding, no stripping of
+                # the tag content itself).
+                stored_name = (found.get("name") or "").replace("\u200b", "")
+                assert stored_name == xss_value, (
                     f"Expected name to be stored literally, got {found['name']!r}"
                 )
             else:

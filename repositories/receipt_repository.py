@@ -252,7 +252,7 @@ class ReceiptRepository(BaseRepository):
             self._execute(
                 f"UPDATE {self.TABLE} SET {set_clause} WHERE id = ? {self._company_filter()}",
                 tuple(values) + self._company_params(),
-            )
+            commit=True)
             return True
         except Exception as exc:
             logger.warning("ReceiptRepository.update failed for id %s: %s", receipt_id, exc)

@@ -11,6 +11,8 @@ Covers:
 
 from __future__ import annotations
 
+import logging
+import time
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, PropertyMock, patch
 
@@ -198,6 +200,81 @@ class TestInitialize:
         assert isinstance(service._adapter, GenericRestAdapter)
 
 
+# ── FleetTrackingService — credential decryption at read ──────────
+
+
+class TestInitializeCredentials:
+    """Tracking credentials are encrypted at rest and decrypted on read.
+
+    Mirrors the existing ``smtp_password`` handling: values written through
+    ``PreferencesManager`` are ciphertext in the settings table, so the raw
+    ``DatabaseManager.get_setting`` reads here must be decrypted — with a
+    plaintext fallback for legacy values written before encryption existed.
+    """
+
+    def test_ciphertext_credentials_decrypted(self, service, mock_db):
+        def get_setting(key):
+            settings = {
+                "tracking.platform": "frotcom",
+                "tracking.username": "enc:user",
+                "tracking.password": "enc:pass",
+                "tracking.account": "enc:acc",
+            }
+            return settings.get(key, "")
+        mock_db.get_setting.side_effect = get_setting
+        with patch(
+            "services.fleet_tracking_service.decrypt_value",
+            side_effect=lambda v: v.replace("enc:", ""),
+        ):
+            service.initialize(mock_db)
+        assert isinstance(service._adapter, FrotcomAdapter)
+        assert service._adapter.auth == ("user", "pass")
+        assert service._adapter.account == "acc"
+
+    def test_token_credentials_decrypted_for_token_platforms(self, service, mock_db):
+        def get_setting(key):
+            settings = {
+                "tracking.platform": "navixy",
+                "tracking.token": "enc:api-key-123",
+                "tracking.host": "https://api.eu.navixy.com/v2",
+            }
+            return settings.get(key, "")
+        mock_db.get_setting.side_effect = get_setting
+        with patch(
+            "services.fleet_tracking_service.decrypt_value",
+            side_effect=lambda v: v.replace("enc:", ""),
+        ):
+            service.initialize(mock_db)
+        assert isinstance(service._adapter, NavixyAdapter)
+        assert service._adapter.api_key == "api-key-123"
+
+    def test_legacy_plaintext_credentials_pass_through(self, service, mock_db):
+        """Legacy plaintext credentials (pre-encryption) keep working."""
+        def get_setting(key):
+            settings = {
+                "tracking.platform": "traccar",
+                "tracking.host": "http://traccar:8082",
+                "tracking.username": "legacy-admin",
+                "tracking.password": "legacy-pass",
+            }
+            return settings.get(key, "")
+        mock_db.get_setting.side_effect = get_setting
+        with patch(
+            "services.fleet_tracking_service.decrypt_value", side_effect=lambda v: v
+        ):
+            service.initialize(mock_db)
+        assert isinstance(service._adapter, TraccarAdapter)
+        assert service._adapter.auth == ("legacy-admin", "legacy-pass")
+
+    def test_real_decrypt_fallback_legacy_plaintext(self):
+        """Real decrypt_value leaves legacy plaintext credentials unchanged."""
+        from services.fleet_tracking_service import _decrypt_tracking_credential
+
+        assert _decrypt_tracking_credential("legacy-plain-account") == "legacy-plain-account"
+        assert _decrypt_tracking_credential("") == ""
+        assert _decrypt_tracking_credential(None) == ""
+
+
 # ── FleetTrackingService — get_positions ───────────────────────────
 
 class TestGetPositions:
@@ -334,6 +411,7 @@ class TestWialonAdapter:
             ]
         }
         with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = mock_response
             positions = adapter.get_positions()
 
@@ -415,6 +493,7 @@ class TestTraccarAdapter:
             }
         ]
         with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = mock_response
             positions = adapter.get_positions()
 
@@ -441,6 +520,7 @@ class TestNavixyAdapter:
             ]
         }
         with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = mock_response
             positions = adapter.get_positions()
 
@@ -477,6 +557,7 @@ class TestGenericRestAdapter:
             }
         }
         with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 200
             mock_get.return_value.json.return_value = mock_data
             positions = adapter.get_positions()
 
@@ -516,3 +597,125 @@ class TestBaseAdapter:
         adapter = BaseTrackingAdapter()
         with pytest.raises(NotImplementedError):
             adapter.test_connection()
+
+
+# ── Non-200 status guard (F5) ───────────────────────────────────────
+# Every adapter must return [] AND log a warning when the partner returns
+# a non-200 status, instead of swallowing a JSONDecodeError into a silent [].
+
+
+class TestAdaptersNon200StatusGuard:
+    def test_wialon_non_200_returns_empty_and_logs(self, caplog):
+        adapter = WialonAdapter(token="test-token")
+        adapter._session_id = "sess-123"
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 503
+            with caplog.at_level(logging.WARNING, logger="services.fleet_tracking_service"):
+                result = adapter.get_positions()
+        assert result == []
+        assert any(
+            "Wialon get_positions: HTTP 503" in r.message for r in caplog.records
+        )
+
+    def test_frotcom_non_200_returns_empty_and_logs(self, caplog):
+        adapter = FrotcomAdapter(username="u", password="p")
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 503
+            with caplog.at_level(logging.WARNING, logger="services.fleet_tracking_service"):
+                result = adapter.get_positions()
+        assert result == []
+        assert any(
+            "Frotcom get_positions: HTTP 503" in r.message for r in caplog.records
+        )
+
+    def test_traccar_non_200_returns_empty_and_logs(self, caplog):
+        adapter = TraccarAdapter(url="http://traccar:8082", email="a@b.com", password="p")
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 503
+            with caplog.at_level(logging.WARNING, logger="services.fleet_tracking_service"):
+                result = adapter.get_positions()
+        assert result == []
+        assert any(
+            "Traccar get_positions: HTTP 503" in r.message for r in caplog.records
+        )
+
+    def test_navixy_non_200_returns_empty_and_logs(self, caplog):
+        adapter = NavixyAdapter(api_key="key-123")
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 503
+            with caplog.at_level(logging.WARNING, logger="services.fleet_tracking_service"):
+                result = adapter.get_positions()
+        assert result == []
+        assert any(
+            "Navixy get_positions: HTTP 503" in r.message for r in caplog.records
+        )
+
+    def test_generic_rest_non_200_returns_empty_and_logs(self, caplog):
+        adapter = GenericRestAdapter(url="http://example.com/api")
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 503
+            with caplog.at_level(logging.WARNING, logger="services.fleet_tracking_service"):
+                result = adapter.get_positions()
+        assert result == []
+        assert any(
+            "Generic REST get_positions: HTTP 503" in r.message for r in caplog.records
+        )
+
+    def test_non_200_body_is_never_json_parsed(self, caplog):
+        """A non-200 HTML body must not be fed to .json() (would raise)."""
+        adapter = TraccarAdapter(url="http://traccar:8082", email="a@b.com", password="p")
+        with patch("requests.get") as mock_get:
+            mock_get.return_value.status_code = 500
+            mock_get.return_value.json.side_effect = ValueError("html body")
+            result = adapter.get_positions()
+        assert result == []
+        # .json() must never have been attempted on the non-200 response.
+        mock_get.return_value.json.assert_not_called()
+
+
+# ── Poll backoff + jitter (F5) ──────────────────────────────────────
+
+
+class TestPollBackoff:
+    def test_backoff_base_equals_interval(self, service):
+        with patch("services.fleet_tracking_service.random.uniform", return_value=0.0):
+            assert service._compute_poll_wait(30, 0) == 30
+            assert service._compute_poll_wait(30, 1) == 30
+
+    def test_backoff_doubles_on_consecutive_failures(self, service):
+        with patch("services.fleet_tracking_service.random.uniform", return_value=0.0):
+            assert service._compute_poll_wait(30, 1) == 30
+            assert service._compute_poll_wait(30, 2) == 60
+            assert service._compute_poll_wait(30, 3) == 120
+            assert service._compute_poll_wait(30, 4) == 240
+
+    def test_backoff_is_monotonic(self, service):
+        with patch("services.fleet_tracking_service.random.uniform", return_value=0.0):
+            waits = [
+                service._compute_poll_wait(30, n) for n in range(0, 8)
+            ]
+        assert waits == sorted(waits)
+
+    def test_backoff_capped_at_10min(self, service):
+        with patch("services.fleet_tracking_service.random.uniform", return_value=0.0):
+            # 30 * 2**9 = 15360s without the cap → must be clamped to 600.
+            assert service._compute_poll_wait(30, 10) == 600
+            assert service._compute_poll_wait(30, 30) == 600
+
+    def test_backoff_includes_jitter(self, service):
+        w = service._compute_poll_wait(30, 1)
+        assert 30 <= w <= 35  # base 30 + uniform(0, 5)
+
+    def test_poll_loop_respects_stop_event_during_backoff(self, service):
+        """Empty polls trigger backoff but stop_polling still interrupts."""
+        adapter = MagicMock(spec=BaseTrackingAdapter)
+        adapter.get_positions.return_value = []
+        service._adapter = adapter
+        service._poll_interval = 0.01
+        service.start_polling(interval_seconds=0.01)
+        try:
+            time.sleep(0.1)  # let a couple of empty polls run
+        finally:
+            service.stop_polling(timeout=2)
+        assert service._polling is False
+        assert adapter.get_positions.call_count >= 1

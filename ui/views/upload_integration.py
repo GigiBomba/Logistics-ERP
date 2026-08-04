@@ -35,7 +35,7 @@ from client.config import ClientConfig, get_client_config
 from client.network.network_worker import NetworkWorker
 from services.i18n import t
 from ui.components import Btn
-from ui.theme import S
+from ui.design_tokens import SP
 from ui.widgets import SectionHeader
 
 logger = logging.getLogger(__name__)
@@ -68,8 +68,8 @@ class UploadIntegrationWidget(QWidget):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["3"])
 
         header = SectionHeader(self, t("upload.title", default="Upload & OCR"))
         layout.addWidget(header)
@@ -77,7 +77,7 @@ class UploadIntegrationWidget(QWidget):
         pick_row = QWidget(self)
         pick_layout = QHBoxLayout(pick_row)
         pick_layout.setContentsMargins(0, 0, 0, 0)
-        pick_layout.setSpacing(S["2"])
+        pick_layout.setSpacing(SP["2"])
 
         self._path_label = QLabel(t("upload.no_file", default="No file selected"), pick_row)
         self._path_label.setProperty("fontRole", "small")
@@ -117,7 +117,7 @@ class UploadIntegrationWidget(QWidget):
         self._result_content = QWidget(self._result_scroll)
         self._result_layout = QVBoxLayout(self._result_content)
         self._result_layout.setContentsMargins(0, 0, 0, 0)
-        self._result_layout.setSpacing(S["1"])
+        self._result_layout.setSpacing(SP["1"])
         self._result_layout.setAlignment(Qt.AlignTop)
         self._result_scroll.setWidget(self._result_content)
         self._result_scroll.setVisible(False)

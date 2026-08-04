@@ -52,10 +52,25 @@ def _import_row(db: InMemoryDB, **kw) -> int:
     return db.conn.execute("SELECT last_insert_rowid()").fetchone()[0]
 
 
+def _ensure_parents(db: InMemoryDB, truck_id: int = 1, import_id: int = 1) -> None:
+    """Create parent records needed for FK constraints on tacho_vehicle_data."""
+    db.conn.execute(
+        "INSERT OR IGNORE INTO trucks (id, plate_number, active_status) VALUES (?, 'FK-TRUCK', 1)",
+        (truck_id,),
+    )
+    db.conn.execute(
+        "INSERT OR IGNORE INTO tacho_imports (id, file_name, file_type, file_hash, imported_at, parse_status) "
+        "VALUES (?, 'test.ddd', 'DDD', 'abc', datetime('now'), 'ok')",
+        (import_id,),
+    )
+    db.conn.commit()
+
+
 def _vehicle_row(db: InMemoryDB, **kw) -> int:
     """Insert a minimal tacho_vehicle_data row and return its id."""
     d = dict(import_id=1, truck_id=1, vu_serial_number="VU-001")
     d.update(kw)
+    _ensure_parents(db, truck_id=d.get("truck_id", 1), import_id=d.get("import_id", 1))
     cols = ", ".join(d.keys())
     vals = ", ".join("?" for _ in d)
     db.conn.execute(f"INSERT INTO tacho_vehicle_data ({cols}) VALUES ({vals})", list(d.values()))
@@ -74,6 +89,7 @@ class TestCreate:
 
     def test_create_persists_data(self, db, repo):
         """Inserted row is readable back with matching values."""
+        _ensure_parents(db, truck_id=1, import_id=1)
         iid = repo.create({
             "import_id": 1,
             "truck_id": 1,

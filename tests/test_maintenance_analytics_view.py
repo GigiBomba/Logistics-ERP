@@ -87,10 +87,12 @@ class TestQtMaintenanceAnalyticsView:
     # ── UI elements ────────────────────────────────────────────────────
 
     def test_chart_widget_a_created(self, view):
+        view._load_data()  # Ensures lazy creation fires
         assert hasattr(view, "_chart_widget_a")
         assert view._chart_widget_a is not None
 
     def test_chart_widget_b_created(self, view):
+        view._load_data()  # Ensures lazy creation fires
         assert hasattr(view, "_chart_widget_b")
         assert view._chart_widget_b is not None
 
@@ -198,8 +200,11 @@ class TestQtMaintenanceAnalyticsView:
             mock_b.assert_called_once()
 
     def test_render_charts_no_charts(self, view):
+        # Both chart widgets and placeholders are None — lazy creation short-circuits
         view._chart_widget_a = None
         view._chart_widget_b = None
+        view._chart_placeholder_a = None
+        view._chart_placeholder_b = None
         view._render_charts()  # no crash
 
     def test_render_charts_empty_data(self, view):

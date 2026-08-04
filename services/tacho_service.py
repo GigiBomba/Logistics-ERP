@@ -39,6 +39,10 @@ from utils.resource_path import data_path
 
 logger = logging.getLogger(__name__)
 
+# Cache of the successfully version-probed parser binary path (see
+# ``_resolve_parser_path``) — the 5s probe runs at most once per process.
+_parser_verified_path: str | None = None
+
 _DEFAULT_TACHOGRAPH_PATH = data_path("tools/tachograph/tachograph.exe")
 TACHOGRAPH_PATH = os.environ.get(
     "OPERION_TACHOGRAPH_PATH",
@@ -598,10 +602,42 @@ class TachoService:
     # ═════════════════════════════════════════════════════════════════
 
     def _resolve_parser_path(self):
-        """Return path to tachograph parser binary, or None."""
-        if os.path.exists(TACHOGRAPH_PATH):
-            return TACHOGRAPH_PATH
-        return None
+        """Return path to tachograph parser binary, or None.
+
+        After the exists-check, runs a quick ``--version`` probe so a stale or
+        broken binary (non-zero exit, subprocess failure, or timeout) is
+        treated as "no parser found" and the caller's graceful error path
+        fires.  Never blocks imports and keeps the 30s parse timeout
+        untouched.
+
+        The successful probe result is cached (``_parser_verified_path``) so
+        the 5s probe runs at most once per process — later parses skip it.
+        A failed probe is never cached, so the next parse re-attempts.
+        """
+        global _parser_verified_path
+        if _parser_verified_path and os.path.exists(_parser_verified_path):
+            return _parser_verified_path
+        if not os.path.exists(TACHOGRAPH_PATH):
+            return None
+        try:
+            probe = subprocess.run(
+                [TACHOGRAPH_PATH, "--version"],
+                capture_output=True,
+                timeout=5,
+            )
+        except (OSError, subprocess.SubprocessError):
+            logger.warning(
+                "Tachograph parser version probe failed for %s", TACHOGRAPH_PATH,
+            )
+            return None
+        if probe.returncode != 0:
+            logger.warning(
+                "Tachograph parser version probe returned rc=%d for %s",
+                probe.returncode, TACHOGRAPH_PATH,
+            )
+            return None
+        _parser_verified_path = TACHOGRAPH_PATH
+        return TACHOGRAPH_PATH
 
     def _run_parser(self, file_bytes: bytes):
         """Run tachograph.exe parse on *file_bytes* via temp file.

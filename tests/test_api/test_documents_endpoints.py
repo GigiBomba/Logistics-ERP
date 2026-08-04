@@ -128,7 +128,11 @@ class TestDocumentsUploadEndpoint:
 
     def test_upload_document_success(self, client_with_mocks):
         client, mocks = client_with_mocks
-        mocks["document_service"].upload.return_value = {**FAKE_DOC, "id": 10}
+        from unittest.mock import MagicMock
+        mocks["document_service"].upload_document.return_value = MagicMock(
+            success=True,
+            data=MagicMock(model_dump=lambda: {**FAKE_DOC, "id": 10}),
+        )
 
         resp = client.post(
             f"{BASE}/upload",
@@ -164,7 +168,11 @@ class TestDocumentsUploadEndpoint:
 
     def test_upload_document_with_metadata(self, client_with_mocks):
         client, mocks = client_with_mocks
-        mocks["document_service"].upload.return_value = {**FAKE_DOC, "id": 20}
+        from unittest.mock import MagicMock
+        mocks["document_service"].upload_document.return_value = MagicMock(
+            success=True,
+            data=MagicMock(model_dump=lambda: {**FAKE_DOC, "id": 20}),
+        )
 
         resp = client.post(
             f"{BASE}/upload",
@@ -173,18 +181,21 @@ class TestDocumentsUploadEndpoint:
                   "entity_id": "42", "uploaded_by": "alice"},
         )
         assert resp.status_code == 200
-        mocks["document_service"].upload.assert_called_once()
+        mocks["document_service"].upload_document.assert_called_once()
 
     def test_upload_document_service_failure(self, client_with_mocks):
         client, mocks = client_with_mocks
-        mocks["document_service"].upload.return_value = None
+        from unittest.mock import MagicMock
+        mocks["document_service"].upload_document.return_value = MagicMock(
+            success=False,
+            data=None,
+        )
 
         resp = client.post(
             f"{BASE}/upload",
             files={"file": ("test.pdf", b"%PDF-1.4", "application/pdf")},
         )
         assert resp.status_code == 500
-        assert resp.json()["detail"] == "Upload failed"
 
 
 class TestDocumentsUpdateEndpoint:

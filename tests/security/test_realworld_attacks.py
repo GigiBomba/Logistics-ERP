@@ -170,9 +170,8 @@ class TestIDOR:
     def test_cross_tenant_trip_update(self, client: TestClient, auth_a: dict) -> None:
         """Company A updating Company B's trip should return 404.
 
-        Known gap: the repository UPDATE method does not check company_id,
-        so the update currently succeeds (200).  A proper fix must add a
-        company_id filter to the UPDATE SQL.
+        Fixed (F6): the trip UPDATE is now company-scoped — a cross-tenant
+        update surfaces as 404 before any write.
         """
         try:
             resp = client.put(
@@ -180,9 +179,8 @@ class TestIDOR:
                 json={"status": "Delivered"},
                 headers=auth_a,
             )
-            # Accept 200 as well — documents the gap described above
-            assert resp.status_code in (200, 404, 500), (
-                f"Expected 200/404/500, got {resp.status_code}: {resp.text}"
+            assert resp.status_code == 404, (
+                f"Expected 404, got {resp.status_code}: {resp.text}"
             )
         except ValueError:
             pass
@@ -190,18 +188,16 @@ class TestIDOR:
     def test_cross_tenant_trip_delete(self, client: TestClient, auth_a: dict) -> None:
         """Company A deleting Company B's trip should return 404.
 
-        Known gap: the repository DELETE method does not check company_id,
-        so the delete currently succeeds (200).  A proper fix must add a
-        company_id filter to the DELETE SQL.
+        Fixed (F6): the trip DELETE is now company-scoped — a cross-tenant
+        delete surfaces as 404 before any write.
         """
         try:
             resp = client.delete(
                 f"/api/v1/trips/{_COMPANY_B_TRIP_ID}",
                 headers=auth_a,
             )
-            # Accept 200 as well — documents the gap described above
-            assert resp.status_code in (200, 404, 500), (
-                f"Expected 200/404/500, got {resp.status_code}: {resp.text}"
+            assert resp.status_code == 404, (
+                f"Expected 404, got {resp.status_code}: {resp.text}"
             )
         except ValueError:
             pass
@@ -248,19 +244,29 @@ class TestIDOR:
     def test_cross_tenant_list_does_not_leak(self, client: TestClient, auth_a: dict) -> None:
         """Company A listing trips must only see Company A data (no B names).
 
-        Known gap: the list endpoint may not scope by company_id, so both
-        companies' data can appear.  This documents current behavior rather
-        than asserting strict isolation (which requires a backend fix).
+        Fixed (F6): the trips list query is now company-scoped — Company B
+        trips must never appear in Company A's listing.
         """
         resp = client.get("/api/v1/trips/", headers=auth_a)
         assert resp.status_code == 200, f"Expected 200, got {resp.status_code}"
-        # body = resp.json()
-        # items = body.get("items", [])
-        # Known gap: list endpoint may not enforce company_id scoping.
-        # A proper fix requires adding a company_id filter to the list query.  # noqa: E501
+        body = resp.json()
+        items = body.get("items", [])
+        for trip in items:
+            client_name = (trip.get("client_name") or "").lower()
+            driver_name = (trip.get("driver_name") or "").lower()
+            assert "company b" not in client_name and "client b" not in client_name, (
+                f"Trip {trip.get('id')} leaks Company B client: {client_name}"
+            )
+            assert "driver b" not in driver_name, (
+                f"Trip {trip.get('id')} leaks Company B driver: {driver_name}"
+            )
 
     def test_cross_tenant_invoice_read(self, client: TestClient, auth_a: dict, auth_b: dict) -> None:
-        """Create an invoice for a Company B trip, then read as Company A → 404."""
+        """Create an invoice for a Company B trip, then read as Company A → 404.
+
+        Fixed (F6): the client-invoices query is scoped to the caller's
+        company, so Company A cannot see Company B's invoice data.
+        """
         # ── Create invoice as Company B for their own trip ──────────────
         trip_data = {
             "id": _COMPANY_B_TRIP_ID,
@@ -280,27 +286,22 @@ class TestIDOR:
             pytest.skip("Invoice generation for trip 3 did not return 200 — "
                         "cannot test cross-tenant invoice read")
 
-        # The invoice is now in the DB with company_id=2.
-        # Try to fetch invoice by trip ID as Company A.
-        # Since invoices are linked to trips, we try reading via
-        # the trip's invoices endpoint if available, or directly.
-        # The simplest approach: try listing invoices as Company A
-        # and assert no Company B data leaks.
-        # We'll query client/{COMPANY_B_CLIENT_ID}/invoices as company A.
+        # The invoice is now in the DB with company_id=2.  Company A reads
+        # Company B's client invoice list — no Company B data may leak.
         resp = client.get(
             f"/api/v1/clients/{_COMPANY_B_CLIENT_ID}/invoices",
             headers=auth_a,
         )
-        # Company A should not be able to see Company B's invoices
-        try:
-            # Known gap: invoices endpoint has no company_id scoping,
-            # so it may return 200 with empty items for cross-tenant reads.
-            assert resp.status_code in (200, 404), (
-                f"Expected 200/404 for cross-tenant invoice read, "
-                f"got {resp.status_code}: {resp.text}"
-            )
-        except ValueError:
-            pass
+        # The client itself belongs to Company B; Company A must get either
+        # 404 (no such client in its scope) or 200 with ZERO Company B items.
+        assert resp.status_code in (200, 404), (
+            f"Unexpected status {resp.status_code}: {resp.text}"
+        )
+        if resp.status_code == 200:
+            for invoice in resp.json().get("items", []):
+                assert invoice.get("client_name") != "Client B-1", (
+                    f"Company A leaked Company B invoice: {invoice}"
+                )
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

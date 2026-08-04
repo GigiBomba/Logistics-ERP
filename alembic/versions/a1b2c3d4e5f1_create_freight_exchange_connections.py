@@ -18,7 +18,7 @@ def upgrade() -> None:
     op.create_table(
         'freight_exchange_connections',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
         sa.Column('provider_id', sa.String(), nullable=False),
         sa.Column('credentials_encrypted', sa.Text(), nullable=False),
         sa.Column('session_state', sa.JSON(), nullable=True),

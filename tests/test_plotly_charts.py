@@ -7,14 +7,14 @@ class TestPlotlyCharts:
         from ui.plotly_charts import make_pie_chart
         labels = ["A", "B", "C"]
         values = [10, 20, 30]
-        fig = make_pie_chart(labels, values, title="Test")
+        fig = make_pie_chart(values, labels, title="Test")
         assert fig is not None
 
     def test_make_line_chart(self):
         from ui.plotly_charts import make_line_chart
         x = [1, 2, 3]
         y = [10, 20, 30]
-        fig = make_line_chart(x, y, title="Test")
+        fig = make_line_chart(x, [(y, "Series 1", "#6366F1")], title="Test")
         assert fig is not None
 
     def test_make_bar_chart(self):
@@ -46,9 +46,9 @@ class TestPlotlyCharts:
 
     def test_make_box_plot(self):
         from ui.plotly_charts import make_box_plot
-        data = [[1, 2, 3], [4, 5, 6]]
+        data = [[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]]
         labels = ["A", "B"]
-        fig = make_box_plot(data, labels)
+        fig = make_box_plot(labels, data)
         assert fig is not None
 
     def test_format_value(self):

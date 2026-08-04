@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.components import Btn, Card, EmptyState, Label, StatusBadge
+from ui.components import EmptyState, StatusBadge
 from ui.views.migration_center.immigrate_physical_tab import (
     ImmigratePhysicalTab,
 )
@@ -47,6 +47,7 @@ def physical_tab(qt_widget, qtbot):
     """Provide an ImmigratePhysicalTab with db=None (services gracefully degraded)."""
     tab = ImmigratePhysicalTab(parent=qt_widget, db=None)
     qtbot.addWidget(tab)
+    qt_widget.show()  # Show parent so children become visible
     yield tab
     tab.deleteLater()
 
@@ -62,6 +63,7 @@ def physical_tab_with_svc(qt_widget, qtbot):
         mock_svc_cls.return_value = mock_svc
         tab = ImmigratePhysicalTab(parent=qt_widget, db=db)
     qtbot.addWidget(tab)
+    qt_widget.show()  # Show parent so children become visible
     yield tab, mock_svc
     tab.deleteLater()
 
@@ -105,8 +107,8 @@ class TestImmigratePhysicalTabInit:
         assert len(empties) >= 1
 
     def test_has_file_count_label(self, physical_tab):
-        labels = physical_tab.findChildren(Label)
-        assert any("file" in l.text().lower() or len(l.text()) > 0 for l in labels)
+        assert hasattr(physical_tab, "_file_count_label")
+        assert physical_tab._file_count_label is not None
 
     def test_processing_complete_signal_connected(self, physical_tab):
         assert physical_tab.processing_complete is not None

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.theme import COLORS
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_BG_ELEVATED, COLOR_BG_OVERLAY, COLOR_BORDER_STRONG
 
 class QtDispatchTabs(QWidget):
     """Horizontal tab bar that switches between stacked panels.
@@ -30,10 +30,10 @@ class QtDispatchTabs(QWidget):
     changing the import and swapping ``CTkFrame`` panels for ``QWidget``.
     """
 
-    TAB_BG = COLORS["bg_surface"]
-    TAB_ACTIVE = COLORS["accent"]
-    TAB_INACTIVE = COLORS["bg_elevated"]
-    TAB_HOVER = COLORS["border_hover"]
+    TAB_BG = COLOR_BG_ELEVATED
+    TAB_ACTIVE = COLOR_ACCENT_PRIMARY
+    TAB_INACTIVE = COLOR_BG_OVERLAY
+    TAB_HOVER = COLOR_BORDER_STRONG
 
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
@@ -149,6 +149,28 @@ class QtDispatchTabs(QWidget):
             btn = self._buttons.get(tab_id)
             if btn is not None:
                 btn.setText(new_label)
+
+    def set_tab_panel(self, tab_id: str, panel: QWidget) -> None:
+        """Replace the panel widget for an already-registered tab.
+
+        Used to swap a lightweight placeholder for a fully-initialized
+        panel on first switch (lazy loading).
+        """
+        old_panel = self._tabs.get(tab_id)
+        if old_panel is None or old_panel is panel:
+            return
+
+        idx = self._stack.indexOf(old_panel)
+        if idx < 0:
+            return
+
+        self._stack.removeWidget(old_panel)
+        self._stack.insertWidget(idx, panel)
+        self._tabs[tab_id] = panel
+        old_panel.deleteLater()
+
+        if self._active_tab == tab_id:
+            self._stack.setCurrentWidget(panel)
 
     def get_active_tab(self) -> str | None:
         """Return the ``tab_id`` of the currently active tab, or ``None``."""

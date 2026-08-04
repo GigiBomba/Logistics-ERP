@@ -85,9 +85,11 @@ def test_get_default_template(service):
 
 def test_create_template(service):
     service._repo.create_template.return_value = 42
+    service._repo.get_template_by_id.return_value = {"id": 42, "name": "Test"}
     data = {"name": "Test", "subject": "Hello"}
-    tid = service.create_template(data)
-    assert tid == 42
+    result = service.create_template(data)
+    assert result.success is True
+    assert result.data["id"] == 42
     service._repo.create_template.assert_called_with(data)
 
 

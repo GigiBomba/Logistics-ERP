@@ -1,6 +1,6 @@
 """Top bar widget for the PySide6 main window.
 
-Replaces ui/widgets/top_bar.py. Provides breadcrumb, clock, alert bell, and fuel status.
+Replaces ui/widgets/top_bar.py. Provides clock, alert bell, fuel status, and navigation controls.
 """
 
 from __future__ import annotations
@@ -10,11 +10,14 @@ from datetime import datetime
 from typing import Any, Callable
 
 import qtawesome as qta
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -22,16 +25,25 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.design_tokens import (
     BORDER_DEFAULT,
+    BTN_HEIGHT_SM,
+    COLOR_ACCENT_PRIMARY,
+    COLOR_BORDER_SUBTLE,
+    COLOR_TEXT_SECONDARY,
     DANGER,
     FONT_MONO,
+    FONT_SIZE_LG,
+    FONT_SIZE_SM,
     SUCCESS,
     TEXT_MUTED,
-    TEXT_PRIMARY,
     TOPBAR_HEIGHT,
 )
 
 class TopBar(QFrame):
-    """44px top bar with breadcrumb, clock, alert bell, and fuel status."""
+    """44px top bar with clock, alert bell, fuel status, and navigation controls."""
+
+    back_clicked = Signal()
+    recent_clicked = Signal(str)
+    report_issue_clicked = Signal()
 
     def __init__(self, parent: QWidget | None = None, ops=None):
         super().__init__(parent)
@@ -62,20 +74,45 @@ class TopBar(QFrame):
         row_layout.setContentsMargins(20, 0, 16, 0)
         row_layout.setSpacing(8)
 
-        # Breadcrumb
-        self._breadcrumb = QLabel("")
-        self._breadcrumb.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 15px; font-weight: 600; background: transparent;"
-        )
-        row_layout.addWidget(self._breadcrumb)
+        # Back button (hidden until nav stack has history)
+        self._back_btn = QPushButton()
+        self._back_btn.setIcon(qta.icon("fa5s.arrow-left", color=COLOR_TEXT_SECONDARY))
+        self._back_btn.setFixedSize(BTN_HEIGHT_SM, BTN_HEIGHT_SM)
+        self._back_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
+        self._back_btn.setAccessibleName("Go back")
+        self._back_btn.setToolTip(t("nav.back", default="Back (Alt+Left)"))
+        self._back_btn.setProperty("variant", "ghost")
+        self._back_btn.setCursor(Qt.PointingHandCursor)
+        self._back_btn.setVisible(False)
+        self._back_btn.clicked.connect(self.back_clicked.emit)
+        row_layout.addWidget(self._back_btn)
+
+        # Recent button (hidden until nav stack has items)
+        self._recent_btn = QPushButton()
+        self._recent_btn.setIcon(qta.icon("fa5s.clock", color=COLOR_TEXT_SECONDARY))
+        self._recent_btn.setText(t("nav.recent", default="Recent"))
+        self._recent_btn.setToolTip(t("nav.recent_tooltip", default="Recently viewed pages"))
+        self._recent_btn.setProperty("variant", "ghost")
+        self._recent_btn.setCursor(Qt.PointingHandCursor)
+        self._recent_btn.setFixedHeight(BTN_HEIGHT_SM)
+        self._recent_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
+        self._recent_btn.setVisible(False)
+        row_layout.addWidget(self._recent_btn)
 
         row_layout.addStretch(1)
 
+        # Subtle vertical separator before the right section
+        sep_before = QFrame()
+        sep_before.setFrameShape(QFrame.VLine)
+        sep_before.setFixedSize(1, 20)
+        sep_before.setStyleSheet(f"background: {COLOR_BORDER_SUBTLE}; max-width: 1px; min-width: 1px;")
+        row_layout.addWidget(sep_before)
+
         # Fuel status dot
         self._fuel_dot = QLabel()
-        self._fuel_dot.setFixedSize(6, 6)
+        self._fuel_dot.setFixedSize(8, 8)
         self._fuel_dot.setStyleSheet(
-            f"background: {DANGER}; border-radius: 3px;"
+            f"background: {DANGER}; border-radius: 4px;"
         )
         self._fuel_dot.setToolTip(t("fuel.updated_tooltip", default="Fuel prices updated ? ago"))
         row_layout.addWidget(self._fuel_dot)
@@ -88,6 +125,7 @@ class TopBar(QFrame):
 
         self._bell = QLabel()
         self._bell.setPixmap(qta.icon("fa5s.bell", color=TEXT_MUTED).pixmap(16, 16))
+        self._bell.setAccessibleName("Notifications")
         self._bell.setCursor(Qt.PointingHandCursor)
         self._bell.setToolTip(t("common.show_alerts", default="Show alerts"))
         self._bell.mousePressEvent = self._on_bell_clicked
@@ -104,6 +142,22 @@ class TopBar(QFrame):
 
         row_layout.addWidget(alert_widget)
 
+        # Report Issue button - placeholder
+        self._report_issue_btn = QPushButton()
+        self._report_issue_btn.setIcon(
+            qta.icon("fa5s.bug", color=TEXT_MUTED),
+        )
+        self._report_issue_btn.setFixedSize(BTN_HEIGHT_SM, BTN_HEIGHT_SM)
+        self._report_issue_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
+        self._report_issue_btn.setAccessibleName("Report Issue")
+        self._report_issue_btn.setToolTip(
+            t("report_issue.button_tooltip", default="Report an Issue"),
+        )
+        self._report_issue_btn.setProperty("variant", "ghost")
+        self._report_issue_btn.setCursor(Qt.PointingHandCursor)
+        self._report_issue_btn.clicked.connect(self.report_issue_clicked.emit)
+        row_layout.addWidget(self._report_issue_btn)
+
         # Separator
         sep = QFrame()
         sep.setFixedSize(1, 16)
@@ -112,15 +166,13 @@ class TopBar(QFrame):
 
         # Clock
         self._clock = QLabel("")
+        self._clock.setAccessibleName("Current time")
         self._clock.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-family: '{FONT_MONO}'; font-size: 13px; background: transparent;"
+            f"color: {TEXT_MUTED}; font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_SM}px; background: transparent;"
         )
         row_layout.addWidget(self._clock)
 
         layout.addWidget(row)
-
-    def set_breadcrumb(self, text: str) -> None:
-        self._breadcrumb.setText(text)
 
     def set_fuel_status(self, text: str) -> None:
         """Update the fuel status tooltip and dot color."""
@@ -128,9 +180,9 @@ class TopBar(QFrame):
         # Simple heuristic: if text contains "offline" or "?", show red, else green
         lower = text.lower()
         if "offline" in lower or "?" in lower:
-            self._fuel_dot.setStyleSheet(f"background: {DANGER}; border-radius: 3px;")
+            self._fuel_dot.setStyleSheet(f"background: {DANGER}; border-radius: 4px;")
         else:
-            self._fuel_dot.setStyleSheet(f"background: {SUCCESS}; border-radius: 3px;")
+            self._fuel_dot.setStyleSheet(f"background: {SUCCESS}; border-radius: 4px;")
 
     def set_alert_count(self, count: int) -> None:
         if count > 0:
@@ -147,6 +199,22 @@ class TopBar(QFrame):
 
     def set_alert_navigate_callback(self, callback: Callable[[str, dict[str, Any] | None], None]) -> None:
         self._on_navigate = callback
+
+    def set_back_enabled(self, enabled: bool) -> None:
+        """Show or hide the back navigation button."""
+        self._back_btn.setVisible(enabled)
+
+    def _update_recent_menu(self, recent_items: list[tuple[str, str]]) -> None:
+        """Update recent dropdown. Each tuple: (view_key, display_name)."""
+        self._recent_btn.setVisible(len(recent_items) > 0)
+        if not recent_items:
+            return
+        menu = QMenu(self)
+        for view_key, name in recent_items[-5:]:
+            action = QAction(name, self)
+            action.triggered.connect(lambda checked, vk=view_key: self.recent_clicked.emit(vk))
+            menu.addAction(action)
+        self._recent_btn.setMenu(menu)
 
     def _update_clock(self) -> None:
         self._clock.setText(datetime.now().strftime("%H:%M"))

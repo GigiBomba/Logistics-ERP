@@ -51,6 +51,10 @@ def _make_actions_mock() -> MagicMock:
     actions._drag_source_col = None
     actions._drag_target_col = None
     actions._show_toast = MagicMock()
+    actions._dispatch_service = MagicMock()
+    actions._db = MagicMock()
+    actions._fleet_repo = MagicMock()
+    actions._conflict_service = MagicMock()
     # Default: parse_date returns a date far in the past so that
     # individual tests can override it as needed.
     actions._parse_date = MagicMock(
@@ -199,13 +203,14 @@ class TestEvaluateAllDelays:
         actions._columns["Planned"]._cards = [card_1]
         actions._columns["In Transit"]._cards = [card_2]
 
-        with patch.object(actions, "_is_trip_delayed", return_value=(True, 10)):
-            with patch.object(actions, "_create_delay_alert"):
-                BoardActionsMixin._evaluate_all_delays(actions)
+        # _evaluate_all_delays now delegates to _dispatch_service
+        actions._dispatch_service.evaluate_trip_delay.return_value = (True, 10)
 
-            assert actions._is_trip_delayed.call_count == 2
-            card_1.set_delayed.assert_called_with(True, 10)
-            card_2.set_delayed.assert_called_with(True, 10)
+        BoardActionsMixin._evaluate_all_delays(actions)
+
+        assert actions._dispatch_service.evaluate_trip_delay.call_count == 2
+        card_1.set_delayed.assert_called_with(True, 10)
+        card_2.set_delayed.assert_called_with(True, 10)
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -263,7 +268,7 @@ class TestHandleTransition:
             return_value=MagicMock(),
         ):
             with patch(
-                "ui.widgets.trip_card.QtTripCard",
+                "ui.views.dispatch_board.board_actions.QtTripCard",
                 return_value=MagicMock(),
             ):
                 BoardActionsMixin._handle_transition(
@@ -426,6 +431,15 @@ class _QtBoardActionsTestWidget(BoardActionsMixin, QWidget):
         self._find_card_by_trip_id = MagicMock(return_value=None)
         self._preload_alerts = MagicMock()
         self._start_load = MagicMock()
+
+    def _open_detail_drawer(self, trip_data: dict) -> None:
+        """Override for the mixin's _on_card_click to work in tests."""
+        import ui.dialogs.dispatch_detail_panel as detail_mod
+        self._detail_panel = detail_mod.QtDispatchDetailPanel(trip_data)
+
+    def _on_detail_close(self) -> None:
+        """Override for the mixin's _on_detail_close to clear panel."""
+        self._detail_panel = None
         self._parse_date = MagicMock(return_value=datetime(2020, 1, 1))
 
         self.setAcceptDrops(True)

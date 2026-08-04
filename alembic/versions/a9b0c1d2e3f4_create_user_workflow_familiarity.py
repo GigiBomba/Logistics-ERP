@@ -18,8 +18,8 @@ def upgrade() -> None:
     op.create_table(
         'user_workflow_familiarity',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.UUID(), sa.ForeignKey('companies.id'), nullable=False),
-        sa.Column('user_id', sa.UUID(), sa.ForeignKey('users.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('user_id', sa.BigInteger(), sa.ForeignKey('users.id'), nullable=False),
         sa.Column('workflow_id', sa.Text(), nullable=False),
         sa.Column('times_completed', sa.Integer(), nullable=False, server_default='0'),
         sa.Column('last_completed_at', sa.DateTime(timezone=True), nullable=True),

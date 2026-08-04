@@ -24,6 +24,32 @@ from tests.security.conftest import TEST_DB_PATH as _TEST_DB_PATH
 from backend.api.v1.registration import _clear_register_rate_limit
 
 
+@pytest.fixture(scope="module")
+def client(request):
+    """Module-scoped real backend ``client`` on an ISOLATED test database.
+
+    The root conftest re-exports a mocked ``client``/``app`` (from
+    ``tests/test_api/conftest.py``) which shadows the security conftest's
+    module-scoped real-app ``client`` for modules outside ``tests/security/``.
+    Those tests used to silently run against the shared ``data/cashflow.db``
+    (each run created real companies in the dev DB — e.g. ids 1593+).
+
+    This local fixture re-registers the security conftest's app fixture
+    explicitly so registration E2E runs against a fresh, isolated DB with
+    the real auth/RBAC stack.
+    """
+    import tests.security.conftest as _sec
+
+    gen = _sec.app.__wrapped__(request)
+    app = next(gen)
+    tc = TestClient(app, raise_server_exceptions=False)
+    yield tc
+    try:
+        next(gen)  # run the module-scoped teardown (truncate tables)
+    except StopIteration:
+        pass
+
+
 def _register(client, json_body):
     """Helper: clear registration rate limit, POST register, return response."""
     _clear_register_rate_limit()

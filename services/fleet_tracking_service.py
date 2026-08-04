@@ -1,6 +1,9 @@
 """Fleet tracking service — polls external GPS platforms via adapter pattern."""
+from __future__ import annotations
+
 import json
 import logging
+import random
 import threading
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -8,7 +11,33 @@ from typing import Optional
 
 import requests
 
+from services.encryption_service import decrypt_value
+
 logger = logging.getLogger(__name__)
+
+# ── Poll backoff (F5 resilience) ────────────────────────────────────────
+# On consecutive empty/failed polls the background loop backs off: base wait
+# is the configured poll interval (default 30s), doubled each failure up to
+# 10 minutes, plus up to 5s of random jitter to avoid stampeding a
+# recovering partner when the fleet comes back online.
+POLL_BACKOFF_MAX_SECONDS = 600  # 10 minutes
+POLL_JITTER_MAX_SECONDS = 5.0
+
+
+def _decrypt_tracking_credential(value: Optional[str]) -> str:
+    """Decrypt a stored tracking-provider credential read from the settings table.
+
+    Mirrors how ``smtp_password`` is handled by ``PreferencesManager``:
+    values are encrypted on write and transparently decrypted on read.
+
+    Backward-compatible fallback: legacy plaintext values (stored before
+    encryption existed) and values written while ``OPERION_ENCRYPTION_KEY``
+    was unset pass through unchanged — ``decrypt_value`` returns the raw
+    value when it does not look like Fernet ciphertext or no key is set.
+    """
+    if value:
+        value = decrypt_value(value)
+    return value or ""
 
 
 @dataclass
@@ -93,6 +122,9 @@ class WialonAdapter(BaseTrackingAdapter):
                 },
                 timeout=10,
             )
+            if resp.status_code != 200:
+                logger.warning("Wialon get_positions: HTTP %d", resp.status_code)
+                return []
             data = resp.json()
             if "error" in data:
                 self._session_id = None
@@ -161,6 +193,7 @@ class FrotcomAdapter(BaseTrackingAdapter):
                 timeout=10,
             )
             if resp.status_code != 200:
+                logger.warning("Frotcom get_positions: HTTP %d", resp.status_code)
                 return []
             vehicles = resp.json()
             if isinstance(vehicles, dict):
@@ -220,6 +253,9 @@ class TraccarAdapter(BaseTrackingAdapter):
                 f"{self.base}positions",
                 auth=self.auth, timeout=10
             )
+            if resp.status_code != 200:
+                logger.warning("Traccar get_positions: HTTP %d", resp.status_code)
+                return []
             positions = []
             for p in resp.json():
                 speed = float(p.get("speed", 0) or 0) * 1.852
@@ -280,6 +316,9 @@ class NavixyAdapter(BaseTrackingAdapter):
                 params={"hash": self.api_key},
                 timeout=10,
             )
+            if resp.status_code != 200:
+                logger.warning("Navixy get_positions: HTTP %d", resp.status_code)
+                return []
             data = resp.json()
             trackers = data.get("list", []) if isinstance(data, dict) else []
             positions = []
@@ -357,6 +396,11 @@ class GenericRestAdapter(BaseTrackingAdapter):
             if self.auth_header:
                 headers["Authorization"] = self.auth_header
             resp = requests.get(self.url, headers=headers, timeout=10)
+            if resp.status_code != 200:
+                logger.warning(
+                    "Generic REST get_positions: HTTP %d", resp.status_code,
+                )
+                return []
             data = resp.json()
             vehicles = self._resolve_path(data, self.positions_path)
             if vehicles is None:
@@ -473,9 +517,18 @@ class FleetTrackingService:
             logger.info(
                 "Background polling started (interval=%ds)", self._poll_interval,
             )
+            consecutive_failures = 0
             while not self._stop_event.is_set():
-                self.get_positions(force_refresh=True)
-                self._stop_event.wait(self._poll_interval)
+                positions = self.get_positions(force_refresh=True)
+                if positions:
+                    consecutive_failures = 0
+                else:
+                    consecutive_failures += 1
+                wait = self._compute_poll_wait(
+                    self._poll_interval, consecutive_failures,
+                )
+                # ``_stop_event.wait`` stays interruptible by ``stop_polling``.
+                self._stop_event.wait(wait)
 
         self._poll_thread = threading.Thread(target=_poll_loop, daemon=True)
         self._poll_thread.start()
@@ -494,6 +547,25 @@ class FleetTrackingService:
             self._poll_thread = None
         logger.info("Background polling stopped")
 
+    @staticmethod
+    def _compute_poll_wait(interval_seconds: float, consecutive_failures: int) -> float:
+        """Exponential backoff + jitter for the background polling loop.
+
+        Base wait is the configured poll interval (default 30s); it doubles
+        on every consecutive empty/failed poll up to ``POLL_BACKOFF_MAX_SECONDS``
+        (10 minutes) and a ``random.uniform(0, POLL_JITTER_MAX_SECONDS)``
+        jitter is added so a recovering partner is not stampeded by all
+        tenants polling simultaneously.  A success resets to the base
+        interval (``consecutive_failures=0``).
+        """
+        if consecutive_failures <= 0:
+            return interval_seconds
+        backoff = min(
+            interval_seconds * (2 ** (consecutive_failures - 1)),
+            POLL_BACKOFF_MAX_SECONDS,
+        )
+        return backoff + random.uniform(0, POLL_JITTER_MAX_SECONDS)
+
     def _create_adapter(self, platform: str) -> Optional[BaseTrackingAdapter]:
         if not platform or platform.lower() == "not configured":
             return None
@@ -503,30 +575,30 @@ class FleetTrackingService:
         db = self._db
         if "wialon" in p or "gps-trace" in p or "gurtam" in p:
             return WialonAdapter(
-                token=db.get_setting("tracking.token") or "",
+                token=_decrypt_tracking_credential(db.get_setting("tracking.token")),
                 host=db.get_setting("tracking.host") or "https://hst-api.wialon.com",
             )
         elif "frotcom" in p:
             return FrotcomAdapter(
-                username=db.get_setting("tracking.username") or "",
-                password=db.get_setting("tracking.password") or "",
-                account=db.get_setting("tracking.account") or "",
+                username=_decrypt_tracking_credential(db.get_setting("tracking.username")),
+                password=_decrypt_tracking_credential(db.get_setting("tracking.password")),
+                account=_decrypt_tracking_credential(db.get_setting("tracking.account")),
             )
         elif "traccar" in p:
             return TraccarAdapter(
                 url=db.get_setting("tracking.host") or "",
-                email=db.get_setting("tracking.username") or "",
-                password=db.get_setting("tracking.password") or "",
+                email=_decrypt_tracking_credential(db.get_setting("tracking.username")),
+                password=_decrypt_tracking_credential(db.get_setting("tracking.password")),
             )
         elif "navixy" in p:
             return NavixyAdapter(
-                api_key=db.get_setting("tracking.token") or "",
+                api_key=_decrypt_tracking_credential(db.get_setting("tracking.token")),
                 host=db.get_setting("tracking.host") or "https://api.eu.navixy.com/v2",
             )
         elif "generic" in p or "rest" in p:
             return GenericRestAdapter(
                 url=db.get_setting("tracking.host") or "",
-                auth_header=db.get_setting("tracking.token") or "",
+                auth_header=_decrypt_tracking_credential(db.get_setting("tracking.token")),
                 positions_path=db.get_setting("tracking.positions_path") or "data.vehicles",
                 lat_field=db.get_setting("tracking.lat_field") or "lat",
                 lng_field=db.get_setting("tracking.lng_field") or "lng",

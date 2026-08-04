@@ -11,13 +11,16 @@ import contextlib
 import logging
 import threading
 
+import qtawesome as qta
 from PySide6.QtCore import QTimer, Qt, Signal
-from PySide6.QtGui import QDragEnterEvent, QDropEvent, QColor
+from PySide6.QtGui import QAction, QDragEnterEvent, QDropEvent, QColor
 from PySide6.QtWidgets import (
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QSizePolicy,
     QStackedWidget,
@@ -32,6 +35,7 @@ from ui.components import (
     Card,
     CardHeader,
     EmptyState,
+    IconButton,
     Label,
     PageTitle,
     StatusBadge,
@@ -54,6 +58,9 @@ from ui.design_tokens import (
 )
 
 from ui.widgets import StyledTableWidget
+
+from ui.performance_timer import PerfTimer
+from ui.worker_pool import WorkerPool
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +100,7 @@ class QtTachoImportView(QWidget):
     # ── UI build ───────────────────────────────────────────────────────────────
 
     def _build_ui(self):
+        self.setAccessibleName("Tachograph import")
         main_layout = QHBoxLayout(self)
         main_layout.setContentsMargins(SP["5"], SP["4"], SP["5"], SP["4"])
         main_layout.setSpacing(SP["4"])
@@ -311,7 +319,19 @@ class QtTachoImportView(QWidget):
 
     def _build_history_table(self, parent: QWidget, layout: QVBoxLayout):
         self._history_card = Card(None)
-        CardHeader(self._history_card.layout(), t("tacho.import_history"))
+
+        # Density toggle button for the history table header
+        density_btn = IconButton(
+            None,
+            icon_name="fa5s.table",
+            tooltip=t("tacho.density_toggle", default="Row density"),
+            variant="ghost",
+            size=28,
+        )
+        self._density_btn_history = density_btn
+
+        CardHeader(self._history_card.layout(), t("tacho.import_history"),
+                   right_widget=density_btn)
 
         self._history_table = StyledTableWidget(
             parent,
@@ -322,7 +342,12 @@ class QtTachoImportView(QWidget):
                 ("records_imported", t("tacho.hdr_records"), 70),
                 ("parse_status", t("tacho.hdr_status"), 70),
             ],
+            prefs_key="tacho_import",
         )
+        self._history_table.setSortingEnabled(True)
+        self._history_table.horizontalHeader().setSortIndicatorShown(True)
+        self._history_table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self._history_table.customContextMenuRequested.connect(self._show_history_context_menu)
         self._history_table.setMinimumHeight(120)
         self._history_table.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Preferred
@@ -330,6 +355,10 @@ class QtTachoImportView(QWidget):
         # Formatter for status: raw key → colored display text
         self._history_table._formatters["parse_status"] = self._format_status
         self._history_table.set_data([])
+
+        # Connect density menu after table is created
+        density_menu = self._history_table._build_density_menu(density_btn)
+        density_btn.setMenu(density_menu)
 
         self._history_table_container = QStackedWidget()
         self._history_table_container.addWidget(self._history_table)
@@ -347,18 +376,20 @@ class QtTachoImportView(QWidget):
     # ── History ──────────────────────────────────────────────────────────────
 
     def _refresh_history(self):
-        try:
-            imports = (
-                self.tacho_service.get_import_history(limit=50)
-                if self.tacho_service
-                else []
+        with PerfTimer("tacho_import.refresh"):
+            if self.tacho_service is None:
+                self._history_table_container.setCurrentWidget(self._history_empty)
+                return
+            WorkerPool.run(
+                fn=lambda: self.tacho_service.get_import_history(limit=50),
+                on_result=self._on_history_loaded,
+                on_error=self._on_history_error,
             )
-        except Exception:
-            logger.exception("Failed to load import history")
-            imports = []
 
+    def _on_history_loaded(self, imports: list) -> None:
         rows = [self._format_history_row(imp) for imp in imports]
         self._history_table.set_data(rows)
+        self._history_table.restore_column_widths()
 
         if not rows:
             self._history_table_container.setCurrentWidget(self._history_empty)
@@ -366,6 +397,10 @@ class QtTachoImportView(QWidget):
             self._history_table_container.setCurrentWidget(self._history_table)
             self._add_table_tooltips()
             self._color_status_column()
+
+    def _on_history_error(self, msg: str) -> None:
+        logger.exception("Failed to load import history: %s", msg)
+        self._history_table_container.setCurrentWidget(self._history_empty)
 
     def _add_table_tooltips(self):
         for r in range(self._history_table.rowCount()):
@@ -560,6 +595,103 @@ class QtTachoImportView(QWidget):
         self._result_msg.setText(error)
         self._result_detail.setVisible(False)
         self._result_violations.setVisible(False)
+
+    # ── Context menu (right-click on history) ────────────────────────────────
+
+    def _show_history_context_menu(self, pos) -> None:
+        """Right-click context menu for the import history table."""
+        index = self._history_table.indexAt(pos)
+        if not index.isValid():
+            return
+
+        row = index.row()
+        row_data = self._history_table._data[row] if 0 <= row < len(self._history_table._data) else None
+        if row_data is None:
+            return
+
+        menu = QMenu(self)
+
+        view_action = QAction(qta.icon("fa5s.eye"), t("tacho.view_details", "View Details"), self)
+        view_action.triggered.connect(lambda: self._view_import_details(row_data))
+        menu.addAction(view_action)
+
+        reimport_action = QAction(qta.icon("fa5s.sync-alt"), t("tacho.re_import", "Re-import"), self)
+        reimport_action.triggered.connect(lambda: self._re_import(row_data))
+        menu.addAction(reimport_action)
+
+        menu.addSeparator()
+
+        delete_action = QAction(qta.icon("fa5s.trash"), t("common.delete", "Delete"), self)
+        delete_action.triggered.connect(lambda: self._delete_import(row_data))
+        menu.addAction(delete_action)
+
+        menu.exec(self._history_table.viewport().mapToGlobal(pos))
+
+    def _view_import_details(self, record: dict) -> None:
+        """Show a details dialog for the selected import record."""
+        QMessageBox.information(
+            self,
+            t("tacho.import_details", "Import Details"),
+            t("tacho.import_details_msg",
+              default="File: {file}\nType: {type}\nDate: {date}\nRecords: {records}\nStatus: {status}").format(
+                file=record.get("file_name", "—"),
+                type=record.get("file_type", "—"),
+                date=record.get("imported_at", "—"),
+                records=record.get("records_imported", "—"),
+                status=record.get("parse_status", "—"),
+            ),
+        )
+
+    def _re_import(self, record: dict) -> None:
+        """Re-run the import for the selected record."""
+        file_name = record.get("file_name_raw", "") or record.get("file_name", "")
+        if not file_name or file_name == "—":
+            QMessageBox.information(
+                self,
+                t("tacho.re_import", "Re-import"),
+                t("tacho.re_import_no_file", "No source file available for re-import."),
+            )
+            return
+
+        # Try to re-import the file if it still exists
+        import os
+        if os.path.exists(file_name):
+            self._run_import(file_name)
+        else:
+            # Ask the user to browse for the file
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                t("tacho.select_file", "Select tachograph file"),
+                "",
+                "Tachograph files (*.ddd *.DDD *.tgd *.TGD);;All files (*.*)",
+            )
+            if path:
+                self._run_import(path)
+
+    def _delete_import(self, record: dict) -> None:
+        """Delete the selected import record after confirmation."""
+        reply = QMessageBox.question(
+            self,
+            t("tacho.delete_import", "Delete Import"),
+            t("tacho.confirm_delete_import",
+              default="Are you sure you want to delete this import record?"),
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No,
+        )
+        if reply != QMessageBox.StandardButton.Yes:
+            return
+
+        try:
+            if self.tacho_service and hasattr(self.tacho_service, "delete_import"):
+                self.tacho_service.delete_import(record)
+            self._refresh_history()
+        except Exception:
+            logger.exception("Failed to delete import record")
+            QMessageBox.critical(
+                self,
+                t("main.error_title"),
+                t("tacho.delete_error", default="Failed to delete import record."),
+            )
 
     # ── i18n ─────────────────────────────────────────────────────────────────
 

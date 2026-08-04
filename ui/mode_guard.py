@@ -27,7 +27,10 @@ def detect_mode(db, api_client) -> ConnectionMode:
         )
         return ConnectionMode.LOCAL
     else:
-        logger.error("Neither db nor api_client provided — no data access available")
+        logger.warning(
+            "Neither db nor api_client provided — running in degraded mode. "
+            "Some features requiring local database access will be unavailable."
+        )
         return ConnectionMode.UNKNOWN
 
 

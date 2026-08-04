@@ -77,6 +77,15 @@ def dashboard(qt_widget, qtbot, mock_prefs):
     view = QtFleetDashboard(qt_widget, db=db, prefs=mock_prefs)
     qtbot.addWidget(view)
 
+    # __init__ triggers refresh_all(), which fetches data OFF the GUI thread
+    # via WorkerPool (result delivered through a queued Qt signal).  Wait for
+    # the initial cycle to complete so the widget tree (KPI cards + chart
+    # frames) is deterministic regardless of prior test-suite Qt state.
+    qtbot.waitUntil(
+        lambda: hasattr(view, "_left_chart_frame") and hasattr(view, "_kpi_cards"),
+        timeout=5000,
+    )
+
     # Stop the auto-refresh timer
     if view._refresh_timer is not None:
         view._refresh_timer.stop()
@@ -162,7 +171,7 @@ class TestKPICards:
         # The dashboard constructor already calls refresh_all()
         # KPI cards should be in _content_layout_inner
         assert hasattr(dashboard, "_kpi_cards")
-        assert len(dashboard._kpi_cards) == 6
+        assert len(dashboard._kpi_cards) == 4
 
     def test_kpi_card_has_label_and_value(self, dashboard):
         """Each KPI card has a title and value label."""

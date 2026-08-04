@@ -114,8 +114,8 @@ class PipelineRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO document_pipeline_runs ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def update_stage(
         self,
@@ -134,8 +134,8 @@ class PipelineRepository(BaseRepository):
                 updated_at = ?, completed_at = COALESCE(?, completed_at)
             WHERE id = ? {self._company_filter()}
             """,
-            (stage, status, error_message, now, completed_at, run_id) + self._company_params(),
-        )
+            (stage, status, error_message, now, completed_at, run_id) + self._company_params(), commit=True,
+		)
 
     def set_processed_files(
         self,
@@ -152,8 +152,8 @@ class PipelineRepository(BaseRepository):
                 pages_count = ?, updated_at = ?
             WHERE id = ? {self._company_filter()}
             """,
-            (processed_file_path, processed_pdf_path, pages_count, now, run_id) + self._company_params(),
-        )
+            (processed_file_path, processed_pdf_path, pages_count, now, run_id) + self._company_params(), commit=True,
+		)
 
     def set_ocr_result(
         self,
@@ -168,8 +168,8 @@ class PipelineRepository(BaseRepository):
             SET ocr_text = ?, extracted_data_json = ?, updated_at = ?
             WHERE id = ? {self._company_filter()}
             """,
-            (ocr_text, json.dumps(extracted_data, ensure_ascii=False, default=str), now, run_id) + self._company_params(),
-        )
+            (ocr_text, json.dumps(extracted_data, ensure_ascii=False, default=str), now, run_id) + self._company_params(), commit=True,
+		)
 
     def set_match_result(
         self,
@@ -192,8 +192,8 @@ class PipelineRepository(BaseRepository):
                 json.dumps(match_signals, ensure_ascii=False, default=str),
                 now,
                 run_id,
-            ) + self._company_params(),
-        )
+            ) + self._company_params(), commit=True,
+		)
 
     def set_document_id(self, run_id: int, document_id: int) -> None:
         now = _now_iso()
@@ -203,8 +203,8 @@ class PipelineRepository(BaseRepository):
             SET document_id = ?, updated_at = ?
             WHERE id = ? {self._company_filter()}
             """,
-            (document_id, now, run_id) + self._company_params(),
-        )
+            (document_id, now, run_id) + self._company_params(), commit=True,
+		)
 
     def set_related_documents(self, run_id: int, doc_ids: List[int]) -> None:
         """Store the list of related document IDs for a pipeline run.
@@ -231,8 +231,8 @@ class PipelineRepository(BaseRepository):
             SET match_signals_json = ?, updated_at = ?
             WHERE id = ? {self._company_filter()}
             """,
-            (json.dumps(signals, ensure_ascii=False), now, run_id) + self._company_params(),
-        )
+            (json.dumps(signals, ensure_ascii=False), now, run_id) + self._company_params(), commit=True,
+		)
 
     def get_run_by_id(self, run_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
@@ -284,8 +284,8 @@ class PipelineRepository(BaseRepository):
     def delete_run(self, run_id: int) -> None:
         self._execute(
             "DELETE FROM document_pipeline_runs WHERE id = ? " + self._company_filter(),
-            (run_id,) + self._company_params(),
-        )
+            (run_id,) + self._company_params(), commit=True,
+		)
 
     def recover_stuck_runs(self) -> int:
         """Mark non-terminal runs as failed and clear stale data.
@@ -313,8 +313,8 @@ class PipelineRepository(BaseRepository):
                 WHERE status NOT IN ('complete', 'failed', 'processed')
                 {self._company_filter()}
                 """,
-                (now, now) + self._company_params(),
-            )
+                (now, now) + self._company_params(), commit=True,
+		)
             return count
         except Exception:
             logger.exception("recover_stuck_runs failed")
@@ -476,8 +476,8 @@ class PipelineRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO document_package ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def update_package(
         self,
@@ -522,8 +522,8 @@ class PipelineRepository(BaseRepository):
         params.append(package_id)
         self._execute(
             f"UPDATE document_package SET {', '.join(sets)} WHERE id = ? {self._company_filter()}",
-            tuple(params),
-        )
+            tuple(params), commit=True,
+		)
 
     def add_package_item(
         self,
@@ -542,8 +542,8 @@ class PipelineRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT OR IGNORE INTO document_package_items ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def add_package_items_batch(
         self,
@@ -580,8 +580,8 @@ class PipelineRepository(BaseRepository):
             "DELETE FROM document_package_items "
             "WHERE package_id = ? AND document_id = ? "
             + self._company_filter(),
-            (package_id, document_id) + self._company_params(),
-        )
+            (package_id, document_id) + self._company_params(), commit=True,
+		)
 
     def replace_package_items(
         self,

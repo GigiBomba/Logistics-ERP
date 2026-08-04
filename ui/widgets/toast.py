@@ -6,8 +6,13 @@ displays a message, and fades out automatically.
 
 from __future__ import annotations
 
+import qtawesome as qta
+
 from PySide6.QtCore import QPoint, QPropertyAnimation, Qt, QTimer
+from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QWidget
+
+from ui.design_tokens import COLOR_ERROR_DEFAULT, COLOR_SUCCESS_DEFAULT
 
 class Toast(QFrame):
     """Non-blocking toast message that auto-dismisses after a delay."""
@@ -19,13 +24,16 @@ class Toast(QFrame):
         self,
         parent: QWidget | None = None,
         message: str = "",
-        icon: str = "✅",
+        icon: str | QIcon | None = None,
         duration_ms: int = DEFAULT_DURATION_MS,
     ):
         super().__init__(parent)
         self.setWindowFlags(Qt.FramelessWindowHint | Qt.WindowStaysOnTopHint)
         self.setAttribute(Qt.WA_TranslucentBackground)
         self.setProperty("role", "toast")
+
+        self.setAccessibleName("Notification toast")
+        self.setAccessibleDescription("Temporary notification message")
 
         self._opacity_effect = QGraphicsOpacityEffect(self)
         self._opacity_effect.setOpacity(0.0)
@@ -35,7 +43,11 @@ class Toast(QFrame):
         layout.setContentsMargins(16, 12, 16, 12)
         layout.setSpacing(8)
 
-        self._icon = QLabel(icon)
+        self._icon = QLabel()
+        if isinstance(icon, QIcon):
+            self._icon.setPixmap(icon.pixmap(16, 16))
+        elif icon:
+            self._icon.setText(icon)
         self._icon.setProperty("role", "toast-icon")
         layout.addWidget(self._icon)
 
@@ -95,7 +107,7 @@ class Toast(QFrame):
         message: str,
         anchor: QWidget | None = None,
     ) -> Toast:
-        toast = cls(parent, message, icon="✅")
+        toast = cls(parent, message, icon=qta.icon("fa5s.check-circle", color=COLOR_SUCCESS_DEFAULT))
         toast.show_at(anchor or parent, QPoint(parent.width() - toast.width() - 20, 20))
         return toast
 
@@ -106,7 +118,7 @@ class Toast(QFrame):
         message: str,
         anchor: QWidget | None = None,
     ) -> Toast:
-        toast = cls(parent, message, icon="❌")
+        toast = cls(parent, message, icon=qta.icon("fa5s.times-circle", color=COLOR_ERROR_DEFAULT))
         toast.setProperty("state", "error")
         toast.show_at(anchor or parent, QPoint(parent.width() - toast.width() - 20, 20))
         return toast

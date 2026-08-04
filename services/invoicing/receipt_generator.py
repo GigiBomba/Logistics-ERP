@@ -5,6 +5,8 @@ companies, transport services, customer payments, employee reimbursements,
 fuel expenses, toll expenses, and other business-related financial
 transactions.
 """
+from __future__ import annotations
+
 import json
 import logging
 import os

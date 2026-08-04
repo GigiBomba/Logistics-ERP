@@ -347,7 +347,7 @@ class TestBatchDisplay:
         """Empty state: empty label visible, batch table hidden."""
         # Trigger refresh to set proper visibility state
         bulk_payments_view._refresh_batch_table()
-        assert not bulk_payments_view._batch_empty_label.isHidden()
+        assert not bulk_payments_view._batch_empty_state.isHidden()
         assert bulk_payments_view._batch_table.isHidden()
 
     def test_batch_table_shows_items(self, bulk_payments_view):
@@ -361,8 +361,8 @@ class TestBatchDisplay:
         ]
         bulk_payments_view._refresh_batch_table()
 
-        # After adding items the empty label is hidden and the table is not hidden
-        assert bulk_payments_view._batch_empty_label.isHidden()
+        # After adding items the empty state is hidden and the table is not hidden
+        assert bulk_payments_view._batch_empty_state.isHidden()
         assert not bulk_payments_view._batch_table.isHidden()
         # 1 data row + 1 total row
         assert bulk_payments_view._batch_table.rowCount() == 2
@@ -534,7 +534,7 @@ class TestContextMenus:
         bulk_payments_view._load_data()
         bulk_payments_view._recipient_table.selectRow(0)
 
-        with patch("PySide6.QtWidgets.QMenu.exec", return_value=None):
+        with patch("PySide6.QtWidgets.QMenu.popup", return_value=None):
             bulk_payments_view._show_recipient_context_menu(
                 bulk_payments_view._recipient_table.pos(),
             )
@@ -551,7 +551,7 @@ class TestContextMenus:
         bulk_payments_view._refresh_batch_table()
         bulk_payments_view._batch_table.selectRow(0)
 
-        with patch("PySide6.QtWidgets.QMenu.exec", return_value=None):
+        with patch("PySide6.QtWidgets.QMenu.popup", return_value=None):
             bulk_payments_view._show_batch_context_menu(
                 bulk_payments_view._batch_table.pos(),
             )

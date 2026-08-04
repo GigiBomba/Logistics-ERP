@@ -87,7 +87,8 @@ class UploadService:
                category: str = "", entity_type: str = "",
                entity_id: int | None = None,
                description: str = "", tags: list[str] | None = None,
-               uploaded_by: str = "") -> int | None:
+               uploaded_by: str = "",
+               company_id: int | None = None) -> int | None:
         if not os.path.isfile(source_path):
             raise FileNotFoundError(f"Source file not found: {source_path}")
 
@@ -162,6 +163,7 @@ class UploadService:
             uploaded_by=uploaded_by,
             uploaded_at=now,
             updated_at=now,
+            company_id=company_id,
         )
 
         if entity_type and entity_id is not None:
@@ -183,7 +185,8 @@ class UploadService:
     def batch_upload(self, paths: list, category: str = "",
                      entity_type: str = "", entity_id: int | None = None,
                      uploaded_by: str = "",
-                     tags: list[str] | None = None) -> dict[str, Any]:
+                     tags: list[str] | None = None,
+                     company_id: int | None = None) -> dict[str, Any]:
         results = {"uploaded": [], "duplicates": [], "failed": [], "rejected": []}
         for src in paths:
             fname = os.path.basename(src)
@@ -216,6 +219,7 @@ class UploadService:
                 doc_id = self.upload(
                     src, category=category, entity_type=entity_type,
                     entity_id=entity_id, uploaded_by=uploaded_by, tags=tags,
+                    company_id=company_id,
                 )
                 if doc_id:
                     results["uploaded"].append({"file": fname, "id": doc_id})
@@ -235,7 +239,8 @@ class UploadService:
                           cmr_number: str = "",
                           cmr_metadata: str = "",
                           is_signed: int = 0,
-                          commit: bool = True) -> int | None:
+                          commit: bool = True,
+                          company_id: int | None = None) -> int | None:
         if not os.path.isfile(file_path):
             logger.warning("register_existing: file not found: %s", file_path)
             return None
@@ -299,6 +304,7 @@ class UploadService:
             cmr_metadata_json=cmr_metadata,
             is_signed=is_signed,
             commit=commit,
+            company_id=company_id,
         )
 
         if entity_type and entity_id is not None:

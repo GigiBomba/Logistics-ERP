@@ -28,6 +28,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import register_listener, t, unregister_listener
 from services.operations.alert_manager import AlertType, Severity
+from ui.performance_timer import PerfTimer
 from services.operations.operations_engine import OperationsEngine
 from ui.components import (
     Btn,
@@ -370,10 +371,11 @@ class QtMaintenanceControlPanel(QWidget):
 
     def _on_data_changed(self):
         """Reactively update KPIs and summary when ViewModel emits data_changed."""
-        self._stop_shimmer()
-        self._update_kpis()
-        self._update_summary()
-        self._on_filter_changed()
+        with PerfTimer("maintenance_control_panel.on_data_changed"):
+            self._stop_shimmer()
+            self._update_kpis()
+            self._update_summary()
+            self._on_filter_changed()
 
     def _update_kpis(self):
         summary = self._vm.get_summary() if self._vm is not None else {}

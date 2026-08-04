@@ -71,9 +71,6 @@ class AppShell:
         central_layout.addWidget(self.main_area, 1)
         self.root.setCentralWidget(central)
 
-    def set_breadcrumb(self, text: str) -> None:
-        self.top_bar.set_breadcrumb(text)
-
     def set_fuel_status(self, text: str) -> None:
         """Update the fuel status label in the top bar."""
         self.top_bar.set_fuel_status(text)

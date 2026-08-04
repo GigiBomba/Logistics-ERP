@@ -15,12 +15,17 @@ logger = logging.getLogger(__name__)
 
 @celery_app.task(bind=True, max_retries=2, default_retry_delay=30)
 def generate_document_pdf(
-    self, document_id: int, company_id: int, template_name: str
+    self, document_id: int, company_id: int, template_name: str,
+    request_id: str | None = None,
 ) -> Dict[str, Any]:
-    """Generate a PDF for a document using its template."""
+    """Generate a PDF for a document using its template.
+
+    ``request_id`` is the HTTP correlation id from the originating request,
+    used to trace async task failures back to their request.
+    """
     logger.info(
-        "generate_document_pdf: document_id=%d company_id=%d template=%s",
-        document_id, company_id, template_name,
+        "generate_document_pdf: document_id=%d company_id=%d template=%s request_id=%s",
+        document_id, company_id, template_name, request_id,
     )
     set_company_context(company_id)
     db = DatabaseManager(Config.DB_PATH)
@@ -58,6 +63,10 @@ def generate_document_pdf(
             else:
                 builder.build_zip(0, output_dir)
 
+        logger.info(
+            "generate_document_pdf completed: document_id=%d request_id=%s",
+            document_id, request_id,
+        )
         return {
             "status": "ok",
             "document_id": document_id,
@@ -75,11 +84,16 @@ def generate_document_pdf(
 def build_email_package(
     self, document_ids: List[int], recipient: str, company_id: int,
     prefs: Optional[Dict[str, Any]] = None,
+    request_id: str | None = None,
 ) -> Dict[str, Any]:
-    """Build and optionally email a ZIP package of documents."""
+    """Build and optionally email a ZIP package of documents.
+
+    ``request_id`` is the HTTP correlation id from the originating request,
+    used to trace async task failures back to their request.
+    """
     logger.info(
-        "build_email_package: document_count=%d recipient=%s company_id=%d",
-        len(document_ids), recipient, company_id,
+        "build_email_package: document_count=%d recipient=%s company_id=%d request_id=%s",
+        len(document_ids), recipient, company_id, request_id,
     )
     set_company_context(company_id)
     if prefs is None:
@@ -109,14 +123,37 @@ def build_email_package(
                 prefs.get("smtp_user") or Config.SMTP_USER
             )
             if smtp_configured and recipient:
-                try:
-                    from backend.services.document_service import DocumentService as DS
-                    svc = DS(db)
-                    svc.email_document(document_ids[0], recipient, prefs=prefs)
-                    result["email_sent"] = True
-                except Exception as e:
-                    result["email_error"] = str(e)
+                from backend.services.document_service import DocumentService as DS
+                from repositories.sent_email_repository import SentEmailRepository
+                svc = DS(db)
+                dedup = SentEmailRepository(db)
+                # Dedup (roadmap 12): claim a 'pending' row before sending.
+                # If the row already exists (INSERT OR IGNORE inserts 0 rows),
+                # a send is already in flight/complete for this
+                # (document_id, recipient) pair — skip to avoid double-send.
+                if not document_ids or not dedup.claim(document_ids[0], recipient):
+                    logger.warning(
+                        "build_email_package: email already sent/in-flight for "
+                        "document_id=%s recipient=%s — skipping duplicate send",
+                        document_ids[0] if document_ids else None, recipient,
+                    )
                     result["email_sent"] = False
+                    result["email_deduplicated"] = True
+                else:
+                    try:
+                        svc.email_document(document_ids[0], recipient, prefs=prefs)
+                        dedup.mark_sent(document_ids[0], recipient)
+                        result["email_sent"] = True
+                    except Exception as e:
+                        # On failure remove the pending row so a Celery retry
+                        # can re-attempt the send (same failure path as before).
+                        dedup.remove_pending(document_ids[0], recipient)
+                        result["email_error"] = str(e)
+                        result["email_sent"] = False
+            logger.info(
+                "build_email_package completed: document_count=%d request_id=%s",
+                len(document_ids), request_id,
+            )
             return result
         finally:
             if os.path.isfile(zip_path):

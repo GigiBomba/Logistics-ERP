@@ -301,6 +301,9 @@ class PipelineWorker(QThread):
 
     def run(self) -> None:
         pipeline = self._pipeline_repo
+        if not self.input_paths:
+            self.finished.emit(PIPELINE_ERROR_RUN_ID, None, "No input files provided")
+            return
         # ── 1. Import ────────────────────────────────────────────────
         first = self.input_paths[0]
         try:

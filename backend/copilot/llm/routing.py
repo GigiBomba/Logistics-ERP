@@ -25,3 +25,29 @@ class LLMRoutingConfig(BaseModel):
 
     company_id: Optional[int] = None    # None = platform default; company-specific overrides for Enterprise
     rules: List[RoutingRule] = []
+
+
+# ── Default routing ─────────────────────────────────────────────────────
+
+_DEFAULT_RULES: list[dict] = [
+    {"task": "intent_extraction", "provider_id": "self_hosted", "fallback_provider_id": "google"},
+    {"task": "reasoning_graph_resolution", "provider_id": "self_hosted", "fallback_provider_id": "google"},
+    {"task": "final_summary", "provider_id": "self_hosted", "fallback_provider_id": "google"},
+    {"task": "sensitive_extraction", "provider_id": "self_hosted", "fallback_provider_id": "google"},
+]
+
+
+def default_routing_config() -> LLMRoutingConfig:
+    """Return the platform-default routing configuration.
+
+    All ARGO task types route to the self-hosted OCR AI provider
+    (``self_hosted``) as the primary, with Google Gemini (``google``)
+    as the fallback when the self-hosted endpoint is unhealthy.
+
+    Companies can override this via per-company ``LLMRoutingConfig``
+    stored in the settings DB.
+    """
+    return LLMRoutingConfig(
+        company_id=None,
+        rules=[RoutingRule(**r) for r in _DEFAULT_RULES],
+    )

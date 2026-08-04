@@ -4,6 +4,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QDialogButtonBox, QLabel, QScrollArea, QPushButton
 
 from ui.widgets import StyledCheckBox
@@ -184,3 +185,68 @@ class TestCountryExclusionsDialogEdgeCases:
     def test_widgets_are_styled(self, exclusion_dialog):
         """Dialog has a stylesheet set."""
         assert len(exclusion_dialog.styleSheet()) > 0
+
+
+class TestCountryExclusionsDialogIntegration:
+    """Integration checks for dialog behaviour."""
+
+    def test_accept_calls_toggle_only_for_changed(
+        self, exclusion_dialog, mock_avoidance
+    ):
+        """Uncheck RO, check HU → avoidance.toggle called exactly 2 times (RO and HU), not 5."""
+        ro_cb = next(
+            cb for cb in exclusion_dialog._checkboxes
+            if cb.property("country_code") == "RO"
+        )
+        hu_cb = next(
+            cb for cb in exclusion_dialog._checkboxes
+            if cb.property("country_code") == "HU"
+        )
+        ro_cb.setChecked(False)
+        hu_cb.setChecked(True)
+
+        exclusion_dialog._on_accept()
+
+        assert mock_avoidance.toggle.call_count == 2
+
+    def test_accept_none_changed_no_toggle(self, exclusion_dialog, mock_avoidance):
+        """All checkboxes match get_selected() → toggle called 0 times."""
+        mock_avoidance.toggle.reset_mock()
+        exclusion_dialog._on_accept()
+        assert mock_avoidance.toggle.call_count == 0
+
+    def test_cancel_button_drops_changes(self, exclusion_dialog, qtbot):
+        """Toggle checkboxes, click Cancel → _on_accept() NOT called, dialog rejected."""
+        from unittest.mock import MagicMock
+
+        exclusion_dialog._on_accept = MagicMock()
+
+        ro_cb = next(
+            cb for cb in exclusion_dialog._checkboxes
+            if cb.property("country_code") == "RO"
+        )
+        ro_cb.setChecked(False)
+
+        cancel_btn = exclusion_dialog.layout().itemAt(2).widget().button(
+            QDialogButtonBox.StandardButton.Cancel
+        )
+        qtbot.mouseClick(cancel_btn, Qt.LeftButton)
+
+        exclusion_dialog._on_accept.assert_not_called()
+        assert exclusion_dialog.result() == 0  # Rejected
+
+    def test_header_text_matches_i18n(self, exclusion_dialog):
+        """Header label text is t('route.exclusions_label')."""
+        from services.i18n import t
+
+        header = exclusion_dialog.layout().itemAt(0).widget()
+        assert isinstance(header, QLabel)
+        assert header.text() == t("route.exclusions_label")
+
+    def test_all_country_codes_are_strings(self, exclusion_dialog):
+        """Every cb.property('country_code') is str."""
+        for cb in exclusion_dialog._checkboxes:
+            code = cb.property("country_code")
+            assert isinstance(code, str), (
+                f"Expected str, got {type(code).__name__}"
+            )

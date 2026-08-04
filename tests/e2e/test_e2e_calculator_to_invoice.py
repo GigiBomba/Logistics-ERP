@@ -13,6 +13,7 @@ import pytest
 from models.calculator_models import CalculationRequest, TripCalculationResult
 from models.common import ServiceResult
 from models.invoice_models import InvoiceResult
+from models.trip_models import TripCreate
 from services.calculator import TripCalculator
 from services.invoicing.service import InvoiceService
 from services.trip_service import TripService
@@ -95,17 +96,17 @@ class TestCalculatorToInvoice:
 
         # ── 2. Create trip from calculation data ──────────────────────────
         trip_svc = TripService(db)
-        trip_id = trip_svc.add({
+        trip_data = {
             "client_id": client_id,
             "client_name": "Acme Corp",
             "truck_id": truck_id,
-            "truck_number": "TR-CALC-001",
+            "truck_plate": "TR-CALC-001",
             "driver_id": driver_id,
             "driver_name": "Driver Calc",
             "start_date": _dt(1),
             "end_date": _dt(4),
             "distance_km": data.km,
-            "total_price_eur": data.price_eur,
+            "price_eur": data.price_eur,
             "fuel_cost": data.fuel_cost,
             "toll_cost": data.toll_cost,
             "salary_cost": data.salary_cost,
@@ -115,8 +116,9 @@ class TestCalculatorToInvoice:
             "gross_per_km": data.gross_per_km,
             "status": "Delivered",
             "currency": "EUR",
-            "cargo_description": "Electronics",
-        })
+        }
+        trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+        trip_id = trip_svc.create(TripCreate(**trip_fields)).data.id
         assert trip_id > 0
 
         # ── 3. Verify trip in database ────────────────────────────────────
@@ -193,11 +195,11 @@ class TestCalculatorToInvoice:
         """Invoice line items reflect the calculation breakdown."""
         client_id = self._seed_client(db)
         trip_svc = TripService(db)
-        trip_id = trip_svc.add({
+        trip_data = {
             "client_id": client_id,
             "client_name": "Acme Corp",
             "distance_km": 500.0,
-            "total_price_eur": 2000.0,
+            "price_eur": 2000.0,
             "fuel_cost": 232.5,
             "toll_cost": 110.0,
             "salary_cost": 300.0,
@@ -206,7 +208,9 @@ class TestCalculatorToInvoice:
             "status": "Delivered",
             "start_date": _dt(0),
             "end_date": _dt(1),
-        })
+        }
+        trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+        trip_id = trip_svc.create(TripCreate(**trip_fields)).data.id
         inv_number = f"INV-E2E-{trip_id:04d}"
         db.conn.execute(
             "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, "
@@ -226,15 +230,17 @@ class TestCalculatorToInvoice:
         """Invoice status transitions: Draft → Sent → Paid."""
         client_id = self._seed_client(db)
         trip_svc = TripService(db)
-        trip_id = trip_svc.add({
+        trip_data = {
             "client_id": client_id,
             "client_name": "Acme Corp",
             "distance_km": 100.0,
-            "total_price_eur": 500.0,
+            "price_eur": 500.0,
             "status": "Delivered",
             "start_date": _dt(-5),
             "end_date": _dt(-4),
-        })
+        }
+        trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+        trip_id = trip_svc.create(TripCreate(**trip_fields)).data.id
 
         db.conn.execute(
             "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, "
@@ -259,15 +265,17 @@ class TestCalculatorToInvoice:
         """Ensure duplicate invoice creation for the same trip is handled."""
         client_id = self._seed_client(db)
         trip_svc = TripService(db)
-        trip_id = trip_svc.add({
+        trip_data = {
             "client_id": client_id,
             "client_name": "Acme Corp",
             "distance_km": 200.0,
-            "total_price_eur": 800.0,
+            "price_eur": 800.0,
             "status": "Delivered",
             "start_date": _dt(-3),
             "end_date": _dt(-2),
-        })
+        }
+        trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+        trip_id = trip_svc.create(TripCreate(**trip_fields)).data.id
 
         db.conn.execute(
             "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, "
@@ -333,7 +341,7 @@ class TestCalculatorToInvoiceViaAPI:
             "price_eur": 4000.0,
             "status": "Delivered",
         }
-        mocks["trip_service"].add.return_value = 99
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=99))
         resp = client.post(f"{self.BASE_TRIPS}/", json=trip_payload)
         # TripCreateRequest requires client_id (gt=0); with mocks it returns service result
         assert resp.status_code in (200, 422), f"Expected 200 or 422, got {resp.status_code}"

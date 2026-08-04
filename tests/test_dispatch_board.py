@@ -335,10 +335,10 @@ class TestQtDispatchBoardView:
         board_view.shutdown()  # second call is safe
 
     def test_shutdown_clears_detail_panel(self, board_view):
-        """shutdown() closes and clears the detail panel if open."""
-        board_view._detail_panel = MagicMock()
+        """shutdown() closes and hides the detail drawer if open."""
+        board_view._detail_drawer.show()
         board_view.shutdown()
-        assert board_view._detail_panel is None
+        assert not board_view._detail_drawer.isVisible()
 
     # ── Lifecycle: wakeup ─────────────────────────────────────────────────
 

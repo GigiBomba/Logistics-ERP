@@ -114,6 +114,8 @@ class TestChaosDatabaseFailures:
     crashes.
     """
 
+
+
     # -- list ----------------------------------------------------------
 
     def test_trip_list_survives_db_disconnect(self, client, auth_admin):
@@ -163,6 +165,7 @@ class TestChaosDatabaseFailures:
                 client.post,
                 "/api/v1/trips/",
                 json={
+                    "client_id": 1,
                     "client_name": "Chaos Client",
                     "driver_name": "Chaos Driver",
                     "truck_number": "CH-001",
@@ -182,6 +185,7 @@ class TestChaosDatabaseFailures:
                 client.post,
                 "/api/v1/trips/",
                 json={
+                    "client_id": 1,
                     "client_name": "Full Disk",
                     "driver_name": "Chaos Driver",
                     "truck_number": "DF-001",

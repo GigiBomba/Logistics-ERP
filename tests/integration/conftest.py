@@ -26,13 +26,14 @@ from __future__ import annotations
 
 import logging
 import os
-from pathlib import Path
 from typing import Any, Dict, Generator
 
 import psycopg2  # type: ignore[import-untyped]
 import pytest
 from psycopg2 import sql as pgsql
 from psycopg2.extras import RealDictCursor
+
+from database.tenant_context import clear_context
 
 logger = logging.getLogger(__name__)
 
@@ -116,23 +117,6 @@ def _drop_database(dsn: str) -> None:
         logger.warning("Could not drop test database '%s' (may not exist)", db_name)
 
 
-def _run_migrations(dsn: str) -> None:
-    """Apply all Alembic migrations to the test database.
-
-    Uses the project's ``alembic.ini`` configuration and overrides the
-    ``sqlalchemy.url`` to point at the test database.
-    """
-    from alembic.command import upgrade
-    from alembic.config import Config
-
-    project_root = Path(__file__).parents[2]
-    alembic_cfg = Config(str(project_root / "alembic.ini"))
-    alembic_cfg.set_main_option("sqlalchemy.url", dsn)
-    alembic_cfg.attributes["configure_logger"] = False
-    upgrade(alembic_cfg, "head")
-    logger.info("Alembic migrations applied to test database")
-
-
 # ---------------------------------------------------------------------------
 # Session-scoped fixtures
 # ---------------------------------------------------------------------------
@@ -160,11 +144,19 @@ def pg_database(db_url: str) -> Generator[str, None, None]:
 
 @pytest.fixture(scope="session")
 def pg_migrations(pg_database: str) -> str:
-    """Apply Alembic migrations to the test database (once per session).
+    """Create full PostgreSQL schema + run alembic migrations.
+
+    Uses ``DatabaseManager(engine="postgresql")`` which calls
+    ``_init_pg_schema()`` (50 tables from ``schema_pg.sql``) then runs
+    Alembic migrations via ``_init_db()``.
 
     Yields the DSN so that connection fixtures can use it.
     """
-    _run_migrations(pg_database)
+    from database.db_manager import DatabaseManager
+
+    db = DatabaseManager(db_path=pg_database, engine="postgresql", pool_min=1, pool_max=2)
+    db.close()
+    logger.info("Full PostgreSQL schema + migrations applied to test database")
     return pg_database
 
 
@@ -203,9 +195,162 @@ def pg_db(pg_session: Any) -> Generator[Any, None, None]:
     ``tests/integration/`` directory.  If a test does not touch the database
     the overhead is minimal (a ``BEGIN`` + ``ROLLBACK`` round-trip).
     """
-    pg_session.execute("SAVEPOINT test_sp")
+    # Clear any tenant context that may have leaked from a previous
+    # test (contextvars.ContextVar survives across sync test functions).
+    clear_context()
+    # psycopg2 connections do not expose .execute() directly;
+    # we must create a cursor first.
+    cur = pg_session.cursor()
+    cur.execute("SAVEPOINT test_sp")
+    cur.close()
     yield pg_session
-    pg_session.execute("ROLLBACK TO SAVEPOINT test_sp")
+    cur = pg_session.cursor()
+    cur.execute("ROLLBACK TO SAVEPOINT test_sp")
+    cur.close()
+
+
+# ---------------------------------------------------------------------------
+# seeded_db — DatabaseManager-compatible wrapper for pg_db
+# ---------------------------------------------------------------------------
+
+
+class _Psycopg2Connection:
+    """Lightweight wrapper around a psycopg2 connection that adds ``.execute()``
+    and provides savepoint-safe transaction control.
+
+    ``sqlite3.Connection`` has a native ``execute()`` method; psycopg2
+    connections do not because they are implemented as a C extension type
+    without ``__dict__``.  This wrapper delegates all standard methods
+    (``cursor``, ``commit``, ``rollback``, ``close``) to the underlying
+    connection and provides an ``execute()`` that mirrors the SQLite API.
+
+    **Savepoint safety** — Repositories may call ``commit()``, ``rollback()``
+    or issue ``COMMIT`` / ``ROLLBACK`` SQL statements during test execution.
+    These would commit/rollback the outer transaction and destroy the
+    savepoint that ``pg_db`` relies on for test isolation.  This wrapper
+    intercepts those operations and translates them to savepoint operations.
+    """
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+
+    def cursor(self, *args: Any, **kwargs: Any) -> Any:
+        return self._conn.cursor(*args, **kwargs)
+
+    def commit(self) -> None:
+        """No-op: we are inside a savepoint managed by ``pg_db``.
+
+        Committing the outer connection would destroy the savepoint
+        and prevent ``pg_db`` from rolling back changes at test end.
+        """
+        pass
+
+    def rollback(self) -> None:
+        """Rollback the savepoint instead of the full transaction."""
+        cur = self._conn.cursor()
+        cur.execute("ROLLBACK TO SAVEPOINT test_sp")
+        cur.close()
+
+    def close(self) -> None:
+        self._conn.close()
+
+    def execute(self, query: str, params: Any = None) -> Any:
+        """Execute a query, handling placeholders and transaction control.
+
+        - Converts ``?`` placeholders to ``%s`` for PostgreSQL.
+        - Intercepts ``COMMIT`` / ``ROLLBACK`` / ``BEGIN`` SQL statements
+          that would break savepoint isolation.
+        """
+        q = query.strip().rstrip(";").strip()
+        q_upper = q.upper()
+
+        # ── Transaction-control interception ──────────────────────────
+        if q_upper in ("COMMIT",):
+            # No-op — same rationale as commit() above.
+            cur = self._conn.cursor()
+            return cur
+
+        if q_upper in ("ROLLBACK",):
+            # Translate to savepoint rollback.
+            cur = self._conn.cursor()
+            cur.execute("ROLLBACK TO SAVEPOINT test_sp")
+            return cur
+
+        if q_upper.startswith("BEGIN"):
+            # We are already inside a transaction (managed by pg_db).
+            cur = self._conn.cursor()
+            return cur
+
+        # ── Normal query execution ────────────────────────────────────
+        # Convert ? placeholders to %s for psycopg2
+        if params is not None:
+            adapted = q.replace("?", "%s")
+        else:
+            adapted = q
+        cur = self._conn.cursor()
+        if params is not None:
+            cur.execute(adapted, params)
+        else:
+            cur.execute(adapted)
+        return cur
+
+
+class _DbAdapter:
+    """Minimal adapter that wraps a psycopg2 connection as DatabaseManager.
+
+    Tests and services expect a ``DatabaseManager``-like object with a
+    ``.conn`` property, ``.execute()``, ``.row_to_dict()``, and
+    ``.rows_to_dicts()``.  This adapter delegates those calls to the
+    underlying ``pg_db`` connection (which is inside the SAVEPOINT
+    transaction), avoiding the overhead and connection-pool churn of
+    creating a full ``DatabaseManager`` per test.
+    """
+
+    def __init__(self, conn: Any) -> None:
+        self._conn = conn
+        self._engine = "postgresql"
+        # psycopg2 is a C extension type that does not allow setting
+        # arbitrary attributes (no __dict__).  Wrap it in a helper
+        # that adds the ``.execute()`` method for API parity with
+        # ``sqlite3.Connection``.
+        self._wrapped_conn = _Psycopg2Connection(conn)
+
+    @property
+    def conn(self) -> _Psycopg2Connection:
+        return self._wrapped_conn
+
+    @staticmethod
+    def row_to_dict(row: Any) -> Any:
+        if row is None:
+            return None
+        if isinstance(row, dict):
+            return row
+        return dict(row)
+
+    @staticmethod
+    def rows_to_dicts(rows: Any) -> list:
+        if not rows:
+            return []
+        return [_DbAdapter.row_to_dict(r) for r in rows]
+
+    def execute(self, query: str, params: tuple = ()) -> Any:
+        return self._wrapped_conn.execute(query, params)
+
+
+@pytest.fixture
+def seeded_db(pg_db: Any, test_data: Dict[str, Any]) -> _DbAdapter:
+    """Provide a ``DatabaseManager``-compatible wrapper for the test
+    database connection.
+
+    Includes pre-seeded test data (company, admin user, client, truck,
+    driver) so that tests can immediately use ``user_id=1``,
+    ``client_id=1``, ``truck_id=1``, ``driver_id=1`` without having
+    to set up records themselves.
+
+    The wrapper stays inside ``pg_db``'s SAVEPOINT transaction, so all
+    changes are rolled back after each test.
+    """
+    return _DbAdapter(pg_db)
 
 
 # ---------------------------------------------------------------------------
@@ -287,37 +432,55 @@ def test_data(
             # ...
     """
     cur = pg_db.cursor()
+    from datetime import datetime as _dt
+    _now = _dt.utcnow().isoformat(timespec="seconds")
+
+    # Use OVERRIDING SYSTEM VALUE to force id=1 for seed records.
+    # PostgreSQL IDENTITY sequences do NOT roll back with savepoints,
+    # so without this each successive test would get different IDs
+    # (2, 3, 4, …) and fail when looking for hardcoded IDs like 1.
+    # Insert seed records with forced id=1 so tests can hardcode these IDs.
+    # OVERRIDING SYSTEM VALUE bypasses the IDENTITY sequence, which is
+    # necessary because sequences do NOT roll back with savepoints.
     cur.execute(
-        "INSERT INTO companies (company_name) VALUES ('Test Company') RETURNING id"
+        "INSERT INTO companies (id, company_name) "
+        "OVERRIDING SYSTEM VALUE VALUES (1, 'Test Company')"
     )
-    company_id = cur.fetchone()["id"]
+    company_id = 1
 
     cur.execute(
-        "INSERT INTO users (email, password_hash, role, display_name, is_active, company_id) "
-        "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-        ("admin@test.com", "hash", "admin", "Admin", True, company_id),
+        "INSERT INTO users (id, email, password_hash, role, display_name, is_active, company_id) "
+        "OVERRIDING SYSTEM VALUE VALUES (1, %s, %s, %s, %s, %s, %s)",
+        ("admin@test.com", "hash", "admin", "Admin", 1, company_id),
     )
-    user_id = cur.fetchone()["id"]
+    user_id = 1
 
     cur.execute(
-        "INSERT INTO clients (name, company_id, vat_number, address, email, phone, country) "
-        "VALUES (%s, %s, %s, %s, %s, %s, %s) RETURNING id",
-        ("Test Client", company_id, "", "", "", "", ""),
+        "INSERT INTO clients (id, name, company_id, vat_number, address, email, phone, country, created_at) "
+        "OVERRIDING SYSTEM VALUE VALUES (1, %s, %s, %s, %s, %s, %s, %s, %s)",
+        ("Test Client", company_id, "", "", "", "", "", _now),
     )
-    client_id = cur.fetchone()["id"]
+    client_id = 1
 
     cur.execute(
-        "INSERT INTO trucks (plate_number, company_id, active_status) "
-        "VALUES (%s, %s, %s) RETURNING id",
-        ("B-001-AAA", company_id, True),
+        "INSERT INTO trucks (id, plate_number, company_id, active_status) "
+        "OVERRIDING SYSTEM VALUE VALUES (1, %s, %s, %s)",
+        ("B-001-AAA", company_id, 1),
     )
-    truck_id = cur.fetchone()["id"]
+    truck_id = 1
 
     cur.execute(
-        "INSERT INTO drivers (name, company_id) VALUES (%s, %s) RETURNING id",
-        ("Test Driver", company_id),
+        "INSERT INTO drivers (id, name, company_id, created_at, updated_at) "
+        "OVERRIDING SYSTEM VALUE VALUES (1, %s, %s, %s, %s)",
+        ("Test Driver", company_id, _now, _now),
     )
-    driver_id = cur.fetchone()["id"]
+    driver_id = 1
+
+    # Advance IDENTITY sequences past 1 so that auto-generated
+    # inserts (those without OVERRIDING SYSTEM VALUE) do not
+    # collide with our forced ids.
+    for seq_table in ("companies", "users", "clients", "trucks", "drivers"):
+        cur.execute(f"ALTER SEQUENCE {seq_table}_id_seq RESTART WITH 1000")
 
     return {
         "company_id": company_id,

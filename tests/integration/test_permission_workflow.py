@@ -16,12 +16,13 @@ class TestPermissionWorkflow:
         """Inactive user denied."""
         cur = seeded_db.conn.cursor()
         cur.execute(
-            "INSERT INTO users (id, email, password_hash, role, display_name, is_active, company_id) "
-            "VALUES (2, 'inactive@test.com', 'hash', 'admin', 'Inactive', 0, 1)"
+            "INSERT INTO users (email, password_hash, role, display_name, is_active, company_id) "
+            "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
+            ("inactive@test.com", "hash", "admin", "Inactive", 0, 1),
         )
-        seeded_db.conn.commit()
+        user_id = cur.fetchone()["id"]
         perm = PermissionService(seeded_db)
-        result = perm.can_create_trip(user_id=2)
+        result = perm.can_create_trip(user_id=user_id)
         assert not result.allowed
         assert "inactive" in result.reason.lower()
 

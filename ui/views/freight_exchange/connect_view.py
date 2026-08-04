@@ -4,6 +4,9 @@ Manages OAuth connection flow: connect via browser, view status,
 test connection, and disconnect. Uses OAuthLoopbackServer for
 capturing the authorization code redirect.
 """
+
+from __future__ import annotations
+
 import logging
 import webbrowser
 from datetime import datetime, timezone
@@ -12,6 +15,8 @@ from PySide6.QtCore import QTimer, Signal
 from PySide6.QtWidgets import (
     QFrame, QHBoxLayout, QLabel, QPushButton, QVBoxLayout, QWidget,
 )
+
+from services.i18n import t
 
 logger = logging.getLogger(__name__)
 
@@ -53,13 +58,13 @@ class ConnectView(QWidget):
 
         # Header row
         header_layout = QHBoxLayout()
-        self._title_label = QLabel("Trans.eu")
+        self._title_label = QLabel(t("freight.connection.provider_trans_eu", default="Trans.eu"))
         self._title_label.setStyleSheet("font-weight: bold; font-size: 14px;")
         header_layout.addWidget(self._title_label)
         header_layout.addStretch()
 
         # Status badge
-        self._status_badge = QLabel("Disconnected")
+        self._status_badge = QLabel(t("freight.connection.status_disconnected", default="Disconnected"))
         self._status_badge.setStyleSheet(
             "padding: 2px 10px; border-radius: 10px; background: #e5e7eb; color: #374151;"
         )
@@ -83,14 +88,14 @@ class ConnectView(QWidget):
         button_layout = QHBoxLayout()
         button_layout.setSpacing(6)
 
-        self._connect_btn = QPushButton("Connect Trans.eu")
+        self._connect_btn = QPushButton(t("freight.connection.connect_trans_eu", default="Connect Trans.eu"))
         self._connect_btn.setStyleSheet(
             "background: #6366F1; color: white; padding: 6px 16px; border-radius: 6px; border: none;"
         )
         self._connect_btn.clicked.connect(self._on_connect_clicked)
         button_layout.addWidget(self._connect_btn)
 
-        self._test_btn = QPushButton("Test")
+        self._test_btn = QPushButton(t("freight.connection.test_button", default="Test"))
         self._test_btn.setStyleSheet(
             "padding: 6px 12px; border-radius: 6px; border: 1px solid #d1d5db;"
         )
@@ -98,7 +103,7 @@ class ConnectView(QWidget):
         self._test_btn.setVisible(False)
         button_layout.addWidget(self._test_btn)
 
-        self._disconnect_btn = QPushButton("Disconnect")
+        self._disconnect_btn = QPushButton(t("freight.connection.disconnect", default="Disconnect"))
         self._disconnect_btn.setStyleSheet(
             "padding: 6px 12px; border-radius: 6px; border: 1px solid #dc2626; color: #dc2626;"
         )
@@ -155,7 +160,7 @@ class ConnectView(QWidget):
     def _update_ui_for_status(self):
         """Update visibility and text based on current status."""
         if self._status == self.STATUS_CONNECTED:
-            self._status_badge.setText("Connected")
+            self._status_badge.setText(t("freight.connection.status_connected", default="Connected"))
             self._status_badge.setStyleSheet(
                 "padding: 2px 10px; border-radius: 10px; background: #dcfce7; color: #166534;"
             )
@@ -165,7 +170,7 @@ class ConnectView(QWidget):
             self._expiry_label.setVisible(True)
             self._start_expiry_timer()
         elif self._status == self.STATUS_CONNECTING:
-            self._status_badge.setText("Connecting...")
+            self._status_badge.setText(t("freight.connection.status_connecting", default="Connecting..."))
             self._status_badge.setStyleSheet(
                 "padding: 2px 10px; border-radius: 10px; background: #fef3c7; color: #92400e;"
             )
@@ -173,7 +178,7 @@ class ConnectView(QWidget):
             self._test_btn.setVisible(False)
             self._disconnect_btn.setVisible(False)
         else:
-            self._status_badge.setText("Disconnected")
+            self._status_badge.setText(t("freight.connection.status_disconnected", default="Disconnected"))
             self._status_badge.setStyleSheet(
                 "padding: 2px 10px; border-radius: 10px; background: #e5e7eb; color: #374151;"
             )
@@ -200,7 +205,12 @@ class ConnectView(QWidget):
                 hours = int(ttl // 3600)
                 minutes = int((ttl % 3600) // 60)
                 self._expiry_label.setText(
-                    f"Token expires in {hours}h {minutes}m"
+                    t(
+                        "freight.connection.token_expires_in",
+                        default="Token expires in {hours}h {minutes}m",
+                        hours=hours,
+                        minutes=minutes,
+                    )
                 )
                 if ttl < 600:
                     self._expiry_label.setStyleSheet("color: #dc2626; font-size: 12px;")
@@ -209,7 +219,7 @@ class ConnectView(QWidget):
                 else:
                     self._expiry_label.setStyleSheet("color: #6b7280; font-size: 12px;")
             else:
-                self._expiry_label.setText("Token expired — reconnect required")
+                self._expiry_label.setText(t("freight.connection.token_expired", default="Token expired — reconnect required"))
                 self._expiry_label.setStyleSheet("color: #dc2626; font-size: 12px; font-weight: bold;")
         else:
             self._expiry_label.setText("")
@@ -219,7 +229,7 @@ class ConnectView(QWidget):
     def _on_connect_clicked(self):
         """Start the OAuth connection flow."""
         if not self._remote_api:
-            self._show_error("API client not configured")
+            self._show_error(t("freight.connection.api_not_configured", default="API client not configured"))
             return
 
         self._set_status(self.STATUS_CONNECTING)
@@ -230,7 +240,10 @@ class ConnectView(QWidget):
 
             server = OAuthLoopbackServer()
             if not server.start():
-                self._show_error("Could not start local server for OAuth callback. All ports in use.")
+                self._show_error(t(
+                    "freight.connection.server_start_failed",
+                    default="Could not start local server for OAuth callback. All ports in use.",
+                ))
                 self._set_status(self.STATUS_DISCONNECTED)
                 return
 
@@ -249,7 +262,7 @@ class ConnectView(QWidget):
             # The backend knows client_id; we just need to redirect to the
             # correct auth server. For now, open the URL as-is.
             if not auth_url:
-                self._show_error("Could not build auth URL")
+                self._show_error(t("freight.connection.auth_url_failed", default="Could not build auth URL"))
                 self._set_status(self.STATUS_DISCONNECTED)
                 server.stop()
                 return
@@ -262,16 +275,16 @@ class ConnectView(QWidget):
 
             if error:
                 if error == "timeout":
-                    self._show_error("Authentication timed out. Please try again.")
+                    self._show_error(t("freight.connection.auth_timeout", default="Authentication timed out. Please try again."))
                 elif error == "access_denied":
-                    self._show_error("Access was denied. You must grant access to connect.")
+                    self._show_error(t("freight.connection.access_denied", default="Access was denied. You must grant access to connect."))
                 else:
-                    self._show_error(f"Authentication error: {error}")
+                    self._show_error(t("freight.connection.auth_error", default="Authentication error: {error}", error=error))
                 self._set_status(self.STATUS_DISCONNECTED)
                 return
 
             if not code:
-                self._show_error("No authorization code received.")
+                self._show_error(t("freight.connection.no_auth_code", default="No authorization code received."))
                 self._set_status(self.STATUS_DISCONNECTED)
                 return
 
@@ -287,7 +300,7 @@ class ConnectView(QWidget):
 
         except Exception as e:
             logger.exception("Failed to connect Trans.eu")
-            self._show_error(f"Connection failed: {e}")
+            self._show_error(t("freight.connection.connect_failed", default="Connection failed: {error}", error=e))
             self._set_status(self.STATUS_DISCONNECTED)
 
     def _on_disconnect_clicked(self):
@@ -299,7 +312,7 @@ class ConnectView(QWidget):
             self.update_status({"status": self.STATUS_DISCONNECTED})
             self.connection_changed.emit({"status": self.STATUS_DISCONNECTED})
         except Exception as e:
-            self._show_error(f"Disconnect failed: {e}")
+            self._show_error(t("freight.connection.disconnect_failed", default="Disconnect failed: {error}", error=e))
 
     def _on_test_clicked(self):
         """Test the Trans.eu connection."""
@@ -309,14 +322,18 @@ class ConnectView(QWidget):
             result = self._remote_api.test_provider("trans_eu")
             if result.get("status") == "healthy":
                 self._hide_error()
-                self._status_badge.setText("Connected")
+                self._status_badge.setText(t("freight.connection.status_connected", default="Connected"))
                 self._status_badge.setStyleSheet(
                     "padding: 2px 10px; border-radius: 10px; background: #dcfce7; color: #166534;"
                 )
             else:
-                self._show_error(f"Connection test: {result.get('status', 'unknown')}")
+                self._show_error(t(
+                    "freight.connection.test_status",
+                    default="Connection test: {status}",
+                    status=result.get("status", "unknown"),
+                ))
         except Exception as e:
-            self._show_error(f"Connection test failed: {e}")
+            self._show_error(t("freight.connection.test_failed_msg", default="Connection test failed: {error}", error=e))
 
     # ── Helpers ────────────────────────────────────────────────────
 

@@ -245,9 +245,13 @@ class CoPilotController(QObject):
             ``error_occurred`` on failure (including if STT unavailable).
         """
         try:
-            transcript = self._transcribe_audio(audio_data, language)
+            transcript, stt_error = self._transcribe_audio(audio_data, language)
+            if stt_error:
+                self.error_occurred.emit(stt_error)
+                raise RuntimeError(stt_error)
+
             if not transcript:
-                msg = "copilot.error.stt_failed"
+                msg = "copilot.error.stt_no_speech"
                 self.error_occurred.emit(msg)
                 raise RuntimeError(msg)
 
@@ -572,25 +576,36 @@ class CoPilotController(QObject):
 
     # ── Internal helpers ─────────────────────────────────────────────
 
-    def _transcribe_audio(self, audio_data: bytes, language: str) -> Optional[str]:
+    def _transcribe_audio(
+        self, audio_data: bytes, language: str
+    ) -> tuple[Optional[str], Optional[str]]:
         """Transcribe audio bytes to text using Whisper STT (conditional).
 
-        Returns the transcript string, or ``None`` if STT is unavailable
-        or transcription fails.
+        Returns ``(transcript, error_code)`` where *error_code* is ``None``
+        on success.  Callers should check *error_code* first, then check
+        whether *transcript* is empty (no speech detected).
+
+        Error codes
+        -----------
+        ``copilot.error.stt_unavailable``
+            The STT provider could not be loaded (faster-whisper not installed).
+        ``copilot.error.stt_failed``
+            The provider returned ``None`` or raised an exception.
         """
         if self._stt_provider is None:
             self._stt_provider = self._load_stt_provider()
         if self._stt_provider is None:
             logger.warning("STT provider not available — cannot transcribe voice input")
-            return None
+            return None, "copilot.error.stt_unavailable"
         try:
             result = self._stt_provider.transcribe(audio_data, language=language)
             if result is None:
-                return None
-            return result.transcript or None
+                return None, "copilot.error.stt_failed"
+            transcript = result.transcript or ""
+            return transcript, None
         except Exception as exc:
             logger.error("STT transcription error: %s", exc)
-            return None
+            return None, "copilot.error.stt_failed"
 
     @staticmethod
     def _load_stt_provider() -> Any:

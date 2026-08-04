@@ -143,8 +143,8 @@ class TestTruckEventSubscription(unittest.TestCase):
         but defense in depth).  Verify the Fleet Manager publishes
         the plate."""
         import inspect
-        from ui.views import fleet_tab
-        src = inspect.getsource(fleet_tab)
+        from ui.views.fleet_tab import truck_form
+        src = inspect.getsource(truck_form)
         self.assertIn("TRUCK_CREATED", src)
         self.assertIn('"plate":', src)
 

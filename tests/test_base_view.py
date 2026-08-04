@@ -73,16 +73,20 @@ class TestInit:
         v = _TestView(parent)
         qtbot.addWidget(v)
         assert v.parent() is parent
+        # Keep parent alive until after test teardown
+        self._saved_parent = parent
 
-    def test_no_auto_build_ui(self):
+    def test_no_auto_build_ui(self, qtbot):
         """_build_ui must be called by subclass, not by BaseView.__init__."""
         with patch.object(BaseView, "_build_ui") as mock:
-            _ = _TestView()
+            v = _TestView()
+            qtbot.addWidget(v)
             mock.assert_not_called()
 
-    def test_no_auto_load_data(self):
+    def test_no_auto_load_data(self, qtbot):
         with patch.object(BaseView, "_load_data") as mock:
-            _ = _TestView()
+            v = _TestView()
+            qtbot.addWidget(v)
             mock.assert_not_called()
 
 
@@ -90,14 +94,16 @@ class TestInit:
 
 
 class TestWakeup:
-    def test_calls_load_data(self, view):
+    def test_calls_load_data(self, view, qtbot):
         view.wakeup()
+        qtbot.wait(50)  # Let async _load_data_async -> _load_data timers fire
         assert view._load_called
 
-    def test_noop_after_shutdown(self, view):
+    def test_noop_after_shutdown(self, view, qtbot):
         view.shutdown()
         view._load_called = False
         view.wakeup()
+        qtbot.wait(50)
         assert not view._load_called
 
 
@@ -356,8 +362,9 @@ class TestSafeCall:
 
 
 class TestFullLifecycle:
-    def test_wakeup_shutdown_cycle(self, view):
+    def test_wakeup_shutdown_cycle(self, view, qtbot):
         view.wakeup()
+        qtbot.wait(50)  # Let async timers fire
         assert view._load_called
 
         view.shutdown()
@@ -366,6 +373,7 @@ class TestFullLifecycle:
 
         view._load_called = False
         view.wakeup()
+        qtbot.wait(50)
         assert not view._load_called
 
     def test_multiple_shutdown_idempotent(self, view):

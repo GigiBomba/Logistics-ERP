@@ -14,6 +14,7 @@ from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from models.trip_models import TripCreate
 from repositories.client_repository import ClientRepository
 from repositories.driver_repository import DriverRepository
 from repositories.document_repository import DocumentRepository
@@ -37,7 +38,7 @@ def _dt(days_offset: int = 0) -> str:
     return (datetime.now() + timedelta(days=days_offset)).strftime("%Y-%m-%d")
 
 
-def _create_minimal_trip(db, status="Planned", cargo="Test cargo", **extra) -> int:
+def _create_minimal_trip(db, status="Planned", **extra) -> int:
     svc = TripService(db)
     now = datetime.now().isoformat()
     # Seed a minimal client so FK constraints are satisfied
@@ -65,24 +66,31 @@ def _create_minimal_trip(db, status="Planned", cargo="Test cargo", **extra) -> i
     data = {
         "client_name": "CMR Chain Client AG",
         "client_id": 1,
-        "truck_number": "TR-CMR-001",
+        "truck_plate": "TR-CMR-001",
         "driver_name": "CMR Driver",
         "start_date": _dt(0),
         "end_date": _dt(2),
         "distance_km": 850.0,
-        "total_price_eur": 3400.0,
+        "price_eur": 3400.0,
         "currency": "EUR",
         "status": status,
-        "created_at": now,
-        "cargo_description": cargo,
-        "package_count": 24,
-        "package_type": "Pallets",
-        "gross_weight_kg": 12000.0,
-        "loading_country": "DE",
-        "delivery_country": "RO",
     }
     data.update(extra)
-    return svc.add(data)
+    # Filter to only TripCreate fields
+    trip_fields = {k: v for k, v in data.items() if k in TripCreate.model_fields}
+    result = svc.create(TripCreate(**trip_fields))
+    trip_id = result.data.id
+
+    # Apply non-TripCreate fields (cargo_description, gross_weight_kg, etc.)
+    # directly on the trip record so CMR generator sees them.
+    extra_trip = {k: v for k, v in data.items() if k not in TripCreate.model_fields}
+    if extra_trip:
+        sets = ", ".join(f"{k} = ?" for k in extra_trip)
+        params = tuple(extra_trip.values())
+        db.conn.execute(f"UPDATE trips SET {sets} WHERE id = ?", params + (trip_id,))
+        db.conn.commit()
+
+    return trip_id
 
 
 # ── Tests ─────────────────────────────────────────────────────────────────
@@ -125,7 +133,8 @@ class TestEventBusCMRChain:
             "VALUES (1, 'Test Company', 1, datetime('now'), datetime('now'))"
         )
         db.conn.commit()
-        trip_id = _create_minimal_trip(db, status="Loading", driver_id=1, truck_id=1)
+        trip_id = _create_minimal_trip(db, status="Loading", driver_id=1, truck_id=1,
+                                       cargo_description="Test cargo", gross_weight_kg=1000)
         alert_mgr = AlertManager(db)
         prefs = MagicMock()
 
@@ -188,7 +197,8 @@ class TestEventBusCMRChain:
 
     def test_cmr_skips_if_already_generated(self, db):
         """Generate CMR twice, verify no duplicates."""
-        trip_id = _create_minimal_trip(db, status="In Transit")
+        trip_id = _create_minimal_trip(db, status="In Transit",
+                                       cargo_description="Test cargo", gross_weight_kg=1000)
         alert_mgr = AlertManager(db)
         prefs = MagicMock()
 
@@ -291,6 +301,7 @@ class TestEventBusCMRChain:
         trip_id = _create_minimal_trip(
             db, status="Loading",
             driver_id=driver_id,
+            cargo_description="ADR cargo", gross_weight_kg=5000,
             adr_info_json=adr_json,
         )
 

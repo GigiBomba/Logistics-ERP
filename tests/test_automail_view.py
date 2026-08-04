@@ -4,11 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 class TestQtAutoMailView:
-    def test_creation(self, qt_widget, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            "ui.views.automail_view.QtAutoMailView._initial_load",
-            lambda self: None,
-        )
+    def test_creation(self, qt_widget, qtbot):
         db = MagicMock()
         prefs = MagicMock()
         api_client = MagicMock()
@@ -19,21 +15,13 @@ class TestQtAutoMailView:
         with __import__("contextlib", fromlist=["suppress"]).suppress(Exception):
             view.shutdown()
 
-    def test_has_config_panel(self, qt_widget, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            "ui.views.automail_view.QtAutoMailView._initial_load",
-            lambda self: None,
-        )
+    def test_has_config_panel(self, qt_widget, qtbot):
         view = __import__("ui.views.automail_view", fromlist=["QtAutoMailView"]).QtAutoMailView(
             qt_widget, db=MagicMock(), prefs=MagicMock(), api_client=MagicMock(),
         )
         qtbot.addWidget(view)
 
-    def test_wakeup_does_not_crash(self, qt_widget, qtbot, monkeypatch):
-        monkeypatch.setattr(
-            "ui.views.automail_view.QtAutoMailView._initial_load",
-            lambda self: None,
-        )
+    def test_wakeup_does_not_crash(self, qt_widget, qtbot):
         view = __import__("ui.views.automail_view", fromlist=["QtAutoMailView"]).QtAutoMailView(
             qt_widget, db=MagicMock(), prefs=MagicMock(), api_client=MagicMock(),
         )

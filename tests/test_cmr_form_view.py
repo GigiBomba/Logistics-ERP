@@ -11,6 +11,9 @@ from PySide6.QtWidgets import QWidget
 
 from ui.views.cmr_form_view.cmr_form import QtCmrFormView
 
+import ui.widgets as _ui_widgets
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
 
 # ── Fixtures ───────────────────────────────────────────────────────────────────
 

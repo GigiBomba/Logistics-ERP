@@ -17,18 +17,18 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import SP
 from ui.widgets import ActionButton, StyledCheckBox
 from ui.widgets.debounced_line_edit import DebouncedLineEdit
 
 STATUS_OPTIONS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
 
 _STATUS_COLORS: dict[str, str] = {
-    "Planned": COLORS["chip_planned"],
-    "Loading": COLORS["chip_loading"],
-    "In Transit": COLORS["chip_transit"],
-    "Delivered": COLORS["chip_delivered"],
-    "Cancelled": COLORS["chip_cancelled"],
+    "Planned": "#1c1917",
+    "Loading": "#341a00",
+    "In Transit": "#0f1f4a",
+    "Delivered": "#052e16",
+    "Cancelled": "#1A1A20",
 }
 
 
@@ -61,14 +61,14 @@ class QtDispatchSearchBar(QFrame):
 
     def _build(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["2"], S["1"], S["2"], 0)
-        layout.setSpacing(S["1"])
+        layout.setContentsMargins(SP["2"], SP["1"], SP["2"], 0)
+        layout.setSpacing(SP["1"])
 
         # Top row ----------------------------------------------------------------
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setSpacing(SP["2"])
 
         # Search icon
         icon = QLabel("\U0001f50d")
@@ -84,19 +84,35 @@ class QtDispatchSearchBar(QFrame):
         self._entry.debouncedTextChanged.connect(self._fire_search)
         row_layout.addWidget(self._entry, 1)
 
-        # Status checkboxes
+        # Status checkboxes with colored dots
         status_frame = QWidget()
         status_layout = QHBoxLayout(status_frame)
         status_layout.setContentsMargins(0, 0, 0, 0)
-        status_layout.setSpacing(S["1"])
+        status_layout.setSpacing(SP["1"])
 
         for status in STATUS_OPTIONS:
-            cb = StyledCheckBox(parent=status_frame, text=status)
+            item = QWidget(status_frame)
+            item_layout = QHBoxLayout(item)
+            item_layout.setContentsMargins(0, 0, 0, 0)
+            item_layout.setSpacing(4)
+
+            # Colored dot (8px circle)
+            dot = QLabel()
+            dot.setFixedSize(8, 8)
+            dot.setStyleSheet(
+                f"background-color: {_STATUS_COLORS[status]};"
+                f" border-radius: 4px; border: none;"
+            )
+            item_layout.addWidget(dot)
+
+            cb = StyledCheckBox(parent=item, text=status)
             cb.setProperty("role", "filter")
             cb.setChecked(True)
             cb.stateChanged.connect(self._fire_search)
             self._checkboxes[status] = cb
-            status_layout.addWidget(cb)
+            item_layout.addWidget(cb)
+
+            status_layout.addWidget(item)
 
         row_layout.addWidget(status_frame)
 
@@ -111,7 +127,7 @@ class QtDispatchSearchBar(QFrame):
         # Result count label -----------------------------------------------------
         self._result_lbl = QLabel("")
         self._result_lbl.setProperty("fontRole", "muted")
-        self._result_lbl.setContentsMargins(S["2"], 0, 0, S["1"])
+        self._result_lbl.setContentsMargins(SP["2"], 0, 0, SP["1"])
         layout.addWidget(self._result_lbl)
 
     # ── Public API ──────────────────────────────────────────────────────────────

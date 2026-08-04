@@ -23,6 +23,67 @@ import pytest
 from services.folder_watcher import FolderWatcher
 
 
+def _ensure_watchdog_stub():
+    """Inject minimal ``watchdog`` modules when the optional package is absent.
+
+    ``watchdog`` is an optional dependency (not listed in requirements); the
+    production code falls back to polling when it is unavailable.  Two tests
+    exercise the watchdog integration path with ``patch()``, which requires
+    the ``watchdog`` package to be importable.  When it isn't installed we
+    provide stub modules so those tests still verify the wiring.
+    """
+    import sys
+    try:
+        import watchdog  # noqa: F401
+    except ImportError:
+        import types
+
+        observers = types.ModuleType("watchdog.observers")
+        events = types.ModuleType("watchdog.events")
+
+        class Observer:
+            def __init__(self):
+                self._handler = None
+
+            def schedule(self, handler, path, recursive=False):
+                self._handler = handler
+
+            def start(self):
+                pass
+
+            def stop(self):
+                pass
+
+            def join(self, timeout=None):
+                pass
+
+        class FileSystemEventHandler:
+            def on_created(self, event):
+                pass
+
+            def on_modified(self, event):
+                pass
+
+            def on_moved(self, event):
+                pass
+
+        observers.Observer = Observer
+        events.FileSystemEventHandler = FileSystemEventHandler
+
+        watchdog_mod = types.ModuleType("watchdog")
+        watchdog_mod.observers = observers
+        watchdog_mod.events = events
+        sys.modules["watchdog"] = watchdog_mod
+        sys.modules["watchdog.observers"] = observers
+        sys.modules["watchdog.events"] = events
+
+
+@pytest.fixture(autouse=True)
+def _watchdog_env():
+    _ensure_watchdog_stub()
+    yield
+
+
 # ── Fixtures ─────────────────────────────────────────────────────────
 
 @pytest.fixture
@@ -126,7 +187,10 @@ class TestPollLoop:
         new_file = os.path.join(watch_dir, "new_doc.pdf")
         Path(new_file).write_text("dummy content")
 
-        watcher._check_for_new_files()
+        # _check_for_new_files only processes files with an mtime older than
+        # 2s (write-complete guard), so bypass the guard for the test.
+        with patch.object(watcher, "_is_stable", return_value=True):
+            watcher._check_for_new_files()
         callback.assert_called_once()
         args = callback.call_args[0][0]
         assert any(new_file in p for p in args)
@@ -146,7 +210,8 @@ class TestPollLoop:
         watcher._seed_known_files()
         for name in ["a.pdf", "b.jpg", "c.png"]:
             Path(os.path.join(watch_dir, name)).write_text("data")
-        watcher._check_for_new_files()
+        with patch.object(watcher, "_is_stable", return_value=True):
+            watcher._check_for_new_files()
         callback.assert_called_once()
         args = callback.call_args[0][0]
         assert len(args) == 3
@@ -190,7 +255,8 @@ class TestDeleteAfter:
         Path(new_file).write_text("data")
         assert os.path.isfile(new_file)
 
-        w._check_for_new_files()
+        with patch.object(w, "_is_stable", return_value=True):
+            w._check_for_new_files()
         assert not os.path.isfile(new_file)
 
     def test_delete_failure_does_not_raise(self, watch_dir, callback):

@@ -14,17 +14,6 @@ class TestTopBar:
         qtbot.addWidget(bar)
         assert bar.height() == TOPBAR_HEIGHT
 
-    def test_breadcrumb_initially_empty(self, qt_widget, qtbot):
-        bar = TopBar(qt_widget)
-        qtbot.addWidget(bar)
-        assert bar._breadcrumb.text() == ""
-
-    def test_set_breadcrumb(self, qt_widget, qtbot):
-        bar = TopBar(qt_widget)
-        qtbot.addWidget(bar)
-        bar.set_breadcrumb("Overview")
-        assert bar._breadcrumb.text() == "Overview"
-
     def test_clock_updates(self, qt_widget, qtbot):
         bar = TopBar(qt_widget)
         qtbot.addWidget(bar)

@@ -9,6 +9,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QFrame,
     QHBoxLayout,
+    QInputDialog,
     QLabel,
     QLineEdit,
     QMessageBox,
@@ -599,3 +600,107 @@ class TestEditorPanelSendTest:
             qtbot.addWidget(panel)
             panel._on_send_test()
             mock_warn.assert_called_once()
+
+
+# ── SP workaround (if needed) ─────────────────────────────────────────
+
+import ui.widgets as _ui_widgets
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
+
+
+# ── Send test full flow ──────────────────────────────────────────────
+
+
+class TestEditorPanelSendTestFullFlow:
+    """Integration-style tests for the full send-test-email flow."""
+
+    def test_send_test_full_flow_success(self, qt_widget, qtbot):
+        """Full send-test flow: QInputDialog accepted, email sent, success box."""
+        db = MagicMock()
+        ops = MagicMock()
+        ops.notification_center = MagicMock()
+        ops.notification_center.send_email.return_value = True
+
+        with patch.object(
+            QInputDialog, "getText", return_value=("test@acme.com", True),
+        ), patch(
+            "ui.views.automail.editor_panel.load_company_config",
+            return_value={"email": "admin@acme.com", "company_name": "Operion"},
+        ), patch(
+            "ui.views.automail.editor_panel.get_sample_context",
+            return_value={"invoice_number": "INV-TEST"},
+        ), patch(
+            "ui.views.automail.editor_panel.render_template",
+            side_effect=lambda text, ctx: text,  # identity
+        ), patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            panel = EditorPanel(qt_widget, db=db, ops=ops)
+            qtbot.addWidget(panel)
+            panel._subject_edit.setText("Test Subject")
+            panel._body_editor.setPlainText("Test Body")
+            panel._on_send_test()
+            mock_info.assert_called_once()
+            mock_warn.assert_not_called()
+            # Verify the success message mentions the recipient email
+            args, _ = mock_info.call_args
+            assert "test@acme.com" in str(args)
+
+    def test_send_test_full_flow_failure(self, qt_widget, qtbot):
+        """Full send-test flow: nc.send_email raises → warning box."""
+        db = MagicMock()
+        ops = MagicMock()
+        ops.notification_center = MagicMock()
+        ops.notification_center.send_email.side_effect = Exception("SMTP error")
+
+        with patch.object(
+            QInputDialog, "getText", return_value=("test@acme.com", True),
+        ), patch(
+            "ui.views.automail.editor_panel.load_company_config",
+            return_value={"email": "admin@acme.com"},
+        ), patch(
+            "ui.views.automail.editor_panel.get_sample_context",
+            return_value={"invoice_number": "INV-TEST"},
+        ), patch(
+            "ui.views.automail.editor_panel.render_template",
+            side_effect=lambda text, ctx: text,
+        ), patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            panel = EditorPanel(qt_widget, db=db, ops=ops)
+            qtbot.addWidget(panel)
+            panel._subject_edit.setText("Test Subject")
+            panel._body_editor.setPlainText("Test Body")
+            panel._on_send_test()
+            mock_warn.assert_called_once()
+            mock_info.assert_not_called()
+            # Verify warning contains the exception message
+            args, _ = mock_warn.call_args
+            assert "SMTP error" in str(args)
+
+    def test_send_test_cancelled(self, qt_widget, qtbot):
+        """User cancels the email input dialog — no action taken."""
+        db = MagicMock()
+        ops = MagicMock()
+        ops.notification_center = MagicMock()
+
+        with patch.object(
+            QInputDialog, "getText", return_value=("", False),
+        ), patch(
+            "ui.views.automail.editor_panel.load_company_config",
+            return_value={"email": "admin@acme.com"},
+        ), patch.object(
+            QMessageBox, "information",
+        ) as mock_info, patch.object(
+            QMessageBox, "warning",
+        ) as mock_warn:
+            panel = EditorPanel(qt_widget, db=db, ops=ops)
+            qtbot.addWidget(panel)
+            panel._on_send_test()
+            mock_info.assert_not_called()
+            mock_warn.assert_not_called()

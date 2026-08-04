@@ -13,13 +13,14 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QCheckBox,
     QComboBox,
+    QFrame,
     QProgressBar,
     QPushButton,
     QRadioButton,
     QTableWidget,
 )
 
-from ui.components import Btn, Card, EmptyState, Label
+from ui.components import EmptyState, Label
 from ui.views.migration_center.immigrate_software_tab import (
     ImmigrateSoftwareTab,
 )
@@ -32,6 +33,7 @@ def software_tab(qt_widget, qtbot):
     """Provide an ImmigrateSoftwareTab with db=None (services gracefully degraded)."""
     tab = ImmigrateSoftwareTab(parent=qt_widget, db=None)
     qtbot.addWidget(tab)
+    qt_widget.show()  # Show parent so children become visible
     yield tab
     tab.deleteLater()
 
@@ -47,6 +49,7 @@ def software_tab_with_svc(qt_widget, qtbot):
         mock_svc_cls.return_value = mock_svc
         tab = ImmigrateSoftwareTab(parent=qt_widget, db=db)
     qtbot.addWidget(tab)
+    qt_widget.show()  # Show parent so children become visible
     yield tab, mock_svc
     tab.deleteLater()
 
@@ -67,7 +70,8 @@ class TestImmigrateSoftwareTabInit:
         assert software_tab._duplicates == []
 
     def test_config_card_exists(self, software_tab):
-        cards = software_tab.findChildren(Card)
+        # Card is a factory function returning QFrame -- search by object name
+        cards = [c for c in software_tab.findChildren(QFrame) if c.objectName() == "card"]
         assert len(cards) >= 1
 
     def test_format_combo_exists(self, software_tab):
@@ -79,7 +83,7 @@ class TestImmigrateSoftwareTabInit:
         assert len(combos) >= 2
 
     def test_browse_button_exists(self, software_tab):
-        buttons = software_tab.findChildren(Btn)
+        buttons = software_tab.findChildren(QPushButton)
         btn_texts = [b.text() for b in buttons]
         assert any("Browse" in t or "browse" in t.lower() for t in btn_texts)
 

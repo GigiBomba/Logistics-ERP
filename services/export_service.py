@@ -70,6 +70,22 @@ class ExportService:
         if not os.path.exists(self.reports_dir):
             os.makedirs(self.reports_dir)
 
+    @staticmethod
+    def _to_float(value: Any, field: str) -> float:
+        """Coerce *value* to float, treating None/"" as 0.0.
+
+        Raises ValueError naming *field* for malformed non-numeric values so
+        the failure is actionable instead of a bare ``float()`` exception.
+        """
+        if value is None or value == "":
+            return 0.0
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            raise ValueError(
+                f"Invalid numeric value for {field}: {value!r}"
+            ) from None
+
     # ------------------------------------------------------------------
     # Old methods — kept for backward compatibility with deprecation warning
     # ------------------------------------------------------------------
@@ -131,14 +147,14 @@ class ExportService:
 
         for t in trips:
             data.append([
-                str(t["created_at"])[:10],
-                remove_accents(t["truck_number"]),
-                remove_accents(t["driver_name"]),
-                remove_accents(t["client_name"]),
-                f"{(t.get('distance_km') or 0):.0f}",
-                f"{(t.get('gross_per_km') or 0):.2f}",
-                f"{(t.get('net_profit') or 0):.2f}",
-                remove_accents(t["status"]),
+                str(t.get("created_at") or "")[:10],
+                remove_accents(t.get("truck_number") or ""),
+                remove_accents(t.get("driver_name") or ""),
+                remove_accents(t.get("client_name") or ""),
+                f"{self._to_float(t.get('distance_km'), 'distance_km'):.0f}",
+                f"{self._to_float(t.get('gross_per_km'), 'gross_per_km'):.2f}",
+                f"{self._to_float(t.get('net_profit'), 'net_profit'):.2f}",
+                remove_accents(t.get("status") or ""),
             ])
 
         table = Table(
@@ -230,20 +246,20 @@ class ExportService:
 
         for t in trips:
             ws.append([
-                t["id"],
-                t["created_at"],
-                t["truck_number"],
-                t["driver_name"],
-                t["client_name"],
-                t["distance_km"],
-                t["total_price_eur"],
-                t["net_profit"],
-                t["gross_per_km"],
-                t["rate_per_km"],
-                t["status"],
-                t["fuel_cost"],
-                t["toll_cost"],
-                t["salary_cost"],
+                t.get("id", ""),
+                t.get("created_at") or "",
+                t.get("truck_number") or "",
+                t.get("driver_name") or "",
+                t.get("client_name") or "",
+                self._to_float(t.get("distance_km"), "distance_km"),
+                self._to_float(t.get("total_price_eur"), "total_price_eur"),
+                self._to_float(t.get("net_profit"), "net_profit"),
+                self._to_float(t.get("gross_per_km"), "gross_per_km"),
+                self._to_float(t.get("rate_per_km"), "rate_per_km"),
+                t.get("status") or "",
+                self._to_float(t.get("fuel_cost"), "fuel_cost"),
+                self._to_float(t.get("toll_cost"), "toll_cost"),
+                self._to_float(t.get("salary_cost"), "salary_cost"),
             ])
 
         for cell in ws[1]:
@@ -467,7 +483,8 @@ class ExportService:
             data = [headers]
             for row in entities:
                 data.append([
-                    remove_accents(str(v)) if isinstance(v, str) else str(v) for v in row.values()
+                    remove_accents(str(v)) if isinstance(v, str)
+                    else ("" if v is None else str(v)) for v in row.values()
                 ])
         else:
             data = [["No data"]]
@@ -722,7 +739,7 @@ class ExportService:
                         cd.get("trip_id", ""),
                         cd.get("truck_plate", ""),
                         cd.get("driver_name", ""),
-                        f"{cd.get('origin', '?')} \u2192 {cd.get('destination', '?')}",
+                        f"{(cd.get('origin') or '?')} \u2192 {(cd.get('destination') or '?')}",
                         cd.get("departure_date", ""),
                         cd.get("eta", ""),
                     ])

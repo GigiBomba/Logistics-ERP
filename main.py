@@ -63,19 +63,10 @@ from utils.observability import log, metrics
 from utils.resource_path import _is_packaged
 
 # ── Startup logging ─────────────────────────────────────────────────
-# Ensure the log directory exists before setting up the file handler.
-_log_dir = os.path.dirname(Config.LOG_FILE)
-os.makedirs(_log_dir, exist_ok=True)
-_handler = logging.FileHandler(Config.LOG_FILE, encoding="utf-8", delay=True)
-_handler.setFormatter(logging.Formatter(
-    "%(asctime)s %(levelname)s %(name)s: %(message)s"
-))
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout), _handler],
-    force=True,
-)
+# Central rotating-file + stdout configuration shared with main_remote.py
+# (see utils/logger.configure_app_logging).
+from utils.logger import configure_app_logging
+configure_app_logging(Config.LOG_FILE, level=logging.INFO)
 logger = logging.getLogger("app")
 
 
@@ -112,7 +103,16 @@ def _register_operion_protocol() -> None:
         logger.debug("Could not register operion:// protocol (admin rights may be required)")
 
 
-def run_app() -> int:
+def run_app(return_window: bool = False):
+    """Run the Operion ERP application.
+
+    Args:
+        return_window: If True, returns ``(app, window)`` instead of the exit code.
+                       Used by measurement scripts that need access to the window object.
+
+    Returns:
+        int exit code, or ``(QApplication, MainWindow)`` if *return_window* is True.
+    """
     startup_start = time.perf_counter()
 
     # Parse CLI arguments for route sharing
@@ -228,6 +228,13 @@ def run_app() -> int:
         app.setApplicationName(Config.APP_NAME)
         app.setApplicationDisplayName(Config.APP_NAME)
 
+        # Global exception handling — uncaught exceptions (Python or Qt) log
+        # a full traceback and surface a user-facing dialog instead of
+        # crashing silently.  Must run after QApplication creation and before
+        # app.exec() so dialogs can be shown.
+        from utils.error_handling import install_global_handlers
+        install_global_handlers()
+
         # 8a. Auto-login hydration — restore persisted token if still valid
         try:
             from client.auth_manager import hydrate_from_storage
@@ -276,6 +283,11 @@ def run_app() -> int:
         logger.info("PySide6 application started")
         metrics.gauge("startup_time_s", time.perf_counter() - startup_start)
         log.info("app_started", startup_ms=round((time.perf_counter() - startup_start) * 1000))
+
+        if return_window:
+            # Return early with app/window handles for measurement scripts
+            return app, window
+
         result = app.exec()
 
         # 8. Cleanup — close DB and shared browser after Qt event loop ends
@@ -301,4 +313,4 @@ if __name__ == "__main__":
     # Show Python path for diagnostics
     print(f"Python: {sys.executable}")
     print(f"Working dir: {os.getcwd()}")
-    sys.exit(run_app())
+    sys.exit(run_app())  # type: ignore[arg-type]

@@ -9,12 +9,15 @@ from __future__ import annotations
 import logging
 from typing import Callable
 
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
     QLineEdit,
     QPlainTextEdit,
+    QPushButton,
+    QSizePolicy,
     QSpinBox,
     QVBoxLayout,
     QWidget,
@@ -23,13 +26,23 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from services.invoicing.config_manager import load_company_config
 from services.operations.event_bus import TOUR_REPLAY_REQUESTED, EventBus
-from ui.components import Btn, Card, Divider, FieldLabel, Label, SectionTitle
-from ui.design_tokens import SP
+from ui.components import Btn, Card, Divider, FieldLabel, Label, SearchInput, SectionTitle
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    FONT_SIZE_SM,
+    FONT_WEIGHT_SEMIBOLD,
+    SP,
+)
 from ui.widgets import StyledComboBox, StyledLineEdit
 
 logger = logging.getLogger(__name__)
 
 DEFAULT_BRAND_COLOR = "#6366f1"
+
+# Class-level cache to avoid loading company config multiple times
+_company_config_cache: dict | None = None
 
 
 class SettingsFieldsMixin:
@@ -43,23 +56,97 @@ class SettingsFieldsMixin:
     #  Section card helpers
     # ──────────────────────────────────────────────────────────────────────────
 
-    def _section_card(self, title_key: str) -> QFrame:
-        """Build a Card with a SectionTitle and a dedicated content area.
+    def _load_company_config_cached(self) -> dict:
+        """Return cached company config to avoid loading it more than once."""
+        global _company_config_cache
+        if _company_config_cache is None:
+            _company_config_cache = load_company_config()
+        return _company_config_cache
 
-        Returns the card; its content layout is stored at ``card._content_layout``
-        so callers can ``.addWidget()`` field rows into it.
+    def _section_card(
+        self, title_key: str, default_expanded: bool = True,
+    ) -> QFrame:
+        """Build a Card with a clickable collapsible header.
+
+        The section body (divider + field rows) is placed inside a content
+        container whose visibility is toggled by clicking the header button.
+        Expansion state is persisted via ``PreferencesManager``.
+
+        Returns the card; its content layout is stored at
+        ``card._content_layout`` so callers can ``.addWidget()`` field rows.
         """
         card = Card(self._scroll)
 
-        title_lbl = SectionTitle(card, t(title_key))
-        card.layout().addWidget(title_lbl)
-        self._section_headings[title_key] = title_lbl
+        # ── Restore saved expansion state ──────────────────────────────
+        pref_key = f"settings.section_{title_key.split('.')[-1]}_expanded"
+        if self.prefs:
+            saved = self.prefs.get_setting(pref_key)
+            expanded = saved in ("1", "true") if saved is not None else default_expanded
+        else:
+            expanded = default_expanded
+
+        # ── Clickable header button ────────────────────────────────────
+        icon_char = "▼" if expanded else "▶"
+        header_btn = QPushButton(f"{icon_char}  {t(title_key).upper()}")
+        header_btn.setFlat(True)
+        header_btn.setCursor(Qt.PointingHandCursor)
+        header_btn.setFixedHeight(28)
+        header_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        header_btn.setStyleSheet(f"""
+            QPushButton {{
+                text-align: left;
+                font-size: {FONT_SIZE_SM}px;
+                font-weight: {FONT_WEIGHT_SEMIBOLD};
+                color: {COLOR_TEXT_PRIMARY};
+                padding: 0 0 4px 0;
+                border: none;
+                background: transparent;
+                letter-spacing: 0.5px;
+            }}
+            QPushButton:hover {{
+                color: {COLOR_ACCENT_PRIMARY};
+            }}
+        """)
+
+        # ── Content container (collapsible body) ───────────────────────
+        content_widget = QWidget()
+        content_layout = QVBoxLayout(content_widget)
+        content_layout.setContentsMargins(0, 0, 0, 0)
+        content_layout.setSpacing(SP["3"])
+        content_widget.setVisible(expanded)
 
         div = Divider(card)
-        card.layout().addWidget(div)
+        content_layout.addWidget(div)
 
-        card._content_layout = card.layout()
-        card._content_widget = card
+        # Assemble card: [header button] → [content container]
+        card.layout().addWidget(header_btn)
+        card.layout().addWidget(content_widget)
+
+        # ── Stored references for toggle / i18n / search ───────────────
+        card._content_layout = content_layout
+        card._content_widget = content_widget
+        card._title_btn = header_btn
+        card._title_key = title_key
+        card._pref_key = pref_key
+        card._expanded = expanded
+
+        self._section_headings[title_key] = header_btn
+
+        # ── Track card for search filtering ────────────────────────────
+        if hasattr(self, '_section_cards') and self._section_cards is not None:
+            self._section_cards.append(card)
+
+        # ── Toggle logic ───────────────────────────────────────────────
+        def _do_toggle() -> None:
+            card._expanded = not card._expanded
+            content_widget.setVisible(card._expanded)
+            icon = "▼" if card._expanded else "▶"
+            header_btn.setText(f"{icon}  {t(title_key).upper()}")
+            if self.prefs:
+                self.prefs.save_setting(pref_key, "1" if card._expanded else "0")
+
+        header_btn.clicked.connect(_do_toggle)
+
         return card
 
     def _add_labeled_field(
@@ -93,6 +180,72 @@ class SettingsFieldsMixin:
         return container
 
     # ──────────────────────────────────────────────────────────────────────────
+    #  Search bar
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _build_search_bar(self) -> None:
+        """Add a search bar as the first item in the scroll area."""
+        search = SearchInput(
+            self._scroll,
+            placeholder=t("settings.search", default="Search settings..."),
+            on_text_changed=self._on_search_changed,
+        )
+        search.setObjectName("settingsSearch")
+        self._search_input = search
+        # Insert at position 0 (before any section cards)
+        self._scroll.layout.insertWidget(0, search)
+        # Add some spacing after the search bar
+        self._scroll.layout.insertSpacing(1, SP["3"])
+
+    # ──────────────────────────────────────────────────────────────────────────
+    #  Search filtering
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _collect_section_texts(self, card: QFrame) -> list[str]:
+        """Collect all user-visible text strings from a section card."""
+        texts: list[str] = []
+        # Section title (strip icon prefix)
+        raw = card._title_btn.text()
+        texts.append(raw.lstrip("▼▶ ").strip().lower())
+        # Walk child widgets in content area for label-like text
+        for child in card._content_widget.findChildren((QLabel, QPushButton)):
+            txt = child.text().strip()
+            if txt and len(txt) > 1:
+                texts.append(txt.lower())
+        # Also check StyledLineEdit placeholders
+        for child in card._content_widget.findChildren(QLineEdit):
+            ph = child.placeholderText().strip()
+            if ph:
+                texts.append(ph.lower())
+        return texts
+
+    def _on_search_changed(self, text: str) -> None:
+        """Filter visible sections based on search text."""
+        query = text.strip().lower()
+        if not query:
+            self._restore_section_visibility()
+            return
+
+        for card in self._section_cards:
+            searchable = self._collect_section_texts(card)
+            matches = any(query in s for s in searchable)
+            card.setVisible(matches)
+            if matches:
+                # Auto-expand matching sections
+                card._expanded = True
+                card._content_widget.setVisible(True)
+                icon = "▼"
+                card._title_btn.setText(f"{icon}  {t(card._title_key).upper()}")
+
+    def _restore_section_visibility(self) -> None:
+        """Restore all sections to their saved expansion state."""
+        for card in self._section_cards:
+            card.setVisible(True)
+            icon = "▼" if card._expanded else "▶"
+            card._title_btn.setText(f"{icon}  {t(card._title_key).upper()}")
+            card._content_widget.setVisible(card._expanded)
+
+    # ──────────────────────────────────────────────────────────────────────────
     #  Section: Company
     # ──────────────────────────────────────────────────────────────────────────
 
@@ -100,15 +253,20 @@ class SettingsFieldsMixin:
         card = self._section_card("settings.section_company")
         self._scroll.add_widget(card)
 
-        conf = load_company_config()
+        conf = self._load_company_config_cached()
 
         fields_cfg: list[tuple[str, str]] = [
             ("company_name", "settings.field_company_name"),
             ("cui", "settings.field_cui"),
             ("reg_number", "settings.field_reg_number"),
             ("address", "settings.field_address"),
+            ("county", "settings.field_county"),
+            ("city", "settings.field_city"),
+            ("country", "settings.field_country"),
             ("phone", "settings.field_phone"),
             ("email", "settings.field_email"),
+            ("iban", "settings.field_iban"),
+            ("bank_name", "settings.field_bank_name"),
         ]
         for key, label_key in fields_cfg:
             entry = StyledLineEdit(text=conf.get(key, ""))
@@ -120,10 +278,10 @@ class SettingsFieldsMixin:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _build_section_branding(self) -> None:
-        card = self._section_card("settings.section_branding")
+        card = self._section_card("settings.section_branding", default_expanded=False)
         self._scroll.add_widget(card)
 
-        conf = load_company_config()
+        conf = self._load_company_config_cached()
 
         # Helper to build an input row with an inline browse button
         def _browse_row(
@@ -373,7 +531,7 @@ class SettingsFieldsMixin:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _build_section_tracking(self) -> None:
-        card = self._section_card("tracking.section_title")
+        card = self._section_card("tracking.section_title", default_expanded=False)
         card.setObjectName("settings_section_tracking")
         self._scroll.add_widget(card)
 
@@ -561,7 +719,7 @@ class SettingsFieldsMixin:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _build_section_maintenance(self) -> None:
-        card = self._section_card("settings.section_maintenance")
+        card = self._section_card("settings.section_maintenance", default_expanded=False)
         self._scroll.add_widget(card)
 
         entries: list[tuple[str, str, str]] = [
@@ -580,7 +738,7 @@ class SettingsFieldsMixin:
     # ──────────────────────────────────────────────────────────────────────────
 
     def _build_section_automation(self) -> None:
-        card = self._section_card("settings.section_automation")
+        card = self._section_card("settings.section_automation", default_expanded=False)
         self._scroll.add_widget(card)
 
         # Company name used as the email signature.
@@ -610,15 +768,15 @@ class SettingsFieldsMixin:
         body_widget.setMinimumHeight(180)
         body_label = QLabel(t("settings.field_automation_body", default="Body template:"))
         body_label.setProperty("fontRole", "muted")
-        card.layout().addWidget(body_label)
-        card.layout().addWidget(body_widget)
+        card._content_layout.addWidget(body_label)
+        card._content_layout.addWidget(body_widget)
         self._automation_body_edit = body_widget
 
         # ── Cloud OCR credentials ────────────────────────────────────
         ocr_label = QLabel(t("settings.field_ocr_credentials", default="Cloud OCR credentials:"))
         ocr_label.setProperty("fontRole", "muted")
-        card.layout().addWidget(ocr_label)
-        card.layout().addSpacing(4)
+        card._content_layout.addWidget(ocr_label)
+        card._content_layout.addSpacing(4)
 
         self._ocr_google_key = self._add_ocr_field(
             card, "Google Vision API key",
@@ -644,7 +802,7 @@ class SettingsFieldsMixin:
         hint = QLabel(t("settings.field_ocr_help", default="Set at least one provider's credentials to enable handwriting recognition."))
         hint.setProperty("fontRole", "muted")
         hint.setWordWrap(True)
-        card.layout().addWidget(hint)
+        card._content_layout.addWidget(hint)
 
         # ── PaddleOCR GPU toggle ──────────────────────────────────────
         from ui.widgets import StyledCheckBox
@@ -654,12 +812,12 @@ class SettingsFieldsMixin:
             text=t("settings.field_ocr_gpu", default="Use GPU for OCR (requires CUDA + PaddlePaddle GPU)"),
         )
         self._ocr_gpu_check.setChecked(gpu_enabled in ("1", "true", "yes"))
-        card.layout().addWidget(self._ocr_gpu_check)
+        card._content_layout.addWidget(self._ocr_gpu_check)
 
         # ── PaddleOCR advanced config ─────────────────────────────────
         ocr_config_label = QLabel(t("settings.field_ocr_config", default="PaddleOCR advanced settings:"))
         ocr_config_label.setProperty("fontRole", "muted")
-        card.layout().addWidget(ocr_config_label)
+        card._content_layout.addWidget(ocr_config_label)
 
         det_len = self.prefs.get_setting("ocr_det_limit_side_len", "960") if self.prefs else "960"
         self._ocr_det_len = StyledLineEdit(text=det_len)
@@ -672,8 +830,8 @@ class SettingsFieldsMixin:
         # ── AI Vision fallback (Gemma 3) ──────────────────────────────
         ai_label = QLabel(t("settings.field_ai_vision", default="AI Vision fallback (Gemma 3, local):"))
         ai_label.setProperty("fontRole", "muted")
-        card.layout().addWidget(ai_label)
-        card.layout().addSpacing(4)
+        card._content_layout.addWidget(ai_label)
+        card._content_layout.addSpacing(4)
 
         from ui.widgets import StyledComboBox
         self._ai_api_mode = StyledComboBox(
@@ -688,6 +846,14 @@ class SettingsFieldsMixin:
             text=self.prefs.get_setting("qwen_endpoint", "https://ocr.operionerp.xyz") if self.prefs else "https://ocr.operionerp.xyz",
         )
         self._add_labeled_field(card, "Endpoint URL", self._ai_endpoint)
+
+        from services.preferences import get_ai_api_key
+        self._ai_api_key = StyledLineEdit(
+            text=get_ai_api_key("qwen", self.prefs.get_setting("qwen_api_key", "") if self.prefs else "") or "",
+            echoMode=StyledLineEdit.EchoMode.Password,
+            placeholder=t("settings.field_api_key_placeholder", default="Bearer token for API auth"),
+        )
+        self._add_labeled_field(card, "API key (Bearer token)", self._ai_api_key)
 
         self._ai_model = StyledLineEdit(
             text=self.prefs.get_setting("qwen_model", "gemma3:4b") if self.prefs else "gemma3:4b",
@@ -722,14 +888,14 @@ class SettingsFieldsMixin:
         # ── Email Importer ─────────────────────────────────────────────
         email_label = QLabel(t("settings.field_email_importer", default="Email importer (IMAP):"))
         email_label.setProperty("fontRole", "muted")
-        card.layout().addWidget(email_label)
-        card.layout().addSpacing(4)
+        card._content_layout.addWidget(email_label)
+        card._content_layout.addSpacing(4)
 
         from ui.widgets import StyledCheckBox
         self._email_importer_enabled = StyledCheckBox(card, text="Enable email import")
         if self.prefs:
             self._email_importer_enabled.setChecked(self.prefs.get_setting("email_importer_enabled", "0") in ("1", "true"))
-        card.layout().addWidget(self._email_importer_enabled)
+        card._content_layout.addWidget(self._email_importer_enabled)
 
         self._email_importer_host = StyledLineEdit(
             text=self.prefs.get_setting("email_importer_host", "") if self.prefs else "",
@@ -767,18 +933,18 @@ class SettingsFieldsMixin:
             self._email_importer_delete.setChecked(
                 self.prefs.get_setting("email_importer_delete", "0") in ("1", "true")
             )
-        card.layout().addWidget(self._email_importer_delete)
+        card._content_layout.addWidget(self._email_importer_delete)
 
         # ── Folder Watcher ─────────────────────────────────────────────
         fw_label = QLabel(t("settings.field_folder_watcher", default="Folder watcher (hot folder):"))
         fw_label.setProperty("fontRole", "muted")
-        card.layout().addWidget(fw_label)
-        card.layout().addSpacing(4)
+        card._content_layout.addWidget(fw_label)
+        card._content_layout.addSpacing(4)
 
         self._fw_enabled = StyledCheckBox(card, text="Enable folder watcher")
         if self.prefs:
             self._fw_enabled.setChecked(self.prefs.get_setting("folder_watcher_enabled", "0") in ("1", "true"))
-        card.layout().addWidget(self._fw_enabled)
+        card._content_layout.addWidget(self._fw_enabled)
 
         self._fw_path = StyledLineEdit(
             text=self.prefs.get_setting("folder_watcher_path", "") if self.prefs else "",
@@ -793,12 +959,12 @@ class SettingsFieldsMixin:
         self._fw_recursive = StyledCheckBox(card, text="Watch subdirectories recursively")
         if self.prefs:
             self._fw_recursive.setChecked(self.prefs.get_setting("folder_watcher_recursive", "0") in ("1", "true"))
-        card.layout().addWidget(self._fw_recursive)
+        card._content_layout.addWidget(self._fw_recursive)
 
         self._fw_delete = StyledCheckBox(card, text="Delete files after import")
         if self.prefs:
             self._fw_delete.setChecked(self.prefs.get_setting("folder_watcher_delete", "0") in ("1", "true"))
-        card.layout().addWidget(self._fw_delete)
+        card._content_layout.addWidget(self._fw_delete)
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Section: Autonomous Mode  (Enterprise-tier per-workflow AI toggles)
@@ -827,7 +993,7 @@ class SettingsFieldsMixin:
         Non-Enterprise tiers see an upgrade prompt.  Enterprise users get
         per-workflow toggle switches and a circuit-breaker status stub.
         """
-        card = self._section_card("settings.section_autonomous_mode")
+        card = self._section_card("settings.section_autonomous_mode", default_expanded=False)
         self._scroll.add_widget(card)
 
         tier = self._get_subscription_tier()
@@ -922,7 +1088,7 @@ class SettingsFieldsMixin:
 
     def _build_section_tutorial(self) -> None:
         """Build settings card for replaying the onboarding tour."""
-        card = self._section_card("settings.section_tutorial")
+        card = self._section_card("settings.section_tutorial", default_expanded=False)
         self._scroll.add_widget(card)
 
         desc = Label(
@@ -1000,5 +1166,5 @@ class SettingsFieldsMixin:
         entry.setEchoMode(QLineEdit.EchoMode.Password)
         row_layout.addWidget(lbl)
         row_layout.addWidget(entry, 1)
-        card.layout().addWidget(row)
+        card._content_layout.addWidget(row)
         return entry

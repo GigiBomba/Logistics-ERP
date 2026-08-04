@@ -17,8 +17,8 @@ class TachoImportRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def get_by_hash(self, file_hash: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(

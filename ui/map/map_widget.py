@@ -64,6 +64,8 @@ class MapWidget(QWebEngineView):
         zoom: int = DEFAULT_ZOOM,
     ):
         super().__init__(parent)
+        self.setAccessibleName("Map")
+        self.setAccessibleDescription("Interactive map for route planning and fleet tracking")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self.page().setBackgroundColor(QColor("#09090b"))
         self.setStyleSheet("QWebEngineView { background-color: #09090b; border: none; margin: 0; padding: 0; }")

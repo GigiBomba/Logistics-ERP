@@ -36,9 +36,11 @@ from services.operations.event_bus import (
     TRUCK_UPDATED,
 )
 from ui.components import (
+    Btn,
     Card,
     CompactKPICard,
     EmptyState,
+    IconButton,
     Label,
     PageTitle,
     StatusBadge,
@@ -67,6 +69,9 @@ from ui.design_tokens import (
     WARNING_TEXT,
 )
 from ui.widgets.layout_utils import clear_layout
+from ui.performance_timer import PerfTimer
+from ui.plotly_renderer import PlotlyChartWidget
+from ui.worker_pool import WorkerPool
 from utils.formatters import fmt_currency, fmt_distance, fmt_percentage
 
 logger = logging.getLogger(__name__)
@@ -144,6 +149,27 @@ class QtOverviewView(BaseView):
         self._handlers: dict[str, Any] = {}
         self._last_refresh_ts = 0
         self._shutting_down = False
+        # Trips fetched off the UI thread in ``_fetch_all_data`` and shared
+        # by the active-trips and recent-activity panels.  ``None`` means
+        # no background cycle has populated the cache yet.
+        self._trips_cache: list[dict[str, Any]] | None = None
+        self._trips_iteration: int = 0
+        # Trips handed to the panels for the current ``_on_data_loaded``
+        # pass.  ``None`` when no refresh cycle is delivering data, so a
+        # standalone panel refresh (no cycle) keeps the legacy behavior of
+        # fetching directly.
+        self._trips_delivery: list[dict[str, Any]] | None = None
+        # Top trucks fetched off the UI thread in ``_fetch_all_data`` and
+        # consumed by ``_refresh_top_trucks`` on the current pass.  ``None``
+        # when no refresh cycle is delivering data, so a standalone panel
+        # refresh falls back to a direct fetch (legacy behavior).
+        self._top_trucks_delivery: list[dict[str, Any]] | None = None
+        # Re-entrancy guard: only one refresh cycle may run at a time.
+        # A request arriving mid-cycle is coalesced via ``_refresh_pending``
+        # and re-triggered after the in-flight cycle completes.
+        self._refresh_in_flight: bool = False
+        self._refresh_pending: bool = False
+        self._grid_visible = True
         self._chart_render_ts = 0
         self._chart_last_size = None
         self._chart_fig = None
@@ -181,6 +207,7 @@ class QtOverviewView(BaseView):
         return f"{cat.upper()} \u2014 {lbl}"
 
     def _build_ui(self):
+        self.setAccessibleName("Overview dashboard")
         self.setWidgetResizable(True)
         self.setFrameShape(QFrame.NoFrame)
         self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
@@ -219,6 +246,16 @@ class QtOverviewView(BaseView):
         date_lbl = Label(None, datetime.now().strftime("%A, %d %B %Y"), role="secondary")
         header_layout.addWidget(date_lbl)
 
+        # ── Grid toggle button ──────────────────────────────────────
+        self._grid_btn = IconButton(
+            header,
+            icon_name="fa5s.th",
+            tooltip=t("chart.toggle_grid", "Toggle grid"),
+            variant="ghost",
+            command=self._toggle_grid,
+        )
+        header_layout.addWidget(self._grid_btn)
+
         layout.addWidget(header)
 
     def _build_kpi_strip(self, layout):
@@ -227,35 +264,18 @@ class QtOverviewView(BaseView):
         self._kpi_strip_layout.setContentsMargins(0, 0, 0, 0)
         self._kpi_strip_layout.setSpacing(SP["2"])
 
+        self._kpi_value_labels: dict[str, QLabel] = {}
         self._kpi_widgets: dict[str, QFrame] = {}
-        # Build initial KPI cards (values are filled on first refresh)
-        self._rebuild_kpi_strip()
-
-        layout.addWidget(self._kpi_strip)
-
-    def _rebuild_kpi_strip(self):
-        """Clear and rebuild KPI cards so values can be updated."""
-        # Clear existing cards
-        while self._kpi_strip_layout.count():
-            item = self._kpi_strip_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-        self._kpi_widgets.clear()
-
-        kpi_defs: list[tuple] = []
+        # Create cards ONCE — never destroy
         for src in self._selected_kpis:
             key = src["key"]
             label = self._kpi_label(src)
-            kpi_defs.append((key, label, "\u2014"))
-
-        # Store the value label for each so _refresh_kpis can update text
-        self._kpi_value_labels: dict[str, QLabel] = {}
-        for key, label, default in kpi_defs:
-            card = CompactKPICard(self._kpi_strip, label=label, value=default)
+            card = CompactKPICard(self._kpi_strip, label=label, value="\u2014")
             self._kpi_value_labels[key] = card.value_label
-            self._kpi_strip_layout.addWidget(card, 1)
             self._kpi_widgets[key] = card
+            self._kpi_strip_layout.addWidget(card, 1)
+
+        layout.addWidget(self._kpi_strip)
 
     def _build_main_content(self, layout):
         main = QFrame()
@@ -382,29 +402,113 @@ class QtOverviewView(BaseView):
     # ── Refresh / data population ──────────────────────────────────────────────
 
     def refresh(self):
-        # Guard: skip if the widget is shutting down or the underlying
-        # C++ object has been destroyed (can happen when a QTimer fires
-        # after the widget is closed in tests).
-        if getattr(self, "_shutting_down", False):
-            return
+        """Async refresh — skeleton shown during data load."""
+        with PerfTimer("overview.refresh"):
+            if getattr(self, "_shutting_down", False):
+                return
+            try:
+                self.isVisible()
+            except RuntimeError:
+                return
+
+            # Re-entrancy guard: never start a second refresh cycle while
+            # one is already in flight (at startup ``__init__`` and
+            # ``wakeup`` both call ``refresh()``).  A suppressed call marks
+            # a pending refresh so data changes that arrive mid-cycle are
+            # re-triggered once the in-flight cycle finishes.
+            if self._refresh_in_flight:
+                self._refresh_pending = True
+                return
+
+            now_ts = datetime.now().timestamp()
+            if now_ts - self._last_refresh_ts < 2:
+                return
+            self._last_refresh_ts = now_ts
+            self._refresh_in_flight = True
+
+            self._show_loading()
+            WorkerPool.run(
+                fn=self._fetch_all_data,
+                on_result=self._on_data_loaded,
+                on_error=self._on_refresh_error,
+            )
+
+    def _fetch_all_data(self):
+        """Fetch all dashboard data on background thread."""
+        # Trips are fetched here — off the UI thread — so the overview
+        # never blocks on the network/DB while building the active-trips
+        # and recent-activity panels.  A single ``limit=200`` request is
+        # shared by both panels (recent activity slices its 6 newest from
+        # the same result).
+        trips: list[dict[str, Any]] = []
+        if self._trip_repo:
+            try:
+                trips = self._trip_repo.get_all(limit=200)
+            except Exception:
+                trips = []
+
+        # Top trucks by revenue are also fetched off the UI thread so the
+        # ranking panel never blocks on the network/DB either.  The
+        # ``isinstance`` guard protects against MagicMock truthiness in tests.
+        top_trucks: list[dict[str, Any]] = []
+        if self._trip_repo:
+            try:
+                now = datetime.now()
+                month_start = now.replace(day=1).strftime("%Y-%m-%d")
+                month_end = now.strftime("%Y-%m-%d")
+                result = self._trip_repo.get_top_trucks_by_revenue(month_start, month_end, limit=4)
+                top_trucks = result if isinstance(result, list) else []
+            except Exception:
+                top_trucks = []
+
+        return {"trips": trips, "top_trucks": top_trucks}
+
+    def _on_data_loaded(self, data):
+        """Called on main thread — update UI widgets."""
+        # Cycle finished — release the re-entrancy guard and re-trigger a
+        # refresh that was requested while this cycle was in flight.
+        self._refresh_in_flight = False
+        if self._refresh_pending:
+            self._refresh_pending = False
+            QTimer.singleShot(0, self.refresh)
+
+        if isinstance(data, dict) and "trips" in data:
+            self._trips_cache = data["trips"] or []
+            self._trips_iteration += 1
+        if isinstance(data, dict):
+            self._top_trucks_delivery = data.get("top_trucks") or []
+
+        self._hide_loading()
+
+        # Hand the fresh trip data to the panels for this pass.  Cleared in
+        # ``finally`` so a direct/standalone panel call outside a refresh
+        # cycle falls back to a direct fetch (legacy behavior).
+        self._trips_delivery = self._trips_cache
         try:
-            # Access a property to verify the C++ object is still alive.
-            # If the widget was deleted by Qt, this raises RuntimeError.
-            self.isVisible()
-        except RuntimeError:
-            return
+            with PerfTimer("overview.kpi"):
+                self._refresh_kpis()
+            with PerfTimer("overview.chart"):
+                self._render_profit_chart()
+            with PerfTimer("overview.trips"):
+                self._refresh_active_trips()
+            with PerfTimer("overview.trucks"):
+                self._refresh_top_trucks()
+            with PerfTimer("overview.activity"):
+                self._refresh_recent_activity()
+            with PerfTimer("overview.alerts"):
+                self._refresh_alerts()
+        finally:
+            self._trips_delivery = None
+            self._top_trucks_delivery = None
 
-        now_ts = datetime.now().timestamp()
-        if now_ts - self._last_refresh_ts < 2:
-            return
-        self._last_refresh_ts = now_ts
-
-        self._refresh_kpis()
-        self._render_profit_chart()
-        self._refresh_active_trips()
-        self._refresh_top_trucks()
-        self._refresh_recent_activity()
-        self._refresh_alerts()
+    def _on_refresh_error(self, error: str):
+        """Handle a background refresh failure on the main thread."""
+        self._refresh_in_flight = False
+        if self._refresh_pending:
+            self._refresh_pending = False
+            QTimer.singleShot(0, self.refresh)
+        self._hide_loading()
+        logger.error("Refresh failed: %s", error)
 
     def _refresh_kpis(self):
         if not self._analytics_svc:
@@ -513,7 +617,6 @@ class QtOverviewView(BaseView):
                 profit = sum(r.get("profit", 0) or 0 for r in routes)
                 km = sum(r.get("total_km", 0) or 0 for r in routes)
                 avg = profit / max(km, 1)
-                from ui.design_tokens import DANGER, SUCCESS
                 color = SUCCESS if avg >= 0 else DANGER
                 return (f"\u20ac {avg:.2f}/km", color)
             elif key == "route_count":
@@ -531,10 +634,16 @@ class QtOverviewView(BaseView):
     def _refresh_active_trips(self):
         self._clear_layout(self._trips_list)
 
-        try:
-            trips = self._trip_repo.get_all(limit=200) if self._trip_repo else []
-        except Exception:
-            trips = []
+        # Consume the shared trip cache delivered by the background
+        # ``_fetch_all_data`` cycle.  When no cycle is delivering data
+        # (standalone panel refresh), fall back to a direct fetch — the
+        # legacy behavior.
+        trips = self._trips_delivery
+        if trips is None:
+            try:
+                trips = self._trip_repo.get_all(limit=200) if self._trip_repo else []
+            except Exception:
+                trips = []
 
         non_active = ("Delivered", "Completed", "Done", "Cancelled", "Paid", "Invoiced", "LOADING")
         active = [t for t in trips if t.get("status", "") not in non_active]
@@ -648,19 +757,25 @@ class QtOverviewView(BaseView):
     def _refresh_top_trucks(self):
         self._clear_layout(self._top_trucks_layout)
 
-        try:
-            now = datetime.now()
-            month_start = now.replace(day=1).strftime("%Y-%m-%d")
-            month_end = now.strftime("%Y-%m-%d")
-            top = self._trip_repo.get_top_trucks_by_revenue(month_start, month_end, limit=4) if self._trip_repo else []
-        except Exception:
-            top = []
+        # Consume the ranking delivered by the background ``_fetch_all_data``
+        # cycle.  When no cycle is delivering data (standalone panel
+        # refresh), fall back to a direct fetch — the legacy behavior.
+        top = self._top_trucks_delivery
+        if top is None:
+            try:
+                now = datetime.now()
+                month_start = now.replace(day=1).strftime("%Y-%m-%d")
+                month_end = now.strftime("%Y-%m-%d")
+                top = self._trip_repo.get_top_trucks_by_revenue(month_start, month_end, limit=4) if self._trip_repo else []
+            except Exception:
+                top = []
 
         if not top:
             empty = EmptyState(
                 None,
-                icon_name="mdi6.trophy-outline",
-                title=t("common.no_data", default="No data"),
+                icon_name="fa5s.truck",
+                title=t("home.no_top_trucks", default="No top trucks yet"),
+                subtitle=t("home.no_top_trucks_desc", default="Complete trips to see truck performance rankings."),
             )
             self._top_trucks_layout.addWidget(empty)
             return
@@ -704,16 +819,41 @@ class QtOverviewView(BaseView):
     def _refresh_recent_activity(self):
         self._clear_layout(self._activity_layout)
 
-        try:
-            recent = self._trip_repo.get_all(limit=6) if self._trip_repo else []
-        except Exception:
-            recent = []
+        # The shared trip cache delivered by the background cycle holds up to
+        # 200 trips in the repo's returned order (most recent first); the 6
+        # most recent are simply its first 6 entries — identical to the old
+        # dedicated ``limit=6`` request.  When no cycle is delivering data
+        # (standalone panel refresh), fall back to a direct fetch.
+        trips = self._trips_delivery
+        if trips is None:
+            try:
+                trips = self._trip_repo.get_all(limit=6) if self._trip_repo else []
+            except Exception:
+                trips = []
+        recent = trips[:6]
 
         if not recent:
+            from ui.views.route_planner_view import QtRoutePlannerView
+
+            def _navigate_route_planner():
+                parent = self.parent()
+                while parent is not None:
+                    if hasattr(parent, "_switch_module"):
+                        parent._switch_module("route_planner")
+                        break
+                    parent = parent.parent()
+
             empty = EmptyState(
                 None,
-                icon_name="mdi6.clipboard-text-outline",
-                title=t("common.no_data", default="No data"),
+                icon_name="fa5s.chart-bar",
+                title=t("home.no_recent_trips", default="No recent trips"),
+                subtitle=t("home.no_recent_trips_desc", default="Plan your first route to see activity here."),
+                cta_button=Btn(
+                    None,
+                    text=t("home.plan_first_route", default="Plan Your First Route"),
+                    variant="primary",
+                    command=_navigate_route_planner,
+                ),
             )
             self._activity_layout.addWidget(empty)
             return
@@ -766,19 +906,20 @@ class QtOverviewView(BaseView):
         if not _force and self._chart_render_ts and now - self._chart_render_ts < 0.8:
             return
 
-        try:
-            self._do_render_chart()
-            self._chart_render_ts = now
-        except Exception as exc:
-            logger.warning("Chart render failed: %s", exc)
-            self._clear_layout(self._chart_container.layout())
-            msg = t("home.profit_no_data", default="Chart unavailable.\nComplete trips to see analytics.")
-            lbl = QLabel(msg)
-            lbl.setProperty("role", "muted")
-            lbl.style().unpolish(lbl)
-            lbl.style().polish(lbl)
-            lbl.setAlignment(Qt.AlignCenter)
-            self._chart_container.layout().addWidget(lbl)
+        with PerfTimer("overview.chart_render"):
+            try:
+                self._do_render_chart()
+                self._chart_render_ts = now
+            except Exception as exc:
+                logger.warning("Chart render failed: %s", exc)
+                self._clear_layout(self._chart_container.layout())
+                msg = t("home.profit_no_data", default="Chart unavailable.\nComplete trips to see analytics.")
+                lbl = QLabel(msg)
+                lbl.setProperty("role", "muted")
+                lbl.style().unpolish(lbl)
+                lbl.style().polish(lbl)
+                lbl.setAlignment(Qt.AlignCenter)
+                self._chart_container.layout().addWidget(lbl)
 
     def _do_render_chart(self):
         from ui.plotly_renderer import PlotlyChartWidget
@@ -1072,6 +1213,19 @@ class QtOverviewView(BaseView):
                 color=_value_colors(vals), is_currency=True, show_title=False)
 
         return None
+
+    # ── Grid toggle ──────────────────────────────────────────────────
+
+    def _toggle_grid(self) -> None:
+        """Toggle grid lines on all charts in this view."""
+        self._grid_visible = not self._grid_visible
+        for chart in self.findChildren(PlotlyChartWidget):
+            try:
+                chart.fig.update_xaxes(showgrid=self._grid_visible)
+                chart.fig.update_yaxes(showgrid=self._grid_visible)
+                chart.render()
+            except Exception:
+                logger.exception("Failed to toggle grid on chart widget")
 
     # ── Event handling ─────────────────────────────────────────────────────────
 
