@@ -97,6 +97,16 @@ class AlertListModel(QAbstractListModel):
         alerts = ops.get_active_alerts(limit=200)
         self.set_alerts(alerts)
 
+    def clear(self) -> None:
+        """Remove all alerts from the model."""
+        self.beginResetModel()
+        self._alerts.clear()
+        self.endResetModel()
+
+    def get_alerts(self) -> list[Alert]:
+        """Return the full list of alerts."""
+        return list(self._alerts)
+
     def get(self, row: int) -> Alert | None:
         if 0 <= row < len(self._alerts):
             return self._alerts[row]

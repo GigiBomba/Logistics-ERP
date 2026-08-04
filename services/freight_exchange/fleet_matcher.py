@@ -158,7 +158,7 @@ class FleetMatcherService:
         estimated_fuel = (load.distance_km or 500) * 0.35
         estimated_tolls = (load.distance_km or 500) * 0.08
         estimated_salary = (load.distance_km or 500) * 0.12
-        actual_profit = load.price.amount - (estimated_fuel + estimated_tolls + estimated_salary)
+        actual_profit = float(load.price.amount) - (estimated_fuel + estimated_tolls + estimated_salary)
         expected_profit = Money(
             amount=actual_profit,
             currency=load.price.currency,
@@ -212,12 +212,13 @@ class FleetMatcherService:
         fuel_cost_est = fuel_liters * 1.50  # ~1.50 EUR/L
         total_cost_est = fuel_cost_est + (distance * 0.15)  # tolls + salary
 
-        profit_est = load.price.amount - total_cost_est
+        price_amount = float(load.price.amount)
+        profit_est = price_amount - total_cost_est
         if profit_est <= 0:
             return 10.0  # unprofitable
 
         # Scale: profit/price ratio mapped to 0-100
-        margin = profit_est / load.price.amount
+        margin = profit_est / price_amount
         return min(margin * 150.0, 100.0)  # 66% margin = 100 score
 
     def _score_driver_hours(self, driver_id: Optional[int], load: LoadSearchResult) -> float:

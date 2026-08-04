@@ -44,7 +44,7 @@ class TestStressServiceFailures:
     def test_trips_create_survives_service_crash(self, client_with_mocks):
         """Service throwing on create should return 500."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.side_effect = RuntimeError("Insert failed")
+        mocks["trip_service"].create.side_effect = RuntimeError("Insert failed")
         resp = client.post(f"{BASE_TRIPS}/", json={"client_id": 1, "loading_city": "Paris"})
         assert resp.status_code == 500
         assert "detail" in resp.json()
@@ -185,7 +185,7 @@ class TestStressMalformedInput:
     def test_unicode_in_all_fields(self, client_with_mocks):
         """Unicode characters in all fields should be handled — expect 200 or 422."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = type('MockResult', (), {'success': True, 'data': type('MockData', (), {'id': 1})()})()
 
         payload = {
             "client_id": 1,
@@ -227,7 +227,7 @@ class TestStressMalformedInput:
     def test_unicode_normalization_attacks(self, client_with_mocks):
         """Unicode normalization attacks (confusable characters) should not crash."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = type('MockResult', (), {'success': True, 'data': type('MockData', (), {'id': 1})()})()
 
         # Homoglyph attack: Cyrillic 'а' instead of Latin 'a'
         payload = {
@@ -243,7 +243,7 @@ class TestStressMalformedInput:
     def test_extreme_numeric_values(self, client_with_mocks):
         """Very large and very small numeric values should not crash."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = type('MockResult', (), {'success': True, 'data': type('MockData', (), {'id': 1})()})()
 
         payload = {
             "client_id": 1,
@@ -317,12 +317,19 @@ class TestStressConcurrentFailures:
     def test_concurrent_service_crashes(self, client_with_mocks):
         """50 concurrent requests that all fail should all return 500."""
         import concurrent.futures
+        from fastapi.testclient import TestClient
 
         client, mocks = client_with_mocks
         mocks["trip_service"].get_filtered.side_effect = RuntimeError("concurrent crash")
 
+        # Use the app from the existing TestClient to build per-thread
+        # clients so each thread gets its own httpx.Client (which is not
+        # thread-safe when shared).
+        app = client.app
+
         def failing_request(_):
-            return client.get(f"{BASE_TRIPS}/")
+            c = TestClient(app, raise_server_exceptions=False)
+            return c.get(f"{BASE_TRIPS}/")
 
         with concurrent.futures.ThreadPoolExecutor(max_workers=50) as executor:
             results = list(executor.map(failing_request, range(50)))

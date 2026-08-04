@@ -600,7 +600,7 @@ class TestPostgresConnectionManagement:
             try:
                 conn = pool.get_connection()
                 assert conn is not None
-                assert conn.autocommit is True
+                assert conn.autocommit is False
             finally:
                 pool.close_all()
         finally:

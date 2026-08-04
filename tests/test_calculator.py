@@ -80,6 +80,7 @@ class TestQtCalculatorView:
     def test_calculate_displays_result(self, calc_view, qtbot, monkeypatch):
         monkeypatch.setattr("ui.views.calculator_view.QMessageBox", MagicMock())
         calc_view._route_distance = 500.0
+        calc_view.e_km.clear()  # clear default "0" so _route_distance is used
         calc_view.e_price.setText("1000")
         calc_view.e_days.setText("1")
         calc_view.e_sal.setText("100")
@@ -95,6 +96,7 @@ class TestQtCalculatorView:
     def test_calculate_saves_trip(self, calc_view, qtbot, monkeypatch):
         monkeypatch.setattr("ui.views.calculator_view.QMessageBox", MagicMock())
         calc_view._route_distance = 500.0
+        calc_view.e_km.clear()  # clear default "0" so _route_distance is used
         calc_view.e_price.setText("1000")
         calc_view.e_days.setText("1")
         calc_view.e_sal.setText("100")
@@ -106,10 +108,10 @@ class TestQtCalculatorView:
 
         calc_view._handle_calculate()
 
-        assert calc_view.trip_service.add.called
-        args = calc_view.trip_service.add.call_args[0][0]
-        assert args["client_name"] == "ACME"
-        assert args["distance_km"] == 500.0
+        assert calc_view.trip_service.create.called
+        args = calc_view.trip_service.create.call_args[0][0]
+        assert args.client_name == "ACME"
+        assert args.distance_km == 500.0
 
     def test_trip_context_sync(self, calc_view, qtbot):
         calc_view._truck_map = {"1": {"id": 1, "plate_number": "B-123-ABC", "fuel_consumption": 30.0}}

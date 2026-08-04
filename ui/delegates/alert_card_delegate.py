@@ -79,9 +79,17 @@ class AlertCardDelegate(QStyledItemDelegate):
     def __init__(self, parent=None):
         super().__init__(parent)
         self._font_title = QFont("Segoe UI", 10, QFont.Bold)
+        if self._font_title.pointSize() <= 0:
+            self._font_title.setPointSize(10)
         self._font_body = QFont("Segoe UI", 9)
+        if self._font_body.pointSize() <= 0:
+            self._font_body.setPointSize(9)
         self._font_small = QFont("Segoe UI", 8)
+        if self._font_small.pointSize() <= 0:
+            self._font_small.setPointSize(8)
         self._font_mono = QFont("Consolas", 9)
+        if self._font_mono.pointSize() <= 0:
+            self._font_mono.setPointSize(9)
 
     def sizeHint(self, option, index):
         return QSize(option.rect.width(), _CARD_HEIGHT)

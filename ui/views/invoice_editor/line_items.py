@@ -17,7 +17,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.components import Btn, Divider, SectionTitle
-from ui.theme import COLORS, S
+from ui.design_tokens import SP
 from ui.widgets import (
     StyledComboBox,
     StyledLineEdit,
@@ -43,15 +43,15 @@ class LineItemsMixin:
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         self._lit_header_label = SectionTitle(container, t("invoice_editor.line_items"))
         layout.addWidget(self._lit_header_label)
 
         card = self._make_card()
         card_layout = card.layout()
-        card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        card_layout.setSpacing(S["2"])
+        card_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        card_layout.setSpacing(SP["2"])
 
         # Line items table
         self._items_table = StyledTableWidget(
@@ -87,7 +87,7 @@ class LineItemsMixin:
         btn_row = QWidget()
         btn_row_layout = QHBoxLayout(btn_row)
         btn_row_layout.setContentsMargins(0, 0, 0, 0)
-        btn_row_layout.setSpacing(S["2"])
+        btn_row_layout.setSpacing(SP["2"])
 
         self._add_row_btn = Btn(
             btn_row, "+ " + t("invoice_editor.add_row"), variant="secondary"
@@ -204,15 +204,15 @@ class LineItemsMixin:
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         header = SectionTitle(container, t("invoice_editor.totals"))
         layout.addWidget(header)
 
         card = self._make_card()
         card_layout = card.layout()
-        card_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        card_layout.setSpacing(S["3"])
+        card_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        card_layout.setSpacing(SP["3"])
 
         # Financial controls
         self._financial_header = QLabel(t("invoice_editor.financial_controls").upper())
@@ -223,7 +223,7 @@ class LineItemsMixin:
         tax_row = QWidget()
         tax_row_layout = QHBoxLayout(tax_row)
         tax_row_layout.setContentsMargins(0, 0, 0, 0)
-        tax_row_layout.setSpacing(S["2"])
+        tax_row_layout.setSpacing(SP["2"])
 
         self._tax_label = QLabel(t("invoice_editor.tax_rate"))
         self._tax_label.setProperty("fontRole", "label")
@@ -246,7 +246,7 @@ class LineItemsMixin:
         disc_row = QWidget()
         disc_row_layout = QHBoxLayout(disc_row)
         disc_row_layout.setContentsMargins(0, 0, 0, 0)
-        disc_row_layout.setSpacing(S["2"])
+        disc_row_layout.setSpacing(SP["2"])
 
         self._discount_label = QLabel(t("invoice_editor.discount"))
         self._discount_label.setProperty("fontRole", "label")
@@ -279,7 +279,7 @@ class LineItemsMixin:
         curr_row = QWidget()
         curr_row_layout = QHBoxLayout(curr_row)
         curr_row_layout.setContentsMargins(0, 0, 0, 0)
-        curr_row_layout.setSpacing(S["2"])
+        curr_row_layout.setSpacing(SP["2"])
 
         self._currency_label = QLabel(t("invoice_editor.currency"))
         self._currency_label.setProperty("fontRole", "label")
@@ -334,8 +334,8 @@ class LineItemsMixin:
         canvas_totals_card = QFrame()
         canvas_totals_card.setProperty("role", "card-inner")
         canvas_totals_layout = QVBoxLayout(canvas_totals_card)
-        canvas_totals_layout.setContentsMargins(S["3"], S["3"], S["3"], S["3"])
-        canvas_totals_layout.setSpacing(S["1"])
+        canvas_totals_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
+        canvas_totals_layout.setSpacing(SP["1"])
 
         self._canvas_subtotal_label = QLabel(t("invoice_editor.subtotal"))
         self._canvas_subtotal_label.setProperty("fontRole", "label")

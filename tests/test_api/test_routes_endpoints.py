@@ -17,18 +17,11 @@ BASE = "/api/v1/routes"
 RouteRepository._migrate_done = True
 
 
-def _configure_db_mocks(mocks):
-    """Install pass-through row_to_dict / rows_to_dicts on the mock DB."""
-    mocks["db"].row_to_dict.side_effect = lambda row: None if row is None else dict(row)
-    mocks["db"].rows_to_dicts.side_effect = lambda rows: [dict(r) for r in (rows or [])]
-
-
 class TestRoutesHistoryList:
     """GET /api/v1/routes/history"""
 
     def test_list_history_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         fake_rows = [
             {"id": 1, "fingerprint": "abc", "total_km": 100.0,
              "profile": "truck", "created_at": "2024-01-01"},
@@ -43,7 +36,6 @@ class TestRoutesHistoryList:
 
     def test_list_history_empty(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchall.return_value = []
 
         resp = client.get(f"{BASE}/history")
@@ -54,7 +46,6 @@ class TestRoutesHistoryList:
 
     def test_list_history_catches_exception(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.side_effect = RuntimeError("db failure")
 
         resp = client.get(f"{BASE}/history")
@@ -66,7 +57,6 @@ class TestRoutesHistoryList:
 
     def test_list_history_passes_limit(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchall.return_value = []
 
         resp = client.get(f"{BASE}/history?limit=10")
@@ -78,7 +68,6 @@ class TestRoutesHistoryGet:
 
     def test_get_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         fake = {"id": 1, "fingerprint": "abc", "total_km": 100.0,
                 "profile": "truck", "created_at": "2024-01-01"}
         mocks["db"].conn.execute.return_value.fetchone.return_value = fake
@@ -89,7 +78,6 @@ class TestRoutesHistoryGet:
 
     def test_get_route_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.get(f"{BASE}/history/999")
@@ -136,7 +124,6 @@ class TestRoutesDuplicate:
 
     def test_duplicate_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchall.return_value = [
             {"id": 1, "fingerprint": "abc"},
         ]
@@ -151,7 +138,6 @@ class TestRoutesArchive:
 
     def test_archive_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = {
             "id": 1, "fingerprint": "abc",
         }
@@ -162,7 +148,6 @@ class TestRoutesArchive:
 
     def test_archive_route_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.post(f"{BASE}/history/999/archive")
@@ -174,7 +159,6 @@ class TestRoutesDelete:
 
     def test_delete_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = {
             "id": 1, "fingerprint": "abc",
         }
@@ -185,7 +169,6 @@ class TestRoutesDelete:
 
     def test_delete_route_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.delete(f"{BASE}/history/999")
@@ -197,7 +180,6 @@ class TestRoutesExport:
 
     def test_export_json_default(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = {
             "id": 1, "fingerprint": "abc", "total_km": 100.0,
             "profile": "truck", "created_at": "2024-01-01",
@@ -209,7 +191,6 @@ class TestRoutesExport:
 
     def test_export_csv_format(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = {
             "id": 1, "fingerprint": "abc", "total_km": 100.0,
             "profile": "truck", "created_at": "2024-01-01",
@@ -221,7 +202,6 @@ class TestRoutesExport:
 
     def test_export_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.get(f"{BASE}/history/999/export")

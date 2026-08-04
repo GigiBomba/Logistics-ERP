@@ -365,7 +365,7 @@ class TestVoicePipelineEdgeCases:
         mock_stt.transcribe.return_value = mock_stt_result
         controller._stt_provider = mock_stt
 
-        with pytest.raises(RuntimeError, match="stt_failed"):
+        with pytest.raises(RuntimeError, match="stt_no_speech"):
             await controller.send_voice(b"", language="en")
 
     @pytest.mark.asyncio
@@ -422,8 +422,9 @@ class TestTranscribeAudioHelper:
         mock_stt.transcribe.return_value = mock_result
         controller._stt_provider = mock_stt
 
-        result = controller._transcribe_audio(b"audio", "en")
-        assert result == "hello world"
+        transcript, err = controller._transcribe_audio(b"audio", "en")
+        assert transcript == "hello world"
+        assert err is None
 
     def test_transcribe_audio_no_provider(self):
         """_transcribe_audio returns None when no STT provider is available."""
@@ -433,8 +434,9 @@ class TestTranscribeAudioHelper:
         controller._stt_provider = None
 
         with patch.object(controller, "_load_stt_provider", return_value=None):
-            result = controller._transcribe_audio(b"audio", "en")
-            assert result is None
+            transcript, err = controller._transcribe_audio(b"audio", "en")
+            assert transcript is None
+            assert err == "copilot.error.stt_unavailable"
 
     def test_transcribe_audio_none_result(self):
         """_transcribe_audio returns None when transcribe returns None."""
@@ -445,11 +447,12 @@ class TestTranscribeAudioHelper:
         mock_stt.transcribe.return_value = None
         controller._stt_provider = mock_stt
 
-        result = controller._transcribe_audio(b"audio", "en")
-        assert result is None
+        transcript, err = controller._transcribe_audio(b"audio", "en")
+        assert transcript is None
+        assert err == "copilot.error.stt_failed"
 
     def test_transcribe_audio_empty_transcript(self):
-        """_transcribe_audio returns None when transcript is empty string."""
+        """_transcribe_audio returns empty transcript, no error."""
         from ui.copilot.controllers.copilot_controller import CoPilotController
 
         controller = CoPilotController(remote=MagicMock())
@@ -459,11 +462,12 @@ class TestTranscribeAudioHelper:
         mock_stt.transcribe.return_value = mock_result
         controller._stt_provider = mock_stt
 
-        result = controller._transcribe_audio(b"audio", "en")
-        assert result is None
+        transcript, err = controller._transcribe_audio(b"audio", "en")
+        assert transcript == ""
+        assert err is None
 
     def test_transcribe_audio_exception(self):
-        """_transcribe_audio returns None when transcribe raises."""
+        """_transcribe_audio returns error code when transcribe raises."""
         from ui.copilot.controllers.copilot_controller import CoPilotController
 
         controller = CoPilotController(remote=MagicMock())
@@ -471,8 +475,9 @@ class TestTranscribeAudioHelper:
         mock_stt.transcribe.side_effect = RuntimeError("fail")
         controller._stt_provider = mock_stt
 
-        result = controller._transcribe_audio(b"audio", "en")
-        assert result is None
+        transcript, err = controller._transcribe_audio(b"audio", "en")
+        assert transcript is None
+        assert err == "copilot.error.stt_failed"
 
     def test_transcribe_audio_language_passed(self):
         """Language is passed through to the STT provider."""

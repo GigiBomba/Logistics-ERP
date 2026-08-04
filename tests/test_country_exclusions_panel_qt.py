@@ -271,3 +271,31 @@ class TestCountryExclusionsPanelRefresh:
         assert p._count_label.text() == "0"
         p._toggle_section()  # should not crash
         p.close()
+
+
+class TestCountryExclusionsPanelEdgeCases:
+    """Edge case behaviour for the panel."""
+
+    def test_on_country_toggled_none_sender(self, panel):
+        """_on_country_toggled with no sender (direct call) → returns early, no crash."""
+        panel._on_country_toggled(0)  # no sender → returns immediately
+
+    def test_on_country_toggled_no_country_code(self, panel, mock_avoidance):
+        """Sender has no country_code property → no toggle, no crash."""
+        from PySide6.QtWidgets import QCheckBox
+
+        cb = QCheckBox("Test")
+        cb.stateChanged.connect(panel._on_country_toggled)
+        cb.setChecked(True)
+        mock_avoidance.toggle.assert_not_called()
+
+    def test_count_label_styled(self, panel):
+        """Count label has background-color in stylesheet."""
+        ss = panel._count_label.styleSheet()
+        assert "background-color" in ss
+
+    def test_stylesheet_applied_to_frame(self, panel):
+        """Section QFrame has role='card' property."""
+        section = panel.layout().itemAt(0).widget()
+        assert isinstance(section, QFrame)
+        assert section.property("role") == "card"

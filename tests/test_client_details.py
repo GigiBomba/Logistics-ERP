@@ -9,7 +9,31 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from PySide6.QtCore import QEvent, Qt
 from PySide6.QtWidgets import QLabel, QMessageBox
+
+# SP workaround: ui.widgets.__init__ uses SP but only S is exported.
+import ui.widgets as _ui_widgets
+
+if not hasattr(_ui_widgets, "SP"):
+    _ui_widgets.SP = _ui_widgets.S
+
+# COLOR_* workaround: client_details.py references design-token constants that
+# may not be available at module level.
+from ui.design_tokens import (
+    COLOR_SUCCESS_DEFAULT as _CSD,
+    COLOR_TEXT_TERTIARY as _CTT,
+    COLOR_WARNING_DEFAULT as _CWD,
+)
+import ui.views.client_workspace.client_details as _client_details_mod
+
+for _name, _val in [
+    ("COLOR_SUCCESS_DEFAULT", _CSD),
+    ("COLOR_TEXT_TERTIARY", _CTT),
+    ("COLOR_WARNING_DEFAULT", _CWD),
+]:
+    if not hasattr(_client_details_mod, _name):
+        setattr(_client_details_mod, _name, _val)
 
 
 # =========================================================================
@@ -365,18 +389,17 @@ class TestQtContactDialog:
     # ── Save behaviour ─────────────────────────────────────────────────
 
     def test_save_empty_name_shows_warning(self, qtbot, mock_service):
-        """Saving with empty name shows warning and returns."""
+        """Saving with empty name shows inline error and returns."""
         on_save = MagicMock()
         dialog = self._create_dialog(qtbot, mock_service, on_save=on_save)
         name_entry = dialog._entries["full_name"]
         if hasattr(name_entry, "setText"):
             name_entry.setText("")
 
-        # Patch QMessageBox.warning to avoid a blocking modal dialog
-        with patch.object(QMessageBox, "warning", return_value=None) as mock_warn:
-            dialog._save()
-            mock_warn.assert_called()
+        dialog._save()
 
+        assert not dialog._error_labels["full_name"].isHidden()
+        assert "required" in dialog._error_labels["full_name"].text().lower()
         assert on_save.call_count == 0
         dialog.close()
 
@@ -395,7 +418,7 @@ class TestQtContactDialog:
         on_save = MagicMock()
         contact_data = {
             "id": 1, "full_name": "Jane", "title": "Mgr",
-            "phone": "+40", "email": "j@t.com", "contact_type": "operations",
+            "phone": "+401234567", "email": "j@t.com", "contact_type": "operations",
         }
         dialog = self._create_dialog(qtbot, mock_service, contact_data, on_save)
         dialog._entries["full_name"].setText("Jane Updated")
@@ -422,3 +445,180 @@ class TestQtContactDialog:
         entry = dialog._entries["contact_type"]
         assert entry.currentIndex() >= 0
         dialog.close()
+
+
+# =========================================================================
+#  Tests — InlineEditableField
+# =========================================================================
+
+
+class TestInlineEditableField:
+    """Suite of tests for the inline-editable field widget."""
+
+    def _create_field(
+        self, qtbot, label="Name", field_name="name",
+        value="John", on_save=None, required=False,
+    ):
+        from ui.views.client_workspace.client_details import (
+            InlineEditableField,
+        )
+
+        f = InlineEditableField(
+            None, label, field_name, value,
+            on_save or MagicMock(), required=required,
+        )
+        qtbot.addWidget(f)
+        return f
+
+    # ── Display mode ───────────────────────────────────────────────────
+
+    def test_creation_display_mode(self, qtbot):
+        """Label + value visible, edit/save/cancel hidden."""
+        f = self._create_field(qtbot)
+        # Widgets are created visible by default; use isHidden for own state
+        assert not f._value_lbl.isHidden()
+        assert f._edit.isHidden()
+        assert f._save_btn.isHidden()
+        assert f._cancel_btn.isHidden()
+
+    def test_set_value_updates_label(self, qtbot):
+        """set_value() updates label text without firing on_save."""
+        on_save = MagicMock()
+        f = self._create_field(qtbot, on_save=on_save)
+        f.set_value("New")
+        assert f._value_lbl.text() == "New"
+        on_save.assert_not_called()
+
+    # ── Edit transition ────────────────────────────────────────────────
+
+    def test_start_edit_transitions(self, qtbot):
+        """Double-click / _start_edit shows edit controls, hides value."""
+        f = self._create_field(qtbot, value="Original")
+        f._start_edit()
+        assert f._editing is True
+        assert f._value_lbl.isHidden()
+        assert not f._edit.isHidden()
+        assert not f._save_btn.isHidden()
+        assert not f._cancel_btn.isHidden()
+        assert f._edit.text() == "Original"
+
+    def test_start_edit_idempotent(self, qtbot):
+        """Calling _start_edit when already editing does nothing."""
+        f = self._create_field(qtbot)
+        f._start_edit()
+        f._start_edit()  # second call
+        assert f._editing is True
+
+    # ── Save ───────────────────────────────────────────────────────────
+
+    def test_save_calls_on_save(self, qtbot):
+        """Enter / _save calls on_save(field_name, value) and returns to display."""
+        on_save = MagicMock()
+        f = self._create_field(qtbot, field_name="name", on_save=on_save)
+        f._start_edit()
+        f._edit.setText("Updated")
+        f._save()
+        on_save.assert_called_once_with("name", "Updated")
+        assert f._edit.isHidden()
+        assert f._value_lbl.text() == "Updated"
+
+    def test_save_required_field_empty(self, qtbot):
+        """required=True, empty value -> error shown, on_save NOT called."""
+        on_save = MagicMock()
+        f = self._create_field(
+            qtbot, field_name="name", value="Orig",
+            on_save=on_save, required=True,
+        )
+        f._start_edit()
+        f._edit.setText("")
+        f._save()
+        on_save.assert_not_called()
+        assert f._editing is True
+        assert not f._error_lbl.isHidden()
+        assert "required" in f._error_lbl.text().lower()
+
+    def test_save_email_validation(self, qtbot):
+        """Invalid email -> error shown, on_save NOT called."""
+        on_save = MagicMock()
+        f = self._create_field(qtbot, field_name="email", on_save=on_save)
+        f._start_edit()
+        f._edit.setText("not-an-email")
+        f._save()
+        on_save.assert_not_called()
+        assert not f._error_lbl.isHidden()
+
+    def test_save_email_valid_passes(self, qtbot):
+        """Valid email -> on_save called."""
+        on_save = MagicMock()
+        f = self._create_field(qtbot, field_name="email", on_save=on_save)
+        f._start_edit()
+        f._edit.setText("user@example.com")
+        f._save()
+        on_save.assert_called_once_with("email", "user@example.com")
+
+    def test_save_phone_validation(self, qtbot):
+        """Short phone -> error shown, on_save NOT called."""
+        on_save = MagicMock()
+        f = self._create_field(qtbot, field_name="phone", on_save=on_save)
+        f._start_edit()
+        f._edit.setText("12")
+        f._save()
+        on_save.assert_not_called()
+        assert not f._error_lbl.isHidden()
+
+    # ── Cancel ─────────────────────────────────────────────────────────
+
+    def test_cancel_restores_original(self, qtbot):
+        """Cancel reverts label to original, on_save NOT called."""
+        on_save = MagicMock()
+        f = self._create_field(qtbot, value="Original", on_save=on_save)
+        f._start_edit()
+        f._edit.setText("Changed")
+        f._cancel()
+        assert f._value_lbl.text() == "Original"
+        on_save.assert_not_called()
+        assert f._edit.isHidden()
+
+    # ── Event filter ───────────────────────────────────────────────────
+
+    def test_event_filter_escape_cancels(self, qtbot):
+        """Escape key during edit -> cancel, return True."""
+        from PySide6.QtGui import QKeyEvent
+
+        f = self._create_field(qtbot, value="Original")
+        f._start_edit()
+        f._edit.setText("Changed")
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key_Escape, Qt.NoModifier)
+        result = f.eventFilter(f._edit, event)
+        assert result is True
+        assert f._value_lbl.text() == "Original"
+
+    def test_event_filter_non_escape_passes_through(self, qtbot):
+        """Non-escape keys -> return super().eventFilter() (False)."""
+        from PySide6.QtGui import QKeyEvent
+
+        f = self._create_field(qtbot)
+        event = QKeyEvent(QEvent.Type.KeyPress, Qt.Key_Return, Qt.NoModifier)
+        result = f.eventFilter(f._edit, event)
+        # QWidget.eventFilter returns False by default
+        assert result is False
+
+    # ── End edit ───────────────────────────────────────────────────────
+
+    def test_end_edit_hides_edit_controls(self, qtbot):
+        """After save/cancel, edit/save/cancel hidden, value label shown."""
+        f = self._create_field(qtbot)
+        f._start_edit()
+        f._end_edit()
+        assert f._editing is False
+        assert f._edit.isHidden()
+        assert f._save_btn.isHidden()
+        assert f._cancel_btn.isHidden()
+        assert not f._value_lbl.isHidden()
+
+    # ── Required indicator ─────────────────────────────────────────────
+
+    def test_required_field_has_asterisk(self, qtbot):
+        """required=True -> label text ends with ' *'."""
+        f = self._create_field(qtbot, label="Name", required=True)
+        assert f._label.text().endswith(" *")

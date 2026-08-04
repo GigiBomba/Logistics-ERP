@@ -69,6 +69,19 @@ NON_TRANSLATABLE_TEXT_PATTERNS = [
     r"^—$",                      # Em dash
     r"^0 sent$|^0 failed$|^.0 outstanding$",  # Already fixed with t()
     r"^\(auto\)$",               # Already fixed with t()
+    r"^\\[uU][0-9A-Fa-f]{4,8}$",  # Unicode escape sequences (symbols/emoji)
+]
+
+# Regex patterns used to scan for hardcoded user-facing strings.
+# The quote is anchored directly after the opening paren so that wrapped
+# calls such as QLabel(t("key", default="Text")) never match (a t()/iconed()
+# call appears between the opening paren and the literal).
+SCAN_PATTERNS = [
+    ("QLabel", re.compile(r'QLabel\(\s*"([^"]*[A-Za-z]{2,}[^"]*)"\s*[,\)]')),
+    ("QPushButton", re.compile(r'QPushButton\(\s*"([^"]*[A-Za-z]{2,}[^"]*)"\s*[,\)]')),
+    ("setText", re.compile(r'\.setText\(\s*"([^"]*[A-Za-z]{2,}[^"]*)"\s*[,\)]')),
+    ("setPlaceholderText", re.compile(r'\.setPlaceholderText\(\s*"([^"]*[A-Za-z]{2,}[^"]*)"\s*[,\)]')),
+    ("setToolTip", re.compile(r'\.setToolTip\(\s*"([^"]*[A-Za-z]{2,}[^"]*)"\s*[,\)]')),
 ]
 
 # Files known to be false-positive-free after all fixes
@@ -115,6 +128,33 @@ def _is_inside_t_call(node, source_lines: list[str]) -> bool:
         if re.search(r"\bt\((.*?)" + re.escape(repr(node.s))[1:-1], line):
             return True
     return False
+
+
+def _docstring_lines(lines: list[str]) -> set[int]:
+    """Return the 0-based line indexes that belong to a docstring.
+
+    Handles multi-line ``'''...'''`` / ``\"\"\"...\"\"\"`` blocks as well as
+    same-line ``\"\"\"docstring\"\"\"`` definitions (which appear frequently
+    in one-liner method docstrings and must not leave the parser stuck in an
+    open docstring state).
+    """
+    in_docstring = False
+    docstring_lines: set[int] = set()
+    for i, line in enumerate(lines):
+        stripped = line.strip()
+        n_triple = stripped.count('"""') + stripped.count("'''")
+        if in_docstring:
+            docstring_lines.add(i)
+            if n_triple % 2 == 1:
+                in_docstring = False
+        elif n_triple % 2 == 1:
+            in_docstring = True
+            docstring_lines.add(i)
+        elif n_triple > 0:
+            # e.g. """docstring""" on a single line — the line itself is a
+            # docstring but does not change the open/closed state.
+            docstring_lines.add(i)
+    return docstring_lines
 
 
 class TestNoHardcodedStrings:
@@ -177,12 +217,6 @@ class TestNoHardcodedStrings:
         """Detect common hardcoded label patterns that should use t() instead."""
         violations = []
 
-        # Pattern: QLabel("user-visible text") where text has at least 2+ word chars
-        label_pattern = re.compile(
-            r'QLabel\(\s*"([^"]*[A-Za-z]{2,}[^"]*)"\s*[,\)]',
-            re.MULTILINE,
-        )
-
         for fpath, content in sorted(file_contents.items()):
             rel_path = os.path.relpath(fpath, os.path.join(UI_DIR, "..")).replace("\\", "/")
 
@@ -190,59 +224,46 @@ class TestNoHardcodedStrings:
                 continue
 
             lines = content.split("\n")
+            docstring_lines = _docstring_lines(lines)
 
-            # Determine docstring ranges to skip
-            in_docstring = False
-            docstring_lines = set()
-            for i, line in enumerate(lines):
-                stripped = line.strip()
-                if stripped.startswith('"""') or stripped.startswith("'''"):
-                    in_docstring = not in_docstring
-                    docstring_lines.add(i)
-                elif in_docstring:
-                    docstring_lines.add(i)
+            for name, pat in SCAN_PATTERNS:
+                for match in pat.finditer(content):
+                    text = match.group(1)
+                    line_no = content[:match.start()].count("\n") + 1
+                    line_idx = line_no - 1
 
-            for match in label_pattern.finditer(content):
-                text = match.group(1)
-                line_no = content[:match.start()].count("\n") + 1
-                line_idx = line_no - 1
-
-                # Skip docstring lines
-                if line_idx in docstring_lines:
-                    continue
-
-                # Check if this line also contains t(
-                if line_idx < len(lines):
-                    line = lines[line_idx]
-                    if "t(" in line or "iconed(" in line:
+                    # Skip docstring lines
+                    if line_idx in docstring_lines:
                         continue
 
-                    # Skip known safe patterns
-                    skip = False
-                    for excl in EXCLUDE_PATTERNS:
-                        if re.search(excl, line):
-                            skip = True
-                            break
-                    if skip:
+                    # Skip known safe patterns (CSS, colors, logging, Qt enums…)
+                    if line_idx < len(lines):
+                        line = lines[line_idx]
+                        skip = False
+                        for excl in EXCLUDE_PATTERNS:
+                            if re.search(excl, line):
+                                skip = True
+                                break
+                        if skip:
+                            continue
+
+                    # Skip non-translatable symbol patterns
+                    if any(re.search(p, text) for p in NON_TRANSLATABLE_TEXT_PATTERNS):
                         continue
 
-                # Skip non-translatable symbol patterns
-                if any(re.search(p, text) for p in NON_TRANSLATABLE_TEXT_PATTERNS):
-                    continue
+                    # Skip very short strings that are symbols
+                    if len(text.strip()) < 3 and not text.isalpha():
+                        continue
 
-                # Skip very short strings that are symbols
-                if len(text.strip()) < 3 and not text.isalpha():
-                    continue
+                    # Skip values that look like CSS class names
+                    if text.startswith("Q"):
+                        continue
 
-                # Skip values that look like CSS class names
-                if text.startswith("Q"):
-                    continue
-
-                violations.append(f"{rel_path}:{line_no}: QLabel(\"{text}\")")
+                    violations.append(f"{rel_path}:{line_no}: {name}(\"{text}\")")
 
         if violations:
             pytest.fail(
-                f"Found {len(violations)} hardcoded QLabel strings:\n"
+                f"Found {len(violations)} hardcoded user-facing strings:\n"
                 + "\n".join(sorted(violations)[:50])
                 + ("\n..." if len(violations) > 50 else "")
             )

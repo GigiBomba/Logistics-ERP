@@ -1,4 +1,6 @@
 """Security headers middleware for FastAPI backend."""
+from __future__ import annotations
+
 from collections.abc import Sequence
 
 from starlette.middleware.base import BaseHTTPMiddleware

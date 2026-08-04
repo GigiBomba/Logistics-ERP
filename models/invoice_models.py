@@ -13,6 +13,7 @@ class InvoiceLineItem(BaseModel):
     discount_amount: float = 0.0
     taxable_amount: Optional[float] = None  # net after discount
     vat_rate: float = 19.0  # percentage
+    total_net: Optional[float] = None  # net total for this line
     vat_amount: Optional[float] = None
     line_total: Optional[float] = None  # gross total for this line
 

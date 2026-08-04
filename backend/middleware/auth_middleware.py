@@ -63,7 +63,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     SKIP_PREFIXES = (
         "/docs", "/redoc", "/openapi.json", "/api/v1/health",
         "/api/v1/auth", "/api/v1/registration", "/api/v1/route-demo",
-        "/api/v1/waitlist",
+        "/api/v1/waitlist", "/api/v1/status",
     )
 
     @staticmethod

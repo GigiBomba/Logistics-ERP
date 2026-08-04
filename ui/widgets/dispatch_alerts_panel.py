@@ -22,8 +22,17 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from services.operations.alert_manager import Severity
 from ui.components import EmptyState
-from ui.design_tokens import COLOR_ACCENT_PRIMARY, COLOR_TEXT_PRIMARY, COLOR_TEXT_WHITE
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    COLOR_TEXT_WHITE,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.widgets import ActionButton
 from ui.widgets.layout_utils import clear_layout
 from ui.widgets.stat_card import StatCard
@@ -68,8 +77,8 @@ class QtDispatchAlertsPanel(QWidget):
 
         content = QWidget()
         content_layout = QVBoxLayout(content)
-        content_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        content_layout.setSpacing(S["3"])
+        content_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        content_layout.setSpacing(SP["3"])
         content_layout.setAlignment(Qt.AlignTop)
 
         scroll.setWidget(content)
@@ -107,14 +116,14 @@ class QtDispatchAlertsPanel(QWidget):
         card.setFrameShape(QFrame.StyledPanel)
 
         card_layout = QVBoxLayout(card)
-        card_layout.setContentsMargins(S["4"], S["3"], S["4"], S["3"])
-        card_layout.setSpacing(S["4"])
+        card_layout.setContentsMargins(SP["4"], SP["3"], SP["4"], SP["3"])
+        card_layout.setSpacing(SP["4"])
 
         # Header row — matches Step 7 spec (14px, 600 weight, white)
         header = QWidget()
         header_layout = QHBoxLayout(header)
         header_layout.setContentsMargins(0, 0, 0, 0)
-        header_layout.setSpacing(S["2"])
+        header_layout.setSpacing(SP["2"])
 
         title_lbl = QLabel(t(title_key))
         title_lbl.setStyleSheet(
@@ -145,7 +154,7 @@ class QtDispatchAlertsPanel(QWidget):
         content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         inner_layout = QVBoxLayout(content)
         inner_layout.setContentsMargins(0, 0, 0, 0)
-        inner_layout.setSpacing(S["2"])
+        inner_layout.setSpacing(SP["2"])
         card_layout.addWidget(content)
 
         parent_layout.addWidget(card)
@@ -196,17 +205,17 @@ class QtDispatchAlertsPanel(QWidget):
                 pass
 
         kpis: list[tuple[str, int, str]] = [
-            ("dispatch_board.brief_departing_today", departing, COLORS["accent"]),
-            ("dispatch_board.brief_arriving_today", arriving, COLORS["success"]),
+            ("dispatch_board.brief_departing_today", departing, COLOR_ACCENT_PRIMARY),
+            ("dispatch_board.brief_arriving_today", arriving, COLOR_SUCCESS_DEFAULT),
             (
                 "dispatch_board.brief_critical",
                 critical_count,
-                COLORS["danger"] if critical_count else COLORS["text_muted"],
+                COLOR_ERROR_DEFAULT if critical_count else COLOR_TEXT_TERTIARY,
             ),
             (
                 "dispatch_board.brief_needs_attention",
                 needs_attention,
-                COLORS["warning"] if needs_attention else COLORS["text_muted"],
+                COLOR_WARNING_DEFAULT if needs_attention else COLOR_TEXT_TERTIARY,
             ),
         ]
 
@@ -247,17 +256,17 @@ class QtDispatchAlertsPanel(QWidget):
 
     def _draw_alert_row(self, alert) -> None:
         sev_colors: dict[str, str] = {
-            "critical": COLORS["danger"],
-            "warning": COLORS["warning"],
-            "info": COLORS["info"],
+            "critical": COLOR_ERROR_DEFAULT,
+            "warning": COLOR_WARNING_DEFAULT,
+            "info": COLOR_INFO_DEFAULT,
         }
         sev = str(getattr(alert.severity, "value", alert.severity)).lower()
-        chip_color = sev_colors.get(sev, COLORS["info"])
+        chip_color = sev_colors.get(sev, COLOR_INFO_DEFAULT)
 
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["2"])
+        row_layout.setSpacing(SP["2"])
 
         chip = QLabel(sev.upper()[:3])
         chip.setFixedWidth(36)
@@ -348,7 +357,7 @@ class QtDispatchAlertsPanel(QWidget):
         grp = QWidget()
         grp_layout = QVBoxLayout(grp)
         grp_layout.setContentsMargins(0, 0, 0, 0)
-        grp_layout.setSpacing(S["1"])
+        grp_layout.setSpacing(SP["1"])
 
         title_lbl = QLabel(t(title_key))
         title_lbl.setProperty("fontRole", "warning")
@@ -358,7 +367,7 @@ class QtDispatchAlertsPanel(QWidget):
             row = QWidget()
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(0, 0, 0, 0)
-            row_layout.setSpacing(S["2"])
+            row_layout.setSpacing(SP["2"])
 
             trip_id = item.get("trip_id", "")
             origin = item.get("origin", "?")
@@ -429,13 +438,13 @@ class QtDispatchAlertsPanel(QWidget):
                 unassigned += 1
 
         kpis: list[tuple[str, int, str]] = [
-            ("dispatch_board.alerts_panel_total_trips", total_active, COLORS["text_primary"]),
-            ("dispatch_board.alerts_panel_fully_assigned", fully_assigned, COLORS["success"]),
-            ("dispatch_board.alerts_panel_partial", partial, COLORS["warning"]),
+            ("dispatch_board.alerts_panel_total_trips", total_active, COLOR_TEXT_PRIMARY),
+            ("dispatch_board.alerts_panel_fully_assigned", fully_assigned, COLOR_SUCCESS_DEFAULT),
+            ("dispatch_board.alerts_panel_partial", partial, COLOR_WARNING_DEFAULT),
             (
                 "dispatch_board.alerts_panel_unassigned",
                 unassigned,
-                COLORS["danger"] if unassigned else COLORS["text_muted"],
+                COLOR_ERROR_DEFAULT if unassigned else COLOR_TEXT_TERTIARY,
             ),
         ]
 
@@ -454,5 +463,6 @@ class QtDispatchAlertsPanel(QWidget):
         self._ops = None
         self._on_assign_truck = None
         self._on_assign_driver = None
+        self._on_assign_both = None
         self._on_resolve_alert = None
         super().deleteLater()

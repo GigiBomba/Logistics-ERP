@@ -14,10 +14,7 @@ from PySide6.QtWidgets import QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from services.i18n import register_listener, t, unregister_listener
 from ui.components import Label, PageTitle
-from ui.design_tokens import COLOR_TEXT_SECONDARY, SP
-from ui.views.migration_center.emigrate_tab import EmigrateTab
-from ui.views.migration_center.immigrate_physical_tab import ImmigratePhysicalTab
-from ui.views.migration_center.immigrate_software_tab import ImmigrateSoftwareTab
+from ui.design_tokens import COLOR_TEXT_SECONDARY, FONT_SIZE_SM, SP
 from ui.widgets.dispatch_tabs import QtDispatchTabs
 
 logger = logging.getLogger(__name__)
@@ -34,6 +31,46 @@ class QtMigrationCenterView(QWidget):
 
         self._build_ui()
         self._i18n_id = register_listener(self._on_language_changed)
+
+    # ── Lazy tab properties ──────────────────────────────────────────
+
+    @property
+    def _tab_software(self):
+        if not hasattr(self, '_tab_software_cache'):
+            from ui.views.migration_center.immigrate_software_tab import (
+                ImmigrateSoftwareTab,
+            )
+            self._tab_software_cache = ImmigrateSoftwareTab(self._tabs, db=self.db)
+        return self._tab_software_cache
+
+    @property
+    def _tab_physical(self):
+        if not hasattr(self, '_tab_physical_cache'):
+            from ui.views.migration_center.immigrate_physical_tab import (
+                ImmigratePhysicalTab,
+            )
+            self._tab_physical_cache = ImmigratePhysicalTab(self._tabs, db=self.db)
+        return self._tab_physical_cache
+
+    @property
+    def _tab_emigrate(self):
+        if not hasattr(self, '_tab_emigrate_cache'):
+            from ui.views.migration_center.emigrate_tab import EmigrateTab
+            self._tab_emigrate_cache = EmigrateTab(self._tabs, db=self.db)
+        return self._tab_emigrate_cache
+
+    def _tab_with_desc(self, tab_widget: QWidget, desc_text: str) -> QWidget:
+        """Wrap a tab widget with a description label below its header."""
+        container = QWidget()
+        layout = QVBoxLayout(container)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(SP["1"])
+        desc = QLabel(desc_text)
+        desc.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+        desc.setWordWrap(True)
+        layout.addWidget(desc)
+        layout.addWidget(tab_widget, 1)
+        return container
 
     def _build_ui(self):
         layout = QVBoxLayout(self)
@@ -60,27 +97,63 @@ class QtMigrationCenterView(QWidget):
         self._tabs = QtDispatchTabs(self)
         layout.addWidget(self._tabs, 1)
 
-        # Create tab panels
-        self._tab_software = ImmigrateSoftwareTab(self._tabs, db=self.db)
-        self._tab_physical = ImmigratePhysicalTab(self._tabs, db=self.db)
-        self._tab_emigrate = EmigrateTab(self._tabs, db=self.db)
-
-        # Register tabs
+        # Tab 0 — software (eager; visible by default)
         self._tabs.add_tab(
             "software",
             t("migration.tab_software", "Import from Software"),
-            self._tab_software,
+            self._tab_with_desc(
+                self._tab_software,
+                t("migration.software_desc",
+                  "Import digital records from CSV, Excel, JSON or XML files with column mapping and validation."),
+            ),
         )
+
+        # Tabs 1 & 2 — lazy placeholders; real panels created on first switch
+        self._physical_holder = QWidget(self._tabs)
         self._tabs.add_tab(
             "physical",
             t("migration.tab_physical", "Physical Archive"),
-            self._tab_physical,
+            self._physical_holder,
         )
+
+        self._emigrate_holder = QWidget(self._tabs)
         self._tabs.add_tab(
             "emigrate",
             t("migration.tab_emigrate", "Export Data"),
-            self._tab_emigrate,
+            self._emigrate_holder,
         )
+
+        self._tabs.on_switch(self._on_tab_changed)
+
+    # ── Tab switch handler (lazy init) ───────────────────────────────
+
+    def _on_tab_changed(self, tab_id: str) -> None:
+        """Lazy-init the real tab panel on first visit."""
+        # Resolve the real panel (triggers lazy property / deferred import)
+        if tab_id == "software":
+            tab = self._tab_software
+        elif tab_id == "physical":
+            tab = self._tab_physical
+        elif tab_id == "emigrate":
+            tab = self._tab_emigrate
+        else:
+            return
+
+        # Wrap with description label on first visit
+        holder = getattr(self, f"_{tab_id}_holder", None)
+        if holder is not None:
+            desc_key = {
+                "software": "migration.software_desc",
+                "physical": "migration.physical_desc",
+                "emigrate": "migration.emigrate_desc",
+            }.get(tab_id, "")
+            desc_text = t(desc_key, default="") if desc_key else ""
+            wrapped = self._tab_with_desc(tab, desc_text) if desc_text else tab
+            self._tabs.set_tab_panel(tab_id, wrapped)
+            setattr(self, f"_{tab_id}_holder", None)
+
+        if hasattr(tab, "wakeup"):
+            tab.wakeup()
 
     # ── i18n ──────────────────────────────────────────────────────────
 

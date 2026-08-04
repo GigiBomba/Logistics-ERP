@@ -89,8 +89,8 @@ class ApiKeyRepository(BaseRepository):
                 created_by,
                 expires_at,
                 self._user_company_id or 0,
-            ),
-        )
+            ), commit=True,
+		)
         logger.info("Created API key '%s' for partner '%s' (id=%d)", name, partner, key_id)
         return raw_key, key_id
 
@@ -126,8 +126,8 @@ class ApiKeyRepository(BaseRepository):
         # ── Update last_used_at ────────────────────────────────────────
         self._execute(
             f"UPDATE {self.TABLE} SET last_used_at = datetime('now') WHERE id = ?",
-            (row["id"],),
-        )
+            (row["id"],), commit=True,
+		)
 
         return dict(row)
 
@@ -141,8 +141,8 @@ class ApiKeyRepository(BaseRepository):
             f"UPDATE {self.TABLE} "
             f"SET is_active = 0, revoked_at = datetime('now') "
             f"WHERE id = ? {self._company_filter()}",
-            (key_id,) + self._company_params(),
-        )
+            (key_id,) + self._company_params(), commit=True,
+		)
         if affected:
             logger.info("Revoked API key id=%d", key_id)
             return True

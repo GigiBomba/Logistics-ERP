@@ -13,6 +13,8 @@ from unittest.mock import MagicMock, PropertyMock
 
 import pytest
 from PySide6.QtCore import Qt, QTimer
+
+pytestmark = pytest.mark.qt_no_exception_capture
 from PySide6.QtWidgets import (
     QApplication,
     QFrame,

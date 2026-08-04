@@ -88,6 +88,10 @@ class FleetAnalyticsTab(BaseTab):
                                 f"{avg_consumption:.1f} L/100km"))
         kpi_l.addWidget(KPICard(kpi_row, t("analytics.kpi_cost_per_km", default="Avg Cost/km"),
                                 f"\u20ac {avg_cost_per_km:.2f}/km"))
+        otd_raw = self._svc.get_otd_percentage(from_date, to_date)
+        otd_pct = otd_raw if isinstance(otd_raw, (int, float)) else 0.0
+        kpi_l.addWidget(KPICard(kpi_row, t("analytics.kpi_otd", default="On-Time Delivery"),
+                                f"{otd_pct:.1f}%"))
         maint_count = len(maint)
         maint_color = SUCCESS
         if maint_count >= 4:

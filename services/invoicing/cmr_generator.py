@@ -410,8 +410,15 @@ class CMRGenerator:
             merged["carrier_name"] = request.carrier_name
             merged["carrier_license"] = request.carrier_license
             merged["cmr_remarks"] = request.remarks
+            if request.sig_sender_path:
+                merged["sig_sender_path"] = request.sig_sender_path
 
             ctx = self._gather_context(merged)
+            # Re-inject the allocated number so the legacy call below reuses
+            # the SAME number — a second _gather_context would otherwise bump
+            # the sequence again (response number != PDF/DB number drift).
+            merged["cmr_number"] = ctx["cmr_number"]
+            merged["cmr_sequence"] = ctx.get("cmr_sequence", 0)
             output_dir = self._get_output_dir(request.trip_id)
             file_path = self._generate_legacy(merged, output_dir)
 
@@ -520,8 +527,15 @@ class CMRGenerator:
             merged["carrier_name"] = request.carrier_name
             merged["carrier_license"] = request.carrier_license
             merged["cmr_remarks"] = request.remarks
+            if request.sig_sender_path:
+                merged["sig_sender_path"] = request.sig_sender_path
 
             ctx = self._gather_context(merged)
+            # Re-inject the allocated number so the legacy multi-copy call
+            # below reuses the SAME number (single sequence allocation;
+            # response number == PDF filename number == trip DB row).
+            merged["cmr_number"] = ctx["cmr_number"]
+            merged["cmr_sequence"] = ctx.get("cmr_sequence", 0)
             output_dir = self._get_output_dir(request.trip_id)
             paths = self._generate_all_copies_legacy(merged, output_dir, skip_db_update=False)
 

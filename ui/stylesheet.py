@@ -30,6 +30,8 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
+    FONT_SIZE_SM,
+    HOVER_MS,
     RADIUS_LG as RADIUS_CARD,
     RADIUS_MD as RADIUS_INPUT,
     RADIUS_SM as RADIUS_CHIP,
@@ -119,16 +121,18 @@ def _tab_button_qss() -> str:
     return f"""
     QPushButton[tabRole="tab-button"] {{
         background-color: transparent;
-        color: {COLOR_TEXT_TERTIARY};
+        color: {COLOR_TEXT_SECONDARY};
         border: none;
         border-bottom: 2px solid transparent;
         border-radius: 0;
         padding: 8px 16px;
-        font-weight: 500;
+        font-weight: 600;
+        font-size: {FONT_SIZE_SM}px;
+        letter-spacing: 0.04em;
     }}
 
     QPushButton[tabRole="tab-button"]:hover {{
-        color: {COLOR_TEXT_SECONDARY};
+        color: {COLOR_TEXT_PRIMARY};
     }}
 
     QPushButton[tabRole="tab-button"][tabActive="true"] {{

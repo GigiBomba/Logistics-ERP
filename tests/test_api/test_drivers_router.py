@@ -123,9 +123,6 @@ class TestDriversRouter:
 
     def test_assign_driver_to_truck(self, client_with_mocks):
         client, mocks = client_with_mocks
-        # Configure the mock DB so row_to_dict works for queries done
-        # inside DriverTruckService.
-        mocks["db"].row_to_dict.side_effect = lambda row: None if row is None else dict(row)
 
         resp = client.post(f"{BASE}/1/assign-truck?truck_id=5")
         # The endpoint creates DriverTruckService internally with mock_db.

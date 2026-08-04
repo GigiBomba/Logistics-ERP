@@ -13,13 +13,43 @@ import os
 # The .env file has OPERION_ENV=production which causes RuntimeErrors
 # in BackendSettings._check_admin_config and AuthMiddleware.__init__.
 os.environ.setdefault("OPERION_ENV", "testing")
-os.environ.setdefault("OPERION_JWT_SECRET_KEY", "test-jwt-secret-key-for-testing")
+os.environ.setdefault("OPERION_JWT_SECRET_KEY", "test-jwt-secret-key-for-testing!!")
+
+# Business invariant environment — satisfy AUTH invariants
+os.environ.setdefault("JWT_SECRET", "a" * 64)
+os.environ.setdefault("JWT_ALGORITHM", "HS256")
+os.environ.setdefault("BF_ENABLED", "true")
+os.environ.setdefault("BF_MAX_ATTEMPTS", "5")
+os.environ.setdefault("BF_WINDOW_MINUTES", "5")
+os.environ.setdefault("BF_LOCKOUT_MINUTES", "15")
 
 import logging
 import pytest
 from unittest.mock import MagicMock
 
 pytest_plugins = ["tests.test_conftest"]
+
+# ── Shared API fixtures ──────────────────────────────────────────────────
+# pytest fails to register fixtures from a subdirectory conftest when test
+# files at different directory depths are interleaved on the command line
+# (e.g. ``pytest tests/test_api/a.py tests/x.py tests/test_api/b.py`` — the
+# second ``tests/test_api`` batch can't see ``client_with_mocks`` etc.).
+# Re-exporting the fixtures from the ROOT conftest registers them
+# unconditionally, so the affected suites resolve them regardless of
+# collection order (same pattern as ``tests/stress/conftest.py``).
+from tests.test_api.conftest import (  # noqa: F401
+    StrippedMock,
+    app,
+    client,
+    client_with_mocks,
+    mock_analytics_service,
+    mock_client_service,
+    mock_db,
+    mock_document_service,
+    mock_driver_repo,
+    mock_fleet_service,
+    mock_trip_service,
+)
 
 
 @pytest.fixture(autouse=True)
@@ -104,6 +134,10 @@ def reset_singletons():
     with _ce._ENGINE_LOCK:
         _saved_ce = _ce._ENGINE
         _ce._ENGINE = _mock_ce
+
+    # QtTheme cached stylesheet
+    from ui.theme_engine import QtTheme
+    QtTheme._style_sheet = None
 
     yield
 

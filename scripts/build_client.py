@@ -98,7 +98,6 @@ HIDDEN_IMPORTS: List[str] = [
     "urllib3",
     "httpcore",
     "websockets",
-    "PyPDF2",
     "pypdf",
     "reportlab",
     "openpyxl",

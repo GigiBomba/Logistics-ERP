@@ -5,16 +5,11 @@ import pytest
 
 
 @pytest.fixture
-def client_manager(qt_widget, qtbot, monkeypatch):
-    monkeypatch.setattr(
-        "ui.views.client_manager.QtClientManager._initial_load",
-        lambda self: None,
-    )
+def client_manager(qt_widget, qtbot):
     db = MagicMock()
     prefs = MagicMock()
-    api_client = MagicMock()
     view = __import__("ui.views.client_manager", fromlist=["QtClientManager"]).QtClientManager(
-        qt_widget, db=db, prefs=prefs, api_client=api_client,
+        qt_widget, db=db, prefs=prefs,
     )
     qtbot.addWidget(view)
     yield view
@@ -27,13 +22,13 @@ class TestQtClientManager:
         assert client_manager.db is not None
 
     def test_client_table_created(self, client_manager):
-        assert hasattr(client_manager, "_client_table")
+        assert hasattr(client_manager, "table")
 
     def test_add_button_exists(self, client_manager):
-        assert hasattr(client_manager, "_btn_add")
+        assert hasattr(client_manager, "_new_btn")
 
     def test_search_bar_exists(self, client_manager):
-        assert hasattr(client_manager, "_search_input")
+        assert hasattr(client_manager, "_search_entry")
 
     def test_shutdown_cleanup(self, client_manager):
         client_manager.shutdown()

@@ -253,18 +253,31 @@ class TestGpsTelemetryTable:
 
     GPS_COLS = ("truck_id", "latitude", "longitude", "speed_kmh", "recorded_at")
 
+    def _seed_truck(self, db, truck_id):
+        """Ensure a truck row exists to satisfy FK constraints."""
+        db.conn.execute("PRAGMA foreign_keys=OFF")
+        db.conn.execute(
+            "INSERT OR IGNORE INTO trucks (id, plate_number) VALUES (?, ?)",
+            (truck_id, f"TRUCK-{truck_id:04d}"),
+        )
+        db.conn.execute("PRAGMA foreign_keys=ON")
+        db.conn.commit()
+
     def _insert(self, db, truck_id, lat, lon, speed, recorded_at):
         """Insert a GPS record and return the new row id."""
+        db.conn.execute("PRAGMA foreign_keys=OFF")
         cursor = db.conn.execute(
             "INSERT INTO gps_telemetry "
             "(truck_id, latitude, longitude, speed_kmh, recorded_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (truck_id, lat, lon, speed, recorded_at),
         )
+        db.conn.execute("PRAGMA foreign_keys=ON")
         return cursor.lastrowid
 
     def test_insert_gps_record(self, db):
         """Insert a GPS record and verify it can be read back."""
+        self._seed_truck(db, 1)
         gid = self._insert(db, 1, 45.5, 25.3, 80.0, "2025-06-01T10:00:00")
         assert gid is not None and gid > 0
 
@@ -280,6 +293,8 @@ class TestGpsTelemetryTable:
 
     def test_query_by_truck_id(self, db):
         """Insert records for multiple trucks and query by a specific truck."""
+        for tid in (1, 2, 3):
+            self._seed_truck(db, tid)
         records = [
             (1, 45.0, 25.0, 50.0, "2025-06-01T10:00:00"),
             (2, 46.0, 26.0, 60.0, "2025-06-01T10:00:00"),
@@ -314,6 +329,7 @@ class TestGpsTelemetryTable:
 
     def test_query_by_time_range(self, db):
         """Insert records with different timestamps and query a time window."""
+        self._seed_truck(db, 1)
         timestamps = [
             "2025-06-01T08:00:00",
             "2025-06-01T09:00:00",
@@ -337,6 +353,7 @@ class TestGpsTelemetryTable:
 
     def test_gps_null_driver_allowed(self, db):
         """Insert a GPS record with driver_id=NULL (optional field)."""
+        self._seed_truck(db, 1)
         cursor = db.conn.execute(
             "INSERT INTO gps_telemetry "
             "(truck_id, latitude, longitude, driver_id, recorded_at) "
@@ -381,22 +398,34 @@ class TestDatabaseManagerSettings:
 
     def test_save_and_get_setting_with_company(self, db, company_1):
         """Save a setting scoped to a company and retrieve it."""
-        db.save_setting("theme", "dark", company_id=1)
-        result = db.get_setting("theme", company_id=1)
+        from database.tenant_context import set_company_context
+        set_company_context(1)
+        db.save_setting("theme", "dark")
+        result = db.get_setting("theme")
         assert result == "dark"
+        set_company_context(None)
 
     def test_settings_isolated_per_company(self, db, company_1, company_2):
         """Settings saved for different companies are kept separate."""
-        db.save_setting("language", "en", company_id=1)
-        db.save_setting("language", "ro", company_id=2)
+        from database.tenant_context import set_company_context
+        set_company_context(1)
+        db.save_setting("language", "en")
+        set_company_context(2)
+        db.save_setting("language", "ro")
 
-        assert db.get_setting("language", company_id=1) == "en"
-        assert db.get_setting("language", company_id=2) == "ro"
+        set_company_context(1)
+        assert db.get_setting("language") == "en"
+        set_company_context(2)
+        assert db.get_setting("language") == "ro"
+        set_company_context(None)
 
     def test_get_setting_returns_none_for_missing_key(self, db, company_1):
         """Requesting a non-existent key returns None."""
-        result = db.get_setting("nonexistent.key", company_id=1)
+        from database.tenant_context import set_company_context
+        set_company_context(1)
+        result = db.get_setting("nonexistent.key")
         assert result is None
+        set_company_context(None)
 
 
 # ── Backfill Safety ───────────────────────────────────────────────────────────

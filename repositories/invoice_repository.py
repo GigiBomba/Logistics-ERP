@@ -41,7 +41,7 @@ class InvoiceRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def update(self, invoice_id: int, data: Dict[str, Any]) -> None:
         self._validate_columns(data)
@@ -49,18 +49,27 @@ class InvoiceRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
             tuple(data.values()) + (invoice_id,) + self._company_params(),
-        )
+        commit=True)
 
     def delete(self, invoice_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
             (invoice_id,) + self._company_params(),
-        )
+        commit=True)
 
-    def get_by_id(self, invoice_id: int) -> Optional[Dict[str, Any]]:
+    def get_by_id(
+        self, invoice_id: int, company_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch an invoice row.
+
+        ``company_id`` (the JWT-derived company, per blueprint §1.8) is honored
+        when provided: an invoice belonging to a different company is treated
+        as not found.  When omitted, the request-context filter is used (the
+        desktop behaviour — unchanged).
+        """
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (invoice_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (invoice_id,) + self._company_params_for(company_id),
         )
 
     def get_by_trip_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
@@ -69,10 +78,12 @@ class InvoiceRepository(BaseRepository):
             (trip_id,) + self._company_params(),
         )
 
-    def get_by_number(self, inv_number: str) -> Optional[Dict[str, Any]]:
+    def get_by_number(
+        self, inv_number: str, company_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ? {self._company_filter()}",
-            (inv_number,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ? {self._company_filter_for(company_id)}",
+            (inv_number,) + self._company_params_for(company_id),
         )
 
     def get_by_client_id(self, client_id: int, limit: int = 100) -> List[Dict[str, Any]]:
@@ -222,7 +233,7 @@ class InvoiceRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def get_invoice_count(self, client_id: int) -> int:
         row = self._fetchone(

@@ -28,6 +28,17 @@ from PySide6.QtWidgets import (
 
 from ui.views.freight_exchange.search_view import FreightSearchView, _map_sort_field
 from ui.views.freight_exchange.load_detail_view import FreightLoadDetailView
+from ui.design_tokens import (
+    COLOR_ERROR_DEFAULT,
+    COLOR_ERROR_TEXT,
+    COLOR_INFO_SUBTLE,
+    COLOR_INFO_TEXT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_SUCCESS_TEXT,
+    COLOR_WARNING_DEFAULT,
+    COLOR_WARNING_SUBTLE,
+    COLOR_WARNING_TEXT,
+)
 
 # =========================================================================
 # Helpers
@@ -112,11 +123,31 @@ SAMPLE_MATCHES = [
     },
 ]
 
+MATCH_NEGATIVE_PROFIT = {
+    "vehicle_id": "VH-303",
+    "score": 45,
+    "reasons": [],
+    "expected_profit": {"amount": -320, "currency": "EUR"},
+}
+
+MATCH_MANY_REASONS = {
+    "vehicle_id": "VH-404",
+    "score": 88,
+    "reasons": [
+        "closest_vehicle",
+        "highest_profit",
+        "maintenance_health",
+        "trailer_compatible",
+        "driver_hours",
+    ],
+    "driver_hours_remaining": 2,
+    "expected_profit": {"amount": 500},
+}
+
 
 # =========================================================================
 # FreightSearchView Fixtures
 # =========================================================================
-
 
 @pytest.fixture
 def mock_api():
@@ -905,6 +936,91 @@ class TestImportTarget:
 
 
 # =========================================================================
+# TestBuildMatchRow
+# =========================================================================
+
+
+class TestBuildMatchRow:
+    """_build_match_row edge cases and formatting."""
+
+    def test_match_row_negative_profit_formatting(self, detail_view):
+        """Negative profit displays with ERROR_TEXT color."""
+        row = detail_view._build_match_row(1, MATCH_NEGATIVE_PROFIT)
+        profit_label = next(lbl for lbl in row.findChildren(QLabel) if "€" in lbl.text())
+        assert profit_label.text() == "-€320"
+        assert COLOR_ERROR_TEXT in profit_label.styleSheet()
+
+    def test_match_row_score_boundary_50(self, detail_view):
+        """Score of 50 uses warning color, not success or error."""
+        row = detail_view._build_match_row(1, {
+            "vehicle_id": "VH-1", "score": 50, "reasons": [],
+            "expected_profit": {"amount": 100, "currency": "EUR"},
+        })
+        score_label = next(lbl for lbl in row.findChildren(QLabel) if lbl.text() == "50")
+        assert COLOR_WARNING_DEFAULT in score_label.styleSheet()
+        assert COLOR_SUCCESS_DEFAULT not in score_label.styleSheet()
+        assert COLOR_ERROR_DEFAULT not in score_label.styleSheet()
+
+    def test_match_row_zero_reasons(self, detail_view):
+        """Empty reasons list does not produce any badges."""
+        row = detail_view._build_match_row(1, {
+            "vehicle_id": "VH-1", "score": 80, "reasons": [],
+            "expected_profit": {"amount": 100, "currency": "EUR"},
+        })
+        labels = row.findChildren(QLabel)
+        reason_keys = {"closest_vehicle", "highest_profit", "maintenance_health",
+                       "trailer_compatible", "driver_hours"}
+        reason_badges = [lbl for lbl in labels if lbl.text() in reason_keys]
+        assert len(reason_badges) == 0
+        # No overflow label (the only '+' label is profit, which contains '€')
+        overflow_labels = [lbl for lbl in labels if lbl.text().startswith("+") and "€" not in lbl.text()]
+        assert len(overflow_labels) == 0
+
+    def test_match_row_more_than_three_reasons(self, detail_view):
+        """5 reasons produce 3 badges and a '+2' overflow label."""
+        row = detail_view._build_match_row(1, MATCH_MANY_REASONS)
+        labels = row.findChildren(QLabel)
+        reason_keys = {"closest_vehicle", "highest_profit", "maintenance_health",
+                       "trailer_compatible", "driver_hours"}
+        reason_badges = [lbl for lbl in labels if lbl.text() in reason_keys]
+        assert len(reason_badges) == 3
+        overflow = [lbl for lbl in labels if lbl.text() == "+2"]
+        assert len(overflow) == 1
+
+    def test_match_row_driver_hours_low_warning(self, detail_view):
+        """driver_hours badge uses warning colors when hours <= 4."""
+        row = detail_view._build_match_row(1, {
+            "vehicle_id": "VH-1", "score": 80, "reasons": ["driver_hours"],
+            "driver_hours_remaining": 2,
+            "expected_profit": {"amount": 100, "currency": "EUR"},
+        })
+        badge = next(lbl for lbl in row.findChildren(QLabel) if lbl.text() == "driver_hours")
+        assert COLOR_WARNING_SUBTLE in badge.styleSheet()
+        assert COLOR_WARNING_TEXT in badge.styleSheet()
+
+    def test_match_row_driver_hours_ok_info(self, detail_view):
+        """driver_hours badge uses info colors when hours > 4."""
+        row = detail_view._build_match_row(1, {
+            "vehicle_id": "VH-1", "score": 80, "reasons": ["driver_hours"],
+            "driver_hours_remaining": 8,
+            "expected_profit": {"amount": 100, "currency": "EUR"},
+        })
+        badge = next(lbl for lbl in row.findChildren(QLabel) if lbl.text() == "driver_hours")
+        assert COLOR_INFO_SUBTLE in badge.styleSheet()
+        assert COLOR_INFO_TEXT in badge.styleSheet()
+
+    def test_match_row_non_dict_profit(self, detail_view):
+        """Raw number profit (not dict) is handled correctly."""
+        row = detail_view._build_match_row(1, {
+            "vehicle_id": "VH-1", "score": 80, "reasons": [],
+            "expected_profit": 570,
+        })
+        profit_label = next(lbl for lbl in row.findChildren(QLabel) if "€" in lbl.text())
+        assert profit_label.text() == "+€570"
+        assert COLOR_SUCCESS_TEXT in profit_label.styleSheet()
+
+
+# =========================================================================
 # FreightLoadDetailView — display_freight_info
 # =========================================================================
 
@@ -947,6 +1063,59 @@ class TestDisplayFreightInfo:
         detail_view._freight_info_label.setParent(detail_view)
 
         detail_view.display_freight_info({})  # Should not raise
+
+    def test_display_freight_info_raw_payload_path(self, detail_view):
+        """Contact employees from raw_payload are shown."""
+        from PySide6.QtWidgets import QLabel
+        detail_view._freight_info_label = QLabel()
+        detail_view._freight_info_label.setVisible(False)
+        detail_view._freight_info_label.setParent(detail_view)
+
+        detail_view.display_freight_info({
+            "reference_number": "REF-001",
+            "raw_payload": {
+                "contact_employees": [
+                    {"name": "Jane", "last_name": "Smith"},
+                ],
+            },
+        })
+        assert detail_view._freight_info_label.isVisible()
+        assert "Jane Smith" in detail_view._freight_info_label.text()
+
+    def test_display_freight_info_given_family_name(self, detail_view):
+        """Employee with given_name/family_name is shown."""
+        from PySide6.QtWidgets import QLabel
+        detail_view._freight_info_label = QLabel()
+        detail_view._freight_info_label.setVisible(False)
+        detail_view._freight_info_label.setParent(detail_view)
+
+        detail_view.display_freight_info({
+            "reference_number": "REF-002",
+            "raw_payload": {
+                "contact_employees": [
+                    {"given_name": "Alice", "family_name": "Johnson"},
+                ],
+            },
+        })
+        assert detail_view._freight_info_label.isVisible()
+        assert "Alice Johnson" in detail_view._freight_info_label.text()
+
+    def test_display_matches_tab_order_chaining(self, detail_view):
+        """display_matches rows are tab-ordered together and to bottom buttons."""
+        match1 = {
+            "vehicle_id": "VH-101", "score": 92, "reasons": ["closest_vehicle"],
+            "expected_profit": {"amount": 570, "currency": "EUR"},
+        }
+        match2 = {
+            "vehicle_id": "VH-202", "score": 65, "reasons": ["trailer_compatible"],
+            "expected_profit": {"amount": 320, "currency": "EUR"},
+        }
+        detail_view.display_matches([match1, match2])
+        assert len(detail_view._match_rows) == 2
+        assert detail_view._matches_layout.indexOf(detail_view._match_rows[0]) == 0
+        assert detail_view._matches_layout.indexOf(detail_view._match_rows[1]) == 1
+        # Last tab widget chains to the last match row
+        assert detail_view._last_tab_widget == detail_view._match_rows[1]
 
 
 # =========================================================================

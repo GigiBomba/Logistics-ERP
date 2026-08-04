@@ -26,10 +26,29 @@ class InMemoryDB(DatabaseManager):
     Subclasses ``DatabaseManager`` so it provides ``conn``, ``row_to_dict``,
     ``rows_to_dicts``, and the engine attributes expected by
     ``BaseRepository`` subclasses.
+
+    Seeds 100 company rows (ids 0-99) on creation so FK constraints on
+    ``company_id`` columns (which reference ``companies(id)``) do not
+    block test inserts.
     """
 
     def __init__(self) -> None:
         super().__init__(":memory:")
+        _seed_companies(self)
+
+
+def _seed_companies(db: DatabaseManager) -> None:
+    """Insert a range of company IDs so FK constraints don't block inserts."""
+    for cid in range(0, 101):  # companies 0-100
+        try:
+            db.conn.execute(
+                "INSERT OR IGNORE INTO companies (id, company_name, subscription_tier) "
+                "VALUES (?, ?, 'starter')",
+                (cid, f"Company-{cid}"),
+            )
+        except Exception:
+            pass
+    db.conn.commit()
 
 
 def make_db() -> InMemoryDB:
@@ -39,6 +58,37 @@ def make_db() -> InMemoryDB:
     the full schema, indexes, and migrations applied.
     """
     return InMemoryDB()
+
+
+def seed_client(db: DatabaseManager, client_id: int = 1, name: str = "Test Client") -> int:
+    """Insert a minimal client row (idempotent) so FK constraints pass.
+
+    ``trips.client_id`` / ``contracts.client_id`` reference ``clients(id)``
+    and the connection pool enforces ``PRAGMA foreign_keys=ON``, so tests
+    that create trips/contracts need a real client row to exist first.
+    """
+    db.conn.execute(
+        "INSERT OR IGNORE INTO clients (id, name, created_at) VALUES (?, ?, '2026-01-01')",
+        (client_id, name),
+    )
+    db.conn.commit()
+    return client_id
+
+
+def seed_admin_user(db: DatabaseManager, user_id: int = 1, company_id: int = 1) -> int:
+    """Insert an active admin user (idempotent) so permission checks pass.
+
+    ``PermissionService.can_upload_document`` (and other permission guards)
+    reject uploads by unknown/inactive users with ``FORBIDDEN``.
+    """
+    db.conn.execute(
+        "INSERT OR IGNORE INTO users "
+        "(id, email, password_hash, role, company_id, is_active, display_name) "
+        "VALUES (?, ?, ?, 'admin', ?, 1, 'Test Admin')",
+        (user_id, f"admin{user_id}@test.local", "hashed", company_id),
+    )
+    db.conn.commit()
+    return user_id
 
 
 # ──────────────────────────────────────────────────────────────

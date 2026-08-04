@@ -7,7 +7,13 @@ from typing import Any, Dict
 import pytest
 from pydantic import ValidationError
 
-from backend.schemas.trip import TripBase, TripResponse, TripSearchParams
+from backend.schemas.trip import (
+    TripBase,
+    TripCreateRequest,
+    TripResponse,
+    TripSearchParams,
+    TripUpdateRequest,
+)
 
 
 # ── TripBase ──────────────────────────────────────────────────────────────────
@@ -138,3 +144,26 @@ class TestTripSearchParams:
     def test_extra_field_forbidden(self):
         with pytest.raises(ValidationError):
             TripSearchParams(query="x", unknown="y")  # type: ignore[call-arg]
+
+
+# ── TripCreateRequest / TripUpdateRequest promised_date ──────────────────────
+
+
+class TestTripCreateUpdatePromisedDate:
+    """The OTD ``promised_date`` field is optional on both request schemas."""
+
+    def test_create_defaults_to_none(self):
+        inst = TripCreateRequest(client_id=1)
+        assert inst.promised_date is None
+
+    def test_create_accepts_promised_date(self):
+        inst = TripCreateRequest(client_id=1, promised_date="2026-01-15")
+        assert inst.promised_date == "2026-01-15"
+
+    def test_update_defaults_to_none(self):
+        inst = TripUpdateRequest()
+        assert inst.promised_date is None
+
+    def test_update_accepts_promised_date(self):
+        inst = TripUpdateRequest(promised_date="2026-02-01")
+        assert inst.promised_date == "2026-02-01"

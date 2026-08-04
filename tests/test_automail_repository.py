@@ -157,6 +157,9 @@ class TestReorderSchedules:
 
 class TestCreateSchedule:
     def test_create_schedule_auto_sort_order(self, db, repo):
+        # Clear seeded schedules so sort_order starts from 0
+        db.conn.execute("DELETE FROM automail_schedules")
+        db.conn.commit()
         tmpl_id = _template(db)
         sid1 = repo.create_schedule({
             "name": "Sched A",

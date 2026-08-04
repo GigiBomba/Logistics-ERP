@@ -12,7 +12,7 @@ import os
 import warnings
 import zipfile
 from datetime import datetime
-from typing import Any, Optional
+from typing import Any, Dict, Optional
 
 from database.db_manager import DatabaseManager
 from models.common import ErrorDetail, ServiceResult
@@ -212,12 +212,17 @@ class DocumentService:
 
     # ── Typed API ───────────────────────────────────────────────────────
 
-    def upload_document(self, request: DocumentUpload, user_id: int) -> DocumentUploadResult:
+    def upload_document(self, request: DocumentUpload, user_id: int,
+                        company_id=None) -> DocumentUploadResult:
         """Upload a document using a typed request model.
 
         Args:
             request: The document upload details.
             user_id: The ID of the user performing the upload.
+            company_id: Optional JWT-derived tenant id.  When provided the
+                document row is **created** company-scoped in the same
+                INSERT — there is no post-insert UPDATE window where the
+                row exists unscoped (blueprint §1.8 / M2).
 
         Returns:
             A ``ServiceResult`` containing the uploaded document details,
@@ -237,6 +242,7 @@ class DocumentService:
                 description=request.description,
                 tags=request.tags,
                 uploaded_by=str(user_id),
+                company_id=company_id,
             )
         except (FileNotFoundError, ValueError, OSError) as exc:
             logger.error("Upload failed for %s: %s", request.source_path, exc)
@@ -338,14 +344,20 @@ class DocumentService:
         logger.info("Document deleted: id=%d by user=%d", document_id, user_id)
         return self._result_ok(result)
 
-    def email_document(self, document_id: int, recipient: str,
-                       user_id: int) -> ServiceResult[bool]:
+    def email_document(self, document_id: int, recipient: str, user_id: int,
+                       prefs: Optional[Dict[str, Any]] = None) -> ServiceResult[bool]:
         """Email a document to a recipient.
 
         Args:
             document_id: The document ID to email.
             recipient: The email address of the recipient.
             user_id: The ID of the user sending the email.
+            prefs: Optional caller-supplied preferences used to resolve the
+                SMTP config.  Accepts either a ``PreferencesManager``-like
+                object exposing ``get_smtp_config()`` (as the desktop UI
+                passes) or a dict of SMTP settings (as the Celery task
+                passes).  When provided, its SMTP config takes precedence
+                over the DB-backed preferences store.
 
         Returns:
             A ``ServiceResult[bool]`` indicating success or failure.
@@ -362,14 +374,26 @@ class DocumentService:
 
         from services.operations.notification_center import NotificationCenter
         nc = NotificationCenter(self.db)
-        # Try loading SMTP config from prefs if available
-        try:
-            from services.preferences_service import PreferencesService
-            prefs = PreferencesService(self.db)
-            smtp_config = prefs.get_smtp_config()
-        except (ImportError, OSError, ValueError):
-            logger.debug("Failed to load SMTP config from preferences")
-            smtp_config = None
+        # SMTP config: prefer caller-supplied prefs (per-user/company SMTP),
+        # falling back to the DB-backed preferences store.
+        smtp_config = None
+        if prefs is not None:
+            try:
+                if hasattr(prefs, "get_smtp_config"):
+                    smtp_config = prefs.get_smtp_config()
+                elif isinstance(prefs, dict):
+                    smtp_config = prefs
+            except (OSError, ValueError, AttributeError):
+                logger.debug("Failed to load SMTP config from passed prefs")
+                smtp_config = None
+        if not smtp_config:
+            try:
+                from services.preferences import PreferencesManager
+                prefs_svc = PreferencesManager(self.db)
+                smtp_config = prefs_svc.get_smtp_config()
+            except (ImportError, OSError, ValueError):
+                logger.debug("Failed to load SMTP config from preferences")
+                smtp_config = None
 
         if not smtp_config or not smtp_config.get("smtp_server"):
             return ServiceResult(success=False, errors=[ErrorDetail(
@@ -384,11 +408,12 @@ class DocumentService:
         )
         subject = f"Document: {doc.get('title', doc.get('file_name', ''))}"
         body = f"Please find attached: {doc.get('title', '')}\n\nDocument ID: {doc.get('doc_number', '')}"
-        ok = nc.send_email(recipient, subject, body, attachments=[doc["file_path"]])
+        result = nc.send_email(recipient, subject, body, attachments=[doc["file_path"]])
+        ok = bool(result) if hasattr(result, "success") else bool(result)
         if ok:
             self._log_audit("document.emailed", f"Emailed {doc.get('doc_number')} to {recipient}")
             logger.info("Document emailed: id=%d to=%s by user=%d", document_id, recipient, user_id)
-        return ServiceResult(success=ok, data=ok)
+        return ServiceResult(success=ok, data=result)
 
     def link_to_entity(self, document_id: int, entity_type: str,
                        entity_id: int) -> DocumentUploadResult:
@@ -544,14 +569,30 @@ class DocumentService:
     # ── Document operations ────────────────────────────────────────────
 
     def get_by_id(self, doc_id: int, company_id=None) -> Optional[dict[str, Any]]:
+        """Fetch a document by ID, optionally tenant-checked.
+
+        ``company_id`` (the JWT-derived company, per blueprint §1.8) is
+        honored when provided: a document belonging to a different company
+        is treated as not found.  When ``company_id`` is falsy (admin /
+        desktop flows) the document is returned unscoped.
+
+        Tenant-checked reads always hit the database — the shared cache key
+        is company-blind (``doc:<id>``), so a cached copy written by another
+        company could otherwise be served across tenants.
+        """
         cache = self._get_cache()
-        if cache:
+        doc = None
+        if not company_id and cache:
             cached = cache.get(self._cache_key(doc_id))
             if cached is not None:
-                return cached
-        doc = self._repo.get_by_id(doc_id)
-        if doc and cache:
-            cache.set(self._cache_key(doc_id), doc, ttl=300)
+                doc = cached
+        if doc is None:
+            doc = self._repo.get_by_id(doc_id)
+            if doc and not company_id and cache:
+                cache.set(self._cache_key(doc_id), doc, ttl=300)
+        # Tenant check at read time — never leak a document across companies.
+        if doc and company_id and doc.get("company_id") != company_id:
+            return None
         return doc
 
     def get_links(self, doc_id: int) -> list[dict[str, Any]]:
@@ -802,7 +843,7 @@ class DocumentService:
         # Fallback: placeholder with page count
         try:
             from PIL import Image, ImageDraw
-            from PyPDF2 import PdfReader
+            from pypdf import PdfReader
         except ImportError:
             return None
         try:

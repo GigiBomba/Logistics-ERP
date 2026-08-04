@@ -371,11 +371,20 @@ class CoPilotPanel(QFrame):
         self._conversation.add_message(display_text, is_user=False)
 
     def _handle_error(self, error_message: str) -> None:
-        """Display an error message."""
+        """Display an error message.
+
+        Uses the *error_message* as a translation key — if a translation
+        exists (e.g. ``copilot.error.stt_unavailable``) it is shown;
+        otherwise falls back to the generic ``copilot.chat.error`` key,
+        and finally to the raw message string.
+        """
         self._conversation.hide_thinking()
         self._chat_input.set_processing(False)
 
-        error_text = t("copilot.chat.error", default=str(error_message))
+        error_text = t(
+            error_message,
+            default=t("copilot.chat.error", default=str(error_message)),
+        )
         self._conversation.add_message(error_text, is_user=False)
 
     def _format_response(self, response_dict: dict) -> str:

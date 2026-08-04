@@ -7,9 +7,8 @@ import pytest
 def maintenance_view(qt_widget, qtbot):
     db = MagicMock()
     truck_id = 1
-    truck_data = {"id": 1, "plate": "AG01ABC", "make": "Volvo"}
     dlg = __import__("ui.dialogs.maintenance_view", fromlist=["QtMaintenanceView"]).QtMaintenanceView(
-        parent=qt_widget, db=db, truck_id=truck_id, truck_data=truck_data,
+        parent=qt_widget, db=db, truck_id=truck_id, truck_plate="AG01ABC",
     )
     qtbot.addWidget(dlg)
     yield dlg
@@ -17,21 +16,21 @@ def maintenance_view(qt_widget, qtbot):
 
 class TestQtMaintenanceView:
     def test_creation(self, maintenance_view):
-        assert maintenance_view._truck_id == 1
+        assert maintenance_view.truck_id == 1
 
     def test_has_three_tabs(self, maintenance_view):
-        assert hasattr(maintenance_view, "_tabs")
-        assert maintenance_view._tabs.count() == 3
+        assert hasattr(maintenance_view, "_tab_widget")
+        assert maintenance_view._tab_widget.count() == 3
 
     def test_tab_labels(self, maintenance_view):
-        texts = [maintenance_view._tabs.tabText(i) for i in range(3)]
+        texts = [maintenance_view._tab_widget.tabText(i) for i in range(3)]
         assert all(len(t) > 0 for t in texts)
 
     def test_records_tab_exists(self, maintenance_view):
-        assert hasattr(maintenance_view, "_records_table")
+        assert hasattr(maintenance_view, "_record_table")
 
     def test_schedules_tab_exists(self, maintenance_view):
-        assert hasattr(maintenance_view, "_schedules_table")
+        assert hasattr(maintenance_view, "_schedule_table")
 
     def test_health_tab_exists(self, maintenance_view):
-        assert hasattr(maintenance_view, "_health_kpi_cards")
+        assert hasattr(maintenance_view, "_health_cards")

@@ -10,6 +10,7 @@ from typing import Any
 from datetime import datetime, timedelta
 from typing import Optional
 
+from models.trip_models import TripUpdate
 from services.dispatch_service.availability import AvailabilityChecker
 from services.dispatch_service.errors import (
     DispatchError,
@@ -117,7 +118,7 @@ class DispatchService:
         plate = truck.get("plate") or truck.get("truck_number") or str(truck_id)
         self._trip_service.update(
             trip_id,
-            {"truck_number": plate, "truck_id": truck_id},
+            TripUpdate(truck_id=truck_id, truck_plate=plate),
         )
 
         # 6. Emit event (best-effort fire-and-forget)
@@ -131,8 +132,11 @@ class DispatchService:
                         "truck_plate": plate,
                     },
                 )
-        except Exception:
-            logger.debug("Failed to publish TRIP_ASSIGNED event for trip #%d", trip_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to publish TRIP_ASSIGNED event for trip #%d (truck %d): %s",
+                trip_id, truck_id, exc,
+            )
 
         # 7. Build undo token and result
         undo_token = UndoToken(
@@ -176,7 +180,7 @@ class DispatchService:
         driver_name = driver.get("name") or driver.get("driver_name") or ""
         self._trip_service.update(
             trip_id,
-            {"driver_id": driver_id, "driver_name": driver_name},
+            TripUpdate(driver_id=driver_id, driver_name=driver_name),
         )
 
         # 6. Emit event (best-effort fire-and-forget)
@@ -190,8 +194,11 @@ class DispatchService:
                         "driver_name": driver_name,
                     },
                 )
-        except Exception:
-            logger.debug("Failed to publish TRIP_ASSIGNED event for trip #%d", trip_id)
+        except Exception as exc:
+            logger.warning(
+                "Failed to publish TRIP_ASSIGNED event for trip #%d (driver %d): %s",
+                trip_id, driver_id, exc,
+            )
 
         # 7. Build undo token and result
         undo_token = UndoToken(
@@ -238,7 +245,10 @@ class DispatchService:
                 if truck_undo is not None:
                     self._trip_service.update(
                         trip_id,
-                        truck_undo.previous_state,
+                        TripUpdate(
+                            truck_id=truck_undo.previous_state.get("truck_id"),
+                            truck_plate=truck_undo.previous_state.get("truck_number"),
+                        ),
                     )
                     logger.info(
                         "Rolled back truck assignment on trip #%d after driver assignment failure",
@@ -253,11 +263,10 @@ class DispatchService:
                 logger.debug(
                     "DTA pairing: driver %d <-> truck %d", driver_id, truck_id,
                 )
-            except Exception:
-                logger.debug(
-                    "DTA pairing failed for driver %d / truck %d (best-effort)",
-                    driver_id,
-                    truck_id,
+            except Exception as exc:
+                logger.warning(
+                    "DTA pairing failed for driver %d / truck %d (best-effort): %s",
+                    driver_id, truck_id, exc,
                 )
 
         # 4. Build composite result
@@ -409,7 +418,7 @@ class DispatchService:
                 ) from e
 
         # 3b. No ops_engine — update manually and emit event
-        self._trip_service.update(trip_id, {"status": new_status})
+        self._trip_service.update(trip_id, TripUpdate(status=new_status))
 
         # Emit event (best-effort fire-and-forget)
         try:
@@ -422,9 +431,11 @@ class DispatchService:
                         "new_status": new_status,
                     },
                 )
-        except Exception:
-            logger.debug(
-                "Failed to publish TRIP_STATUS_CHANGED event for trip #%d", trip_id,
+        except Exception as exc:
+            logger.warning(
+                "Failed to publish TRIP_STATUS_CHANGED event for trip #%d"
+                " (%s -> %s): %s",
+                trip_id, old_status, new_status, exc,
             )
 
         logger.info(
@@ -569,8 +580,11 @@ class DispatchService:
             origin = summary_data.get("origin", "") or ""
             destination = summary_data.get("destination", "") or ""
             return origin, destination
-        except Exception:
-            logger.debug("Failed to resolve route for trip #%d", trip.get("id"))
+        except Exception as exc:
+            logger.warning(
+                "Failed to resolve route for trip #%s: %s",
+                trip.get("id"), exc,
+            )
             return "", ""
 
     def _validate_trip_exists(self, trip_id: int) -> dict[str, Any]:
@@ -627,8 +641,12 @@ class DispatchService:
                 if now > eta_dt:
                     minutes = int((now - eta_dt).total_seconds() / 60)
                     return True, minutes
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Failed to evaluate delay for trip #%s (In Transit, eta=%r): %s",
+                    trip_data.get("trip_id_num") or trip_data.get("id") or "?",
+                    eta, exc,
+                )
             return False, 0
 
         # ── Loading ─────────────────────────────────────────────────
@@ -643,8 +661,12 @@ class DispatchService:
                 if now > threshold:
                     minutes = int((now - threshold).total_seconds() / 60)
                     return True, minutes
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Failed to evaluate delay for trip #%s (Loading, departure=%r): %s",
+                    trip_data.get("trip_id_num") or trip_data.get("id") or "?",
+                    departure, exc,
+                )
             return False, 0
 
         # ── Planned ─────────────────────────────────────────────────
@@ -659,8 +681,12 @@ class DispatchService:
                 if dep_dt < threshold:
                     minutes = int((threshold - dep_dt).total_seconds() / 60)
                     return True, minutes
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning(
+                    "Failed to evaluate delay for trip #%s (Planned, departure=%r): %s",
+                    trip_data.get("trip_id_num") or trip_data.get("id") or "?",
+                    departure, exc,
+                )
             return False, 0
 
         return False, 0

@@ -139,13 +139,18 @@ class PhysicalArchiveService:
                     )
 
                 # ── Step 1: Upload ────────────────────────────────────
-                doc_id = self.doc_svc.upload(
-                    source_path=file_path,
-                    title=os.path.splitext(filename)[0],
-                    category="migration",
+                from models.document_models import DocumentUpload
+                upload_result = self.doc_svc.upload_document(
+                    DocumentUpload(
+                        source_path=file_path,
+                        title=os.path.splitext(filename)[0],
+                        category="migration",
+                    ),
+                    user_id=0,
                 )
-                if not doc_id:
-                    raise RuntimeError(f"DocumentService.upload returned no ID for {file_path}")
+                if not upload_result.success:
+                    raise RuntimeError(f"DocumentService.upload_document failed for {file_path}")
+                doc_id = upload_result.data.id
                 file_result["doc_id"] = doc_id
 
                 if progress_cb:

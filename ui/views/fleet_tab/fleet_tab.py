@@ -15,16 +15,20 @@ import time
 from datetime import datetime
 from typing import Any
 
+import qtawesome as qta
 from PySide6.QtCore import Qt, QTimer
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QScrollArea,
     QSizePolicy,
+    QTabWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -46,16 +50,24 @@ from services.operations.event_bus import (
 )
 from ui.components import (
     Btn,
+    EmptyState,
+    IconButton,
     KPICard,
     MonoLabel,
     PageTitle,
     SectionTitle,
 )
-from ui.design_tokens import SP
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_SECONDARY,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.plotly_charts import CHART_ACCENT, CHART_INFO, CHART_SECONDARY, make_pie_chart
 from ui.plotly_renderer import PlotlyChartWidget
-from ui.styles import Theme
-from ui.theme import COLORS
 from ui.widgets import (
     StyledCheckBox,
     StyledComboBox,
@@ -64,6 +76,8 @@ from ui.widgets import (
 )
 from ui.widgets.layout_utils import clear_layout
 from ui.views.fleet_tab.truck_form import _TruckFormDialog
+from ui.worker_pool import WorkerPool
+from ui.performance_timer import PerfTimer
 
 logger = logging.getLogger(__name__)
 
@@ -134,6 +148,19 @@ class QtFleetTab(BaseView):
         # ── Mode guard ───────────────────────────────────────────────────────
         self._mode = detect_mode(db, api_client)
         guard_local_access(self._mode, "Fleet tab")
+        if self._mode == ConnectionMode.REMOTE:
+            layout = QVBoxLayout(self)
+            layout.setAlignment(Qt.AlignCenter)
+            msg = QLabel(
+                "Fleet tab is not available in remote mode.\n"
+                "This feature requires local database access."
+            )
+            msg.setAlignment(Qt.AlignCenter)
+            msg.setWordWrap(True)
+            layout.addWidget(msg)
+            self._initialized = False
+            return
+        self._initialized = True
 
         # -- i18n --
         self._language_callback = self._on_language_changed
@@ -145,6 +172,9 @@ class QtFleetTab(BaseView):
         self._subscribe(TRUCK_DELETED, self._on_truck_updated_ev)
         self._subscribe(ALERT_CREATED, self._on_alert_ev)
         self._subscribe(ALERT_RESOLVED, self._on_alert_ev)
+
+        # ── Grid toggle state ────────────────────────────────────────────────
+        self._grid_visible = True
 
         # -- Chart references --
         self._chart_widget: PlotlyChartWidget | None = None
@@ -160,7 +190,7 @@ class QtFleetTab(BaseView):
         self._rows: list = []
 
         # -- KPI card references --
-        self._kpi_value_labels: dict[str, MonoLabel] = {}
+        self._kpi_value_labels: dict[str, QLabel] = {}
 
         # -- UI --
         self._build_ui()
@@ -215,6 +245,7 @@ class QtFleetTab(BaseView):
     # ==================================================================
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Fleet management")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -243,9 +274,28 @@ class QtFleetTab(BaseView):
         self._build_table(left_layout)
         self._build_action_buttons(left_layout)
 
-        self._build_alerts_panel(right_layout)
-        self._build_chart_area(right_layout)
-        self._build_quick_add(right_layout)
+        right_tabs = QTabWidget()
+        right_tabs.setDocumentMode(True)
+
+        alerts_tab = QWidget()
+        alerts_tab_layout = QVBoxLayout(alerts_tab)
+        alerts_tab_layout.setContentsMargins(0, 0, 0, 0)
+        self._build_alerts_panel(alerts_tab_layout)
+        right_tabs.addTab(alerts_tab, t("fleet.section_alerts"))
+
+        chart_tab = QWidget()
+        chart_tab_layout = QVBoxLayout(chart_tab)
+        chart_tab_layout.setContentsMargins(0, 0, 0, 0)
+        self._build_chart_area(chart_tab_layout)
+        right_tabs.addTab(chart_tab, t("fleet.section_charts"))
+
+        quick_tab = QWidget()
+        quick_tab_layout = QVBoxLayout(quick_tab)
+        quick_tab_layout.setContentsMargins(0, 0, 0, 0)
+        self._build_quick_add(quick_tab_layout)
+        right_tabs.addTab(quick_tab, t("fleet.section_quick_add"))
+
+        right_layout.addWidget(right_tabs)
 
         main_layout.addWidget(left, 1)
         main_layout.addWidget(right, 0)
@@ -273,6 +323,16 @@ class QtFleetTab(BaseView):
             btn = Btn(None, t(label_key), variant="secondary", command=callback)
             header_layout.addWidget(btn)
 
+        # ── Grid toggle button ──────────────────────────────────────
+        self._grid_btn = IconButton(
+            None,
+            icon_name="fa5s.th",
+            tooltip=t("chart.toggle_grid", "Toggle grid"),
+            variant="ghost",
+            command=self._toggle_grid,
+        )
+        header_layout.addWidget(self._grid_btn)
+
         layout.addWidget(header)
 
     # -- KPI strip ---------------------------------------------------------
@@ -283,20 +343,11 @@ class QtFleetTab(BaseView):
         self._kpi_strip_layout.setContentsMargins(SP["3"], 0, SP["3"], SP["2"])
         self._kpi_strip_layout.setSpacing(SP["2"])
 
-        self._kpi_value_labels: dict[str, MonoLabel] = {}
-        self._rebuild_kpi_strip()
-
+        self._build_kpi_pairs()
         layout.addWidget(self._kpi_strip)
 
-    def _rebuild_kpi_strip(self) -> None:
-        """Clear and rebuild KPI cards with current translations."""
-        while self._kpi_strip_layout.count():
-            item = self._kpi_strip_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                w.deleteLater()
-        self._kpi_value_labels.clear()
-
+    def _build_kpi_pairs(self) -> None:
+        """Build KPI cards once — never destroy them."""
         kpi_defs = [
             ("kpi_total", "fleet.kpi_total_trucks", "0"),
             ("kpi_active", "fleet.kpi_active", "0"),
@@ -361,10 +412,20 @@ class QtFleetTab(BaseView):
         columns = [
             (cid, t(lbl_key), w) for cid, lbl_key, w in self.TABLE_COLUMNS
         ]
-        self._table = StyledTableWidget(None, columns)
+        self._table = StyledTableWidget(None, columns, prefs_key="fleet_tab")
         self._table.setSortingEnabled(True)
         self._table.rowDoubleClicked.connect(self._on_table_double_click)
         layout.addWidget(self._table, 1)
+
+        # Empty state (hidden by default)
+        self._fleet_empty_state = EmptyState(
+            parent=self,
+            icon_name="fa5s.truck-moving",
+            title=t("fleet.empty_title", "No vehicles in fleet"),
+            subtitle=t("fleet.empty_desc", "Add your first vehicle to start managing your fleet."),
+        )
+        self._fleet_empty_state.setVisible(False)
+        layout.addWidget(self._fleet_empty_state)
 
     # -- Action buttons ----------------------------------------------------
 
@@ -385,6 +446,17 @@ class QtFleetTab(BaseView):
         btn_layout.addWidget(edit_btn)
 
         btn_layout.addStretch(1)
+
+        # Density toggle
+        self._density_btn = IconButton(
+            None,
+            icon_name="fa5s.table",
+            tooltip=t("table.density", "Row density"),
+            variant="ghost",
+            size=32,
+        )
+        self._density_btn.clicked.connect(self._show_density_menu)
+        btn_layout.addWidget(self._density_btn)
 
         docs_btn = Btn(
             None,
@@ -480,178 +552,257 @@ class QtFleetTab(BaseView):
     # ==================================================================
 
     def refresh(self) -> None:
-        """Reload all truck data, update KPIs, chart, and alerts."""
-        try:
-            rows = self.service.get_trucks()
-        except Exception as ex:
-            logger.exception("refresh_fleet failed")
-            QMessageBox.critical(
-                self,
-                t("main.error_title"),
-                t("fleet.error_load", default=str(ex)),
+        """Reload all truck data asynchronously."""
+        with PerfTimer("fleet_tab.refresh"):
+            self._show_loading()
+            WorkerPool.run(
+                fn=self._fetch_data,
+                on_result=self._on_data_loaded,
+                on_error=self._on_refresh_error,
             )
-            return
 
-        self._load_table_and_kpis(rows)
-        self._draw_charts(rows)
-        self._refresh_alerts()
-        self._filter_table()
+    def _fetch_data(self) -> dict:
+        """Background: fetch trucks + batch driver names."""
+        rows = self.service.get_trucks()
+        truck_ids = [r["id"] for r in rows]
+        driver_map = {}
+        if self._dta_service and truck_ids:
+            driver_map = self._dta_service.get_driver_names_for_trucks(truck_ids)
+        return {"rows": rows, "driver_map": driver_map}
+
+    def _on_data_loaded(self, data: dict) -> None:
+        """GUI thread: populate table + KPIs + chart."""
+        with PerfTimer("fleet_tab.on_data_loaded"):
+            self._hide_loading()
+            rows = data["rows"]
+            driver_map = data.get("driver_map", {})
+
+            has_rows = bool(rows)
+            self._table.setVisible(has_rows)
+            self._fleet_empty_state.setVisible(not has_rows)
+            if not has_rows:
+                return
+
+            # Use batch driver_map instead of N+1 loop
+            table_rows = []
+            for r in rows:
+                driver_name = driver_map.get(r["id"]) or t("fleet.table_driver_unassigned")
+                table_rows.append(
+                    {
+                        "id": r["id"],
+                        "plate": r["plate_number"],
+                        "model": r.get("model", "") or "",
+                        "manufacturer": r.get("manufacturer", "") or "",
+                        "year": r.get("year", "") or "",
+                        "vin": r.get("vin", "") or "",
+                        "mileage": f"{(r.get('mileage') or 0):,}",
+                        "fuel": (
+                            f"{(r.get('fuel_consumption') or 0):.1f}"
+                            if r.get("fuel_consumption") is not None
+                            else ""
+                        ),
+                        "monthly_rate": f"{(r.get('monthly_rate') or 0):.2f}",
+                        "status": r.get("status") or "",
+                        "active": (
+                            t("common.yes")
+                            if r.get("active_status") in (1, True)
+                            else t("common.no")
+                        ),
+                        "driver": driver_name,
+                    }
+                )
+
+            with PerfTimer("fleet_tab.table"):
+                self._table.set_data(table_rows)
+                self._table.restore_column_widths()
+            with PerfTimer("fleet_tab.kpi"):
+                self._update_kpi_values(rows)
+            with PerfTimer("fleet_tab.chart"):
+                self._draw_charts(rows)
+            with PerfTimer("fleet_tab.alerts"):
+                self._refresh_alerts()
+            self._filter_table()
+
+    def _on_refresh_error(self, error: str) -> None:
+        self._hide_loading()
+        QMessageBox.critical(self, t("main.error_title"), f"Load failed: {error}")
 
     def _load_table_and_kpis(self, rows: list[dict[str, Any]]) -> None:
         """Populate the truck table and update KPI cards from *rows*."""
-        # Populate table
-        table_rows: list[dict[str, Any]] = []
-        for r in rows:
-            driver_name = (
-                self._dta_service.get_driver_name_for_truck(r["id"])
-                if self._dta_service is not None else None
-            ) or t("fleet.table_driver_unassigned")
-            table_rows.append(
-                {
-                    "id": r["id"],
-                    "plate": r["plate_number"],
-                    "model": r.get("model", "") or "",
-                    "manufacturer": r.get("manufacturer", "") or "",
-                    "year": r.get("year", "") or "",
-                    "vin": r.get("vin", "") or "",
-                    "mileage": f"{(r.get('mileage') or 0):,}",
-                    "fuel": (
-                        f"{(r.get('fuel_consumption') or 0):.1f}"
-                        if r.get("fuel_consumption") is not None
-                        else ""
-                    ),
-                    "monthly_rate": f"{(r.get('monthly_rate') or 0):.2f}",
-                    "status": r.get("status") or "",
-                    "active": (
-                        t("common.yes")
-                        if r.get("active_status") in (1, True)
-                        else t("common.no")
-                    ),
-                    "driver": driver_name,
-                }
-            )
-        self._table.set_data(table_rows)
+        with PerfTimer("fleet_tab.load_table_and_kpis"):
+            # Populate table
+            table_rows: list[dict[str, Any]] = []
+            for r in rows:
+                driver_name = (
+                    self._dta_service.get_driver_name_for_truck(r["id"])
+                    if self._dta_service is not None else None
+                ) or t("fleet.table_driver_unassigned")
+                table_rows.append(
+                    {
+                        "id": r["id"],
+                        "plate": r["plate_number"],
+                        "model": r.get("model", "") or "",
+                        "manufacturer": r.get("manufacturer", "") or "",
+                        "year": r.get("year", "") or "",
+                        "vin": r.get("vin", "") or "",
+                        "mileage": f"{(r.get('mileage') or 0):,}",
+                        "fuel": (
+                            f"{(r.get('fuel_consumption') or 0):.1f}"
+                            if r.get("fuel_consumption") is not None
+                            else ""
+                        ),
+                        "monthly_rate": f"{(r.get('monthly_rate') or 0):.2f}",
+                        "status": r.get("status") or "",
+                        "active": (
+                            t("common.yes")
+                            if r.get("active_status") in (1, True)
+                            else t("common.no")
+                        ),
+                        "driver": driver_name,
+                    }
+                )
+            with PerfTimer("fleet_tab.table_set"):
+                self._table.set_data(table_rows)
+                self._table.restore_column_widths()
+            with PerfTimer("fleet_tab.kpi_update"):
+                self._update_kpi_values(rows)
 
-        # KPIs
-        total = len(rows)
-        active = sum(
-            1 for r in rows if r.get("active_status") in (1, True)
-        )
-        if "kpi_total" in self._kpi_value_labels:
-            self._kpi_value_labels["kpi_total"].setText(str(total))
-        if "kpi_active" in self._kpi_value_labels:
-            self._kpi_value_labels["kpi_active"].setText(str(active))
-        if "kpi_leasing" in self._kpi_value_labels:
-            total_rate = sum(float(r.get("monthly_rate") or 0) for r in rows)
-            self._kpi_value_labels["kpi_leasing"].setText(f"{total_rate:,.0f} \u20ac")
-
-        alert_count = 0
-        if self.ops:
-            with contextlib.suppress(Exception):
-                alert_count = self.ops.get_active_alert_count()
-        if "kpi_alerts" in self._kpi_value_labels:
-            self._kpi_value_labels["kpi_alerts"].setText(
-                str(alert_count) if self.ops else "N/A"
-            )
+    def _update_kpi_values(self, rows: list[dict]) -> None:
+        """Update KPI card values without destroying widgets."""
+        with PerfTimer("fleet_tab.update_kpi"):
+            if not rows:
+                return
+            total = len(rows)
+            active = sum(1 for r in rows if r.get("active_status") in (1, True))
+            if "kpi_total" in self._kpi_value_labels:
+                self._kpi_value_labels["kpi_total"].setText(str(total))
+            if "kpi_active" in self._kpi_value_labels:
+                self._kpi_value_labels["kpi_active"].setText(str(active))
+            if "kpi_leasing" in self._kpi_value_labels:
+                total_rate = sum(float(r.get("monthly_rate") or 0) for r in rows)
+                self._kpi_value_labels["kpi_leasing"].setText(f"{total_rate:,.0f} \u20ac")
+            alert_count = 0
+            if self.ops:
+                with contextlib.suppress(Exception):
+                    alert_count = self.ops.get_active_alert_count()
+            if "kpi_alerts" in self._kpi_value_labels:
+                self._kpi_value_labels["kpi_alerts"].setText(
+                    str(alert_count) if self.ops else "N/A"
+                )
 
     # ==================================================================
     # Chart rendering
     # ==================================================================
 
     def _draw_charts(self, rows: list[dict[str, Any]]) -> None:
-        if self._chart_widget is None:
-            return
+        with PerfTimer("fleet_tab.draw_charts"):
+            if self._chart_widget is None:
+                return
 
-        statuses: dict[str, int] = {}
-        for r in rows:
-            st_raw = (r.get("status") or "").title()
-            key = self.STATUS_KEYS.get(st_raw, "")
-            st = t(key) if key else (st_raw or t("fleet.status_unknown"))
-            statuses[st] = statuses.get(st, 0) + 1
+            statuses: dict[str, int] = {}
+            for r in rows:
+                st_raw = (r.get("status") or "").title()
+                key = self.STATUS_KEYS.get(st_raw, "")
+                st = t(key) if key else (st_raw or t("fleet.status_unknown"))
+                statuses[st] = statuses.get(st, 0) + 1
 
-        labels = list(statuses.keys())
-        counts = list(statuses.values())
+            labels = list(statuses.keys())
+            counts = list(statuses.values())
 
-        if counts:
-            fig = make_pie_chart(
-                counts,
-                labels,
-                title=t("fleet.section_charts"),
-                colors=[CHART_ACCENT, CHART_SECONDARY, CHART_INFO],
-                show_title=True,
-            )
-        else:
-            # No data: render an empty placeholder figure with a message
-            from ui.plotly_renderer import empty_figure
-            fig = empty_figure(t("fleet.no_data_chart"))
+            if counts:
+                fig = make_pie_chart(
+                    counts,
+                    labels,
+                    title=t("fleet.section_charts"),
+                    colors=[CHART_ACCENT, CHART_SECONDARY, CHART_INFO],
+                    show_title=True,
+                )
+            else:
+                # No data: render an empty placeholder figure with a message
+                from ui.plotly_renderer import empty_figure
+                fig = empty_figure(t("fleet.no_data_chart"))
 
-        try:
-            self._chart_widget.set_figure(fig)
-            # Record render time + signature so ``wakeup`` can skip
-            # subsequent re-renders when the data has not changed.
-            self._last_chart_ts = time.time()
-            self._last_chart_signature = tuple(sorted(statuses.items()))
-        except Exception:
-            logger.exception("Fleet chart render failed")
+            try:
+                self._chart_widget.set_figure(fig)
+                # Record render time + signature so ``wakeup`` can skip
+                # subsequent re-renders when the data has not changed.
+                self._last_chart_ts = time.time()
+                self._last_chart_signature = tuple(sorted(statuses.items()))
+            except Exception:
+                logger.exception("Fleet chart render failed")
+
+    # ── Grid toggle ──────────────────────────────────────────────────
+
+    def _toggle_grid(self) -> None:
+        """Toggle grid lines on all charts in this view."""
+        self._grid_visible = not self._grid_visible
+        for chart in self.findChildren(PlotlyChartWidget):
+            try:
+                chart.fig.update_xaxes(showgrid=self._grid_visible)
+                chart.fig.update_yaxes(showgrid=self._grid_visible)
+                chart.render()
+            except Exception:
+                logger.exception("Failed to toggle grid on chart widget")
 
     # ==================================================================
     # Alerts panel
     # ==================================================================
 
     def _refresh_alerts(self) -> None:
-        clear_layout(self._alerts_container_layout)
+        with PerfTimer("fleet_tab.refresh_alerts"):
+            clear_layout(self._alerts_container_layout)
 
-        if not self.ops:
-            lbl = QLabel(t("fleet.no_engine"))
-            lbl.setProperty("fontRole", "muted")
-            self._alerts_container_layout.addWidget(lbl)
-            return
+            if not self.ops:
+                lbl = QLabel(t("fleet.no_engine"))
+                lbl.setProperty("fontRole", "muted")
+                self._alerts_container_layout.addWidget(lbl)
+                return
 
-        try:
-            alerts = self.ops.get_active_alerts(limit=10)
-        except Exception:
-            alerts = []
+            try:
+                alerts = self.ops.get_active_alerts(limit=10)
+            except Exception:
+                alerts = []
 
-        if not alerts:
-            lbl = QLabel(t("fleet.no_alerts"))
-            lbl.setProperty("fontRole", "muted")
-            lbl.setAlignment(Qt.AlignCenter)
-            self._alerts_container_layout.addWidget(lbl)
-            return
+            if not alerts:
+                lbl = QLabel(t("fleet.no_alerts"))
+                lbl.setProperty("fontRole", "muted")
+                lbl.setAlignment(Qt.AlignCenter)
+                self._alerts_container_layout.addWidget(lbl)
+                return
 
-        for a in alerts:
-            sev = getattr(a, "severity", None)
-            sev_str = getattr(sev, "value", "info") if sev else "info"
-            if sev_str == "critical":
-                sev_color = COLORS["danger"]
-            elif sev_str == "warning":
-                sev_color = COLORS["warning"]
-            else:
-                sev_color = COLORS["info"]
+            for a in alerts:
+                sev = getattr(a, "severity", None)
+                sev_str = getattr(sev, "value", "info") if sev else "info"
+                if sev_str == "critical":
+                    sev_color = COLOR_ERROR_DEFAULT
+                elif sev_str == "warning":
+                    sev_color = COLOR_WARNING_DEFAULT
+                else:
+                    sev_color = COLOR_INFO_DEFAULT
 
-            card = QFrame()
-            card.setProperty("role", "card-elevated")
-            card.setStyleSheet(
-                f"border-left: 3px solid {sev_color};"
-            )
-            card_layout = QVBoxLayout(card)
-            card_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
-            card_layout.setSpacing(2)
+                card = QFrame()
+                card.setProperty("role", "card-elevated")
+                card.setStyleSheet(
+                    f"border-left: 3px solid {sev_color};"
+                )
+                card_layout = QVBoxLayout(card)
+                card_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
+                card_layout.setSpacing(2)
 
-            title_text = getattr(a, "title", getattr(a, "message", "Alert"))
-            title_lbl = QLabel(title_text)
-            title_lbl.setProperty("fontRole", "body_bold")
-            title_lbl.setWordWrap(True)
-            card_layout.addWidget(title_lbl)
+                title_text = getattr(a, "title", getattr(a, "message", "Alert"))
+                title_lbl = QLabel(title_text)
+                title_lbl.setProperty("fontRole", "body_bold")
+                title_lbl.setWordWrap(True)
+                card_layout.addWidget(title_lbl)
 
-            msg_text = getattr(a, "message", "")
-            if msg_text:
-                msg_lbl = QLabel(msg_text)
-                msg_lbl.setProperty("fontRole", "muted")
-                msg_lbl.setWordWrap(True)
-                card_layout.addWidget(msg_lbl)
+                msg_text = getattr(a, "message", "")
+                if msg_text:
+                    msg_lbl = QLabel(msg_text)
+                    msg_lbl.setProperty("fontRole", "muted")
+                    msg_lbl.setWordWrap(True)
+                    card_layout.addWidget(msg_lbl)
 
-            self._alerts_container_layout.addWidget(card)
+                self._alerts_container_layout.addWidget(card)
 
     # ==================================================================
     # Table filtering
@@ -714,6 +865,47 @@ class QtFleetTab(BaseView):
             t("fleet.search_info_title"),
             t("fleet.search_not_found", plate),
         )
+
+    # ── Density menu ───────────────────────────────────────────────────
+
+    def _show_density_menu(self):
+        """Show row density menu for the fleet table."""
+        menu = self._table._build_density_menu(self._density_btn)
+        if menu:
+            menu.exec_(self._density_btn.mapToGlobal(
+                self._density_btn.rect().bottomLeft()
+            ))
+
+    # ── Context menu ──────────────────────────────────────────────────
+
+    def contextMenuEvent(self, event):
+        """Right-click context menu for the fleet table."""
+        index = self._table.indexAt(event.pos())
+        if not index.isValid():
+            return
+
+        row = index.row()
+        record = self._table._data[row] if 0 <= row < len(self._table._data) else None
+        if record is None:
+            return
+
+        menu = QMenu(self)
+
+        view_action = QAction(qta.icon("fa5s.eye"), t("fleet.view_truck", "View"), self)
+        view_action.triggered.connect(lambda: self._open_truck_detail(record.get("id")))
+        menu.addAction(view_action)
+
+        edit_action = QAction(qta.icon("fa5s.edit"), t("fleet.edit_button"), self)
+        edit_action.triggered.connect(self._edit_truck_selected)
+        menu.addAction(edit_action)
+
+        menu.addSeparator()
+
+        delete_action = QAction(qta.icon("fa5s.trash"), t("fleet.delete_button"), self)
+        delete_action.triggered.connect(self._delete_truck)
+        menu.addAction(delete_action)
+
+        menu.exec_(event.globalPos())
 
     def _on_table_double_click(self, row_data: dict[str, Any]) -> None:
         truck_id = row_data.get("id")
@@ -1008,12 +1200,12 @@ class QtFleetTab(BaseView):
         # Odometer
         odometer_km = truck_row.get("mileage", 0) or 0
         odometer_str = f"{odometer_km:,.0f} {t('fleet.unit_km')}"
-        self._maint_kpi_card(kpi_layout, t("fleet.maint_kpi_odometer"), odometer_str, Theme.ACCENT)
+        self._maint_kpi_card(kpi_layout, t("fleet.maint_kpi_odometer"), odometer_str, COLOR_ACCENT_PRIMARY)
 
         # Last service
         last_service = repo.get_maintenance_last_date(truck_id)
         self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_last_service"), last_service or "\u2014", Theme.SUCCESS
+            kpi_layout, t("fleet.maint_kpi_last_service"), last_service or "\u2014", COLOR_SUCCESS_DEFAULT
         )
 
         # Next due
@@ -1030,14 +1222,14 @@ class QtFleetTab(BaseView):
                     pass
         next_due_str = next_due.strftime("%d/%m/%Y") if next_due else "\u2014"
         self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_next_due"), next_due_str, Theme.WARNING
+            kpi_layout, t("fleet.maint_kpi_next_due"), next_due_str, COLOR_WARNING_DEFAULT
         )
 
         # Cost month
         month_start = datetime.now().strftime("%Y-%m-01")
         cost_month = repo.sum_maintenance_cost(since_date=month_start)
         self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_cost_month"), f"{cost_month:.0f}", Theme.INFO
+            kpi_layout, t("fleet.maint_kpi_cost_month"), f"{cost_month:.0f}", COLOR_INFO_DEFAULT
         )
 
         # Alert count
@@ -1051,12 +1243,12 @@ class QtFleetTab(BaseView):
             except Exception:
                 pass
         self._maint_kpi_card(
-            kpi_layout, t("fleet.maint_kpi_alerts"), str(alert_count), Theme.DANGER
+            kpi_layout, t("fleet.maint_kpi_alerts"), str(alert_count), COLOR_ERROR_DEFAULT
         )
 
         # Tachograph expiry
         tacho_expiry = truck_row.get("tachograph_expiry") or ""
-        tacho_color = Theme.MUTED
+        tacho_color = COLOR_TEXT_SECONDARY
         tacho_display = "\u2014"
         if tacho_expiry:
             for fmt in ("%d/%m/%Y", "%Y-%m-%d"):
@@ -1065,16 +1257,16 @@ class QtFleetTab(BaseView):
                     days_left = (tacho_dt - datetime.now()).days
                     tacho_display = tacho_dt.strftime("%d/%m/%Y")
                     if days_left <= 7:
-                        tacho_color = Theme.DANGER
+                        tacho_color = COLOR_ERROR_DEFAULT
                     elif days_left <= 30:
-                        tacho_color = Theme.WARNING
+                        tacho_color = COLOR_WARNING_DEFAULT
                     else:
-                        tacho_color = Theme.SUCCESS
+                        tacho_color = COLOR_SUCCESS_DEFAULT
                     break
                 except Exception:
                     continue
             else:
-                tacho_color = Theme.DANGER
+                tacho_color = COLOR_ERROR_DEFAULT
                 tacho_display = tacho_expiry
         self._maint_kpi_card(
             kpi_layout, t("fleet.maint_kpi_tacho"), tacho_display, tacho_color

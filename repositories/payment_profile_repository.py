@@ -57,8 +57,8 @@ class PaymentProfileRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def update(self, profile_id: int, data: Dict[str, Any]) -> None:
         self._validate_columns(data)
@@ -69,11 +69,11 @@ class PaymentProfileRepository(BaseRepository):
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (profile_id,) + self._company_params(),
-        )
+            tuple(data.values()) + (profile_id,) + self._company_params(), commit=True,
+		)
 
     def delete(self, profile_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (profile_id,) + self._company_params(),
-        )
+            (profile_id,) + self._company_params(), commit=True,
+		)

@@ -76,13 +76,13 @@ def test_start_stop(db_mock):
 
     engine._event_bus = MagicMock()
     engine.start()
-    assert engine._running is True
+    assert not engine._stop_event.is_set()
     engine._event_bus.publish.assert_called()
     engine._maintenance_engine.evaluate_all.assert_called_once()
     engine._dunner_engine.evaluate_all.assert_called_once()
 
     engine.stop()
-    assert engine._running is False
+    assert engine._stop_event.is_set()
     engine._dunner_engine.shutdown.assert_called_once()
 
 
@@ -205,9 +205,9 @@ def test_start_without_db():
     engine._event_bus = MagicMock()
     engine._cmr_generator = MagicMock()
     engine.start()
-    assert engine._running is True
+    assert not engine._stop_event.is_set()
     engine.stop()
-    assert engine._running is False
+    assert engine._stop_event.is_set()
 
 
 def test_get_active_alerts_limit(db_mock):

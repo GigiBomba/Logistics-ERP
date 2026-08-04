@@ -25,9 +25,11 @@ import logging
 import re
 from typing import Optional
 
-from PySide6.QtCore import QObject, Qt, QThread, Signal
+from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, Qt, QThread, Signal
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QLineEdit,
@@ -40,7 +42,14 @@ from PySide6.QtWidgets import (
 from client.auth import Auth
 from client.auth_manager import set_auth
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_ACCENT_HOVER, COLOR_ACCENT_PRIMARY, COLOR_BG_BASE, COLOR_BG_CARD,
+    COLOR_BG_HOVER, COLOR_BG_OVERLAY, COLOR_BORDER_MEDIUM, COLOR_ERROR_DEFAULT,
+    COLOR_TEXT_PRIMARY, COLOR_TEXT_TERTIARY, COLOR_TEXT_WHITE,
+    FADE_MS, FONT_SIZE_LG, FONT_SIZE_MD, FONT_WEIGHT_BOLD, RADIUS_SM,
+    SPACE_2, SPACE_3, SPACE_6, SPACE_8,
+)
+from ui.design_tokens import SP as S
 
 logger = logging.getLogger(__name__)
 
@@ -102,14 +111,33 @@ class QtLoginDialog(QDialog):
         self._thread: Optional[QThread] = None
         self._build_ui()
 
+        # ── Fade-in effect ─────────────────────────────────────────────
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_effect)
+        self._opacity_effect.setOpacity(0.0)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """Fade in the dialog on show."""
+        super().showEvent(event)
+        self._fade_anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        self._fade_anim.setDuration(FADE_MS)
+        self._fade_anim.setStartValue(0.0)
+        self._fade_anim.setEndValue(1.0)
+        self._fade_anim.setEasingCurve(QEasingCurve.OutCubic)
+        self._fade_anim.start()
+        # Clean up reference after animation completes
+        self._fade_anim.finished.connect(self._fade_anim.deleteLater)
+
     # ── UI construction ──────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
-        self.setWindowTitle(t("admin.login_title", default="Admin Login"))
+        self.setWindowTitle(t("admin.login_title", default="Log-In"))
+        self.setAccessibleName("Login")
+        self.setAccessibleDescription("Admin authentication dialog with email and password")
         self.setMinimumSize(400, 260)
         self.setMaximumSize(500, 320)
         self.setWindowModality(Qt.ApplicationModal)
-        self.setStyleSheet(f"QDialog {{ background-color: {COLORS['bg_base']}; }}")
+        self.setStyleSheet(f"QDialog {{ background-color: {COLOR_BG_BASE}; }}")
 
         # Root layout
         root_layout = QVBoxLayout(self)
@@ -117,7 +145,7 @@ class QtLoginDialog(QDialog):
         root_layout.setSpacing(S["3"])
 
         # ── Title (persistent across both stacked pages) ─────────────────
-        title = QLabel(t("admin.login_title", default="Admin Login"), self)
+        title = QLabel(t("admin.login_title", default="Log-In"), self)
         title.setProperty("fontRole", "h3")
         title.setAlignment(Qt.AlignCenter)
         root_layout.addWidget(title)
@@ -135,7 +163,7 @@ class QtLoginDialog(QDialog):
         # ── Shared error label (below the stack) ─────────────────────────
         self._error_label = QLabel("", self)
         self._error_label.setProperty("fontRole", "small")
-        self._error_label.setStyleSheet(f"color: {COLORS['danger']};")
+        self._error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT};")
         self._error_label.setWordWrap(True)
         self._error_label.setVisible(False)
         root_layout.addWidget(self._error_label)
@@ -144,11 +172,12 @@ class QtLoginDialog(QDialog):
         self._cancel_btn = QPushButton(
             t("admin.cancel", default="Cancel"), self
         )
+        self._cancel_btn.setAccessibleName("Cancel")
         self._cancel_btn.setStyleSheet(
-            f"QPushButton {{ padding: 8px 24px; border: 1px solid {COLORS['border']}; "
-            f"border-radius: 4px; background: {COLORS['bg_card']}; "
-            f"color: {COLORS['text_primary']}; }}"
-            f"QPushButton:hover {{ background: {COLORS['bg_hover']}; }}"
+            f"QPushButton {{ padding: {SPACE_2}px {SPACE_6}px; border: 1px solid {COLOR_BORDER_MEDIUM}; "
+            f"border-radius: {RADIUS_SM}px; background: {COLOR_BG_CARD}; "
+            f"color: {COLOR_TEXT_PRIMARY}; }}"
+            f"QPushButton:hover {{ background: {COLOR_BG_HOVER}; }}"
         )
         self._cancel_btn.clicked.connect(self.reject)
         root_layout.addWidget(self._cancel_btn)
@@ -168,11 +197,13 @@ class QtLoginDialog(QDialog):
         layout.addWidget(email_label)
 
         self._email_input = QLineEdit(page)
+        self._email_input.setAccessibleName("Email address")
+        self._email_input.setAccessibleDescription("Enter your email address to log in")
         self._email_input.setPlaceholderText(t("admin.email_placeholder", default="admin@example.com"))
         self._email_input.setStyleSheet(
-            f"QLineEdit {{ padding: 8px; border: 1px solid {COLORS['border']}; "
-            f"border-radius: 4px; background: {COLORS['bg_input']}; "
-            f"color: {COLORS['text_primary']}; font-size: 14px; }}"
+            f"QLineEdit {{ padding: {SPACE_2}px; border: 1px solid {COLOR_BORDER_MEDIUM}; "
+            f"border-radius: {RADIUS_SM}px; background: {COLOR_BG_OVERLAY}; "
+            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_MD}px; }}"
         )
         self._email_input.returnPressed.connect(self._on_next_clicked)
         layout.addWidget(self._email_input)
@@ -183,10 +214,10 @@ class QtLoginDialog(QDialog):
             t("admin.next", default="Next \u2192"), page
         )
         next_btn.setStyleSheet(
-            f"QPushButton {{ padding: 10px 32px; border: none; border-radius: 4px; "
-            f"background: {COLORS['accent']}; color: #FFFFFF; font-weight: bold; "
-            f"font-size: 14px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
+            f"QPushButton {{ padding: {SPACE_3}px {SPACE_8}px; border: none; border-radius: {RADIUS_SM}px; "
+            f"background: {COLOR_ACCENT_PRIMARY}; color: {COLOR_TEXT_WHITE}; font-weight: {FONT_WEIGHT_BOLD}; "
+            f"font-size: {FONT_SIZE_LG}px; }}"
+            f"QPushButton:hover {{ background: {COLOR_ACCENT_HOVER}; }}"
         )
         next_btn.clicked.connect(self._on_next_clicked)
         layout.addWidget(next_btn)
@@ -214,12 +245,13 @@ class QtLoginDialog(QDialog):
         layout.addWidget(pw_label)
 
         self._password_input = QLineEdit(page)
+        self._password_input.setAccessibleName("Password")
         self._password_input.setEchoMode(QLineEdit.EchoMode.Password)
         self._password_input.setPlaceholderText(t("admin.password_placeholder", default="············"))
         self._password_input.setStyleSheet(
-            f"QLineEdit {{ padding: 8px; border: 1px solid {COLORS['border']}; "
-            f"border-radius: 4px; background: {COLORS['bg_input']}; "
-            f"color: {COLORS['text_primary']}; font-size: 14px; }}"
+            f"QLineEdit {{ padding: {SPACE_2}px; border: 1px solid {COLOR_BORDER_MEDIUM}; "
+            f"border-radius: {RADIUS_SM}px; background: {COLOR_BG_OVERLAY}; "
+            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_MD}px; }}"
         )
         self._password_input.returnPressed.connect(self._on_login_clicked)
         layout.addWidget(self._password_input)
@@ -236,10 +268,10 @@ class QtLoginDialog(QDialog):
             t("admin.back", default="\u2190 Back"), btn_row
         )
         back_btn.setStyleSheet(
-            f"QPushButton {{ padding: 10px 24px; border: 1px solid {COLORS['border']}; "
-            f"border-radius: 4px; background: {COLORS['bg_card']}; "
-            f"color: {COLORS['text_primary']}; font-size: 14px; }}"
-            f"QPushButton:hover {{ background: {COLORS['bg_hover']}; }}"
+            f"QPushButton {{ padding: {SPACE_3}px {SPACE_6}px; border: 1px solid {COLOR_BORDER_MEDIUM}; "
+            f"border-radius: {RADIUS_SM}px; background: {COLOR_BG_CARD}; "
+            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_LG}px; }}"
+            f"QPushButton:hover {{ background: {COLOR_BG_HOVER}; }}"
         )
         back_btn.clicked.connect(self._on_back_clicked)
         btn_layout.addWidget(back_btn)
@@ -247,13 +279,14 @@ class QtLoginDialog(QDialog):
         self._login_btn = QPushButton(
             t("admin.login_button", default="Login"), btn_row
         )
+        self._login_btn.setAccessibleName("Login")
         self._login_btn.setStyleSheet(
-            f"QPushButton {{ padding: 10px 32px; border: none; border-radius: 4px; "
-            f"background: {COLORS['accent']}; color: #FFFFFF; font-weight: bold; "
-            f"font-size: 14px; }}"
-            f"QPushButton:hover {{ background: {COLORS['accent_hover']}; }}"
-            f"QPushButton:disabled {{ background: {COLORS['bg_disabled']}; "
-            f"color: {COLORS['text_muted']}; }}"
+            f"QPushButton {{ padding: {SPACE_3}px {SPACE_8}px; border: none; border-radius: {RADIUS_SM}px; "
+            f"background: {COLOR_ACCENT_PRIMARY}; color: {COLOR_TEXT_WHITE}; font-weight: {FONT_WEIGHT_BOLD}; "
+            f"font-size: {FONT_SIZE_LG}px; }}"
+            f"QPushButton:hover {{ background: {COLOR_ACCENT_HOVER}; }}"
+            f"QPushButton:disabled {{ background: {COLOR_BG_OVERLAY}; "
+            f"color: {COLOR_TEXT_TERTIARY}; }}"
         )
         self._login_btn.setDefault(True)
         self._login_btn.clicked.connect(self._on_login_clicked)

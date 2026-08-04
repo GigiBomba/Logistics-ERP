@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.components import EmptyState
-from ui.theme import COLORS, S
+from ui.design_tokens import COLOR_TEXT_PRIMARY, SP
 from ui.widgets import ActionButton
 from utils.dates import parse_date
 
@@ -33,9 +33,9 @@ _DONE_STATUSES = frozenset({
 
 # Map trip status to chip colour token.
 _STATUS_COLORS: dict[str, str] = {
-    "Planned":   COLORS["chip_planned"],
-    "Loading":   COLORS["chip_loading"],
-    "In Transit": COLORS["chip_transit"],
+    "Planned":   "#1c1917",
+    "Loading":   "#341a00",
+    "In Transit": "#0f1f4a",
 }
 
 
@@ -62,8 +62,8 @@ class QtDispatchTimeline(QWidget):
         self._content = QWidget()
         self._content.setObjectName("timelineContent")
         self._layout = QVBoxLayout(self._content)
-        self._layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        self._layout.setSpacing(S["1"])
+        self._layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        self._layout.setSpacing(SP["1"])
         self._layout.setAlignment(Qt.AlignTop)
 
         self._scroll.setWidget(self._content)
@@ -99,7 +99,7 @@ class QtDispatchTimeline(QWidget):
             f"{t('dispatch_board.timeline_now')}: {now_str}"
         )
         header_label.setProperty("fontRole", "accent")
-        header_label.setContentsMargins(S["2"], 0, 0, 0)
+        header_label.setContentsMargins(SP["2"], 0, 0, 0)
         self._layout.addWidget(header_label)
 
         # ── Divider ──────────────────────────────────────────────────────
@@ -113,7 +113,7 @@ class QtDispatchTimeline(QWidget):
         header_row = QFrame()
         header_row.setContentsMargins(0, 0, 0, 0)
         header_layout = QHBoxLayout(header_row)
-        header_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
+        header_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
         header_layout.setSpacing(0)
 
         truck_header = QLabel(t("common.truck_label", default="Truck"))
@@ -182,8 +182,8 @@ class QtDispatchTimeline(QWidget):
         row.setProperty("role", "card")
         row.setContentsMargins(0, 0, 0, 0)
         row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
-        row_layout.setSpacing(S["1"])
+        row_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
+        row_layout.setSpacing(SP["1"])
 
         # ── Truck plate label ────────────────────────────────────────────
         plate_label = QLabel(plate)
@@ -219,7 +219,7 @@ class QtDispatchTimeline(QWidget):
         status = trip.get("status", "Planned")
 
         # Resolve colour.
-        bar_color = _STATUS_COLORS.get(status, COLORS["chip_planned"])
+        bar_color = _STATUS_COLORS.get(status, "#1c1917")
 
         # Format the date range label.
         dep_dt = parse_date(dep_raw, "%d/%m/%Y")
@@ -239,13 +239,13 @@ class QtDispatchTimeline(QWidget):
         )
 
         bar_bar_layout = QHBoxLayout(bar)
-        bar_bar_layout.setContentsMargins(S["2"], 0, S["2"], 0)
+        bar_bar_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
         bar_bar_layout.setSpacing(0)
 
         bar_label = QLabel(label)
         bar_label.setProperty("fontRole", "small")
         bar_label.setStyleSheet(
-            f"background-color: transparent; color: {COLORS['text_primary']};"
+            f"background-color: transparent; color: {COLOR_TEXT_PRIMARY};"
         )
         bar_label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         bar_bar_layout.addWidget(bar_label)

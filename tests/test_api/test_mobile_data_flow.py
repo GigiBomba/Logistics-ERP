@@ -235,10 +235,18 @@ def _ensure_test_db() -> None:
 
 
 def _cleanup_test_db() -> None:
-    """Remove all test database files created by this module."""
-    for f in glob.glob(os.path.join(_TEST_DB_DIR, "test_mobile_flow_*.db*")):
+    """Remove this worker's own test database files.
+
+    Only the exact ``_TEST_DB_PATH`` is removed.  Under pytest-xdist the
+    same module runs in several worker processes, each with its own
+    UUID-based DB file; globbing the module prefix would delete the DB
+    file another worker is actively using (spurious "unknown user"
+    login failures).
+    """
+    for suffix in ("", "-wal", "-shm"):
+        p = _TEST_DB_PATH + suffix
         try:
-            os.remove(f)
+            os.remove(p)
         except (PermissionError, FileNotFoundError):
             pass
 

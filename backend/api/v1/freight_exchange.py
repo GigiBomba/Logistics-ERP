@@ -66,6 +66,53 @@ class SearchRequest(BaseModel):
     min_trucks: Optional[int] = None
 
 
+class FreightLoadListItem(BaseModel):
+    """Provider-agnostic load-board list item (blueprint §6.3).
+
+    Mirrors the mobile ``FreightLoad`` model in ``freight_load.dart`` field
+    for field — NO provider-specific field names (no TIMOCOM/Trans.eu
+    identifiers leak into this contract).  ``distance_km`` is a string to
+    match the Dart model's ``String? distanceKm`` parsing exactly.
+    """
+
+    id: str
+    origin: str = ""
+    destination: str = ""
+    cargo_type: Optional[str] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    pickup_date: Optional[str] = None
+    deadline_date: Optional[str] = None
+    weight_kg: Optional[float] = None
+    distance_km: Optional[str] = None
+
+
+def _to_freight_load_item(load) -> FreightLoadListItem:
+    """Map a provider ``LoadSearchResult`` to the provider-agnostic list item."""
+    price = load.price
+    pickup_window = getattr(load, "pickup_window", None) or ()
+    delivery_window = getattr(load, "delivery_window", None) or ()
+    pickup_date = (
+        pickup_window[0].isoformat() if pickup_window else (load.loading_date or None)
+    )
+    deadline_date = (
+        delivery_window[1].isoformat() if delivery_window else (load.unloading_date or None)
+    )
+    distance_km = getattr(load, "distance_km", None)
+    return FreightLoadListItem(
+        id=load.result_id or f"{load.provider_id}:{load.provider_load_id}",
+        origin=load.origin or "",
+        destination=load.destination or "",
+        cargo_type=getattr(load, "trailer_type", None) or None,
+        price=float(price.amount) if price is not None else None,
+        currency=price.currency if price is not None else None,
+        pickup_date=pickup_date,
+        deadline_date=deadline_date,
+        weight_kg=getattr(load, "weight_kg", 0.0) or None,
+        distance_km=(str(round(distance_km, 1)) if distance_km else None),
+    )
+
+
 class SaveSearchRequest(BaseModel):
     label: str
     filters: dict
@@ -342,6 +389,66 @@ async def refresh_search(
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Load-board LIST (blueprint §6.3 — provider-agnostic mobile contract)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/loads", response_model=list[FreightLoadListItem])
+async def list_loads(
+    origin: Optional[str] = Query(None, description="Loading place filter"),
+    destination: Optional[str] = Query(None, description="Unloading place filter"),
+    date: Optional[str] = Query(None, description="Single pickup date filter (ISO YYYY-MM-DD)"),
+    cargo_type: Optional[str] = Query(None, description="Trailer/cargo type filter"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """List freight loads across connected providers (provider-agnostic).
+
+    Mobile load-board contract (§6.3): every item is a ``FreightLoadListItem``
+    with provider-agnostic fields mirroring the mobile ``FreightLoad`` model —
+    no TIMOCOM/Trans.eu-specific field names ever reach this response.
+
+    Company-scoped: ``company_id`` comes from the JWT only, never from query
+    params or the body.  Filters (origin, destination, date, cargo_type) are
+    all optional; when no ``date`` is given the pickup window defaults to a
+    3-week rolling window around today so the load board is never empty.
+    """
+    from datetime import date as _date_type  # noqa: A004 (param shadows module)
+
+    company_id = current_user["company_id"]
+
+    today = _date_type.today()
+    if date:
+        try:
+            filter_from = _date_type.fromisoformat(date)
+            filter_to = filter_from
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid 'date' filter — expected ISO YYYY-MM-DD.",
+            )
+    else:
+        from datetime import timedelta
+
+        filter_from = today - timedelta(days=7)
+        filter_to = today + timedelta(days=14)
+
+    filters = LoadSearchFilters(
+        origin=GeoFilter(location=origin, radius_km=50) if origin else None,
+        destination=GeoFilter(location=destination, radius_km=30) if destination else None,
+        pickup_date_from=filter_from,
+        pickup_date_to=filter_to,
+        trailer_type=[cargo_type] if cargo_type else None,
+    )
+
+    search_svc = SearchEngineService(db)
+    result_set = await search_svc.search_loads(company_id=company_id, filters=filters)
+
+    return [_to_freight_load_item(r) for r in result_set.results[:limit]]
 
 
 # ═══════════════════════════════════════════════════════════════════════════

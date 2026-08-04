@@ -3,10 +3,12 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 from unittest.mock import MagicMock, call, patch
 
 import pytest
 
+from models.common import ServiceResult
 from services.document_service import DocumentService
 
 
@@ -21,14 +23,19 @@ def mock_db():
 @pytest.fixture
 def doc_service(mock_db):
     with patch("services.document_service.DocumentRepository") as mock_repo_cls, \
-         patch("services.document_service.EventBus") as mock_eb_cls:
+         patch("services.document_service.EventBus") as mock_eb_cls, \
+         patch("services.document_service.PermissionService") as mock_perm_cls:
         mock_repo = MagicMock()
         mock_repo_cls.return_value = mock_repo
         mock_eb = MagicMock()
         mock_eb_cls.return_value = mock_eb
+        mock_perm = MagicMock()
+        mock_perm.can_upload_document.return_value = MagicMock(allowed=True)
+        mock_perm_cls.return_value = mock_perm
         svc = DocumentService(mock_db)
         svc._repo = mock_repo
         svc._event_bus = mock_eb
+        svc._perm = mock_perm
         return svc
 
 
@@ -38,7 +45,7 @@ class TestUpload:
         mock_svc.validate_file.return_value = (True, None)
         doc_service._services["upload"] = mock_svc
 
-        ok, err = doc_service.validate_file("/path/doc.pdf")
+        ok, err = doc_service._services["upload"].validate_file("/path/doc.pdf")
         assert ok is True
 
     def test_upload_creates_and_enqueues_ocr(self, doc_service, mock_db):
@@ -53,8 +60,13 @@ class TestUpload:
             "id": 42, "file_path": "/docs/test.pdf", "mime_type": "application/pdf",
         }
 
-        doc_id = doc_service.upload("/path/source.pdf")
-        assert doc_id == 42
+        from models.document_models import DocumentUpload
+        result = doc_service.upload_document(
+            DocumentUpload(source_path="/path/source.pdf"),
+            user_id=0,
+        )
+        assert result.success
+        assert result.data.id == 42
         mock_upload.upload.assert_called_once()
         mock_ocr.enqueue_ocr.assert_called_once_with(42, "/docs/test.pdf", "application/pdf")
 
@@ -67,8 +79,13 @@ class TestUpload:
             "id": 42, "file_path": "/docs/doc.txt", "mime_type": "text/plain",
         }
 
-        doc_id = doc_service.upload("/path/doc.txt")
-        assert doc_id == 42
+        from models.document_models import DocumentUpload
+        result = doc_service.upload_document(
+            DocumentUpload(source_path="/path/doc.txt"),
+            user_id=0,
+        )
+        assert result.success
+        assert result.data.id == 42
 
     def test_batch_upload_delegates(self, doc_service):
         mock_upload = MagicMock()
@@ -205,7 +222,16 @@ class TestEmail:
             "title": "Test Doc", "file_name": "test.pdf",
             "doc_number": "DOC-001",
         }
-        smtp_config = {
+        mock_prefs = MagicMock()
+        mock_prefs.get_smtp_config.return_value = {
+            "smtp_server": "smtp.example.com",
+            "smtp_port": "587",
+            "smtp_user": "user",
+            "smtp_password": "pass",
+        }
+
+        mock_prefs = MagicMock()
+        mock_prefs.get_smtp_config.return_value = {
             "smtp_server": "smtp.example.com",
             "smtp_port": "587",
             "smtp_user": "user",
@@ -213,13 +239,14 @@ class TestEmail:
         }
 
         with patch("services.document_service.os.path.isfile", return_value=True), \
+             patch("services.preferences.PreferencesManager", return_value=mock_prefs), \
              patch("services.operations.notification_center.NotificationCenter") as mock_nc_cls:
             mock_nc = MagicMock()
-            mock_nc.send_email.return_value = True
+            mock_nc.send_email.return_value = ServiceResult(success=True)
             mock_nc_cls.return_value = mock_nc
 
-            result = doc_service.email_document(1, "recipient@example.com", smtp_config=smtp_config)
-            assert result is True
+            result = doc_service.email_document(1, "recipient@example.com", user_id=0)
+            assert result.success
             mock_nc.send_email.assert_called_once()
             args, _ = mock_nc.send_email.call_args
             assert "recipient@example.com" in args
@@ -229,16 +256,20 @@ class TestEmail:
             "id": 1, "file_path": "/docs/missing.pdf",
         }
         with patch("os.path.isfile", return_value=False):
-            result = doc_service.email_document(1, "recipient@example.com")
-            assert result is False
+            result = doc_service.email_document(1, "recipient@example.com", user_id=0)
+            assert not result.success
 
     def test_email_document_fails_without_smtp(self, doc_service):
         doc_service._repo.get_by_id.return_value = {
             "id": 1, "file_path": "/docs/test.pdf",
         }
-        with patch("os.path.isfile", return_value=True):
-            result = doc_service.email_document(1, "recipient@example.com", smtp_config=None)
-            assert result is False
+        mock_prefs = MagicMock()
+        mock_prefs.get_smtp_config.return_value = None
+
+        with patch("os.path.isfile", return_value=True), \
+             patch("services.preferences.PreferencesManager", return_value=mock_prefs):
+            result = doc_service.email_document(1, "recipient@example.com", user_id=0)
+            assert not result.success
 
 
 class TestDownloadZip:
@@ -749,19 +780,23 @@ class TestEmailExtended:
             "smtp_user": "user",
             "smtp_password": "pass",
         }
+
         with patch("services.document_service.os.path.isfile", return_value=True), \
+             patch("services.preferences.PreferencesManager", return_value=mock_prefs), \
              patch("services.operations.notification_center.NotificationCenter") as mock_nc_cls:
             mock_nc = MagicMock()
-            mock_nc.send_email.return_value = True
+            mock_nc.send_email.return_value = ServiceResult(success=True)
             mock_nc_cls.return_value = mock_nc
-            result = doc_service.email_document(1, "recipient@example.com", prefs=mock_prefs)
-            assert result is True
+            result = doc_service.email_document(1, "recipient@example.com", user_id=0)
+            assert result.success
             mock_nc.send_email.assert_called_once()
 
     def test_email_document_no_doc(self, doc_service):
         doc_service._repo.get_by_id.return_value = None
-        result = doc_service.email_document(999, "test@example.com")
-        assert result is False
+        with patch("services.document_service.PermissionService") as mock_perm:
+            mock_perm.return_value.can_email_document.return_value = MagicMock(allowed=True)
+            result = doc_service.email_document(999, "test@example.com", user_id=0)
+            assert not result.success
 
 
 class TestAuditLog:
@@ -786,8 +821,13 @@ class TestUploadExtended:
         doc_service._repo.get_by_id.return_value = {
             "id": 42, "file_path": "/docs/img.png", "mime_type": "image/png",
         }
-        doc_id = doc_service.upload("/path/img.png")
-        assert doc_id == 42
+        from models.document_models import DocumentUpload
+        result = doc_service.upload_document(
+            DocumentUpload(source_path="/path/img.png"),
+            user_id=0,
+        )
+        assert result.success
+        assert result.data.id == 42
         mock_ocr.enqueue_ocr.assert_called_once_with(42, "/docs/img.png", "image/png")
 
     def test_upload_does_not_enqueue_ocr_if_no_doc_id(self, doc_service):
@@ -796,6 +836,10 @@ class TestUploadExtended:
         doc_service._services["upload"] = mock_upload
         mock_ocr = MagicMock()
         doc_service._services["ocr"] = mock_ocr
-        doc_id = doc_service.upload("/path/file.pdf")
-        assert doc_id is None
+        from models.document_models import DocumentUpload
+        result = doc_service.upload_document(
+            DocumentUpload(source_path="/path/file.pdf"),
+            user_id=0,
+        )
+        assert not result.success
         mock_ocr.enqueue_ocr.assert_not_called()

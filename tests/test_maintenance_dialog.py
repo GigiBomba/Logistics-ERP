@@ -35,7 +35,12 @@ from ui.widgets import ActionButton, StyledTableWidget
 def maint_view(qt_widget, qtbot):
     """Provide a QtMaintenanceView with fully mocked service layer."""
     db = MagicMock()
-    view = QtMaintenanceView(parent=qt_widget, db=db, truck_id=5, truck_plate="AB-12-34")
+    with patch("ui.dialogs.maintenance_view.FleetMaintenanceService") as mock_svc_cls:
+        mock_svc = MagicMock()
+        mock_svc.get_schedules.return_value = []
+        mock_svc.predict_next_service.return_value = {}
+        mock_svc_cls.return_value = mock_svc
+        view = QtMaintenanceView(parent=qt_widget, db=db, truck_id=5, truck_plate="AB-12-34")
     qtbot.addWidget(view)
     yield view
     view.close()
@@ -179,7 +184,8 @@ class TestQtMaintenanceViewRecords:
         maint_view.service.get_records.return_value = mock_records
         maint_view._load_records()
         # Simulate row double-click signal
-        maint_view._on_record_double_clicked(mock_records[0])
+        with patch("ui.dialogs.maintenance_view.QMessageBox.information"):
+            maint_view._on_record_double_clicked(mock_records[0])
         # Should show a QMessageBox — not crashing is sufficient
 
 
@@ -247,29 +253,30 @@ class TestQtMaintenanceViewHealth:
         for key in ("overall", "compliance", "overdue", "recurring", "downtime"):
             assert key in maint_view._health_cards
 
-    def test_health_detail_label_exists(self, maint_view):
-        assert maint_view._health_detail is not None
+    def test_health_cards_exist_after_load(self, maint_view):
+        # Cards are created during _build_ui (via __init__)
+        assert len(maint_view._health_cards) == 5
 
     def test_load_health_sets_card_values(self, maint_view, mock_health):
-        maint_view._vm.get_health.return_value = mock_health
-        with patch.object(maint_view, "_load_records"):
-            with patch.object(maint_view, "_load_schedules"):
-                maint_view._load_health()
+        with patch.object(maint_view._vm, "get_health", return_value=mock_health):
+            with patch.object(maint_view, "_load_records"):
+                with patch.object(maint_view, "_load_schedules"):
+                    maint_view._load_health()
         # Cards should have values set
         assert "78" in maint_view._health_cards["overall"].value_label.text()
 
     def test_load_health_with_overdue_warning(self, maint_view, mock_health):
-        maint_view._vm.get_health.return_value = mock_health
-        with patch.object(maint_view, "_load_records"):
-            with patch.object(maint_view, "_load_schedules"):
-                maint_view._load_health()
-        text = maint_view._health_detail.text()
-        assert "2" in text or "overdue" in text.lower()
+        with patch.object(maint_view._vm, "get_health", return_value=mock_health):
+            with patch.object(maint_view, "_load_records"):
+                with patch.object(maint_view, "_load_schedules"):
+                    maint_view._load_health()
+        # Health cards should be visible (no empty state)
+        assert not maint_view._health_empty_state.isVisible()
 
     def test_load_health_handles_exception(self, maint_view):
-        maint_view._vm.get_health.side_effect = ValueError("Error")
-        # Should not raise
-        maint_view._load_health()
+        with patch.object(maint_view._vm, "get_health", side_effect=ValueError("Error")):
+            # Should not raise
+            maint_view._load_health()
 
     def test_health_card_count_matches(self, maint_view):
         assert len(maint_view._health_cards) == 5
@@ -315,8 +322,9 @@ class TestQtMaintenanceViewScheduleCrud:
                 mock_add.assert_called_once()
 
     def test_edit_schedule_dialog(self, maint_view):
-        with patch.object(maint_view, "_selected_schedule", return_value=10):
-            maint_view.service._fleet_repo.get_maintenance_schedule.return_value = None
+        with patch.object(maint_view, "_selected_schedule", return_value=10), \
+             patch.object(maint_view.service, "_fleet_repo") as mock_repo:
+            mock_repo.get_maintenance_schedule.return_value = None
             maint_view.service.get_schedules.return_value = [
                 {"id": 10, "maintenance_type": "oil_change"}
             ]
@@ -336,15 +344,19 @@ class TestQtMaintenanceViewScheduleCrud:
                     mock_upd.assert_called_once()
 
     def test_deactivate_schedule(self, maint_view):
-        with patch.object(maint_view, "_selected_schedule", return_value=10):
-            with patch("ui.dialogs.maintenance_view.QMessageBox.question", return_value=16):  # QMessageBox.Yes
+        from PySide6.QtWidgets import QMessageBox
+        with patch.object(maint_view, "_selected_schedule", return_value=10), \
+             patch.object(maint_view.service, "_fleet_repo"):
+            with patch("ui.dialogs.maintenance_view.QMessageBox.question", return_value=QMessageBox.Yes):
                 with patch.object(maint_view.service, "update_schedule") as mock_upd:
                     maint_view._deactivate_schedule()
                     mock_upd.assert_called_once_with(schedule_id=10, active=0)
 
     def test_deactivate_schedule_declined(self, maint_view):
-        with patch.object(maint_view, "_selected_schedule", return_value=10):
-            with patch("ui.dialogs.maintenance_view.QMessageBox.question", return_value=65536):  # QMessageBox.No
+        from PySide6.QtWidgets import QMessageBox
+        with patch.object(maint_view, "_selected_schedule", return_value=10), \
+             patch.object(maint_view.service, "_fleet_repo"):
+            with patch("ui.dialogs.maintenance_view.QMessageBox.question", return_value=QMessageBox.No):
                 with patch.object(maint_view.service, "update_schedule") as mock_upd:
                     maint_view._deactivate_schedule()
                     mock_upd.assert_not_called()

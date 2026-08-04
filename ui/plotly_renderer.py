@@ -199,11 +199,23 @@ def _fallback_svg(width: int, height: int, message: str) -> bytes:
 # ── Empty / error figure factories ─────────────────────────────────
 
 
-def empty_figure(message: str = "") -> go.Figure:
+def empty_figure(
+    message: str = "",
+    width: int = 420,
+    height: int = 170,
+) -> go.Figure:
     """Return a placeholder Plotly figure for no-data or empty states.
 
     The figure displays *message* centered on a dark background with
     hidden axes — visually identical to the old matplotlib empty state.
+
+    Parameters
+    ----------
+    message : str
+        Text to display (default: translated "common.no_data").
+    width, height : int
+        Figure dimensions in CSS pixels.  The chart widget may override
+        these at render time to match its container.
     """
     if not message:
         message = _t("common.no_data")
@@ -220,6 +232,8 @@ def empty_figure(message: str = "") -> go.Figure:
     )
     fig.update_layout(
         template="operion_dark",
+        width=width,
+        height=height,
         xaxis={"visible": False, "fixedrange": True},
         yaxis={"visible": False, "fixedrange": True},
         margin={"l": 10, "r": 10, "t": 10, "b": 10},

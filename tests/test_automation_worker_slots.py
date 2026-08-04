@@ -34,8 +34,12 @@ def _new_db():
 def _make_view():
     _ensure_qapp()
     db, path = _new_db()
+    from repositories.pipeline_repository import PipelineRepository
     from ui.views.automation_view import QtAutomationView
-    view = QtAutomationView(None, db=db, prefs=None, ops=None)
+    view = QtAutomationView(
+        None, db=db, prefs=None, ops=None,
+        pipeline_repo=PipelineRepository(db),
+    )
     return view, db, path
 
 

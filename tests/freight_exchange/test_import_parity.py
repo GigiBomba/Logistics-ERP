@@ -111,11 +111,18 @@ def db():
 
 @pytest.fixture(autouse=True)
 def _clear_registry():
-    """Clear the adapter registry before each test so fake adapters
-    from one test don't leak into another."""
+    """Clear the adapter registry before AND after each test so fake
+    adapters (registered at module import via @register_freight_provider)
+    don't leak into another test or into a test that runs in isolation."""
     before = dict(_registry)
+    # Pre-test cleanup: drop fakes registered at module import time so
+    # TestRegistryCleanup passes when this module runs in isolation.
+    _registry.clear()
+    for k, v in before.items():
+        if k == "timocom":
+            _registry[k] = v
     yield
-    # Restore only non-fake adapters (timocom)
+    # Post-test cleanup: restore only non-fake adapters (timocom)
     _registry.clear()
     for k, v in before.items():
         if k == "timocom":

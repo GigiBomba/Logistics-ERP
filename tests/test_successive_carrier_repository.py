@@ -13,7 +13,11 @@ import pytest
 
 @pytest.fixture
 def db():
-    return InMemoryDB()
+    from database.tenant_context import clear_context
+    clear_context()
+    _db = InMemoryDB()
+    yield _db
+    clear_context()
 
 
 @pytest.fixture
@@ -22,6 +26,15 @@ def repo(db) -> SuccessiveCarrierRepository:
 
 
 # ── helpers ──────────────────────────────────────────────────────────
+
+
+def _trip(db: InMemoryDB, trip_id: int = 1) -> None:
+    """Insert a minimal trip row so FK constraints on successive_carriers.trip_id are satisfied."""
+    db.conn.execute(
+        "INSERT OR IGNORE INTO trips (id, status, created_at, company_id) VALUES (?, 'Planned', datetime('now'), 1)",
+        (trip_id,),
+    )
+    db.conn.commit()
 
 
 def _carrier(db: InMemoryDB, **kw) -> int:
@@ -53,6 +66,7 @@ def _carrier(db: InMemoryDB, **kw) -> int:
 
 class TestGetByTrip:
     def test_get_by_trip_returns_ordered_by_sequence(self, db, repo):
+        _trip(db, 50)
         _carrier(db, trip_id=50, sequence_order=2, carrier_name="Second")
         _carrier(db, trip_id=50, sequence_order=1, carrier_name="First")
         _carrier(db, trip_id=50, sequence_order=3, carrier_name="Third")
@@ -69,7 +83,8 @@ class TestGetByTrip:
 
 
 class TestCreate:
-    def test_create_inserts_row(self, repo):
+    def test_create_inserts_row(self, db, repo):
+        _trip(db, 10)
         cid = repo.create(
             {
                 "trip_id": 10,
@@ -98,6 +113,7 @@ class TestCreate:
 
 class TestUpdate:
     def test_update_changes_fields(self, db, repo):
+        _trip(db, 1)
         cid = _carrier(db, carrier_name="Old Name", vehicle_plate="OLD-01")
         repo.update(cid, {"carrier_name": "Updated Name", "vehicle_plate": "NEW-01"})
         row = db.conn.execute(
@@ -112,6 +128,7 @@ class TestUpdate:
 
 class TestDelete:
     def test_delete_removes_single_record(self, db, repo):
+        _trip(db, 20)
         cid = _carrier(db, trip_id=20, carrier_name="ToDelete")
         repo.delete(cid)
         row = db.conn.execute(
@@ -120,6 +137,7 @@ class TestDelete:
         assert row is None
 
     def test_delete_by_trip_removes_all(self, db, repo):
+        _trip(db, 30)
         _carrier(db, trip_id=30, sequence_order=1, carrier_name="A")
         _carrier(db, trip_id=30, sequence_order=2, carrier_name="B")
         _carrier(db, trip_id=30, sequence_order=3, carrier_name="C")
@@ -135,6 +153,7 @@ class TestDelete:
 
 class TestReplaceForTrip:
     def test_replace_for_trip_replaces_all(self, db, repo):
+        _trip(db, 40)
         _carrier(db, trip_id=40, sequence_order=1, carrier_name="Old A")
         _carrier(db, trip_id=40, sequence_order=2, carrier_name="Old B")
         new_carriers = [
@@ -158,6 +177,7 @@ class TestReplaceForTrip:
         assert seqs == [1, 2, 3]
 
     def test_replace_for_trip_empty_list_clears_all(self, db, repo):
+        _trip(db, 50)
         _carrier(db, trip_id=50, sequence_order=1, carrier_name="ToClear")
         _carrier(db, trip_id=50, sequence_order=2, carrier_name="AlsoClear")
         repo.replace_for_trip(50, [])

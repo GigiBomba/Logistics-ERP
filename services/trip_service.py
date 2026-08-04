@@ -6,6 +6,8 @@ Write operations include permission checks and business validation
 are provided with deprecation warnings.
 """
 
+from __future__ import annotations
+
 import logging
 import warnings
 from typing import Any, Optional, Union
@@ -126,11 +128,15 @@ class TripService:
     # New typed API
     # ═════════════════════════════════════════════════════════════════════
 
-    def create(self, request: TripCreate, user_id: int = 0) -> TripCreateResult:
+    def create(self, request: TripCreate, user_id: int = 0, company_id=None) -> TripCreateResult:
         """Create a new trip from a validated TripCreate model.
 
         Performs permission and business validation before persisting.
         Returns a ``ServiceResult`` wrapping the created ``TripResult``.
+
+        ``company_id`` (resolved from the JWT by the API layer) is stamped on
+        the row at insert time — the request model has no company_id field,
+        so a client can never self-assign a tenant.
         """
         logger.info("Creating trip: client_id=%s", request.client_id)
 
@@ -155,6 +161,8 @@ class TripService:
 
             # ── Persist ────────────────────────────────────────────────
             data = _model_to_db(request.model_dump(exclude_none=True))
+            if company_id:
+                data["company_id"] = company_id
             new_id = self._trip_repo.create(data)
             self._event_bus.publish(TRIP_CREATED, {"trip_id": new_id, "data": data})
             AuditService(self.db).log(
@@ -220,7 +228,14 @@ class TripService:
             logger.info("Updating trip (deprecated dict path): trip_id=%s, changes=%s",
                         trip_id, {k: v for k, v in request.items() if k != '_csrf_token'})
             try:
-                self._trip_repo.update(trip_id, dict(request))
+                # Tenant scoping: never update a trip outside the caller's
+                # company (company_id resolved from the JWT by the API layer).
+                if company_id is not None and not self._trip_repo.get_by_id(trip_id, company_id=company_id):
+                    return ServiceResult(
+                        success=False,
+                        errors=[ErrorDetail(message=f"Trip {trip_id} not found", code="not_found")],
+                    )
+                self._trip_repo.update(trip_id, dict(request), company_id=company_id)
                 self._event_bus.publish(TRIP_UPDATED, {"trip_id": trip_id, "changes": request})
                 AuditService(self.db).log(
                     event_type="trip.updated",
@@ -270,15 +285,22 @@ class TripService:
             if trip_update.driver_id is not None:
                 self._validate_external_refs(driver_id=trip_update.driver_id)
 
+            # ── Tenant scoping: the trip must belong to the caller's company ──
+            if company_id is not None and not self._trip_repo.get_by_id(trip_id, company_id=company_id):
+                return ServiceResult(
+                    success=False,
+                    errors=[ErrorDetail(message=f"Trip {trip_id} not found", code="not_found")],
+                )
+
             # ── Persist ────────────────────────────────────────────────
-            data = _model_to_db(trip_update.model_dump(exclude_none=True, exclude_unset=True))
+            data = _model_to_db(trip_update.model_dump(exclude_unset=True))
             if not data:
                 return ServiceResult(
                     success=False,
                     errors=[ErrorDetail(message="No fields to update", code="empty_update")],
                 )
 
-            self._trip_repo.update(trip_id, data)
+            self._trip_repo.update(trip_id, data, company_id=company_id)
             self._event_bus.publish(TRIP_UPDATED, {"trip_id": trip_id, "changes": data})
             AuditService(self.db).log(
                 event_type="trip.updated",
@@ -318,7 +340,7 @@ class TripService:
                 errors=[ErrorDetail(message=str(e), code="internal_error")],
             )
 
-    def get(self, trip_id: int, driver_id: int | None = None) -> TripCreateResult:
+    def get(self, trip_id: int, driver_id: Optional[int] = None) -> TripCreateResult:
         """Fetch a single trip by ID, returning a ``ServiceResult``.
 
         When ``driver_id`` is provided, the trip is only returned if it is
@@ -387,15 +409,16 @@ class TripService:
                 )
 
         try:
-            # Fetch data before deleting so we can return it
-            row = self._trip_repo.get_by_id(trip_id)
+            # Fetch data before deleting so we can return it.  The fetch is
+            # company-scoped: cross-tenant deletes surface as "not found".
+            row = self._trip_repo.get_by_id(trip_id, company_id=company_id)
             if not row:
                 return ServiceResult(
                     success=False,
                     errors=[ErrorDetail(message=f"Trip {trip_id} not found", code="not_found")],
                 )
 
-            self._trip_repo.delete(trip_id)
+            self._trip_repo.delete(trip_id, company_id=company_id)
             self._event_bus.publish(TRIP_DELETED, {"trip_id": trip_id})
             AuditService(self.db).log(
                 event_type="trip.deleted",
@@ -487,16 +510,25 @@ class TripService:
     # ═════════════════════════════════════════════════════════════════════
 
     def get_filtered(self, search: str = "", status: str = "", limit: int = 200, company_id=None) -> list[dict[str, Any]]:
-        return self._trip_repo.get_filtered(search=search, truck="", status=status, limit=limit)
+        return self._trip_repo.get_filtered(search=search, truck="", status=status, limit=limit, company_id=company_id)
 
     def get_by_id(self, trip_id: int, company_id=None) -> Optional[dict[str, Any]]:
-        return self._trip_repo.get_by_id(trip_id)
+        return self._trip_repo.get_by_id(trip_id, company_id=company_id)
 
-    def get_by_statuses(self, statuses: list[str]) -> list[dict[str, Any]]:
-        return self._trip_repo.get_by_statuses(statuses)
+    def get_by_statuses(self, statuses: list[str], limit: int | None = None) -> list[dict[str, Any]]:
+        return self._trip_repo.get_by_statuses(statuses, limit=limit)
 
     def get_all(self, limit: int = 500) -> list[dict[str, Any]]:
         return self._trip_repo.get_all(limit=limit)
+
+    def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4, company_id=None) -> list[dict[str, Any]]:
+        """Return top trucks by revenue for a date range.
+
+        ``company_id`` (resolved from the JWT by the API layer) scopes the
+        query explicitly; when omitted the repository falls back to the
+        tenant-context filter (desktop/local path).
+        """
+        return self._trip_repo.get_top_trucks_by_revenue(month_start, month_end, limit, company_id=company_id)
 
     def update_cmr_fields(self, trip_id: int, cmr_number: str, cmr_seq: int, user_id: int = 0) -> None:
         self._trip_repo.update_cmr_fields(trip_id, cmr_number, cmr_seq)

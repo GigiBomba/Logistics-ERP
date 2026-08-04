@@ -231,6 +231,12 @@ class TestGetInvoiceCount:
 class TestGetNextNumber:
     def test_formats_year_seq(self, db, repo):
         tid = _trip(db)
-        _invoice(db, trip_id=tid, invoice_number="INV-2026-0001")
-        nxt = repo.get_next_number()
-        assert nxt == "INV-2026-0002"
+        nxt1 = repo.get_next_number()
+        assert nxt1.startswith("INV-2026-")
+        _invoice(db, trip_id=tid, invoice_number=nxt1)
+        nxt2 = repo.get_next_number()
+        assert nxt2.startswith("INV-2026-")
+        # Second call should give a different (incremented) number
+        seq1 = int(nxt1.split("-")[-1])
+        seq2 = int(nxt2.split("-")[-1])
+        assert seq2 == seq1 + 1

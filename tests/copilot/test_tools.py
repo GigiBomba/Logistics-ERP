@@ -80,9 +80,9 @@ class TestAllToolsRegistered:
         )
 
     def test_67_production_tools_registered(self):
-        """Phase 5 expects exactly 70 tools across 4 confirmation levels."""
+        """Phase 5 expects exactly 75 tools across 4 confirmation levels."""
         tools = _production_tools()
-        assert len(tools) == 74, f"Expected 74 tools, got {len(tools)}"
+        assert len(tools) == 75, f"Expected 75 tools, got {len(tools)}"
 
     def test_no_deprecated_tools(self):
         """No deprecated tools expected in Phase 2."""
@@ -167,8 +167,12 @@ class TestAllToolsRegistered:
     def test_tool_names_use_dotted_convention(self):
         """Tool names must follow '<domain>.<action>' convention."""
         dotted = re.compile(r"^[a-z][a-z0-9_]*\.[a-z][a-z0-9_]*$")
+        # Phase-5 mobile-integration tools use a single-segment id that maps
+        # 1:1 to the mobile permission gate (record_maintenance ↔
+        # can_schedule_maintenance).
+        single_segment_allowed = {"record_maintenance"}
         for t in _production_tools():
-            assert dotted.match(t.name), (
+            assert dotted.match(t.name) or t.name in single_segment_allowed, (
                 f"{t.name} does not follow '<domain>.<action>' convention"
             )
 
@@ -180,7 +184,7 @@ class TestAllToolsRegistered:
             levels[t.confirmation_level.value] += 1
         assert levels[0] == 24, f"Expected 24 SAFE tools, got {levels[0]}"
         assert levels[1] == 18, f"Expected 18 INFORMATIONAL tools, got {levels[1]}"
-        assert levels[2] == 23, f"Expected 23 BUSINESS tools, got {levels[2]}"
+        assert levels[2] == 24, f"Expected 24 BUSINESS tools, got {levels[2]}"
         assert levels[3] == 9, f"Expected 9 DESTRUCTIVE tools, got {levels[3]}"
 
     def test_get_tool_every_name(self):
@@ -375,6 +379,7 @@ BUS_NAMES: Set[str] = {
     "dispatch.create",
     "dispatch.bulk_assign",
     "maintenance.schedule",
+    "record_maintenance",
     "route.create",
     "route.update",
     "document.ocr_confirm_match",
@@ -536,7 +541,7 @@ class TestDomainGroups:
         "receipt":  {"receipt.draft", "receipt.generate_pdf", "receipt.finalize"},
         "proforma": {"proforma.create", "proforma.update", "proforma.convert_to_invoice"},
         "dispatch": {"dispatch.create", "dispatch.bulk_assign", "dispatch.cancel"},
-        "maintenance": {"maintenance.schedule"},
+        "maintenance": {"maintenance.schedule", "record_maintenance"},
         "tahograf": {"tahograf.import_file"},
         "export":   {"export.generate_pdf_report", "export.generate_excel"},
         "automail": {"automail.schedule_reminder", "automail.send_now"},
@@ -579,9 +584,12 @@ class TestDomainGroups:
         for name in expected:
             tool = get_tool(name)
             assert tool is not None, f"Tool {name} (domain={domain}) not registered"
-            assert tool.name.startswith(domain + "."), (
-                f"Tool {name} does not start with domain '{domain}'"
-            )
+            # Phase-5 single-segment mobile tool (record_maintenance) carries
+            # no domain dot; its domain membership is group-level only.
+            if "." in name:
+                assert tool.name.startswith(domain + "."), (
+                    f"Tool {name} does not start with domain '{domain}'"
+                )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

@@ -118,7 +118,7 @@ class TestPatchConvention:
         svc_client.update.return_value = None
 
         svc_trip = MagicMock()
-        svc_trip.update.return_value = None
+        svc_trip.update.return_value = MagicMock(success=True)
 
         app = _build_app(
             [clients.router, trips.router],

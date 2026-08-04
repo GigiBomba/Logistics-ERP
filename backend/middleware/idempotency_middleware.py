@@ -21,6 +21,13 @@ _idempotency_store: dict[str, tuple[float, int, str, str]] = {}  # key → (expi
 _store_lock = asyncio.Lock()
 _IDEMPOTENCY_TTL = 86400  # 24 hours
 
+# Per-key serialization locks.  Concurrent requests that carry the SAME
+# ``Idempotency-Key`` are serialized on this lock so exactly ONE request
+# executes the underlying mutation while the others replay the cached
+# response.  Different keys never block each other.  Locks are pruned
+# together with their store entry by ``cleanup_expired_entries()``.
+_key_locks: dict[str, asyncio.Lock] = {}
+
 
 # ---------------------------------------------------------------------------
 # Redis-backed store (primary)
@@ -172,8 +179,32 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         # Hash the key to prevent storing raw keys
         key_hash = hashlib.sha256(idempotency_key.encode()).hexdigest()
 
+        # Serialize concurrent requests carrying the same key within this
+        # process.  Without this, two simultaneous requests with the same
+        # key can both miss the store check before either one caches its
+        # response — allowing the underlying mutation to run twice.
+        # The lock is per-key, so requests with different keys never
+        # contend.  Multi-worker deployments additionally rely on Redis
+        # (see _process_with_key) for cross-process deduplication.
+        lock = _key_locks.setdefault(key_hash, asyncio.Lock())
+        async with lock:
+            return await self._process_with_key(
+                request, call_next, key_hash, idempotency_key
+            )
+
+    async def _process_with_key(
+        self, request: Request, call_next, key_hash: str, idempotency_key: str
+    ):
         # ── 1. Try Redis first (shared across workers) ────────────────
         if self._redis_store.available:
+            # ⚠ CROSS-PROCESS RACE: this GET is followed by a SETEX below,
+            # and the two are NOT atomic.  Two workers handling the same
+            # Idempotency-Key concurrently can both miss here and both
+            # execute the mutation.  The per-process ``_key_locks`` only
+            # serialises workers within THIS process.
+            #   Real fix (separate work item): an atomic ``SET NX GET``
+            #   (Redis 7.0+) or a Lua script that performs the
+            #   get-if-exists / set-if-absent in one round-trip.
             redis_result = self._redis_store.get(key_hash)
             if redis_result is not None:
                 status, content_type, body = redis_result
@@ -244,3 +275,4 @@ def cleanup_expired_entries():
     ]
     for k in expired:
         del _idempotency_store[k]
+        _key_locks.pop(k, None)

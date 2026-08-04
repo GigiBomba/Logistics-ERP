@@ -9,22 +9,25 @@ from typing import Any
 
 _log = logging.getLogger(__name__)
 
+import qtawesome as qta
 from PySide6.QtCore import Qt
 from PySide6.QtGui import QPixmap
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QPushButton,
     QScrollArea,
     QVBoxLayout,
     QWidget,
 )
 
 from services.i18n import t
-from ui.components import EmptyState, KPICard
+from ui.components import EmptyState, IconButton, KPICard
 from ui.design_tokens import (
     ACCENT,
     BG_BASE,
+    BG_ELEVATED,
     BG_SURFACE,
     BORDER_DEFAULT,
     BORDER_FAINT,
@@ -262,6 +265,8 @@ class BaseTab(QWidget):
         super().__init__(parent)
         self._svc = service
         self._figs: list = []
+        self._chart_widgets: list = []
+        self._grid_visible = True
 
         # Signature of the data last rendered.  ``refresh()`` becomes a
         # no-op when this matches the current signature, so navigating
@@ -500,6 +505,37 @@ class BaseTab(QWidget):
             text_col.addWidget(sub)
         hdr.addLayout(text_col)
         hdr.addStretch()
+
+        # ── Grid toggle button ───────────────────────────────────
+        self._grid_btn = QPushButton(header)
+        self._grid_btn.setIcon(qta.icon("fa5s.th", color=TEXT_SECONDARY))
+        self._grid_btn.setToolTip(t("analytics.toggle_grid", default="Toggle chart grid"))
+        self._grid_btn.setFixedSize(28, 28)
+        self._grid_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self._grid_btn.setStyleSheet(
+            f"QPushButton {{"
+            f" background: transparent;"
+            f" border: 1px solid {BORDER_FAINT};"
+            f" border-radius: 4px;"
+            f" padding: 2px;"
+            f" }}"
+            f"QPushButton:hover {{"
+            f" background: {BG_ELEVATED};"
+            f" border-color: {BORDER_DEFAULT};"
+            f" }}"
+        )
+        self._grid_btn.clicked.connect(self._toggle_grid)
+
+        # ── Export button ────────────────────────────────────────
+        self._export_btn = IconButton(
+            header,
+            icon_name="fa5s.download",
+            tooltip=t("analytics.export_chart", default="Export chart as PNG"),
+            variant="ghost",
+            command=self._export_chart,
+        )
+        hdr.addWidget(self._export_btn)
+        hdr.addWidget(self._grid_btn)
         self._content_layout.addWidget(header)
 
         # Subtle hairline divider under header
@@ -950,6 +986,30 @@ class BaseTab(QWidget):
             len(self.findChildren(PlotlyChartWidget))
             + len(self.findChildren(_SparklineLabel))
         )
+
+    # ── Grid toggle ──────────────────────────────────────────────────
+
+    def _toggle_grid(self) -> None:
+        """Toggle chart grid lines on/off for all PlotlyChartWidget instances."""
+        self._grid_visible = not self._grid_visible
+        for chart_widget in self.findChildren(PlotlyChartWidget):
+            try:
+                chart_widget.fig.update_xaxes(showgrid=self._grid_visible)
+                chart_widget.fig.update_yaxes(showgrid=self._grid_visible)
+                chart_widget.render()
+            except Exception:
+                _log.exception("Failed to toggle grid on chart widget")
+
+    def _export_chart(self) -> None:
+        """Export the first Plotly chart found in this tab as a PNG file."""
+        from PySide6.QtWidgets import QFileDialog
+        for chart in self.findChildren(PlotlyChartWidget):
+            path, _ = QFileDialog.getSaveFileName(
+                self, "Export Chart", "", "PNG (*.png)"
+            )
+            if path:
+                chart.fig.write_image(path, scale=2)
+                break  # export only the first chart for simplicity
 
     def _on_chart_rendered(self, _widget) -> None:
         """Called by ``PlotlyChartWidget`` / ``_SparklineLabel`` on render delivery.

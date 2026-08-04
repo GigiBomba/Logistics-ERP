@@ -12,7 +12,7 @@ import os
 import uuid
 from typing import Any
 
-from PySide6.QtCore import QPoint, QRect, QSize, Qt, QUrl, Signal
+from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QPainter
 from PySide6.QtWidgets import (
     QCheckBox,
@@ -33,6 +33,7 @@ from PySide6.QtWidgets import (
 
 from services.fleet_service import FleetService
 from services.i18n import register_listener, t, unregister_listener
+from ui.performance_timer import PerfTimer
 from services.operations.event_bus import (
     TRUCK_CREATED,
     TRUCK_DELETED,
@@ -52,11 +53,15 @@ from services.route_state import RouteStateManager
 from services.stop_factory import normalize_existing_stop
 from ui.components import (
     Btn,
+    Card,
+    EmptyState,
     Label,
     PageTitle,
     get_icon,
 )
+from ui.worker_pool import WorkerPool
 from ui.design_tokens import (
+    BTN_HEIGHT_SM,
     COLOR_ACCENT_HOVER,
     COLOR_ACCENT_PRIMARY,
     COLOR_BG_ELEVATED,
@@ -69,14 +74,29 @@ from ui.design_tokens import (
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
+    COLOR_TEXT_WHITE,
+    COLOR_WARNING_DEFAULT,
+    FONT_SIZE_BASE,
+    FONT_SIZE_LG,
+    FONT_SIZE_MD,
+    FONT_SIZE_SM,
+    FONT_SIZE_XS,
     FONT_WEIGHT_MEDIUM,
     FONT_WEIGHT_REGULAR,
     FONT_WEIGHT_SEMIBOLD,
+    HOVER_MS,
+    INPUT_HEIGHT,
+    RADIUS_MD,
+    RADIUS_PILL,
+    RADIUS_SM,
     SP,
+    SPACE_1,
+    SPACE_12,
     SPACE_2,
+    SPACE_3,
+    SPACE_5,
 )
 from ui.map import MapWidget, QtRouteMapRenderer
-from ui.theme import COLORS
 from ui.widgets import (
     StyledComboBox,
 )
@@ -93,7 +113,7 @@ def make_section_header(text: str) -> QWidget:
 
     label = QLabel(text.upper())
     label.setStyleSheet(
-        f"color: {COLOR_TEXT_TERTIARY}; font-size: 10px; font-weight: 600; letter-spacing: 0.08em;"
+        f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; letter-spacing: 0.08em;"
     )
 
     line = QFrame()
@@ -108,18 +128,18 @@ def make_section_header(text: str) -> QWidget:
 def make_toggle_row(label_text: str, checked: bool = False) -> QCheckBox:
     cb = QCheckBox(label_text)
     cb.setChecked(checked)
-    cb.setFixedHeight(28)
+    cb.setFixedHeight(BTN_HEIGHT_SM)
     cb.setStyleSheet(f"""
         QCheckBox {{
             color: {COLOR_TEXT_SECONDARY};
-            font-size: 12px;
+            font-size: {FONT_SIZE_BASE}px;
             font-weight: {FONT_WEIGHT_REGULAR};
             spacing: 8px;
         }}
         QCheckBox:hover {{ color: {COLOR_TEXT_PRIMARY}; }}
         QCheckBox::indicator {{
             width: 16px; height: 16px;
-            border-radius: 4px;
+            border-radius: {RADIUS_SM}px;
             border: 1px solid {COLOR_BORDER_MEDIUM};
             background: {COLOR_BG_OVERLAY};
         }}
@@ -134,12 +154,12 @@ def make_toggle_row(label_text: str, checked: bool = False) -> QCheckBox:
 
 def make_result_pill(value: str, label: str) -> QFrame:
     pill = QFrame()
-    pill.setFixedHeight(48)
+    pill.setFixedHeight(SPACE_12)
     pill.setStyleSheet(f"""
         QFrame {{
             background: {COLOR_BG_OVERLAY};
             border: 1px solid {COLOR_BORDER_SUBTLE};
-            border-radius: 6px;
+            border-radius: {RADIUS_MD}px;
         }}
     """)
     pl = QVBoxLayout(pill)
@@ -148,11 +168,11 @@ def make_result_pill(value: str, label: str) -> QFrame:
 
     val_lbl = QLabel(value)
     val_lbl.setStyleSheet(
-        f"color: {COLOR_TEXT_PRIMARY}; font-size: 13px; font-weight: {FONT_WEIGHT_SEMIBOLD}; border: none; background: transparent;"
+        f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_MD}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; border: none; background: transparent;"
     )
     lbl_w = QLabel(label)
     lbl_w.setStyleSheet(
-        f"color: {COLOR_TEXT_TERTIARY}; font-size: 10px; border: none; background: transparent;"
+        f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px; border: none; background: transparent;"
     )
 
     pl.addWidget(val_lbl)
@@ -180,14 +200,14 @@ class WaypointRow(QWidget):
 
         self.field = QLineEdit()
         self.field.setPlaceholderText(placeholder)
-        self.field.setFixedHeight(32)
+        self.field.setFixedHeight(INPUT_HEIGHT)
         self.field.setStyleSheet(f"""
             QLineEdit {{
                 background: {COLOR_BG_OVERLAY};
                 border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: 4px;
+                border-radius: {RADIUS_SM}px;
                 color: {COLOR_TEXT_PRIMARY};
-                font-size: 12px;
+                font-size: {FONT_SIZE_BASE}px;
                 padding: 0 10px;
             }}
             QLineEdit:focus {{
@@ -204,15 +224,15 @@ class WaypointRow(QWidget):
 
         if show_remove:
             remove_btn = QPushButton("\u00d7")
-            remove_btn.setFixedSize(20, 20)
+            remove_btn.setFixedSize(SPACE_5, SPACE_5)
             remove_btn.setStyleSheet(f"""
                 QPushButton {{
                     background: transparent;
                     color: {COLOR_TEXT_TERTIARY};
                     border: none;
-                    font-size: 14px;
-                    font-weight: 400;
-                    border-radius: 3px;
+                    font-size: {FONT_SIZE_MD}px;
+                    font-weight: {FONT_WEIGHT_REGULAR};
+                    border-radius: {RADIUS_SM}px;
                 }}
                 QPushButton:hover {{
                     color: {COLOR_TEXT_PRIMARY};
@@ -226,7 +246,7 @@ class WaypointRow(QWidget):
 class WaypointConnector(QWidget):
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setFixedHeight(8)
+        self.setFixedHeight(SPACE_2)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -243,7 +263,7 @@ def make_country_chip(country_code: str) -> QWidget:
     chip.setStyleSheet(f"""
         background: {COLOR_BG_OVERLAY};
         border: 1px solid {COLOR_BORDER_MEDIUM};
-        border-radius: 11px;
+        border-radius: {RADIUS_PILL}px;
     """)
     row = QHBoxLayout(chip)
     row.setContentsMargins(8, 0, 6, 0)
@@ -251,14 +271,14 @@ def make_country_chip(country_code: str) -> QWidget:
 
     lbl = QLabel(country_code)
     lbl.setStyleSheet(
-        f"color: {COLOR_TEXT_PRIMARY}; font-size: 10px; font-weight: 600; background: transparent; border: none;"
+        f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_XS}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; background: transparent; border: none;"
     )
     remove = QPushButton("\u00d7")
     remove.setFixedSize(14, 14)
     remove.setStyleSheet(f"""
         QPushButton {{
             background: transparent; border: none;
-            color: {COLOR_TEXT_TERTIARY}; font-size: 11px;
+            color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px;
         }}
         QPushButton:hover {{ color: {COLOR_ERROR_DEFAULT}; }}
     """)
@@ -268,39 +288,39 @@ def make_country_chip(country_code: str) -> QWidget:
     return chip
 
 
-LEAFLET_DARK_CSS = """
-.leaflet-control-zoom {
+LEAFLET_DARK_CSS = f"""
+.leaflet-control-zoom {{
     border: none !important;
     box-shadow: none !important;
-}
-.leaflet-control-zoom a {
-    background-color: #141416 !important;
-    color: #F0F0F3 !important;
-    border: 1px solid #2A2A30 !important;
-    border-radius: 6px !important;
+}}
+.leaflet-control-zoom a {{
+    background-color: {COLOR_BG_ELEVATED} !important;
+    color: {COLOR_TEXT_PRIMARY} !important;
+    border: 1px solid {COLOR_BORDER_SUBTLE} !important;
+    border-radius: {RADIUS_MD}px !important;
     width: 28px !important;
     height: 28px !important;
     line-height: 28px !important;
-    font-size: 16px !important;
-    font-weight: 400 !important;
+    font-size: {FONT_SIZE_LG}px !important;
+    font-weight: {FONT_WEIGHT_REGULAR} !important;
     display: block !important;
-    margin-bottom: 4px !important;
+    margin-bottom: {SPACE_1}px !important;
     text-align: center !important;
-    transition: background 0.1s ease;
-}
-.leaflet-control-zoom a:hover {
-    background-color: #222226 !important;
-    color: #6366F1 !important;
-    border-color: #38383F !important;
-}
-.leaflet-control-attribution {
+    transition: background {HOVER_MS}ms ease;
+}}
+.leaflet-control-zoom a:hover {{
+    background-color: {COLOR_BG_HOVER} !important;
+    color: {COLOR_ACCENT_PRIMARY} !important;
+    border-color: {COLOR_BORDER_MEDIUM} !important;
+}}
+.leaflet-control-attribution {{
     background: rgba(20, 20, 22, 0.7) !important;
-    color: #5A5A6E !important;
-    font-size: 9px !important;
-    border-top-left-radius: 4px !important;
+    color: {COLOR_TEXT_TERTIARY} !important;
+    font-size: {FONT_SIZE_XS}px !important;
+    border-top-left-radius: {RADIUS_SM}px !important;
     padding: 2px 6px !important;
-}
-.leaflet-control-attribution a { color: #6366F1 !important; }
+}}
+.leaflet-control-attribution a {{ color: {COLOR_ACCENT_PRIMARY} !important; }}
 """
 
 
@@ -420,6 +440,12 @@ class QtRoutePlannerView(QWidget):
         self._event_bus.subscribe(TRUCK_DELETED, self._on_truck_event)
         self._event_subscribed = True
 
+        # Defer MapWidget construction so the view switch is instant.
+        # Initialize to None so method guards don't crash before lazy init runs.
+        self.map_widget = None
+        self._map_renderer = None
+        QTimer.singleShot(0, self._lazy_init_map)
+
     def _on_truck_event(self, _event_data: Any) -> None:
         """Refresh the truck dropdown when a truck is created,
         updated, or deleted elsewhere.  Keeps the user's current
@@ -442,6 +468,8 @@ class QtRoutePlannerView(QWidget):
     LEAFLET_CSS_INJECTED = False
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Route planner")
+        self.setAccessibleDescription("Route planning with map and sidebar controls")
         outer = QVBoxLayout(self)
         outer.setContentsMargins(0, 0, 0, 0)
         outer.setSpacing(0)
@@ -463,7 +491,7 @@ class QtRoutePlannerView(QWidget):
 
         # ── Left Panel (TASK 1) ──
         panel = QFrame()
-        panel.setMinimumWidth(280)
+        panel.setMinimumWidth(320)
         panel.setObjectName("route_panel")
         panel.setStyleSheet(f"""
             QFrame#route_panel {{
@@ -483,8 +511,8 @@ class QtRoutePlannerView(QWidget):
         scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         scroll_area.setStyleSheet(f"""
             QScrollArea {{ background: transparent; border: none; }}
-            QScrollBar:vertical {{ width: 4px; background: transparent; }}
-            QScrollBar::handle:vertical {{ background: {COLOR_BORDER_MEDIUM}; border-radius: 2px; min-height: 20px; }}
+            QScrollBar:vertical {{ width: {SPACE_1}px; background: transparent; }}
+            QScrollBar::handle:vertical {{ background: {COLOR_BORDER_MEDIUM}; border-radius: 2px; min-height: {SPACE_5}px; }}
             QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
         """)
 
@@ -512,64 +540,159 @@ class QtRoutePlannerView(QWidget):
 
         content.addWidget(panel)
 
-        # Map
-        self.map_widget = MapWidget(self._content_widget)
-        self._map_renderer = QtRouteMapRenderer(self.map_widget)
-        self.map_widget.set_click_callback(self._on_map_click)
+        # Map — placeholder widget replaced lazily to avoid synchronous
+        # QWebEngineView startup (~270 ms) in _build_ui().
+        self.map_widget = QWidget()
+        ph_layout = QVBoxLayout(self.map_widget)
+        ph_layout.setAlignment(Qt.AlignCenter)
+        ph_label = QLabel(t("route.loading_map", default="Loading map\u2026"))
+        ph_label.setStyleSheet(
+            f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_LG}px;"
+        )
+        ph_layout.addWidget(ph_label)
         self.map_widget.setMinimumWidth(1)
         self._click_to_add_enabled = False
         content.addWidget(self.map_widget, 1)
 
         outer.addWidget(self._content_widget, 1)
 
-        # Inject dark Leaflet CSS after map loads
-        self.map_widget.loadFinished.connect(self._inject_map_styles)
-
         # Build sidebar content
         self._build_sidebar_content(scroll_layout, button_bar_layout)
 
-    def _build_sidebar_content(self, sl: QVBoxLayout, bl: QVBoxLayout) -> None:
-        # ── TASK 2: Section Header — ROUTE ──
-        sl.addWidget(make_section_header(t("route.section.smart_route")))
+    def _lazy_init_map(self) -> None:
+        """Create the real MapWidget lazily, replacing the placeholder.
 
-        # ── TASK 3: Waypoint Inputs ──
+        Called once via QTimer.singleShot(0, …) at the end of __init__
+        to avoid paying the ~270 ms cost of QWebEngineView + Folium HTML
+        generation synchronously during _build_ui().
+        """
+        if self._map_renderer is not None:
+            return  # Already initialised
+
+        content_layout = self._content_widget.layout()
+
+        # Remove ALL non-panel widgets from the content layout.
+        # This handles both the initial placeholder and any orphaned
+        # MapWidget left behind after shutdown/wakeup (where the C++
+        # object was destroyed but the widget was never removed from
+        # the layout — causing a 50/50 split between "Loading map…"
+        # and the real map).
+        if content_layout is not None:
+            for i in range(content_layout.count() - 1, -1, -1):
+                item = content_layout.itemAt(i)
+                w = item.widget() if item else None
+                if w is not None and w.objectName() != "route_panel":
+                    content_layout.removeWidget(w)
+                    w.deleteLater()
+
+        # Create the real widget
+        self.map_widget = MapWidget(self._content_widget)
+        self._map_renderer = QtRouteMapRenderer(self.map_widget)
+        self.map_widget.set_click_callback(self._on_map_click)
+        self.map_widget.setMinimumWidth(1)
+        if content_layout is not None:
+            content_layout.addWidget(self.map_widget, 1)
+        self.map_widget.loadFinished.connect(self._inject_map_styles)
+
+    def _make_collapsible_card(
+        self, title: str, body: QWidget, expanded: bool = True
+    ) -> tuple[QFrame, QPushButton]:
+        """Build a collapsible Card with a clickable header that toggles the body.
+
+        Returns (card_frame, header_button).
+        """
+        card = Card()
+        card.layout().setContentsMargins(0, 0, 0, 0)
+        card.layout().setSpacing(0)
+
+        # Header row
+        header = QPushButton()
+        header.setFixedHeight(36)
+        header.setCursor(Qt.PointingHandCursor)
+        header.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: {COLOR_TEXT_SECONDARY};
+                font-size: {FONT_SIZE_SM}px;
+                font-weight: {FONT_WEIGHT_SEMIBOLD};
+                text-align: left;
+                padding: 0 {SPACE_3}px;
+                border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+            }}
+            QPushButton:hover {{
+                color: {COLOR_TEXT_PRIMARY};
+                background: {COLOR_BG_HOVER};
+            }}
+        """)
+        # Arrow + title
+        arrow = "\u25BC" if expanded else "\u25B6"
+        header.setText(f"{arrow}  {title.upper()}")
+
+        body.setVisible(expanded)
+
+        def _toggle():
+            expanded_new = not body.isVisible()
+            body.setVisible(expanded_new)
+            new_arrow = "\u25BC" if expanded_new else "\u25B6"
+            header.setText(f"{new_arrow}  {title.upper()}")
+
+        header.clicked.connect(_toggle)
+
+        card.layout().addWidget(header)
+        card.layout().addWidget(body)
+        return card, header
+
+    def _build_sidebar_content(self, sl: QVBoxLayout, bl: QVBoxLayout) -> None:
+        # ═══ CARD 1: Route (waypoints + add-stop button) ═══
+        route_body = QWidget()
+        route_body_layout = QVBoxLayout(route_body)
+        route_body_layout.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
+        route_body_layout.setSpacing(0)
+
         self._stops_container = QWidget()
         self._stops_container_layout = QVBoxLayout(self._stops_container)
         self._stops_container_layout.setContentsMargins(0, 0, 0, 0)
         self._stops_container_layout.setSpacing(0)
         self._stops_container_layout.setAlignment(Qt.AlignTop)
-        sl.addWidget(self._stops_container)
+        route_body_layout.addWidget(self._stops_container)
 
-        # "+ Adaugă Stop" button
         add_stop_btn = QPushButton(f"+ {t('route.add_stop')}")
-        add_stop_btn.setFixedHeight(28)
+        add_stop_btn.setFixedHeight(BTN_HEIGHT_SM)
         add_stop_btn.setCursor(Qt.PointingHandCursor)
         add_stop_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent;
                 color: {COLOR_ACCENT_PRIMARY};
                 border: none;
-                font-size: 11px;
+                font-size: {FONT_SIZE_SM}px;
                 font-weight: {FONT_WEIGHT_MEDIUM};
                 text-align: left;
-                padding-left: 18px;
+                padding-left: 0;
             }}
             QPushButton:hover {{
                 color: {COLOR_ACCENT_HOVER};
             }}
         """)
         add_stop_btn.clicked.connect(self._add_stop_field)
-        sl.addWidget(add_stop_btn)
+        route_body_layout.addWidget(add_stop_btn)
 
-        # Remove "Elimină Stop" — removal is via × on each waypoint row
+        sl.addSpacing(4)
+        card1, _ = self._make_collapsible_card(
+            t("route.section.smart_route"), route_body, expanded=True
+        )
+        sl.addWidget(card1)
 
-        # ── TASK 4: Options Section ──
-        sl.addWidget(make_section_header(t("route.section.options")))
+        # ═══ CARD 2: Constraints (truck, profile, countries, toggles) ═══
+        constraints_body = QWidget()
+        constraints_layout = QVBoxLayout(constraints_body)
+        constraints_layout.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
+        constraints_layout.setSpacing(8)
 
         # Truck selector: label + [combo + refresh button]
         truck_label = QLabel(t("route.select_truck"))
-        truck_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};")
-        sl.addWidget(truck_label)
+        truck_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        constraints_layout.addWidget(truck_label)
 
         truck_combo_row = QWidget()
         tcr_layout = QHBoxLayout(truck_combo_row)
@@ -577,14 +700,14 @@ class QtRoutePlannerView(QWidget):
         tcr_layout.setSpacing(4)
 
         self.truck_combo = StyledComboBox()
-        self.truck_combo.setFixedHeight(32)
+        self.truck_combo.setFixedHeight(INPUT_HEIGHT)
         self.truck_combo.setStyleSheet(f"""
             QComboBox {{
                 background: {COLOR_BG_OVERLAY};
                 border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: 4px;
+                border-radius: {RADIUS_SM}px;
                 color: {COLOR_TEXT_PRIMARY};
-                font-size: 12px;
+                font-size: {FONT_SIZE_BASE}px;
                 padding: 0 10px;
             }}
             QComboBox:focus {{ border-color: {COLOR_ACCENT_PRIMARY}; }}
@@ -593,7 +716,7 @@ class QtRoutePlannerView(QWidget):
             QComboBox QAbstractItemView {{
                 background: {COLOR_BG_OVERLAY};
                 border: 1px solid {COLOR_BORDER_MEDIUM};
-                border-radius: 6px;
+                border-radius: {RADIUS_MD}px;
                 color: {COLOR_TEXT_PRIMARY};
                 selection-background-color: {COLOR_BG_HOVER};
             }}
@@ -602,7 +725,7 @@ class QtRoutePlannerView(QWidget):
         tcr_layout.addWidget(self.truck_combo, 1)
 
         self._truck_refresh_btn = QPushButton("\u21bb")
-        self._truck_refresh_btn.setFixedSize(28, 28)
+        self._truck_refresh_btn.setFixedSize(BTN_HEIGHT_SM, BTN_HEIGHT_SM)
         self._truck_refresh_btn.setToolTip(t("common.refresh", default="Refresh"))
         self._truck_refresh_btn.setCursor(Qt.PointingHandCursor)
         self._truck_refresh_btn.setStyleSheet(f"""
@@ -610,8 +733,8 @@ class QtRoutePlannerView(QWidget):
                 background: transparent;
                 color: {COLOR_TEXT_TERTIARY};
                 border: none;
-                font-size: 14px;
-                border-radius: 4px;
+                font-size: {FONT_SIZE_MD}px;
+                border-radius: {RADIUS_SM}px;
             }}
             QPushButton:hover {{
                 color: {COLOR_TEXT_PRIMARY};
@@ -621,59 +744,65 @@ class QtRoutePlannerView(QWidget):
         self._truck_refresh_btn.clicked.connect(self._load_trucks)
         tcr_layout.addWidget(self._truck_refresh_btn)
 
-        sl.addWidget(truck_combo_row)
-        sl.addSpacing(12)
+        constraints_layout.addWidget(truck_combo_row)
 
         # Route profile
         profile_label = QLabel(t("route.profile_label"))
-        profile_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};")
-        sl.addWidget(profile_label)
+        profile_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        constraints_layout.addWidget(profile_label)
 
         self._rebuild_profile_display_names()
         self.profile_combo = StyledComboBox(values=list(self._profile_key_to_display.values()))
-        self.profile_combo.setFixedHeight(32)
+        self.profile_combo.setFixedHeight(INPUT_HEIGHT)
         self.profile_combo.setStyleSheet(self.truck_combo.styleSheet())
         self.profile_combo.setCurrentText(self._profile_key_to_display.get("Recommended", "Recommended"))
-        sl.addWidget(self.profile_combo)
+        constraints_layout.addWidget(self.profile_combo)
 
-        # ── TASK 5: Excluded Countries as Chips ──
-        sl.addWidget(make_section_header(t("route.section.excluded_countries")))
+        # Excluded Countries
+        countries_label = QLabel(t("route.section.excluded_countries"))
+        countries_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        constraints_layout.addWidget(countries_label)
 
         self._chips_container = QWidget()
         self._chips_container.setStyleSheet("background: transparent;")
         self._chips_container_layout = QVBoxLayout(self._chips_container)
         self._chips_container_layout.setContentsMargins(0, 0, 0, 0)
         self._chips_container_layout.setSpacing(4)
-        sl.addWidget(self._chips_container)
+        constraints_layout.addWidget(self._chips_container)
 
         add_country_btn = QPushButton(f"+ {t('route.add_country')}")
         add_country_btn.setCursor(Qt.PointingHandCursor)
         add_country_btn.setStyleSheet(f"""
             QPushButton {{
                 background: transparent; border: none;
-                color: {COLOR_ACCENT_PRIMARY}; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};
-                text-align: left; padding: 4px 0;
+                color: {COLOR_ACCENT_PRIMARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM};
+                text-align: left; padding: {SPACE_1}px 0;
             }}
             QPushButton:hover {{ color: {COLOR_ACCENT_HOVER}; }}
         """)
         add_country_btn.clicked.connect(self._open_country_selector)
-        sl.addWidget(add_country_btn)
+        constraints_layout.addWidget(add_country_btn)
 
-        # ── TASK 6: Toggle Checkboxes ──
-        sl.addSpacing(16)
-
+        # Toggle checkboxes
         self._compare_check = make_toggle_row(t("route.show_comparison"), checked=True)
         self._compare_check.stateChanged.connect(self._toggle_comparison)
-        sl.addWidget(self._compare_check)
-        sl.addSpacing(4)
+        constraints_layout.addWidget(self._compare_check)
 
         self._click_add_check = make_toggle_row(t("route.click_to_add_stop"), checked=False)
         self._click_add_check.stateChanged.connect(self._on_click_add_changed)
-        sl.addWidget(self._click_add_check)
+        constraints_layout.addWidget(self._click_add_check)
 
-        # ── TASK 7: Route Result Panel ──
-        sl.addSpacing(20)
-        sl.addWidget(make_section_header(t("route.section.result")))
+        sl.addSpacing(4)
+        card2, _ = self._make_collapsible_card(
+            t("route.section.options"), constraints_body, expanded=True
+        )
+        sl.addWidget(card2)
+
+        # ═══ CARD 3: Results (pills + create trip) ═══
+        self._results_body = QWidget()
+        results_layout_inner = QVBoxLayout(self._results_body)
+        results_layout_inner.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
+        results_layout_inner.setSpacing(8)
 
         self._result_stack = QStackedWidget()
 
@@ -684,27 +813,18 @@ class QtRoutePlannerView(QWidget):
         empty_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
         empty_layout.setSpacing(6)
 
-        icon_lbl = QLabel()
-        icon_lbl.setPixmap(get_icon("mdi6.map-marker-path", color=COLOR_TEXT_TERTIARY).pixmap(28, 28))
-        icon_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-
-        title_lbl = QLabel(t("route.info_placeholder"))
-        title_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        title_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 12px; font-weight: {FONT_WEIGHT_MEDIUM};")
-
-        sub_lbl = QLabel(t("route.info_empty_subtitle"))
-        sub_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        sub_lbl.setWordWrap(True)
-        sub_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 11px;")
-
-        empty_layout.addWidget(icon_lbl)
-        empty_layout.addWidget(title_lbl)
-        empty_layout.addWidget(sub_lbl)
+        self._route_empty_state = EmptyState(
+            parent=empty_page,
+            icon_name="fa5s.route",
+            title=t("route.empty_title", "Plan your first route"),
+            subtitle=t("route.empty_desc", "Enter a start and destination to begin."),
+        )
+        empty_layout.addWidget(self._route_empty_state)
 
         self._empty_error_label = QLabel("")
         self._empty_error_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self._empty_error_label.setWordWrap(True)
-        self._empty_error_label.setStyleSheet(f"color: {COLORS.get('danger', '#ef4444')}; font-size: 12px;")
+        self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
         self._empty_error_label.hide()
         empty_layout.addWidget(self._empty_error_label)
 
@@ -718,7 +838,7 @@ class QtRoutePlannerView(QWidget):
 
         self._loading_bar = QProgressBar()
         self._loading_bar.setRange(0, 0)
-        self._loading_bar.setFixedHeight(4)
+        self._loading_bar.setFixedHeight(SPACE_1)
         self._loading_bar.setTextVisible(False)
         self._loading_bar.setStyleSheet(f"""
             QProgressBar {{
@@ -735,7 +855,7 @@ class QtRoutePlannerView(QWidget):
 
         loading_text = QLabel(t("route.calculating"))
         loading_text.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        loading_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 12px;")
+        loading_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_BASE}px;")
         loading_layout.addWidget(loading_text)
         loading_layout.addStretch()
         self._result_stack.addWidget(loading_page)
@@ -747,7 +867,7 @@ class QtRoutePlannerView(QWidget):
         result_layout.setSpacing(8)
 
         self.route_summary_label = QLabel()
-        self.route_summary_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        self.route_summary_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
         result_layout.addWidget(self.route_summary_label)
 
         # Grid of 4 metric pills
@@ -766,15 +886,47 @@ class QtRoutePlannerView(QWidget):
 
         result_layout.addLayout(pills_grid)
 
+        # "Create Trip" button — right-aligned below pills
+        create_trip_row = QWidget()
+        create_trip_row_layout = QHBoxLayout(create_trip_row)
+        create_trip_row_layout.setContentsMargins(0, 0, 0, 0)
+        create_trip_row_layout.setSpacing(0)
+        create_trip_row_layout.addStretch(1)
+
+        self._create_trip_btn = QPushButton(t("route.create_trip", default="Create Trip"))
+        self._create_trip_btn.setFixedHeight(32)
+        self._create_trip_btn.setCursor(Qt.PointingHandCursor)
+        self._create_trip_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: {COLOR_ACCENT_PRIMARY};
+                color: {COLOR_TEXT_WHITE};
+                border: none;
+                border-radius: {RADIUS_SM}px;
+                font-size: {FONT_SIZE_SM}px;
+                font-weight: {FONT_WEIGHT_MEDIUM};
+                padding: 0 16px;
+            }}
+            QPushButton:hover {{
+                background: {COLOR_ACCENT_HOVER};
+            }}
+            QPushButton:pressed {{
+                background: {COLOR_ACCENT_HOVER};
+            }}
+        """)
+        self._create_trip_btn.clicked.connect(self._on_create_trip)
+        create_trip_row_layout.addWidget(self._create_trip_btn)
+
+        result_layout.addWidget(create_trip_row)
+
         # Compliance texts
         self._summary_text = QLabel("")
         self._summary_text.setWordWrap(True)
-        self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
         result_layout.addWidget(self._summary_text)
 
         self._explanation_text = QLabel("")
         self._explanation_text.setWordWrap(True)
-        self._explanation_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 10px;")
+        self._explanation_text.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px;")
         result_layout.addWidget(self._explanation_text)
 
         self._dispatch_container = QWidget()
@@ -787,10 +939,17 @@ class QtRoutePlannerView(QWidget):
         result_layout.addStretch()
         self._result_stack.addWidget(result_page)
 
-        sl.addWidget(self._result_stack)
+        results_layout_inner.addWidget(self._result_stack)
+
+        sl.addSpacing(4)
+        card3, self._results_card_header = self._make_collapsible_card(
+            t("route.section.result"), self._results_body, expanded=False
+        )
+        sl.addWidget(card3)
+
         sl.addStretch(1)
 
-        # ── TASK 8: Pinned Bottom Button Bar ──
+        # ── Pinned Bottom Button Bar ──
         self.calc_btn = QPushButton(t("route.calculate"))
         self.calc_btn.setFixedHeight(36)
         self.calc_btn.setObjectName("calc_route_btn")
@@ -799,17 +958,17 @@ class QtRoutePlannerView(QWidget):
         self.calc_btn.setStyleSheet(f"""
             QPushButton#calc_route_btn {{
                 background: {COLOR_ACCENT_PRIMARY};
-                color: #FFFFFF;
+                color: {COLOR_TEXT_WHITE};
                 border: none;
-                border-radius: 6px;
-                font-size: 12px;
+                border-radius: {RADIUS_MD}px;
+                font-size: {FONT_SIZE_BASE}px;
                 font-weight: {FONT_WEIGHT_MEDIUM};
             }}
             QPushButton#calc_route_btn:hover {{
                 background: {COLOR_ACCENT_HOVER};
             }}
             QPushButton#calc_route_btn:pressed {{
-                background: #4547B0;
+                background: {COLOR_ACCENT_HOVER};
             }}
             QPushButton#calc_route_btn:disabled {{
                 background: rgba(99, 102, 241, 0.4);
@@ -820,15 +979,15 @@ class QtRoutePlannerView(QWidget):
         bl.addWidget(self.calc_btn)
 
         export_btn = QPushButton(t("route.export_metadata"))
-        export_btn.setFixedHeight(28)
+        export_btn.setFixedHeight(BTN_HEIGHT_SM)
         export_btn.setCursor(Qt.PointingHandCursor)
         export_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {COLOR_BG_OVERLAY};
                 color: {COLOR_TEXT_SECONDARY};
                 border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: 4px;
-                font-size: 11px;
+                border-radius: {RADIUS_SM}px;
+                font-size: {FONT_SIZE_SM}px;
                 font-weight: {FONT_WEIGHT_REGULAR};
             }}
             QPushButton:hover {{
@@ -841,15 +1000,15 @@ class QtRoutePlannerView(QWidget):
         bl.addWidget(export_btn)
 
         share_btn = QPushButton(t("route.share", default="Share"))
-        share_btn.setFixedHeight(28)
+        share_btn.setFixedHeight(BTN_HEIGHT_SM)
         share_btn.setCursor(Qt.PointingHandCursor)
         share_btn.setStyleSheet(f"""
             QPushButton {{
                 background: {COLOR_BG_OVERLAY};
                 color: {COLOR_TEXT_SECONDARY};
                 border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: 4px;
-                font-size: 11px;
+                border-radius: {RADIUS_SM}px;
+                font-size: {FONT_SIZE_SM}px;
                 font-weight: {FONT_WEIGHT_REGULAR};
             }}
             QPushButton:hover {{
@@ -876,31 +1035,62 @@ class QtRoutePlannerView(QWidget):
     # ── Trucks ─────────────────────────────────────────────────────────────────
 
     def _load_trucks(self) -> None:
-        try:
-            # Lazy-init conflict service to avoid direct instantiation in view
-            if self._conflict_service is None and self.fleet_service is not None:
-                from services.conflict_service import TripConflictService
-                self._conflict_service = TripConflictService(self.fleet_service.db)
-            conflict_svc = self._conflict_service
-            rows = self.fleet_service.get_trucks() if self.fleet_service is not None else []
+        """Load trucks asynchronously — show spinner during load."""
+        with PerfTimer("route_planner.load_trucks"):
+            if hasattr(self, '_show_loading'):
+                self._show_loading()
+            WorkerPool.run(
+                fn=self._fetch_trucks_with_slots,
+                on_result=self._on_trucks_loaded,
+                on_error=self._on_trucks_error,
+            )
+
+    def _fetch_trucks_with_slots(self) -> dict:
+        """Background: fetch all trucks + batch slot information."""
+        # Lazy-init conflict service to avoid direct instantiation in view
+        if self._conflict_service is None and self.fleet_service is not None:
+            from services.conflict_service import TripConflictService
+            self._conflict_service = TripConflictService(self.fleet_service.db)
+        rows = self.fleet_service.get_trucks() if self.fleet_service else []
+        plates = [row["plate_number"] for row in rows]
+
+        # BATCH: one query for all slot availability
+        slot_map = {}
+        if self._conflict_service and plates:
+            slot_map = self._conflict_service.get_next_available_slots_for_trucks(plates)
+
+        return {"trucks": rows, "slot_map": slot_map}
+
+    def _on_trucks_loaded(self, data: dict) -> None:
+        """GUI thread: populate truck combo from batch data."""
+        with PerfTimer("route_planner.trucks_loaded"):
+            if hasattr(self, '_hide_loading'):
+                self._hide_loading()
+            trucks = data["trucks"]
+            slot_map = data.get("slot_map", {})
+
             self._trucks_map = {}
             self._truck_label_to_id = {}
             self.truck_combo.clear()
-            for row in rows:
+            for row in trucks:
                 truck_id = str(row["id"])
                 plate = row["plate_number"]
                 label = f"{plate} - {row.get('model') or ''}"
-                next_slot = conflict_svc.get_next_available_slot(plate) if conflict_svc is not None else None
+                next_slot = slot_map.get(plate)
                 if next_slot:
-                    label = f"{label}  [{t('dispatch_board.available_from').format(next_slot)}]"
+                    label = f"{label}  [Available: {next_slot}]"
                 self._truck_label_to_id[label] = truck_id
                 self._trucks_map[truck_id] = row
                 self.truck_combo.addItem(label, truck_id)
-            if rows:
+            if trucks:
                 self.truck_combo.setCurrentIndex(0)
                 self._selected_truck_id = self._truck_label_to_id.get(self.truck_combo.currentText())
-        except Exception:
-            logger.exception("Failed to load trucks")
+
+    def _on_trucks_error(self, error: str) -> None:
+        """Handle truck load error."""
+        if hasattr(self, '_hide_loading'):
+            self._hide_loading()
+        logger.error("Failed to load trucks: %s", error)
 
     def _on_truck_selected(self, _index: int) -> None:
         self._selected_truck_id = self._truck_label_to_id.get(self.truck_combo.currentText())
@@ -927,67 +1117,68 @@ class QtRoutePlannerView(QWidget):
         self._render_stops_list()
 
     def _render_stops_list(self) -> None:
-        while self._stops_container_layout.count():
-            item = self._stops_container_layout.takeAt(0)
-            w = item.widget()
-            if w is not None:
-                # Block signals on the field to prevent stale lambda callbacks
-                # from firing after the widget is removed from the layout
-                if hasattr(w, "field"):
-                    w.field.blockSignals(True)
-                w.deleteLater()
+        with PerfTimer("route_planner.render_stops"):
+            while self._stops_container_layout.count():
+                item = self._stops_container_layout.takeAt(0)
+                w = item.widget()
+                if w is not None:
+                    # Block signals on the field to prevent stale lambda callbacks
+                    # from firing after the widget is removed from the layout
+                    if hasattr(w, "field"):
+                        w.field.blockSignals(True)
+                    w.deleteLater()
 
-        self._stop_rows.clear()
-        self._stop_ids.clear()
-        self._waypoint_fields = {}
+            self._stop_rows.clear()
+            self._stop_ids.clear()
+            self._waypoint_fields = {}
 
-        for idx, stop in enumerate(self.stops_state):
-            sid = stop.get("id") or uuid.uuid4().hex
-            stop["id"] = sid
-            if sid not in self.stop_vars:
-                self.stop_vars[sid] = stop.get("address", "") or ""
+            for idx, stop in enumerate(self.stops_state):
+                sid = stop.get("id") or uuid.uuid4().hex
+                stop["id"] = sid
+                if sid not in self.stop_vars:
+                    self.stop_vars[sid] = stop.get("address", "") or ""
 
-            if stop["type"] == "start":
-                placeholder = t("route.stop_start", default="📍 Start...")
-                dot_color = COLOR_SUCCESS_DEFAULT
-                show_remove = False
-            elif stop["type"] == "destination":
-                placeholder = t("route.stop_destination")
-                dot_color = COLOR_ERROR_DEFAULT
-                show_remove = False
-            else:
-                placeholder = t("route.stop_n", default=f"Stop {idx}").format(idx)
-                dot_color = COLOR_ACCENT_PRIMARY
-                show_remove = True
+                if stop["type"] == "start":
+                    placeholder = t("route.stop_start", default="📍 Start...")
+                    dot_color = COLOR_SUCCESS_DEFAULT
+                    show_remove = False
+                elif stop["type"] == "destination":
+                    placeholder = t("route.stop_destination")
+                    dot_color = COLOR_ERROR_DEFAULT
+                    show_remove = False
+                else:
+                    placeholder = t("route.stop_n", default=f"Stop {idx}").format(idx)
+                    dot_color = COLOR_ACCENT_PRIMARY
+                    show_remove = True
 
-            row = WaypointRow(placeholder, dot_color, show_remove=show_remove, parent=self._stops_container)
-            row.field.setText(stop.get("address", ""))
-            row.field.textChanged.connect(
-                lambda text, s=sid: self._on_stop_text_changed(s, text)
-            )
-            self._waypoint_fields[sid] = row.field
+                row = WaypointRow(placeholder, dot_color, show_remove=show_remove, parent=self._stops_container)
+                row.field.setText(stop.get("address", ""))
+                row.field.textChanged.connect(
+                    lambda text, s=sid: self._on_stop_text_changed(s, text)
+                )
+                self._waypoint_fields[sid] = row.field
 
-            if show_remove and hasattr(row, "remove_btn"):
-                row.remove_btn.clicked.connect(lambda checked, i=idx: self._remove_stop_index(i))
+                if show_remove and hasattr(row, "remove_btn"):
+                    row.remove_btn.clicked.connect(lambda checked, i=idx: self._remove_stop_index(i))
 
-            self._stops_container_layout.addWidget(row)
-            self._stop_rows[idx] = row
-            self._stop_ids[idx] = sid
+                self._stops_container_layout.addWidget(row)
+                self._stop_rows[idx] = row
+                self._stop_ids[idx] = sid
 
-            # Connecting line between waypoints
-            if idx < len(self.stops_state) - 1:
-                connector = WaypointConnector(self._stops_container)
-                self._stops_container_layout.addWidget(connector)
+                # Connecting line between waypoints
+                if idx < len(self.stops_state) - 1:
+                    connector = WaypointConnector(self._stops_container)
+                    self._stops_container_layout.addWidget(connector)
 
-        # Bind Enter to calculate on last field
-        if self._stop_rows:
-            last_idx = len(self.stops_state) - 1
-            last_row = self._stop_rows.get(last_idx)
-            if last_row and hasattr(last_row, "field"):
-                last_row.field.returnPressed.connect(self._on_calculate_click)
+            # Bind Enter to calculate on last field
+            if self._stop_rows:
+                last_idx = len(self.stops_state) - 1
+                last_row = self._stop_rows.get(last_idx)
+                if last_row and hasattr(last_row, "field"):
+                    last_row.field.returnPressed.connect(self._on_calculate_click)
 
-        # Update calc button state
-        self._update_calc_button_state()
+            # Update calc button state
+            self._update_calc_button_state()
 
     def _on_stop_text_changed(self, sid: str, text: str) -> None:
         self.stop_vars[sid] = text
@@ -1020,7 +1211,8 @@ class QtRoutePlannerView(QWidget):
                 "var el = document.querySelector('.leaflet-container');"
                 "if (el) el.style.cursor = '';"
             )
-        self.map_widget._run_js(js)
+        if self.map_widget is not None and hasattr(self.map_widget, '_run_js'):
+            self.map_widget._run_js(js)
 
     def _refresh_chips(self) -> None:
         while self._chips_container_layout.count():
@@ -1075,6 +1267,8 @@ class QtRoutePlannerView(QWidget):
 
     def _inject_map_styles(self, ok: bool) -> None:
         if not ok or getattr(QtRoutePlannerView, "LEAFLET_CSS_INJECTED", False):
+            return
+        if self.map_widget is None:
             return
         QtRoutePlannerView.LEAFLET_CSS_INJECTED = True
         js = f"""
@@ -1159,7 +1353,7 @@ class QtRoutePlannerView(QWidget):
         if err or ctx is None:
             self._result_stack.setCurrentIndex(0)
             self._empty_error_label.setText(err or "Unknown error")
-            self._empty_error_label.setStyleSheet(f"color: {COLORS.get('warning', '#f59e0b')}; font-size: 12px;")
+            self._empty_error_label.setStyleSheet(f"color: {COLOR_WARNING_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
             self._empty_error_label.show()
             return
 
@@ -1191,13 +1385,13 @@ class QtRoutePlannerView(QWidget):
         if err:
             self._result_stack.setCurrentIndex(0)
             self._empty_error_label.setText(err)
-            self._empty_error_label.setStyleSheet(f"color: {COLORS.get('danger', '#ef4444')}; font-size: 12px;")
+            self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
             self._empty_error_label.show()
             return
         if not processed:
             self._result_stack.setCurrentIndex(0)
             self._empty_error_label.setText(t("route.calc_failed"))
-            self._empty_error_label.setStyleSheet(f"color: {COLORS.get('danger', '#ef4444')}; font-size: 12px;")
+            self._empty_error_label.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_BASE}px;")
             self._empty_error_label.show()
             return
 
@@ -1205,6 +1399,13 @@ class QtRoutePlannerView(QWidget):
         self._last_route_history_id = processed.route.get("history_id")
         self._last_route_calc_ctx = ctx
         self._populate_stops_from_route(processed.route)
+
+        # Auto-expand the Results card
+        if hasattr(self, '_results_card_header'):
+            if not self._result_stack.isVisible():
+                self._results_body.setVisible(True)
+                header = self._results_card_header
+                header.setText(f"\u25BC  {t('route.section.result').upper()}")
 
         # Update route summary label from stop_vars
         route = processed.route
@@ -1268,10 +1469,10 @@ class QtRoutePlannerView(QWidget):
                 background: {COLOR_BG_OVERLAY};
                 color: {COLOR_TEXT_SECONDARY};
                 border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: 4px;
-                font-size: 11px;
+                border-radius: {RADIUS_SM}px;
+                font-size: {FONT_SIZE_SM}px;
                 font-weight: {FONT_WEIGHT_REGULAR};
-                padding: 0 12px;
+                padding: 0 {SPACE_3}px;
             }}
             QPushButton:hover {{
                 background: {COLOR_BG_HOVER};
@@ -1318,7 +1519,7 @@ class QtRoutePlannerView(QWidget):
             self._map_renderer.clear_route_overlays()
             self._map_renderer.clear_stop_markers()
         self._summary_text.setText("")
-        self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
         self._explanation_text.setText("")
         self._show_empty_state()
         self.stops_state = [
@@ -1329,6 +1530,29 @@ class QtRoutePlannerView(QWidget):
         self._stop_rows = {}
         self._stop_ids = {}
         self._render_stops_list()
+
+    # ── Create Trip ───────────────────────────────────────────────────────
+
+    def _on_create_trip(self) -> None:
+        """Create a trip pre-filled with route data, show success, navigate."""
+        if not self._last_route_result or not self._persistence:
+            return
+        truck_id = str(self._selected_truck_id) if self._selected_truck_id else None
+        try:
+            self._persistence.commit_route(self._last_route_history_id, truck_id=truck_id)
+            self._pending_clear = True
+            self._summary_text.setText(t("route.create_trip_success", default="✓ Trip created successfully"))
+            self._summary_text.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT}; font-size: {FONT_SIZE_SM}px;")
+            logger.info("Trip created from route #%s", self._last_route_history_id)
+            # Navigate to dispatch board
+            if self.controller and hasattr(self.controller, "_switch_module"):
+                self.controller._switch_module("dispatch_board")
+        except Exception as exc:
+            logger.exception("Failed to create trip")
+            self._summary_text.setText(
+                t("route.create_trip_error", default="Failed to create trip: {error}").format(error=str(exc))
+            )
+            self._summary_text.setStyleSheet(f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_SM}px;")
 
     def _populate_stops_from_route(self, route: dict) -> None:
         stops = route.get("stops") or []
@@ -1424,10 +1648,10 @@ class QtRoutePlannerView(QWidget):
         path, err = self._core.export_route_metadata(self._last_route_result)
         if err:
             self._summary_text.setText(err)
-            self._summary_text.setStyleSheet(f"color: {COLORS.get('warning', '#f59e0b')};")
+            self._summary_text.setStyleSheet(f"color: {COLOR_WARNING_DEFAULT};")
             return
         self._summary_text.setText(t("route.export_success").format(path))
-        self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        self._summary_text.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
 
     # ── Share / Google Maps ────────────────────────────────────────────────────
 
@@ -1524,7 +1748,7 @@ class QtRoutePlannerView(QWidget):
                 t("route.export_success_file", default="Route saved: {path}").format(path=path)
             )
             self._summary_text.setStyleSheet(
-                f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;"
+                f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;"
             )
             return path
         except OSError as exc:
@@ -1532,7 +1756,7 @@ class QtRoutePlannerView(QWidget):
                 t("route.export_error", default="Failed to save: {error}").format(error=str(exc))
             )
             self._summary_text.setStyleSheet(
-                f"color: {COLORS.get('danger', '#ef4444')}; font-size: 11px;"
+                f"color: {COLOR_ERROR_DEFAULT}; font-size: {FONT_SIZE_SM}px;"
             )
             return None
 
@@ -1682,16 +1906,10 @@ class QtRoutePlannerView(QWidget):
         try:
             self.map_widget.isWidgetType()
         except RuntimeError:
-            from ui.map.map_widget import MapWidget
-            self.map_widget = MapWidget(self._content_widget)
-            self._map_renderer = QtRouteMapRenderer(self.map_widget)
-            self.map_widget.set_click_callback(self._on_map_click)
-            self.map_widget.setMinimumWidth(1)
-            self.map_widget.loadFinished.connect(self._inject_map_styles)
+            self.map_widget = None
+            self._map_renderer = None
             QtRoutePlannerView.LEAFLET_CSS_INJECTED = False
-            content_layout = self._content_widget.layout()
-            if content_layout:
-                content_layout.addWidget(self.map_widget, 1)
+            self._lazy_init_map()
 
     def shutdown(self) -> None:
         with contextlib.suppress(Exception):

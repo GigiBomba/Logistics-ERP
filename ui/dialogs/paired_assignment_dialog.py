@@ -8,10 +8,12 @@ from __future__ import annotations
 
 from typing import Callable
 
-from PySide6.QtCore import Qt
+from PySide6.QtCore import QEasingCurve, QPropertyAnimation, Qt
+from PySide6.QtGui import QShowEvent
 from PySide6.QtWidgets import (
     QDialog,
     QFrame,
+    QGraphicsOpacityEffect,
     QHBoxLayout,
     QLabel,
     QScrollArea,
@@ -21,7 +23,12 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY, COLOR_ACCENT_SUBTLE, COLOR_BG_ELEVATED, COLOR_BG_OVERLAY,
+    COLOR_ERROR_DEFAULT, COLOR_SUCCESS_DEFAULT, COLOR_TEXT_PRIMARY, COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT, FADE_MS, RADIUS_MD, RADIUS_SM, ROW_HEIGHT, SPACE_12,
+)
+from ui.design_tokens import SP as S
 from ui.widgets import ActionButton
 
 class QtPairedAssignmentDialog(QDialog):
@@ -53,6 +60,8 @@ class QtPairedAssignmentDialog(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("dispatch_board.pair_title"))
+        self.setAccessibleName("Paired assignment")
+        self.setAccessibleDescription("Dialog for assigning truck and driver to a trip")
         self.setMinimumSize(480, 400)
         self.resize(600, 520)
         self.setWindowModality(Qt.ApplicationModal)
@@ -75,6 +84,23 @@ class QtPairedAssignmentDialog(QDialog):
 
         self._build()
         self._auto_select_first_available()
+
+        # ── Fade-in effect ─────────────────────────────────────────────
+        self._opacity_effect = QGraphicsOpacityEffect(self)
+        self.setGraphicsEffect(self._opacity_effect)
+        self._opacity_effect.setOpacity(0.0)
+
+        # Escape key dismisses (default QDialog behavior)
+
+    def showEvent(self, event: QShowEvent) -> None:
+        """Fade in the dialog on show."""
+        super().showEvent(event)
+        anim = QPropertyAnimation(self._opacity_effect, b"opacity")
+        anim.setDuration(FADE_MS)
+        anim.setStartValue(0.0)
+        anim.setEndValue(1.0)
+        anim.setEasingCurve(QEasingCurve.OutCubic)
+        anim.start()
 
     # ── Auto-select first available ──────────────────────────────────────────
 
@@ -111,7 +137,7 @@ class QtPairedAssignmentDialog(QDialog):
         trip_id = str(self._trip_data.get("trip_id", ""))
         trip_lbl = QLabel(trip_id)
         trip_lbl.setProperty("fontRole", "h2")
-        trip_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        trip_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         hdr_layout.addWidget(trip_lbl)
 
         route = (
@@ -120,7 +146,7 @@ class QtPairedAssignmentDialog(QDialog):
         )
         route_lbl = QLabel(route)
         route_lbl.setProperty("fontRole", "small")
-        route_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        route_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         hdr_layout.addWidget(route_lbl)
 
         hdr_layout.addStretch(1)
@@ -133,8 +159,9 @@ class QtPairedAssignmentDialog(QDialog):
                 "Click a truck and a driver, then press Assign Both.",
             )
         )
+        hint_lbl.setAccessibleName("Assignment hint")
         hint_lbl.setProperty("fontRole", "label")
-        hint_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        hint_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         hint_lbl.setContentsMargins(S["4"], 0, S["4"], S["1"])
         layout.addWidget(hint_lbl)
 
@@ -183,14 +210,14 @@ class QtPairedAssignmentDialog(QDialog):
 
         hint_frame = QFrame()
         hint_frame.setStyleSheet(
-            f"background-color: {COLORS['bg_surface']}; border-radius: 6px;"
+            f"background-color: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_MD}px;"
         )
         hint_frame_layout = QHBoxLayout(hint_frame)
         hint_frame_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
 
         hint_lbl = QLabel(self._paired_hint)
         hint_lbl.setProperty("fontRole", "small")
-        hint_lbl.setStyleSheet(f"color: {COLORS['accent']};")
+        hint_lbl.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY};")
         hint_frame_layout.addWidget(hint_lbl)
 
         wrapper_layout.addWidget(hint_frame)
@@ -198,8 +225,8 @@ class QtPairedAssignmentDialog(QDialog):
 
     def _build_buttons(self, layout: QVBoxLayout) -> None:
         btn_row = QWidget()
-        btn_row.setFixedHeight(48)
-        btn_row.setStyleSheet(f"background-color: {COLORS['bg_elevated']};")
+        btn_row.setFixedHeight(SPACE_12)
+        btn_row.setStyleSheet(f"background-color: {COLOR_BG_OVERLAY};")
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
         btn_layout.setSpacing(S["2"])
@@ -210,6 +237,7 @@ class QtPairedAssignmentDialog(QDialog):
             command=self.reject,
             variant="ghost",
         )
+        cancel_btn.setAccessibleName("Cancel")
         btn_layout.addWidget(cancel_btn)
 
         btn_layout.addStretch(1)
@@ -218,8 +246,9 @@ class QtPairedAssignmentDialog(QDialog):
             btn_row,
             text=t("dispatch_board.pair_assign_both"),
             command=self._do_assign_both,
-            color=COLORS["accent"],
+            color=COLOR_ACCENT_PRIMARY,
         )
+        self._both_btn.setAccessibleName("Assign both")
         btn_layout.addWidget(self._both_btn)
 
         self._truck_btn = ActionButton(
@@ -228,6 +257,7 @@ class QtPairedAssignmentDialog(QDialog):
             command=self._do_assign_truck_only,
             variant="ghost",
         )
+        self._truck_btn.setAccessibleName("Truck only")
         btn_layout.addWidget(self._truck_btn)
 
         self._driver_btn = ActionButton(
@@ -236,6 +266,7 @@ class QtPairedAssignmentDialog(QDialog):
             command=self._do_assign_driver_only,
             variant="ghost",
         )
+        self._driver_btn.setAccessibleName("Driver only")
         btn_layout.addWidget(self._driver_btn)
 
         layout.addWidget(btn_row)
@@ -253,8 +284,9 @@ class QtPairedAssignmentDialog(QDialog):
         parent_layout = parent.layout()
 
         title_lbl = QLabel(t(title_key))
+        title_lbl.setAccessibleName(t(title_key))
         title_lbl.setProperty("fontRole", "h3")
-        title_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        title_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         title_lbl.setContentsMargins(S["2"], S["2"], S["2"], S["1"])
         parent_layout.addWidget(title_lbl)
 
@@ -262,14 +294,14 @@ class QtPairedAssignmentDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(f"background-color: {COLORS['bg_surface']};")
+        scroll.setStyleSheet(f"background-color: {COLOR_BG_ELEVATED};")
         parent_layout.addWidget(scroll, 1)
 
         content = QWidget()
-        content.setStyleSheet(f"background-color: {COLORS['bg_surface']};")
+        content.setStyleSheet(f"background-color: {COLOR_BG_ELEVATED};")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(S["1"], 0, S["1"], S["1"])
-        content_layout.setSpacing(1)
+        content_layout.setSpacing(S["1"])
         content_layout.setAlignment(Qt.AlignTop)
 
         for idx, item in enumerate(items):
@@ -289,9 +321,9 @@ class QtPairedAssignmentDialog(QDialog):
         row = QFrame(parent)
         row.setFrameShape(QFrame.NoFrame)
         row.setCursor(Qt.PointingHandCursor)
-        row.setFixedHeight(30)
+        row.setFixedHeight(ROW_HEIGHT)
         row.setStyleSheet(
-            f"background-color: {COLORS['bg_surface']}; border-radius: 4px;"
+            f"background-color: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_SM}px;"
         )
 
         row_layout = QHBoxLayout(row)
@@ -299,12 +331,12 @@ class QtPairedAssignmentDialog(QDialog):
         row_layout.setSpacing(S["1"])
 
         avail = item.get("available", True)
-        dot_color = COLORS["success"] if avail else COLORS["danger"]
+        dot_color = COLOR_SUCCESS_DEFAULT if avail else COLOR_ERROR_DEFAULT
 
         dot = QFrame(row)
         dot.setFixedSize(8, 8)
         dot.setStyleSheet(
-            f"background-color: {dot_color}; border-radius: 4px;"
+            f"background-color: {dot_color}; border-radius: {RADIUS_SM}px;"
         )
         row_layout.addWidget(dot)
 
@@ -315,7 +347,7 @@ class QtPairedAssignmentDialog(QDialog):
             star_lbl.setStyleSheet("background: transparent;")
             row_layout.addWidget(star_lbl)
 
-        fg = COLORS["text_primary"] if avail else COLORS["text_muted"]
+        fg = COLOR_TEXT_PRIMARY if avail else COLOR_TEXT_TERTIARY
         label_text = str(item.get("label", ""))[:24]
         label_widget = QLabel(label_text)
         label_widget.setProperty("fontRole", "small")
@@ -326,7 +358,7 @@ class QtPairedAssignmentDialog(QDialog):
         sublabel_widget = QLabel(sublabel_text)
         sublabel_widget.setProperty("fontRole", "label")
         sublabel_widget.setStyleSheet(
-            f"color: {COLORS['text_muted']}; background: transparent;"
+            f"color: {COLOR_TEXT_TERTIARY}; background: transparent;"
         )
         sublabel_widget.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Preferred
@@ -338,7 +370,7 @@ class QtPairedAssignmentDialog(QDialog):
             status_widget = QLabel(str(st)[:30])
             status_widget.setProperty("fontRole", "label")
             status_widget.setStyleSheet(
-                f"color: {COLORS['warning']}; background: transparent;"
+                f"color: {COLOR_WARNING_DEFAULT}; background: transparent;"
             )
             row_layout.addWidget(status_widget)
 
@@ -351,18 +383,18 @@ class QtPairedAssignmentDialog(QDialog):
     def _select_truck(self, idx: int) -> None:
         self._selected_truck = idx
         for i, wid in self._truck_widgets.items():
-            bg = COLORS["accent_dim"] if i == idx else COLORS["bg_surface"]
+            bg = COLOR_ACCENT_SUBTLE if i == idx else COLOR_BG_ELEVATED
             wid.setStyleSheet(
-                f"background-color: {bg}; border-radius: 4px;"
+                f"background-color: {bg}; border-radius: {RADIUS_SM}px;"
             )
         self._update_buttons()
 
     def _select_driver(self, idx: int) -> None:
         self._selected_driver = idx
         for i, wid in self._driver_widgets.items():
-            bg = COLORS["accent_dim"] if i == idx else COLORS["bg_surface"]
+            bg = COLOR_ACCENT_SUBTLE if i == idx else COLOR_BG_ELEVATED
             wid.setStyleSheet(
-                f"background-color: {bg}; border-radius: 4px;"
+                f"background-color: {bg}; border-radius: {RADIUS_SM}px;"
             )
         self._update_buttons()
 

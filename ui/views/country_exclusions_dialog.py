@@ -38,6 +38,8 @@ class CountryExclusionsDialog(QDialog):
         avoidance: CountryAvoidanceManager,
     ):
         super().__init__(parent)
+        self.setAccessibleName("Country exclusions")
+        self.setAccessibleDescription("Dialog for selecting countries to exclude from route calculation")
         self.avoidance = avoidance
         self._checkboxes: list[StyledCheckBox] = []
         self._build()
@@ -86,6 +88,7 @@ class CountryExclusionsDialog(QDialog):
 
         for code, name in codes:
             cb = StyledCheckBox(text=name)
+            cb.setAccessibleName(f"Exclude {name}")
             cb.setProperty("country_code", code)
             cb.setChecked(code in selected)
             cb.setStyleSheet(f"""
@@ -120,6 +123,8 @@ class CountryExclusionsDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok
             | QDialogButtonBox.StandardButton.Cancel
         )
+        for btn in buttons.buttons():
+            btn.setAccessibleName(btn.text())
         buttons.setStyleSheet(f"""
             QPushButton {{
                 background: {COLOR_BG_OVERLAY};

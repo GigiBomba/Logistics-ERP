@@ -161,12 +161,31 @@ class TestWhisperSTTProviderModelLoading:
 
     def test_load_model_import_error(self):
         """_load_model returns None and logs warning when faster-whisper not installed."""
+        import sys
+        import types
         from backend.copilot.voice.providers.whisper_stt import WhisperSTTProvider
 
-        provider = WhisperSTTProvider()
-        result = provider._load_model()
-        assert result is None
-        assert provider._model is None
+        # Replace faster_whisper in sys.modules with a bare module that
+        # does NOT export WhisperModel, so the "from faster_whisper import
+        # WhisperModel" inside _load_model() raises ImportError.
+        old_fw = sys.modules.get("faster_whisper")
+        old_sub = {k: v for k, v in sys.modules.items() if k.startswith("faster_whisper.")}
+        for k in list(old_sub):
+            del sys.modules[k]
+        sys.modules["faster_whisper"] = types.ModuleType("faster_whisper")
+
+        try:
+            provider = WhisperSTTProvider()
+            result = provider._load_model()
+            assert result is None
+            assert provider._model is None
+        finally:
+            if old_fw is not None:
+                sys.modules["faster_whisper"] = old_fw
+            else:
+                del sys.modules["faster_whisper"]
+            for key, val in old_sub.items():
+                sys.modules[key] = val
 
     def test_load_model_generic_error(self):
         """_load_model returns None on generic exception."""
@@ -378,9 +397,10 @@ class TestWhisperSTTProviderTranscribe:
 
         assert result is None
 
-    def test_transcribe_temp_file_cleaned_up(self):
+    def test_transcribe_temp_file_cleaned_up(self, monkeypatch):
         """Temporary file is cleaned up after transcription."""
         from backend.copilot.voice.providers.whisper_stt import WhisperSTTProvider
+        import tempfile
         from pathlib import Path
 
         provider = WhisperSTTProvider()
@@ -393,9 +413,17 @@ class TestWhisperSTTProviderTranscribe:
         mock_model.transcribe.return_value = (iter(mock_segments), mock_info)
         provider._model = mock_model
 
-        temp_files_before = set(Path(tempfile.gettempdir()).glob("*.wav"))
+        # xdist-safe: the suite runs with ``-n auto``, so OTHER workers may
+        # create/delete *.wav files in the shared system temp dir at any
+        # moment.  Scope the assertion to a private temp dir instead of
+        # globbing the global temp dir — the semantics (the provider leaves
+        # no new wav file behind) are unchanged.
+        private_tmp = Path(tempfile.mkdtemp(prefix="copilot-stt-test-"))
+        monkeypatch.setattr(tempfile, "tempdir", str(private_tmp))
+
+        temp_files_before = set(private_tmp.glob("*.wav"))
         provider.transcribe(b"audio", language="en")
-        temp_files_after = set(Path(tempfile.gettempdir()).glob("*.wav"))
+        temp_files_after = set(private_tmp.glob("*.wav"))
 
         # No new wav files should remain
         assert temp_files_after == temp_files_before
@@ -445,7 +473,7 @@ class TestWhisperSTTProviderTranscribe:
         assert result.detected_language == "es"
         assert result.transcript == "hola"
 
-    def test_transcribe_error_writes_temp_file(self):
+    def test_transcribe_error_writes_temp_file(self, monkeypatch):
         """Even when model.transcribe raises, the temp file is cleaned up."""
         from backend.copilot.voice.providers.whisper_stt import WhisperSTTProvider
         import tempfile
@@ -456,9 +484,14 @@ class TestWhisperSTTProviderTranscribe:
         mock_model.transcribe.side_effect = RuntimeError("fail")
         provider._model = mock_model
 
-        temp_files_before = set(Path(tempfile.gettempdir()).glob("*.wav"))
+        # xdist-safe: scope to a private temp dir (see
+        # test_transcribe_temp_file_cleaned_up).
+        private_tmp = Path(tempfile.mkdtemp(prefix="copilot-stt-test-"))
+        monkeypatch.setattr(tempfile, "tempdir", str(private_tmp))
+
+        temp_files_before = set(private_tmp.glob("*.wav"))
         result = provider.transcribe(b"audio", language="en")
-        temp_files_after = set(Path(tempfile.gettempdir()).glob("*.wav"))
+        temp_files_after = set(private_tmp.glob("*.wav"))
 
         assert result is None
         assert temp_files_after == temp_files_before

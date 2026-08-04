@@ -31,6 +31,7 @@ _TEST_DB = os.path.join(
 os.environ.setdefault("OPERION_DB_PATH", _TEST_DB)
 os.environ["OPERION_JWT_SECRET_KEY"] = "mutation-test-jwt-secret"
 os.environ["OPERION_ENV"] = "test"
+os.environ["OPERION_RATE_LIMIT"] = "10000"
 
 import bcrypt
 import pytest
@@ -41,7 +42,7 @@ Config.DB_PATH = _TEST_DB
 import backend.dependencies as deps
 from tests.test_api.helpers import create_test_app
 
-_ADMIN_EMAIL = "admin-mutation@test.com"
+_ADMIN_EMAIL = f"admin-mutation-{uuid.uuid4().hex[:8]}@test.com"
 _ADMIN_PASSWORD = "admin-mutation-pw"
 _ADMIN_HASH = bcrypt.hashpw(_ADMIN_PASSWORD.encode(), bcrypt.gensalt(rounds=4)).decode()
 os.environ["OPERION_ADMIN_EMAIL"] = _ADMIN_EMAIL
@@ -49,6 +50,11 @@ os.environ["OPERION_ADMIN_PASSWORD_HASH"] = _ADMIN_HASH
 
 
 def _seed():
+    # Force Config.DB_PATH to OUR test DB FIRST — another test module may
+    # have overwritten it, and deps.init_db() reads Config.DB_PATH at call
+    # time. Binding the singleton before resetting the path would point the
+    # app at another suite's DB.
+    Config.DB_PATH = _TEST_DB
     deps._db_instance = None
     deps.init_db()
     from database.db_manager import DatabaseManager
@@ -78,14 +84,12 @@ def _client() -> TestClient:
     return TestClient(create_test_app())
 
 
-def _login(client: TestClient) -> str:
-    resp = client.post("/api/v1/auth/token", data={"username": _ADMIN_EMAIL, "password": _ADMIN_PASSWORD})
-    assert resp.status_code == 200, f"Login: {resp.text}"
-    return resp.json()["access_token"]
+# create_test_app() overrides auth dependencies, so any Bearer token works.
+_MOCK_TOKEN = "mutation-test-mock-token"
 
 
-def _headers(token: str) -> Dict[str, str]:
-    return {"Authorization": f"Bearer {token}"}
+def _headers() -> Dict[str, str]:
+    return {"Authorization": "Bearer mutation-test-mock-token"}
 
 
 # ═══════════════════════════════════════════════════════════════════════
@@ -101,11 +105,10 @@ class TestMobileMutation:
     def test_01_sql_injection_query_param(self):
         """SQL injection in query string — should sanitize or reject."""
         client = _client()
-        token = _login(client)
         payload = "1' OR '1'='1"
         resp = client.get(
             f"/api/v1/mobile/sync?entity={payload}&full=true",
-            headers=_headers(token),
+            headers=_headers(),
         )
         # Should not crash; acceptable: 200 (sanitized), 400, 422
         assert resp.status_code in (200, 400, 422), f"Got {resp.status_code}"
@@ -116,7 +119,7 @@ class TestMobileMutation:
     def test_02_sql_injection_json_body(self):
         """SQL injection inside a JSON string field."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         resp = client.post(
             "/api/v1/mobile/dispatcher/transports",
             json={
@@ -124,7 +127,7 @@ class TestMobileMutation:
                 "loading_city": "A",
                 "delivery_city": "B'; SELECT * FROM users; --",
             },
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (201, 200, 400, 422), f"Got {resp.status_code}"
 
@@ -133,19 +136,19 @@ class TestMobileMutation:
     def test_03_xss_in_message_text(self):
         """XSS payload in message body — should be preserved as text, not executed."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         xss = '<script>alert("XSS")</script>'
         resp = client.post(
             "/api/v1/mobile/messages",
             json={"receiver_id": 88, "text": xss},
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (201, 200, 400, 422), f"Got {resp.status_code}"
 
     def test_04_xss_in_transport_reference(self):
         """XSS payload in transport reference field."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         resp = client.post(
             "/api/v1/mobile/dispatcher/transports",
             json={
@@ -153,7 +156,7 @@ class TestMobileMutation:
                 "loading_city": "SafeCity",
                 "delivery_city": "SafeCity2",
             },
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (201, 200, 400, 422), f"Got {resp.status_code}"
 
@@ -162,20 +165,20 @@ class TestMobileMutation:
     def test_05_negative_transport_id(self):
         """Request transport detail with negative ID."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         resp = client.get(
             "/api/v1/mobile/driver/transports/-1",
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (404, 400, 422), f"Got {resp.status_code}"
 
     def test_06_string_id_where_int_expected(self):
         """Type confusion: pass a string for a numeric path param."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         resp = client.get(
             "/api/v1/mobile/driver/transports/abc",
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (404, 400, 422), f"Got {resp.status_code}"
 
@@ -184,7 +187,7 @@ class TestMobileMutation:
     def test_07_special_unicode_chars(self):
         """Unicode escape sequences, zero-width characters, RTL override."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         resp = client.post(
             "/api/v1/mobile/dispatcher/transports",
             json={
@@ -192,7 +195,7 @@ class TestMobileMutation:
                 "loading_city": "\u0000hidden",
                 "delivery_city": "\uFEFFBOM",
             },
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (201, 200, 400, 422), f"Got {resp.status_code}"
 
@@ -201,7 +204,7 @@ class TestMobileMutation:
     def test_08_deeply_nested_json(self):
         """Send an extremely nested JSON structure."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
 
         def _deep_nest(n):
             if n == 0:
@@ -211,25 +214,25 @@ class TestMobileMutation:
         resp = client.post(
             "/api/v1/mobile/messages",
             json={"receiver_id": 88, "text": "ok", "payload": _deep_nest(100)},
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (201, 200, 400, 422), f"Got {resp.status_code}"
 
     def test_09_empty_required_fields(self):
         """Send empty string for required fields."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         resp = client.post(
             "/api/v1/mobile/dispatcher/transports",
             json={"reference": "", "loading_city": "", "delivery_city": ""},
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (201, 200, 400, 422), f"Got {resp.status_code}"
 
     def test_10_boundary_values(self):
         """Max integers, boolean for string fields, arrays for scalars."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
 
         # Integer field with max 64-bit values
         cases = [
@@ -239,7 +242,7 @@ class TestMobileMutation:
         ]
 
         for method, path, body in cases:
-            resp = client.request(method, path, json=body, headers=_headers(token))
+            resp = client.request(method, path, json=body, headers=_headers())
             assert resp.status_code in (200, 201, 400, 422), (
                 f"{method} {path}: unexpected {resp.status_code}"
             )
@@ -249,7 +252,7 @@ class TestMobileMutation:
     def test_sql_injection_in_messages(self):
         """SQL injection payload in message text — should sanitize or reject."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         payloads = [
             "'; DROP TABLE mobile_messages; --",
             "' OR 1=1; --",
@@ -259,7 +262,7 @@ class TestMobileMutation:
             resp = client.post(
                 "/api/v1/mobile/messages",
                 json={"receiver_id": 88, "text": payload},
-                headers=_headers(token),
+                headers=_headers(),
             )
             assert resp.status_code in (201, 200, 400, 422), (
                 f"Payload {payload!r}: got {resp.status_code}"
@@ -268,7 +271,7 @@ class TestMobileMutation:
     def test_xss_in_profile_name(self):
         """XSS payload in display_name — should be stored as text, not executed."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
         xss_payloads = [
             '<script>alert("xss")</script>',
             '<img src=x onerror=alert(1)>',
@@ -279,7 +282,7 @@ class TestMobileMutation:
             resp = client.patch(
                 "/api/v1/mobile/user/profile",
                 json={"display_name": payload},
-                headers=_headers(token),
+                headers=_headers(),
             )
             assert resp.status_code in (200, 400, 422), (
                 f"Payload {payload!r}: got {resp.status_code}"
@@ -288,7 +291,7 @@ class TestMobileMutation:
     def test_very_deep_nested_json_in_profile(self):
         """Profile PATCH with extremely nested JSON structure."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
 
         def _deep_nest(n):
             if n <= 0:
@@ -299,7 +302,7 @@ class TestMobileMutation:
         resp = client.patch(
             "/api/v1/mobile/user/profile",
             json={"display_name": "DeepTest", "extra": deep},
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (200, 400, 422, 500), (
             f"Deep nested JSON: got {resp.status_code}"
@@ -308,7 +311,7 @@ class TestMobileMutation:
     def test_invalid_json_in_body(self):
         """Send non-parseable JSON body to a POST endpoint."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
 
         cases = [
             ("/api/v1/mobile/driver/expenses", "this is not json {{{"),
@@ -320,7 +323,7 @@ class TestMobileMutation:
             resp = client.post(
                 path,
                 content=body,
-                headers=_headers(token) | {"Content-Type": "application/json"},
+                headers=_headers() | {"Content-Type": "application/json"},
             )
             assert resp.status_code in (400, 422, 500), (
                 f"{path} with body {body!r}: got {resp.status_code}"
@@ -329,13 +332,13 @@ class TestMobileMutation:
     def test_empty_strings_for_all_fields(self):
         """Send empty strings for all text fields in transport creation."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
 
         resp = client.post(
             "/api/v1/mobile/dispatcher/transports",
             json={"reference": "", "loading_city": "", "delivery_city": "",
                   "driver_name": "", "truck_plate": "", "notes": ""},
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (201, 200, 400, 422), (
             f"Empty fields: got {resp.status_code}: {resp.text[:200]}"
@@ -345,7 +348,7 @@ class TestMobileMutation:
         resp2 = client.patch(
             "/api/v1/mobile/user/profile",
             json={"display_name": "", "phone": "", "email": ""},
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp2.status_code in (200, 400, 422), (
             f"Empty profile fields: got {resp2.status_code}"
@@ -354,12 +357,12 @@ class TestMobileMutation:
     def test_boundary_int_values(self):
         """Extreme boundary integer values for entity IDs and pagination."""
         client = _client()
-        token = _login(client)
+        _ = _MOCK_TOKEN  # noqa: F841 - auth is overridden by create_test_app()
 
         # Max 32-bit signed int
         resp = client.get(
             "/api/v1/mobile/driver/transports/2147483647",
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (404, 400, 422), (
             f"Max int transport: {resp.status_code}"
@@ -368,7 +371,7 @@ class TestMobileMutation:
         # Min 32-bit signed int (negative)
         resp = client.get(
             "/api/v1/mobile/driver/transports/-2147483648",
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (404, 400, 422), (
             f"Min int transport: {resp.status_code}"
@@ -377,7 +380,7 @@ class TestMobileMutation:
         # Zero as transport ID
         resp = client.get(
             "/api/v1/mobile/driver/transports/0",
-            headers=_headers(token),
+            headers=_headers(),
         )
         assert resp.status_code in (404, 400, 422), (
             f"Zero transport: {resp.status_code}"

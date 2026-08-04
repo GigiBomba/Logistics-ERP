@@ -13,6 +13,14 @@ from repositories import BaseRepository
 logger = logging.getLogger(__name__)
 
 
+def _next_month(ym: str) -> str:
+    """Return YYYY-MM of the month after *ym* (YYYY-MM)."""
+    y, m = int(ym[:4]), int(ym[5:7])
+    if m == 12:
+        return f"{y+1}-01"
+    return f"{y}-{m+1:02d}"
+
+
 class AnalyticsRepository(BaseRepository):
 
     _month_col_available: Optional[bool] = None
@@ -144,8 +152,8 @@ class AnalyticsRepository(BaseRepository):
             SELECT COALESCE(SUM(total_price_eur), 0) AS m_rev,
                    COALESCE(SUM(net_profit), 0) AS m_profit,
                    COALESCE(SUM(distance_km), 0) AS m_km
-            FROM trips WHERE created_at LIKE ? {self._company_filter()}
-        """, (f"%{current_month}%",) + self._company_params())
+            FROM trips WHERE created_at >= ? AND created_at < ? {self._company_filter()}
+        """, (f"{current_month}-01", f"{_next_month(current_month)}-01") + self._company_params())
         m_rev = m_row["m_rev"] if m_row else 0
         m_profit = m_row["m_profit"] if m_row else 0
         m_km = m_row["m_km"] if m_row else 0
@@ -328,6 +336,71 @@ class AnalyticsRepository(BaseRepository):
             ORDER BY profit DESC LIMIT 15
         """, tuple(params))
         return truck_stats
+
+    def get_otd_percentage(self, from_date=None, to_date=None):
+        """On-Time Delivery (OTD) percentage for delivered trips.
+
+        OTD % = (delivered trips with end_date <= promised_date) /
+                (delivered trips with promised_date set) × 100.
+
+        Only trips in a delivered/completed/done/paid status with a
+        non-empty ``promised_date`` are counted.  Returns ``0.0`` when
+        there are no qualifying trips (avoids division by zero).
+        """
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
+        date_clause = ""
+        date_params: list = []
+        if from_date and to_date:
+            date_clause = "AND end_date >= ? AND end_date <= ?"
+            date_params = [from_date, to_date]
+        row = self._fetchone(
+            f"""SELECT ROUND(100.0 * SUM(
+                        CASE WHEN end_date <= promised_date THEN 1 ELSE 0 END
+                    ) / COUNT(*), 1) AS otd_pct
+                FROM trips
+                WHERE LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
+                  AND promised_date IS NOT NULL AND promised_date != ''
+                  {date_clause} {company_filter}""",
+            tuple(date_params + company_params),
+        )
+        if not row or row.get("otd_pct") is None:
+            return 0.0
+        try:
+            return float(row["otd_pct"])
+        except (TypeError, ValueError):
+            return 0.0
+
+    def get_driver_otd(self, from_date=None, to_date=None):
+        """Per-driver On-Time Delivery percentage (mobile Phase 2 aggregator).
+
+        Same OTD definition as :meth:`get_otd_percentage` (delivered trips
+        with ``promised_date`` where ``end_date <= promised_date``), grouped
+        per driver.  Returns ``{driver_name: otd_pct}``; drivers without
+        qualifying delivered trips are absent (the aggregator defaults to 0).
+        """
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
+        date_clause = ""
+        date_params: list = []
+        if from_date and to_date:
+            date_clause = "AND end_date >= ? AND end_date <= ?"
+            date_params = [from_date, to_date]
+        rows = self._fetchall(
+            f"""SELECT COALESCE(NULLIF(driver_name, ''), 'Driver') AS driver,
+                       ROUND(100.0 * SUM(
+                           CASE WHEN end_date <= promised_date THEN 1 ELSE 0 END
+                       ) / COUNT(*), 1) AS otd_pct
+                FROM trips
+                WHERE LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
+                  AND promised_date IS NOT NULL AND promised_date != ''
+                  AND driver_name IS NOT NULL AND driver_name != ''
+                  AND driver_name != 'Unassigned'
+                  {date_clause} {company_filter}
+                GROUP BY driver_name""",
+            tuple(date_params + company_params),
+        )
+        return {r["driver"]: r.get("otd_pct") or 0.0 for r in (rows or [])}
 
     def get_driver_analytics(self, from_date=None, to_date=None):
         clause, params = self._date_clause(from_date, to_date)
@@ -625,8 +698,11 @@ class AnalyticsRepository(BaseRepository):
         )
 
     def get_invoice_aging(self):
-        """Invoice aging breakdown: unpaid invoices by overdue days.
+        """Invoice aging breakdown: outstanding (non-terminal) invoices by overdue days.
 
+        Counts every invoice that is NOT in a terminal state ('paid' /
+        'cancelled') — includes both the legacy 'Unpaid' value and the
+        Phase-3 status machine (draft/finalized/xml_generated/...).
         Returns buckets: current (0-30d overdue), 31-60d, 61-90d, 90+ days.
         """
         today = datetime.now()
@@ -643,7 +719,7 @@ class AnalyticsRepository(BaseRepository):
                 COALESCE(SUM(CASE WHEN due_date BETWEEN ? AND ? THEN total_amount ELSE 0 END), 0) AS bucket_61_90,
                 COALESCE(SUM(CASE WHEN due_date < ? THEN total_amount ELSE 0 END), 0) AS overdue_bucket,
                 COALESCE(SUM(total_amount), 0) AS total_outstanding
-            FROM invoices WHERE status = 'Unpaid' {self._company_filter()}
+            FROM invoices WHERE LOWER(status) NOT IN ('paid', 'cancelled') {self._company_filter()}
         """, (d_30, d_today, d_60, d_31, d_90, d_61, d_90) + self._company_params())
 
     def get_client_payment_timeline(self, from_date=None, to_date=None):

@@ -37,6 +37,8 @@ from services.fleet_maintenance_service import (
     MaintType,
 )
 from services.i18n import register_listener, t, unregister_listener
+from ui.components import EmptyState
+from ui.form_utils import add_required_indicator
 from ui.icons import iconed
 from ui.models.maintenance_view_model import MaintenanceViewModel
 from ui.widgets import ActionButton, KpiCard, StyledTableWidget
@@ -109,6 +111,14 @@ class QtMaintenanceView(QDialog):
         ])
         self._record_table.rowDoubleClicked.connect(self._on_record_double_clicked)
         self._record_layout.addWidget(self._record_table)
+        self._record_empty_state = EmptyState(
+            parent=self._record_tab,
+            icon_name="fa5s.wrench",
+            title=t("maint.empty_records_title", "No maintenance records"),
+            subtitle=t("maint.empty_records_desc", "Schedule your first service."),
+        )
+        self._record_empty_state.setVisible(False)
+        self._record_layout.addWidget(self._record_empty_state)
         self._tab_widget.addTab(self._record_tab, iconed("maint.tab_history"))
 
         # Tab 2 — Schedules (with add/edit/delete)
@@ -124,6 +134,14 @@ class QtMaintenanceView(QDialog):
             ("status", t("maint.col_status"), 80),
         ])
         self._schedule_layout.addWidget(self._schedule_table)
+        self._schedule_empty_state = EmptyState(
+            parent=self._schedule_tab,
+            icon_name="fa5s.wrench",
+            title=t("maint.empty_schedules_title", "No maintenance schedules"),
+            subtitle=t("maint.empty_schedules_desc", "Add a schedule to track recurring services."),
+        )
+        self._schedule_empty_state.setVisible(False)
+        self._schedule_layout.addWidget(self._schedule_empty_state)
 
         # Schedule action buttons
         btn_row = QHBoxLayout()
@@ -154,10 +172,13 @@ class QtMaintenanceView(QDialog):
             self._health_cards[key] = card
         self._health_layout.addLayout(self._health_cards_layout)
 
-        self._health_detail = QLabel(t("maint.health_no_data", "No health data available"))
-        self._health_detail.setProperty("fontRole", "muted")
-        self._health_detail.setWordWrap(True)
-        self._health_layout.addWidget(self._health_detail, 1)
+        self._health_empty_state = EmptyState(
+            parent=self._health_tab,
+            icon_name="fa5s.heartbeat",
+            title=t("maint.empty_health_title", "No health data available"),
+            subtitle=t("maint.empty_health_desc", "Health metrics will appear once maintenance records are added."),
+        )
+        self._health_layout.addWidget(self._health_empty_state, 1)
         self._tab_widget.addTab(self._health_tab, iconed("maint.tab_health"))
 
     # ── Data loading ─────────────────────────────────────────────
@@ -190,7 +211,11 @@ class QtMaintenanceView(QDialog):
                         "cost": getattr(r, "cost", ""),
                         "mileage": getattr(r, "km", ""),
                     })
-            self._record_table.set_data(rows)
+            has_rows = bool(rows)
+            self._record_table.setVisible(has_rows)
+            self._record_empty_state.setVisible(not has_rows)
+            if has_rows:
+                self._record_table.set_data(rows)
         except Exception:
             logger.exception("Failed to load maintenance records")
 
@@ -222,7 +247,11 @@ class QtMaintenanceView(QDialog):
                     "next_service": next_svc,
                     "status": t("maint.active") if s.get("active") else t("maint.inactive"),
                 })
-            self._schedule_table.set_data(rows)
+            has_rows = bool(rows)
+            self._schedule_table.setVisible(has_rows)
+            self._schedule_empty_state.setVisible(not has_rows)
+            if has_rows:
+                self._schedule_table.set_data(rows)
         except Exception:
             logger.exception("Failed to load schedules")
 
@@ -235,17 +264,8 @@ class QtMaintenanceView(QDialog):
             self._health_cards["recurring"].set_value(str(health.recurring_issues))
             self._health_cards["downtime"].set_value(f"{health.downtime_days}d")
 
-            summary_parts = []
-            if health.overdue_count > 0:
-                summary_parts.append(f"{health.overdue_count} overdue service(s)")
-            if health.recurring_issues > 0:
-                summary_parts.append(f"{health.recurring_issues} recurring issue(s)")
-            if health.downtime_days > 30:
-                summary_parts.append(f"{health.downtime_days}d since last service")
-            if summary_parts:
-                self._health_detail.setText("; ".join(summary_parts))
-            else:
-                self._health_detail.setText(t("maint.health_good"))
+            has_data = health.score > 0 or health.overdue_count > 0 or health.recurring_issues > 0
+            self._health_empty_state.setVisible(not has_data)
         except Exception:
             logger.exception("Failed to load health data")
 
@@ -362,8 +382,12 @@ class _ScheduleEditDialog(QDialog):
 
         self._existing = existing
         form = QFormLayout(self)
+        form.setSpacing(8)
 
-        # Maintenance type
+        # ── Maintenance type (required) ──
+        type_label = QLabel(t("maint.col_type"))
+        add_required_indicator(type_label)
+
         self._type_combo = QComboBox()
         for mt in MaintType:
             self._type_combo.addItem(MAINT_DISPLAY.get(mt, mt.value), mt.value)
@@ -371,9 +395,21 @@ class _ScheduleEditDialog(QDialog):
             idx = self._type_combo.findData(existing.get("maintenance_type", ""))
             if idx >= 0:
                 self._type_combo.setCurrentIndex(idx)
-        form.addRow(t("maint.col_type"), self._type_combo)
 
-        # Interval KM
+        type_container = QWidget()
+        type_container_layout = QVBoxLayout(type_container)
+        type_container_layout.setContentsMargins(0, 0, 0, 0)
+        type_container_layout.setSpacing(0)
+        type_container_layout.addWidget(self._type_combo)
+        self._type_error = QLabel()
+        self._type_error.setProperty("role", "field-error")
+        self._type_error.setVisible(False)
+        self._type_error.setWordWrap(True)
+        type_container_layout.addWidget(self._type_error)
+
+        form.addRow(type_label, type_container)
+
+        # ── Interval KM ──
         self._km_spin = QDoubleSpinBox()
         self._km_spin.setRange(0, 500000)
         self._km_spin.setSingleStep(10000)
@@ -384,7 +420,7 @@ class _ScheduleEditDialog(QDialog):
             self._km_spin.setValue(0)
         form.addRow(t("maint.interval_km"), self._km_spin)
 
-        # Interval months
+        # ── Interval months ──
         self._month_spin = QSpinBox()
         self._month_spin.setRange(0, 60)
         self._month_spin.setSuffix(" months")
@@ -397,7 +433,7 @@ class _ScheduleEditDialog(QDialog):
             self._month_spin.setValue(default_months or 0)
         form.addRow(t("maint.interval_months"), self._month_spin)
 
-        # Last done KM
+        # ── Last done KM ──
         self._last_km_spin = QDoubleSpinBox()
         self._last_km_spin.setRange(0, 9999999)
         self._last_km_spin.setSuffix(" km")
@@ -405,7 +441,7 @@ class _ScheduleEditDialog(QDialog):
             self._last_km_spin.setValue(float(existing["last_done_km"]))
         form.addRow(t("maint.last_done_km"), self._last_km_spin)
 
-        # Last done date
+        # ── Last done date ──
         self._last_date_edit = QDateEdit()
         self._last_date_edit.setCalendarPopup(True)
         self._last_date_edit.setDisplayFormat("yyyy-MM-dd")
@@ -419,7 +455,7 @@ class _ScheduleEditDialog(QDialog):
             self._last_date_edit.setDate(datetime.now().date())
         form.addRow(t("maint.last_done_date"), self._last_date_edit)
 
-        # Fixed expiry date
+        # ── Fixed expiry date ──
         self._fixed_date_edit = QDateEdit()
         self._fixed_date_edit.setCalendarPopup(True)
         self._fixed_date_edit.setDisplayFormat("yyyy-MM-dd")
@@ -432,15 +468,57 @@ class _ScheduleEditDialog(QDialog):
                 pass
         form.addRow(t("maint.fixed_expiry_date"), self._fixed_date_edit)
 
-        # Buttons
+        # ── Buttons ──
         btn_layout = QHBoxLayout()
         save_btn = QPushButton(t("common.save"))
-        save_btn.clicked.connect(self.accept)
+        save_btn.clicked.connect(self._on_save)
         cancel_btn = QPushButton(t("common.cancel"))
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(save_btn)
         btn_layout.addWidget(cancel_btn)
         form.addRow(btn_layout)
+
+        # ── Tab order ──
+        self.setTabOrder(self._type_combo, self._km_spin)
+        self.setTabOrder(self._km_spin, self._month_spin)
+        self.setTabOrder(self._month_spin, self._last_km_spin)
+        self.setTabOrder(self._last_km_spin, self._last_date_edit)
+        self.setTabOrder(self._last_date_edit, self._fixed_date_edit)
+        self.setTabOrder(self._fixed_date_edit, save_btn)
+        self.setTabOrder(save_btn, cancel_btn)
+
+    def _on_save(self) -> None:
+        """Validate required fields before accepting."""
+        errors = []
+
+        # Validate type
+        if not self._type_combo.currentData():
+            self._type_error.setText(t("common.field_required", default="This field is required"))
+            self._type_error.setVisible(True)
+            self._type_combo.setProperty("validation", "error")
+            self._type_combo.style().unpolish(self._type_combo)
+            self._type_combo.style().polish(self._type_combo)
+            errors.append("type")
+        else:
+            self._type_error.setVisible(False)
+            self._type_combo.setProperty("validation", "")
+            self._type_combo.style().unpolish(self._type_combo)
+            self._type_combo.style().polish(self._type_combo)
+
+        # Validate that at least one interval is set
+        km = self._km_spin.value()
+        months = self._month_spin.value()
+        if km == 0 and months == 0:
+            self._type_error.setText(t("maint.validation.interval_required", default="Set at least one interval (KM or months)"))
+            self._type_error.setVisible(True)
+            errors.append("interval")
+        elif not errors:
+            self._type_error.setVisible(False)
+
+        if errors:
+            return
+
+        self.accept()
 
     def get_data(self) -> dict[str, Any]:
         km = self._km_spin.value()

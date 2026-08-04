@@ -5,12 +5,17 @@ import pytest
 
 
 @pytest.fixture
-def document_center(qt_widget, qtbot, monkeypatch):
-    monkeypatch.setattr(
-        "ui.views.document_center_view.QtDocumentCenterView._initial_load",
-        lambda self: None,
-    )
+def document_center(qt_widget, qtbot):
     db = MagicMock()
+    # Mock conn.execute to return sensible values for document queries
+    mock_cursor = MagicMock()
+    mock_cursor.fetchall.return_value = []
+    mock_cursor.fetchone.return_value = None
+    mock_cursor.description = ()
+    db.conn.execute.return_value = mock_cursor
+    # Prevent errors from rows_to_dicts on MagicMock results
+    db.rows_to_dicts = MagicMock(return_value=[])
+    db.row_to_dict = MagicMock(return_value={})
     prefs = MagicMock()
     ops = MagicMock()
     api_client = MagicMock()
@@ -28,17 +33,17 @@ class TestQtDocumentCenterView:
         assert document_center.db is not None
 
     def test_document_table_created(self, document_center):
-        assert hasattr(document_center, "_doc_table")
-        assert document_center._doc_table is not None
+        # The document center uses a widget-based list, not a QTableWidget
+        assert hasattr(document_center, "_list_content") or hasattr(document_center, "_list_layout")
 
     def test_search_bar_created(self, document_center):
-        assert hasattr(document_center, "_search_bar")
+        assert hasattr(document_center, "_search_entry")
 
     def test_filter_controls_exist(self, document_center):
-        assert hasattr(document_center, "_status_filter")
+        assert hasattr(document_center, "_filter_panel") or hasattr(document_center, "_entity_type_combo")
 
     def test_bulk_action_buttons(self, document_center):
-        assert hasattr(document_center, "_btn_delete_selected")
+        assert hasattr(document_center, "_batch_del_btn") or hasattr(document_center, "_batch_zip_btn")
 
     def test_shutdown_cleanup(self, document_center):
         document_center.shutdown()

@@ -371,6 +371,8 @@ class ConfigPanel(QFrame):
         ops=None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName("Configuration panel")
+        self.setAccessibleDescription("AutoMail configuration panel for automation settings")
         self._db = db
         self._prefs = prefs
         self._ops = ops
@@ -408,6 +410,7 @@ class ConfigPanel(QFrame):
 
         # ── Master Toggle ───────────────────────────────────────────
         self._master_toggle = _MasterToggle(content)
+        self._master_toggle.setAccessibleName("Master toggle")
         self._master_toggle.toggled.connect(self._on_master_toggle)
         self._content_layout.addWidget(self._master_toggle)
 
@@ -419,6 +422,7 @@ class ConfigPanel(QFrame):
         self._add_btn = QPushButton(
             "+ " + t("automail.add_reminder", "Add Reminder"), content
         )
+        self._add_btn.setAccessibleName("Add reminder")
         self._add_btn.setObjectName("add-reminder-btn")
         self._add_btn.setFixedHeight(34)
         self._add_btn.setCursor(Qt.PointingHandCursor)
@@ -459,15 +463,18 @@ class ConfigPanel(QFrame):
         self._biz_hours_cb = QCheckBox(
             t("automail.business_hours_only", "Only send during business hours"), content
         )
+        self._biz_hours_cb.setAccessibleName("Business hours only")
         self._biz_hours_cb.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;")
         self._content_layout.addWidget(self._biz_hours_cb)
 
         hours_row = QHBoxLayout()
         hours_row.setSpacing(SPACE_2)
         self._start_time = QTimeEdit(content)
+        self._start_time.setAccessibleName("Start time")
         self._start_time.setDisplayFormat("HH:mm")
         self._start_time.setTime(self._start_time.time().fromString("08:00", "HH:mm"))
         self._end_time = QTimeEdit(content)
+        self._end_time.setAccessibleName("End time")
         self._end_time.setDisplayFormat("HH:mm")
         self._end_time.setTime(self._end_time.time().fromString("18:00", "HH:mm"))
         hours_row.addWidget(QLabel(t("common.from", "From") + ":", content))
@@ -480,6 +487,7 @@ class ConfigPanel(QFrame):
         self._skip_weekends_cb = QCheckBox(
             t("automail.skip_weekends", "Skip weekends"), content
         )
+        self._skip_weekends_cb.setAccessibleName("Skip weekends")
         self._skip_weekends_cb.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;")
         self._content_layout.addWidget(self._skip_weekends_cb)
 
@@ -495,6 +503,7 @@ class ConfigPanel(QFrame):
             t("automail.max_reminders", "Max reminders per invoice") + ":", content
         ))
         self._max_reminders_spin = QSpinBox(content)
+        self._max_reminders_spin.setAccessibleName("Max reminders")
         self._max_reminders_spin.setRange(1, 50)
         self._max_reminders_spin.setValue(5)
         safety_row.addWidget(self._max_reminders_spin)
@@ -507,6 +516,7 @@ class ConfigPanel(QFrame):
             t("automail.retry_attempts", "Retry attempts") + ":", content
         ))
         self._retry_spin = QSpinBox(content)
+        self._retry_spin.setAccessibleName("Retry attempts")
         self._retry_spin.setRange(0, 10)
         self._retry_spin.setValue(3)
         retry_row.addWidget(self._retry_spin)
@@ -522,6 +532,7 @@ class ConfigPanel(QFrame):
         preset_row = QHBoxLayout()
         preset_row.setSpacing(SPACE_2)
         self._preset_combo = QComboBox(content)
+        self._preset_combo.setAccessibleName("Preset selector")
         self._preset_combo.setMinimumWidth(120)
         preset_row.addWidget(self._preset_combo)
 

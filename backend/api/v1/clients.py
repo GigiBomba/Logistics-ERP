@@ -5,7 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from backend.dependencies import get_client_service
 from backend.schemas.client import (
     ClientContactAddRequest,
+    ClientContactUpdateRequest,
     ClientCreateRequest,
+    ClientMergeRequest,
     ClientResponse,
     ClientTagAddRequest,
     ClientUpdateRequest,
@@ -13,7 +15,7 @@ from backend.schemas.client import (
 from backend.schemas.common import PaginatedResponse
 from backend.services.client_service import ClientService
 
-from backend.dependencies_security import require_dispatcher
+from backend.dependencies_security import require_admin, require_dispatcher
 
 router = APIRouter(prefix="/clients", tags=["clients"])
 
@@ -67,6 +69,25 @@ def create_client(
     company_id = current_user.get("company_id", 0)
     client_id = service.create(company_id=company_id, name=data.name, **data.model_dump(exclude={"name"}))
     return {"id": client_id}
+
+
+@router.post("/merge", response_model=Dict[str, int])
+def merge_clients(
+    data: ClientMergeRequest,
+    current_user: Dict[str, Any] = Depends(require_admin),
+    service: ClientService = Depends(get_client_service),
+):
+    """Merge a source client into a target client (destructive, admin-only).
+
+    Reassigns all related trips, invoices, contacts and tags to the target
+    and deactivates the source. Mirrors ``ClientService.merge_clients``;
+    company scoping is handled inside the repository.
+    """
+    # Pass the caller id so the service-level ``can_merge_clients`` check
+    # runs. The env-configured admin has ``id == 0`` (falsy), which falls
+    # back to the legacy no-permission-check path.
+    user_id = current_user.get("id") or current_user.get("user_id")
+    return service.merge_clients(data.from_id, data.to_id, user_id=user_id)
 
 
 @router.patch("/{client_id}")
@@ -179,6 +200,49 @@ def add_client_contact(
     company_id = current_user.get("company_id", 0)
     contact_id = service.add_contact(client_id, company_id=company_id, **data.model_dump())
     return {"id": contact_id}
+
+
+@router.patch("/contacts/{contact_id}")
+def update_client_contact(
+    contact_id: int,
+    data: ClientContactUpdateRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service: ClientService = Depends(get_client_service),
+):
+    """Update a client contact by contact id (company-scoped).
+
+    Partial update: only the fields present in the request body are applied
+    (``exclude_unset``). An empty body is rejected with 422.
+
+    ``RemoteClientService.update_contact`` only knows ``contact_id``, so the
+    route is contact-id-addressed (``/clients/contacts/{contact_id}``); the
+    ``{client_id}`` routes never collide because "contacts" cannot match an
+    int path converter and the segment counts differ.
+    """
+    company_id = current_user.get("company_id", 0)
+    contact = service.get_contact_by_id(contact_id, company_id=company_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    fields = data.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=422, detail="No fields provided for update")
+    service.update_contact(contact_id, **fields)
+    return {"status": "updated"}
+
+
+@router.delete("/contacts/{contact_id}")
+def delete_client_contact(
+    contact_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service: ClientService = Depends(get_client_service),
+):
+    """Delete a client contact by contact id (company-scoped)."""
+    company_id = current_user.get("company_id", 0)
+    contact = service.get_contact_by_id(contact_id, company_id=company_id)
+    if contact is None:
+        raise HTTPException(status_code=404, detail="Contact not found")
+    service.delete_contact(contact_id)
+    return {"status": "deleted"}
 
 
 @router.get("/{client_id}/tags")

@@ -25,6 +25,7 @@ from services.migration.types import (
     ImportStage,
     MappingConfig,
 )
+from models.trip_models import TripCreate
 from services.trip_service import TripService
 from tests.test_helpers import make_db
 
@@ -82,17 +83,16 @@ class TestMigrationImportExport:
         now = datetime.now().isoformat()
         for i, client in enumerate(clients[:2]):
             truck_plate = trucks[i % len(trucks)]["plate_number"] if trucks else "TR-EXP-001"
-            trip_svc.add({
-                "client_id": client["id"],
-                "client_name": client["name"],
-                "truck_plate": truck_plate,
-                "distance_km": 500.0 * (i + 1),
-                "price_eur": 2000.0 * (i + 1),
-                "status": "Delivered",
-                "start_date": "2024-06-01",
-                "end_date": "2024-06-03",
-                "created_at": now,
-            })
+            trip_svc.create(TripCreate(
+                client_id=client["id"],
+                client_name=client["name"],
+                truck_plate=truck_plate,
+                distance_km=500.0 * (i + 1),
+                price_eur=2000.0 * (i + 1),
+                status="Delivered",
+                start_date="2024-06-01",
+                end_date="2024-06-03",
+            ))
 
     def _export_all(self, db, tmpdir) -> dict[str, str]:
         """Export all entity types and return paths by type."""

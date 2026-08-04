@@ -268,6 +268,10 @@ class ImportService:
         stats = ImportStats(total_rows=len(rows))
         repo = self._get_repo(entity_type)
 
+        # Pre-flight: surface malformed start_date values (observability only —
+        # rows are never dropped or altered here).
+        self._warn_malformed_start_dates(rows)
+
         if progress_cb:
             progress_cb(ImportStage.COMMITTING.value, 0, f"Committing {len(rows)} rows...")
 
@@ -385,6 +389,32 @@ class ImportService:
         return stats
 
     # ── Helpers ────────────────────────────────────────────────────────
+
+    @staticmethod
+    def _warn_malformed_start_dates(rows: list[dict[str, Any]]) -> None:
+        """Log a warning for any row whose ``start_date`` is not ISO-format.
+
+        Source files may carry dates in unknown formats; there is no
+        deterministically safe converter here, so rows are imported as-is.
+        The goal is observability of malformed dates, not data loss.
+        """
+        from datetime import datetime
+
+        malformed: list[str] = []
+        for row in rows:
+            value = row.get("start_date")
+            if value is None or value == "":
+                continue
+            try:
+                datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+            except (ValueError, TypeError):
+                malformed.append(str(value))
+        if malformed:
+            logger.warning(
+                "Import contains malformed start_date value(s), expected ISO "
+                "YYYY-MM-DD (rows imported as-is): %s",
+                ", ".join(malformed),
+            )
 
     @staticmethod
     def _enrich_row(row: dict[str, Any], entity_type: EntityType) -> dict[str, Any]:

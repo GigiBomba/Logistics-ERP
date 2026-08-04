@@ -17,7 +17,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from ui.theme import COLORS
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY, COLOR_BG_BASE, COLOR_TEXT_PRIMARY, COLOR_TEXT_TERTIARY,
+    SPACE_4,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -35,38 +38,44 @@ class LoadingOverlay(QFrame):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("loadingOverlay")
-        self.setStyleSheet("""
-            #loadingOverlay {
-                background-color: rgba(9, 9, 11, 200);
-            }
+        self.setStyleSheet(f"""
+            #loadingOverlay {{
+                background-color: {COLOR_BG_BASE};
+            }}
         """)
         self.setAttribute(Qt.WA_TransparentForMouseEvents, False)
 
         layout = QVBoxLayout(self)
         layout.setAlignment(Qt.AlignCenter)
-        layout.setSpacing(16)
+        layout.setSpacing(SPACE_4)
 
         # Spinner
         self._spinner = QLabel("\u25E0", self)  # unicode half-circle
         sp_font = QFont("Segoe UI", 48)
+        if sp_font.pointSize() <= 0:
+            sp_font.setPointSize(48)
         self._spinner.setFont(sp_font)
-        self._spinner.setStyleSheet(f"color: {COLORS['accent']}; background: transparent;")
+        self._spinner.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY}; background: transparent;")
         self._spinner.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._spinner)
 
         # Main text
         self._text_label = QLabel(text, self)
         tf = QFont("IBM Plex Sans", 18)
+        if tf.pointSize() <= 0:
+            tf.setPointSize(18)
         self._text_label.setFont(tf)
-        self._text_label.setStyleSheet(f"color: {COLORS['text_primary']}; background: transparent;")
+        self._text_label.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; background: transparent;")
         self._text_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._text_label)
 
         # Progress sub-text
         self._progress_label = QLabel("", self)
         pf = QFont("IBM Plex Sans", 13)
+        if pf.pointSize() <= 0:
+            pf.setPointSize(13)
         self._progress_label.setFont(pf)
-        self._progress_label.setStyleSheet(f"color: {COLORS['text_muted']}; background: transparent;")
+        self._progress_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; background: transparent;")
         self._progress_label.setAlignment(Qt.AlignCenter)
         layout.addWidget(self._progress_label)
 

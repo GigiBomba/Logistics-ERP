@@ -8,6 +8,8 @@ from backend.dependencies_security import require_dispatcher
 from backend.schemas.settings import CompanyConfigUpdateRequest, SettingUpdateRequest
 from backend.db import DatabaseManager
 from backend.desktop_config import Config
+from services.encryption_service import decrypt_value, encrypt_value
+from services.preferences import _SENSITIVE_KEYS
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
@@ -69,6 +71,8 @@ def get_setting(
     value = db.get_setting(key)
     if value is None:
         raise HTTPException(status_code=404, detail="Setting not found")
+    if key in _SENSITIVE_KEYS:
+        value = decrypt_value(value)
     return {"key": key, "value": value}
 
 
@@ -80,7 +84,8 @@ def save_setting_partial(
     db: DatabaseManager = Depends(get_db),
 ):
     """Partially update a setting (PATCH)."""
-    db.save_setting(key, data.value)
+    value = encrypt_value(data.value) if key in _SENSITIVE_KEYS else data.value
+    db.save_setting(key, value)
     return {"status": "saved", "key": key, "value": data.value}
 
 
@@ -93,7 +98,8 @@ def save_setting(
     response: Response = None,
 ):
     """[DEPRECATED] Use PATCH /{key} instead."""
-    db.save_setting(key, data.value)
+    value = encrypt_value(data.value) if key in _SENSITIVE_KEYS else data.value
+    db.save_setting(key, value)
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
     return {"status": "saved", "key": key, "value": data.value}

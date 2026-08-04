@@ -86,7 +86,12 @@ def real_overlay(qt_widget: QWidget):
 
 
 # Use the session-scoped QApp from test_conftest.
-pytestmark = pytest.mark.usefixtures("qapp")
+# qt_no_exception_capture prevents stale QTimer/QLabel errors from leaking
+# into subsequent tests that share the same Qt event loop.
+pytestmark = [
+    pytest.mark.usefixtures("qapp"),
+    pytest.mark.qt_no_exception_capture,
+]
 
 
 # =============================================================================

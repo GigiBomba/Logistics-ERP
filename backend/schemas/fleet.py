@@ -1,7 +1,7 @@
 
-from typing import Optional
+from typing import Annotated, List, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, RootModel
 
 class TruckBase(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -40,3 +40,11 @@ class GpsPosition(BaseModel):
     heading: int = 0
     recorded_at: str = ""
     driver_id: Optional[int] = None
+
+
+class GpsBatchRequest(RootModel[Annotated[List[GpsPing], Field(max_length=500)]]):
+    """Batch of GPS pings for ``POST /fleet/gps/batch``.
+
+    Capped at 500 pings so an oversized batch cannot build a huge IN-clause
+    or flood the cache; FastAPI rejects larger batches with 422.
+    """

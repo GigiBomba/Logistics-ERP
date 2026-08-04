@@ -131,14 +131,16 @@ class TestQtCalculatorView:
 
     def test_calculate_button_exists(self, calculator_view):
         """Calculate button is present on the widget."""
-        from ui.components import Btn
-        buttons = calculator_view.findChildren(Btn)
-        # Find the calculate button specifically
         assert calculator_view.calculate_btn is not None
+        # Widget must be shown for isVisible() to return True
+        calculator_view.show()
         assert calculator_view.calculate_btn.isVisible()
 
     def test_result_panel_renders_after_calculation(self, calculator_view, mock_calculator):
         """After calculation, result labels are updated."""
+        calculator_view.show()
+        # Clear default "0" in e_km so _route_distance is used
+        calculator_view.e_km.clear()
         # Set up input fields
         calculator_view._route_distance = 500.0
         calculator_view.e_price.setText("2000")
@@ -183,12 +185,14 @@ class TestQtCalculatorView:
 
     def test_vat_toggle_shows_fields(self, calculator_view):
         """Enabling VAT reveals pre/post VAT fields."""
+        calculator_view.show()
         assert calculator_view._vat_fields_frame.isHidden()
         calculator_view._vat_check.setChecked(True)
         assert calculator_view._vat_fields_frame.isVisible()
 
     def test_vat_toggle_hides_fields(self, calculator_view):
         """Disabling VAT hides pre/post VAT fields."""
+        calculator_view.show()
         calculator_view._vat_check.setChecked(True)
         assert calculator_view._vat_fields_frame.isVisible()
         calculator_view._vat_check.setChecked(False)

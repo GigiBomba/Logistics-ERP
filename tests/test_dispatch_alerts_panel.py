@@ -9,7 +9,7 @@ class TestQtDispatchAlertsPanel:
         panel = QtDispatchAlertsPanel(qt_widget)
         qtbot.addWidget(panel)
 
-    def test_set_alerts(self, qt_widget, qtbot):
+    def test_refresh(self, qt_widget, qtbot):
         from ui.widgets.dispatch_alerts_panel import QtDispatchAlertsPanel
         panel = QtDispatchAlertsPanel(qt_widget)
         qtbot.addWidget(panel)
@@ -17,13 +17,8 @@ class TestQtDispatchAlertsPanel:
             {"type": "conflict", "message": "Driver double-booked"},
             {"type": "warning", "message": "Truck overdue maintenance"},
         ]
-        panel.set_alerts(alerts)
-
-    def test_clear(self, qt_widget, qtbot):
-        from ui.widgets.dispatch_alerts_panel import QtDispatchAlertsPanel
-        panel = QtDispatchAlertsPanel(qt_widget)
-        qtbot.addWidget(panel)
-        panel.clear()
+        # refresh accepts a list of card data dicts
+        panel.refresh(alerts)
 
     def test_has_alerts(self, qt_widget, qtbot):
         from ui.widgets.dispatch_alerts_panel import QtDispatchAlertsPanel

@@ -18,8 +18,8 @@ def upgrade() -> None:
     op.create_table(
         'saved_searches',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('user_id', sa.BigInteger(), sa.ForeignKey('users.id'), nullable=False),
         sa.Column('label', sa.String(), nullable=False),
         sa.Column('filters', sa.JSON(), nullable=False),
         sa.Column('provider_ids', sa.JSON(), nullable=True),

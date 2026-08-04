@@ -18,6 +18,7 @@ from backend.api.v1 import (
     health,
     invoices,
     maintenance,
+    metrics,
     mobile,
     oauth2,
     ocr,
@@ -28,6 +29,7 @@ from backend.api.v1 import (
     routes,
     settings,
     slo,
+    support,
     tacho,
     trips,
     users,
@@ -50,6 +52,7 @@ api_v1_router.include_router(freight_exchange.router)
 api_v1_router.include_router(routes.router)
 api_v1_router.include_router(analytics.router)
 api_v1_router.include_router(maintenance.router)
+api_v1_router.include_router(metrics.router)
 api_v1_router.include_router(alerts.router)
 api_v1_router.include_router(settings.router)
 api_v1_router.include_router(tacho.router)
@@ -65,6 +68,11 @@ api_v1_router.include_router(payments.router)
 api_v1_router.include_router(feature_flags.router)
 api_v1_router.include_router(gdpr.router)
 api_v1_router.include_router(slo.router)
+api_v1_router.include_router(support.router)
 api_v1_router.include_router(webhooks.router)
 api_v1_router.include_router(waitlist.router)
 api_v1_router.include_router(mobile.router)
+# New mobile entity routers (blueprint §6) — mounted alongside the legacy
+# mobile.py router; subpaths (/fleet, /drivers, …) do not collide with it.
+api_v1_router.include_router(mobile.mobile_router)
+

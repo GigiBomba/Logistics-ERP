@@ -5,18 +5,13 @@ import pytest
 
 
 @pytest.fixture
-def history_view(qt_widget, qtbot, monkeypatch):
-    monkeypatch.setattr(
-        "ui.views.history_view.QtHistoryView._initial_load",
-        lambda self: None,
-    )
+def history_view(qt_widget, qtbot):
     db = MagicMock()
     controller = MagicMock()
     prefs = MagicMock()
     ops = MagicMock()
-    api_client = MagicMock()
     view = __import__("ui.views.history_view", fromlist=["QtHistoryView"]).QtHistoryView(
-        qt_widget, db=db, controller=controller, prefs=prefs, ops=ops, api_client=api_client,
+        qt_widget, db=db, controller=controller, prefs=prefs, ops=ops,
     )
     qtbot.addWidget(view)
     yield view
@@ -29,16 +24,16 @@ class TestQtHistoryView:
         assert history_view.db is not None
 
     def test_trip_table_created(self, history_view):
-        assert hasattr(history_view, "_trip_table")
+        assert hasattr(history_view, "table")
 
     def test_date_filters_exist(self, history_view):
-        assert hasattr(history_view, "_date_from")
+        assert hasattr(history_view, "c_status")
 
     def test_search_bar_exists(self, history_view):
-        assert hasattr(history_view, "_search_input")
+        assert hasattr(history_view, "e_search")
 
     def test_export_button_exists(self, history_view):
-        assert hasattr(history_view, "_btn_export")
+        assert hasattr(history_view, "_action_bar")
 
     def test_shutdown_cleanup(self, history_view):
         history_view.shutdown()

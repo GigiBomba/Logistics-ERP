@@ -18,6 +18,8 @@ dev = [
     "coverage>=7.0",
     "ruff>=0.12",
     "pre-commit>=4.0",
+    "numpy>=1.24",
+    "Pillow>=10.0",
 ]
 sharing = [
     "qrcode>=8.0.0",
@@ -107,14 +109,21 @@ markers = [
     "chaos: chaos and resilience tests",
     "concurrency: thread-safety and race-condition tests",
     "asyncio: async/await tests",
+    "postgresql: tests that require a running PostgreSQL instance",
+    "visual: visual regression / screenshot comparison tests",
+    "visual_slow: visual tests that take >2 seconds",
 ]
 
 # ──────────────────────────────────────────────────────────────
 # Coverage
 # ──────────────────────────────────────────────────────────────
 [tool.coverage.run]
-source = ["."]
-fail_under = 60
+# Source narrowed to the core packages (D8 baseline, 2026-08): source = ["."]
+# swept scratch scripts and, with pytest-xdist, produced "No source for code:
+# pyscript" in CI. parallel = true makes `coverage run -m pytest -n auto`
+# actually measure the xdist worker processes.
+source = ["services", "repositories", "client", "backend"]
+parallel = true
 omit = [
     "*/tests/*",
     "*/scripts/*",
@@ -127,6 +136,14 @@ omit = [
 ]
 
 [tool.coverage.report]
+# Evidence-based fail_under (roadmap 11): full-suite baseline established by
+# D8 (2026-08) measures 76% aggregate over services/repositories/client/backend
+# (A∪B∪C∪D chunks, parallel-mode + combine; see .slim/deepwork progress file).
+# fail_under stays at 65 — a calibrated-but-conservative gate: run-to-run
+# variance (~±4pt), ~30 pre-existing failing tests, and erratic e2e/mobile
+# coverage argue against raising until those failures are green. CI must run
+# with parallel mode + `coverage combine` for the number to be enforceable.
+fail_under = 65
 show_missing = true
 skip_covered = false
 exclude_lines = [

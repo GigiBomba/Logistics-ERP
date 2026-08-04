@@ -71,7 +71,7 @@ def _load_flattened(lang: str) -> dict[str, str]:
     path = TRANSLATIONS_DIR / f"{lang}.json"
     if not path.is_file():
         return {}
-    with open(path, encoding="utf-8") as f:
+    with open(path, encoding="utf-8-sig") as f:
         raw = json.load(f)
     flat: dict[str, str] = {}
     _flatten(raw, "", flat)
@@ -162,7 +162,7 @@ class TestFreightI18n:
         """Return only code keys that correspond to string values (not parent
         dicts) in the English JSON structure."""
         en_path = TRANSLATIONS_DIR / "en.json"
-        with open(en_path, encoding="utf-8") as f:
+        with open(en_path, encoding="utf-8-sig") as f:
             en_raw = json.load(f)
         freight_obj = en_raw.get("freight", {})
 

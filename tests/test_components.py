@@ -56,7 +56,7 @@ class TestBtn:
         from ui.components import Btn
         btn = Btn(qt_widget, "Small", size="sm")
         qtbot.addWidget(btn)
-        assert btn.property("size") == "sm"
+        assert btn.property("button-size") == "sm"
 
     def test_button_command(self, qt_widget, qtbot):
         from ui.components import Btn

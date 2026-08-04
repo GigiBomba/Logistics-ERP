@@ -10,11 +10,14 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+import qtawesome as qta
 from PySide6.QtCore import Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
     QMessageBox,
     QVBoxLayout,
     QWidget,
@@ -23,7 +26,7 @@ from PySide6.QtWidgets import (
 from services.user_service import UserService
 from ui.base_view import BaseView
 from services.i18n import t
-from ui.components import Btn
+from ui.components import Btn, EmptyState, IconButton
 from ui.design_tokens import SP
 from ui.widgets import (
     StyledComboBox,
@@ -61,11 +64,12 @@ class QtTeamView(BaseView):
 
     def _build_ui(self) -> None:
         """Build the full view layout inside a scrollable container."""
+        self.setAccessibleName("Team management")
         self._container = QWidget()
         self._container.setObjectName("team-view-container")
         layout = QVBoxLayout(self._container)
         layout.setContentsMargins(SP["10"], SP["6"], SP["10"], SP["10"])
-        layout.setSpacing(SP["6"])
+        layout.setSpacing(SP["4"])
         layout.setAlignment(Qt.AlignTop)
 
         self._build_add_user_section(layout)
@@ -83,6 +87,7 @@ class QtTeamView(BaseView):
     def _build_add_user_section(self, parent_layout: QVBoxLayout) -> None:
         """Build the 'Add User' card with form fields."""
         card = QFrame()
+        card.setObjectName("card")
         card.setProperty("role", "card")
         cl = QVBoxLayout(card)
         cl.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
@@ -136,6 +141,7 @@ class QtTeamView(BaseView):
     def _build_team_members_section(self, parent_layout: QVBoxLayout) -> None:
         """Build the 'Team Members' card with user table."""
         card = QFrame()
+        card.setObjectName("card")
         card.setProperty("role", "card")
         cl = QVBoxLayout(card)
         cl.setContentsMargins(SP["4"], SP["5"], SP["4"], SP["5"])
@@ -151,6 +157,22 @@ class QtTeamView(BaseView):
         subtitle.setProperty("fontRole", "muted")
         cl.addWidget(subtitle)
 
+        # Density toggle
+        density_row = QFrame()
+        density_layout = QHBoxLayout(density_row)
+        density_layout.setContentsMargins(0, 0, 0, 0)
+        density_layout.addStretch()
+        self._density_btn = IconButton(
+            density_row,
+            icon_name="fa5s.table",
+            tooltip=t("table.density", "Row density"),
+            variant="ghost",
+            size=32,
+        )
+        self._density_btn.clicked.connect(self._show_density_menu)
+        density_layout.addWidget(self._density_btn)
+        cl.addWidget(density_row)
+
         # Table — last column (Actions) stretches
         columns: list[tuple] = [
             ("email",   t("team.col_email"),    200),
@@ -159,10 +181,53 @@ class QtTeamView(BaseView):
             ("created", t("team.col_created"),  140),
             ("actions", t("team.col_actions"),   80),
         ]
-        self._table = StyledTableWidget(card, columns=columns)
+        self._table = StyledTableWidget(card, columns=columns, prefs_key="team_view")
+        self._table.setAccessibleName("Team members table")
         cl.addWidget(self._table)
 
+        # Empty state (hidden when table has data)
+        self._empty_state = EmptyState(
+            parent=card,
+            icon_name="fa5s.users",
+            title=t("team.empty_title", "No team members"),
+            subtitle=t("team.empty_desc", "Invite team members to collaborate."),
+        )
+        self._empty_state.setVisible(False)
+        cl.addWidget(self._empty_state)
+
         parent_layout.addWidget(card)
+
+    # ── Density menu ──────────────────────────────────────────────────────
+
+    def _show_density_menu(self):
+        """Show row density menu for the team members table."""
+        menu = self._table._build_density_menu(self._density_btn)
+        if menu:
+            menu.exec_(self._density_btn.mapToGlobal(
+                self._density_btn.rect().bottomLeft()
+            ))
+
+    # ── Context menu ──────────────────────────────────────────────────────
+
+    def contextMenuEvent(self, event):
+        """Right-click context menu for the team members table."""
+        index = self._table.indexAt(event.pos())
+        if not index.isValid():
+            return
+
+        row = index.row()
+        record = self._table._data[row] if 0 <= row < len(self._table._data) else None
+        if record is None:
+            return
+
+        menu = QMenu(self)
+
+        # Deactivate action
+        deact_action = QAction(qta.icon("fa5s.user-slash"), t("team.deactivate"), self)
+        deact_action.triggered.connect(lambda: self._on_deactivate_user(record))
+        menu.addAction(deact_action)
+
+        menu.exec_(event.globalPos())
 
     # ── i18n ──────────────────────────────────────────────────────────────────
 
@@ -250,7 +315,14 @@ class QtTeamView(BaseView):
         except Exception as exc:
             logger.error("Failed to load users: %s", exc)
 
+        has_rows = bool(rows)
+        self._table.setVisible(has_rows)
+        self._empty_state.setVisible(not has_rows)
+        if not has_rows:
+            return
+
         self._table.set_data(rows)
+        self._table.restore_column_widths()
 
         # Add Deactivate buttons to each row's Actions column
         actions_col = len(self._table._column_ids) - 1

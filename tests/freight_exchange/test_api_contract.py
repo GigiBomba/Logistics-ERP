@@ -7,7 +7,7 @@ handling, rate limiting, pagination, idempotency, and security concerns.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone, date
+from datetime import datetime, timedelta, timezone, date
 from typing import Any, Dict
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -228,6 +228,131 @@ def client_no_auth(db: InMemoryDB) -> TestClient:
     app.dependency_overrides[get_db] = _override_get_db
 
     return TestClient(app)
+
+
+# ===================================================================
+# Load-board LIST endpoint (blueprint §6.3 — provider-agnostic contract)
+# ===================================================================
+
+
+class TestLoadListEndpoint:
+    """GET /freight/loads — provider-agnostic load-board list contract.
+
+    Mirrors the mobile ``FreightLoad`` model (freight_load.dart) field for
+    field: id, origin, destination, cargo_type, price, currency, pickup_date,
+    deadline_date, weight_kg, distance_km.  NO provider-specific field names.
+    """
+
+    EXPECTED_KEYS = {
+        "id", "origin", "destination", "cargo_type", "price", "currency",
+        "pickup_date", "deadline_date", "weight_kg", "distance_km",
+    }
+    FORBIDDEN_KEYS = {"provider_id", "provider_load_id", "result_id",
+                      "trailer_type", "pickup_window", "delivery_window",
+                      "raw_payload", "adr"}
+
+    @patch("backend.api.v1.freight_exchange.SearchEngineService")
+    def test_list_loads_returns_provider_agnostic_items(
+        self, mock_search_cls: MagicMock, client: TestClient,
+    ) -> None:
+        """GET /freight/loads → 200 + provider-agnostic item list."""
+        now = datetime.now(timezone.utc)
+        load = LoadSearchResult(
+            result_id="TL-001",
+            provider_id="timocom",
+            provider_load_id="TIM-0000001",
+            origin="Berlin",
+            destination="Paris",
+            pickup_window=(now, now + timedelta(hours=6)),
+            delivery_window=(now + timedelta(hours=24), now + timedelta(hours=48)),
+            price=Money(amount="1450.00", currency="EUR"),
+            distance_km=1050.5,
+            trailer_type="curtain",
+            adr=False,
+            weight_kg=21000,
+        )
+        result_set = SearchResultSet()
+        result_set.results = [load]
+        mock_instance = MagicMock()
+        mock_instance.search_loads = AsyncMock(return_value=result_set)
+        mock_search_cls.return_value = mock_instance
+
+        resp = client.get("/api/v1/freight/loads")
+        assert resp.status_code == 200, f"List failed: {resp.text}"
+        items = resp.json()
+        assert isinstance(items, list)
+        assert len(items) == 1
+        item = items[0]
+        assert set(item.keys()) == self.EXPECTED_KEYS
+        # Provider-agnostic discipline (§6.3): no TIMOCOM/Trans.eu names.
+        assert self.FORBIDDEN_KEYS.isdisjoint(item.keys())
+        assert item["id"] == "TL-001"
+        assert item["origin"] == "Berlin"
+        assert item["destination"] == "Paris"
+        assert item["cargo_type"] == "curtain"
+        assert item["price"] == 1450.0
+        assert item["currency"] == "EUR"
+        assert item["weight_kg"] == 21000.0
+        # distance_km is a string in the mobile Dart model (String? distanceKm).
+        assert item["distance_km"] == "1050.5"
+        assert item["pickup_date"] == now.isoformat()
+        assert item["deadline_date"] == (now + timedelta(hours=48)).isoformat()
+
+    @patch("backend.api.v1.freight_exchange.SearchEngineService")
+    def test_list_loads_passes_filters_to_service(
+        self, mock_search_cls: MagicMock, client: TestClient,
+    ) -> None:
+        """origin/destination/date/cargo_type query params reach the engine."""
+        mock_instance = MagicMock()
+        mock_instance.search_loads = AsyncMock(return_value=SearchResultSet())
+        mock_search_cls.return_value = mock_instance
+
+        resp = client.get(
+            "/api/v1/freight/loads?origin=Berlin&destination=Paris"
+            "&date=2026-07-20&cargo_type=curtain"
+        )
+        assert resp.status_code == 200
+        call_kwargs = mock_instance.search_loads.call_args.kwargs
+        assert call_kwargs["company_id"] == 1  # from JWT, never query param
+        filters = call_kwargs["filters"]
+        assert filters.origin.location == "Berlin"
+        assert filters.destination.location == "Paris"
+        assert filters.pickup_date_from.isoformat() == "2026-07-20"
+        assert filters.pickup_date_to.isoformat() == "2026-07-20"
+        assert filters.trailer_type == ["curtain"]
+
+    @patch("backend.api.v1.freight_exchange.SearchEngineService")
+    def test_list_loads_defaults_pickup_window_without_date(
+        self, mock_search_cls: MagicMock, client: TestClient,
+    ) -> None:
+        """No date param → a rolling 3-week window so the board is not empty."""
+        mock_instance = MagicMock()
+        mock_instance.search_loads = AsyncMock(return_value=SearchResultSet())
+        mock_search_cls.return_value = mock_instance
+
+        resp = client.get("/api/v1/freight/loads")
+        assert resp.status_code == 200
+        filters = mock_instance.search_loads.call_args.kwargs["filters"]
+        assert filters.pickup_date_from <= date.today()
+        assert filters.pickup_date_to >= date.today()
+
+    def test_list_loads_rejects_invalid_date(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/freight/loads?date=not-a-date")
+        assert resp.status_code == 422
+
+    def test_list_loads_rejects_invalid_limit(self, client: TestClient) -> None:
+        resp = client.get("/api/v1/freight/loads?limit=9999")
+        assert resp.status_code == 422
+
+    def test_list_loads_requires_auth(self, client_no_auth: TestClient) -> None:
+        resp = client_no_auth.get("/api/v1/freight/loads")
+        assert resp.status_code == 401
+
+    def test_list_loads_requires_dispatcher_role(
+        self, client_insufficient_role: TestClient,
+    ) -> None:
+        resp = client_insufficient_role.get("/api/v1/freight/loads")
+        assert resp.status_code == 403
 
 
 # ===================================================================

@@ -10,6 +10,8 @@ Tests cover:
 Blueprint: §9 — Registry enforcement, §9.1 Level 1 INFORMATIONAL.
 """
 
+from __future__ import annotations
+
 import asyncio
 from typing import Any
 from unittest.mock import MagicMock, patch

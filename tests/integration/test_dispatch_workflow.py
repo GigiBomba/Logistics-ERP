@@ -81,12 +81,9 @@ def _build_dispatch_service(db) -> DispatchService:
 
 
 def _trip_add_kwargs(**overrides: Any) -> dict[str, Any]:
-    """Return a base dict for ``TripService.add()`` with all fields TripResult requires.
+    """Return a base dict for creating trips via ``TripCreate``.
 
     ``TripResult`` validates that certain string fields are not ``None``.
-    The deprecated ``TripService.add()`` + subsequent ``TripService.update()``
-    path maps the DB row through ``_db_to_trip_result()``, so we must ensure
-    those columns are never NULL.
     """
     kw: dict[str, Any] = {
         "client_id": 1,
@@ -95,13 +92,19 @@ def _trip_add_kwargs(**overrides: Any) -> dict[str, Any]:
         "start_date": _dt_iso(1),
         "end_date": _dt_iso(2),
         "distance_km": 150.0,
-        "total_price_eur": 600.0,
+        "price_eur": 600.0,
         "currency": "EUR",
         "driver_name": "",
-        "truck_number": "",
+        "truck_plate": "",
     }
     kw.update(overrides)
     return kw
+
+
+def _create_trip(trip_svc, **overrides):
+    """Create a trip via the typed API and return its ID."""
+    result = trip_svc.create(TripCreate(**_trip_add_kwargs(**overrides)))
+    return result.data.id
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -448,7 +451,7 @@ class TestConflictDetection:
         """Assigning a non-existent truck raises TruckNotFoundError."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="No Truck"))
+        trip_id = _create_trip(trip_svc, client_name="No Truck")
 
         with pytest.raises(TruckNotFoundError, match="Truck #99999 not found"):
             dispatch.assign_truck(trip_id, truck_id=99999)
@@ -457,7 +460,7 @@ class TestConflictDetection:
         """Assigning a non-existent driver raises DriverNotFoundError."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="No Driver"))
+        trip_id = _create_trip(trip_svc, client_name="No Driver")
 
         with pytest.raises(DriverNotFoundError, match="Driver #99999 not found"):
             dispatch.assign_driver(trip_id, driver_id=99999)
@@ -475,13 +478,13 @@ class TestBulkAssignment:
         """Create *count* Planned trips and return their IDs."""
         ids: list[int] = []
         for i in range(count):
-            tid = trip_svc.add(_trip_add_kwargs(
+            tid = _create_trip(trip_svc,
                 client_name=f"Bulk Client {i}",
                 start_date=_dt_iso(10 + i),
                 end_date=_dt_iso(12 + i),
                 distance_km=200.0,
-                total_price_eur=800.0,
-            ))
+                price_eur=800.0,
+            )
             ids.append(tid)
         return ids
 
@@ -563,14 +566,14 @@ class TestStatusTransitions:
 
     def _create_trip_with_status(self, trip_svc: TripService, status: str) -> int:
         """Create a trip in the given status and return its ID."""
-        return trip_svc.add(_trip_add_kwargs(
+        return _create_trip(trip_svc,
             client_name=f"Status {status}",
             status=status,
             start_date=_dt_iso(1),
             end_date=_dt_iso(3),
             distance_km=300.0,
-            total_price_eur=1200.0,
-        ))
+            price_eur=1200.0,
+        )
 
     # ── Valid transitions ───────────────────────────────────────────────
 
@@ -720,7 +723,7 @@ class TestUndoAndRollback:
         """When assign_both succeeds at truck but fails at driver, truck is rolled back."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="Rollback Test"))
+        trip_id = _create_trip(trip_svc, client_name="Rollback Test")
 
         with pytest.raises(DriverNotFoundError, match="Driver #99999 not found"):
             dispatch.assign_both(trip_id, truck_id=1, driver_id=99999)
@@ -736,7 +739,7 @@ class TestUndoAndRollback:
         """assign_both with only truck_id (driver=None) assigns truck and skips driver."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="Truck Only"))
+        trip_id = _create_trip(trip_svc, client_name="Truck Only")
 
         result = dispatch.assign_both(trip_id, truck_id=1, driver_id=None)
         assert result.success
@@ -752,7 +755,7 @@ class TestUndoAndRollback:
         """assign_both with only driver_id (truck=None) assigns driver and skips truck."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="Driver Only"))
+        trip_id = _create_trip(trip_svc, client_name="Driver Only")
 
         result = dispatch.assign_both(trip_id, truck_id=None, driver_id=1)
         assert result.success
@@ -768,7 +771,7 @@ class TestUndoAndRollback:
         """assign_both with valid truck and driver assigns both successfully."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="Both Assigned"))
+        trip_id = _create_trip(trip_svc, client_name="Both Assigned")
 
         result = dispatch.assign_both(trip_id, truck_id=1, driver_id=1)
         assert result.success
@@ -787,7 +790,7 @@ class TestUndoAndRollback:
         """assign_truck and assign_driver return undo tokens with correct previous state."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="Undo Token"))
+        trip_id = _create_trip(trip_svc, client_name="Undo Token")
 
         # Truck undo
         truck_result = dispatch.assign_truck(trip_id, truck_id=1)
@@ -828,7 +831,7 @@ class TestEdgeCases:
         """Assigning the same truck twice does not error — updates in-place."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="Double Assign Truck"))
+        trip_id = _create_trip(trip_svc, client_name="Double Assign Truck")
 
         # Assign truck once
         r1 = dispatch.assign_truck(trip_id, truck_id=1)
@@ -842,7 +845,7 @@ class TestEdgeCases:
         """Assigning the same driver twice does not error — updates in-place."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(client_name="Double Assign Driver"))
+        trip_id = _create_trip(trip_svc, client_name="Double Assign Driver")
 
         r1 = dispatch.assign_driver(trip_id, driver_id=1)
         assert r1.success
@@ -854,11 +857,11 @@ class TestEdgeCases:
         """Status transitions should not clobber other trip fields."""
         trip_svc = TripService(seeded_db)
         dispatch = _build_dispatch_service(seeded_db)
-        trip_id = trip_svc.add(_trip_add_kwargs(
+        trip_id = _create_trip(trip_svc,
             client_name="Preserve Fields",
             distance_km=500.0,
-            total_price_eur=2000.0,
-        ))
+            price_eur=2000.0,
+        )
 
         # Assign and transition
         dispatch.assign_truck(trip_id, truck_id=1)

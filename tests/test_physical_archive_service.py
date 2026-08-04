@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from models.common import ServiceResult
 from services.migration.physical_archive_service import PhysicalArchiveService
 from tests.test_helpers import make_db
 
@@ -152,6 +153,13 @@ class TestProcessDocument:
 class TestProcessBatch:
     """Tests for PhysicalArchiveService.process_batch."""
 
+    def _mock_upload(self, mock_doc_svc, doc_id=42):
+        """Configure the doc_svc mock to simulate a successful upload returning doc_id."""
+        mock_doc_svc.upload_document.return_value = MagicMock(
+            success=True,
+            data=MagicMock(id=doc_id),
+        )
+
     @patch("services.migration.physical_archive_service.os.path.isfile")
     @patch("services.migration.physical_archive_service.PhysicalArchiveService.doc_svc")
     def test_process_batch_handles_empty_list(self, mock_doc_svc, mock_isfile, service):
@@ -178,7 +186,7 @@ class TestProcessBatch:
         self, mock_doc_svc, mock_run, mock_isfile, service,
     ):
         """When run_for_existing_document raises, the entry has an error."""
-        mock_doc_svc.upload.return_value = 99
+        mock_doc_svc.upload_document.return_value = MagicMock(success=True, data=MagicMock(id=99))
         mock_run.side_effect = RuntimeError("OCR engine crashed")
         results = service.process_batch(["/path/to/doc.pdf"])
         entry = results.get("/path/to/doc.pdf")
@@ -193,7 +201,7 @@ class TestProcessBatch:
         self, mock_doc_svc, mock_trip_matcher_cls, mock_run, mock_isfile, service,
     ):
         """A successful CMR document goes through the full pipeline."""
-        mock_doc_svc.upload.return_value = 42
+        mock_doc_svc.upload_document.return_value = MagicMock(success=True, data=MagicMock(id=42))
         mock_run.return_value = {
             "extracted": {"cmr_number": "CMR-001"},
             "confidence": 0.92,
@@ -225,7 +233,7 @@ class TestProcessBatch:
         self, mock_doc_svc, mock_run, mock_isfile, service,
     ):
         """Confidence below 0.75 sets needs_confirmation to True."""
-        mock_doc_svc.upload.return_value = 43
+        mock_doc_svc.upload_document.return_value = MagicMock(success=True, data=MagicMock(id=43))
         mock_run.return_value = {
             "extracted": {"cmr_number": "CMR-002"},
             "confidence": 0.50,
@@ -243,7 +251,7 @@ class TestProcessBatch:
         self, mock_doc_svc, mock_trip_matcher_cls, mock_run, mock_isfile, service,
     ):
         """Trip matching failure for CMR/invoice produces an error in match_result but does not break the pipeline."""
-        mock_doc_svc.upload.return_value = 44
+        mock_doc_svc.upload_document.return_value = MagicMock(success=True, data=MagicMock(id=44))
         mock_run.return_value = {
             "extracted": {"cmr_number": "CMR-003"},
             "confidence": 0.80,
@@ -264,11 +272,11 @@ class TestProcessBatch:
         self, mock_doc_svc, mock_run, mock_isfile, service,
     ):
         """When upload returns None/falsy, an error is recorded."""
-        mock_doc_svc.upload.return_value = None
+        mock_doc_svc.upload_document.return_value = MagicMock(success=False)
         results = service.process_batch(["/path/to/fail.pdf"])
         entry = results.get("/path/to/fail.pdf")
         assert entry["error"] is not None
-        assert "no ID" in entry["error"].lower() or "returned no" in entry["error"].lower()
+        assert "upload_document failed" in entry["error"].lower()
 
 
 # ── confirm_document ─────────────────────────────────────────────────────

@@ -20,6 +20,17 @@ os.environ.setdefault(
     "test-secret-key-32-chars-for-testing-only!!",
 )
 
+# ── Reset stale Config / backend state left by prior test modules ──────
+# Prior test modules (e.g. mobile chaos tests) may have set OPERION_API_KEY
+# at module-import time, causing config.Config to cache a stale non-empty
+# value.  The security conftest's module-level code also pops this, but
+# if backend.main was already imported (by a prior test module *during
+# execution*), the cached middleware instances retain the stale value.
+#
+# We purge the cached modules here AND inside the security conftest's
+# `app` fixture (see tests/security/conftest.py).
+os.environ.pop("OPERION_API_KEY", None)  # Ensure API key middleware stays disabled
+
 # Point to the security test suite's conftest for the app/client fixtures
 from tests.security.conftest import (  # noqa: F401, E402
     app, client, tokens, admin_token, auth_admin, auth_a, auth_b,

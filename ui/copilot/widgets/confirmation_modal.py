@@ -104,6 +104,8 @@ class CoPilotConfirmationModal(QDialog):
     ) -> None:
         super().__init__(parent)
         self.setWindowTitle(t("copilot.confirmation.title", default="Confirm Action"))
+        self.setAccessibleName("Confirm action")
+        self.setAccessibleDescription("Confirmation dialog for Co-Pilot actions")
         self.setMinimumWidth(560)
         self.setMinimumHeight(400)
         self.setModal(True)
@@ -240,6 +242,7 @@ class CoPilotConfirmationModal(QDialog):
             layout.addWidget(warning_lbl)
 
             self._phrase_input = QLineEdit()
+            self._phrase_input.setAccessibleName("Confirmation phrase input")
             self._phrase_input.setPlaceholderText(
                 t(
                     "copilot.confirmation.type_phrase",
@@ -285,6 +288,7 @@ class CoPilotConfirmationModal(QDialog):
         btn_layout.setSpacing(SPACE_4)
 
         cancel_btn = QPushButton(t("copilot.confirmation.cancel", default="Cancel"))
+        cancel_btn.setAccessibleName("Cancel")
         cancel_btn.setStyleSheet(
             f"""
             QPushButton {{
@@ -307,6 +311,7 @@ class CoPilotConfirmationModal(QDialog):
         btn_layout.addWidget(cancel_btn)
 
         self._confirm_btn = QPushButton(t("copilot.confirmation.confirm", default="Confirm"))
+        self._confirm_btn.setAccessibleName("Confirm")
         default_enabled = self._confirmation_level < 3 and not self._ocr_candidates
         self._confirm_btn.setEnabled(default_enabled)
         self._confirm_btn.setStyleSheet(

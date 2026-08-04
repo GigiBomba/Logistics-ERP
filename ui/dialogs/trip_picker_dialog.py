@@ -30,8 +30,10 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from ui.components import EmptyState
+
 from services.i18n import t
-from ui.theme import S
+from ui.design_tokens import SP
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +56,8 @@ class QtTripPickerDialog(QDialog):
         self._selected: int | None = None
 
         self.setWindowTitle(t("docs.pick_trip_title", default="Pick a trip"))
+        self.setAccessibleName("Select trip")
+        self.setAccessibleDescription("Dialog for selecting a trip from a list")
         self.setMinimumSize(520, 420)
         self.setWindowModality(Qt.ApplicationModal)
 
@@ -66,8 +70,8 @@ class QtTripPickerDialog(QDialog):
 
     def _build_ui(self) -> None:
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        layout.setSpacing(SP["2"])
 
         # Search row
         search_row = QHBoxLayout()
@@ -78,6 +82,7 @@ class QtTripPickerDialog(QDialog):
         search_row.addWidget(search_lbl)
 
         self._search_edit = QLineEdit(self)
+        self._search_edit.setAccessibleName("Search trips")
         self._search_edit.setPlaceholderText(
             t("docs.pick_trip_placeholder", default="Type to filter…")
         )
@@ -87,18 +92,20 @@ class QtTripPickerDialog(QDialog):
 
         # Trip list
         self._list = QListWidget(self)
+        self._list.setAccessibleName("Trip list")
         self._list.itemDoubleClicked.connect(self._on_item_double_clicked)
         self._list.itemSelectionChanged.connect(self._on_selection_changed)
         layout.addWidget(self._list, 1)
 
-        # Empty-state label (hidden by default)
-        self._empty_lbl = QLabel(
-            t("docs.pick_trip_empty", default="No trips match your filter."),
-            self,
+        # Empty-state
+        self._trip_picker_empty = EmptyState(
+            parent=self,
+            icon_name="fa5s.search",
+            title=t("trip_picker.empty_title", "No trips available"),
+            subtitle=t("trip_picker.empty_desc", "Create a trip first."),
         )
-        self._empty_lbl.setAlignment(Qt.AlignCenter)
-        self._empty_lbl.hide()
-        layout.addWidget(self._empty_lbl)
+        self._trip_picker_empty.setVisible(False)
+        layout.addWidget(self._trip_picker_empty)
 
         # Action row
         button_row = QHBoxLayout()
@@ -107,18 +114,27 @@ class QtTripPickerDialog(QDialog):
         self._cancel_btn = QPushButton(
             t("common.cancel", default="Cancel"), self
         )
+        self._cancel_btn.setAccessibleName("Cancel")
         self._cancel_btn.clicked.connect(self.reject)
         button_row.addWidget(self._cancel_btn)
 
         self._link_btn = QPushButton(
             t("docs.link_to_trip", default="Link to trip…"), self
         )
+        self._link_btn.setAccessibleName("Link to trip")
         self._link_btn.setDefault(True)
         self._link_btn.setEnabled(False)
         self._link_btn.clicked.connect(self._on_link_clicked)
         button_row.addWidget(self._link_btn)
 
         layout.addLayout(button_row)
+
+        # Set tab order: search → list → Cancel → Link
+        self.setTabOrder(self._search_edit, self._list)
+        self.setTabOrder(self._list, self._cancel_btn)
+        self.setTabOrder(self._cancel_btn, self._link_btn)
+
+        # Escape key dismisses (default QDialog behavior)
 
     # ------------------------------------------------------------------
     # Data
@@ -129,7 +145,8 @@ class QtTripPickerDialog(QDialog):
             logger.warning("Trip picker requires local database access - not available in remote mode")
             trips = []
             self._list.clear()
-            self._empty_lbl.setVisible(True)
+            self._list.setVisible(False)
+            self._trip_picker_empty.setVisible(True)
             self._link_btn.setEnabled(False)
             self._selected = None
             return
@@ -155,7 +172,9 @@ class QtTripPickerDialog(QDialog):
             item.setData(Qt.UserRole, int(str(trow.get("id", 0) or 0)))
             self._list.addItem(item)
 
-        self._empty_lbl.setVisible(self._list.count() == 0)
+        has_items = self._list.count() > 0
+        self._list.setVisible(has_items)
+        self._trip_picker_empty.setVisible(not has_items)
         self._link_btn.setEnabled(False)
         self._selected = None
 

@@ -17,6 +17,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from backend.config import BackendSettings
 from backend.dependencies import get_db
 from backend.dependencies_security import require_admin
+from repositories.alert_repository import AlertRepository
+from repositories.company_repository import CompanyRepository
+from repositories.document_repository import DocumentRepository
+from repositories.user_repository import UserRepository
 from backend.schemas.admin import (
     CeleryStatus,
     ColumnInfo,
@@ -168,6 +172,7 @@ async def list_tables(
                     f"SELECT COUNT(*) FROM \"{table_name}\""  # nosec B608
                 ).fetchone()[0]
 
+                # PRAGMA — admin diagnostics, cannot migrate to repo
                 col_cursor = db.conn.execute(f"PRAGMA table_info(\"{table_name}\")")
                 columns = [
                     ColumnInfo(
@@ -205,6 +210,7 @@ async def get_table_schema(
         raise HTTPException(status_code=400, detail=f"Table '{table_name}' is not accessible.")
     async for db in get_db():
         try:
+            # PRAGMA — admin diagnostics, cannot migrate to repo
             cursor = db.conn.execute(
                 f"PRAGMA table_info(\"{table_name}\")"
             )
@@ -309,15 +315,16 @@ async def get_recent_errors(
     cutoff = datetime.utcnow() - timedelta(hours=hours)
     cutoff_str = cutoff.strftime("%Y-%m-%d %H:%M:%S")
     async for db in get_db():
-        alerts = db.conn.execute(
+        alert_repo = AlertRepository(db)
+        alerts = alert_repo._fetchall(
             "SELECT id, company_id, type, severity, message, created_at "
             "FROM alerts WHERE created_at >= ? ORDER BY created_at DESC LIMIT ?",
             (cutoff_str, limit),
-        ).fetchall()
+        )
         return {
             "alerts": [
-                {"id": r[0], "company_id": r[1], "type": r[2],
-                 "severity": r[3], "message": r[4], "created_at": r[5]}
+                {"id": r["id"], "company_id": r["company_id"], "type": r["type"],
+                 "severity": r["severity"], "message": r["message"], "created_at": r["created_at"]}
                 for r in alerts
             ],
         }
@@ -335,22 +342,26 @@ async def get_database_stats(
         "db_stats",
     )
     async for db in get_db():
+        # PRAGMA — admin diagnostics, cannot migrate to repo
         page_count = db.conn.execute("PRAGMA page_count").fetchone()[0]
+        # PRAGMA — admin diagnostics, cannot migrate to repo
         freelist_count = db.conn.execute("PRAGMA freelist_count").fetchone()[0]
+        # PRAGMA — admin diagnostics, cannot migrate to repo
         page_size = db.conn.execute("PRAGMA page_size").fetchone()[0]
         db_size_mb = round((page_count * page_size) / (1024 * 1024), 2)
         try:
+            # PRAGMA — admin diagnostics, cannot migrate to repo
             integrity = db.conn.execute(
                 "PRAGMA quick_check(1)"
             ).fetchone()[0]
         except Exception:
             integrity = "unknown"
-        user_count = db.conn.execute(
-            "SELECT COUNT(*) FROM users"
-        ).fetchone()[0]
-        company_count = db.conn.execute(
-            "SELECT COUNT(*) FROM companies"
-        ).fetchone()[0]
+        user_count = UserRepository(db)._fetchone(
+            "SELECT COUNT(*) AS cnt FROM users"
+        )["cnt"]
+        company_count = CompanyRepository(db)._fetchone(
+            "SELECT COUNT(*) AS cnt FROM companies"
+        )["cnt"]
         return {
             "page_count": page_count,
             "freelist_count": freelist_count,
@@ -370,33 +381,32 @@ async def get_document_stats(
     """Aggregate document statistics."""
     async for db in get_db():
         try:
-            total = db.execute(
-                "SELECT COUNT(*) FROM documents WHERE is_archived = 0"
-            ).fetchone()[0]
+            doc_repo = DocumentRepository(db)
 
-            storage = db.execute(
-                "SELECT COALESCE(SUM(file_size), 0) FROM documents "
+            total = doc_repo.count()
+
+            storage_row = doc_repo._fetchone(
+                "SELECT COALESCE(SUM(file_size), 0) AS total_size FROM documents "
                 "WHERE is_archived = 0"
-            ).fetchone()[0]
+            )
+            storage = storage_row["total_size"] if storage_row else 0
 
-            ocr_done = db.execute(
-                "SELECT COUNT(*) FROM documents "
+            ocr_row = doc_repo._fetchone(
+                "SELECT COUNT(*) AS cnt FROM documents "
                 "WHERE is_archived = 0 AND ocr_run_at IS NOT NULL"
-            ).fetchone()[0]
+            )
+            ocr_done = ocr_row["cnt"] if ocr_row else 0
 
             ocr_pct = round((ocr_done / total * 100), 2) if total else 0.0
 
-            cat_rows = db.execute(
-                "SELECT category, COUNT(*) as cnt FROM documents "
-                "WHERE is_archived = 0 GROUP BY category ORDER BY cnt DESC"
-            ).fetchall()
-            by_category: Dict[str, int] = {r[0]: r[1] for r in cat_rows}
+            cat_rows = doc_repo.count_by_category()
+            by_category: Dict[str, int] = {r["category"]: r["cnt"] for r in cat_rows}
 
-            mime_rows = db.execute(
+            mime_rows = doc_repo._fetchall(
                 "SELECT mime_type, COUNT(*) as cnt FROM documents "
                 "WHERE is_archived = 0 GROUP BY mime_type ORDER BY cnt DESC"
-            ).fetchall()
-            by_mime: Dict[str, int] = {r[0]: r[1] for r in mime_rows}
+            )
+            by_mime: Dict[str, int] = {r["mime_type"]: r["cnt"] for r in mime_rows}
 
             return DocumentStatsResponse(
                 total_documents=total,
@@ -432,19 +442,26 @@ async def get_orphan_documents(
 
     async for db in get_db():
         try:
-            links = db.execute(
+            doc_repo = DocumentRepository(db)
+            links = doc_repo._fetchall(
                 "SELECT dl.id, dl.document_id, dl.linked_entity_type, "
                 "dl.linked_entity_id, d.title, d.doc_number "
                 "FROM document_links dl "
                 "JOIN documents d ON d.id = dl.document_id"
-            ).fetchall()
+            )
 
             for link in links:
-                link_id, doc_id, etype, eid, title, doc_num = link
+                link_id = link["id"]
+                doc_id = link["document_id"]
+                etype = link["linked_entity_type"]
+                eid = link["linked_entity_id"]
+                title = link["title"]
+                doc_num = link["doc_number"]
                 table = entity_tables.get(etype)
                 if table is None:
                     continue
 
+                # Dynamic entity table — admin diagnostic, cannot migrate to repo
                 exists = db.execute(
                     f"SELECT 1 FROM \"{table}\" WHERE id = ?", (eid,)  # nosec B608
                 ).fetchone()

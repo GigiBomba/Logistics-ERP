@@ -48,19 +48,27 @@ LANGUAGE_NAMES = {
 }
 
 
-def _load_file(lang: str) -> dict[str, str]:
+def _load_file(lang: str) -> dict[str, str] | None:
+    """Load a single translation file.
+
+    Returns the flat translation dict on success, or ``None`` if the file
+    does not exist or cannot be parsed.
+    """
     path = os.path.join(_TRANSLATIONS_DIR, f"{lang}.json")
     if not os.path.isfile(path):
-        return {}
+        return None
     try:
         with open(path, encoding="utf-8-sig") as f:
             raw = json.load(f)
     except json.JSONDecodeError as e:
         logger.warning("Skipping %s: %s (line %s)", lang, e.msg, e.lineno)
-        return {}
+        return None
     except Exception as e:
         logger.warning("Skipping %s: %s", lang, e)
-        return {}
+        return None
+    if not isinstance(raw, dict):
+        logger.warning("Skipping %s: expected JSON object, got %s", lang, type(raw).__name__)
+        return None
     flat: dict[str, str] = {}
     _flatten(raw, "", flat)
     return flat
@@ -85,7 +93,7 @@ def load_translations() -> None:
     failed = []
     for code in available:
         data = _load_file(code)
-        if data:
+        if data is not None:
             _translations[code] = data
             loaded.append(code)
         else:
@@ -96,8 +104,12 @@ def load_translations() -> None:
         return
     en = _translations.get("en", {})
     if not en and _translations:
-        _translations["en"] = next(iter(_translations.values()))
-        en = _translations["en"]
+        # Pick first non-en translation as English fallback
+        for code, data in _translations.items():
+            if code != "en":
+                _translations["en"] = data
+                en = data
+                break
     for code in loaded:
         if code == "en":
             continue
@@ -126,6 +138,8 @@ def t(key: str, default: str | None = None, *args: Any, **kwargs: Any) -> str:
     # Do string formatting OUTSIDE the lock for performance
     if msg is None:
         return key
+    if not args and not kwargs:
+        return str(msg)
     try:
         return str(msg).format(*args, **kwargs)
     except Exception:

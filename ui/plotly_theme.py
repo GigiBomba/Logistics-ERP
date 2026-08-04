@@ -22,6 +22,7 @@ import plotly.io as pio
 from ui.design_tokens import (
     ACCENT,
     BG_BASE,
+    BG_ELEVATED,
     BG_SURFACE,
     BORDER_DEFAULT,
     BORDER_FAINT,
@@ -117,20 +118,31 @@ def _make_base_layout() -> dict:
             DANGER,
             INFO,
         ],
-        "margin": {"l": 50, "r": 20, "t": 35, "b": 40},
+        "margin": {"l": 10, "r": 10, "t": 30, "b": 30},
         "legend": {
             "font": {"color": TEXT_SECONDARY, "size": 10},
             "bgcolor": "rgba(0,0,0,0)",
             "bordercolor": BORDER_FAINT,
             "borderwidth": 0.5,
+            "orientation": "h",
+            "yanchor": "bottom",
+            "y": 1.02,
+            "xanchor": "right",
+            "x": 1.0,
+            "itemclick": "toggle",
+            "itemdoubleclick": False,
         },
         "bargap": 0.15,
         "bargroupgap": 0.1,
+        "hovermode": "x unified",
+        "hoverdistance": 10,
+        "spikedistance": -1,
         "hoverlabel": {
-            "bgcolor": BG_BASE,
+            "bgcolor": BG_ELEVATED,
             "font": {"color": TEXT_PRIMARY, "family": FONT_FAMILY, "size": 11},
             "bordercolor": BORDER_STRONG,
         },
+        "autosize": True,
     }
 
 

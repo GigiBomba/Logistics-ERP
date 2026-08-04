@@ -56,6 +56,8 @@ class TestOcrResult:
         assert inst.extracted_fields == {}
         assert inst.confidence == 0.0
         assert inst.processing_time_ms == 0
+        assert inst.status == "pending"  # roadmap 12 default
+        assert inst.error is None
 
     def test_all_fields(self):
         inst = OcrResult(

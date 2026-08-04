@@ -3,6 +3,9 @@
 Processes webhook events and updates internal Operion models.
 Each handler maps a Trans.eu event_name to local model mutations.
 """
+
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timezone

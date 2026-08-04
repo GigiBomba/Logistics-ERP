@@ -6,8 +6,9 @@ import os
 import uuid
 from typing import Dict
 
+_TEST_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
 _TEST_DB = os.path.join(
-    os.path.dirname(__file__), "..", "..", "data", "test_mobile_int.db",
+    _TEST_DB_DIR, f"test_mobile_additional_{uuid.uuid4().hex[:12]}.db",
 )
 os.environ.setdefault("OPERION_DB_PATH", _TEST_DB)
 os.environ["OPERION_JWT_SECRET_KEY"] = "test-mobile-jwt-secret-key-for-testing-only!"
@@ -35,9 +36,131 @@ DISPATCHER_PASSWORD = "dispatcher-pw"
 _TOKEN_CACHE: Dict[str, str] = {}
 
 
+def _ensure_column(db, table: str, column: str, alter_sql: str) -> None:
+    """Add a column to *table* if it does not already exist."""
+    try:
+        cols = {r[1] for r in db.conn.execute(f"PRAGMA table_info({table})").fetchall()}
+        if column not in cols:
+            db.conn.execute(alter_sql)
+    except Exception:
+        pass
+
+
+def _seed_test_db() -> None:
+    """Idempotently seed the test database with schema columns and reference data."""
+    from database.db_manager import DatabaseManager
+    db = DatabaseManager(_TEST_DB)
+    from datetime import datetime, timezone
+    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    # Mobile-required columns on trips
+    for col, sql in (
+        ("cmr_number", "ALTER TABLE trips ADD COLUMN cmr_number TEXT"),
+        ("place_of_loading", "ALTER TABLE trips ADD COLUMN place_of_loading TEXT"),
+        ("updated_at", "ALTER TABLE trips ADD COLUMN updated_at TEXT"),
+    ):
+        _ensure_column(db, "trips", col, sql)
+    # Companies
+    db.conn.execute(
+        "INSERT OR IGNORE INTO companies (id, company_name, subscription_tier, "
+        "is_active, created_at, updated_at) "
+        "VALUES (1, 'Mobile Test Company', 'professional', 1, ?, ?)",
+        (now, now),
+    )
+    # Users
+    dispatcher_hash = bcrypt.hashpw(DISPATCHER_PASSWORD.encode(), bcrypt.gensalt(rounds=4)).decode()
+    driver_hash = bcrypt.hashpw(DRIVER_PASSWORD.encode(), bcrypt.gensalt(rounds=4)).decode()
+    db.conn.execute(
+        "INSERT OR IGNORE INTO users (id, email, password_hash, role, "
+        "company_id, is_active, created_at) "
+        "VALUES (10, ?, ?, 'dispatcher', 1, 1, ?)",
+        (DISPATCHER_EMAIL, dispatcher_hash, now),
+    )
+    db.conn.execute(
+        "INSERT OR IGNORE INTO users (id, email, password_hash, role, "
+        "company_id, is_active, created_at) "
+        "VALUES (11, ?, ?, 'driver', 1, 1, ?)",
+        (DRIVER_EMAIL, driver_hash, now),
+    )
+    # Driver record
+    db.conn.execute(
+        "INSERT OR IGNORE INTO drivers (id, name, phone, email, company_id, "
+        "is_active, created_at, updated_at) "
+        "VALUES (10, 'Mobile Test Driver', '+40-700-000-010', ?, 1, 1, ?, ?)",
+        (DRIVER_EMAIL, now, now),
+    )
+    db.conn.execute("UPDATE users SET driver_id = 10 WHERE id = 11")
+    # Truck
+    db.conn.execute(
+        "INSERT OR IGNORE INTO trucks (id, plate_number, manufacturer, model, "
+        "status, company_id) "
+        "VALUES (10, 'TEST-MOBILE-01', 'TestBrand', 'TestModel', 'active', 1)",
+    )
+    # Driver-truck assignment
+    db.conn.execute(
+        "INSERT OR IGNORE INTO driver_truck_assignments (driver_id, truck_id, assigned_at) "
+        "VALUES (10, 10, ?)", (now,),
+    )
+    db.conn.commit()
+    db.close()
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _seed_db():
+    """Seed the test DB once per session (idempotent)."""
+    # Force Config.DB_PATH to OUR test DB FIRST — another test module's
+    # import/fixture may have overwritten it, and deps.init_db() reads
+    # Config.DB_PATH at call time. Binding the singleton before resetting
+    # the path would leave the app pointing at another suite's DB.
+    Config.DB_PATH = _TEST_DB
+    # Remove ONLY this worker's own DB file.  Under pytest-xdist the same
+    # module runs in several worker processes, each with its own UUID-based
+    # DB file; globbing the module prefix would delete the DB file another
+    # worker is actively using (causing spurious "unknown user" logins).
+    _remove_if_exists(_TEST_DB)
+    _remove_if_exists(_TEST_DB + "-wal")
+    _remove_if_exists(_TEST_DB + "-shm")
+    _cleanup_stale_db_files(_TEST_DB)
+    import backend.dependencies as deps
+    deps._db_instance = None
+    deps.init_db()
+    _seed_test_db()
+    yield
+
+
+def _remove_if_exists(path: str) -> None:
+    """Remove a file if it exists, tolerating locks (best-effort)."""
+    try:
+        os.remove(path)
+    except FileNotFoundError:
+        pass
+    except PermissionError:
+        pass
+
+
+def _cleanup_stale_db_files(path: str) -> None:
+    """Remove stale WAL/SHM files that can cause FTS5 creation hangs on Windows."""
+    for suffix in ("-wal", "-shm"):
+        p = path + suffix
+        if os.path.isfile(p):
+            try:
+                os.remove(p)
+            except PermissionError:
+                pass
+
+
 def _create_app_and_client():
     from config import Config as Cfg
     Cfg.DB_PATH = _TEST_DB
+    import backend.dependencies as deps
+    # Reset the DB singleton so the app binds to OUR test DB.  Another
+    # test suite may have left the singleton pointing at its own DB file.
+    if deps._db_instance is not None:
+        try:
+            deps._db_instance.close()
+        except Exception:
+            pass
+        deps._db_instance = None
+    deps.init_db()
     return TestClient(create_test_app())
 
 
@@ -75,6 +198,7 @@ def _create_real_app_and_client():
         except Exception:
             pass
         deps._db_instance = None
+    _cleanup_stale_db_files(_TEST_DB)
     deps.init_db()
     from backend.main import create_app
     return TestClient(create_app())

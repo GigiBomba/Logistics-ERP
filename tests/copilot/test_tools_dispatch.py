@@ -503,6 +503,8 @@ class TestDispatchCreateExecution:
 
     def test_undo_success(self, ctx):
         """dispatch.create undo() restores the previous trip state."""
+        from models.trip_models import TripUpdate
+
         tool = get_tool("dispatch.create")
         mock_trip_service = MagicMock()
         mock_trip_service.update.return_value = MagicMock(success=True)
@@ -513,7 +515,13 @@ class TestDispatchCreateExecution:
 
         assert result.status == "success"
         assert result.message_key == "copilot.undo.success"
-        mock_trip_service.update.assert_called_once_with(1, {"status": "pending"})
+        # The service now receives a typed TripUpdate object instead of a raw dict
+        mock_trip_service.update.assert_called_once()
+        args = mock_trip_service.update.call_args
+        assert args[0][0] == 1, f"Expected trip_id=1, got {args[0][0]}"
+        update_obj = args[0][1]
+        assert isinstance(update_obj, TripUpdate), f"Expected TripUpdate, got {type(update_obj)}"
+        assert update_obj.status == "pending"
 
     def test_undo_invalid_token(self, ctx):
         """Invalid JSON undo_token returns failed."""

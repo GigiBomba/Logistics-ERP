@@ -6,6 +6,8 @@ convenience properties for role gating in the UI layer.
 
 import json
 import logging
+import platform
+import socket
 import threading
 import time
 from typing import Any, Dict, Optional
@@ -152,9 +154,17 @@ class Auth:
             headers = {}
             if config.api_key:
                 headers["X-API-Key"] = config.api_key
+            # Identify this device so the backend can track active sessions
+            device_name = socket.gethostname()
+            device_platform = f"{platform.system()} {platform.release()}"
             resp = httpx.post(
                 url,
-                data={"username": email, "password": password},
+                data={
+                    "username": email,
+                    "password": password,
+                    "device_name": device_name,
+                    "device_platform": device_platform,
+                },
                 headers=headers,
                 timeout=30.0,
                 verify=config.verify_ssl,

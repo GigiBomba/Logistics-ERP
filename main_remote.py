@@ -49,18 +49,11 @@ from PySide6.QtWidgets import QApplication
 from config import Config
 from ui.stylesheet import build_stylesheet
 
-_log_dir = os.path.dirname(Config.LOG_FILE)
-os.makedirs(_log_dir, exist_ok=True)
-_handler = logging.FileHandler(Config.LOG_FILE, encoding="utf-8", delay=True)
-_handler.setFormatter(logging.Formatter(
-    "%(asctime)s %(levelname)s %(name)s: %(message)s"
-))
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(levelname)s %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout), _handler],
-    force=True,
-)
+# ── Startup logging ─────────────────────────────────────────────────
+# Central rotating-file + stdout configuration shared with main.py
+# (see utils/logger.configure_app_logging).
+from utils.logger import configure_app_logging
+configure_app_logging(Config.LOG_FILE, level=logging.INFO)
 logger = logging.getLogger("remote_app")
 
 
@@ -78,13 +71,6 @@ def run_remote() -> int:
 
     try:
         Config.ensure_dirs()
-
-        # Choreographer — headless static image export
-        try:
-            from utils.chart_export import configure_choreographer_export
-            configure_choreographer_export()
-        except Exception:
-            logger.debug("Choreographer config skipped (not installed)")
 
         from services.i18n import init_language
         init_language()
@@ -140,6 +126,13 @@ def run_remote() -> int:
         app.setApplicationName(Config.APP_NAME)
         app.setApplicationDisplayName(Config.APP_NAME)
 
+        # Global exception handling — uncaught exceptions (Python or Qt) log
+        # a full traceback and surface a user-facing dialog instead of
+        # crashing silently.  Must run after QApplication creation and before
+        # app.exec() so dialogs can be shown.
+        from utils.error_handling import install_global_handlers
+        install_global_handlers()
+
         # Auto-login hydration — restore persisted token if still valid
         from client.auth_manager import get_auth, hydrate_from_storage, require_auth_async
         try:
@@ -149,6 +142,19 @@ def run_remote() -> int:
             hydrated = False
 
         app.setStyleSheet(build_stylesheet())
+
+        # ── Diagnostics Engine ─────────────────────────────────────
+        diagnostics_enabled = os.environ.get("OPERION_DIAGNOSTICS", "1") == "1"
+        diagnostics_engine = None
+        if diagnostics_enabled:
+            try:
+                from diagnostics import DiagnosticsEngine
+                diagnostics_engine = DiagnosticsEngine(output_dir="logs/diagnostics")
+                diagnostics_engine.install_all()
+                diagnostics_engine.start_monitoring()
+                logger.info("[DIAG] Runtime diagnostics engine started")
+            except Exception as exc:
+                logger.warning("[DIAG] Diagnostics engine skipped: %s", exc)
 
         # ── Pre-warm QWebEngine Chromium process ──────────────────
         # Force-initialize the embedded Chromium engine NOW, while
@@ -196,6 +202,13 @@ def run_remote() -> int:
                            api_client=api_client)
         window.show()
 
+        # ── Deferred: Choreographer browser init ───────────────────
+        try:
+            from utils.chart_export import configure_choreographer_export
+            configure_choreographer_export()
+        except Exception:
+            logger.debug("Choreographer config skipped (not installed)")
+
         logger.info("PySide6 remote application started")
         result = app.exec()
 
@@ -204,6 +217,8 @@ def run_remote() -> int:
             from utils.chart_export import shutdown_browser_sync
             shutdown_browser_sync()
         api_client.close()
+        if diagnostics_engine:
+            diagnostics_engine.shutdown()
         return result
 
     except Exception:

@@ -37,8 +37,8 @@ class TestInvoiceLineItem:
     def test_line_item_totals_default_none(self):
         li = InvoiceLineItem(description="Test", unit_price=100.0)
         assert li.total_net is None
-        assert li.total_vat is None
-        assert li.total_gross is None
+        assert li.vat_amount is None
+        assert li.line_total is None
 
     def test_line_item_totals_set_explicitly(self):
         li = InvoiceLineItem(
@@ -47,12 +47,12 @@ class TestInvoiceLineItem:
             quantity=2,
             vat_rate=19.0,
             total_net=200.0,
-            total_vat=38.0,
-            total_gross=238.0,
+            vat_amount=38.0,
+            line_total=238.0,
         )
         assert li.total_net == 200.0
-        assert li.total_vat == 38.0
-        assert li.total_gross == 238.0
+        assert li.vat_amount == 38.0
+        assert li.line_total == 238.0
 
 
 class TestInvoiceCreate:

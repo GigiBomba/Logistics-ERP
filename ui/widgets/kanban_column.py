@@ -24,7 +24,13 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_BG_BASE,
+    COLOR_BG_ELEVATED,
+    COLOR_ERROR_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    SP,
+)
 from ui.widgets import ActionButton
 from ui.widgets.trip_card import QtTripCard
 
@@ -51,16 +57,16 @@ class QtKanbanColumn(QFrame):
         └─────────────────────────────────┘
     """
 
-    COLUMN_BG = COLORS["bg_base"]
-    HEADER_BG = COLORS["bg_surface"]
+    COLUMN_BG = COLOR_BG_BASE
+    HEADER_BG = COLOR_BG_ELEVATED
     ACCENT_HEIGHT = 4
 
     STATUS_COLORS: dict[str, str] = {
-        "Planned": COLORS["chip_planned"],
-        "Loading": COLORS["chip_loading"],
-        "In Transit": COLORS["chip_transit"],
-        "Delivered": COLORS["chip_delivered"],
-        "Cancelled": COLORS["chip_cancelled"],
+        "Planned": "#1c1917",
+        "Loading": "#341a00",
+        "In Transit": "#0f1f4a",
+        "Delivered": "#052e16",
+        "Cancelled": "#1A1A20",
     }
 
     # Drag-and-drop: a trip card drag started on this column (or any
@@ -82,6 +88,7 @@ class QtKanbanColumn(QFrame):
         on_assign_driver: Callable[[dict], None] | None = None,
         on_select_changed: Callable[[dict, bool], None] | None = None,
         on_assign_both: Callable[[dict], None] | None = None,
+        on_status_change: Callable[[dict, str], None] | None = None,
         show_load_older: bool = False,
         on_load_older: Callable[[], None] | None = None,
         on_retry: Callable[[], None] | None = None,
@@ -102,7 +109,7 @@ class QtKanbanColumn(QFrame):
         self.title_key: str = title_key
         self.accent_color: str = (
             accent_color
-            or self.STATUS_COLORS.get(status_key, COLORS["chip_planned"])
+            or self.STATUS_COLORS.get(status_key, "#1c1917")
         )
         self._on_card_click = on_card_click
         self._on_drag_start = on_drag_start
@@ -110,6 +117,7 @@ class QtKanbanColumn(QFrame):
         self._on_assign_driver = on_assign_driver
         self._on_select_changed = on_select_changed
         self._on_assign_both = on_assign_both
+        self._on_status_change = on_status_change
         self._show_load_older = show_load_older
         self._on_load_older = on_load_older
         self._on_retry = on_retry
@@ -150,8 +158,8 @@ class QtKanbanColumn(QFrame):
         header = QWidget(self)
         header.setProperty("role", "kanban-column-header")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
-        header_layout.setSpacing(S["1"])
+        header_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
+        header_layout.setSpacing(SP["1"])
 
         self._title_label = QLabel(t(self.title_key))
         self._title_label.setProperty("fontRole", "kanban-column-title")
@@ -178,14 +186,14 @@ class QtKanbanColumn(QFrame):
         scroll_content = QWidget()
         scroll_content.setProperty("role", "kanban-column-scroll")
         self._scroll_layout = QVBoxLayout(scroll_content)
-        self._scroll_layout.setContentsMargins(S["1"], 0, S["1"], 0)
-        self._scroll_layout.setSpacing(S["2"])
+        self._scroll_layout.setContentsMargins(SP["1"], 0, SP["1"], 0)
+        self._scroll_layout.setSpacing(SP["2"])
         self._scroll_layout.setAlignment(Qt.AlignTop)
 
         # -- Loading state widget (hidden by default) ---------------------
         self._loading_widget = QWidget()
         loading_layout = QVBoxLayout(self._loading_widget)
-        loading_layout.setContentsMargins(0, S["10"], 0, 0)
+        loading_layout.setContentsMargins(0, SP["10"], 0, 0)
         self._loading_label = QLabel("")
         self._loading_label.setAlignment(Qt.AlignCenter)
         self._loading_label.setProperty("fontRole", "kanban-column-loading")
@@ -196,8 +204,8 @@ class QtKanbanColumn(QFrame):
         # -- Error state widget (hidden by default) -----------------------
         self._error_widget = QWidget()
         error_layout = QVBoxLayout(self._error_widget)
-        error_layout.setContentsMargins(S["3"], S["10"], S["3"], 0)
-        error_layout.setSpacing(S["3"])
+        error_layout.setContentsMargins(SP["3"], SP["10"], SP["3"], 0)
+        error_layout.setSpacing(SP["3"])
         self._error_label = QLabel("")
         self._error_label.setAlignment(Qt.AlignCenter)
         self._error_label.setWordWrap(True)
@@ -226,7 +234,7 @@ class QtKanbanColumn(QFrame):
         self._load_older_widget = QWidget(self)
         load_older_layout = QVBoxLayout(self._load_older_widget)
         load_older_layout.setContentsMargins(
-            S["3"], S["1"], S["3"], S["1"]
+            SP["3"], SP["1"], SP["3"], SP["1"]
         )
         self._load_older_btn = ActionButton(
             self._load_older_widget,
@@ -317,6 +325,7 @@ class QtKanbanColumn(QFrame):
                     on_assign_driver=self._on_assign_driver,
                     on_select_changed=self._on_select_changed,
                     on_assign_both=self._on_assign_both,
+                    on_status_change=self._on_status_change,
                 )
                 self._scroll_layout.addWidget(card)
                 new_cards.append(card)
@@ -429,13 +438,13 @@ class QtKanbanColumn(QFrame):
     def highlight_valid(self) -> None:
         """Highlight the column border green (valid drop target)."""
         self.setStyleSheet(
-            f"QtKanbanColumn {{ border: 2px solid {COLORS['success']}; }}"
+            f"QtKanbanColumn {{ border: 2px solid {COLOR_SUCCESS_DEFAULT}; }}"
         )
 
     def highlight_invalid(self) -> None:
         """Highlight the column border red (invalid drop target)."""
         self.setStyleSheet(
-            f"QtKanbanColumn {{ border: 2px solid {COLORS['danger']}; }}"
+            f"QtKanbanColumn {{ border: 2px solid {COLOR_ERROR_DEFAULT}; }}"
         )
 
     # ══════════════════════════════════════════════════════════════════════

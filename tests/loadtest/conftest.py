@@ -8,8 +8,10 @@ from unittest.mock import MagicMock, patch
 
 from tests.test_helpers import make_db, InMemoryDB
 
-# Make all fixtures from test_api.conftest available here
-pytest_plugins = ("tests.test_api.conftest",)
+# ``client``/``app``/mock fixtures from tests.test_api.conftest are already
+# re-exported by the ROOT conftest (tests/conftest.py).  Declaring
+# ``pytest_plugins`` in a non-top-level conftest is an error on pytest 8+
+# and breaks collecting the whole ``tests/`` tree in one invocation.
 
 
 @pytest.fixture

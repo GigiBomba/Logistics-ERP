@@ -18,7 +18,12 @@ from models.freight_exchange_models import (
     SavedSearch,
 )
 from repositories.freight_exchange_repository import FreightExchangeRepository
+from services.freight_exchange.circuit_breaker import (
+    CircuitBreakerOpenError,
+    FreightCircuitBreaker,
+)
 from services.freight_exchange.connection_manager import ConnectionManagerService
+from services.freight_exchange.rate_limiter import FreightRateLimiter, RateLimitExceededError
 from services.freight_exchange.registry import get_adapter
 
 logger = logging.getLogger(__name__)
@@ -58,10 +63,16 @@ class SearchEngineService:
         )
     """
 
-    def __init__(self, db, cache: Any = None):
+    def __init__(self, db, cache: Any = None, rate_limiter: Any = None):
         self._repo = FreightExchangeRepository(db)
         self._conn_mgr = ConnectionManagerService(db)
         self._cache = cache  # RedisCache or None (caching skipped if None)
+        # Freight resilience guard rails (F5): per-(company, provider) Redis
+        # token bucket + per-provider circuit breaker.  Both degrade to
+        # "allow" when Redis is unavailable (see _guard_* helpers) so a down
+        # Redis can never block legitimate searches.
+        self._rate_limiter = rate_limiter if rate_limiter is not None else FreightRateLimiter()
+        self._breakers: dict[str, FreightCircuitBreaker] = {}
 
     # ── Search ─────────────────────────────────────────────────────────
 
@@ -323,10 +334,25 @@ class SearchEngineService:
         provider_id: str,
         filters: LoadSearchFilters,
     ) -> Optional[list[LoadSearchResult]]:
-        """Search a single provider (called via asyncio.gather)."""
+        """Search a single provider (called via asyncio.gather).
+
+        Guarded by the freight rate limiter (per company/provider token
+        bucket) and a per-provider circuit breaker.  Both primitives degrade
+        to "allow" when Redis is unavailable (see ``_guard_*`` helpers) so a
+        Redis outage can never block legitimate traffic; only an actually
+        OPEN circuit or an exhausted token bucket skips a provider.
+        """
         adapter = get_adapter(provider_id)
         if adapter is None:
             return None
+
+        # Circuit breaker: skip the provider while its circuit is OPEN.
+        if not await self._guard_allowed(company_id, provider_id):
+            logger.warning(
+                "Provider '%s' circuit is OPEN — skipping search (company %d)",
+                provider_id, company_id,
+            )
+            raise CircuitBreakerOpenError(provider_id, company_id)
 
         session = await self._conn_mgr.get_session(company_id, provider_id)
         if session is None:
@@ -334,10 +360,78 @@ class SearchEngineService:
             return None
 
         try:
-            return await adapter.search_loads(session, filters)
+            # Rate limit: acquire an API token before hitting the provider.
+            if not await self._guard_rate_limit(company_id, provider_id):
+                logger.warning(
+                    "Rate limit exceeded for provider '%s' — skipping search (company %d)",
+                    provider_id, company_id,
+                )
+                raise RateLimitExceededError(company_id, provider_id, "api")
+
+            results = await adapter.search_loads(session, filters)
+            self._record_breaker_success(company_id, provider_id)
+            return results
+        except RateLimitExceededError:
+            # A rate-limit denial is a self-imposed guard rail, not a
+            # provider failure — surface it but do not trip the breaker.
+            raise
         except Exception as e:
+            self._record_breaker_failure(company_id, provider_id)
             logger.error("Provider '%s' search error: %s", provider_id, e)
             raise  # re-raised, caught by asyncio.gather(return_exceptions=True)
+
+    # ── Resilience guard helpers ──────────────────────────────────────────
+    # All four helpers catch Redis/breaker/limiter errors and fall back to
+    # permissive behavior so the search path never blocks on infrastructure.
+
+    def _breaker_for(self, provider_id: str) -> FreightCircuitBreaker:
+        """Return the per-provider circuit breaker (created on demand)."""
+        cb = self._breakers.get(provider_id)
+        if cb is None:
+            cb = FreightCircuitBreaker()
+            self._breakers[provider_id] = cb
+        return cb
+
+    async def _guard_allowed(self, company_id: int, provider_id: str) -> bool:
+        """Circuit-breaker is_allowed() that bypasses when Redis is down."""
+        try:
+            return await self._breaker_for(provider_id).is_allowed(
+                company_id, provider_id
+            )
+        except Exception as e:
+            logger.warning(
+                "Circuit breaker check bypassed for provider '%s': %s",
+                provider_id, e,
+            )
+            return True
+
+    async def _guard_rate_limit(self, company_id: int, provider_id: str) -> bool:
+        """Rate-limiter acquire_api() that bypasses when Redis is down."""
+        try:
+            return await self._rate_limiter.acquire_api(company_id, provider_id)
+        except Exception as e:
+            logger.warning(
+                "Rate limiter bypassed for provider '%s': %s", provider_id, e,
+            )
+            return True
+
+    def _record_breaker_success(self, company_id: int, provider_id: str) -> None:
+        try:
+            self._breaker_for(provider_id).record_success(company_id, provider_id)
+        except Exception as e:
+            logger.debug(
+                "Circuit breaker record_success skipped for '%s': %s",
+                provider_id, e,
+            )
+
+    def _record_breaker_failure(self, company_id: int, provider_id: str) -> None:
+        try:
+            self._breaker_for(provider_id).record_failure(company_id, provider_id)
+        except Exception as e:
+            logger.debug(
+                "Circuit breaker record_failure skipped for '%s': %s",
+                provider_id, e,
+            )
 
     def _get_cached(
         self,

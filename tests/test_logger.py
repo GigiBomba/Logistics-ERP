@@ -52,17 +52,20 @@ def _reset_logger_state():
 
 @pytest.fixture
 def mock_file_handler():
-    """Patch ``logging.FileHandler`` so no real files are created.
+    """Patch ``logging.handlers.RotatingFileHandler`` so no real files are
+    created.
 
-    The mock instance is a plain ``MagicMock`` (no spec) because
-    ``logging.FileHandler`` itself is already replaced by the patch,
-    preventing us from using ``spec=logging.FileHandler``.
+    ``utils.logger`` builds its file handlers via ``RotatingFileHandler``
+    (10 MB x 5 backups), so that is the class the fixture intercepts.  The
+    mock instance is a plain ``MagicMock`` (no spec) because the class itself
+    is already replaced by the patch, preventing us from using
+    ``spec=logging.handlers.RotatingFileHandler``.
 
     After the test, clear handlers from all loggers that were created
     during the patch so MagicMock handlers don't pollute other tests.
     """
     known_before = set(logging.root.manager.loggerDict.keys())
-    with patch("logging.FileHandler") as m:
+    with patch("logging.handlers.RotatingFileHandler") as m:
         mock_instance = MagicMock()
         m.return_value = mock_instance
         yield m, mock_instance
@@ -206,21 +209,31 @@ class TestGetLogger:
     # ── Handler configuration ──────────────────────────────────────
 
     def test_handler_has_formatter(self, mock_file_handler):
-        """The FileHandler should have a formatter set."""
+        """The rotating file handler should have a formatter set."""
         _, mock_instance = mock_file_handler
         logger_module.get_logger("formatter_test")
         mock_instance.setFormatter.assert_called_once()
         fmt_arg = mock_instance.setFormatter.call_args[0][0]
         assert isinstance(fmt_arg, logging.Formatter)
 
-    def test_handler_type_is_file_handler(self, mock_file_handler):
-        """The handler added to the logger should be a ``FileHandler``."""
+    def test_handler_type_is_rotating_file_handler(self, mock_file_handler):
+        """The handler added to the logger should be a ``RotatingFileHandler``.
+
+        ``logging.handlers.RotatingFileHandler`` is patched, so we verify the
+        handler is the mock instance returned by the patched class.
+        """
         mock_cls, _ = mock_file_handler
         log = logger_module.get_logger("type_check")
         assert len(log.handlers) == 1
-        # ``logging.FileHandler`` is patched, so we verify the handler is
-        # the mock instance returned by the patched class.
         assert log.handlers[0] is mock_cls.return_value
+
+    def test_regular_logger_rotates_at_10mb_with_5_backups(self, mock_file_handler):
+        """app.log handlers must roll over at 10 MB keeping 5 backups."""
+        mock_cls, _ = mock_file_handler
+        logger_module.get_logger("rotation_check")
+        kwargs = mock_cls.call_args.kwargs
+        assert kwargs["maxBytes"] == 10_000_000
+        assert kwargs["backupCount"] == 5
 
     # ── _configured_loggers state ──────────────────────────────────
 

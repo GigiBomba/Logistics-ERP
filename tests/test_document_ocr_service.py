@@ -69,7 +69,7 @@ def test_extract_pdf_text(db_mock, repo_mock):
         f.write(b"%PDF-1.4 fake pdf content")
         tmp_path = f.name
     try:
-        # PyPDF2 will fail on garbage, so we should get empty string
+        # pypdf will fail on garbage, so we should get empty string
         result = service._extract_pdf_text(tmp_path)
         assert result == ""
     finally:
@@ -202,7 +202,7 @@ def test_extract_pdf_text_with_mock_pypdf2(db_mock, repo_mock):
         f.write(b"%PDF-1.4\n1 0 obj\n<<>>\nendobj")
         tmp_path = f.name
     try:
-        with patch("PyPDF2.PdfReader") as mock_reader:
+        with patch("pypdf.PdfReader") as mock_reader:
             mock_page = MagicMock()
             mock_page.extract_text.return_value = "Hello from PDF"
             mock_instance = MagicMock()

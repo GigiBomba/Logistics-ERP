@@ -42,15 +42,15 @@ class TestLoadDocuments:
             "ocr_text": "", "ocr_engine": "", "extracted_data_json": "{}",
             "is_signed": False, "cmr_number": "",
         }
-        svc.upload.return_value = {
+        svc.upload_document.return_value = MagicMock(success=True, data=MagicMock(model_dump=lambda: {
             "id": 1, "file_name": "test.pdf", "file_size": 1024, "doc_number": "DOC-001",
             "category": "invoice", "entity_type": "trip", "entity_id": 1,
             "mime_type": "application/pdf", "uploaded_by": "user",
             "uploaded_at": "2026-07-09T00:00:00", "updated_at": "2026-07-09T00:00:00",
-            "tags": "[]", "expiry_date": "", "is_archived": False,
-            "ocr_text": "", "ocr_engine": "", "extracted_data_json": "{}",
+            "tags": [], "expiry_date": "", "is_archived": False,
+            "ocr_text": "", "ocr_engine": "", "extracted_data_json": {},
             "is_signed": False, "cmr_number": "",
-        }
+        }))
         svc.update.return_value = None
         svc.delete.return_value = True
         app.dependency_overrides[get_document_service] = lambda: svc

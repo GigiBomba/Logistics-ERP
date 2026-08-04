@@ -15,6 +15,7 @@ import pytest
 from repositories.automail_repository import AutoMailRepository
 from repositories.client_repository import ClientRepository
 from repositories.invoice_repository import InvoiceRepository
+from models.trip_models import TripCreate
 from services.automail.history_service import HistoryService
 from services.automail.reminder_service import (
     REMINDER_STATUS_CANCELLED,
@@ -59,16 +60,19 @@ def _create_client(db) -> int:
 
 def _create_trip(db, client_id, status="Delivered") -> int:
     svc = TripService(db)
-    now = datetime.now().isoformat()
-    return svc.add({
+    field_names = {"client_name", "client_id", "truck_plate", "driver_name",
+                   "start_date", "end_date", "distance_km", "price_eur",
+                   "rate_per_km", "fuel_cost", "toll_cost", "salary_cost",
+                   "extra_costs", "net_profit", "currency", "status"}
+    raw = {
         "client_name": "AutoMail Client GmbH",
         "client_id": client_id,
-        "truck_number": "TR-AUTO-001",
+        "truck_plate": "TR-AUTO-001",
         "driver_name": "AutoMail Driver",
         "start_date": _dt(-10),
         "end_date": _dt(-8),
         "distance_km": 600.0,
-        "total_price_eur": 2400.0,
+        "price_eur": 2400.0,
         "rate_per_km": 4.0,
         "fuel_cost": 480.0,
         "toll_cost": 90.0,
@@ -77,11 +81,10 @@ def _create_trip(db, client_id, status="Delivered") -> int:
         "net_profit": 1490.0,
         "currency": "EUR",
         "status": status,
-        "created_at": now,
-        "cargo_description": "Automail cargo",
-        "package_count": 12,
-        "gross_weight_kg": 6000.0,
-    })
+    }
+    trip_data = {k: v for k, v in raw.items() if k in field_names}
+    result = svc.create(TripCreate(**trip_data))
+    return result.data.id
 
 
 def _create_invoice(db, trip_id, amount=2400.0, due_date=None):

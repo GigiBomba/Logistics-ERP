@@ -10,14 +10,18 @@ import logging
 import os
 from datetime import datetime, timedelta
 
-from PySide6.QtCore import QTimer
+import qtawesome as qta
+from PySide6.QtCore import QTimer, Qt
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QHeaderView,
     QInputDialog,
     QLineEdit,
+    QMenu,
     QMessageBox,
+    QSizePolicy,
     QVBoxLayout,
     QWidget,
 )
@@ -25,10 +29,19 @@ from PySide6.QtWidgets import (
 from services.export_service import ExportService
 from services.i18n import t
 from ui.base_view import BaseView
+from ui.performance_timer import PerfTimer
+from ui.worker_pool import WorkerPool
 from services.preferences import PreferencesManager
-from ui.components import Btn, Card, FieldLabel, Label, PageTitle
-from ui.design_tokens import SP
-from ui.theme import COLORS
+from ui.components import Btn, Card, EmptyState, FieldLabel, IconButton, Label, PageTitle
+from ui.design_tokens import (
+    COLOR_ACCENT_PRIMARY,
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.widgets import (
     StyledComboBox,
     StyledTableWidget,
@@ -49,14 +62,14 @@ STATUS_TAGS = {
 }
 
 STATUS_TAG_KEYS = {
-    "planned":   COLORS.get("info", COLORS.get("accent", "#6366f1")),
-    "loading":   COLORS.get("warning", "#f59e0b"),
-    "transit":   COLORS.get("accent", "#6366f1"),
-    "delivered": COLORS.get("success", "#22c55e"),
-    "invoiced":  COLORS.get("warning", "#f59e0b"),
-    "paid":      COLORS.get("success", "#22c55e"),
-    "archived":  COLORS.get("text_muted", "#71717a"),
-    "cancelled": COLORS.get("text_muted", "#71717a"),
+    "planned":   COLOR_ACCENT_PRIMARY,
+    "loading":   COLOR_WARNING_DEFAULT,
+    "transit":   COLOR_ACCENT_PRIMARY,
+    "delivered": COLOR_SUCCESS_DEFAULT,
+    "invoiced":  COLOR_WARNING_DEFAULT,
+    "paid":      COLOR_SUCCESS_DEFAULT,
+    "archived":  COLOR_TEXT_TERTIARY,
+    "cancelled": COLOR_TEXT_TERTIARY,
 }
 
 _STATUS_TAG_LOOKUP = {k.strip().lower(): v for k, v in STATUS_TAGS.items()}
@@ -96,12 +109,26 @@ class QtHistoryView(BaseView):
     # ── UI build ───────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Trip history")
         layout = QVBoxLayout(self)
-        layout.setContentsMargins(SP["10"], SP["6"], SP["10"], SP["10"])
+        layout.setContentsMargins(SP["10"], SP["4"], SP["10"], SP["10"])
         layout.setSpacing(0)
 
         self._build_header(layout)
         self._build_filter_bar(layout)
+
+        self._empty_state = EmptyState(
+            self,
+            icon_name="fa5s.history",
+            title=t("history.empty_title", default="No trip history found"),
+            subtitle=t("history.empty_desc", default="Adjust your date range or search criteria to find trips."),
+        )
+        self._empty_state.setSizePolicy(
+            QSizePolicy.Expanding, QSizePolicy.Expanding
+        )
+        self._empty_state.hide()
+        layout.addWidget(self._empty_state, 1)
+
         self._build_table_card(layout)
         self._build_action_bar(layout)
 
@@ -164,29 +191,33 @@ class QtHistoryView(BaseView):
             ("gross_per_km", t("history.col_brut_km"), 70),
             ("net_profit", t("history.col_profit"), 80),
         ]
-        card = Card(padding=False)
+        self._table_card = Card(padding=False)
         self.table = StyledTableWidget(
-            card,
+            self._table_card,
             columns=columns,
             formatters={
                 "distance_km": fmt_distance,
                 "gross_per_km": lambda v: fmt_rate(float(v) if v else 0),
                 "net_profit": lambda v: fmt_currency(float(v) if v else 0),
             },
+            prefs_key="trip_history",
         )
+        self.table.setAccessibleName("History table")
+        self.table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
+        self.table.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.table.customContextMenuRequested.connect(self._show_context_menu)
         self.table.horizontalHeader().setStretchLastSection(False)
         for i in range(len(columns)):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
         # Align numeric columns to the right
-        from PySide6.QtCore import Qt
         for cid in ("distance_km", "gross_per_km", "net_profit"):
             self.table.set_column_alignment(cid, Qt.AlignRight | Qt.AlignVCenter)
-        card.layout().addWidget(self.table)
-        layout.addWidget(card, 1)
+        self._table_card.layout().addWidget(self.table)
+        layout.addWidget(self._table_card, 1)
 
     def _build_action_bar(self, layout: QVBoxLayout) -> None:
-        footer = QWidget()
-        footer_layout = QHBoxLayout(footer)
+        self._action_bar = QWidget()
+        footer_layout = QHBoxLayout(self._action_bar)
         footer_layout.setContentsMargins(0, SP["2"], 0, 0)
         footer_layout.setSpacing(SP["2"])
 
@@ -205,30 +236,56 @@ class QtHistoryView(BaseView):
             ("history.button_delete", self._delete, "danger"),
         ]
         for key, cmd, variant in primary_btns:
-            btn = Btn(footer, t(key), command=cmd, variant=variant)
+            btn = Btn(self._action_bar, t(key), command=cmd, variant=variant)
             footer_layout.addWidget(btn)
         footer_layout.addSpacing(SP["4"])
         for key, cmd, variant in secondary_btns:
-            btn = Btn(footer, t(key), command=cmd, variant=variant)
+            btn = Btn(self._action_bar, t(key), command=cmd, variant=variant)
             footer_layout.addWidget(btn)
+
+        # Density toggle
+        density_btn = IconButton(
+            self._action_bar,
+            icon_name="fa5s.table",
+            tooltip=t("history.density_toggle", default="Row density"),
+            variant="ghost",
+            size=32,
+        )
+        density_menu = self.table._build_density_menu(density_btn)
+        density_btn.setMenu(density_menu)
+        footer_layout.addWidget(density_btn)
+
         footer_layout.addStretch(1)
         for key, cmd, variant in destructive_btns:
-            btn = Btn(footer, t(key), command=cmd, variant=variant)
+            btn = Btn(self._action_bar, t(key), command=cmd, variant=variant)
             footer_layout.addWidget(btn)
-        layout.addWidget(footer)
+        layout.addWidget(self._action_bar)
 
     # ── Data ───────────────────────────────────────────────────────────────────
 
     def refresh(self) -> None:
-        if self.trip_service is None:
+        with PerfTimer("history.refresh"):
+            if self.trip_service is None:
+                return
+            search = self.e_search.text().strip()
+            status = self.c_status.currentText()
+            WorkerPool.run(
+                fn=lambda: self.trip_service.get_filtered(search=search, status=status, limit=self._limit),
+                on_result=self._on_history_loaded,
+                on_error=self._on_history_error,
+            )
+
+    def _on_history_loaded(self, trips: list) -> None:
+        # Toggle empty state
+        if not trips:
+            self._empty_state.show()
+            self._table_card.hide()
+            self._action_bar.hide()
             return
-        search = self.e_search.text().strip()
-        status = self.c_status.currentText()
-        try:
-            trips = self.trip_service.get_filtered(search=search, status=status, limit=self._limit)
-        except Exception:
-            logger.warning("Failed to fetch trips (API error)", exc_info=True)
-            trips = []
+        else:
+            self._empty_state.hide()
+            self._table_card.show()
+            self._action_bar.show()
 
         data = []
         for trip in trips:
@@ -246,9 +303,16 @@ class QtHistoryView(BaseView):
                 "_raw": trip,
             })
         self.table.set_data(data)
+        self.table.restore_column_widths()
         self._apply_status_colors(data)
         self._apply_profit_colors(data)
         self._count_lbl.setText(f" ({len(trips)} / {self._limit})")
+
+    def _on_history_error(self, msg: str) -> None:
+        logger.warning("Failed to fetch trips (API error): %s", msg)
+        self._empty_state.show()
+        self._table_card.hide()
+        self._action_bar.hide()
 
     def _apply_status_colors(self, data: list) -> None:
         col_idx = self.table._column_ids.index("status") if "status" in self.table._column_ids else -1
@@ -410,6 +474,54 @@ class QtHistoryView(BaseView):
             open_entity_documents(self, self.db, "trip", trip_id, t("history.trip_title", default="Trip #{}").format(trip_id))
         except Exception:
             logger.exception("Failed to open trip documents")
+
+    # ── Context menu (right-click) ──────────────────────────────────────────
+
+    def _show_context_menu(self, pos) -> None:
+        """Right-click context menu for the trip history table."""
+        index = self.table.indexAt(pos)
+        if not index.isValid():
+            return
+
+        row = index.row()
+        row_data = self.table._data[row] if 0 <= row < len(self.table._data) else None
+        if row_data is None:
+            return
+
+        record = row_data.get("_raw", row_data)
+
+        menu = QMenu(self)
+
+        edit_action = QAction(qta.icon("fa5s.edit"), t("history.edit_trip", "Edit Trip"), self)
+        edit_action.triggered.connect(lambda: self._edit_trip(record))
+        menu.addAction(edit_action)
+
+        inv_action = QAction(qta.icon("fa5s.file-invoice"), t("history.generate_invoice", "Generate Invoice"), self)
+        inv_action.triggered.connect(self._generate_invoice)
+        menu.addAction(inv_action)
+
+        route_action = QAction(qta.icon("fa5s.route"), t("history.view_route", "View Route"), self)
+        route_action.triggered.connect(self._view_route)
+        menu.addAction(route_action)
+
+        menu.exec(self.table.viewport().mapToGlobal(pos))
+
+    def _edit_trip(self, record: dict) -> None:
+        """Open the trip editor dialog for the selected trip."""
+        trip_id = record.get("id", 0)
+        if not trip_id:
+            return
+        try:
+            from PySide6.QtWidgets import QApplication
+            parent_window = QApplication.activeWindow() or self
+            from ui.dialogs.edit_window import QtEditWindow
+            dialog = QtEditWindow(
+                parent_window, self.db, int(trip_id),
+                callback=self.refresh,
+            )
+            dialog.exec()
+        except Exception:
+            logger.exception("Failed to open trip editor")
 
     # ── i18n ───────────────────────────────────────────────────────────────────
 

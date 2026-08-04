@@ -26,17 +26,18 @@ CREATE TABLE IF NOT EXISTS trips (
     driver_name TEXT,
     client_name TEXT,
     distance_km DOUBLE PRECISION,
-    total_price_eur DOUBLE PRECISION,
-    rate_per_km DOUBLE PRECISION,
-    gross_per_km DOUBLE PRECISION,
-    net_profit DOUBLE PRECISION,
+    total_price_eur NUMERIC(12,2),
+    rate_per_km NUMERIC(12,6),
+    gross_per_km NUMERIC(12,6),
+    net_profit NUMERIC(12,2),
     start_date TEXT,
     end_date TEXT,
+    promised_date TEXT,
     payment_date TEXT,
-    extra_costs DOUBLE PRECISION,
-    fuel_cost DOUBLE PRECISION,
-    toll_cost DOUBLE PRECISION,
-    salary_cost DOUBLE PRECISION,
+    extra_costs NUMERIC(12,2),
+    fuel_cost NUMERIC(12,2),
+    toll_cost NUMERIC(12,2),
+    salary_cost NUMERIC(12,2),
     currency TEXT,
     status TEXT,
     loading_country TEXT,
@@ -47,8 +48,8 @@ CREATE TABLE IF NOT EXISTS trips (
     route_history_v2_id INTEGER,
     truck_consumption_l_per_100km DOUBLE PRECISION,
     context_json TEXT,
-    price_pre_vat DOUBLE PRECISION DEFAULT 0,
-    vat_percent DOUBLE PRECISION DEFAULT 0,
+    price_pre_vat NUMERIC(12,2) DEFAULT 0,
+    vat_percent NUMERIC(5,2) DEFAULT 0,
     cmr_number TEXT,
     cmr_sequence INTEGER,
     cargo_description TEXT,
@@ -86,6 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_trips_payment_date ON trips(payment_date);
 CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status);
 CREATE INDEX IF NOT EXISTS idx_trips_truck_id ON trips(truck_id);
 CREATE INDEX IF NOT EXISTS idx_trips_company ON trips(company_id);
+CREATE INDEX IF NOT EXISTS idx_trips_company_start_date ON trips(company_id, start_date);
 CREATE INDEX IF NOT EXISTS idx_trips_deleted ON trips(deleted_at);
 -- Generated column: month
 ALTER TABLE trips ADD COLUMN IF NOT EXISTS month TEXT GENERATED ALWAYS AS (SUBSTRING(created_at, 1, 7)) STORED;
@@ -98,7 +100,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     invoice_number TEXT UNIQUE,
     issue_date TEXT,
     due_date TEXT,
-    total_amount DOUBLE PRECISION,
+    total_amount NUMERIC(12,2),
     status TEXT,
     company_id INTEGER,
     deleted_at TEXT,
@@ -124,13 +126,13 @@ CREATE TABLE IF NOT EXISTS proforma_invoices (
     description TEXT,
     notes TEXT,
     line_items_json TEXT DEFAULT '[]',
-    subtotal DOUBLE PRECISION DEFAULT 0,
+    subtotal NUMERIC(12,2) DEFAULT 0,
     discount_type TEXT DEFAULT '',
-    discount_value DOUBLE PRECISION DEFAULT 0,
-    discount_amount DOUBLE PRECISION DEFAULT 0,
-    tax_rate DOUBLE PRECISION DEFAULT 0,
-    tax_amount DOUBLE PRECISION DEFAULT 0,
-    grand_total DOUBLE PRECISION DEFAULT 0,
+    discount_value NUMERIC(12,2) DEFAULT 0,
+    discount_amount NUMERIC(12,2) DEFAULT 0,
+    tax_rate NUMERIC(5,2) DEFAULT 0,
+    tax_amount NUMERIC(12,2) DEFAULT 0,
+    grand_total NUMERIC(12,2) DEFAULT 0,
     currency TEXT DEFAULT 'EUR',
     mode TEXT DEFAULT 'client',
     status TEXT DEFAULT 'Draft',
@@ -161,6 +163,23 @@ CREATE TABLE IF NOT EXISTS email_logs (
 );
 CREATE INDEX IF NOT EXISTS idx_email_logs_trip ON email_logs(trip_id);
 CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);
+
+-- ── Sent-email dedup (roadmap 12) ─────────────────────────────────────
+-- UNIQUE(document_id, recipient) makes a Celery retry of build_email_package
+-- idempotent: a replayed INSERT (ON CONFLICT DO NOTHING) is a no-op instead
+-- of a second send to the same recipient.
+CREATE TABLE IF NOT EXISTS sent_emails (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    document_id BIGINT NOT NULL,
+    recipient TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    sent_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE (document_id, recipient)
+);
+CREATE INDEX IF NOT EXISTS idx_sent_emails_status ON sent_emails(status);
+-- FK to documents is attached after documents exists (see below), since
+-- documents is defined later in this file.  Idempotent on re-runs.
 
 -- ── Invoice reminders ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS invoice_reminders (
@@ -194,7 +213,7 @@ CREATE TABLE IF NOT EXISTS trucks (
     vin TEXT,
     fuel_consumption DOUBLE PRECISION,
     mileage DOUBLE PRECISION,
-    monthly_rate DOUBLE PRECISION,
+    monthly_rate NUMERIC(12,2),
     status TEXT,
     insurance_expiry TEXT,
     inspection_expiry TEXT,
@@ -234,10 +253,10 @@ CREATE TABLE IF NOT EXISTS route_history (
     computed_at TEXT,
     distance_km DOUBLE PRECISION,
     duration_min DOUBLE PRECISION,
-    fuel_cost DOUBLE PRECISION,
-    toll_cost DOUBLE PRECISION,
-    total_cost DOUBLE PRECISION,
-    price_recommended DOUBLE PRECISION,
+    fuel_cost NUMERIC(12,2),
+    toll_cost NUMERIC(12,2),
+    total_cost NUMERIC(12,2),
+    price_recommended NUMERIC(12,2),
     company_id INTEGER,
     FOREIGN KEY (route_id) REFERENCES routes(id)
 );
@@ -357,7 +376,7 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     maintenance_type TEXT NOT NULL,
     date TEXT NOT NULL,
     km DOUBLE PRECISION,
-    cost DOUBLE PRECISION,
+    cost NUMERIC(12,2),
     notes TEXT,
     service_provider TEXT,
     attachment_path TEXT,
@@ -393,7 +412,7 @@ CREATE INDEX IF NOT EXISTS idx_maintenance_schedules_company ON maintenance_sche
 CREATE TABLE IF NOT EXISTS truck_health_scores (
     truck_id INTEGER PRIMARY KEY,
     score INTEGER NOT NULL DEFAULT 100,
-    compliance_pct DOUBLE PRECISION DEFAULT 100.0,
+    compliance_pct NUMERIC(5,2) DEFAULT 100.0,
     overdue_count INTEGER DEFAULT 0,
     recurring_issues INTEGER DEFAULT 0,
     downtime_days INTEGER DEFAULT 0,
@@ -414,7 +433,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     license_expiry TEXT,
     medical_expiry TEXT,
     hire_date TEXT,
-    monthly_salary DOUBLE PRECISION DEFAULT 0,
+    monthly_salary NUMERIC(12,2) DEFAULT 0,
     notes TEXT,
     is_active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL,
@@ -506,8 +525,8 @@ CREATE TABLE IF NOT EXISTS clients (
     updated_at TEXT,
     client_type TEXT DEFAULT '',
     payment_terms_days INTEGER DEFAULT 30,
-    credit_limit_eur DOUBLE PRECISION DEFAULT 0,
-    default_rate_per_km DOUBLE PRECISION,
+    credit_limit_eur NUMERIC(12,2) DEFAULT 0,
+    default_rate_per_km NUMERIC(12,6),
     rating INTEGER CHECK (rating BETWEEN 1 AND 5),
     eori_number TEXT DEFAULT '',
     country TEXT DEFAULT '',
@@ -598,6 +617,12 @@ CREATE INDEX IF NOT EXISTS idx_documents_deleted ON documents(deleted_at);
 ALTER TABLE documents ADD COLUMN IF NOT EXISTS search_vector tsvector;
 CREATE INDEX IF NOT EXISTS idx_documents_search ON documents USING GIN (search_vector);
 
+-- FK for sent_emails: documents is created above, so attach the constraint
+-- here.  DROP IF EXISTS keeps this idempotent across schema re-runs.
+ALTER TABLE sent_emails DROP CONSTRAINT IF EXISTS fk_sent_emails_document;
+ALTER TABLE sent_emails ADD CONSTRAINT fk_sent_emails_document
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE;
+
 CREATE TABLE IF NOT EXISTS document_links (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     document_id INTEGER NOT NULL,
@@ -635,7 +660,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     contract_type TEXT NOT NULL DEFAULT 'transport',
     start_date TEXT,
     end_date TEXT,
-    value_eur DOUBLE PRECISION DEFAULT 0,
+    value_eur NUMERIC(12,2) DEFAULT 0,
     payment_terms TEXT DEFAULT '',
     auto_renewal INTEGER DEFAULT 0,
     renewal_notice_days INTEGER DEFAULT 30,
@@ -663,6 +688,21 @@ CREATE TABLE IF NOT EXISTS document_templates (
     updated_at TEXT NOT NULL
 );
 
+-- ── Mobile Phase 2: async export jobs ──────────────────────────────────
+CREATE TABLE IF NOT EXISTS export_jobs (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    kind TEXT NOT NULL,
+    params_json TEXT,
+    status TEXT NOT NULL DEFAULT 'processing',
+    result_path TEXT,
+    error TEXT,
+    company_id BIGINT DEFAULT 0 REFERENCES companies(id),
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_export_jobs_company ON export_jobs(company_id);
+CREATE INDEX IF NOT EXISTS idx_export_jobs_status ON export_jobs(status);
+
 -- ── CMR System ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS cmr_counter (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -674,6 +714,7 @@ CREATE TABLE IF NOT EXISTS cmr_counter (
 CREATE TABLE IF NOT EXISTS successive_carriers (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    company_id BIGINT DEFAULT 0 REFERENCES companies(id),
     sequence_order INTEGER NOT NULL DEFAULT 1,
     carrier_name TEXT NOT NULL,
     carrier_address TEXT,
@@ -701,7 +742,9 @@ CREATE TABLE IF NOT EXISTS cmr_audit_log (
 CREATE INDEX IF NOT EXISTS idx_cmr_audit_trip ON cmr_audit_log(trip_id);
 CREATE INDEX IF NOT EXISTS idx_cmr_audit_number ON cmr_audit_log(cmr_number);
 CREATE INDEX IF NOT EXISTS idx_cmr_audit_event_type ON cmr_audit_log(event_type);
-CREATE INDEX IF NOT EXISTS idx_cmr_audit_created ON cmr_audit_log(created_at);
+
+-- NOTE: no idx_cmr_audit_created — cmr_audit_log has a `timestamp` column,
+-- not `created_at`; the old index statement failed against the schema.
 
 -- ── Document Automation Pipeline ────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS document_pipeline_runs (
@@ -721,7 +764,7 @@ CREATE TABLE IF NOT EXISTS document_pipeline_runs (
     ocr_text TEXT DEFAULT '',
     extracted_data_json TEXT DEFAULT '{}',
     matched_trip_id INTEGER,
-    match_confidence DOUBLE PRECISION DEFAULT 0.0,
+    match_confidence NUMERIC(5,4) DEFAULT 0.0,
     match_signals_json TEXT DEFAULT '{}',
     document_id INTEGER,
     created_at TEXT NOT NULL,
@@ -786,18 +829,18 @@ CREATE TABLE IF NOT EXISTS receipts (
     related_trip_id INTEGER, driver_id INTEGER,
     vehicle_id INTEGER, trailer_id INTEGER,
     purpose TEXT,
-    amount DOUBLE PRECISION NOT NULL DEFAULT 0,
-    vat_rate DOUBLE PRECISION DEFAULT 0,
-    vat_amount DOUBLE PRECISION DEFAULT 0,
-    total DOUBLE PRECISION DEFAULT 0,
+    amount NUMERIC(12,2) NOT NULL DEFAULT 0,
+    vat_rate NUMERIC(5,2) DEFAULT 0,
+    vat_amount NUMERIC(12,2) DEFAULT 0,
+    total NUMERIC(12,2) DEFAULT 0,
     amount_words TEXT,
     notes TEXT,
     status TEXT DEFAULT 'Draft',
     logo_path TEXT, signature_path TEXT, stamp_path TEXT,
     attachments_json TEXT DEFAULT '[]',
     employee_name TEXT, department TEXT, expense_category TEXT,
-    mileage DOUBLE PRECISION, fuel DOUBLE PRECISION, accommodation DOUBLE PRECISION,
-    meals DOUBLE PRECISION, parking DOUBLE PRECISION, tolls DOUBLE PRECISION, other_expense DOUBLE PRECISION,
+    mileage NUMERIC(12,2), fuel NUMERIC(12,2), accommodation NUMERIC(12,2),
+    meals NUMERIC(12,2), parking NUMERIC(12,2), tolls NUMERIC(12,2), other_expense NUMERIC(12,2),
     pickup_location TEXT, delivery_location TEXT,
     route TEXT, dispatcher TEXT,
     language TEXT DEFAULT 'en',
@@ -889,6 +932,10 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
 
+-- Add user_id to drivers (created in §Drivers above) now that users table exists
+ALTER TABLE drivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
+CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id);
+
 CREATE TABLE IF NOT EXISTS gps_telemetry (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     truck_id INTEGER NOT NULL,
@@ -905,6 +952,18 @@ CREATE INDEX IF NOT EXISTS idx_gps_truck ON gps_telemetry(truck_id);
 CREATE INDEX IF NOT EXISTS idx_gps_recorded ON gps_telemetry(recorded_at);
 CREATE INDEX IF NOT EXISTS idx_gps_truck_time ON gps_telemetry(truck_id, recorded_at);
 CREATE INDEX IF NOT EXISTS idx_gps_telemetry_company ON gps_telemetry(company_id);
+-- Unique (truck_id, recorded_at) — makes GPS batch-flush retries idempotent:
+-- a replayed INSERT OR IGNORE (translated to ON CONFLICT DO NOTHING) is a
+-- no-op instead of a duplicate row.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_gps_telemetry_unique ON gps_telemetry(truck_id, recorded_at);
+
+-- Unique (company_id, insight_type, payload) — makes insight-job retries
+-- idempotent: a replayed INSERT OR IGNORE (translated to ON CONFLICT DO
+-- NOTHING) is a no-op instead of a duplicate row.  copilot_insights is
+-- created by the Alembic migration a7b8c9d0e1f7 (payload JSON column); the
+-- index is also ensured in db_manager._pg_extra_ddl (which runs after Alembic)
+-- so fresh databases get it on first boot.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup ON copilot_insights(company_id, insight_type, payload);
 
 -- ── API Keys / OAuth2 ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -1085,4 +1144,24 @@ ON CONFLICT (version) DO NOTHING;
 
 INSERT INTO schema_migrations (version, name)
 VALUES (4, 'add_missing_company_id_and_soft_delete')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (5, 'create_freight_exchange_connections')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (6, 'create_saved_searches')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (7, 'add_trips_source_columns')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (8, 'add_sent_emails_dedup_table')
+ON CONFLICT (version) DO NOTHING;
+
+INSERT INTO schema_migrations (version, name)
+VALUES (9, 'add_trips_promised_date')
 ON CONFLICT (version) DO NOTHING;

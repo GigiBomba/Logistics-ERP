@@ -1,0 +1,3 @@
+Trip ID,Status,Truck,Driver,Origin,Destination,Departure,ETA,Alerts
+,planned,,,,,,,0
+,in_transit,,,,,,,0

@@ -39,18 +39,24 @@ def test_evaluate_all(engine):
 
 
 def test_evaluate_truck(engine):
-    engine._db.get_truck_by_id.return_value = {"id": 1, "plate_number": "AB-123"}
-    with patch.object(engine, "_evaluate_single", return_value=1) as mock_eval:
-        count = engine.evaluate_truck(1)
-        assert count == 1
+    with patch("services.operations.maintenance_engine.FleetRepository") as mock_fleet_repo:
+        mock_fleet_repo_instance = MagicMock()
+        mock_fleet_repo.return_value = mock_fleet_repo_instance
+        mock_fleet_repo_instance.get_by_id.return_value = {"id": 1, "plate_number": "AB-123"}
+        with patch.object(engine, "_evaluate_single", return_value=1) as mock_eval:
+            count = engine.evaluate_truck(1)
+            assert count == 1
 
 
 def test_evaluate_truck_not_found(engine):
-    engine._db.get_truck_by_id.return_value = None
-    with patch.object(engine, "_evaluate_single") as mock_eval:
-        count = engine.evaluate_truck(999)
-        assert count == 0
-        mock_eval.assert_not_called()
+    with patch("services.operations.maintenance_engine.FleetRepository") as mock_fleet_repo:
+        mock_fleet_repo_instance = MagicMock()
+        mock_fleet_repo.return_value = mock_fleet_repo_instance
+        mock_fleet_repo_instance.get_by_id.return_value = None
+        with patch.object(engine, "_evaluate_single") as mock_eval:
+            count = engine.evaluate_truck(999)
+            assert count == 0
+            mock_eval.assert_not_called()
 
 
 def test_evaluate_single_inspection_expired(engine):

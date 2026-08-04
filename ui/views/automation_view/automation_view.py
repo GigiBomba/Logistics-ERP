@@ -907,8 +907,8 @@ class QtAutomationView(QueueManagementMixin, QWidget):
         self._do_refresh()
 
     def _do_refresh(self) -> None:
-        """Actual refresh \u2014 runs synchronously, coalesces subsequent calls."""
-        if not self.db:
+        """Actual refresh — runs synchronously, coalesces subsequent calls."""
+        if not self.db or self._pipeline_repo is None:
             self._refresh_pending = False
             return
         try:

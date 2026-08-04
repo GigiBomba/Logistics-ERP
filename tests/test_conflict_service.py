@@ -1,6 +1,7 @@
 """Tests for TripConflictService."""
 from __future__ import annotations
 
+from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -295,3 +296,120 @@ def test_get_next_available_slot_no_trips_returns_none(service):
     service._trip_repo.get_active_for_truck.return_value = []
     result = service.get_next_available_slot(truck_plate="AB-123")
     assert result is None
+
+
+# ── _parse_date (ISO-8601 support) ────────────────────────────────────────
+
+
+class TestParseDate:
+    """Trip dates are ISO-8601 in production; DD/MM/YYYY must keep working."""
+
+    def test_parse_iso_date(self, service):
+        assert service._parse_date("2026-06-10") == datetime(2026, 6, 10)
+
+    def test_parse_iso_datetime_space_separated(self, service):
+        assert service._parse_date("2026-06-10 14:30:00") == datetime(2026, 6, 10, 14, 30, 0)
+
+    def test_parse_iso_datetime_t_separated(self, service):
+        assert service._parse_date("2026-06-10T14:30:00") == datetime(2026, 6, 10, 14, 30, 0)
+
+    def test_parse_iso_datetime_utc_z_suffix(self, service):
+        assert service._parse_date("2026-06-10T14:30:00Z") == datetime(2026, 6, 10, 14, 30, 0)
+
+    def test_parse_dd_mm_yyyy_keeps_existing_behavior(self, service):
+        assert service._parse_date("10/06/2026") == datetime(2026, 6, 10)
+
+    def test_parse_dd_mm_yyyy_ignores_trailing_time(self, service):
+        assert service._parse_date("10/06/2026 14:30") == datetime(2026, 6, 10)
+
+    def test_parse_garbage_returns_none(self, service):
+        assert service._parse_date("not-a-date") is None
+        assert service._parse_date("") is None
+        assert service._parse_date(None) is None
+
+
+# ── ISO-date conflict detection (regression proof) ────────────────────────
+
+
+def test_check_conflicts_overlap_iso_dates_detected(service):
+    """Real trips store ISO-8601 dates; an overlap must still be detected.
+
+    This FAILS on the old code (which only parsed ``%d/%m/%Y``): the
+    departure short-circuited to None and no conflict was reported.
+    """
+    service._trip_repo.get_active_for_truck.return_value = [
+        {"id": 2, "start_date": "2026-06-01", "end_date": "2026-06-15",
+         "truck_number": "AB-123", "driver_id": 10, "status": "Active",
+         "driver_name": "John"}
+    ]
+    result = service.check_conflicts({
+        "id": 1, "truck_id": 1, "driver_id": 10,
+        "start_date": "2026-06-10", "end_date": "2026-06-20",
+        "truck_number": "AB-123",
+    })
+    assert len(result) == 1
+    assert result[0]["trip_id"] == 2
+    assert result[0]["same_truck"] is True
+    assert result[0]["same_driver"] is True
+
+
+def test_check_conflicts_no_overlap_iso_dates(service):
+    """ISO dates that do not overlap should still produce no conflict."""
+    service._trip_repo.get_active_for_truck.return_value = [
+        {"id": 2, "start_date": "2026-06-01", "end_date": "2026-06-05",
+         "truck_number": "AB-123", "driver_id": 10, "status": "Active",
+         "driver_name": "John"}
+    ]
+    result = service.check_conflicts({
+        "id": 1, "truck_id": 1, "driver_id": 10,
+        "start_date": "2026-06-10", "end_date": "2026-06-20",
+        "truck_number": "AB-123",
+    })
+    assert result == []
+
+
+# ── Batched conflict scan ─────────────────────────────────────────────────
+
+
+class TestCheckConflictsBatch:
+    """check_conflicts_batch returns the same per-trip result shape keyed by id."""
+
+    def test_batch_with_overlaps_and_clean_trips(self, service):
+        service._trip_repo.get_active_excluding_statuses.return_value = [
+            # Overlaps trip 1 (same truck + driver)
+            {"id": 2, "start_date": "2026-06-01", "end_date": "2026-06-15",
+             "truck_number": "AB-123", "driver_id": 10, "status": "Active",
+             "driver_name": "John"},
+            # No overlap with trip 1 (dates apart)
+            {"id": 3, "start_date": "2026-07-01", "end_date": "2026-07-05",
+             "truck_number": "AB-123", "driver_id": 10, "status": "Active",
+             "driver_name": "John"},
+        ]
+        trips = [
+            {"id": 1, "truck_number": "AB-123", "truck_id": 1, "driver_id": 10,
+             "start_date": "2026-06-10", "end_date": "2026-06-20"},
+            {"id": 4, "truck_number": "XY-999", "truck_id": 9, "driver_id": 99,
+             "start_date": "2026-06-10", "end_date": "2026-06-20"},
+        ]
+        result = service.check_conflicts_batch(trips)
+        assert set(result.keys()) == {1}
+        assert len(result[1]) == 1
+        assert result[1][0]["trip_id"] == 2
+        assert result[1][0]["same_truck"] is True
+        assert result[1][0]["same_driver"] is True
+
+    def test_batch_excludes_self_trip(self, service):
+        """A trip must not conflict with itself in a batch scan."""
+        service._trip_repo.get_active_excluding_statuses.return_value = [
+            {"id": 1, "start_date": "2026-06-01", "end_date": "2026-06-15",
+             "truck_number": "AB-123", "driver_id": 10, "status": "Active",
+             "driver_name": "John"}
+        ]
+        trips = [
+            {"id": 1, "truck_number": "AB-123", "truck_id": 1, "driver_id": 10,
+             "start_date": "2026-06-10", "end_date": "2026-06-20"},
+        ]
+        assert service.check_conflicts_batch(trips) == {}
+
+    def test_batch_empty_input(self, service):
+        assert service.check_conflicts_batch([]) == {}

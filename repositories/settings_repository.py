@@ -41,14 +41,14 @@ class SettingsRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT OR REPLACE INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def update_setting(self, key: str, value: str) -> None:
         self._execute(
             f"UPDATE {self.TABLE} SET value = ? WHERE key = ? {self._company_filter()}",
-            (value, key) + self._company_params(),
-        )
+            (value, key) + self._company_params(), commit=True,
+		)
 
     def get_table_names(self) -> List[str]:
         if getattr(self.db, "_engine", "sqlite") == "postgresql":

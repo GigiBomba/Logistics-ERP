@@ -162,6 +162,12 @@ class TestAlertPersistence(unittest.TestCase):
         self.db = make_db()
 
     def test_alerts_persisted_and_reloaded(self):
+        # Pre-create trips referenced by trip_id FK constraints
+        try:
+            self.db.conn.execute("INSERT OR IGNORE INTO trips (id, status) VALUES (7, 'planned')")
+            self.db.conn.commit()
+        except Exception:
+            pass  # table may not exist in all schemas
         mgr1 = AlertManager(db=self.db)
         a1 = mgr1.create_alert(
             AlertType.OVERDUE_INVOICE, Severity.CRITICAL,

@@ -16,3 +16,31 @@ repos:
       - id: check-toml
       - id: debug-statements
       - id: detect-private-key
+
+  # ── Constitutional Governance Hooks ─────────────────────────────
+  - repo: local
+    hooks:
+      - id: no-hardcoded-secrets
+        name: G-01 — No Hardcoded Secrets
+        entry: python scripts/ci_copilot_gates.py
+        language: python
+        files: ^backend/copilot/
+        pass_filenames: false
+        description: "Scans for hardcoded secrets, API keys, and passwords"
+        stages: [pre-commit, pre-push]
+
+      - id: ruff-constitutional
+        name: Constitutional — Ruff Lint
+        entry: ruff check --fix
+        language: system
+        files: \.py$
+        types: [python]
+        stages: [pre-commit]
+
+      - id: ruff-format-constitutional
+        name: Constitutional — Ruff Format
+        entry: ruff format
+        language: system
+        files: \.py$
+        types: [python]
+        stages: [pre-commit]

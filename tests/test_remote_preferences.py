@@ -218,6 +218,14 @@ class TestRemotePreferencesSensitiveKeys:
         assert prefs._data["smtp_password"] == "enc:p4ss"
         assert prefs._data["normal_key"] == "val"
 
+    def test_save_settings_does_not_mutate_caller_dict(self, prefs):
+        data = {"smtp_password": "p4ss", "normal_key": "val"}
+        prefs.save_settings(data)
+        # The caller's dict must be left untouched (no plaintext→ciphertext swap).
+        assert data == {"smtp_password": "p4ss", "normal_key": "val"}
+        assert prefs._data["smtp_password"] == "enc:p4ss"
+        assert prefs._data["normal_key"] == "val"
+
     def test_smtp_config_encrypts_password(self, prefs):
         prefs.save_smtp_config({
             "smtp_server": "smtp.test.com",
@@ -241,6 +249,20 @@ class TestRemotePreferencesSensitiveKeys:
         assert cfg["smtp_port"] == "587"
         assert cfg["smtp_user"] == "user"
         assert cfg["alert_email_recipients"] == "admin@test.com"
+
+    def test_tracking_credentials_encrypted_on_save(self, prefs):
+        for key in ("tracking.token", "tracking.username", "tracking.password",
+                    "tracking.account"):
+            prefs.save_setting(key, "sekret")
+            assert prefs._data[key] == "enc:sekret"
+
+    def test_tracking_credentials_decrypted_on_get(self, prefs):
+        prefs.save_setting("tracking.token", "tok123")
+        assert prefs.get_setting("tracking.token") == "tok123"
+
+    def test_tracking_legacy_plaintext_reads_back_unchanged(self, prefs):
+        prefs._data["tracking.account"] = "legacy-acc"
+        assert prefs.get_setting("tracking.account") == "legacy-acc"
 
 
 # ── Language / Currency ─────────────────────────────────────────────────

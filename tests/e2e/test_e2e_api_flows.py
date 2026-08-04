@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch
@@ -20,6 +21,26 @@ import pytest
 from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
 
 pytestmark = pytest.mark.slow
+
+
+@pytest.fixture(autouse=True)
+def _clean_env():
+    """Clean env vars that could leak from other test modules and affect mocks."""
+    import os as _os
+    saved = {k: _os.environ.get(k) for k in (
+        "OPERION_API_KEY", "OPERION_ENV", "OPERION_ADMIN_EMAIL",
+        "OPERION_ADMIN_PASSWORD_HASH", "OPERION_JWT_SECRET_KEY",
+        "OPERION_DB_PATH", "OPERION_DB_ENGINE",
+    )}
+    yield
+    for k, v in saved.items():
+        if v is None:
+            _os.environ.pop(k, None)
+        else:
+            _os.environ[k] = v
+
+
+
 
 # ── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -53,12 +74,12 @@ class TestTripLifecycleViaAPI:
             "start_date": _dt(1),
             "end_date": _dt(3),
         }
-        mocks["trip_service"].add.return_value = 42
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=42))
 
         resp = client.post(f"{self.BASE}/", json=create_payload)
         assert resp.status_code == 200
         assert resp.json() == {"id": 42}
-        mocks["trip_service"].add.assert_called_once_with(create_payload)
+        mocks["trip_service"].create.assert_called_once()
 
         # ── 2. Verify it appears in list ────────────────────────────────────
         created_trip = {
@@ -106,7 +127,7 @@ class TestTripLifecycleViaAPI:
         mocks["trip_service"].get_by_id.reset_mock()
 
         # ── 6. Delete it ────────────────────────────────────────────────────
-        mocks["trip_service"].delete.return_value = None
+        mocks["trip_service"].delete.return_value = MagicMock(success=True)
 
         resp = client.delete(f"{self.BASE}/42")
         assert resp.status_code == 200
@@ -127,7 +148,7 @@ class TestTripLifecycleViaAPI:
 
         resp = client.post(f"{self.BASE}/", json={"client_id": 1})
         assert resp.status_code == 200
-        mocks["trip_service"].add.assert_called_once_with({"client_id": 1})
+        mocks["trip_service"].create.assert_called_once()
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -193,14 +214,15 @@ class TestClientLifecycleViaAPI:
         # ── 5. Add a contact ────────────────────────────────────────────────
         mocks["client_service"].add_contact.return_value = 7
 
+        # ClientContactAddRequest uses full_name (matches the desktop dialog)
         resp = client.post(f"{self.BASE}/10/contacts",
-                           json={"name": "Alice Schmidt", "email": "alice@testclient.de"})
+                           json={"full_name": "Alice Schmidt", "email": "alice@testclient.de"})
         assert resp.status_code == 201
         assert resp.json() == {"id": 7}
-        # Note: actual call includes default phone='' and position=''
+        # Note: actual call includes default phone='' and contact_type=''
         mocks["client_service"].add_contact.assert_called_once()
         assert mocks["client_service"].add_contact.call_args.args[0] == 10
-        assert mocks["client_service"].add_contact.call_args.kwargs.get("name") == "Alice Schmidt"
+        assert mocks["client_service"].add_contact.call_args.kwargs.get("full_name") == "Alice Schmidt"
 
         # ── 6. Verify contact appears ───────────────────────────────────────
         mocks["client_service"].get_contacts.return_value = [
@@ -260,7 +282,7 @@ class TestClientLifecycleViaAPI:
 
 class TestDriverLifecycleViaAPI:
     """Create → Assign to Truck → Get Tacho Activity → Unassign → Delete."""
-
+    
     BASE = "/api/v1/drivers"
 
     def test_e2e_driver_lifecycle_via_api(self, client_with_mocks):
@@ -318,7 +340,7 @@ class TestDriverLifecycleViaAPI:
 
         # ── 5. Get tacho activity ───────────────────────────────────────────
         with patch(
-            "repositories.tacho_driver_activity_repository.TachoDriverActivityRepository"
+            "backend.repositories.tacho_driver_activity_repository.TachoDriverActivityRepository"
         ) as mock_repo_cls:
             mock_repo = mock_repo_cls.return_value
             fake_activity = [
@@ -494,6 +516,8 @@ class TestFleetLifecycleViaAPI:
             {"truck_id": 1, "latitude": 48.8566, "longitude": 2.3522,
              "speed_kmh": 65, "recorded_at": "2024-01-15T10:30:00Z"},
         ]
+        # Clear the side_effect set by _DbMock so return_value is honored
+        mocks["db"].rows_to_dicts.side_effect = None
         mocks["db"].rows_to_dicts.return_value = fake_history
 
         resp = client.get(f"{self.BASE}/gps/history/1?limit=10")
@@ -530,6 +554,7 @@ class TestFleetLifecycleViaAPI:
 
     def test_e2e_gps_batch_ingest(self, client_with_mocks):
         client, mocks = client_with_mocks
+        mocks["fleet_service"].get_trucks_by_ids.return_value = [{"id": 1}, {"id": 2}]
         with patch("backend.api.v1.fleet.get_cache") as mock_get_cache:
             mock_cache = MagicMock()
             mock_get_cache.return_value = mock_cache
@@ -571,7 +596,7 @@ class TestInvoiceFlowViaAPI:
             "price_eur": 3000.0,
             "status": "Delivered",
         }
-        mocks["trip_service"].add.return_value = 42
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=42))
 
         resp = client.post(f"{self.BASE_TRIP}/", json=trip_payload)
         assert resp.status_code == 200
@@ -649,13 +674,8 @@ class TestRoutePlanningFlowViaAPI:
 
     BASE = "/api/v1/routes"
 
-    def _configure_db_mocks(self, mocks):
-        mocks["db"].row_to_dict.side_effect = lambda row: None if row is None else dict(row)
-        mocks["db"].rows_to_dicts.side_effect = lambda rows: [dict(r) for r in (rows or [])]
-
     def test_e2e_route_planning_via_api(self, client_with_mocks):
         client, mocks = client_with_mocks
-        self._configure_db_mocks(mocks)
 
         # ── 1. Calculate a route ────────────────────────────────────────────
         calc_payload = {
@@ -715,7 +735,7 @@ class TestRoutePlanningFlowViaAPI:
             assert resp.json().get("id") == 1
 
         # ── 4. Get route statistics ─────────────────────────────────────────
-        with patch("services.route_history_service.RouteHistoryService") as mock_svc_cls:
+        with patch("backend.services.route_history_service.RouteHistoryService") as mock_svc_cls:
             mock_svc = mock_svc_cls.return_value
             mock_svc.get_statistics.return_value = {
                 "total_routes": 1,
@@ -780,7 +800,6 @@ class TestRoutePlanningFlowViaAPI:
 
     def test_e2e_route_export_not_found(self, client_with_mocks):
         client, mocks = client_with_mocks
-        self._configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.get(f"{self.BASE}/history/999/export")
@@ -976,7 +995,7 @@ class TestDocumentFlowViaAPI:
             "tags": "[]",
             "description": "",
         }
-        mocks["document_service"].upload.return_value = mock_doc_result
+        mocks["document_service"].upload_document.return_value = MagicMock(success=True, data=MagicMock(model_dump=lambda: mock_doc_result))
 
         # Use a real temp file to simulate upload
         import io
@@ -991,7 +1010,7 @@ class TestDocumentFlowViaAPI:
         assert data["id"] == 1
         assert data["doc_number"] == "DOC-2024-0001"
         assert data["file_name"] == "test.pdf"
-        mocks["document_service"].upload.assert_called_once()
+        mocks["document_service"].upload_document.assert_called_once()
 
         # ── 2. List documents ───────────────────────────────────────────────
         mocks["document_service"].advanced_search.return_value = {

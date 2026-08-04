@@ -570,7 +570,7 @@ class TestPostgresConnectionPool:
 
         assert conn is fake_conn
         mock_pool.getconn.assert_called_once()
-        assert conn.autocommit is True
+        assert conn.autocommit is False
 
     def test_return_connection(self):
         """return_connection() returns a borrowed connection to the pool."""

@@ -28,6 +28,26 @@ def sample_template():
     }
 
 
+@pytest.fixture
+def html_template():
+    return {
+        "name": "HTML Template",
+        "subject": "Test {var}",
+        "body_text": "Plain fallback",
+        "body_html": "<p>Rich <strong>{var}</strong> content</p>",
+    }
+
+
+@pytest.fixture
+def html_template_whitespace():
+    return {
+        "name": "WS Template",
+        "subject": "Test",
+        "body_text": "The real body",
+        "body_html": "   \n  ",
+    }
+
+
 # ── Creation ────────────────────────────────────────────────────────────
 
 
@@ -206,3 +226,62 @@ class TestTemplateEditorDialogLifecycle:
         # After accept(), result is Accepted
         # Note: Accept relies on QDialogButtonBox connected to accept()
         pass  # OK button connected via buttons.accepted.connect(self.accept)
+
+
+# ── Validation ─────────────────────────────────────────────────────────
+
+
+class TestTemplateEditorDialogValidation:
+    """Validation and edge-case tests for TemplateEditorDialog."""
+
+    def test_body_html_preferred_over_body_text(
+        self, qt_widget, qtbot, html_template
+    ):
+        dlg = TemplateEditorDialog(qt_widget, template=html_template)
+        qtbot.addWidget(dlg)
+        html = dlg._body_editor.toHtml()
+        assert "Rich" in html
+        assert "{var}" in html
+        # Qt converts <strong> to font-weight:700 span; verify bold survives
+        assert "font-weight:700" in html or "strong" in html
+
+    def test_body_text_fallback_when_html_whitespace(
+        self, qt_widget, qtbot, html_template_whitespace
+    ):
+        dlg = TemplateEditorDialog(qt_widget, template=html_template_whitespace)
+        qtbot.addWidget(dlg)
+        assert dlg._body_editor.toPlainText() == "The real body"
+
+    def test_variable_label_displays_all_vars(self, qt_widget, qtbot):
+        mock_vars = [
+            {"name": "invoice_number"},
+            {"name": "client_contact"},
+            {"name": "due_date"},
+            {"name": "client_name"},
+        ]
+        with patch(
+            "ui.views.automail.template_editor_dialog.get_available_variables",
+            return_value=mock_vars,
+        ):
+            dlg = TemplateEditorDialog(qt_widget)
+            qtbot.addWidget(dlg)
+            from PySide6.QtWidgets import QLabel
+
+            labels = dlg.findChildren(QLabel)
+            var_labels = [lbl for lbl in labels if "{" in lbl.text()]
+            assert len(var_labels) >= 1
+            text = var_labels[0].text()
+            assert "{invoice_number}" in text
+            assert "{client_contact}" in text
+            assert "{due_date}" in text
+            assert "{client_name}" in text
+
+    def test_get_data_roundtrip_html(self, qt_widget, qtbot, html_template):
+        dlg = TemplateEditorDialog(qt_widget, template=html_template)
+        qtbot.addWidget(dlg)
+        data = dlg.get_data()
+        assert data["name"] == "HTML Template"
+        assert data["subject"] == "Test {var}"
+        assert "Rich" in data["body_text"]
+        assert "{var}" in data["body_text"]
+        assert data["body_html"]  # non-empty HTML output

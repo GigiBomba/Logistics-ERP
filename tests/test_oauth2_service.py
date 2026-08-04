@@ -118,8 +118,8 @@ class TestRegisterClient:
             client_id, client_secret = service.register_client("X", "y", ["z"])
 
         # Capture the INSERT args
-        insert_sql = mock_db.conn.execute.call_args[0][0]
-        insert_params = mock_db.conn.execute.call_args[0][1]
+        insert_sql = mock_db.execute.call_args[0][0]
+        insert_params = mock_db.execute.call_args[0][1]
 
         assert "INSERT INTO oauth2_clients" in insert_sql
         stored_hash = insert_params[4]  # 5th positional param
@@ -141,14 +141,14 @@ class TestRegisterClient:
             ):
                 service.register_client("Warehouse", "logistics", ["read", "write"], user_id=7)
 
-        params: tuple = mock_db.conn.execute.call_args[0][1]
+        params: tuple = mock_db.execute.call_args[0][1]
         # 7 params: (client_id, name, partner, scopes, secret_hash, user_id, company_id)
         assert len(params) == 7
         client_id = params[0]
         assert client_id.startswith("operion_")
         assert params[1] == "Warehouse"
         assert params[2] == "logistics"
-        assert params[3] == str(["read", "write"])  # scopes stored as str
+        assert params[3] == '["read", "write"]'  # scopes stored as JSON string
         assert isinstance(params[4], str) and len(params[4]) == 64  # sha256 hash
         assert params[5] == 7  # created_by (user_id)
         assert params[6] == 99  # company_id
@@ -156,7 +156,7 @@ class TestRegisterClient:
     def test_commit_called(self, service, mock_db):
         with patch("backend.oauth2.secrets.token_hex", return_value="x"):
             service.register_client("X", "y", ["z"])
-        mock_db.conn.commit.assert_called_once()
+        mock_db.commit.assert_called_once()
 
     def test_calls_get_company_id(self, service, mock_db):
         with patch("backend.oauth2.secrets.token_hex", return_value="x"):
@@ -170,7 +170,7 @@ class TestRegisterClient:
         """An empty scopes list is stored as '[]' string."""
         with patch("backend.oauth2.secrets.token_hex", return_value="x"):
             service.register_client("X", "y", [])
-        params = mock_db.conn.execute.call_args[0][1]
+        params = mock_db.execute.call_args[0][1]
         assert params[3] == "[]"
 
 
@@ -183,7 +183,7 @@ class TestValidateClient:
         """Valid client_id + client_secret returns a populated OAuth2Client."""
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("operion_abc123def456ghi789", "correct-secret")
         assert isinstance(result, OAuth2Client)
@@ -198,7 +198,7 @@ class TestValidateClient:
     def test_wrong_client_id_returns_none(self, service, mock_db):
         cursor = MagicMock()
         cursor.fetchone.return_value = None
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("nonexistent", "any-secret")
         assert result is None
@@ -214,7 +214,7 @@ class TestValidateClient:
             ).hexdigest() else None
             return cursor
 
-        mock_db.conn.execute.side_effect = execute_side_effect
+        mock_db.execute.side_effect = execute_side_effect
         result = service.validate_client("operion_abc123def456ghi789", "wrong-secret")
         assert result is None
 
@@ -222,7 +222,7 @@ class TestValidateClient:
         """is_active=0 means the row is filtered out by the query (AND is_active = 1)."""
         cursor = MagicMock()
         cursor.fetchone.return_value = None  # DB WHERE clause filters inactive rows
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("operion_abc123def456ghi789", "correct-secret")
         assert result is None
@@ -231,7 +231,7 @@ class TestValidateClient:
         """After a successful validation, last_used_at is set to now."""
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.datetime") as mock_dt:
             fake_now = datetime(2026, 7, 13, 10, 30, 0)
@@ -239,7 +239,7 @@ class TestValidateClient:
             service.validate_client("operion_abc123def456ghi789", "correct-secret")
 
         # The second execute call is the UPDATE
-        update_call = mock_db.conn.execute.call_args_list[1]
+        update_call = mock_db.execute.call_args_list[1]
         update_sql, update_params = update_call[0]
         assert "UPDATE oauth2_clients SET last_used_at" in update_sql
         assert update_params[0] == fake_now.isoformat()
@@ -248,17 +248,17 @@ class TestValidateClient:
     def test_commit_called_after_update(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         service.validate_client("operion_abc123def456ghi789", "correct-secret")
-        assert mock_db.conn.commit.call_count >= 1
+        assert mock_db.commit.call_count >= 1
 
     def test_scopes_string_parsed_as_json(self, service, mock_db, sample_row):
         """When row['scopes'] is a JSON string, it gets parsed into a list."""
         row = dict(sample_row, scopes='["admin"]')
         cursor = MagicMock()
         cursor.fetchone.return_value = row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("cid", "secret")
         assert result.scopes == ["admin"]
@@ -268,7 +268,7 @@ class TestValidateClient:
         row = dict(sample_row, scopes=["admin"])
         cursor = MagicMock()
         cursor.fetchone.return_value = row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("cid", "secret")
         assert result.scopes == ["admin"]
@@ -278,7 +278,7 @@ class TestValidateClient:
         row = dict(sample_row, scopes=None)
         cursor = MagicMock()
         cursor.fetchone.return_value = row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("cid", "secret")
         assert result.scopes == []
@@ -290,7 +290,7 @@ class TestValidateClient:
         row = dict(sample_row, scopes="")
         cursor = MagicMock()
         cursor.fetchone.return_value = row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("cid", "secret")
         assert result.scopes == []
@@ -304,7 +304,7 @@ class TestIssueToken:
     ):
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch(
             "backend.oauth2.create_access_token", return_value="fake.jwt.token"
@@ -321,7 +321,7 @@ class TestIssueToken:
     def test_invalid_credentials_returns_none(self, service, mock_db):
         cursor = MagicMock()
         cursor.fetchone.return_value = None
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.issue_token("bad-id", "bad-secret")
         assert result is None
@@ -329,7 +329,7 @@ class TestIssueToken:
     def test_token_type_is_bearer(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token", return_value="tok"):
             result = service.issue_token("cid", "secret")
@@ -339,7 +339,7 @@ class TestIssueToken:
         """When a scope string is provided, it's split on whitespace."""
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token") as mock_cat:
             service.issue_token("cid", "secret", scope="read write admin")
@@ -352,7 +352,7 @@ class TestIssueToken:
         """Default empty scope should use the scopes from the client record."""
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token") as mock_cat:
             service.issue_token("cid", "secret", scope="")
@@ -366,7 +366,7 @@ class TestIssueToken:
         """Omitting scope entirely defaults to client.scopes."""
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token") as mock_cat:
             service.issue_token("cid", "secret")
@@ -379,7 +379,7 @@ class TestIssueToken:
     ):
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token") as mock_cat:
             service.issue_token("cid", "secret", scope="read")
@@ -400,7 +400,7 @@ class TestIssueToken:
     ):
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token", return_value="tok"):
             result = service.issue_token("cid", "secret", scope="a b c")
@@ -412,7 +412,7 @@ class TestIssueToken:
         """If validate_client returns None, create_access_token is never called."""
         cursor = MagicMock()
         cursor.fetchone.return_value = None
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token") as mock_cat:
             result = service.issue_token("bad", "bad")
@@ -426,14 +426,14 @@ class TestRevokeClient:
     def test_sets_is_active_to_zero(self, service, mock_db):
         service.revoke_client("client_to_revoke")
 
-        sql, params = mock_db.conn.execute.call_args[0]
+        sql, params = mock_db.execute.call_args[0]
         assert "UPDATE oauth2_clients" in sql
         assert "is_active = 0" in sql or "is_active=0" in sql
         assert params[0] == "client_to_revoke"
 
     def test_commit_called(self, service, mock_db):
         service.revoke_client("any")
-        mock_db.conn.commit.assert_called_once()
+        mock_db.commit.assert_called_once()
 
     def test_revoke_already_revoked_client_does_not_raise(
         self, service, mock_db
@@ -441,7 +441,7 @@ class TestRevokeClient:
         """Revoking an already-revoked client is idempotent (no error)."""
         # Simulate DB successfully executing the UPDATE even if 0 rows match
         service.revoke_client("already_inactive")
-        mock_db.conn.execute.assert_called_once()
+        mock_db.execute.assert_called_once()
 
 
 # ── list_clients ───────────────────────────────────────────────────────
@@ -452,7 +452,7 @@ class TestListClients:
     ):
         cursor = MagicMock()
         cursor.fetchall.return_value = [sample_row, dict(sample_row, client_id="c2")]
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=42):
             result = service.list_clients()
@@ -464,45 +464,45 @@ class TestListClients:
     def test_with_partner_filter(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchall.return_value = [sample_row]
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=42):
             result = service.list_clients(partner="acme")
 
         assert len(result) == 1
-        sql = mock_db.conn.execute.call_args[0][0]
+        sql = mock_db.execute.call_args[0][0]
         assert "partner = ?" in sql
-        params = mock_db.conn.execute.call_args[0][1]
+        params = mock_db.execute.call_args[0][1]
         assert params[0] == "acme"
 
     def test_partner_filter_uses_company_id(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchall.return_value = [sample_row]
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=7):
             service.list_clients(partner="foo")
 
-        params = mock_db.conn.execute.call_args[0][1]
+        params = mock_db.execute.call_args[0][1]
         assert params[1] == 7  # company_id is second param
 
     def test_no_partner_uses_company_id_only(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchall.return_value = [sample_row]
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=7):
             service.list_clients()
 
-        params = mock_db.conn.execute.call_args[0][1]
+        params = mock_db.execute.call_args[0][1]
         assert params[0] == 7
-        sql = mock_db.conn.execute.call_args[0][0]
+        sql = mock_db.execute.call_args[0][0]
         assert "partner" not in sql or "partner" not in sql.upper()
 
     def test_returns_list_of_dicts(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchall.return_value = [sample_row]
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=1):
             result = service.list_clients()
@@ -513,18 +513,18 @@ class TestListClients:
     def test_ordered_by_created_at_desc(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchall.return_value = [sample_row]
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=1):
             service.list_clients()
 
-        sql = mock_db.conn.execute.call_args[0][0]
+        sql = mock_db.execute.call_args[0][0]
         assert "ORDER BY created_at DESC" in sql
 
     def test_empty_result(self, service, mock_db):
         cursor = MagicMock()
         cursor.fetchall.return_value = []
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=1):
             result = service.list_clients()
@@ -578,10 +578,10 @@ class TestValidateClientQuery:
     ):
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         service.validate_client("my_client", "my_secret")
-        sql, params = mock_db.conn.execute.call_args_list[0][0]
+        sql, params = mock_db.execute.call_args_list[0][0]
 
         assert "WHERE client_id = ?" in sql
         assert "secret_hash = ?" in sql
@@ -592,10 +592,10 @@ class TestValidateClientQuery:
     def test_query_uses_select_star(self, service, mock_db, sample_row):
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         service.validate_client("x", "y")
-        sql = mock_db.conn.execute.call_args_list[0][0][0]
+        sql = mock_db.execute.call_args_list[0][0][0]
         assert sql.strip().upper().startswith("SELECT")
 
 
@@ -609,7 +609,7 @@ class TestEdgeCases:
         with patch("backend.oauth2.secrets.token_hex", return_value="x"):
             service.register_client("X", "y", ["z"])  # user_id defaults to 0
 
-        params = mock_db.conn.execute.call_args[0][1]
+        params = mock_db.execute.call_args[0][1]
         assert params[5] == 0  # created_by (6th param, index 5)
 
     def test_register_client_with_long_name_partner(
@@ -621,7 +621,7 @@ class TestEdgeCases:
         with patch("backend.oauth2.secrets.token_hex", return_value="x"):
             client_id, secret = service.register_client(name, partner, ["read"])
 
-        params = mock_db.conn.execute.call_args[0][1]
+        params = mock_db.execute.call_args[0][1]
         assert params[1] == name
         assert params[2] == partner
         assert isinstance(client_id, str)
@@ -633,7 +633,7 @@ class TestEdgeCases:
         """Unicode characters in the secret shouldn't cause issues."""
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         result = service.validate_client("cid", "héllo_wörld🔥")
         # The hash is computed and compared by the DB query; if the mock
@@ -646,7 +646,7 @@ class TestEdgeCases:
         """Extra whitespace in scope is handled by .split()."""
         cursor = MagicMock()
         cursor.fetchone.return_value = sample_row
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch("backend.oauth2.create_access_token") as mock_cat:
             service.issue_token("cid", "secret", scope="  read   write  ")
@@ -658,7 +658,7 @@ class TestEdgeCases:
         """An empty company returns an empty list."""
         cursor = MagicMock()
         cursor.fetchall.return_value = []
-        mock_db.conn.execute.return_value = cursor
+        mock_db.execute.return_value = cursor
 
         with patch.object(OAuth2Service, "_get_company_id", return_value=999):
             result = service.list_clients()
@@ -667,8 +667,8 @@ class TestEdgeCases:
 
     def test_revoke_client_correct_sql(self, service, mock_db):
         service.revoke_client("my_client_id")
-        sql, params = mock_db.conn.execute.call_args[0]
+        sql, params = mock_db.execute.call_args[0]
         assert "UPDATE" in sql.upper()
         assert "is_active" in sql.lower()
         assert params[0] == "my_client_id"
-        mock_db.conn.commit.assert_called_once()
+        mock_db.commit.assert_called_once()

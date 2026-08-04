@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS trips (
     net_profit REAL,
     start_date TEXT,
     end_date TEXT,
+    promised_date TEXT,
     payment_date TEXT,
     extra_costs REAL,
     fuel_cost REAL,
@@ -141,6 +142,28 @@ CREATE TABLE IF NOT EXISTS email_logs (
     FOREIGN KEY (trip_id) REFERENCES trips (id)
 );
 """
+
+# ── Sent-email dedup (roadmap 12) ─────────────────────────────────────
+# UNIQUE(document_id, recipient) makes a Celery retry of build_email_package
+# idempotent: a replayed INSERT OR IGNORE of a 'pending' row is a no-op
+# instead of a second send to the same recipient.
+TABLE_SENT_EMAILS = """
+CREATE TABLE IF NOT EXISTS sent_emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    recipient TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    sent_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(document_id, recipient),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+"""
+
+INDEX_SENT_EMAILS_STATUS = (
+    "CREATE INDEX IF NOT EXISTS idx_sent_emails_status "
+    "ON sent_emails(status)"
+)
 
 TABLE_INVOICE_REMINDERS = """
 CREATE TABLE IF NOT EXISTS invoice_reminders (
@@ -427,6 +450,7 @@ CREATE TABLE IF NOT EXISTS driver_truck_assignments (
     driver_id INTEGER NOT NULL UNIQUE,
     truck_id INTEGER NOT NULL,
     assigned_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
@@ -717,6 +741,7 @@ TABLE_SUCCESSIVE_CARRIERS = """
 CREATE TABLE IF NOT EXISTS successive_carriers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    company_id INTEGER DEFAULT 0 REFERENCES companies(id),
     sequence_order INTEGER NOT NULL DEFAULT 1,
     carrier_name TEXT NOT NULL,
     carrier_address TEXT,
@@ -1115,6 +1140,23 @@ INDEX_GPS_TRUCK = (
 INDEX_GPS_RECORDED = (
     "CREATE INDEX IF NOT EXISTS idx_gps_recorded ON gps_telemetry(recorded_at)"
 )
+# Unique (truck_id, recorded_at) — makes GPS batch-flush retries idempotent:
+# a replayed INSERT OR IGNORE is a no-op instead of a duplicate row.
+INDEX_GPS_TELEMETRY_UNIQUE = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_gps_telemetry_unique "
+    "ON gps_telemetry(truck_id, recorded_at)"
+)
+
+# Unique (company_id, insight_type, payload) — makes insight-job retries
+# idempotent: a replayed INSERT OR IGNORE (translated to ON CONFLICT DO
+# NOTHING on PostgreSQL) is a no-op instead of a duplicate row.
+# payload is the JSON-serialized insight payload (real column name per the
+# Alembic copilot_insights migration; the legacy ``payload_json`` name was
+# never part of the schema).
+INDEX_COPILOT_INSIGHTS_DEDUP = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
+    "ON copilot_insights(company_id, insight_type, payload)"
+)
 
 # ── Soft delete: deleted_at for all business tables (P0.7) ───────────
 ALTER_TRIPS_ADD_DELETED_AT = "ALTER TABLE trips ADD COLUMN deleted_at TEXT"
@@ -1165,6 +1207,16 @@ INSERT_SCHEMA_MIGRATION_V7 = (
     "VALUES (7, 'add_trips_source_columns');"
 )
 
+INSERT_SCHEMA_MIGRATION_V8 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (8, 'add_sent_emails_dedup_table');"
+)
+
+INSERT_SCHEMA_MIGRATION_V9 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (9, 'add_trips_promised_date');"
+)
+
 # ── Multi-tenant company_id indexes ────────────────────────────────────
 # These ensure fast tenant-scoped queries on every business table.
 
@@ -1196,6 +1248,13 @@ INDEX_CLIENT_TAGS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_client_tags_company 
 INDEX_DOCUMENT_LINKS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_doc_links_company ON document_links(company_id);"
 INDEX_DOCUMENT_VERSIONS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_doc_versions_company ON document_versions(company_id);"
 
+# ── Composite indexes for common multi-tenant filtered queries ────────
+INDEX_TRIPS_COMPANY_STATUS   = "CREATE INDEX IF NOT EXISTS idx_trips_company_status ON trips(company_id, status);"
+INDEX_TRIPS_COMPANY_CREATED  = "CREATE INDEX IF NOT EXISTS idx_trips_company_created ON trips(company_id, created_at);"
+INDEX_TRIPS_COMPANY_START_DATE = "CREATE INDEX IF NOT EXISTS idx_trips_company_start_date ON trips(company_id, start_date);"
+INDEX_TRUCKS_COMPANY_STATUS  = "CREATE INDEX IF NOT EXISTS idx_trucks_company_status ON trucks(company_id, status);"
+INDEX_INVOICES_COMPANY_STATUS = "CREATE INDEX IF NOT EXISTS idx_invoices_company_status ON invoices(company_id, status);"
+
 # ── Soft delete indexes (P0.7) ─────────────────────────────────────────
 INDEX_TRIPS_DELETED = "CREATE INDEX IF NOT EXISTS idx_trips_deleted ON trips(deleted_at);"
 INDEX_INVOICES_DELETED = "CREATE INDEX IF NOT EXISTS idx_invoices_deleted ON invoices(deleted_at);"
@@ -1211,7 +1270,8 @@ INDEX_CONTRACTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_contracts_deleted ON c
 INDEX_INVOICES_STATUS   = "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);"
 INDEX_GPS_TRUCK_TIME    = "CREATE INDEX IF NOT EXISTS idx_gps_truck_time ON gps_telemetry(truck_id, recorded_at);"
 INDEX_CMR_AUDIT_EVENT_TYPE = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_event_type ON cmr_audit_log(event_type);"
-INDEX_CMR_AUDIT_CREATED = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_created ON cmr_audit_log(created_at);"
+# NOTE: no `idx_cmr_audit_created` — cmr_audit_log has a `timestamp`
+# column, NOT `created_at`; the old statement failed at every init.
 INDEX_EMAIL_LOGS_TRIP   = "CREATE INDEX IF NOT EXISTS idx_email_logs_trip ON email_logs(trip_id);"
 INDEX_EMAIL_LOGS_STATUS = "CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);"
 
@@ -1350,6 +1410,35 @@ INDEX_FREIGHT_CONNECTIONS_STATUS = (
 )
 
 
+# ── Auth Sessions (desktop & web login tracking) ─────────────────────────
+TABLE_AUTH_SESSIONS = """
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 0,
+    user_email TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    device_name TEXT DEFAULT '',
+    device_platform TEXT DEFAULT '',
+    ip_address TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    last_active_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+INDEX_AUTH_SESSIONS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_company "
+    "ON auth_sessions(company_id)"
+)
+INDEX_AUTH_SESSIONS_EMAIL = (
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_email "
+    "ON auth_sessions(user_email)"
+)
+INDEX_AUTH_SESSIONS_TOKEN = (
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_token "
+    "ON auth_sessions(token_hash)"
+)
+
 # ── Freight Exchange: Saved Searches ──────────────────────────────────────
 TABLE_SAVED_SEARCHES = """
 CREATE TABLE IF NOT EXISTS saved_searches (
@@ -1373,6 +1462,25 @@ INDEX_SAVED_SEARCHES_USER = (
     "CREATE INDEX IF NOT EXISTS idx_saved_searches_user "
     "ON saved_searches(user_id);"
 )
+
+
+# ── Mobile Phase 2: async export jobs ─────────────────────────────────────
+TABLE_EXPORT_JOBS = """
+CREATE TABLE IF NOT EXISTS export_jobs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind TEXT NOT NULL,                         -- 'trips_export' | 'analytics_export'
+    params_json TEXT,                           -- JSON: {format, filters}
+    status TEXT NOT NULL DEFAULT 'processing',  -- processing | success | error
+    result_path TEXT,                           -- absolute path to the generated file
+    error TEXT,
+    company_id INTEGER REFERENCES companies(id),
+    created_at TEXT NOT NULL,
+    completed_at TEXT
+);
+"""
+
+INDEX_EXPORT_JOBS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_export_jobs_company ON export_jobs(company_id);"
+INDEX_EXPORT_JOBS_STATUS = "CREATE INDEX IF NOT EXISTS idx_export_jobs_status ON export_jobs(status);"
 
 
 # ── Freight Exchange: trips source columns ────────────────────────────────

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
+import os
 
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QColor
@@ -21,8 +22,7 @@ from PySide6.QtWidgets import (
     QLineEdit,
     QMessageBox,
     QPlainTextEdit,
-    QTableWidget,
-    QTableWidgetItem,
+    QPushButton,
     QVBoxLayout,
     QWidget,
 )
@@ -37,16 +37,18 @@ from services.operations.notification_center import NotificationCenter
 from services.preferences import PreferencesManager
 from ui.components import Btn, Divider, Label, PageTitle, SectionTitle
 from ui.design_tokens import SP
-from ui.theme import S
 from ui.widgets import (
     ActionButton,
     ScrollableFormContainer,
     StyledCheckBox,
     StyledComboBox,
     StyledLineEdit,
+    StyledTableWidget,
 )
 
 from ui.views.settings_view.settings_fields import DEFAULT_BRAND_COLOR, SettingsFieldsMixin
+
+from ui.performance_timer import PerfTimer
 
 logger = logging.getLogger(__name__)
 
@@ -85,11 +87,15 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         # ── i18n tracking ────────────────────────────────────────────────
         self._i18n_labels: list[tuple[QLabel, str]] = []
         self._i18n_buttons: list[tuple[ActionButton, str]] = []
-        self._section_headings: dict[str, QLabel] = {}
+        self._section_headings: dict[str, QLabel | QPushButton] = {}
         self._language_callback = self._on_language_changed
 
         # ── Brand colour swatch reference ────────────────────────────────
         self._brand_color_swatch: QFrame | None = None
+
+        # ── Collapsible section tracking ────────────────────────────────
+        self._section_cards: list[QFrame] = []
+        self._search_input: QLineEdit | None = None
 
         # ── Input maps ───────────────────────────────────────────────────
         self.company_inputs: dict[str, StyledLineEdit] = {}
@@ -126,7 +132,8 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
 
     def wakeup(self) -> None:
         """Called when the view becomes visible (e.g. tab switch)."""
-        pass
+        with PerfTimer("settings.refresh"):
+            pass
 
     def handle_nav_data(self, data: dict) -> None:
         """Accept deep-link data, e.g. ``{"scroll_to": "tracking"}``."""
@@ -149,6 +156,12 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
                 return
             target = widget.findChild(QFrame, obj_name)
             if target is not None:
+                # Auto-expand collapsed section
+                if hasattr(target, "_expanded") and not target._expanded:
+                    target._expanded = True
+                    target._content_widget.setVisible(True)
+                    icon = "▼"
+                    target._title_btn.setText(f"{icon}  {t(target._title_key).upper()}")
                 widget.ensureWidgetVisible(target, xMargin=0, yMargin=20)
 
         QTimer.singleShot(50, _do_scroll)
@@ -172,9 +185,13 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         for button, key in self._i18n_buttons:
             with contextlib.suppress(Exception):
                 button.setText(t(key))
-        for text_key, lbl in self._section_headings.items():
+        for text_key, widget in self._section_headings.items():
             with contextlib.suppress(Exception):
-                lbl.setText(t(text_key))
+                if isinstance(widget, QPushButton):
+                    icon_part = widget.text()[0]  # ▼ or ▶
+                    widget.setText(f"{icon_part}  {t(text_key).upper()}")
+                else:
+                    widget.setText(t(text_key))
         # Rebuild preference menus whose items are language-dependent
         self._rebuild_preference_menus()
         # Rebuild tracking platform menu which contains translated items
@@ -185,6 +202,7 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Settings")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -196,16 +214,20 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         self._scroll = ScrollableFormContainer(self)
         layout.addWidget(self._scroll, 1)
 
+        # Search bar (before sections)
+        self._build_search_bar()
+
         self._build_section_company()
         self._build_section_branding()
         self._build_section_preferences()
         self._build_section_email()
         self._build_section_tracking()
         self._build_section_maintenance()
-        self._build_section_tutorial()
+        # Defer rarely-seen sections to after init for faster first paint
+        QTimer.singleShot(0, self._build_section_tutorial)
         if is_admin():
-            self._build_section_automation()
-            self._build_section_autonomous_mode()
+            QTimer.singleShot(50, self._build_section_automation)
+            QTimer.singleShot(100, self._build_section_autonomous_mode)
 
         # Bottom save bar
         self._build_save_bar(layout)
@@ -346,6 +368,13 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
                 else:
                     val = obj.text().strip()
                 self.prefs.save_setting(key, val)
+        # qwen_api_key is env-first (OPERION_QWEN_API_KEY); when set, the
+        # secret lives in the environment and must not be copied back into
+        # prefs.json — only persist a locally-typed value.
+        if not os.environ.get("OPERION_QWEN_API_KEY"):
+            _ai_key_field = getattr(self, "_ai_api_key", None)
+            if _ai_key_field is not None:
+                self.prefs.save_setting("qwen_api_key", _ai_key_field.text().strip())
         # Also update the runtime threshold in ocr_extractor.
         try:
             thresh_text = getattr(self, "_ai_threshold", None)
@@ -565,42 +594,38 @@ class QtSettingsView(SettingsFieldsMixin, BaseView):
         dialog.setProperty("role", "dialog")
 
         layout = QVBoxLayout(dialog)
-        layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
+        layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
 
-        table = QTableWidget(dialog)
-        table.setColumnCount(5)
-        table.setHorizontalHeaderLabels([
-            t("email_logs.col_id"),
-            t("email_logs.col_recipient"),
-            t("email_logs.col_subject"),
-            t("email_logs.col_sent"),
-            t("email_logs.col_status"),
-        ])
-        table.setAlternatingRowColors(True)
-        table.setSelectionBehavior(table.SelectRows)
-        table.setEditTriggers(table.NoEditTriggers)
-        table.horizontalHeader().setStretchLastSection(True)
-        table.verticalHeader().setVisible(False)
-        table.setColumnWidth(0, 40)
-        table.setColumnWidth(1, 200)
-        table.setColumnWidth(2, 200)
-        table.setColumnWidth(3, 150)
-        table.setColumnWidth(4, 60)
+        table = StyledTableWidget(
+            dialog,
+            columns=[
+                ("id",         t("email_logs.col_id"),         40),
+                ("recipient",  t("email_logs.col_recipient"), 200),
+                ("subject",    t("email_logs.col_subject"),   200),
+                ("sent",       t("email_logs.col_sent"),      150),
+                ("status",     t("email_logs.col_status"),     60),
+            ],
+        )
+        table.setSortingEnabled(True)
+        table.horizontalHeader().setSortIndicatorShown(True)
 
         try:
             rows = self._automail_repo.get_recent_email_logs(200)
-            table.setRowCount(len(rows))
-            for r, row in enumerate(rows):
-                for c, val in enumerate(row):
-                    item = QTableWidgetItem(str(val) if val is not None else "")
-                    table.setItem(r, c, item)
+            data: list[dict[str, str]] = []
+            for row in rows:
+                data.append({
+                    "id": str(row[0]) if row[0] is not None else "",
+                    "recipient": str(row[1]) if row[1] is not None else "",
+                    "subject": str(row[2]) if row[2] is not None else "",
+                    "sent": str(row[3]) if row[3] is not None else "",
+                    "status": str(row[4]) if row[4] is not None else "",
+                })
+            table.set_data(data)
         except Exception:
-            table.setRowCount(1)
-            table.setItem(0, 0, QTableWidgetItem(""))
-            table.setItem(0, 1, QTableWidgetItem(t("email_logs.no_logs")))
-            table.setItem(0, 2, QTableWidgetItem(""))
-            table.setItem(0, 3, QTableWidgetItem(""))
-            table.setItem(0, 4, QTableWidgetItem(""))
+            table.set_data([{
+                "id": "", "recipient": t("email_logs.no_logs"),
+                "subject": "", "sent": "", "status": "",
+            }])
 
         layout.addWidget(table)
         dialog.exec()

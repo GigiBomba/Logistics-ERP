@@ -124,8 +124,10 @@ def _cleanup_copilot_state():
 @pytest.fixture
 def mock_db():
     """A mock database with ``conn.execute`` returning empty results by default."""
-    db = MagicMock(spec_set=["conn"])
+    db = MagicMock(spec_set=["conn", "row_to_dict", "rows_to_dicts"])
     db.conn = MagicMock()
+    db.row_to_dict = lambda row: row
+    db.rows_to_dicts = lambda rows: rows
     # Default: fetchall returns empty list
     db.conn.execute.return_value.fetchall.return_value = []
     db.conn.execute.return_value.fetchone.return_value = None

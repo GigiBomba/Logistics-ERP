@@ -519,6 +519,7 @@ class ImmigrateSoftwareTab(QWidget):
             dup_action = "keep_both"
 
         self._btn_import.setEnabled(False)
+        self._results_card.setVisible(True)
         self._progress_bar.setVisible(True)
         self._progress_bar.setValue(0)
         self._status_label.setText(t("migration.importing", "Importing\u2026"))

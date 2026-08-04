@@ -36,7 +36,7 @@ class TestLoadTrips:
         svc.get_by_id.return_value = {"id": 1, "status": "planned", "created_at": "2026-07-09T00:00:00"}
         svc.add.return_value = 1
         svc.update.return_value = None
-        svc.delete.return_value = None
+        svc.delete.return_value = MagicMock(success=True)
         app.dependency_overrides[get_trip_service] = lambda: svc
 
         yield TestClient(app)

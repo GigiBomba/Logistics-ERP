@@ -323,6 +323,34 @@ class TestCommit:
         assert stats.committed == 0
         assert stats.total_rows == 0
 
+    def test_commit_warns_on_malformed_start_date_but_imports(self, service, db, caplog):
+        """A malformed start_date logs a warning but the row still imports as-is."""
+        import logging
+
+        rows = [{"truck_number": "AB123CD", "start_date": "31/07/2026"}]
+        with caplog.at_level(logging.WARNING, logger="services.migration.import_service"):
+            stats = service.commit(rows, EntityType.TRIP)
+        assert stats.committed == 1
+        assert stats.validation_failures == 0
+        assert any("malformed start_date" in rec.message for rec in caplog.records)
+        row = db.conn.execute(
+            "SELECT truck_number, start_date FROM trips WHERE truck_number = ?",
+            ("AB123CD",),
+        ).fetchone()
+        assert row is not None
+        assert row[1] == "31/07/2026"  # imported unchanged — no silent data loss
+
+    def test_commit_no_warning_for_valid_start_date(self, service, db, caplog):
+        """A valid ISO start_date produces no malformed-date warning."""
+        import logging
+
+        rows = [{"truck_number": "AB123CD", "start_date": "2026-07-31"}]
+        with caplog.at_level(logging.WARNING, logger="services.migration.import_service"):
+            stats = service.commit(rows, EntityType.TRIP)
+        assert stats.committed == 1
+        assert stats.validation_failures == 0
+        assert not any("malformed start_date" in rec.message for rec in caplog.records)
+
 
 # ── Import Data (end-to-end) ─────────────────────────────────────────────────
 

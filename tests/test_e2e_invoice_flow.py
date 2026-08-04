@@ -11,6 +11,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from models.trip_models import TripCreate
 from repositories.client_repository import ClientRepository
 from repositories.fleet_repository import FleetRepository
 from repositories.invoice_repository import InvoiceRepository
@@ -25,7 +26,7 @@ from services.invoicing.service import InvoiceService
 from services.operations.event_bus import EventBus
 from services.operations.trip_status_engine import TripStatusEngine
 from services.trip_service import TripService
-from tests.test_helpers import make_db
+from tests.test_helpers import make_db, seed_client
 
 pytestmark = pytest.mark.slow
 
@@ -79,15 +80,15 @@ class TestInvoiceFlow:
         assert client_id > 0
 
         # ── Step 2: Create a trip ────────────────────────────────────
-        trip_id = trip_service.add({
+        trip_data = {
             "client_name": "Invoice Client AG",
             "client_id": client_id,
-            "truck_number": "CH-BC-5678",
+            "truck_plate": "CH-BC-5678",
             "driver_name": "Pierre Dubois",
             "start_date": _dt(-5),
             "end_date": _dt(-3),
             "distance_km": 1200.0,
-            "total_price_eur": 4800.0,
+            "price_eur": 4800.0,
             "rate_per_km": 4.0,
             "fuel_cost": 960.0,
             "toll_cost": 180.0,
@@ -96,12 +97,9 @@ class TestInvoiceFlow:
             "net_profit": 3200.0,
             "currency": "EUR",
             "status": "In Transit",
-            "created_at": now_iso,
-            "cargo_description": "Pharmaceutical products",
-            "package_count": 10,
-            "package_type": "Boxes",
-            "gross_weight_kg": 5000.0,
-        })
+        }
+        trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+        trip_id = trip_service.create(TripCreate(**trip_fields)).data.id
         assert trip_id > 0
 
         # ── Step 3: Deliver the trip ─────────────────────────────────
@@ -184,22 +182,21 @@ class TestInvoiceFlow:
         invoice_repo = InvoiceRepository(db)
 
         now_iso = datetime.now().isoformat()
-        trip_id = trip_service.add({
+        # TripCreate.client_id is required and must reference a real client
+        client_id = seed_client(db, name="CMR Test Client")
+        trip_data = {
             "client_name": "CMR Test Client",
-            "truck_number": "DE-XX-9999",
+            "client_id": client_id,
+            "truck_plate": "DE-XX-9999",
             "driver_name": "Test Driver",
             "start_date": _dt(-2),
             "end_date": _dt(0),
             "distance_km": 750.0,
-            "total_price_eur": 3000.0,
+            "price_eur": 3000.0,
             "status": "Delivered",
-            "created_at": now_iso,
-            "cargo_description": "Machine parts",
-            "package_count": 5,
-            "gross_weight_kg": 8000.0,
-            "loading_country": "DE",
-            "delivery_country": "FR",
-        })
+        }
+        trip_fields = {k: v for k, v in trip_data.items() if k in TripCreate.model_fields}
+        trip_id = trip_service.create(TripCreate(**trip_fields)).data.id
         assert trip_id > 0
 
         cmr_output_dir = tempfile.mkdtemp(prefix="cmr_inv_e2e_")
@@ -350,13 +347,15 @@ class TestInvoiceFlow:
 
         # ── Create a trip ────────────────────────────────────────
         now_iso = datetime.now().isoformat()
-        trip_id = trip_service.add({
-            "client_name": "Linked Receipt Client",
-            "truck_number": "TR-LINK-001",
-            "total_price_eur": 2500.0,
-            "status": "Paid",
-            "created_at": now_iso,
-        })
+        client_id = seed_client(db, name="Linked Receipt Client")
+        trip_id = trip_service.create(TripCreate(
+            client_id=client_id,
+            client_name="Linked Receipt Client",
+            truck_plate="TR-LINK-001",
+            price_eur=2500.0,
+            status="Paid",
+            start_date=datetime.now().date(),
+        )).data.id
 
         # ── Generate receipt linked to this trip ─────────────────
         receipt_data = {

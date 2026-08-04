@@ -178,6 +178,62 @@ class TestGenerateExcel:
             mock_wb.save.assert_called_once()
 
 
+class TestGenerateNoneValues:
+    """N2: rows with None values must render as 0/'' — never the literal
+    string "None" (which previously leaked via ``float(t.get(...) or 0)``
+    or plain ``t.get(...)`` fallbacks)."""
+
+    @patch("services.export_service.remove_accents", side_effect=lambda x: x)
+    def test_generate_pdf_none_values_omit_none_literal(
+        self, mock_rm_accents, export_service,
+    ):
+        trips = [{
+            "created_at": None, "truck_number": None, "driver_name": None,
+            "client_name": None, "distance_km": None, "gross_per_km": None,
+            "net_profit": None, "status": None,
+        }]
+        table_cells: list[str] = []
+
+        def _fake_table(data, *args, **kwargs):
+            table_cells.extend(str(c) for row in data for c in row)
+            return MagicMock()
+
+        with patch.object(export_service, "_safe_filename", return_value="none.pdf"), \
+             patch("services.export_service.SimpleDocTemplate") as mock_doc_cls, \
+             patch("services.export_service.Table", side_effect=_fake_table):
+            mock_doc = MagicMock()
+            mock_doc_cls.return_value = mock_doc
+
+            result = export_service.generate_pdf(trips, filename="none.pdf")
+
+        assert result == os.path.join("/fake/reports", "none.pdf")
+        assert table_cells, "expected the header + data rows to reach the table"
+        assert "None" not in "".join(table_cells)
+
+    def test_generate_excel_none_values_omit_none_literal(self, export_service):
+        trips = [{
+            "id": 1, "created_at": None, "truck_number": None,
+            "driver_name": None, "client_name": None, "distance_km": None,
+            "total_price_eur": None, "net_profit": None, "gross_per_km": None,
+            "rate_per_km": None, "status": None, "fuel_cost": None,
+            "toll_cost": None, "salary_cost": None,
+        }]
+        with patch.object(export_service, "_safe_filename", return_value="none.xlsx"), \
+             patch("services.export_service.Workbook") as mock_wb_cls:
+            mock_wb = MagicMock()
+            mock_ws = MagicMock()
+            mock_wb.active = mock_ws
+            mock_wb_cls.return_value = mock_wb
+
+            result = export_service.generate_excel(trips, filename="none.xlsx")
+
+        assert result == os.path.join("/fake/reports", "none.xlsx")
+        appended = mock_ws.append.call_args_list
+        assert len(appended) == 2  # header row + data row
+        row = appended[-1].args[0]
+        assert "None" not in "".join(str(v) for v in row)
+
+
 # ── Typed export() entry point ─────────────────────────────────────
 
 

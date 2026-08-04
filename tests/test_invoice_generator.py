@@ -110,16 +110,21 @@ class TestGenerateRichProforma:
             assert path is not None
             mock_doc.build.assert_called_once()
 
-    def test_proforma_vat_mismatch_raises(self, generator, min_proforma_data):
-        """Mismatched VAT calculation raises ValueError."""
+    def test_proforma_vat_mismatch_logs_warning(self, generator, min_proforma_data):
+        """Mismatched VAT calculation logs a warning instead of raising."""
         data = dict(min_proforma_data)
         data["trip_price"] = 1200.0
         data["price_pre_vat"] = 1000.0
         data["vat_percent"] = 19.0
         with patch.object(generator, "_draw_watermark"), \
-             patch("services.invoicing.generator.SimpleDocTemplate"):
-            with pytest.raises(ValueError, match="VAT mismatch"):
-                generator.generate_rich(data, document_type="proforma")
+             patch("services.invoicing.generator.SimpleDocTemplate") as mock_doc_cls, \
+             patch("services.invoicing.generator.logger") as mock_logger:
+            mock_doc = MagicMock()
+            mock_doc_cls.return_value = mock_doc
+            path = generator.generate_rich(data, document_type="proforma")
+            assert path is not None
+            mock_logger.warning.assert_called_once()
+            assert "VAT rounding discrepancy" in mock_logger.warning.call_args[0][0]
 
     def test_proforma_vat_price_pre_exceeds_trip(self, generator, min_proforma_data):
         """price_pre_vat exceeding trip_price raises ValueError."""

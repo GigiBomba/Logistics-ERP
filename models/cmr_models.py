@@ -14,6 +14,9 @@ class CmrGenerateRequest(BaseModel):
     carrier_name: str = ""
     carrier_license: str = ""
     remarks: str = ""
+    # Optional captured-signature PNG path to embed as the Sender signature
+    # (mobile signature pad; empty = company-config signature fallback).
+    sig_sender_path: str = ""
 
 
 class CmrResult(BaseModel):

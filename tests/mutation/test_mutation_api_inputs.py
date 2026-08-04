@@ -26,12 +26,12 @@ class TestMutationApiEmptyBody:
     def test_post_empty_json_body(self, client_with_mocks):
         """POST with empty JSON object {} is forwarded to service."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=1))
 
         resp = client.post(f"{self.BASE}/", json={})
         assert resp.status_code in (200, 422)
         if resp.status_code == 200:
-            mocks["trip_service"].add.assert_called_once_with({})
+            mocks["trip_service"].create.assert_called_once()
         elif resp.status_code == 422:
             body = resp.json()
             assert "detail" in body
@@ -253,7 +253,7 @@ class TestMutationApiXss:
     def test_xss_in_trip_name(self, client_with_mocks, xss):
         """XSS in trip client_name field."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=1))
 
         resp = client.post(f"{self.BASE}/", json={
             "client_name": xss,
@@ -290,7 +290,7 @@ class TestMutationApiLargePayload:
     def test_very_large_json_payload(self, client_with_mocks):
         """POST with a huge JSON payload (simulated) should not crash."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=1))
 
         # Create a large payload with many fields
         large_payload = {
@@ -308,7 +308,7 @@ class TestMutationApiLargePayload:
     def test_deeply_nested_json(self, client_with_mocks):
         """Deeply nested JSON payload."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=1))
 
         def make_nested(depth):
             if depth <= 0:
@@ -352,7 +352,7 @@ class TestMutationApiInvalidTypes:
         resp = client.post(f"{self.BASE}/", json={"client_name": None})
         assert resp.status_code in (200, 400, 422)
         if resp.status_code == 200:
-            mocks["trip_service"].add.assert_called_once()
+            mocks["trip_service"].create.assert_called_once()
         elif resp.status_code in (400, 422):
             body = resp.json()
             assert isinstance(body, dict)
@@ -399,7 +399,7 @@ class TestMutationApiSpecialChars:
     def test_special_chars_in_text_field(self, client_with_mocks, special):
         """Special characters in text field should not cause errors."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 1
+        mocks["trip_service"].create.return_value = MagicMock(success=True, data=MagicMock(id=1))
 
         resp = client.post(f"{self.BASE}/", json={
             "client_name": special,

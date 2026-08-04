@@ -32,9 +32,12 @@ def service(db):
          patch("services.migration.physical_archive_service.run_for_existing_document") as mock_run, \
          patch("services.migration.physical_archive_service.TripMatcher") as mock_tm:
 
-        # Mock DocumentService: upload returns doc_id = 1
+        # Mock DocumentService: upload_document returns ServiceResult with data.id
         mock_ds_instance = MagicMock()
-        mock_ds_instance.upload.return_value = 1
+        mock_ds_instance.upload_document.return_value = MagicMock(
+            success=True,
+            data=MagicMock(id=1),
+        )
         mock_ds.return_value = mock_ds_instance
 
         # Mock OCR pipeline result
@@ -79,15 +82,17 @@ def _temp_file(suffix: str = ".pdf") -> str:
 # ── Process-document tests ─────────────────────────────────────────────────
 
 def test_process_document_calls_upload(service):
-    """Verifies DocumentService.upload was called with the correct args."""
+    """Verifies DocumentService.upload_document was called with the correct args."""
+    from models.document_models import DocumentUpload
+
     path = _temp_file()
     try:
         service.process_document(path)
-        service._doc_svc.upload.assert_called_once_with(
-            source_path=path,
-            title=os.path.splitext(os.path.basename(path))[0],
-            category="migration",
-        )
+        service._doc_svc.upload_document.assert_called_once()
+        call_args = service._doc_svc.upload_document.call_args[0]
+        assert isinstance(call_args[0], DocumentUpload)
+        assert call_args[0].source_path == path
+        assert call_args[0].category == "migration"
     finally:
         os.unlink(path)
 
@@ -226,7 +231,7 @@ def test_confirm_document_links_to_trip(service, db):
 
 def test_process_document_handles_upload_failure(service):
     """When upload returns None, the result contains an error."""
-    service._doc_svc.upload.return_value = None
+    service._doc_svc.upload_document.return_value = MagicMock(success=False)
     path = _temp_file()
     try:
         results = service.process_batch([path])

@@ -27,20 +27,21 @@ class TestRegistrationEndpoint:
     def test_register_success_returns_201(self, client_with_mocks):
         """Valid registration returns 201 with tokens."""
         client, mocks = client_with_mocks
-        # Mock DB: email check returns None (no conflict)
-        check_cursor = MagicMock()
-        check_cursor.fetchone.return_value = None
-        # Company insert + user insert
+        # Repositories call db.conn.execute() internally:
+        #   1) UserRepository.get_by_email → _fetchone → conn.execute().fetchone()
+        #   2) CompanyRepository.create    → _execute_insert → conn.execute()
+        #   3) UserRepository.create_user  → _execute_insert → conn.execute()
+        email_check = MagicMock()
+        email_check.fetchone.return_value = None          # email not found → None
         company_cursor = MagicMock()
-        company_cursor.lastrowid = 1
+        company_cursor.lastrowid = 1                      # new company id
         user_cursor = MagicMock()
-        user_cursor.lastrowid = 10
-        mocks["db"].execute.side_effect = [
-            check_cursor,       # email uniqueness check
-            company_cursor,     # INSERT INTO companies
-            user_cursor,        # INSERT INTO users
+        user_cursor.lastrowid = 10                        # new user id
+        mocks["db"].conn.execute.side_effect = [
+            email_check,      # _fetchone in get_by_email
+            company_cursor,   # _execute_insert for company
+            user_cursor,      # _execute_insert for user
         ]
-
         payload = {
             "email": "newuser@test.com",
             "password": "securepass123",
@@ -64,7 +65,7 @@ class TestRegistrationEndpoint:
         client, mocks = client_with_mocks
         check_cursor = MagicMock()
         check_cursor.fetchone.return_value = {"id": 99}
-        mocks["db"].execute.return_value = check_cursor
+        mocks["db"].conn.execute.return_value = check_cursor
 
         payload = {
             "email": "existing@test.com",
@@ -119,7 +120,7 @@ class TestRegistrationEndpoint:
         company_cursor.lastrowid = 5
         user_cursor = MagicMock()
         user_cursor.lastrowid = 50
-        mocks["db"].execute.side_effect = [
+        mocks["db"].conn.execute.side_effect = [
             check_cursor, company_cursor, user_cursor,
         ]
 

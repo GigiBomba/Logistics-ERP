@@ -182,7 +182,7 @@ class TestClientsSubResources:
         client, mocks = client_with_mocks
         mocks["client_service"].add_contact.return_value = 7
 
-        resp = client.post(f"{BASE}/1/contacts", json={"name": "Bob"})
+        resp = client.post(f"{BASE}/1/contacts", json={"full_name": "Bob"})
         assert resp.status_code == 201
         assert resp.json() == {"id": 7}
 

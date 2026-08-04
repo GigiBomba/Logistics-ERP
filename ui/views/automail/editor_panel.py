@@ -173,6 +173,8 @@ class EditorPanel(QFrame):
         ops=None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName("Template editor panel")
+        self.setAccessibleDescription("AutoMail email template editor panel")
         self._db = db
         self._prefs = prefs
         self._ops = ops
@@ -212,6 +214,7 @@ class EditorPanel(QFrame):
         selector_row = QHBoxLayout()
         selector_row.setSpacing(SPACE_2)
         self._template_combo = QComboBox(content)
+        self._template_combo.setAccessibleName("Template selector")
         self._template_combo.setMinimumWidth(160)
         self._template_combo.currentIndexChanged.connect(self._on_template_selected)
         selector_row.addWidget(self._template_combo, 1)
@@ -255,6 +258,7 @@ class EditorPanel(QFrame):
         self._content_layout.addLayout(subject_header)
 
         self._subject_edit = QLineEdit(content)
+        self._subject_edit.setAccessibleName("Subject editor")
         self._subject_edit.setStyleSheet(
             f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
             f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 6px; "
@@ -290,6 +294,7 @@ class EditorPanel(QFrame):
 
         # Format toolbar
         self._body_editor = QTextEdit(content)
+        self._body_editor.setAccessibleName("Body editor")
         self._body_editor.setAcceptRichText(True)
         self._body_editor.setStyleSheet(
             f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "

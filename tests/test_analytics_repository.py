@@ -453,6 +453,40 @@ class TestGetFleetAnalytics:
         assert result[0]["profit"] == 200
 
 
+class TestGetOtdPercentage:
+    def test_empty_db_returns_zero(self, repo):
+        assert repo.get_otd_percentage() == 0.0
+
+    def test_percentage_calculation(self, db, repo):
+        _trip(db, status="delivered", end_date="2026-01-10", promised_date="2026-01-10")
+        _trip(db, status="delivered", end_date="2026-01-05", promised_date="2026-01-10")
+        _trip(db, status="delivered", end_date="2026-01-15", promised_date="2026-01-10")
+        assert repo.get_otd_percentage() == pytest.approx(66.7)
+
+    def test_only_counts_delivered_statuses(self, db, repo):
+        _trip(db, status="delivered", end_date="2026-01-05", promised_date="2026-01-10")
+        _trip(db, status="planned", end_date="2026-01-05", promised_date="2026-01-10")
+        # Only the delivered trip qualifies → 100% (planned excluded).
+        assert repo.get_otd_percentage() == pytest.approx(100.0)
+
+    def test_excludes_trips_without_promised_date(self, db, repo):
+        _trip(db, status="delivered", end_date="2026-01-05", promised_date="2026-01-10")
+        _trip(db, status="delivered", end_date="2026-01-05", promised_date=None)
+        # Only the trip with a promised_date is counted → 100%.
+        assert repo.get_otd_percentage() == pytest.approx(100.0)
+
+    def test_zero_when_no_qualifying_trips(self, db, repo):
+        _trip(db, status="delivered", end_date="2026-01-05", promised_date=None)
+        _trip(db, status="planned", end_date="2026-01-05", promised_date="2026-01-10")
+        assert repo.get_otd_percentage() == 0.0
+
+    def test_date_filtering(self, db, repo):
+        _trip(db, status="delivered", end_date="2026-01-05", promised_date="2026-01-10")
+        _trip(db, status="delivered", end_date="2026-06-01", promised_date="2026-06-10")
+        assert repo.get_otd_percentage(from_date="2026-05-01", to_date="2026-07-01") == pytest.approx(100.0)
+        assert repo.get_otd_percentage(from_date="2026-02-01", to_date="2026-04-01") == 0.0
+
+
 class TestGetDriverAnalytics:
     def test_empty_db(self, repo):
         assert repo.get_driver_analytics() == []

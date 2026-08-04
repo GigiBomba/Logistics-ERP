@@ -97,6 +97,8 @@ class ChartLoadingOverlay(QFrame):
         self._spinner.setObjectName("chart-loading-spinner")
         self._spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
         spinner_font = QFont(FONT_FAMILY, 28)
+        if spinner_font.pointSize() <= 0:
+            spinner_font.setPointSize(28)
         spinner_font.setBold(True)
         self._spinner.setFont(spinner_font)
         self._spinner.setStyleSheet(

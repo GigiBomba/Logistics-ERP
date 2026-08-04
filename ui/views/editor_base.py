@@ -31,7 +31,7 @@ from services.i18n import t
 from services.invoicing.config_manager import load_company_config
 from services.operations.event_bus import SETTINGS_UPDATED
 from ui.components import Btn, Card
-from ui.theme import COLORS
+from ui.design_tokens import COLOR_ACCENT_PRIMARY
 
 _logger = logging.getLogger(__name__)
 
@@ -87,7 +87,7 @@ class BaseDocumentEditor:
             self._stamp_path = stamp
 
         # Company color
-        color = conf.get("company_color", COLORS["accent"])
+        color = conf.get("company_color", COLOR_ACCENT_PRIMARY)
         if color:
             self._company_color = color
 

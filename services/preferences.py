@@ -2,9 +2,46 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, Callable
+import os
+from typing import Any, Callable, Optional
 
 logger = logging.getLogger("preferences")
+
+
+# ── AI provider API keys (env-first, prefs fallback) ────────────────
+
+def get_ai_api_key(name: str, prefs_value: Optional[str]) -> Optional[str]:
+    """Resolve an AI provider API key: env var first, prefs fallback.
+
+    Args:
+        name:        Provider short name — ``"gemini"`` or ``"qwen"``.
+        prefs_value: Value stored in preferences (``gemini_api_key`` /
+                     ``qwen_api_key``). Pass ``""`` or ``None`` when the
+                     key is not configured in prefs.
+
+    Returns:
+        The key value, or ``None`` when neither env nor prefs provides one.
+
+    The environment variable is ``OPERION_<NAME>_API_KEY`` and always wins.
+    Falling back to a prefs-stored key logs a warning; having neither logs
+    a clear error so a missing key is never silent. Key values are never
+    logged.
+    """
+    env_key = f"OPERION_{name.upper()}_API_KEY"
+    val = os.environ.get(env_key)
+    if val:
+        return val
+    if prefs_value:
+        logger.warning(
+            "Using %s API key from stored preferences — move it to env var %s",
+            name, env_key,
+        )
+        return prefs_value
+    logger.error(
+        "%s API key is not configured — set env var %s (or store the key "
+        "in preferences).", name, env_key,
+    )
+    return None
 
 # ── Safe numeric helpers ──────────────────────────────────────────────
 
@@ -77,7 +114,14 @@ _CURRENCY_FORMAT_LOCALES: dict[str, str] = {
 }
 
 # Settings whose values are encrypted at rest (key names).
-_SENSITIVE_KEYS: set[str] = {"smtp_password"}
+_SENSITIVE_KEYS: set[str] = {
+    "smtp_password",
+    # Fleet-tracking provider credentials (Wialon/Frotcom/Traccar/Navixy/Generic).
+    "tracking.token",
+    "tracking.username",
+    "tracking.password",
+    "tracking.account",
+}
 
 class PreferencesManager:
     """Centralized app preferences backed by the DB settings table.

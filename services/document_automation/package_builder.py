@@ -337,7 +337,7 @@ class PackageBuilder:
     def _generate_cover_page(self, trip_id: int, docs: list[dict[str, Any]]):
         """Generate a cover page (PdfPage) with trip summary.
 
-        Uses reportlab to draw the cover, then returns a PyPDF2-compatible
+        Uses reportlab to draw the cover, then returns a pypdf-compatible
         page.  Falls back to ``None`` when reportlab is not installed.
         """
         try:

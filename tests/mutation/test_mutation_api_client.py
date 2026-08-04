@@ -205,6 +205,8 @@ class TestMutationApiClientAuth:
         instance that has a refresh token."""
         with patch("client.api_client.httpx.Client") as mock_cls:
             mock_transport = MagicMock()
+            # Use a real dict for headers so .get() and .update() work
+            mock_transport.headers = {}
             mock_cls.return_value = mock_transport
             auth = Auth(token="access-old", refresh_token="refresh-token")
             c = ApiClient(
@@ -254,7 +256,7 @@ class TestMutationApiClientAuth:
 
         client._auth.refresh = MagicMock(return_value=True)  # type: ignore[method-assign]
         # After refresh the Auth.headers property returns the new token
-        client._auth.headers = {"Authorization": "Bearer access-new"}  # type: ignore[method-assign]
+        client._auth.set_token("access-new")
 
         client._get("/secure-data")
 

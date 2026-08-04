@@ -91,6 +91,11 @@ def _repo_dict_to_vehicle_result(row: Optional[dict]) -> Optional[VehicleResult]
     kwargs.setdefault("current_location", None)
     kwargs.setdefault("created_at", None)
 
+    # Ensure string fields are never None (Pydantic v2 rejects None for str)
+    for str_field in ("vin",):
+        if kwargs.get(str_field) is None:
+            kwargs[str_field] = ""
+
     return VehicleResult(**kwargs)
 
 
@@ -141,7 +146,16 @@ class FleetService:
             DeprecationWarning,
             stacklevel=2,
         )
-        return self._fleet_repo.get_by_id(truck_id)
+        return self._fleet_repo.get_by_id(truck_id, company_id=company_id)
+
+    def get_trucks_by_ids(self, truck_ids, company_id=None):
+        """Return truck rows (``id``) for the ids that belong to *company_id*.
+
+        Used by the GPS batch endpoint to verify ownership of every truck in
+        the batch with a single ``IN (...)`` lookup.  Foreign/missing trucks
+        are simply absent from the returned list.
+        """
+        return self._fleet_repo.get_trucks_by_ids(truck_ids, company_id=company_id)
 
     # ── List / Search methods ─────────────────────────────────────────────
 
@@ -169,7 +183,7 @@ class FleetService:
             DeprecationWarning,
             stacklevel=2,
         )
-        return self._fleet_repo.get_all()
+        return self._fleet_repo.get_all(company_id=company_id)
 
     def search(self, request: VehicleSearchRequest) -> VehicleSearchResult:
         """Search vehicles with optional filters.
@@ -288,6 +302,11 @@ class FleetService:
             DeprecationWarning,
             stacklevel=2,
         )
+        # Stamp the caller's tenant on the row (the client body has no
+        # company_id field — see the fleet schema).
+        if company_id:
+            data = dict(data)
+            data["company_id"] = company_id
         truck_id = self._fleet_repo.create(data)
         self._event_bus.publish(TRUCK_CREATED, {
             "truck_id": truck_id,
@@ -364,7 +383,10 @@ class FleetService:
             DeprecationWarning,
             stacklevel=2,
         )
-        self._fleet_repo.update(truck_id, data)
+        # Tenant-scoped update: never modify a truck outside the caller's company.
+        if company_id is not None and not self._fleet_repo.get_by_id(truck_id, company_id=company_id):
+            raise ValueError(f"Truck {truck_id} not found")
+        self._fleet_repo.update(truck_id, data, company_id=company_id)
         self._event_bus.publish(TRUCK_UPDATED, {"truck_id": truck_id, "changes": data})
 
     def delete(self, vehicle_id: int, user_id: int) -> VehicleCreateResult:
@@ -405,7 +427,10 @@ class FleetService:
             DeprecationWarning,
             stacklevel=2,
         )
-        self._fleet_repo.delete(truck_id)
+        # Tenant-scoped delete: never remove a truck outside the caller's company.
+        if company_id is not None and not self._fleet_repo.get_by_id(truck_id, company_id=company_id):
+            raise ValueError(f"Truck {truck_id} not found")
+        self._fleet_repo.delete(truck_id, company_id=company_id)
         self._event_bus.publish(TRUCK_DELETED, {"truck_id": truck_id})
 
     # ── Health score ──────────────────────────────────────────────────────

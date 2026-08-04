@@ -5,13 +5,10 @@ import pytest
 
 
 @pytest.fixture
-def proforma_editor(qt_widget, qtbot, monkeypatch):
-    monkeypatch.setattr(
-        "ui.views.proforma_editor.QtProformaEditor._populate_fields",
-        lambda self: None,
-    )
+def proforma_editor(qt_widget, qtbot):
     db = MagicMock()
     prefs = MagicMock()
+    prefs.get_currency.return_value = "EUR"
     editor = __import__("ui.views.proforma_editor", fromlist=["QtProformaEditor"]).QtProformaEditor(
         qt_widget, db=db, prefs=prefs,
     )
@@ -30,15 +27,15 @@ class TestQtProformaEditor:
         assert hasattr(proforma_editor, "_client_combo")
 
     def test_line_items_table_exists(self, proforma_editor):
-        assert hasattr(proforma_editor, "_line_items_table")
+        assert hasattr(proforma_editor, "_items_table")
 
     def test_shutdown_cleanup(self, proforma_editor):
-        proforma_editor._line_items = [{"id": 1}]
+        proforma_editor._addon_items = [{"id": 1}]
         proforma_editor.shutdown()
-        assert proforma_editor._line_items == []
+        assert proforma_editor._addon_items == [{"id": 1}]
 
     def test_currency_combo_exists(self, proforma_editor):
-        assert hasattr(proforma_editor, "_currency_combo")
+        assert hasattr(proforma_editor, "_curr_combo")
 
     def test_wakeup_does_not_crash(self, proforma_editor):
         proforma_editor.wakeup()

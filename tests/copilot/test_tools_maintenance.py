@@ -350,3 +350,233 @@ class TestMaintenanceScheduleExecution:
 
         assert result.status == "failed"
         assert result.message_key == "copilot.error.internal"
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+#  record_maintenance — Phase-5 mobile-integration tool
+# ═════════════════════════════════════════════════════════════════════════════
+
+RECORD_TOOL_NAME = "record_maintenance"
+
+
+class TestRecordMaintenanceToolContract:
+    """record_maintenance must satisfy the BaseTool contract.
+
+    Phase-5 contract (mobile lane): name = 'record_maintenance',
+    required_permission = 'can_schedule_maintenance' (admin+manager),
+    confirmation_level = BUSINESS (2).
+    """
+
+    def test_tool_registered(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        assert tool is not None, f"Tool '{RECORD_TOOL_NAME}' not found in registry"
+
+    def test_tool_has_name(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        assert tool.name == RECORD_TOOL_NAME
+
+    def test_tool_has_semver_version(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        import re
+        assert re.match(r"^\d+\.\d+\.\d+$", tool.tool_version)
+
+    def test_tool_has_description(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        assert tool.description and tool.description.strip()
+
+    def test_tool_has_permission(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        assert tool.required_permission and tool.required_permission.strip()
+        assert tool.required_permission == "can_schedule_maintenance"
+
+    def test_tool_has_parameters_schema(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        from pydantic import BaseModel
+        assert issubclass(tool.parameters_schema, BaseModel)
+
+    def test_tool_not_deprecated(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        assert not tool.deprecated
+
+    def test_tool_confirmation_level(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        assert tool.confirmation_level == ConfirmationLevel.BUSINESS
+        assert tool.confirmation_level.value == 2
+
+    def test_tool_supports_undo_correct(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        assert tool.supports_undo is False
+
+    def test_parameter_keys(self):
+        """Parameter keys are part of the mobile contract."""
+        tool = get_tool(RECORD_TOOL_NAME)
+        fields = set(tool.parameters_schema.model_fields.keys())
+        assert {"truck_id", "plate_number", "category", "cost", "notes", "date"} == fields
+
+
+class TestRecordMaintenanceParams:
+    """record_maintenance parameter schema edge cases."""
+
+    def test_accepts_truck_id_category_cost(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema(truck_id=3, category="oil_change", cost=150.0)
+        assert params.truck_id == 3
+        assert params.category == "oil_change"
+        assert params.cost == 150.0
+        assert params.notes is None
+        assert params.date is None
+
+    def test_accepts_plate_number_identifier(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema(
+            plate_number="AB-01-XYZ", category="tires", cost=220.5, notes="winter set"
+        )
+        assert params.plate_number == "AB-01-XYZ"
+        assert params.truck_id is None
+        assert params.notes == "winter set"
+
+    def test_accepts_all_valid_categories(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        for cat in ("oil_change", "tires", "brakes", "engine", "bodywork", "inspection", "other"):
+            params = tool.parameters_schema(truck_id=1, category=cat, cost=1.0)
+            assert params.category == cat
+
+    def test_field_validator_lowers_category(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema(truck_id=1, category="  OIL_CHANGE  ", cost=1.0)
+        assert params.category == "oil_change"
+
+    def test_rejects_missing_truck_identifier(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        with pytest.raises(ValidationError):
+            tool.parameters_schema(category="other", cost=1.0)
+
+    def test_rejects_invalid_category(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        with pytest.raises(ValidationError):
+            tool.parameters_schema(truck_id=1, category="invalid_type", cost=1.0)
+
+    def test_rejects_negative_cost(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        with pytest.raises(ValidationError):
+            tool.parameters_schema(truck_id=1, category="other", cost=-5.0)
+
+    def test_rejects_truck_id_zero(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        with pytest.raises(ValidationError):
+            tool.parameters_schema(truck_id=0, category="other", cost=1.0)
+
+    def test_coerces_empty_date_to_none(self):
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema(truck_id=1, category="other", cost=1.0, date="")
+        assert params.date is None
+
+    def test_validate_returns_list(self, ctx):
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema(truck_id=1, category="other", cost=1.0)
+        errors = asyncio.run(tool.validate(params, ctx))
+        assert isinstance(errors, list)
+        assert len(errors) == 0
+
+    def test_validate_catches_negative_cost(self, ctx):
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema.model_construct(
+            truck_id=1, category="other", cost=-1.0
+        )
+        errors = asyncio.run(tool.validate(params, ctx))
+        assert any("cost" in e for e in errors)
+
+    def test_validate_catches_missing_identifier(self, ctx):
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema.model_construct(
+            truck_id=None, plate_number=None, category="other", cost=1.0
+        )
+        errors = asyncio.run(tool.validate(params, ctx))
+        assert any("truck_id" in e for e in errors)
+
+
+class TestRecordMaintenanceExecution:
+    """record_maintenance execute() with mocked FleetMaintenanceService."""
+
+    @patch("backend.services.fleet_maintenance_service.FleetMaintenanceService")
+    def test_execute_success_with_truck_id(self, MockService, ctx):
+        from datetime import date as _date
+
+        tool = get_tool(RECORD_TOOL_NAME)
+        mock_svc = MagicMock()
+        mock_svc.add_record.return_value = 7
+        ctx.services["fleet_maintenance_service"] = mock_svc
+
+        params = tool.parameters_schema(truck_id=10, category="brakes", cost=300.0)
+        result = asyncio.run(tool.execute(params, ctx))
+
+        assert result.status == "success"
+        assert result.data["record_id"] == 7
+        assert result.data["truck_id"] == 10
+        assert result.message_key == "copilot.maintenance.record.success"
+        mock_svc.add_record.assert_called_once()
+        kwargs = mock_svc.add_record.call_args.kwargs
+        assert kwargs["truck_id"] == 10
+        assert kwargs["maint_type"] == "brakes"
+        assert kwargs["cost"] == 300.0
+        assert kwargs["notes"] == ""
+        assert kwargs["date"] == _date.today().isoformat()  # defaults to today
+
+    @patch("backend.services.fleet_maintenance_service.FleetMaintenanceService")
+    def test_execute_resolves_plate_number(self, MockService, ctx_with_db):
+        tool = get_tool(RECORD_TOOL_NAME)
+        mock_svc = MagicMock()
+        mock_svc.add_record.return_value = 8
+        ctx_with_db.services["fleet_maintenance_service"] = mock_svc
+
+        from repositories.fleet_repository import FleetRepository
+        with patch.object(
+            FleetRepository, "get_by_plate", return_value={"id": 42}
+        ):
+            params = tool.parameters_schema(
+                plate_number="AB-01-XYZ", category="tires", cost=120.0
+            )
+            result = asyncio.run(tool.execute(params, ctx_with_db))
+
+        assert result.status == "success"
+        assert result.data["truck_id"] == 42
+        mock_svc.add_record.assert_called_once()
+        assert mock_svc.add_record.call_args.kwargs["truck_id"] == 42
+
+    @patch("backend.services.fleet_maintenance_service.FleetMaintenanceService")
+    def test_execute_plate_not_found(self, MockService, ctx_with_db):
+        tool = get_tool(RECORD_TOOL_NAME)
+        mock_svc = MagicMock()
+        mock_svc.add_record.return_value = 1
+        ctx_with_db.services["fleet_maintenance_service"] = mock_svc
+
+        from repositories.fleet_repository import FleetRepository
+        with patch.object(FleetRepository, "get_by_plate", return_value=None):
+            params = tool.parameters_schema(
+                plate_number="NO-SUCH", category="other", cost=10.0
+            )
+            result = asyncio.run(tool.execute(params, ctx_with_db))
+
+        assert result.status == "failed"
+        assert result.message_key == "copilot.maintenance.record.truck_not_found"
+        mock_svc.add_record.assert_not_called()
+
+    def test_execute_no_service_no_db(self, ctx):
+        """When neither service nor db is available, returns unavailable."""
+        tool = get_tool(RECORD_TOOL_NAME)
+        params = tool.parameters_schema(truck_id=1, category="other", cost=1.0)
+        result = asyncio.run(tool.execute(params, ctx))
+        assert result.status == "unavailable"
+        assert result.message_key == "copilot.error.no_db"
+
+    def test_execute_exception(self, ctx):
+        tool = get_tool(RECORD_TOOL_NAME)
+        mock_svc = MagicMock()
+        mock_svc.add_record.side_effect = RuntimeError("Service error")
+        ctx.services["fleet_maintenance_service"] = mock_svc
+
+        params = tool.parameters_schema(truck_id=1, category="other", cost=1.0)
+        result = asyncio.run(tool.execute(params, ctx))
+
+        assert result.status == "failed"
+        assert result.message_key == "copilot.error.internal"

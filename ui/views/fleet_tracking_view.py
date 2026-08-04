@@ -12,27 +12,43 @@ import threading
 from datetime import datetime
 from typing import Callable
 
-from PySide6.QtCore import Qt, QTimer, Signal
+import qtawesome as qta
+from PySide6.QtCore import QEvent, Qt, QTimer, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QMenu,
+    QMessageBox,
     QPushButton,
     QScrollArea,
     QSizePolicy,
+    QSplitter,
     QVBoxLayout,
     QWidget,
 )
+
+from ui.components import UniversalCard
 
 from services.fleet_tracking_service import (
     VehiclePosition,
     fleet_tracking_service,
 )
 from services.i18n import t
-from ui.components import Btn
-from ui.design_tokens import SP
+from ui.components import Btn, EmptyState, UniversalCard
+from ui.performance_timer import PerfTimer
+from ui.design_tokens import (
+    COLOR_BG_ELEVATED,
+    COLOR_BORDER_SUBTLE,
+    COLOR_ERROR_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.map.map_widget import MapWidget
-from ui.theme import COLORS
 
 logger = logging.getLogger(__name__)
 
@@ -65,10 +81,10 @@ class QtFleetTrackingView(QWidget):
 
     # Status → indicator dot colour (hex)
     _STATUS_DOT_COLORS = {
-        "moving":  COLORS["success"],
-        "stopped": COLORS["text_muted"],
-        "idle":    COLORS["warning"],
-        "offline": COLORS["danger"],
+        "moving":  COLOR_SUCCESS_DEFAULT,
+        "stopped": COLOR_TEXT_TERTIARY,
+        "idle":    COLOR_WARNING_DEFAULT,
+        "offline": COLOR_ERROR_DEFAULT,
     }
 
     def __init__(
@@ -99,6 +115,7 @@ class QtFleetTrackingView(QWidget):
         self._fetching = False
         self._force_refreshing = False
         self._lock = threading.Lock()
+        self._vehicle_rows: dict[str, UniversalCard] = {}  # Track widget rows by vehicle name
 
         # ── Signal: thread-safe UI updates ─────────────────────────────
         self._positionsFetched.connect(self._apply_update)
@@ -131,6 +148,8 @@ class QtFleetTrackingView(QWidget):
     # ── Build ─────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Fleet tracking")
+        self.setAccessibleDescription("Live fleet tracking map with vehicle list")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
@@ -139,27 +158,35 @@ class QtFleetTrackingView(QWidget):
             self._build_not_configured_state(layout)
             return
 
-        # ── Map area (72 %) ────────────────────────────────────────────
+        # ── Splitter: map + vehicle panel ──────────────────────────────
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setHandleWidth(4)
+        splitter.setChildrenCollapsible(False)
+
         map_container = QFrame()
         map_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
         self._build_map(map_container)
-        layout.addWidget(map_container, 72)
+        splitter.addWidget(map_container)
 
-        # ── Vehicle panel (28 %) ───────────────────────────────────────
         panel = QFrame()
         panel.setStyleSheet(
-            f"background-color: {COLORS['bg_surface']};"
-            f"border-left: 1px solid {COLORS['border']};"
+            f"background-color: {COLOR_BG_ELEVATED};"
+            f"border-left: 1px solid {COLOR_BORDER_SUBTLE};"
         )
         panel.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Expanding)
+        panel.setMinimumWidth(240)
 
         panel_layout = QVBoxLayout(panel)
         panel_layout.setContentsMargins(0, 0, 0, 0)
         panel_layout.setSpacing(0)
 
         self._build_vehicle_panel(panel)
+        splitter.addWidget(panel)
 
-        layout.addWidget(panel, 28)
+        # Default ratio ~72:28
+        splitter.setSizes([720, 280])
+
+        layout.addWidget(splitter, 1)
 
     def _build_not_configured_state(self, layout: QHBoxLayout) -> None:
         """Centred message when no tracking platform is configured."""
@@ -171,7 +198,7 @@ class QtFleetTrackingView(QWidget):
 
         # Globe icon
         icon_lbl = QLabel("\U0001f5fa")
-        icon_lbl.setStyleSheet(f"font-size: 64px; color: {COLORS['text_muted']};")
+        icon_lbl.setStyleSheet(f"font-size: 64px; color: {COLOR_TEXT_TERTIARY};")
         icon_lbl.setAlignment(Qt.AlignCenter)
         cl.addWidget(icon_lbl)
 
@@ -179,7 +206,7 @@ class QtFleetTrackingView(QWidget):
         title_lbl = QLabel(t("tracking.not_configured_title"))
         title_lbl.setProperty("fontRole", "h2")
         title_lbl.setAlignment(Qt.AlignCenter)
-        title_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        title_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         cl.addWidget(title_lbl)
 
         # Hint
@@ -188,7 +215,7 @@ class QtFleetTrackingView(QWidget):
         hint_lbl.setAlignment(Qt.AlignCenter)
         hint_lbl.setMaximumWidth(360)
         hint_lbl.setWordWrap(True)
-        hint_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        hint_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         cl.addWidget(hint_lbl)
 
         # Settings button
@@ -239,7 +266,7 @@ class QtFleetTrackingView(QWidget):
         # Last-updated label
         self._updated_lbl = QLabel("")
         self._updated_lbl.setProperty("fontRole", "label")
-        self._updated_lbl.setStyleSheet(f"color: {COLORS['text_muted']};")
+        self._updated_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         header_layout.addWidget(self._updated_lbl)
 
         # Refresh button
@@ -271,6 +298,7 @@ class QtFleetTrackingView(QWidget):
         self._vehicle_list_content.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Expanding
         )
+        self._vehicle_list_content.installEventFilter(self)
         self._vehicle_list_layout = QVBoxLayout(self._vehicle_list_content)
         self._vehicle_list_layout.setContentsMargins(0, 0, 0, 0)
         self._vehicle_list_layout.setSpacing(1)
@@ -297,72 +325,43 @@ class QtFleetTrackingView(QWidget):
     def _make_divider() -> QFrame:
         line = QFrame()
         line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet(f"color: {COLORS['border']};")
+        line.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
         line.setFixedHeight(1)
         return line
 
     # ── Vehicle rows ──────────────────────────────────────────────────
 
-    def _build_vehicle_row(
+    def _build_vehicle_row_widget(
         self,
         position: VehiclePosition,
         matched_truck_id: int | None,
-    ) -> None:
-        row = QFrame()
-        row.setFixedHeight(52)
-        row.setCursor(Qt.PointingHandCursor)
-        row.setProperty("class", "vehicle-row")
-        row.setStyleSheet(
-            "QFrame {"
-            f"  background-color: transparent;"
-            f"  border-radius: {SP['1']}px;"
-            "}"
-            "QFrame:hover {"
-            f"  background-color: {COLORS['bg_elevated']};"
-            "}"
-        )
-
-        row_layout = QHBoxLayout(row)
-        row_layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
-        row_layout.setSpacing(SP["2"])
-
-        # ── Status indicator dot ───────────────────────────────────────
+    ) -> UniversalCard:
         dot_color = self._STATUS_DOT_COLORS.get(
             position.status, COLORS["text_muted"]
         )
-        dot = QFrame()
-        dot.setFixedSize(10, 10)
-        dot.setStyleSheet(
-            f"background-color: {dot_color}; border-radius: 5px;"
-        )
-        row_layout.addWidget(dot)
-
-        # ── Vehicle info ───────────────────────────────────────────────
-        info = QFrame()
-        info.setStyleSheet("background-color: transparent;")
-        info_layout = QVBoxLayout(info)
-        info_layout.setContentsMargins(0, 0, 0, 0)
-        info_layout.setSpacing(0)
-
-        name_lbl = QLabel(position.name)
-        name_lbl.setProperty("fontRole", "body_bold")
-        info_layout.addWidget(name_lbl)
-
         detail_str = self._vehicle_detail_text(position)
-        detail_lbl = QLabel(detail_str)
-        detail_lbl.setProperty("fontRole", "small")
-        detail_lbl.setStyleSheet(f"color: {COLORS['text_secondary']}; "
-                                 "background-color: transparent;")
-        info_layout.addWidget(detail_lbl)
 
-        row_layout.addWidget(info, 1)
-
-        # ── Click handler ──────────────────────────────────────────────
-        row.mouseReleaseEvent = lambda e, p=position, tid=matched_truck_id: (
-            self._select_vehicle(p, tid) if e.button() == Qt.MouseButton.LeftButton else None
+        card = UniversalCard(
+            title=position.name,
+            primary=position.status.title(),
+            secondary=detail_str,
+            icon_name="fa5s.truck",
+            icon_color=dot_color,
+            action_icon="fa5s.chevron-right",
+            action_tooltip=t("tracking.details"),
+            on_action=lambda p=position, tid=matched_truck_id: (
+                self._select_vehicle(p, tid)
+            ),
+            on_click=lambda p=position, tid=matched_truck_id: (
+                self._select_vehicle(p, tid)
+            ),
         )
-
-        self._vehicle_list_layout.addWidget(row)
+        # Store data for context menu lookup
+        card._position = position
+        card._truck_id = matched_truck_id
+        # Lower case — more compact in the sidebar
+        card.setMinimumHeight(72)
+        return card
 
     @staticmethod
     def _vehicle_detail_text(position: VehiclePosition) -> str:
@@ -402,7 +401,7 @@ class QtFleetTrackingView(QWidget):
         # Name
         name_lbl = QLabel(position.name)
         name_lbl.setProperty("fontRole", "h3")
-        name_lbl.setStyleSheet(f"color: {COLORS['text_primary']};")
+        name_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         self._detail_layout.addWidget(name_lbl)
 
         # Detail rows
@@ -431,13 +430,13 @@ class QtFleetTrackingView(QWidget):
 
             label_w = QLabel(label_text)
             label_w.setProperty("fontRole", "label")
-            label_w.setStyleSheet(f"color: {COLORS['text_muted']};")
+            label_w.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             label_w.setFixedWidth(90)
             row_f_layout.addWidget(label_w)
 
             value_w = QLabel(value_text)
             value_w.setProperty("fontRole", "small")
-            value_w.setStyleSheet(f"color: {COLORS['text_primary']};")
+            value_w.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
             row_f_layout.addWidget(value_w)
 
             row_f_layout.addStretch(1)
@@ -456,6 +455,154 @@ class QtFleetTrackingView(QWidget):
                 command=on_fleet_detail,
             )
             self._detail_layout.addWidget(fleet_btn)
+
+            # ── Quick action buttons ─────────────────────────────────
+            action_row = QFrame()
+            action_row.setStyleSheet("background-color: transparent;")
+            action_layout = QHBoxLayout(action_row)
+            action_layout.setContentsMargins(0, SP["2"], 0, 0)
+            action_layout.setSpacing(SP["2"])
+
+            maint_btn = Btn(
+                action_row,
+                t("tracking.maintenance", "Maintenance"),
+                variant="secondary",
+                command=lambda tid=truck_id: self._navigate_vehicle_maintenance(tid),
+            )
+            action_layout.addWidget(maint_btn)
+
+            docs_btn = Btn(
+                action_row,
+                t("tracking.documents", "Documents"),
+                variant="secondary",
+                command=lambda tid=truck_id: self._open_vehicle_documents(tid),
+            )
+            action_layout.addWidget(docs_btn)
+
+            call_btn = Btn(
+                action_row,
+                t("tracking.call_driver", "Call Driver"),
+                variant="secondary",
+                command=lambda: self._on_call_driver(position, truck_id),
+            )
+            action_layout.addWidget(call_btn)
+
+            action_layout.addStretch(1)
+            self._detail_layout.addWidget(action_row)
+
+    # ── Context menu (right-click on vehicle rows) ────────────────────
+
+    def eventFilter(self, obj, event) -> bool:
+        """Catch right-clicks on the vehicle list to show a context menu."""
+        if obj is self._vehicle_list_content and event.type() == QEvent.ContextMenu:
+            self._show_vehicle_context_menu(event)
+            return True
+        return super().eventFilter(obj, event)
+
+    def _show_vehicle_context_menu(self, event) -> None:
+        """Show a context menu for the vehicle card under the cursor."""
+        # Find the UniversalCard at the event position
+        pos = self._vehicle_list_content.mapFromGlobal(event.globalPos())
+        child = self._vehicle_list_content.childAt(pos)
+        while child is not None and not isinstance(child, UniversalCard):
+            child = child.parent()
+
+        if child is None:
+            return
+
+        # Retrieve stored position data from the card
+        position = getattr(child, "_position", None)
+        truck_id = getattr(child, "_truck_id", None)
+        if position is None:
+            return
+
+        menu = QMenu(self)
+
+        detail_action = QAction(qta.icon("fa5s.eye"), t("tracking.view_details", "View Details"), self)
+        detail_action.triggered.connect(lambda: self._select_vehicle(position, truck_id))
+        menu.addAction(detail_action)
+
+        maint_action = QAction(qta.icon("fa5s.wrench"), t("tracking.maintenance", "Maintenance"), self)
+        maint_action.triggered.connect(lambda: self._navigate_vehicle_maintenance(truck_id))
+        menu.addAction(maint_action)
+
+        docs_action = QAction(qta.icon("fa5s.folder-open"), t("tracking.documents", "Documents"), self)
+        docs_action.triggered.connect(lambda: self._open_vehicle_documents(truck_id))
+        menu.addAction(docs_action)
+
+        map_action = QAction(qta.icon("fa5s.map-marker-alt"), t("tracking.show_on_map", "Show on Map"), self)
+        map_action.triggered.connect(lambda: self._select_vehicle(position, truck_id))
+        menu.addAction(map_action)
+
+        menu.exec(event.globalPos())
+
+    def _navigate_vehicle_maintenance(self, truck_id: int | None) -> None:
+        """Navigate to the maintenance view for this vehicle."""
+        if self._on_navigate:
+            nav_data = {"truck_id": truck_id} if truck_id else None
+            self._on_navigate("maintenance", nav_data)
+
+    def _open_vehicle_documents(self, truck_id: int | None) -> None:
+        """Open documents for this vehicle."""
+        if truck_id is None:
+            QMessageBox.information(
+                self,
+                t("tracking.documents", "Documents"),
+                t("tracking.no_truck_match", "No matching vehicle found in the fleet database."),
+            )
+            return
+        try:
+            from ui.views.document_center_view import open_entity_documents
+            open_entity_documents(
+                self,
+                self.db,
+                "truck",
+                truck_id,
+                t("tracking.truck_documents_title", default="Vehicle #{} Documents").format(truck_id),
+            )
+        except Exception:
+            logger.exception("Failed to open vehicle documents")
+
+    def _on_call_driver(self, position: VehiclePosition, truck_id: int | None) -> None:
+        """Show the driver's phone number in a toast if available."""
+        phone = None
+        if position.driver_id:
+            try:
+                from repositories.driver_repository import DriverRepository
+                repo = DriverRepository(self.db)
+                driver = repo.get_by_id(position.driver_id)
+                if driver:
+                    phone = driver.get("phone", "") or driver.get("phone_number", "")
+            except Exception:
+                logger.warning("Could not look up driver phone for id %s", position.driver_id)
+        elif truck_id:
+            try:
+                from repositories.driver_repository import DriverRepository
+                from repositories.fleet_repository import FleetRepository
+                fleet_repo = FleetRepository(self.db)
+                truck = fleet_repo.get_by_id(truck_id)
+                if truck and truck.get("driver_id"):
+                    repo = DriverRepository(self.db)
+                    driver = repo.get_by_id(truck["driver_id"])
+                    if driver:
+                        phone = driver.get("phone", "") or driver.get("phone_number", "")
+            except Exception:
+                logger.warning("Could not look up driver phone via truck %s", truck_id)
+
+        if phone:
+            from ui.widgets.toast import Toast
+            Toast.show_info(
+                self,
+                t("tracking.driver_phone", default="Driver phone: {}").format(phone),
+                anchor=self,
+            )
+        else:
+            from ui.widgets.toast import Toast
+            Toast.show_info(
+                self,
+                t("tracking.no_driver_phone", default="No driver phone number available."),
+                anchor=self,
+            )
 
     # ── Map markers ───────────────────────────────────────────────────
 
@@ -483,29 +630,66 @@ class QtFleetTrackingView(QWidget):
 
     # ── Vehicle list refresh ──────────────────────────────────────────
 
+    def _update_vehicle_row(self, row: UniversalCard, position: VehiclePosition,
+                            matched_truck_id: int | None) -> None:
+        """Update an existing vehicle row's content in-place."""
+        dot_color = self._STATUS_DOT_COLORS.get(
+            position.status, COLOR_TEXT_TERTIARY
+        )
+        row._position = position
+        row._truck_id = matched_truck_id
+        row.set_icon_color(dot_color)
+        row.set_title(position.name)
+        row.set_primary(position.status.title())
+        row.set_secondary(self._vehicle_detail_text(position))
+        row._on_click = lambda p=position, tid=matched_truck_id: (
+            self._select_vehicle(p, tid)
+        )
+
     def _refresh_vehicle_list(self, positions: list[VehiclePosition]) -> None:
-        """Clear and rebuild the vehicle list."""
-        # Remove existing rows
-        while self._vehicle_list_layout.count():
-            item = self._vehicle_list_layout.takeAt(0)
-            widget = item.widget()
-            if widget is not None:
+        """Update vehicle list — add new rows, remove gone, update existing."""
+        with PerfTimer("fleet_tracking.refresh_vehicle_list"):
+            new_names = {p.name for p in positions}
+
+            # Remove rows for vehicles that disappeared
+            to_remove = []
+            for name in list(self._vehicle_rows.keys()):
+                if name not in new_names:
+                    to_remove.append(name)
+            for name in to_remove:
+                widget = self._vehicle_rows.pop(name)
+                self._vehicle_list_layout.removeWidget(widget)
                 widget.deleteLater()
 
-        if not positions:
-            no_data = QLabel(t("tracking.no_vehicles"))
-            no_data.setProperty("fontRole", "body")
-            no_data.setStyleSheet(f"color: {COLORS['text_muted']};")
-            no_data.setAlignment(Qt.AlignCenter)
-            no_data.setFixedHeight(80)
-            self._vehicle_list_layout.addWidget(no_data)
-            return
+            if not positions:
+                # Show "no vehicles" empty state when list is empty
+                empty = EmptyState(
+                    None,
+                    icon_name="fa5s.truck-moving",
+                    title=t("tracking.no_vehicles_title", default="No vehicles in your fleet"),
+                    subtitle=t("tracking.no_vehicles_desc", default="Add your first vehicle to start tracking."),
+                    cta_button=Btn(
+                        None,
+                        text=t("tracking.add_vehicle", default="Add Your First Vehicle"),
+                        variant="primary",
+                    ),
+                )
+                self._vehicle_list_layout.addWidget(empty)
+                return
 
-        for pos in sorted(positions, key=lambda p: p.name.lower()):
-            truck_id = fleet_tracking_service.match_to_truck(pos)
-            self._build_vehicle_row(pos, truck_id)
+            # Update existing, add new (sorted alphabetically)
+            for pos in sorted(positions, key=lambda p: p.name.lower()):
+                truck_id = fleet_tracking_service.match_to_truck(pos)
+                if pos.name in self._vehicle_rows:
+                    # Update existing row in-place
+                    self._update_vehicle_row(self._vehicle_rows[pos.name], pos, truck_id)
+                else:
+                    # Add new vehicle
+                    row = self._build_vehicle_row_widget(pos, truck_id)
+                    self._vehicle_rows[pos.name] = row
+                    self._vehicle_list_layout.addWidget(row)
 
-        self._updated_lbl.setText(datetime.now().strftime("%H:%M:%S"))
+            self._updated_lbl.setText(datetime.now().strftime("%H:%M:%S"))
 
     # ── Polling ───────────────────────────────────────────────────────
 
@@ -539,8 +723,9 @@ class QtFleetTrackingView(QWidget):
 
     def _apply_update(self, positions: list[VehiclePosition]) -> None:
         """Main-thread slot: update map markers and vehicle list."""
-        self._update_map_markers(positions)
-        self._refresh_vehicle_list(positions)
+        with PerfTimer("fleet_tracking.apply_update"):
+            self._update_map_markers(positions)
+            self._refresh_vehicle_list(positions)
 
     def _start_polling(self) -> None:
         # Initial load immediately

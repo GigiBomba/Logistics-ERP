@@ -82,6 +82,9 @@ class TestMigrationDocumentationChunks:
                     found = True
                     break
                 down_rev = current.down_revision
+                # Handle merge revisions (multiple parents)
+                if isinstance(down_rev, (list, tuple)):
+                    down_rev = down_rev[0]
                 current = script.get_revision(down_rev) if down_rev else None
             if found:
                 break
@@ -127,22 +130,29 @@ class TestMigrationUserWorkflowFamiliarity:
                     found = True
                     break
                 down_rev = current.down_revision
+                # Handle merge revisions (multiple parents)
+                if isinstance(down_rev, (list, tuple)):
+                    down_rev = down_rev[0]
                 current = script.get_revision(down_rev) if down_rev else None
             if found:
                 break
         assert found, f"Revision {self.REVISION} not in any chain from heads {heads}"
 
     def test_both_migrations_in_correct_sequence(self, script):
-        """Verify the chain: parent → doc_chunks → user_wf."""
+        """Verify the chain: parent → doc_chunks → user_wf → merge → final."""
         doc_rev = _get_revision(script, REV_DOC_CHUNKS)
         wf_rev = _get_revision(script, self.REVISION)
 
         assert doc_rev.down_revision == "a7b8c9d0e1f7"
         assert wf_rev.down_revision == REV_DOC_CHUNKS
-        # user_workflow_familiarity should be a head revision
+        # user_workflow_familiarity has been merged into f7b8c9d0e1f8;
+        # the sole head is now g8c9d0e1f2f0
         heads = script.get_heads()
-        assert wf_rev.revision in heads, (
-            f"{self.REVISION} should be a head, but heads are {heads}"
+        assert "g8c9d0e1f2f0" in heads, (
+            f"Expected g8c9d0e1f2f0 in heads, got {heads}"
+        )
+        assert wf_rev.revision not in heads, (
+            f"{self.REVISION} is no longer a head; heads are {heads}"
         )
 
     def test_migration_module_can_be_imported(self, script):

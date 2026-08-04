@@ -32,13 +32,55 @@ class EncryptionService:
         return self._fernet.encrypt(plaintext.encode()).decode()
 
     def decrypt(self, ciphertext: str) -> str:
+        """Decrypt a Fernet-encrypted value.
+
+        If the value doesn't look like Fernet ciphertext (legacy plaintext),
+        it is returned as-is and optionally re-encrypted for future reads.
+        """
         if not self._fernet:
             return ciphertext  # No encryption key configured
         try:
             return self._fernet.decrypt(ciphertext.encode()).decode()
         except Exception:
-            logger.warning("Failed to decrypt — returning ciphertext (possibly legacy plaintext)")
+            # Detect legacy plaintext: Fernet tokens are base64-encoded
+            # and always start with 'gAAAAA'. If the value doesn't match
+            # this pattern, it was likely stored before encryption was added.
+            if not self._looks_encrypted(ciphertext):
+                logger.debug(
+                    "Value appears to be legacy plaintext — returning as-is "
+                    "(will be encrypted on next write)"
+                )
+                return ciphertext
+            logger.warning(
+                "Failed to decrypt Fernet ciphertext — data may be corrupt "
+                "or encrypted with a different key"
+            )
             return ciphertext
+
+    @staticmethod
+    def _looks_encrypted(value: str) -> bool:
+        """Heuristic: Fernet tokens are URL-safe base64 with a version prefix.
+
+        Every Fernet token starts with ``g`` (the base64url of the version
+        byte 0x80) and is at least 100 characters long (version + 8-byte
+        timestamp + 16-byte IV + minimum 16-byte ciphertext + 32-byte HMAC
+        -> base64url). Requiring that prefix and minimum length, in addition
+        to a clean base64url decode (padding restored on the fly for any
+        unpadded variant), keeps the heuristic from treating ordinary legacy
+        plaintext as encrypted. It only gates the corrupt-data warning path:
+        ``fernet.decrypt()`` always runs first and plaintext is returned
+        unchanged either way.
+        """
+        candidate = (value or "").strip()
+        if not candidate.startswith("g") or len(candidate) < 100:
+            return False
+        try:
+            base64.urlsafe_b64decode(
+                candidate.encode() + b"=" * (-len(candidate) % 4)
+            )
+            return True
+        except Exception:
+            return False
 
 
 _encryption = EncryptionService()

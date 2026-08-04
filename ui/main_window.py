@@ -11,6 +11,7 @@ import logging
 from typing import Any
 
 from PySide6.QtCore import QEasingCurve, QObject, QPropertyAnimation, Qt, QTimer
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QGraphicsOpacityEffect,
     QLabel,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 
 from config import Config
 from services.client_service import ClientService
+from ui.design_tokens import FADE_MS
 from ui.mode_guard import ConnectionMode, detect_mode
 from services.fleet_service import FleetService
 from services.fuel_price_service import FuelPriceService
@@ -44,6 +46,7 @@ from ui.copilot.controllers.struggle_detector import StruggleDetector
 from ui.copilot.controllers.ask_ai_menu import AskAIMenu
 from ui.copilot.widgets.guided_overlay_widget import GuidedOverlayWidget
 from ui.copilot import tour_tracker
+from ui.performance_timer import PerfTimer, timing_report, timing_table, reset_timings
 from ui.views import (
     QtAnalyticsView,
     QtCalculatorView,
@@ -70,6 +73,57 @@ from ui.views import (
 
 logger = logging.getLogger(__name__)
 
+# ── Connection-mode aware module availability ─────────────────────────────
+# Modules that require direct local database access.  Each of these either
+# calls ``guard_local_access`` / ``detect_mode(db, None)`` in its constructor
+# (``dispatch_board``, ``fleet``, ``driver_manager``, ``maintenance``) or has
+# no API path and relies on local repositories / a non-None ``db`` for its
+# core function (``analytics``, ``history``, ``tracking``,
+# ``documents``, ``maintenance_control``, ``invoices``,
+# ``migration_center``, ``freight_exchange``).  These modules are hidden from
+# the navigation, excluded from warmup, and never constructed when the app
+# runs in remote (API-only) mode.
+#
+# ``clients`` used to be local-DB-only, but is remote-capable via
+# ``RemoteClientService`` (wired through ``client_service``), so it is no
+# longer listed here.
+_LOCAL_ONLY_MODULES: frozenset[str] = frozenset({
+    "analytics",
+    "history",
+    "dispatch_board",
+    "tracking",
+    "fleet",
+    "driver_manager",
+    "documents",
+    "maintenance",
+    "maintenance_control",
+    "invoices",
+    "migration_center",
+    "freight_exchange",
+})
+
+# Every module registered in ``MainWindow._VIEW_FACTORIES``.  The class-level
+# factory dict stays unchanged (LOCAL mode keeps all modules); availability is
+# decided per instance based on the connection mode.
+_ALL_MODULE_KEYS: frozenset[str] = frozenset({
+    "calculator", "overview", "route_planner", "analytics", "history",
+    "route_history", "dispatch_board", "tracking", "fleet", "driver_manager",
+    "clients", "documents", "maintenance", "maintenance_control",
+    "tachograph", "invoices", "team", "settings", "migration_center",
+    "freight_exchange", "copilot",
+})
+
+
+def _modules_available_in(mode: ConnectionMode) -> set[str]:
+    """Factory keys that may be created in *mode*.
+
+    Shared modules (those with an ``api_client`` path) are always available;
+    local-DB-only modules are only available in LOCAL mode.
+    """
+    if mode == ConnectionMode.LOCAL:
+        return set(_ALL_MODULE_KEYS)
+    return set(_ALL_MODULE_KEYS) - _LOCAL_ONLY_MODULES
+
 
 class MainWindow(QMainWindow):
     """Main application window."""
@@ -92,6 +146,8 @@ class MainWindow(QMainWindow):
         self._event_bus = ops.event_bus if ops is not None else EventBus()
         self._module_cache: dict = {}
         self._active_module: str | None = None
+        self._nav_stack: list[tuple[str, dict[str, Any] | None]] = []
+        self._max_nav_stack = 20
         self._fuel_timer: QTimer | None = None
 
         self._page_anim: QPropertyAnimation | None = None
@@ -101,6 +157,12 @@ class MainWindow(QMainWindow):
         # Connection mode guard — detect whether we're LOCAL, REMOTE, or UNKNOWN
         self._mode = detect_mode(self.db, self._api_client)
         logger.info("App connection mode: %s", self._mode.value)
+
+        # Modules that require local DB access are hidden/disabled outside
+        # LOCAL mode.  Availability is decided per instance; the class-level
+        # factory registry (``MainWindow._VIEW_FACTORIES``) keeps every module
+        # so LOCAL-mode behaviour is unchanged.
+        self._available_modules = _modules_available_in(self._mode)
 
         # Determine user role for conditional nav items
         self._user_role = "dispatcher"  # fallback
@@ -122,6 +184,7 @@ class MainWindow(QMainWindow):
         self._build_ui()
         self._setup_shortcuts()
         self._init_fuel_status()
+        self._warmup_started = False
 
         self._sub_settings = self._event_bus.subscribe(SETTINGS_UPDATED, self._on_settings_updated)
         self._sub_alert_created = self._event_bus.subscribe(ALERT_CREATED, self._on_alert_event)
@@ -142,6 +205,11 @@ class MainWindow(QMainWindow):
 
         # Initial alert refresh
         QTimer.singleShot(500, self, self._refresh_alerts)
+
+        # ── Performance: pre-create all pages in background ──
+        # After the UI is visible, warm up all view modules so
+        # navigation is instant (no lazy creation cost).
+        self._start_warmup()
 
     def _init_services(self):
         if self.db is not None:
@@ -224,54 +292,113 @@ class MainWindow(QMainWindow):
         self.nav = self.app_shell.nav
 
         self._build_nav()
+        self.app_shell.top_bar.back_clicked.connect(self._go_back)
+        self.app_shell.top_bar.recent_clicked.connect(lambda vk: self._switch_module(vk))
+        self.app_shell.top_bar.report_issue_clicked.connect(
+            self._on_report_issue,
+        )
         self.app_shell.view_container.updateGeometry()
 
     def _build_nav(self):
         """Build the full navigation sidebar."""
         nav = self.nav
+        available = self._available_modules
 
-        nav.add_group(t("nav.group_overview"), "nav.group_overview")
-        nav.add_item("overview", t("nav.overview"), i18n_key="nav.overview")
-        nav.add_item("analytics", t("nav.analytics"), i18n_key="nav.analytics")
+        def _add_group(group_key: str, items: list[tuple[str, str, str]]) -> None:
+            """Add a group + its items, skipping modules unavailable in the
+            current connection mode (remote mode hides local-DB-only modules).
 
-        nav.add_group(t("nav.group_operations"), "nav.group_operations")
-        nav.add_item("route_planner", t("nav.routes"), i18n_key="nav.routes")
-        nav.add_item("calculator", t("nav.calculator"), i18n_key="nav.calculator")
-        nav.add_item("dispatch_board", t("nav.dispatch_board"), i18n_key="nav.dispatch_board")
-        nav.add_item("tracking", t("nav.live_tracking"), i18n_key="nav.live_tracking")
-        nav.add_item("freight_exchange", t("freight.title"), i18n_key="freight.title")
+            The group label is only added when at least one of its items
+            survives the filter, avoiding orphan group headers.
+            """
+            kept = [(k, label, i18n) for k, label, i18n in items if k in available]
+            if not kept:
+                return
+            nav.add_group(t(group_key), group_key)
+            for key, label, i18n_key in kept:
+                nav.add_item(key, label, i18n_key=i18n_key)
 
-        nav.add_group(t("nav.group_fleet"), "nav.group_fleet")
-        nav.add_item("fleet", t("nav.fleet"), i18n_key="nav.fleet")
-        nav.add_item("driver_manager", t("nav.driver_manager"), i18n_key="nav.driver_manager")
-        nav.add_item("clients", t("nav.clients"), i18n_key="nav.clients")
-        nav.add_item("documents", t("nav.documents"), i18n_key="nav.documents")
-        nav.add_item("maintenance", t("nav.maintenance_analytics"),
-                     i18n_key="nav.maintenance_analytics")
-        nav.add_item("maintenance_control", t("nav.maintenance_control"),
-                     i18n_key="nav.maintenance_control")
-        nav.add_item("tachograph", t("nav.tachograph"), i18n_key="nav.tachograph")
+        _add_group("nav.group_overview", [
+            ("overview", t("nav.overview"), "nav.overview"),
+            ("analytics", t("nav.analytics"), "nav.analytics"),
+        ])
 
-        nav.add_group(t("nav.group_finance"), "nav.group_finance")
-        nav.add_item("invoices", t("nav.generators"), i18n_key="nav.generators")
-        nav.add_item("history", t("nav.history"), i18n_key="nav.history")
-        nav.add_item("route_history", t("nav.route_history"), i18n_key="nav.route_history")
+        _add_group("nav.group_operations", [
+            ("route_planner", t("nav.routes"), "nav.routes"),
+            ("calculator", t("nav.calculator"), "nav.calculator"),
+            ("dispatch_board", t("nav.dispatch_board"), "nav.dispatch_board"),
+            ("tracking", t("nav.live_tracking"), "nav.live_tracking"),
+            ("freight_exchange", t("freight.title"), "freight.title"),
+        ])
 
-        nav.add_group(t("nav.group_tools"), "nav.group_tools")
-        nav.add_item("copilot", t("nav.copilot"), i18n_key="nav.copilot")
-        nav.add_item("migration_center", t("nav.migration_center"), i18n_key="nav.migration_center")
+        _add_group("nav.group_fleet", [
+            ("fleet", t("nav.fleet"), "nav.fleet"),
+            ("driver_manager", t("nav.driver_manager"), "nav.driver_manager"),
+            ("clients", t("nav.clients"), "nav.clients"),
+            ("documents", t("nav.documents"), "nav.documents"),
+            ("maintenance", t("nav.maintenance_analytics"), "nav.maintenance_analytics"),
+            ("maintenance_control", t("nav.maintenance_control"), "nav.maintenance_control"),
+            ("tachograph", t("nav.tachograph"), "nav.tachograph"),
+        ])
+
+        _add_group("nav.group_finance", [
+            ("invoices", t("nav.generators"), "nav.generators"),
+            ("history", t("nav.history"), "nav.history"),
+            ("route_history", t("nav.route_history"), "nav.route_history"),
+        ])
+
+        _add_group("nav.group_tools", [
+            ("copilot", t("nav.copilot"), "nav.copilot"),
+            ("migration_center", t("nav.migration_center"), "nav.migration_center"),
+        ])
 
         # ── Administration (manager / admin only) ──
         if self._user_role in ("admin", "manager"):
-            nav.add_group(t("nav.group_administration"), "nav.group_administration")
-            nav.add_item("team", t("nav.team"), i18n_key="nav.team")
+            _add_group("nav.group_administration", [
+                ("team", t("nav.team"), "nav.team"),
+            ])
 
         nav.add_settings_item("settings", t("nav.settings"))
-        nav.select("overview")
+
+        # Show the first available module on startup.  In remote mode the
+        # local-DB-only modules (including the usual default, ``overview``)
+        # are hidden, so fall back to the first available module.
+        initial_key = "overview" if "overview" in available else self._first_available_key()
+        nav.select(initial_key)
+
+    def _first_available_key(self) -> str:
+        """First available module following the canonical warmup order."""
+        for key in self._WARMUP_KEYS:
+            if key in self._available_modules:
+                return key
+        return next(iter(self._available_modules), "overview")
 
     def _setup_shortcuts(self):
         self._shortcut_calculate = QWidgetShortcut(self, Qt.Key_S, Qt.ControlModifier, self._open_calculator)
         self._shortcut_history = QWidgetShortcut(self, Qt.Key_H, Qt.ControlModifier, self._open_history)
+
+        # ── Back navigation (Alt+Left) ──
+        self._shortcut_back = QShortcut(QKeySequence("Alt+Left"), self, self._go_back)
+
+        # ── Navigation shortcuts (Ctrl+1..Ctrl+9) ──
+        self._nav_shortcuts: list[QShortcut] = []
+        _nav_keys = [
+            ("Ctrl+1", "overview"),
+            ("Ctrl+2", "analytics"),
+            ("Ctrl+3", "route_planner"),
+            ("Ctrl+4", "calculator"),
+            ("Ctrl+5", "dispatch_board"),
+            ("Ctrl+6", "tracking"),
+            ("Ctrl+7", "fleet"),
+            ("Ctrl+8", "driver_manager"),
+            ("Ctrl+9", "clients"),
+        ]
+        for seq, module_key in _nav_keys:
+            if module_key not in self._available_modules:
+                continue
+            sc = QShortcut(QKeySequence(seq), self, lambda k=module_key: self._switch_module(k))
+            sc.setAutoRepeat(False)
+            self._nav_shortcuts.append(sc)
 
     def _init_fuel_status(self):
         self._update_fuel_status()
@@ -303,7 +430,7 @@ class MainWindow(QMainWindow):
     def _animate_page_switch(self, frame: QWidget) -> None:
         """Cross-fade to *frame* using QPropertyAnimation on opacity.
 
-        Plan spec (Section 6, item 1): 120ms, ease-in-out, content area only.
+        Phase 10 spec: FADE_MS (150ms), OutCubic, content area only.
         """
         if self._page_anim is not None:
             self._page_anim.stop()
@@ -323,21 +450,62 @@ class MainWindow(QMainWindow):
         self.app_shell.view_container.setCurrentWidget(frame)
 
         self._page_anim = QPropertyAnimation(effect, b"opacity")
-        self._page_anim.setDuration(120)
+        self._page_anim.setDuration(FADE_MS)
         self._page_anim.setStartValue(0.0)
         self._page_anim.setEndValue(1.0)
-        self._page_anim.setEasingCurve(QEasingCurve.Type.InOutQuad)
+        self._page_anim.setEasingCurve(QEasingCurve.OutCubic)
         self._page_anim.start()
 
     def _switch_module(self, key: str, data: dict[str, Any] | None = None):
         # Track navigation for struggle detection
         self._struggle_detector.record_navigation(key)
 
-        # If switching to the same view, avoid shutdown/recreate cycle.
-        # Just re-show the frame, wakeup, and handle any nav data.
-        if key == self._active_module:
+        # Push current view onto nav stack before switching (skip duplicates)
+        current = self._active_module
+        if current and current != key:
+            if not self._nav_stack or self._nav_stack[-1][0] != current:
+                self._nav_stack.append((current, None))
+                if len(self._nav_stack) > self._max_nav_stack:
+                    self._nav_stack.pop(0)
+
+        # Update back button and recent menu state
+        self._update_back_button()
+
+        with PerfTimer(f"nav.switch.{key}", log_level=logging.DEBUG):
+            # If switching to the same view, avoid shutdown/recreate cycle.
+            # Just re-show the frame, wakeup, and handle any nav data.
+            if key == self._active_module:
+                cache = self._module_cache.get(key)
+                if cache and cache.get("frame") is not None:
+                    obj = cache.get("obj")
+                    if obj and hasattr(obj, "wakeup"):
+                        with contextlib.suppress(Exception):
+                            obj.wakeup()
+                    if data and obj and hasattr(obj, "handle_nav_data"):
+                        with contextlib.suppress(Exception):
+                            obj.handle_nav_data(data)
+                return
+
+            # If a guided tour is active, cancel it on navigation away
+            if self._tour_controller.is_tour_active():
+                self._tour_controller.cancel_current()
+                logger.info("Tour cancelled: user navigated away from active tour")
+
+            old_key = self._active_module
+            if old_key and old_key in self._module_cache:
+                cache = self._module_cache[old_key]
+                obj = cache.get("obj")
+                if hasattr(obj, "shutdown"):
+                    with contextlib.suppress(Exception):
+                        obj.shutdown()
+
+            if key not in self._module_cache:
+                self._module_cache[key] = self._create_module(key)
+
             cache = self._module_cache.get(key)
             if cache and cache.get("frame") is not None:
+                frame = cache["frame"]
+                self._animate_page_switch(frame)
                 obj = cache.get("obj")
                 if obj and hasattr(obj, "wakeup"):
                     with contextlib.suppress(Exception):
@@ -345,54 +513,126 @@ class MainWindow(QMainWindow):
                 if data and obj and hasattr(obj, "handle_nav_data"):
                     with contextlib.suppress(Exception):
                         obj.handle_nav_data(data)
-            self._update_breadcrumb(key)
+
+            self._active_module = key
+            with contextlib.suppress(Exception):
+                self.nav.highlight(key)
+
+    def _go_back(self) -> None:
+        """Navigate to the previous view in the navigation stack."""
+        # Close any open drawers/modals first
+        if hasattr(self, '_views'):
+            for view in self._views.values():
+                if hasattr(view, '_detail_drawer') and view._detail_drawer and view._detail_drawer.isVisible():
+                    view._close_detail_drawer()
+                    return  # Don't navigate, just close the drawer
+                if hasattr(view, '_detail_backdrop') and view._detail_backdrop and view._detail_backdrop.isVisible():
+                    view._close_detail_drawer()
+                    return
+
+        if not self._nav_stack:
+            return
+        view_key, data = self._nav_stack.pop()
+        self._active_module = None  # prevent re-push of current view
+        self._switch_module(view_key, data)
+        self._update_back_button()
+
+    def _update_back_button(self) -> None:
+        """Update back button visibility and populate recent items menu."""
+        has_history = len(self._nav_stack) > 0
+        self.app_shell.top_bar.set_back_enabled(has_history)
+
+        # Build recent items list for the dropdown
+        recent: list[tuple[str, str]] = []
+        seen: set[str] = set()
+        for view_key, _ in reversed(self._nav_stack):
+            if view_key in seen:
+                continue
+            seen.add(view_key)
+            name = t(f"nav.{view_key}", default=view_key.replace("_", " ").title())
+            recent.append((view_key, name))
+            if len(recent) >= 5:
+                break
+        recent.reverse()  # chronological order
+        self.app_shell.top_bar._update_recent_menu(recent)
+
+    def _on_report_issue(self) -> None:
+        """Open the Report Issue dialog."""
+        from ui.dialogs.report_issue_dialog import QtReportIssueDialog
+
+        dlg = QtReportIssueDialog(
+            parent=self, api_client=self._api_client,
+        )
+        dlg.exec()
+
+    # ── Startup warmup: pre-create all pages ──────────────────────────
+
+    _WARMUP_KEYS = [
+        "overview", "analytics", "route_planner", "calculator",
+        "dispatch_board", "tracking", "fleet", "driver_manager",
+        "clients", "documents", "maintenance", "maintenance_control",
+        "tachograph", "invoices", "history", "route_history",
+        "copilot", "migration_center", "settings",
+    ]
+
+    def _start_warmup(self) -> None:
+        """Pre-create all view modules after startup with staggered timing.
+
+        Each page is created with a 200ms gap to keep the UI responsive during
+        warmup. By the time the user navigates, most pages are ready.
+        """
+        # Never warm up modules that are unavailable in the current connection
+        # mode (local-DB-only modules are skipped in remote mode).
+        keys = [
+            k for k in self._WARMUP_KEYS
+            if k in self._available_modules and k not in self._module_cache
+        ]
+        if not keys:
             return
 
-        # If a guided tour is active, cancel it on navigation away
-        if self._tour_controller.is_tour_active():
-            self._tour_controller.cancel_current()
-            logger.info("Tour cancelled: user navigated away from active tour")
+        logger.info("[PERF] Starting view warmup: %d pages", len(keys))
+        self._warmup_started = True
 
-        old_key = self._active_module
-        if old_key and old_key in self._module_cache:
-            cache = self._module_cache[old_key]
-            obj = cache.get("obj")
-            if hasattr(obj, "shutdown"):
-                with contextlib.suppress(Exception):
-                    obj.shutdown()
+        _WARMUP_STAGGER_MS = 200   # gap between view creations (was 50ms)
 
-        if key not in self._module_cache:
-            self._module_cache[key] = self._create_module(key)
+        def _warmup_next(idx: int = 0) -> None:
+            if not self._warmup_started or idx >= len(keys):
+                if idx >= len(keys):
+                    logger.info("[PERF] View warmup complete")
+                return
+            key = keys[idx]
+            if key not in self._module_cache:
+                try:
+                    with PerfTimer(f"warmup.create.{key}"):
+                        self._module_cache[key] = self._create_module(key)
+                except Exception:
+                    # A single failing module must never abort the whole
+                    # warmup chain — log and continue with the next module.
+                    logger.exception(
+                        "View warmup failed for module '%s'; continuing", key
+                    )
+            QTimer.singleShot(_WARMUP_STAGGER_MS, lambda: _warmup_next(idx + 1))
 
-        cache = self._module_cache.get(key)
-        if cache and cache.get("frame") is not None:
-            frame = cache["frame"]
-            self._animate_page_switch(frame)
-            obj = cache.get("obj")
-            if obj and hasattr(obj, "wakeup"):
-                with contextlib.suppress(Exception):
-                    obj.wakeup()
-            if data and obj and hasattr(obj, "handle_nav_data"):
-                with contextlib.suppress(Exception):
-                    obj.handle_nav_data(data)
-
-        self._active_module = key
-        self._update_breadcrumb(key)
-        with contextlib.suppress(Exception):
-            self.nav.highlight(key)
-
-    def _update_breadcrumb(self, key: str) -> None:
-        if key == "overview":
-            crumb = t("nav.overview", default="Overview")
-        else:
-            crumb = t(f"nav.{key}", default=key.replace("_", " ").title())
-        self.app_shell.set_breadcrumb(crumb)
+        # Start warmup after the window is fully rendered
+        QTimer.singleShot(2000, lambda: _warmup_next(0))
 
     _VIEW_FACTORIES = None
 
     def _create_module(self, key: str):
         """Factory for view modules — registry pattern."""
         parent = self.app_shell.view_container
+
+        # Modules unavailable in the current connection mode are never
+        # constructed — return a friendly placeholder instead of raising
+        # (e.g. local-DB-only modules in remote mode).
+        if key not in self._available_modules:
+            logger.info(
+                "Module '%s' is not available in %s mode — showing placeholder",
+                key, self._mode.value,
+            )
+            widget = UnavailableModuleView(parent, key, self._mode.value)
+            self.app_shell.view_container.addWidget(widget)
+            return {"frame": widget, "obj": widget}
 
         if MainWindow._VIEW_FACTORIES is None:
             ac = self._api_client
@@ -404,7 +644,7 @@ class MainWindow(QMainWindow):
                     prefs=self.prefs, ops=self.ops, fuel_service=self._fuel_service,
                     api=self.api, api_client=ac,
                 ),
-                # MODE: {self._mode.value}  — local DB only
+                # MODE: {self._mode.value}  — remote-capable (degrades gracefully)
                 "overview": lambda: QtOverviewView(
                     parent, db=self.db, ops=self.ops,
                     trip_service=self.trip_service,
@@ -425,7 +665,7 @@ class MainWindow(QMainWindow):
                 # MODE: {self._mode.value}
                 "route_history": lambda: QtRouteHistoryView(parent, db=self.db, controller=self, api_client=ac),
                 # MODE: {self._mode.value}
-                "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
+                "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac, on_navigate=self._switch_module),
                 # MODE: {self._mode.value}  — local DB only (tracking uses local fleet_tracking_service)
                 "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module),
                 # MODE: {self._mode.value}
@@ -439,8 +679,11 @@ class MainWindow(QMainWindow):
                     parent, db=self.db, prefs=self.prefs,
                     trip_svc=self.trip_service,
                 ),
-                # MODE: {self._mode.value}  — local DB only
-                "clients": lambda: QtClientWorkspace(parent, db=self.db, prefs=self.prefs, ops=self.ops),
+                # MODE: {self._mode.value}  — remote-capable via client_service
+                "clients": lambda: QtClientWorkspace(
+                    parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                    client_service=self.client_service,
+                ),
                 # MODE: {self._mode.value}  — local DB only
                 "documents": lambda: QtDocumentCenterView(
                     parent, db=self.db, prefs=self.prefs, ops=self.ops,
@@ -479,7 +722,8 @@ class MainWindow(QMainWindow):
 
         factory = MainWindow._VIEW_FACTORIES.get(key)
         try:
-            widget = factory() if factory else PlaceholderView(parent, key)
+            with PerfTimer(f"create.{key}"):
+                widget = factory() if factory else PlaceholderView(parent, key)
         except Exception as exc:
             logger.exception("Failed to create module '%s'", key)
             widget = ErrorPlaceholderView(parent, key, str(exc))
@@ -654,6 +898,34 @@ class ErrorPlaceholderView(QWidget):
         layout.addWidget(title)
 
         msg = QLabel(f"Failed to load module.\n{error}")
+        msg.setProperty("role", "muted")
+        msg.setAlignment(Qt.AlignCenter)
+        msg.setWordWrap(True)
+        layout.addWidget(msg)
+
+
+class UnavailableModuleView(QWidget):
+    """Shown when a module is not available in the current connection mode.
+
+    Replaces a hard error for local-DB-only modules while the app runs in
+    remote (API-only) mode, so navigation degrades gracefully instead of
+    showing the raw ``RuntimeError`` from ``guard_local_access``.
+    """
+
+    def __init__(self, parent: QWidget | None, key: str, mode: str):
+        super().__init__(parent)
+        layout = QVBoxLayout(self)
+        layout.setAlignment(Qt.AlignCenter)
+
+        title = QLabel(key)
+        title.setProperty("role", "heading")
+        title.setAlignment(Qt.AlignCenter)
+        layout.addWidget(title)
+
+        msg = QLabel(
+            f"{key} requires local database access and is not available "
+            f"in {mode} mode.\nConnect to a local database to use this module."
+        )
         msg.setProperty("role", "muted")
         msg.setAlignment(Qt.AlignCenter)
         msg.setWordWrap(True)

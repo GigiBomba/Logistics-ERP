@@ -241,7 +241,7 @@ class QueueManagementMixin:
 
     def _recover_stuck_runs(self) -> None:
         """Recover pipeline runs that were left in a transitional state."""
-        if not self.db:
+        if not self.db or self._pipeline_repo is None:
             return
         try:
             recovered = self._pipeline_repo.recover_stuck_runs()

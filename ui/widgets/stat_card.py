@@ -40,6 +40,9 @@ class StatCard(QFrame):
         self.setMinimumHeight(88)
         self.setSizePolicy(QSizePolicy.MinimumExpanding, QSizePolicy.Fixed)
 
+        self.setAccessibleName("Stat Card")
+        self.setAccessibleDescription("Key performance indicator card")
+
         self._dot: QLabel | None = None
         self._build_ui(label, value, status_dot_color)
 

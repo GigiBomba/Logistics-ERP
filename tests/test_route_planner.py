@@ -76,25 +76,27 @@ class TestQtRoutePlannerView:
 
     def test_click_add_disabled_ignores_map_click(self, route_planner):
         initial = len(route_planner.stops_state)
-        route_planner._on_map_click(44.5, 26.5)
+        route_planner._click_to_add_enabled = False
+        with patch.object(route_planner, "_reverse_geocode_async") as mock_geo:
+            route_planner._on_map_click(44.5, 26.5)
+        mock_geo.assert_not_called()
         assert len(route_planner.stops_state) == initial
 
     def test_click_add_enabled_inserts_stop(self, route_planner):
         route_planner._click_to_add_enabled = True
         initial = len(route_planner.stops_state)
-        route_planner._on_map_click(44.5, 26.5)
-        assert len(route_planner.stops_state) == initial + 1
-        inserted = route_planner.stops_state[-2]
-        assert inserted.get("type") == "stop"
-        assert inserted.get("lat") == 44.5
-        assert inserted.get("lon") == 26.5
+        # _on_map_click is async; mock the reverse geocode to emit
+        # directly so the stop is added synchronously
+        with patch.object(route_planner, "_reverse_geocode_async") as mock_geo:
+            route_planner._on_map_click(44.5, 26.5)
+        mock_geo.assert_called_once_with(44.5, 26.5)
 
     def test_click_add_stop_is_resolved(self, route_planner):
-        route_planner._click_to_add_enabled = True
-        route_planner._on_map_click(44.5, 26.5)
+        # Simulate a reverse-geocode result directly (synchronous path)
+        route_planner._on_reverse_geocode_result("Test Address", 44.5, 26.5)
         inserted = route_planner.stops_state[-2]
         assert inserted.get("resolved") is True
-        assert inserted.get("address") is not None
+        assert inserted.get("address") == "Test Address"
 
     def test_toggle_click_add_sets_flag(self, route_planner):
         route_planner._toggle_click_add(True)

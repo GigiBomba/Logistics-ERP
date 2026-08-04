@@ -193,7 +193,7 @@ class TestRenameDocumentAfterOcr:
                 "title": "test",
                 "uploaded_at": "2025-06-15T10:00:00",
             }
-            mock_repo.update.side_effect = Exception("DB error")
+            mock_repo.update.side_effect = RuntimeError("DB error")
 
             extracted = {"doc_id": "DOC-001", "date": "2025-06-15"}
             matched_clients = ["Client SRL"]

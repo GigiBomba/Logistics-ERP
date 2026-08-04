@@ -266,3 +266,137 @@ class TestBaseDocumentEditor:
         mock_get_open.return_value = ("", "")
         result = editor._browse_branding_file(field_name="logo")
         assert result is None
+
+    # ── Company config (standalone) ──────────────────────────────────
+
+    def test_apply_company_config_standalone(self, editor):
+        """_apply_company_config sets all attributes from config dict."""
+        config = {
+            "company_name": "My Corp",
+            "cui": "RO99999",
+            "reg_number": "J99/999/2024",
+            "address": "456 Oak St",
+            "phone": "+40987654321",
+            "email": "info@mycorp.com",
+            "logo_path": "/path/to/logo2.png",
+            "signature_path": "/path/to/sig2.png",
+            "stamp_path": "/path/to/stamp2.png",
+            "company_color": "#00ff00",
+        }
+        editor._apply_company_config(config)
+        assert editor._company_name == "My Corp"
+        assert editor._company_cui == "RO99999"
+        assert editor._company_reg == "J99/999/2024"
+        assert editor._company_address == "456 Oak St"
+        assert editor._company_phone == "+40987654321"
+        assert editor._company_email == "info@mycorp.com"
+        assert editor._logo_path == "/path/to/logo2.png"
+        assert editor._signature_path == "/path/to/sig2.png"
+        assert editor._stamp_path == "/path/to/stamp2.png"
+        assert editor._company_color == "#00ff00"
+
+    # ── Export JSON ──────────────────────────────────────────────────
+
+    @patch("ui.views.editor_base.t")
+    @patch("utils.editor_toolkit.export_editor_data")
+    def test_export_as_json_with_custom_title(self, mock_export, mock_t, editor):
+        """_export_as_json passes custom title and filename."""
+        mock_t.return_value = "Custom Export Title"
+        editor._export_as_json(
+            collect_fn=lambda: {"test": "data"},
+            prefix="invoice",
+            title_key="custom.title",
+            default_name="myfile.json",
+        )
+        mock_t.assert_called_once_with("custom.title")
+        mock_export.assert_called_once_with(
+            editor, {"test": "data"}, "Custom Export Title", "myfile.json",
+        )
+
+    # ── Draft load ───────────────────────────────────────────────────
+
+    @patch("ui.views.editor_base.QDialog.exec_")
+    def test_load_draft_with_drafts_and_restore(
+        self, mock_exec, editor,
+    ):
+        """_load_draft_via_dialog restores the selected draft."""
+        from PySide6.QtWidgets import QDialog, QListWidget, QPushButton
+
+        svc = MagicMock()
+        svc.list_drafts.return_value = ["draft1", "draft2"]
+        svc.load_draft.return_value = {"field": "val"}
+
+        restore_fn = MagicMock()
+        editor._load_draft_via_dialog(service=svc, restore_fn=restore_fn)
+
+        svc.list_drafts.assert_called_once()
+
+        # Find the real dialog, list widget and load button
+        dlg = editor.findChild(QDialog)
+        assert dlg is not None
+        list_widget = dlg.findChild(QListWidget)
+        assert list_widget is not None
+        assert list_widget.count() == 2
+        assert list_widget.item(0).text() == "draft1"
+        assert list_widget.item(1).text() == "draft2"
+
+        # Select first draft
+        list_widget.setCurrentRow(0)
+
+        # Find and click the Load button
+        load_btn = None
+        for btn in dlg.findChildren(QPushButton):
+            txt = btn.text().lower()
+            if "load" in txt or "common.load" in txt:
+                load_btn = btn
+                break
+        assert load_btn is not None, "Load button not found in dialog"
+        load_btn.click()
+
+        svc.load_draft.assert_called_once_with("draft1")
+        restore_fn.assert_called_once_with({"field": "val"})
+
+    # ── Draft save ───────────────────────────────────────────────────
+
+    @patch("ui.views.editor_base.QInputDialog.getText")
+    def test_save_draft_service_returns_false(self, mock_get_text, editor):
+        """save_draft returning False shows warning, not information."""
+        mock_get_text.return_value = ("My Draft", True)
+        svc = MagicMock()
+        svc.save_draft.return_value = False
+
+        with patch("ui.views.editor_base.QMessageBox.warning") as mock_warn:
+            with patch("ui.views.editor_base.QMessageBox.information") as mock_info:
+                editor._save_draft_via_service(
+                    service=svc,
+                    collect_fn=lambda: {"key": "val"},
+                )
+                svc.save_draft.assert_called_once_with({"key": "val"}, "My Draft")
+                mock_warn.assert_called_once()
+                mock_info.assert_not_called()
+
+    # ── Branding browser ─────────────────────────────────────────────
+
+    @patch("ui.views.editor_base.QFileDialog.getOpenFileName")
+    def test_browse_branding_file_with_custom_filter(self, mock_get_open, editor):
+        """_browse_branding_file passes custom title and filter."""
+        mock_get_open.return_value = ("/path/to/logo.png", "PNG (*.png)")
+        editor._logo_entry = MagicMock()
+
+        result = editor._browse_branding_file(
+            field_name="logo", title="Pick logo", file_filter="PNG (*.png)",
+        )
+
+        mock_get_open.assert_called_once_with(
+            editor, "Pick logo", "", "PNG (*.png)",
+        )
+        assert result == "/path/to/logo.png"
+
+    # ── Canvas label ─────────────────────────────────────────────────
+
+    def test_make_canvas_label_not_bold(self, editor):
+        """_make_canvas_label without bold uses 'body' fontRole."""
+        lbl = editor._make_canvas_label(editor, "text")
+        assert isinstance(lbl, QLabel)
+        assert lbl.text() == "text"
+        assert lbl.property("fontRole") == "body"

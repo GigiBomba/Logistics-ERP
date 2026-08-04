@@ -335,3 +335,38 @@ class PermissionService:
         if user["role"] in (self.ROLE_ADMIN, self.ROLE_MANAGER):
             return PermissionCheckResult(True)
         return PermissionCheckResult(False, f"Role '{user['role']}' cannot view analytics")
+
+    # ------------------------------------------------------------------
+    # Team management permissions (blueprint §8.3, Phase 4A)
+    # ------------------------------------------------------------------
+
+    def can_manage_users(self, user_id: int) -> PermissionCheckResult:
+        auth = self.is_authenticated(user_id)
+        if not auth.allowed:
+            return auth
+        user = self._get_user(user_id)
+        if user["role"] in (self.ROLE_ADMIN, self.ROLE_MANAGER):
+            return PermissionCheckResult(True)
+        return PermissionCheckResult(False, f"Role '{user['role']}' cannot manage users")
+
+    # ------------------------------------------------------------------
+    # Company settings permissions (blueprint §8.3, Phase 4A)
+    # ------------------------------------------------------------------
+
+    def can_view_company_settings(self, user_id: int) -> PermissionCheckResult:
+        auth = self.is_authenticated(user_id)
+        if not auth.allowed:
+            return auth
+        user = self._get_user(user_id)
+        if user["role"] in (self.ROLE_ADMIN, self.ROLE_MANAGER):
+            return PermissionCheckResult(True)
+        return PermissionCheckResult(False, f"Role '{user['role']}' cannot view company settings")
+
+    def can_manage_company_settings(self, user_id: int) -> PermissionCheckResult:
+        auth = self.is_authenticated(user_id)
+        if not auth.allowed:
+            return auth
+        user = self._get_user(user_id)
+        if user["role"] in (self.ROLE_ADMIN, self.ROLE_MANAGER):
+            return PermissionCheckResult(True)
+        return PermissionCheckResult(False, f"Role '{user['role']}' cannot manage company settings")

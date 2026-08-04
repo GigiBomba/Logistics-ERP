@@ -13,8 +13,6 @@ from datetime import datetime
 from typing import Any
 
 from PySide6.QtCore import Qt, QTimer
-from PySide6.QtGui import QColor
-from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QDialog,
     QFileDialog,
@@ -27,6 +25,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSplitter,
+    QStackedWidget,
     QVBoxLayout,
     QWidget,
 )
@@ -42,8 +41,8 @@ from services.fleet_service import FleetService
 from services.invoicing.service import InvoiceService
 from services.operations.event_bus import SETTINGS_UPDATED
 from services.preferences import PreferencesManager
-from ui.components import Btn, Card, CardHeader, Divider, Label, PageTitle, SectionTitle
-from ui.theme import COLORS, S
+from ui.components import Btn, Card, CardHeader, Divider, EmptyState, Label, PageTitle, SectionTitle
+from ui.design_tokens import SP
 from ui.widgets import (
     ScrollableFormContainer,
     StyledCheckBox,
@@ -212,7 +211,6 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         # Build UI
         self._build_ui()
         self._load_company_config()
-        self._update_receipt_number()
 
         self._subscribe(SETTINGS_UPDATED, self._on_settings_updated)
 
@@ -220,8 +218,14 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
 
     def wakeup(self) -> None:
         """Called when the tab becomes visible."""
+        if not hasattr(self, '_number_initialized'):
+            self._update_receipt_number()
+            self._number_initialized = True
         self._load_all_db_combos()
         self._refresh_preview()
+        # Show form if we have data (clients, trips, or vehicles), otherwise empty
+        has_data = bool(self._client_map) or bool(self._trip_combo_map) or bool(self._vehicle_map)
+        self._receipt_stack.setCurrentIndex(1 if has_data else 0)
 
     def shutdown(self) -> None:
         """Clean up resources."""
@@ -426,6 +430,29 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._build_toolbar()
         main_layout.addWidget(self._toolbar)
 
+        # Stacked widget: page 0 = empty state, page 1 = form
+        self._receipt_stack = QStackedWidget()
+        main_layout.addWidget(self._receipt_stack, 1)
+
+        # Page 0: Empty state
+        empty_page = QWidget()
+        empty_layout = QVBoxLayout(empty_page)
+        empty_layout.setAlignment(Qt.AlignCenter)
+        self._receipt_empty_state = EmptyState(
+            parent=empty_page,
+            icon_name="fa5s.receipt",
+            title=t("receipt_editor.empty_title", "No receipt data"),
+            subtitle=t("receipt_editor.empty_desc", "Select or create a receipt."),
+        )
+        empty_layout.addWidget(self._receipt_empty_state)
+        self._receipt_stack.addWidget(empty_page)
+
+        # Page 1: Form
+        form_page = QWidget()
+        form_layout = QVBoxLayout(form_page)
+        form_layout.setContentsMargins(0, 0, 0, 0)
+        form_layout.setSpacing(0)
+
         # Splitter: left form + right preview
         splitter = QSplitter(Qt.Horizontal)
         splitter.setHandleWidth(1)
@@ -435,19 +462,17 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._scroll = ScrollableFormContainer(self, max_width=900)
         splitter.addWidget(self._scroll)
 
-        # Right: QWebEngineView preview
-        self._preview_view = QWebEngineView()
-        self._preview_view.setMinimumWidth(420)
-        self._preview_view.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
-        try:
-            self._preview_view.page().setBackgroundColor(QColor("#f5f5f0"))
-        except Exception:
-            pass
-        splitter.addWidget(self._preview_view)
+        # Right: placeholder container (QWebEngineView created lazily on first preview)
+        self._preview_container = QWidget()
+        self._preview_container.setMinimumWidth(420)
+        self._preview_container.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        container_layout = QVBoxLayout(self._preview_container)
+        container_layout.setContentsMargins(0, 0, 0, 0)
+        splitter.addWidget(self._preview_container)
         splitter.setStretchFactor(0, 1)
         splitter.setStretchFactor(1, 1)
 
-        main_layout.addWidget(splitter, 1)
+        form_layout.addWidget(splitter, 1)
 
         # Build form sections
         self._build_view_header()
@@ -464,6 +489,9 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._build_notes_section()
         self._build_branding_section()
 
+        self._receipt_stack.addWidget(form_page)
+        self._receipt_stack.setCurrentIndex(0)  # Start at empty state
+
         # Initial preview
         QTimer.singleShot(200, self._refresh_preview)
 
@@ -475,8 +503,8 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         self._toolbar.setFixedHeight(52)
 
         layout = QHBoxLayout(self._toolbar)
-        layout.setContentsMargins(S["4"], S["2"], S["4"], S["2"])
-        layout.setSpacing(S["3"])
+        layout.setContentsMargins(SP["4"], SP["2"], SP["4"], SP["2"])
+        layout.setSpacing(SP["3"])
 
         self._generate_btn = Btn(
             self._toolbar,
@@ -614,13 +642,13 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["3"])
+        row_layout.setSpacing(SP["3"])
 
         # Left column
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["2"])
+        left_layout.setSpacing(SP["2"])
 
         from ui.widgets import field
         self._receipt_number_entry = StyledLineEdit(
@@ -641,7 +669,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["2"])
+        right_layout.setSpacing(SP["2"])
 
         self._payment_date_entry = StyledLineEdit(
             right, placeholder=t("receipt.payment_date_placeholder"),
@@ -685,7 +713,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["3"])
+        row_layout.setSpacing(SP["3"])
 
         # Received From
         from_card = Card(row)
@@ -758,12 +786,12 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["3"])
+        row_layout.setSpacing(SP["3"])
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["2"])
+        left_layout.setSpacing(SP["2"])
 
         from ui.widgets import field
         self._payment_method_combo = StyledComboBox(left, values=PAYMENT_METHODS)
@@ -783,7 +811,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["2"])
+        right_layout.setSpacing(SP["2"])
 
         self._bank_reference_entry = StyledLineEdit(right)
         self._bank_reference_entry.textChanged.connect(self._on_field_changed)
@@ -810,12 +838,12 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         row = QWidget()
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(0, 0, 0, 0)
-        row_layout.setSpacing(S["3"])
+        row_layout.setSpacing(SP["3"])
 
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["2"])
+        left_layout.setSpacing(SP["2"])
 
         from ui.widgets import field
         # Trip combo
@@ -845,7 +873,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["2"])
+        right_layout.setSpacing(SP["2"])
 
         # Trailer combo
         self._trailer_combo = StyledComboBox(right, state="readonly")
@@ -893,7 +921,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         grid = QWidget()
         grid_layout = QVBoxLayout(grid)
         grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setSpacing(S["2"])
+        grid_layout.setSpacing(SP["2"])
 
         # Amount
         self._amount_entry = StyledLineEdit(grid, placeholder=t("receipt.amount_placeholder"))
@@ -938,13 +966,13 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         grid = QWidget()
         grid_layout = QHBoxLayout(grid)
         grid_layout.setContentsMargins(0, 0, 0, 0)
-        grid_layout.setSpacing(S["3"])
+        grid_layout.setSpacing(SP["3"])
 
         from ui.widgets import field
         left = QWidget()
         left_layout = QVBoxLayout(left)
         left_layout.setContentsMargins(0, 0, 0, 0)
-        left_layout.setSpacing(S["2"])
+        left_layout.setSpacing(SP["2"])
 
         self._employee_name_entry = StyledLineEdit(left)
         self._employee_name_entry.textChanged.connect(self._on_field_changed)
@@ -963,7 +991,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         right = QWidget()
         right_layout = QVBoxLayout(right)
         right_layout.setContentsMargins(0, 0, 0, 0)
-        right_layout.setSpacing(S["2"])
+        right_layout.setSpacing(SP["2"])
 
         self._mileage_entry = StyledLineEdit(right, placeholder="0")
         self._mileage_entry.textChanged.connect(self._on_field_changed)
@@ -982,7 +1010,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         right2 = QWidget()
         right2_layout = QVBoxLayout(right2)
         right2_layout.setContentsMargins(0, 0, 0, 0)
-        right2_layout.setSpacing(S["2"])
+        right2_layout.setSpacing(SP["2"])
 
         self._meals_entry = StyledLineEdit(right2, placeholder="0")
         self._meals_entry.textChanged.connect(self._on_field_changed)
@@ -1081,7 +1109,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         logo_row = QWidget()
         logo_layout = QHBoxLayout(logo_row)
         logo_layout.setContentsMargins(0, 0, 0, 0)
-        logo_layout.setSpacing(S["2"])
+        logo_layout.setSpacing(SP["2"])
 
         self._logo_entry = StyledLineEdit(card, placeholder=t("receipt.logo_placeholder"))
         logo_layout.addWidget(self._logo_entry, 1)
@@ -1097,7 +1125,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         sig_row = QWidget()
         sig_layout = QHBoxLayout(sig_row)
         sig_layout.setContentsMargins(0, 0, 0, 0)
-        sig_layout.setSpacing(S["2"])
+        sig_layout.setSpacing(SP["2"])
 
         self._signature_entry = StyledLineEdit(card, placeholder=t("receipt.signature_placeholder"))
         sig_layout.addWidget(self._signature_entry, 1)
@@ -1113,7 +1141,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
         stamp_row = QWidget()
         stamp_layout = QHBoxLayout(stamp_row)
         stamp_layout.setContentsMargins(0, 0, 0, 0)
-        stamp_layout.setSpacing(S["2"])
+        stamp_layout.setSpacing(SP["2"])
 
         self._stamp_entry = StyledLineEdit(card, placeholder=t("receipt.stamp_placeholder"))
         stamp_layout.addWidget(self._stamp_entry, 1)
@@ -1417,12 +1445,33 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
     # LIVE PREVIEW (QWebEngineView HTML)
     # ══════════════════════════════════════════════════════════════════
 
+    @property
+    def _preview_webview(self):
+        """Lazy QWebEngineView — created only when preview is first requested."""
+        if not hasattr(self, '_preview_webview_cache'):
+            from PySide6.QtWebEngineWidgets import QWebEngineView
+            from PySide6.QtGui import QColor
+            self._preview_webview_cache = QWebEngineView()
+            self._preview_webview_cache.setMinimumHeight(400)
+            self._preview_webview_cache.setHtml("<html><body><p>Loading preview...</p></body></html>")
+            try:
+                self._preview_webview_cache.page().setBackgroundColor(QColor("#f5f5f0"))
+            except Exception:
+                pass
+            # Add to the preview container (replaces the placeholder)
+            preview_container = getattr(self, '_preview_container', None)
+            if preview_container:
+                from ui.widgets.layout_utils import clear_layout
+                clear_layout(preview_container.layout())
+                preview_container.layout().addWidget(self._preview_webview_cache)
+        return self._preview_webview_cache
+
     def _refresh_preview(self) -> None:
         """Re-render the live preview in QWebEngineView."""
         self._sync_state()
         self._recalculate()
         html = self._build_preview_html()
-        self._preview_view.setHtml(html)
+        self._preview_webview.setHtml(html)
 
     def _build_preview_html(self) -> str:
         """Build the receipt preview HTML string."""
@@ -1888,8 +1937,8 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
             row.setProperty("role", "card")
             row.setFixedHeight(32)
             row_layout = QHBoxLayout(row)
-            row_layout.setContentsMargins(S["2"], 0, S["2"], 0)
-            row_layout.setSpacing(S["2"])
+            row_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
+            row_layout.setSpacing(SP["2"])
 
             # Type badge
             atype = a.get("type", "other")

@@ -5,6 +5,7 @@ All tests use InMemoryDB with seeded data.
 
 from __future__ import annotations
 
+from database.tenant_context import clear_context, set_request_context
 from repositories.user_repository import UserRepository
 from tests.test_helpers import InMemoryDB
 
@@ -19,6 +20,13 @@ def db():
 @pytest.fixture
 def repo(db) -> UserRepository:
     return UserRepository(db)
+
+
+@pytest.fixture(autouse=True)
+def _clean_tenant_context():
+    """Clear tenant context after each test so state does not leak."""
+    yield
+    clear_context()
 
 
 # ── helpers ──────────────────────────────────────────────────────────
@@ -92,23 +100,21 @@ class TestListUsers:
         assert "password_hash" not in users[0]
 
     def test_company_filtering(self, db, repo):
-        _company(db, id=1)
-        _company(db, id=2)
-        db.user_company_id = 1
-        db.user_role = "dispatcher"
-        _user(db, email="in@test.com", company_id=1)
-        _user(db, email="out@test.com", company_id=2)
+        _company(db, id=101)
+        _company(db, id=102)
+        set_request_context(company_id=101, role="dispatcher")
+        _user(db, email="in@test.com", company_id=101)
+        _user(db, email="out@test.com", company_id=102)
         users = repo.list_users()
         assert len(users) == 1
         assert users[0]["email"] == "in@test.com"
 
     def test_admin_sees_all_companies(self, db, repo):
-        _company(db, id=1)
-        _company(db, id=2)
-        db.user_company_id = 1
-        db.user_role = "admin"  # admins are not scoped
-        _user(db, email="c1@test.com", company_id=1)
-        _user(db, email="c2@test.com", company_id=2)
+        _company(db, id=101)
+        _company(db, id=102)
+        set_request_context(company_id=101, role="admin")  # admins are not scoped
+        _user(db, email="c1@test.com", company_id=101)
+        _user(db, email="c2@test.com", company_id=102)
         users = repo.list_users()
         assert len(users) == 2
 
@@ -172,9 +178,8 @@ class TestCreateUser:
             assert row["role"] == role
 
     def test_assigns_company_id_from_context(self, db, repo):
-        _company(db, id=5)
-        db.user_company_id = 5
-        db.user_role = "dispatcher"
+        _company(db, id=105)
+        set_request_context(company_id=105, role="dispatcher")
         uid = repo.create_user(
             email="company@test.com",
             password_hash="hash",
@@ -182,7 +187,7 @@ class TestCreateUser:
             display_name="Company User",
         )
         row = db.conn.execute("SELECT company_id FROM users WHERE id = ?", (uid,)).fetchone()
-        assert row["company_id"] == 5
+        assert row["company_id"] == 105
 
     def test_no_company_id_when_unscoped(self, db, repo):
         """Admin/unscoped users do not get an automatic company_id."""
@@ -263,12 +268,11 @@ class TestDeactivateUser:
         repo.deactivate_user(-1)  # should not crash
 
     def test_company_scoped_deactivation(self, db, repo):
-        _company(db, id=1)
-        _company(db, id=2)
-        db.user_company_id = 1
-        db.user_role = "dispatcher"
-        u1 = _user(db, email="in_scope@test.com", company_id=1, is_active=1)
-        _user(db, email="out_of_scope@test.com", company_id=2, is_active=1)
+        _company(db, id=101)
+        _company(db, id=102)
+        set_request_context(company_id=101, role="dispatcher")
+        u1 = _user(db, email="in_scope@test.com", company_id=101, is_active=1)
+        _user(db, email="out_of_scope@test.com", company_id=102, is_active=1)
         repo.deactivate_user(u1)
         row = db.conn.execute("SELECT is_active FROM users WHERE id = ?", (u1,)).fetchone()
         assert row["is_active"] == 0

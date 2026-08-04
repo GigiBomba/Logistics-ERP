@@ -245,12 +245,26 @@ class TestAuthMiddleware:
 
     # ── Tests ──────────────────────────────────────────────────────
 
+    @pytest.fixture(autouse=True)
+    def _clean_auth_state(self, monkeypatch):
+        """Reset AuthMiddleware state and force in-memory DB."""
+        from backend.middleware.auth_middleware import AuthMiddleware
+        AuthMiddleware._db = None
+        import backend.dependencies
+        if backend.dependencies._db_instance is not None:
+            try:
+                backend.dependencies._db_instance.close()
+            except Exception:
+                pass
+            backend.dependencies._db_instance = None
+        monkeypatch.setattr(Config, "DB_PATH", ":memory:")
+
     def test_valid_global_api_key(self, monkeypatch):
         """Correct X-API-Key → request passes (200)."""
         monkeypatch.setattr(Config, "API_KEY", self.TEST_API_KEY)
+        monkeypatch.setattr(Config, "DB_PATH", ":memory:")
         app = _app_with_auth()
         client = TestClient(app)
-
         resp = client.get("/ping", headers={"X-API-Key": self.TEST_API_KEY})
         assert resp.status_code == 200
         assert resp.json() == {"pong": True}
@@ -258,6 +272,7 @@ class TestAuthMiddleware:
     def test_invalid_api_key_rejected(self, monkeypatch):
         """Wrong X-API-Key → 403."""
         monkeypatch.setattr(Config, "API_KEY", self.TEST_API_KEY)
+        monkeypatch.setattr(Config, "DB_PATH", ":memory:")
         app = _app_with_auth()
         client = TestClient(app)
 

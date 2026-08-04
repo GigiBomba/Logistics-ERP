@@ -143,7 +143,6 @@ class TestDriversTruckAssignment:
 
     def test_assign_driver_to_truck(self, client_with_mocks):
         client, mocks = client_with_mocks
-        mocks["db"].row_to_dict.side_effect = lambda row: None if row is None else dict(row)
 
         resp = client.post(f"{BASE}/1/assign-truck?truck_id=5")
         assert resp.status_code in (200, 500)

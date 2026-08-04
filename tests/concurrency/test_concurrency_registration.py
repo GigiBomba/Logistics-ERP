@@ -10,8 +10,9 @@ the sibling file ``test_concurrency_db_write.py``.
 
 import hashlib
 import os
+import sys
 import threading
-from concurrent.futures import ThreadPoolExecutor, as_completed
+from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 
 import pytest
 
@@ -102,6 +103,11 @@ class TestConcurrencyRegistration:
                 f"User {email} was not created"
             )
 
+    @pytest.mark.xfail(
+        condition=sys.platform == "win32",
+        strict=False,
+        reason="SQLite concurrent writes deadlock on Windows",
+    )
     def test_concurrent_same_email_registration(self, db):
         """Multiple threads trying to register the same email — only one
         succeeds due to the UNIQUE constraint on ``users.email``."""
@@ -137,10 +143,18 @@ class TestConcurrencyRegistration:
                 with lock:
                     error_count[0] += 1
 
-        with ThreadPoolExecutor(max_workers=10) as executor:
-            futures = [executor.submit(register) for _ in range(10)]
-            for f in as_completed(futures):
+        executor = ThreadPoolExecutor(max_workers=10)
+        futures = [executor.submit(register) for _ in range(10)]
+        try:
+            for f in as_completed(futures, timeout=8):
                 f.result()
+        except TimeoutError:
+            executor.shutdown(wait=False)
+            pytest.fail(
+                "Test timed out — concurrent SQLite writes deadlocked"
+            )
+        else:
+            executor.shutdown()
 
         # Only one should succeed due to UNIQUE constraint on users.email
         assert success_count[0] == 1, (

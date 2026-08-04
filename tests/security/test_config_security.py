@@ -30,6 +30,7 @@ class TestProductionSettings:
         """App created with OPERION_ENV=production must not expose docs or OpenAPI."""
         os.environ["OPERION_ENV"] = "production"
         os.environ["OPERION_API_KEY"] = "test-api-key-for-testing"
+        os.environ["OPERION_SUPPORT_INTERNAL_AUTH"] = "test-internal-auth"
         try:
             app = create_app()
             assert app.docs_url is None, "docs_url must be None in production"
@@ -37,6 +38,7 @@ class TestProductionSettings:
             assert app.openapi_url is None, "openapi_url must be None in production"
         finally:
             os.environ["OPERION_ENV"] = "test"
+            os.environ.pop("OPERION_SUPPORT_INTERNAL_AUTH", None)
 
     def test_debug_enabled_in_non_production(self) -> None:
         """App created with OPERION_ENV=test or development must expose docs."""

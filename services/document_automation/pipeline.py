@@ -33,6 +33,7 @@ from models.ocr_models import MatchedTrip, OcrResult
 from repositories.settings_repository import SettingsRepository
 
 from .field_extractors import validate_extracted_fields
+from .sanitizer import sanitize_ocr_text
 from .types import FieldValidationResult, ValidationResult
 
 logger = logging.getLogger("document_automation.pipeline")
@@ -131,6 +132,16 @@ def run_for_existing_document(
         progress_callback("persisting", 80)
 
     extracted_fields = extraction.extracted or {}
+
+    # ── Sanitize OCR text before persistence — defense-in-depth ───
+    # Primary sanitization happens in OcrExtractor.extract(); this
+    # second pass ensures any code path that bypasses the extractor
+    # (e.g. direct pipeline callers) still produces clean output.
+    sanitized_full, sanitize_report = sanitize_ocr_text(extraction.full_text or "")
+    if sanitize_report.was_modified:
+        extraction.full_text = sanitized_full
+        if "raw_text" in extracted_fields:
+            extracted_fields["raw_text"] = sanitized_full
 
     # ── Cross-reference extracted company names against client DB ──
     from repositories.client_repository import ClientRepository

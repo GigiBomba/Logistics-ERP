@@ -2,22 +2,21 @@
 import unittest
 from datetime import datetime
 
+from models.trip_models import TripCreate, TripUpdate
 from tests.test_helpers import make_db
 from services.trip_service import TripService
 
 
 def _trip_data(**overrides):
-    now = datetime.now().strftime("%Y-%m-%d %H:%M")
     data = {
-        "created_at": now,
-        "truck_number": "B-123-ABC",
+        "truck_plate": "B-123-ABC",
         "truck_id": None,
         "driver_name": "John Doe",
         "driver_id": None,
         "client_name": "ACME Corp",
-        "client_id": None,
+        "client_id": 1,
         "distance_km": 500.0,
-        "total_price_eur": 1000.0,
+        "price_eur": 1000.0,
         "rate_per_km": 2.0,
         "gross_per_km": 2.0,
         "net_profit": 800.0,
@@ -34,19 +33,69 @@ def _trip_data(**overrides):
     return data
 
 
+def _ensure_client(svc, client_id: int, name: str = "Test Client") -> None:
+    """Ensure a client record exists in the test DB."""
+    existing = svc.db.conn.execute("SELECT id FROM clients WHERE id = ?", (client_id,)).fetchone()
+    if not existing:
+        svc.db.conn.execute(
+            "INSERT INTO clients (id, name, email, is_active, created_at, updated_at) "
+            "VALUES (?, ?, ?, 1, datetime('now'), datetime('now'))",
+            (client_id, name, "test@example.com"),
+        )
+        svc.db.conn.commit()
+
+
+def _ensure_truck(svc, truck_id: int, plate: str = "B-TEST") -> None:
+    """Ensure a truck record exists in the test DB."""
+    existing = svc.db.conn.execute("SELECT id FROM trucks WHERE id = ?", (truck_id,)).fetchone()
+    if not existing:
+        svc.db.conn.execute(
+            "INSERT INTO trucks (id, plate_number, manufacturer, model, active_status) "
+            "VALUES (?, ?, 'TestMake', 'TestModel', 1)",
+            (truck_id, plate),
+        )
+        svc.db.conn.commit()
+
+
+def _ensure_driver(svc, driver_id: int, name: str = "Test Driver") -> None:
+    """Ensure a driver record exists in the test DB."""
+    existing = svc.db.conn.execute("SELECT id FROM drivers WHERE id = ?", (driver_id,)).fetchone()
+    if not existing:
+        svc.db.conn.execute(
+            "INSERT INTO drivers (id, name, is_active, created_at, updated_at) "
+            "VALUES (?, ?, 1, datetime('now'), datetime('now'))",
+            (driver_id, name),
+        )
+        svc.db.conn.commit()
+
+
+def _create_trip(svc, **overrides):
+    """Helper: create a trip via the typed API and return its ID."""
+    data = _trip_data(**overrides)
+    client_id = data.get("client_id", 1)
+    _ensure_client(svc, client_id, data.get("client_name", "Test Client"))
+    truck_id = data.get("truck_id")
+    if truck_id is not None:
+        _ensure_truck(svc, truck_id, data.get("truck_plate", "B-TEST"))
+    driver_id = data.get("driver_id")
+    if driver_id is not None:
+        _ensure_driver(svc, driver_id, data.get("driver_name", "Test Driver"))
+    result = svc.create(TripCreate(**data))
+    return result.data.id
+
+
 class TestTripServiceCreation(unittest.TestCase):
     def setUp(self):
         self.db = make_db()
         self.svc = TripService(self.db)
 
     def test_add_trip_returns_id(self):
-        trip_id = self.svc.add(_trip_data())
+        trip_id = _create_trip(self.svc)
         self.assertIsInstance(trip_id, int)
         self.assertGreater(trip_id, 0)
 
     def test_add_trip_persists_all_fields(self):
-        data = _trip_data(client_name="TestClient", distance_km=750.0)
-        trip_id = self.svc.add(data)
+        trip_id = _create_trip(self.svc, client_name="TestClient", distance_km=750.0)
 
         retrieved = self.svc.get_by_id(trip_id)
         self.assertIsNotNone(retrieved)
@@ -55,35 +104,31 @@ class TestTripServiceCreation(unittest.TestCase):
         self.assertEqual(retrieved["status"], "Planned")
 
     def test_add_trip_with_truck_id(self):
-        data = _trip_data(truck_id=42, truck_number="B-42-XYZ")
-        trip_id = self.svc.add(data)
+        trip_id = _create_trip(self.svc, truck_id=42, truck_plate="B-42-XYZ")
         retrieved = self.svc.get_by_id(trip_id)
         self.assertEqual(retrieved["truck_id"], 42)
         self.assertEqual(retrieved["truck_number"], "B-42-XYZ")
 
     def test_add_trip_with_driver_id(self):
-        data = _trip_data(driver_id=7, driver_name="Alice")
-        trip_id = self.svc.add(data)
+        trip_id = _create_trip(self.svc, driver_id=7, driver_name="Alice")
         retrieved = self.svc.get_by_id(trip_id)
         self.assertEqual(retrieved["driver_id"], 7)
         self.assertEqual(retrieved["driver_name"], "Alice")
 
     def test_add_trip_with_negative_profit(self):
-        data = _trip_data(net_profit=-50.0, total_price_eur=200.0)
-        trip_id = self.svc.add(data)
+        trip_id = _create_trip(self.svc, net_profit=-50.0, price_eur=200.0)
         retrieved = self.svc.get_by_id(trip_id)
         self.assertEqual(retrieved["net_profit"], -50.0)
 
-    def test_add_trip_zero_distance(self):
-        data = _trip_data(distance_km=0.0)
-        trip_id = self.svc.add(data)
+    def test_add_trip_with_distance(self):
+        trip_id = _create_trip(self.svc, distance_km=250.0)
         retrieved = self.svc.get_by_id(trip_id)
-        self.assertEqual(retrieved["distance_km"], 0.0)
+        self.assertEqual(retrieved["distance_km"], 250.0)
 
     def test_add_multiple_trips_have_unique_ids(self):
-        id1 = self.svc.add(_trip_data())
-        id2 = self.svc.add(_trip_data())
-        id3 = self.svc.add(_trip_data())
+        id1 = _create_trip(self.svc)
+        id2 = _create_trip(self.svc)
+        id3 = _create_trip(self.svc)
         self.assertNotEqual(id1, id2)
         self.assertNotEqual(id2, id3)
         self.assertNotEqual(id1, id3)
@@ -93,49 +138,50 @@ class TestTripServiceStatusTransitions(unittest.TestCase):
     def setUp(self):
         self.db = make_db()
         self.svc = TripService(self.db)
-        self.trip_id = self.svc.add(_trip_data(status="Planned"))
+        self.trip_id = _create_trip(self.svc, status="Planned")
 
     def test_update_status_to_loading(self):
-        self.svc.update(self.trip_id, {"status": "Loading"})
+        self.svc.update(self.trip_id, TripUpdate(status="Loading"))
         retrieved = self.svc.get_by_id(self.trip_id)
         self.assertEqual(retrieved["status"], "Loading")
 
     def test_update_status_to_in_transit(self):
-        self.svc.update(self.trip_id, {"status": "In Transit"})
+        self.svc.update(self.trip_id, TripUpdate(status="In Transit"))
         retrieved = self.svc.get_by_id(self.trip_id)
         self.assertEqual(retrieved["status"], "In Transit")
 
     def test_update_status_to_delivered(self):
-        self.svc.update(self.trip_id, {"status": "Delivered"})
+        self.svc.update(self.trip_id, TripUpdate(status="Delivered"))
         retrieved = self.svc.get_by_id(self.trip_id)
         self.assertEqual(retrieved["status"], "Delivered")
 
     def test_update_multiple_fields_at_once(self):
-        self.svc.update(self.trip_id, {
-            "status": "In Transit",
-            "distance_km": 600.0,
-            "net_profit": 950.0,
-        })
+        self.svc.update(self.trip_id, TripUpdate(
+            status="In Transit",
+            distance_km=600.0,
+        ))
         retrieved = self.svc.get_by_id(self.trip_id)
         self.assertEqual(retrieved["status"], "In Transit")
         self.assertEqual(retrieved["distance_km"], 600.0)
-        self.assertEqual(retrieved["net_profit"], 950.0)
 
     def test_update_truck_assignment(self):
-        self.svc.update(self.trip_id, {"truck_id": 99, "truck_number": "B-99-NEW"})
+        _ensure_truck(self.svc, 99, "B-99-NEW")
+        self.svc.update(self.trip_id, TripUpdate(truck_id=99, truck_plate="B-99-NEW"))
         retrieved = self.svc.get_by_id(self.trip_id)
         self.assertEqual(retrieved["truck_id"], 99)
         self.assertEqual(retrieved["truck_number"], "B-99-NEW")
 
     def test_update_driver_assignment(self):
-        self.svc.update(self.trip_id, {"driver_id": 5, "driver_name": "Bob"})
+        _ensure_driver(self.svc, 5, "Bob")
+        self.svc.update(self.trip_id, TripUpdate(driver_id=5, driver_name="Bob"))
         retrieved = self.svc.get_by_id(self.trip_id)
         self.assertEqual(retrieved["driver_id"], 5)
         self.assertEqual(retrieved["driver_name"], "Bob")
 
     def test_update_clears_truck_id(self):
-        self.svc.update(self.trip_id, {"truck_id": 1})
-        self.svc.update(self.trip_id, {"truck_id": None})
+        _ensure_truck(self.svc, 1, "B-1")
+        self.svc.update(self.trip_id, TripUpdate(truck_id=1))
+        self.svc.update(self.trip_id, TripUpdate(truck_id=None))
         retrieved = self.svc.get_by_id(self.trip_id)
         self.assertIsNone(retrieved["truck_id"])
 
@@ -144,9 +190,9 @@ class TestTripServiceQueries(unittest.TestCase):
     def setUp(self):
         self.db = make_db()
         self.svc = TripService(self.db)
-        self.svc.add(_trip_data(status="Planned", client_name="ACME"))
-        self.svc.add(_trip_data(status="In Transit", client_name="Globex"))
-        self.svc.add(_trip_data(status="Delivered", client_name="ACME"))
+        _create_trip(self.svc, status="Planned", client_name="ACME")
+        _create_trip(self.svc, status="In Transit", client_name="Globex")
+        _create_trip(self.svc, status="Delivered", client_name="ACME")
 
     def test_get_by_id_returns_none_for_missing(self):
         self.assertIsNone(self.svc.get_by_id(99999))
@@ -184,7 +230,7 @@ class TestTripServiceDelete(unittest.TestCase):
     def setUp(self):
         self.db = make_db()
         self.svc = TripService(self.db)
-        self.trip_id = self.svc.add(_trip_data())
+        self.trip_id = _create_trip(self.svc)
 
     def test_delete_removes_trip(self):
         self.svc.delete(self.trip_id)

@@ -54,18 +54,29 @@ def ctx_with_db():
 
 
 def _make_service_result(success: bool = True, file_path: str = "/tmp/cmr_42.pdf",
-                         cmr_number: str = "CMR-001", errors: list = None) -> MagicMock:
-    """Build a mock ServiceResult as returned by CMRGenerator."""
-    result = MagicMock()
-    result.success = success
-    result.errors = errors or []
+                         cmr_number: str = "CMR-001", errors: list = None):
+    """Build a ServiceResult as returned by CMRGenerator.
 
-    # Mimic ServiceResult.data attribute
-    data = MagicMock()
-    data.file_path = file_path
-    data.cmr_number = cmr_number
-    result.data = data if success else None
-    return result
+    Uses the real ``CmrGenerateResult`` (ServiceResult[CmrResult]) so that
+    the tool's ``isinstance(raw, ServiceResult)`` check passes.
+    """
+    from datetime import datetime
+    from models.cmr_models import CmrGenerateResult, CmrResult
+    from models.common import ErrorDetail
+
+    if errors is None:
+        errors = []
+    return CmrGenerateResult(
+        success=success,
+        data=CmrResult(
+            cmr_number=cmr_number,
+            trip_id=1,
+            file_path=file_path,
+            copies=4,
+            generated_at=datetime.now(),
+        ) if success else None,
+        errors=[ErrorDetail(field="", message=e, code="ERROR") for e in errors],
+    )
 
 
 # ═══════════════════════════════════════════════════════════════════════════

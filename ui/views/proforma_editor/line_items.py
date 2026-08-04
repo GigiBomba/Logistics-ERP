@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.components import Btn, SectionTitle
-from ui.theme import S
+from ui.design_tokens import SP
 from ui.widgets import (
     StyledComboBox,
     StyledLineEdit,
@@ -40,7 +40,7 @@ class LineItemsMixin:
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["2"])
+        layout.setSpacing(SP["2"])
 
         self._lit_header_label = SectionTitle(container, t("proforma_editor.line_items"))
         layout.addWidget(self._lit_header_label)
@@ -93,7 +93,7 @@ class LineItemsMixin:
         container = QWidget()
         layout = QVBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         # Financial controls header
         self._financial_header = SectionTitle(container, t("proforma_editor.financial_controls"))
@@ -103,7 +103,7 @@ class LineItemsMixin:
         controls = QWidget()
         ctrl_layout = QHBoxLayout(controls)
         ctrl_layout.setContentsMargins(0, 0, 0, 0)
-        ctrl_layout.setSpacing(S["3"])
+        ctrl_layout.setSpacing(SP["3"])
 
         # Tax rate
         self._tax_label = QLabel(t("proforma_editor.tax_rate"))
@@ -152,8 +152,8 @@ class LineItemsMixin:
         # Totals display card
         totals_card = self._make_card()
         totals_layout = totals_card.layout()
-        totals_layout.setContentsMargins(S["4"], S["4"], S["4"], S["4"])
-        totals_layout.setSpacing(S["2"])
+        totals_layout.setContentsMargins(SP["4"], SP["4"], SP["4"], SP["4"])
+        totals_layout.setSpacing(SP["2"])
 
         self._subtotal_title = QLabel(t("proforma_editor.subtotal"))
         self._subtotal_title.setProperty("fontRole", "label")

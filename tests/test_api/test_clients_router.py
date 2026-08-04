@@ -205,15 +205,93 @@ class TestClientsRouter:
 
         resp = client.post(
             f"{BASE}/1/contacts",
-            json={"name": "Bob", "email": "bob@test.com"},
+            json={"full_name": "Bob", "email": "bob@test.com"},
         )
         assert resp.status_code == 201
         assert resp.json() == {"id": 7}
         mocks["client_service"].add_contact.assert_called_once()
         call_args = mocks["client_service"].add_contact.call_args
         assert call_args[0][0] == 1  # client_id
-        assert call_args[1]["name"] == "Bob"
+        assert call_args[1]["full_name"] == "Bob"
         assert call_args[1]["email"] == "bob@test.com"
+        assert call_args[1]["contact_type"] == ""
+        assert call_args[1]["title"] == ""
+
+    # ── contact update / delete (contact-id addressed) ─────────────────
+
+    def test_update_client_contact(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["client_service"].get_contact_by_id.return_value = {
+            "id": 5, "client_id": 1, "full_name": "Jane Smith",
+        }
+
+        resp = client.patch(
+            f"{BASE}/contacts/5",
+            json={"full_name": "Jane Smith", "phone": "+40123"},
+        )
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "updated"}
+        mocks["client_service"].get_contact_by_id.assert_called_once_with(5)
+        mocks["client_service"].update_contact.assert_called_once()
+        call_args = mocks["client_service"].update_contact.call_args
+        assert call_args[0][0] == 5  # contact_id
+        assert call_args[1]["full_name"] == "Jane Smith"
+        assert call_args[1]["phone"] == "+40123"
+
+    def test_update_client_contact_partial(self, client_with_mocks):
+        """Partial PATCH — only sent fields reach the service."""
+        client, mocks = client_with_mocks
+        mocks["client_service"].get_contact_by_id.return_value = {
+            "id": 5, "client_id": 1, "full_name": "Jane Smith",
+        }
+
+        resp = client.patch(
+            f"{BASE}/contacts/5",
+            json={"phone": "+40123"},
+        )
+        assert resp.status_code == 200
+        mocks["client_service"].update_contact.assert_called_once()
+        call_args = mocks["client_service"].update_contact.call_args
+        assert call_args[0][0] == 5  # contact_id
+        assert call_args[1] == {"phone": "+40123"}  # no other fields applied
+
+    def test_update_client_contact_empty_body_422(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["client_service"].get_contact_by_id.return_value = {
+            "id": 5, "client_id": 1,
+        }
+
+        resp = client.patch(f"{BASE}/contacts/5", json={})
+        assert resp.status_code == 422
+        mocks["client_service"].update_contact.assert_not_called()
+
+    def test_update_client_contact_404_when_not_found(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["client_service"].get_contact_by_id.return_value = None
+
+        resp = client.patch(f"{BASE}/contacts/999", json={"full_name": "Jane"})
+        assert resp.status_code == 404
+        mocks["client_service"].update_contact.assert_not_called()
+
+    def test_delete_client_contact(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["client_service"].get_contact_by_id.return_value = {
+            "id": 5, "client_id": 1,
+        }
+
+        resp = client.delete(f"{BASE}/contacts/5")
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "deleted"}
+        mocks["client_service"].get_contact_by_id.assert_called_once_with(5)
+        mocks["client_service"].delete_contact.assert_called_once_with(5)
+
+    def test_delete_client_contact_404_when_not_found(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["client_service"].get_contact_by_id.return_value = None
+
+        resp = client.delete(f"{BASE}/contacts/999")
+        assert resp.status_code == 404
+        mocks["client_service"].delete_contact.assert_not_called()
 
     # ── tags ───────────────────────────────────────────────────────────────
 
@@ -258,6 +336,78 @@ class TestClientsRouter:
         mocks["client_service"].get_client_revenue_history.assert_called_once_with(
             1, months=12
         )
+
+    # ── merge ──────────────────────────────────────────────────────────
+
+    def test_merge_clients_returns_counts(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["client_service"].merge_clients.return_value = {
+            "trips": 5, "invoices": 3, "contacts": 2,
+        }
+
+        resp = client.post(f"{BASE}/merge", json={"from_id": 1, "to_id": 2})
+        assert resp.status_code == 200
+        assert resp.json() == {"trips": 5, "invoices": 3, "contacts": 2}
+        # user_id from the authenticated user must reach the service so the
+        # service-level can_merge_clients permission check runs.
+        mocks["client_service"].merge_clients.assert_called_once_with(1, 2, user_id=1)
+
+    def test_merge_clients_rejects_zero_ids(self, client_with_mocks):
+        client, mocks = client_with_mocks
+
+        resp = client.post(f"{BASE}/merge", json={"from_id": 0, "to_id": 2})
+        assert resp.status_code == 422
+        mocks["client_service"].merge_clients.assert_not_called()
+
+    # ── create / update with extended client fields (L2) ──────────────────
+
+    def test_create_client_with_extended_fields(self, client_with_mocks):
+        client, mocks = client_with_mocks
+        mocks["client_service"].create.return_value = 10
+
+        resp = client.post(f"{BASE}/", json={
+            "name": "NewCo",
+            "contact_person": "John Doe",
+            "client_type": "Shipper",
+            "payment_terms_days": 45,
+            "credit_limit_eur": 5000.5,
+            "default_rate_per_km": 2.75,
+            "rating": 4,
+            "eori_number": "RO123",
+        })
+        assert resp.status_code == 200
+        assert resp.json() == {"id": 10}
+        call_kwargs = mocks["client_service"].create.call_args[1]
+        assert call_kwargs["contact_person"] == "John Doe"
+        assert call_kwargs["client_type"] == "Shipper"
+        assert call_kwargs["payment_terms_days"] == 45
+        assert call_kwargs["credit_limit_eur"] == 5000.5
+        assert call_kwargs["default_rate_per_km"] == 2.75
+        assert call_kwargs["rating"] == 4
+        assert call_kwargs["eori_number"] == "RO123"
+
+    def test_update_client_with_extended_fields(self, client_with_mocks):
+        client, mocks = client_with_mocks
+
+        resp = client.patch(f"{BASE}/1", json={
+            "contact_person": "Jane Doe",
+            "client_type": "Broker",
+            "payment_terms_days": 60,
+            "credit_limit_eur": 10000.0,
+            "default_rate_per_km": 3.1,
+            "rating": 5,
+            "eori_number": "DE999",
+        })
+        assert resp.status_code == 200
+        assert resp.json() == {"status": "updated"}
+        call_kwargs = mocks["client_service"].update.call_args[1]
+        assert call_kwargs["contact_person"] == "Jane Doe"
+        assert call_kwargs["client_type"] == "Broker"
+        assert call_kwargs["payment_terms_days"] == 60
+        assert call_kwargs["credit_limit_eur"] == 10000.0
+        assert call_kwargs["default_rate_per_km"] == 3.1
+        assert call_kwargs["rating"] == 5
+        assert call_kwargs["eori_number"] == "DE999"
 
     # ── auth ──────────────────────────────────────────────────────────────
 

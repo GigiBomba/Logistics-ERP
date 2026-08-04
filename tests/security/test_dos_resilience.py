@@ -82,7 +82,10 @@ class TestDosResilience:
         """Send 10 concurrent POST requests to /api/v1/auth/token
         with wrong passwords.
 
-        Verify all respond (no deadlock) — all should return 401.
+        Verify all respond (no deadlock) — each must return a proper auth
+        response: 401 (invalid credentials) OR 429 (brute-force lockout,
+        which is the designed security control kicking in once ≥5 concurrent
+        failures are recorded within the window).
         """
         def bad_login():
             return client.post(
@@ -98,10 +101,15 @@ class TestDosResilience:
             results = [f.result() for f in futures]
 
         for r in results:
-            assert r.status_code == 401, (
-                f"Concurrent auth request expected 401, "
+            assert r.status_code in (401, 429), (
+                f"Concurrent auth request expected 401 or 429 (lockout), "
                 f"got {r.status_code}: {r.text}"
             )
+
+        # Restore clean lockout state so later tests in this module are not
+        # blocked by the brute-force lockout this test may have tripped.
+        from backend.api.v1.auth import _clear_lockout
+        _clear_lockout("dispatcher-a@test.com")
 
     def test_concurrent_crud_operations(
         self, client: TestClient, auth_admin: dict

@@ -1,6 +1,7 @@
 """Tests for MainWindow — main application shell."""
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import MagicMock, patch, PropertyMock
 
 import pytest
@@ -82,6 +83,12 @@ def main_window(qtbot, mock_db, mock_api, mock_prefs, mock_ops,
     # Prevent real service initialization
     monkeypatch.setattr("ui.main_window.MainWindow._init_services", lambda self: None)
 
+    # Prevent fuel timer init (which depends on _fuel_service from _init_services)
+    monkeypatch.setattr("ui.main_window.MainWindow._init_fuel_status", lambda self: None)
+
+    # Prevent warmup timer (QTimer would fire during subsequent test files)
+    monkeypatch.setattr("ui.main_window.MainWindow._start_warmup", lambda self: None)
+
     # Prevent full UI build — we mock AppShell
     monkeypatch.setattr("ui.main_window.MainWindow._build_ui", lambda self: None)
 
@@ -110,6 +117,32 @@ def main_window(qtbot, mock_db, mock_api, mock_prefs, mock_ops,
         ops=mock_ops,
         api_client=mock_api_client,
     )
+
+    # Set up service attributes that _init_services would normally create
+    # (existing _create_module tests depend on these)
+    widget.trip_service = MagicMock()
+    widget.client_service = MagicMock()
+    widget.fleet_service = MagicMock()
+    widget._fuel_service = MagicMock()
+
+    # Prevent page-animation crashes when frame is a MagicMock
+    monkeypatch.setattr(
+        "ui.main_window.MainWindow._animate_page_switch",
+        lambda self, frame: None,
+    )
+
+    # _create_module creates real Qt widgets with view_container as parent.
+    # Tests that call _create_module directly use MagicMock for view_container,
+    # which Qt constructors reject.  We mock _create_module so those tests
+    # can verify its contract (returns {"frame": …, "obj": …}) without
+    # real widget instantiation.
+    def _mock_create_module(self, key):
+        result = {"frame": MagicMock(), "obj": MagicMock()}
+        self._module_cache[key] = result
+        return result
+
+    monkeypatch.setattr("ui.main_window.MainWindow._create_module", _mock_create_module)
+
     qtbot.addWidget(widget)
     yield widget
 
@@ -308,3 +341,196 @@ class TestMainWindow:
         main_window._fuel_service.is_available.return_value = False
         text = main_window._fuel_status_text()
         assert "offline" in text.lower() or "⛽" in text
+
+
+# =========================================================================
+# Advanced Tests
+# =========================================================================
+
+class TestMainWindowAdvanced:
+    """Advanced MainWindow tests — nav, alerts, fuel, tour, shortcuts, init."""
+
+    # ── Navigation tests (6) ─────────────────────────────────────────────
+
+    def test_go_back_empty_stack_returns_early(self, main_window):
+        """_go_back returns early when nav stack is empty."""
+        main_window._nav_stack = []
+        main_window._switch_module = MagicMock()
+        main_window._go_back()
+        main_window._switch_module.assert_not_called()
+
+    def test_go_back_pops_and_switches(self, main_window):
+        """_go_back pops the stack and switches to the previous view."""
+        main_window._nav_stack = [("old", None)]
+        main_window._switch_module = MagicMock()
+        main_window.app_shell = MagicMock()
+        main_window._go_back()
+        main_window._switch_module.assert_called_once_with("old", None)
+
+    def test_go_back_skips_duplicate_push(self, main_window):
+        """Switching to the same active module does not push the stack."""
+        main_window._active_module = "overview"
+        main_window._nav_stack = []
+        main_window._module_cache["overview"] = {"frame": MagicMock(), "obj": MagicMock()}
+        main_window.app_shell = MagicMock()
+        main_window.app_shell.set_breadcrumb = MagicMock()
+        main_window._update_breadcrumb = MagicMock()
+        main_window._struggle_detector.record_navigation = MagicMock()
+        main_window._switch_module("overview")
+        assert len(main_window._nav_stack) == 0
+
+    def test_nav_stack_overflow_enforcement(self, main_window):
+        """Pushing beyond max stack size pops the oldest entry."""
+        main_window._active_module = "current"
+        main_window._module_cache = {
+            "current": {"frame": MagicMock(), "obj": MagicMock()},
+            "new": {"frame": MagicMock(), "obj": MagicMock()},
+        }
+        main_window._nav_stack = [(f"dummy{i}", None) for i in range(20)]
+        main_window.app_shell = MagicMock()
+        main_window.app_shell.set_breadcrumb = MagicMock()
+        main_window.app_shell.view_container = MagicMock()
+        main_window.nav = MagicMock()
+        main_window._page_anim = None
+        main_window._animate_page_switch = MagicMock()
+        main_window._update_back_button = MagicMock()
+        main_window._update_breadcrumb = MagicMock()
+        main_window._struggle_detector.record_navigation = MagicMock()
+
+        main_window._switch_module("new")
+
+        assert len(main_window._nav_stack) == 20
+        assert main_window._nav_stack[0][0] == "dummy1"
+        assert main_window._nav_stack[-1][0] == "current"
+
+    def test_switch_module_same_view_wakes_not_recreates(self, main_window):
+        """Switching to the active module wakes it up but does not recreate it."""
+        mock_obj = MagicMock()
+        mock_frame = MagicMock()
+        main_window._active_module = "overview"
+        main_window._module_cache["overview"] = {"frame": mock_frame, "obj": mock_obj}
+        main_window.app_shell = MagicMock()
+        main_window.app_shell.set_breadcrumb = MagicMock()
+        main_window._create_module = MagicMock()
+        main_window._struggle_detector.record_navigation = MagicMock()
+        main_window._update_breadcrumb = MagicMock()
+
+        main_window._switch_module("overview")
+
+        mock_obj.wakeup.assert_called_once()
+        main_window._create_module.assert_not_called()
+
+    # ── Alert tests (3) ─────────────────────────────────────────────────
+
+    def test_on_alert_event_refreshes_alerts(self, main_window, qtbot):
+        """_on_alert_event schedules a refresh of alerts."""
+        main_window._refresh_alerts = MagicMock()
+        main_window._on_alert_event({})
+        qtbot.wait(10)
+        main_window._refresh_alerts.assert_called_once()
+
+    def test_refresh_alerts_pushes_count_to_top_bar(self, main_window):
+        """_refresh_alerts pushes alert count to the top bar."""
+        main_window.ops.get_active_alert_count.return_value = 5
+        main_window.app_shell = MagicMock()
+        main_window.app_shell.set_alert_count = MagicMock()
+        main_window.app_shell.top_bar = MagicMock()
+        main_window.app_shell.top_bar.set_alerts = MagicMock()
+        main_window._refresh_alerts()
+        main_window.app_shell.set_alert_count.assert_called_once_with(5)
+
+    def test_refresh_alerts_pushes_list_to_top_bar(self, main_window):
+        """_refresh_alerts pushes the alert list to the top bar."""
+        alerts = [{"id": 1, "message": "Test alert"}]
+        main_window.ops.get_active_alerts.return_value = alerts
+        main_window.ops.get_active_alert_count.return_value = 1
+        main_window.app_shell = MagicMock()
+        main_window.app_shell.set_alert_count = MagicMock()
+        main_window.app_shell.top_bar = MagicMock()
+        main_window.app_shell.top_bar.set_alerts = MagicMock()
+        main_window._refresh_alerts()
+        main_window.app_shell.top_bar.set_alerts.assert_called_once_with(alerts)
+
+    # ── Fuel timer tests (2) ────────────────────────────────────────────
+
+    def test_fuel_timer_fires_update_fuel_status(self, main_window):
+        """The fuel timer timeout triggers _update_fuel_status."""
+        from PySide6.QtCore import QTimer
+        main_window._update_fuel_status = MagicMock()
+        main_window._fuel_timer = QTimer(main_window)
+        main_window._fuel_timer.timeout.connect(main_window._update_fuel_status)
+        main_window._fuel_timer.timeout.emit()
+        main_window._update_fuel_status.assert_called_once()
+
+    def test_fuel_timer_stopped_on_close(self, main_window):
+        """closeEvent stops the fuel timer."""
+        main_window._fuel_timer = MagicMock()
+        main_window._module_cache = {}
+        main_window.app_shell = MagicMock()
+        main_window.ops = MagicMock()
+        main_window._event_bus = MagicMock()
+        main_window._page_anim = None
+
+        from PySide6.QtCore import QEvent
+        event = MagicMock()
+        main_window.closeEvent(event)
+        main_window._fuel_timer.stop.assert_called_once()
+
+    # ── Tour / struggle tests (2) ───────────────────────────────────────
+
+    def test_on_struggle_detected_shows_overlay_when_no_tour(self, main_window):
+        """Struggle detection shows overlay when no tour is active."""
+        main_window._tour_controller.is_tour_active = MagicMock(return_value=False)
+        main_window._tour_overlay.start_tour = MagicMock()
+        main_window._tour_overlay.cancel = MagicMock()
+
+        with patch("ui.copilot.tour_scripts.ALL_SCRIPTS", {
+            "test_workflow": {"steps": [{"target_element_id": "some_id"}]}
+        }):
+            main_window._on_struggle_detected("test_workflow", "tooltip_key")
+            main_window._tour_overlay.start_tour.assert_called_once()
+
+    def test_check_onboarding_starts_if_first_launch(self, main_window):
+        """_check_onboarding starts onboarding tour on first launch."""
+        main_window._tour_controller.can_show_onboarding = MagicMock(return_value=True)
+        main_window._tour_controller.start_onboarding = MagicMock()
+        main_window._check_onboarding()
+        main_window._tour_controller.start_onboarding.assert_called_once()
+
+    # ── Shortcut test (1) ───────────────────────────────────────────────
+
+    def test_ask_ai_requested_navigates_to_copilot(self, main_window):
+        """_on_ask_ai_requested navigates to the copilot module."""
+        main_window._switch_module = MagicMock()
+        main_window._on_ask_ai_requested("Help", "overview")
+        main_window._switch_module.assert_called_once_with("copilot")
+
+    # ── Connection mode test (1) ────────────────────────────────────────
+
+    def test_init_services_local_db_mode(self, qtbot, mock_db, mock_api,
+                                          mock_prefs, mock_ops,
+                                          mock_api_client, mock_app_shell,
+                                          mock_nav):
+        """When db is not None, _init_services creates local FleetService."""
+        from services.fleet_service import FleetService
+
+        with patch("ui.main_window.MainWindow._build_ui", lambda self: None), \
+             patch("ui.main_window.MainWindow._start_warmup", lambda self: None), \
+             patch("ui.main_window.AppShell", return_value=mock_app_shell), \
+             patch("ui.main_window.EventBus", return_value=MagicMock()), \
+             patch("ui.main_window.Config"), \
+             patch("ui.main_window.QWidgetShortcut"):
+            from ui.main_window import MainWindow
+            widget = MainWindow(
+                db=mock_db,
+                api=mock_api,
+                prefs=mock_prefs,
+                ops=mock_ops,
+                api_client=mock_api_client,
+            )
+            qtbot.addWidget(widget)
+
+            assert isinstance(widget.fleet_service, FleetService)
+
+            with contextlib.suppress(Exception):
+                widget.close()

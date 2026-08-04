@@ -97,6 +97,10 @@ class TestSetPrimary:
 
 class TestCreate:
     def test_create_injects_created_at(self, db, repo):
+        # Ensure parent client exists before creating contact (FK constraint)
+        db.conn.execute("INSERT OR IGNORE INTO clients (id, name, created_at) VALUES (?, ?, ?)",
+                        (2, "Client 2", datetime.utcnow().isoformat(timespec="seconds") + "Z"))
+        db.conn.commit()
         cid = repo.create({
             "client_id": 2,
             "contact_type": "ops",
@@ -109,6 +113,10 @@ class TestCreate:
         assert row["created_at"]  # non-empty string
 
     def test_create_respects_explicit_created_at(self, db, repo):
+        # Ensure parent client exists before creating contact (FK constraint)
+        db.conn.execute("INSERT OR IGNORE INTO clients (id, name, created_at) VALUES (?, ?, ?)",
+                        (3, "Client 3", datetime.utcnow().isoformat(timespec="seconds") + "Z"))
+        db.conn.commit()
         explicit = "2025-06-15T10:00:00Z"
         cid = repo.create({
             "client_id": 3,
@@ -156,6 +164,33 @@ class TestGetPrimaryForClient:
         _contact(db, client_id=11, full_name="NonPrimary", is_primary=0)
         result = repo.get_primary_for_client(11)
         assert result is None
+
+
+# ── get_by_id ────────────────────────────────────────────────────────
+
+
+class TestGetById:
+    def test_get_by_id_returns_contact(self, db, repo):
+        cid = _contact(db, client_id=1, full_name="Solo")
+        row = repo.get_by_id(cid)
+        assert row is not None
+        assert row["id"] == cid
+        assert row["full_name"] == "Solo"
+
+    def test_get_by_id_none_when_missing(self, repo):
+        assert repo.get_by_id(99999) is None
+
+    def test_get_by_id_company_scoped_hides_other_company(self, db, repo):
+        cid = _contact(db, client_id=1, full_name="Tenant A", company_id=9)
+        assert repo.get_by_id(cid, company_id=9) is not None
+        assert repo.get_by_id(cid, company_id=7) is None
+
+    def test_get_by_id_company_scope_admin_unscoped(self, db, repo):
+        cid = _contact(db, client_id=1, full_name="Tenant B", company_id=9)
+        # Admin callers (company_id 0 / None) fall back to the context filter,
+        # which is unscoped outside a scoped request → all tenants visible.
+        assert repo.get_by_id(cid, company_id=0) is not None
+        assert repo.get_by_id(cid, company_id=None) is not None
 
 
 # ── get_by_client ────────────────────────────────────────────────────

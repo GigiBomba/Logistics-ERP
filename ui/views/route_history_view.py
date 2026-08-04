@@ -11,7 +11,9 @@ import json
 import logging
 import threading
 
+import qtawesome as qta
 from PySide6.QtCore import Qt, QTimer, Signal
+from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QComboBox,
     QFileDialog,
@@ -19,6 +21,7 @@ from PySide6.QtWidgets import (
     QHeaderView,
     QLabel,
     QLineEdit,
+    QMenu,
     QMessageBox,
     QSplitter,
     QVBoxLayout,
@@ -32,15 +35,17 @@ from ui.components import (
     Btn,
     Card,
     Divider,
+    EmptyState,
+    IconButton,
     Label,
     PageTitle,
 )
-from ui.design_tokens import SP
-from ui.theme import COLORS
+from ui.design_tokens import COLOR_ACCENT_PRIMARY, SP
 from ui.widgets import (
     StyledCheckBox,
     StyledTableWidget,
 )
+from ui.worker_pool import WorkerPool
 from ui.widgets.debounced_line_edit import DebouncedLineEdit
 
 logger = logging.getLogger(__name__)
@@ -104,6 +109,7 @@ class QtRouteHistoryView(QWidget):
     # ── UI build ───────────────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Route history")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SP["10"], 0, SP["10"], SP["10"])
         layout.setSpacing(SP["3"])
@@ -175,7 +181,9 @@ class QtRouteHistoryView(QWidget):
             ("duration_min", t("route_history.table_duration"), 100),
             ("profile", t("route_history.table_profile"), 100),
         ]
-        self.table = StyledTableWidget(self, columns=columns)
+        self.table = StyledTableWidget(self, columns=columns, prefs_key="route_history")
+        self.table.setAccessibleName("Route history table")
+        self.table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
         self.table.horizontalHeader().setStretchLastSection(False)
         for i in range(len(columns)):
             self.table.horizontalHeader().setSectionResizeMode(i, QHeaderView.Stretch)
@@ -183,6 +191,16 @@ class QtRouteHistoryView(QWidget):
         self.table.rowSelected.connect(self._on_row_selected)
         self.table.rowDoubleClicked.connect(lambda d: self._open_in_planner())
         table_card_layout.addWidget(self.table)
+
+        # Empty state (hidden by default)
+        self._history_empty_state = EmptyState(
+            parent=table_card,
+            icon_name="fa5s.history",
+            title=t("route_history.empty_title", "No route history"),
+            subtitle=t("route_history.empty_desc", "Completed routes will appear here."),
+        )
+        self._history_empty_state.setVisible(False)
+        table_card_layout.addWidget(self._history_empty_state)
         splitter.addWidget(table_card)
 
         # Right: map preview in a Card
@@ -214,8 +232,10 @@ class QtRouteHistoryView(QWidget):
 
         pc_layout.addStretch()
         splitter.addWidget(preview_card)
-        splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 1)
+        splitter.setStretchFactor(0, 3)   # table 60%
+        splitter.setStretchFactor(1, 2)   # map 40%
+        splitter.setCollapsible(1, True)  # allow map to collapse to 0
+        splitter.setSizes([600, 400])
         layout.addWidget(splitter, 1)
 
     def _build_footer(self, layout: QVBoxLayout) -> None:
@@ -255,6 +275,17 @@ class QtRouteHistoryView(QWidget):
         delete_btn = Btn(footer, t("route_history.delete"), variant="danger", command=self._delete_route)
         footer_layout.addWidget(delete_btn)
 
+        # Density toggle
+        self._density_btn = IconButton(
+            footer,
+            icon_name="fa5s.table",
+            tooltip=t("table.density", "Row density"),
+            variant="ghost",
+            size=32,
+        )
+        self._density_btn.clicked.connect(self._show_density_menu)
+        footer_layout.addWidget(self._density_btn)
+
         footer_layout.addStretch(1)
         layout.addWidget(footer)
 
@@ -263,35 +294,46 @@ class QtRouteHistoryView(QWidget):
     def _load_page(self) -> None:
         if self.service is None:
             return
-        try:
-            rows = self.service.search_routes(
-                search=self.e_search.text().strip(),
-                truck=self.e_truck.text().strip(),
-                profile=self.c_profile.currentText(),
-                include_archived=self._archived_check.isChecked(),
-                sort_by=self.sort_by,
-                sort_dir=self.sort_dir,
-            )
-            data = []
-            for r in rows:
-                data.append({
-                    "origin": getattr(r, "origin", ""),
-                    "destination": getattr(r, "destination", ""),
-                    "last_calculated_at": getattr(r, "last_calculated_at", ""),
-                    "truck": getattr(r, "truck", ""),
-                    "distance_km": str(getattr(r, "distance_km", "") or ""),
-                    "duration_min": str(getattr(r, "duration_min", "") or ""),
-                    "profile": getattr(r, "profile", ""),
-                    "id": getattr(r, "id", None),
-                })
-            self.table.set_data(data)
-            self._update_stats()
-        except Exception:
-            logger.exception("Failed to load route history")
+        search = self.e_search.text().strip()
+        truck = self.e_truck.text().strip()
+        profile = self.c_profile.currentText()
+        include_archived = self._archived_check.isChecked()
+        sort_by = self.sort_by
+        sort_dir = self.sort_dir
+        WorkerPool.run(
+            fn=lambda: (
+                self.service.search_routes(
+                    search=search, truck=truck, profile=profile,
+                    include_archived=include_archived,
+                    sort_by=sort_by, sort_dir=sort_dir,
+                ),
+                self.service.get_statistics(),
+            ),
+            on_result=self._on_routes_loaded,
+            on_error=self._on_routes_error,
+        )
 
-    def _update_stats(self) -> None:
+    def _on_routes_loaded(self, result: tuple) -> None:
+        rows, stats = result
+        data = []
+        for r in rows:
+            data.append({
+                "origin": getattr(r, "origin", ""),
+                "destination": getattr(r, "destination", ""),
+                "last_calculated_at": getattr(r, "last_calculated_at", ""),
+                "truck": getattr(r, "truck", ""),
+                "distance_km": str(getattr(r, "distance_km", "") or ""),
+                "duration_min": str(getattr(r, "duration_min", "") or ""),
+                "profile": getattr(r, "profile", ""),
+                "id": getattr(r, "id", None),
+            })
+        has_rows = bool(data)
+        self.table.setVisible(has_rows)
+        self._history_empty_state.setVisible(not has_rows)
+        if has_rows:
+            self.table.set_data(data)
+            self.table.restore_column_widths()
         try:
-            stats = self.service.get_statistics()
             text = (
                 f"{t('route_history.label_total', default='Total:')} {stats.get('total', 0)} | "
                 f"{t('route_history.label_active', default='Active:')} {stats.get('active', 0)} | "
@@ -300,6 +342,10 @@ class QtRouteHistoryView(QWidget):
             self._stats_text.setText(text)
         except Exception:
             self._stats_text.setText("")
+
+    def _on_routes_error(self, msg: str) -> None:
+        logger.exception("Failed to load route history: %s", msg)
+        self._stats_text.setText("")
 
     # ── Sorting ────────────────────────────────────────────────────────────────
 
@@ -368,7 +414,7 @@ class QtRouteHistoryView(QWidget):
         try:
             coords = [(float(p[0]), float(p[1])) for p in geometry]
             if coords:
-                self._map_widget.add_polyline(coords, color=COLORS.get("accent", "#6366f1"))
+                self._map_widget.add_polyline(coords, color=COLOR_ACCENT_PRIMARY)
                 self._map_widget.fit_bounds(
                     coords[0][0], coords[0][1], coords[-1][0], coords[-1][1],
                 )
@@ -387,6 +433,55 @@ class QtRouteHistoryView(QWidget):
             self._map_placeholder = None
         except Exception:
             logger.exception("Failed to create map preview widget")
+
+    # ── Density menu ──────────────────────────────────────────────────────
+
+    def _show_density_menu(self):
+        """Show row density menu for the route history table."""
+        menu = self.table._build_density_menu(self._density_btn)
+        if menu:
+            menu.exec_(self._density_btn.mapToGlobal(
+                self._density_btn.rect().bottomLeft()
+            ))
+
+    # ── Context menu ──────────────────────────────────────────────────────
+
+    def contextMenuEvent(self, event):
+        """Right-click context menu for the route history table."""
+        index = self.table.indexAt(event.pos())
+        if not index.isValid():
+            return
+
+        row = index.row()
+        record = self.table._data[row] if 0 <= row < len(self.table._data) else None
+        if record is None:
+            return
+
+        menu = QMenu(self)
+
+        open_action = QAction(qta.icon("fa5s.route"), t("route_history.open_planner"), self)
+        open_action.triggered.connect(self._open_in_planner)
+        menu.addAction(open_action)
+
+        duplicate_action = QAction(qta.icon("fa5s.copy"), t("route_history.duplicate_button"), self)
+        duplicate_action.triggered.connect(self._duplicate_route)
+        menu.addAction(duplicate_action)
+
+        recalc_action = QAction(qta.icon("fa5s.calculator"), t("route_history.recalculate"), self)
+        recalc_action.triggered.connect(self._recalculate)
+        menu.addAction(recalc_action)
+
+        menu.addSeparator()
+
+        archive_action = QAction(qta.icon("fa5s.archive"), t("route_history.archive"), self)
+        archive_action.triggered.connect(self._archive_route)
+        menu.addAction(archive_action)
+
+        delete_action = QAction(qta.icon("fa5s.trash"), t("route_history.delete"), self)
+        delete_action.triggered.connect(self._delete_route)
+        menu.addAction(delete_action)
+
+        menu.exec_(event.globalPos())
 
     # ── Filters ────────────────────────────────────────────────────────────────
 

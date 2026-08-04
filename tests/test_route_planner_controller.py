@@ -126,9 +126,11 @@ class TestProcessResult:
         )
         result = [{"distance_km": 150.0, "duration_min": 120.0}]
 
-        controller.cost_engine.estimate.return_value = {
-            "fuel_liters": 50, "fuel_cost": 100,
-        }
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.data = MagicMock()
+        mock_result.data.model_dump.return_value = {"fuel_liters": 50, "fuel_cost": 100}
+        controller.cost_engine.estimate.return_value = mock_result
         controller.compliance.analyze.return_value = MagicMock()
         controller._truck_cost_payload = MagicMock(return_value={"id": 1})
         controller._sync_trip_context = MagicMock()
@@ -152,7 +154,11 @@ class TestProcessResult:
 
         mock_persistence = MagicMock()
         controller._persistence = mock_persistence
-        controller.cost_engine.estimate.return_value = {"fuel_liters": 60}
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.data = MagicMock()
+        mock_result.data.model_dump.return_value = {"fuel_liters": 60}
+        controller.cost_engine.estimate.return_value = mock_result
         controller.compliance.analyze.return_value = MagicMock()
         controller._truck_cost_payload = MagicMock(return_value={"id": 1})
         controller._sync_trip_context = MagicMock()
@@ -184,8 +190,18 @@ class TestEstimateCost:
     def test_estimate_cost(self, controller):
         truck = MagicMock()
         controller._truck_cost_payload = MagicMock(return_value={"id": 1, "fuel_consumption_l_per_100km": 30})
+        mock_result = MagicMock()
+        mock_result.success = True
+        mock_result.data = MagicMock()
+        mock_result.data.model_dump.return_value = {"fuel_liters": 50}
+        controller.cost_engine.estimate.return_value = mock_result
         result = controller.estimate_cost(truck, 200.0)
-        controller.cost_engine.estimate.assert_called_once_with(200.0, {"id": 1, "fuel_consumption_l_per_100km": 30})
+        # Verify estimate was called with a CostEstimateRequest
+        from models.cost_models import CostEstimateRequest
+        controller.cost_engine.estimate.assert_called_once()
+        args, _ = controller.cost_engine.estimate.call_args
+        assert isinstance(args[0], CostEstimateRequest)
+        assert args[0].distance_km == 200.0
 
 
 class TestLoadHistory:

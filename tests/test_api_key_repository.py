@@ -50,12 +50,21 @@ def _fake_row(**overrides) -> dict:
 # ── Fixtures ─────────────────────────────────────────────────────────
 
 
+@pytest.fixture(autouse=True)
+def _clean_tenant_context():
+    """Clear tenant context before each test to prevent cross-test leakage."""
+    from database.tenant_context import clear_context
+    clear_context()
+    yield
+    clear_context()
+
+
 @pytest.fixture
 def repo():
     """ApiKeyRepository instance with all DB methods mocked."""
+    from database.tenant_context import set_request_context
+    set_request_context(1, "")
     db = MagicMock()
-    db.user_company_id = 1       # drives _user_company_id property
-    db.user_role = ""            # drives _scoped → True (non-admin)
     r = ApiKeyRepository(db)
     r._execute_insert = MagicMock(return_value=42)
     r._fetchone = MagicMock(return_value=None)
@@ -186,7 +195,8 @@ class TestCreateKey:
 
     def test_company_id_fallback_to_zero(self, repo):
         """When ``_user_company_id`` is ``None``/falsy, company_id becomes 0."""
-        repo.db.user_company_id = None
+        from database.tenant_context import clear_context
+        clear_context()
 
         repo.create_key(name="N", partner="P")
         params = repo._execute_insert.call_args[0][1]

@@ -19,15 +19,15 @@ def upgrade() -> None:
     # 1. Add user_id column to freight_exchange_connections
     op.add_column(
         'freight_exchange_connections',
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=True),
+        sa.Column('user_id', sa.BigInteger(), sa.ForeignKey('users.id'), nullable=True),
     )
 
     # 2. Create trans_eu_user_tokens — per-user OAuth token storage
     op.create_table(
         'trans_eu_user_tokens',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('user_id', sa.BigInteger(), sa.ForeignKey('users.id'), nullable=False),
         sa.Column('trans_eu_account_id', sa.String(), nullable=True),
         sa.Column('access_token_encrypted', sa.Text(), nullable=False),
         sa.Column('refresh_token_encrypted', sa.Text(), nullable=False),
@@ -47,8 +47,8 @@ def upgrade() -> None:
     op.create_table(
         'trans_eu_freight_offers',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
-        sa.Column('user_id', sa.Integer(), sa.ForeignKey('users.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('user_id', sa.BigInteger(), sa.ForeignKey('users.id'), nullable=False),
         sa.Column('trans_eu_freight_id', sa.Integer(), nullable=False),
         sa.Column('trans_eu_reference_number', sa.String(), nullable=True),
         sa.Column('status', sa.String(), nullable=False, server_default='draft'),
@@ -68,7 +68,7 @@ def upgrade() -> None:
         sa.Column('weight_kg', sa.Float(), nullable=True, server_default='0.0'),
         sa.Column('raw_payload', sa.Text(), nullable=True),
         sa.Column('externally_modified_at', sa.DateTime(timezone=True), nullable=True),
-        sa.Column('operion_trip_id', sa.Integer(), sa.ForeignKey('trips.id'), nullable=True),
+        sa.Column('operion_trip_id', sa.BigInteger(), sa.ForeignKey('trips.id'), nullable=True),
         sa.Column('trans_eu_order_id', sa.String(), nullable=True),
         sa.Column('created_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
         sa.Column('updated_at', sa.DateTime(timezone=True), nullable=False, server_default=sa.text('now()')),
@@ -80,7 +80,7 @@ def upgrade() -> None:
     op.create_table(
         'trans_eu_webhook_events',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
         sa.Column('trans_eu_event_id', sa.String(), nullable=False),
         sa.Column('event_name', sa.String(), nullable=False),
         sa.Column('occurred_at', sa.DateTime(timezone=True), nullable=False),
@@ -96,7 +96,7 @@ def upgrade() -> None:
     op.create_table(
         'trans_eu_webhook_events_failed',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
         sa.Column('trans_eu_event_id', sa.String(), nullable=False),
         sa.Column('event_name', sa.String(), nullable=False),
         sa.Column('payload', sa.Text(), nullable=False),

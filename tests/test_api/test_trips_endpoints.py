@@ -92,13 +92,13 @@ class TestTripsCreateEndpoint:
     def test_create_trip_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
         payload = {"client_id": 1, "loading_city": "Paris"}
-        mocks["trip_service"].add.return_value = 42
+        mocks["trip_service"].create.return_value = type('R', (), {'success': True, 'data': type('D', (), {'id': 42})()})()
 
         resp = client.post(f"{BASE}/", json=payload)
         assert resp.status_code == 200
         assert resp.json() == {"id": 42}
         # Payload differs due to extra fields being excluded
-        mocks["trip_service"].add.assert_called_once()
+        mocks["trip_service"].create.assert_called_once()
 
     def test_create_trip_missing_fields_returns_422(self, client_with_mocks):
         client, mocks = client_with_mocks
@@ -136,8 +136,6 @@ class TestTripsConflictCheck:
 
     def test_check_conflicts_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        mocks["db"].row_to_dict.side_effect = lambda row: None if row is None else dict(row)
-
         resp = client.post(f"{BASE}/conflicts/check", json={"date": "2024-01-01"})
         # May accept 200, 422 (validation), or 500 (runtime error)
         assert resp.status_code in (200, 422, 500)

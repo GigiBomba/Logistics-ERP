@@ -24,17 +24,6 @@ RouteRepository._migrate_done = True
 # ── helpers ────────────────────────────────────────────────────────────────
 
 
-def _configure_db_mocks(mocks):
-    """Install pass-through row_to_dict / rows_to_dicts on the mock DB.
-
-    Without these, ``BaseRepository._fetchone`` and ``_fetchall`` would
-    receive MagicMock instances instead of actual dicts/lists, causing
-    Pydantic validation errors or empty results.
-    """
-    mocks["db"].row_to_dict.side_effect = lambda row: None if row is None else dict(row)
-    mocks["db"].rows_to_dicts.side_effect = lambda rows: [dict(r) for r in (rows or [])]
-
-
 # ── tests ──────────────────────────────────────────────────────────────────
 
 
@@ -45,7 +34,6 @@ class TestRoutesRouter:
 
     def test_list_route_history_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
 
         fake_rows = [
             {"id": 1, "fingerprint": "abc", "total_km": 100.0,
@@ -65,7 +53,6 @@ class TestRoutesRouter:
         """When the db query fails the handler returns empty items with an
         error string (the router wraps the call in try/except)."""
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.side_effect = RuntimeError("db failure")
 
         resp = client.get(f"{BASE}/history")
@@ -78,7 +65,6 @@ class TestRoutesRouter:
 
     def test_get_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
 
         fake_route = {
             "id": 1, "fingerprint": "abc", "total_km": 100.0,
@@ -92,7 +78,6 @@ class TestRoutesRouter:
 
     def test_get_route_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.get(f"{BASE}/history/999")
@@ -144,7 +129,6 @@ class TestRoutesRouter:
 
     def test_duplicate_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         # RouteHistoryService.duplicate_route will query the DB.
         # A simple MagicMock return suffices because the service internally
         # calls repository methods against the mock DB.
@@ -160,7 +144,6 @@ class TestRoutesRouter:
 
     def test_archive_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = {
             "id": 1, "fingerprint": "abc",
         }
@@ -171,7 +154,6 @@ class TestRoutesRouter:
 
     def test_archive_route_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.post(f"{BASE}/history/999/archive")
@@ -181,7 +163,6 @@ class TestRoutesRouter:
 
     def test_delete_route_returns_200(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = {
             "id": 1, "fingerprint": "abc",
         }
@@ -192,7 +173,6 @@ class TestRoutesRouter:
 
     def test_delete_route_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.delete(f"{BASE}/history/999")
@@ -202,7 +182,6 @@ class TestRoutesRouter:
 
     def test_export_route_returns_json_by_default(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         fake_route = {
             "id": 1, "fingerprint": "abc", "total_km": 100.0,
             "profile": "truck", "created_at": "2024-01-01",
@@ -215,7 +194,6 @@ class TestRoutesRouter:
 
     def test_export_route_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         mocks["db"].conn.execute.return_value.fetchone.return_value = None
 
         resp = client.get(f"{BASE}/history/999/export")
@@ -223,7 +201,6 @@ class TestRoutesRouter:
 
     def test_export_route_csv_format(self, client_with_mocks):
         client, mocks = client_with_mocks
-        _configure_db_mocks(mocks)
         fake_route = {
             "id": 1, "fingerprint": "abc", "total_km": 100.0,
             "profile": "truck", "created_at": "2024-01-01",

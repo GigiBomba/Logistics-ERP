@@ -50,7 +50,7 @@ class TestAPILoadTrips:
     def test_concurrent_trip_create_requests(self, client_with_mocks):
         """20 concurrent POST /trips/ requests should all return 200."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 42
+        mocks["trip_service"].create.return_value = type('R', (), {'success': True, 'data': type('D', (), {'id': 42})()})()
 
         payload = {"client_id": 1, "loading_city": "Paris"}
 
@@ -62,7 +62,7 @@ class TestAPILoadTrips:
 
         successes = [r for r in results if r.status_code == 200]
         assert len(successes) >= 10, f"Only {len(successes)}/20 requests returned 200"
-        assert mocks["trip_service"].add.call_count >= 10
+        assert mocks["trip_service"].create.call_count >= 10
 
     # ── get by id ─────────────────────────────────────────────────────────
 
@@ -121,7 +121,7 @@ class TestAPILoadTrips:
         client, mocks = client_with_mocks
         mocks["trip_service"].get_filtered.return_value = [{"id": 1, "status": "active", "created_at": "2024-01-01T00:00:00", "client_name": "X", "loading_city": ""}]
         mocks["trip_service"].get_by_id.return_value = {"id": 1, "status": "active", "created_at": "2024-01-01T00:00:00", "client_name": "X", "loading_city": ""}
-        mocks["trip_service"].add.return_value = 99
+        mocks["trip_service"].create.return_value = type('R', (), {'success': True, 'data': type('D', (), {'id': 99})()})()
 
         ops = []
 
@@ -252,6 +252,8 @@ class TestAPILoadFleet:
             {"truck_id": 1, "latitude": 48.8566, "longitude": 2.3522,
              "speed_kmh": 65, "recorded_at": "2024-01-15T10:30:00Z"},
         ]
+        # Clear the side_effect set by _DbMock so return_value is honored
+        mocks["db"].rows_to_dicts.side_effect = None
         mocks["db"].rows_to_dicts.return_value = fake_rows
 
         def fetch(_):
@@ -616,7 +618,7 @@ class TestAPILoadMetrics:
     def test_50_concurrent_trip_create_throughput(self, client_with_mocks):
         """50 concurrent POST /trips/ requests: measure throughput (requests/sec)."""
         client, mocks = client_with_mocks
-        mocks["trip_service"].add.return_value = 42
+        mocks["trip_service"].create.return_value = type('R', (), {'success': True, 'data': type('D', (), {'id': 42})()})()
 
         payload = {"client_id": 1, "loading_city": "Berlin"}
         n_requests = 50
@@ -640,7 +642,7 @@ class TestAPILoadMetrics:
             "POST /trips/ (50 concurrent): %.1f req/s (%.3fs total)",
             throughput, elapsed,
         )
-        assert mocks["trip_service"].add.call_count >= 45
+        assert mocks["trip_service"].create.call_count >= 45
 
     # ── 20 concurrent GET /analytics/financial — latency distribution ─
 
@@ -705,7 +707,7 @@ class TestAPILoadMetrics:
         """
         client, mocks = client_with_mocks
         mocks["trip_service"].get_filtered.return_value = [{"id": 1, "status": "active", "created_at": "2024-01-01T00:00:00", "client_name": "Load Test", "loading_city": "Paris"}]
-        mocks["trip_service"].add.return_value = 99
+        mocks["trip_service"].create.return_value = type('R', (), {'success': True, 'data': type('D', (), {'id': 99})()})()
 
         total_ops = 100  # Total operations (80 reads + 20 writes)
         read_count = int(total_ops * 0.8)

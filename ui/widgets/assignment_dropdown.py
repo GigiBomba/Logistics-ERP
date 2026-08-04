@@ -30,7 +30,14 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.theme import COLORS, S
+from ui.design_tokens import (
+    COLOR_BG_OVERLAY,
+    COLOR_ERROR_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    SP,
+)
 
 _MAX_HEIGHT = 300
 _WIDTH = 280
@@ -64,8 +71,8 @@ class _ItemRow(QFrame):
         self._on_select = on_select
 
         layout = QHBoxLayout(self)
-        layout.setContentsMargins(S["3"], 0, S["3"], 0)
-        layout.setSpacing(S["2"])
+        layout.setContentsMargins(SP["3"], 0, SP["3"], 0)
+        layout.setSpacing(SP["2"])
 
         # -- Availability dot ------------------------------------------------
         dot = QLabel()
@@ -73,12 +80,12 @@ class _ItemRow(QFrame):
         dot.setProperty("role", "availability-dot")
         if available:
             dot.setStyleSheet(
-                f"background-color: {COLORS['success']};"
+                f"background-color: {COLOR_SUCCESS_DEFAULT};"
                 f"border-radius: 4px;"
             )
         else:
             dot.setStyleSheet(
-                f"background-color: {COLORS['text_muted']};"
+                f"background-color: {COLOR_TEXT_TERTIARY};"
                 f"border-radius: 4px;"
             )
         layout.addWidget(dot, 0)
@@ -90,7 +97,7 @@ class _ItemRow(QFrame):
         text_layout.setContentsMargins(0, 0, 0, 0)
         text_layout.setSpacing(1)
 
-        text_color = COLORS["text_primary"] if available else COLORS["text_muted"]
+        text_color = COLOR_TEXT_PRIMARY if available else COLOR_TEXT_TERTIARY
 
         label_widget = QLabel(label)
         label_widget.setProperty("fontRole", "small")
@@ -142,7 +149,7 @@ class _ItemRow(QFrame):
         if self._available:
             self.setStyleSheet(
                 f"QFrame[role=\"assignment-row\"] {{"
-                f"  background-color: {COLORS['bg_elevated']};"
+                f"  background-color: {COLOR_BG_OVERLAY};"
                 f"}}"
             )
         super().enterEvent(event)
@@ -221,7 +228,7 @@ class QtAssignmentDropdown(QFrame):
         header.setFixedHeight(38)
 
         hdr_layout = QHBoxLayout(header)
-        hdr_layout.setContentsMargins(S["3"], 0, S["2"], 0)
+        hdr_layout.setContentsMargins(SP["3"], 0, SP["2"], 0)
         hdr_layout.setSpacing(0)
 
         title_label = QLabel(title)

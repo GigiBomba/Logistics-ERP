@@ -192,8 +192,8 @@ class QtAutoMailView(QWidget):
         self._splitter.addWidget(self._config_placeholder)
         self._splitter.addWidget(self._timeline_placeholder)
         self._splitter.addWidget(self._editor_placeholder)
-        self._splitter.setStretchFactor(0, 1)
-        self._splitter.setStretchFactor(1, 2)
-        self._splitter.setStretchFactor(2, 2)
+        self._splitter.setStretchFactor(0, 4)   # Config  20%
+        self._splitter.setStretchFactor(1, 11)  # Timeline 55%
+        self._splitter.setStretchFactor(2, 5)   # Editor  25%
 
         outer.addWidget(self._splitter, 1)

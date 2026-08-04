@@ -37,6 +37,9 @@ class CircuitBreakerOpenError(Exception):
         )
 
 
+_UNSET = object()
+
+
 class FreightCircuitBreaker:
     """Redis-backed circuit breaker for freight exchange provider API calls.
 
@@ -54,9 +57,11 @@ class FreightCircuitBreaker:
             await cb.record_failure(company_id=1, provider_id="trans_eu")
     """
 
-    def __init__(self, redis_client=None):
-        """If redis_client is None, uses the global RedisCache singleton."""
-        if redis_client is None:
+    def __init__(self, redis_client=_UNSET):
+        """If redis_client is None, runs in degraded mode (no Redis, all requests allowed).
+        If not passed, uses the global RedisCache singleton.
+        Explicitly passing None means degraded mode."""
+        if redis_client is _UNSET:
             cache = get_cache()
             self._redis = cache._redis if hasattr(cache, '_redis') and cache._enabled else None
         else:

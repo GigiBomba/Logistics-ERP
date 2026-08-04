@@ -18,7 +18,7 @@ def upgrade() -> None:
     op.create_table(
         'copilot_insights',
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
-        sa.Column('company_id', sa.Integer(), sa.ForeignKey('companies.id'), nullable=False),
+        sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
         sa.Column('insight_type', sa.Text(), nullable=False),
         sa.Column('payload', sa.JSON(), nullable=False),
         sa.Column('severity', sa.Text(), nullable=False, server_default='low'),

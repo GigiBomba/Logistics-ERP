@@ -184,7 +184,8 @@ class TestMutationI18nCorruptFiles:
             json.dump({"hello": "Hello"}, f)
         i18n.load_translations()
         assert "ro" in i18n._translations
-        assert i18n._translations["ro"] == {}
+        # Empty ro.json gets merged with English fallback keys
+        assert i18n._translations["ro"].get("hello") == "Hello"
 
     def test_no_translation_files(self, temp_translations_dir):
         """No translation files — system falls back to empty en."""
@@ -395,7 +396,7 @@ class TestMutationI18nListeners:
     @pytest.fixture(autouse=True)
     def _setup(self):
         import services.i18n as i18n
-        i18n._translations = {"en": {"hello": "Hello"}}
+        i18n._translations = {"en": {"hello": "Hello"}, "fr": {"hello": "Bonjour"}}
         i18n._current_lang = "en"
         i18n._listeners = []
         yield
@@ -440,7 +441,8 @@ class TestMutationI18nListeners:
 
         i18n.register_listener(good_listener)
         i18n.register_listener(bad_listener)
-        i18n.set_language("en")
+        # Switch to a different language to trigger listeners
+        i18n.set_language("fr")
 
         # The good listener should have been called despite the bad one failing
         assert len(calls) >= 1

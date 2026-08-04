@@ -11,11 +11,12 @@ from typing import Callable
 
 import qtawesome as qta
 from PySide6.QtCore import QEasingCurve, QEvent, QParallelAnimationGroup, QPropertyAnimation, Qt
-from PySide6.QtGui import QCursor
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
     QLabel,
+    QLineEdit,
+    QPushButton,
     QScrollArea,
     QSizePolicy,
     QVBoxLayout,
@@ -25,11 +26,24 @@ from PySide6.QtWidgets import (
 from services.i18n import register_listener, t, unregister_listener
 from ui.design_tokens import (
     ACCENT,
-    ACCENT_TEXT,
     BG_OVERLAY,
     BORDER_DEFAULT,
+    BTN_HEIGHT_SM,
+    COLOR_ACCENT_PRIMARY,
+    COLOR_BG_ELEVATED,
+    COLOR_BG_HOVER,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_MEDIUM,
+    COLOR_BORDER_SUBTLE,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_SECONDARY,
+    COLOR_TEXT_TERTIARY,
+    FONT_SIZE_SM,
+    RADIUS_SM,
     SIDEBAR_COLLAPSED,
     SIDEBAR_EXPANDED,
+    SPACE_1,
+    SPACE_2,
     TEXT_MUTED,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
@@ -42,6 +56,19 @@ ANIM_DURATION = 200
 
 # ── Icon mapping (qtawesome) ─────────────────────────────────────────
 # Nav items MUST use qtawesome icons — no emoji, no colored squares.
+# ── Keyboard shortcut hints for the first 9 nav items ──────────────
+NAV_SHORTCUTS: dict[str, str] = {
+    "overview":      "Ctrl+1",
+    "analytics":     "Ctrl+2",
+    "route_planner": "Ctrl+3",
+    "calculator":    "Ctrl+4",
+    "dispatch_board":"Ctrl+5",
+    "tracking":      "Ctrl+6",
+    "fleet":         "Ctrl+7",
+    "driver_manager":"Ctrl+8",
+    "clients":       "Ctrl+9",
+}
+
 NAV_ICONS = {
     "overview":           "fa5s.home",
     "analytics":          "fa5s.chart-line",
@@ -89,10 +116,14 @@ class Sidebar(QFrame):
         self._groups: list[str] = []
         self._items: dict[str, QFrame] = {}
         self._labels: dict[str, QLabel] = {}
+        self._shortcut_labels: dict[str, QLabel] = {}
         self._group_labels: dict[str, QLabel] = {}
         self._item_i18n_keys: dict[str, str] = {}
         self._group_i18n_keys: dict[str, str] = {}
         self._settings_item: str | None = None
+        self._item_groups: dict[str, str | None] = {}
+        self._search_input: QLineEdit | None = None
+        self._collapse_btn: QPushButton | None = None
 
         self._build()
         self._load_state()
@@ -143,17 +174,22 @@ class Sidebar(QFrame):
         top_layout.setContentsMargins(12, 0, 12, 0)
         top_layout.setSpacing(8)
 
-        # Monogram circle
+        # Monogram circle — click to toggle expand/collapse
         self._monogram = QFrame()
         self._monogram.setFixedSize(32, 32)
+        self._monogram.setAccessibleName("Operion home")
         self._monogram.setStyleSheet(
             f"background: {ACCENT}; border-radius: 16px;"
         )
+        self._monogram.setProperty("is-monogram", True)
+        self._monogram.setCursor(Qt.PointingHandCursor)
+        self._monogram.installEventFilter(self)
         mono_layout = QHBoxLayout(self._monogram)
         mono_layout.setContentsMargins(0, 0, 0, 0)
         mono_lbl = QLabel("O")
         mono_lbl.setStyleSheet("color: white; font-weight: 700; font-size: 14px;")
         mono_lbl.setAlignment(Qt.AlignCenter)
+        mono_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         mono_layout.addWidget(mono_lbl)
         top_layout.addWidget(self._monogram)
 
@@ -185,7 +221,7 @@ class Sidebar(QFrame):
 
         # Divider
         divider = QFrame()
-        divider.setStyleSheet(f"background: {BORDER_DEFAULT}; max-height: 1px; min-height: 1px;")
+        divider.setStyleSheet(f"background: {COLOR_BORDER_SUBTLE}; max-height: 1px; min-height: 1px;")
         layout.addWidget(divider)
 
     def _build_scroll_area(self):
@@ -201,6 +237,36 @@ class Sidebar(QFrame):
         self._container_layout.setSpacing(4)
         self._container_layout.setAlignment(Qt.AlignTop)
 
+        # ── Search input (visible only when expanded) ──
+        self._search_input = QLineEdit()
+        self._search_input.setAccessibleName("Search navigation")
+        self._search_input.setPlaceholderText(t("sidebar.search", default="Search..."))
+        self._search_input.addAction(
+            qta.icon("fa5s.search", color=COLOR_TEXT_TERTIARY),
+            QLineEdit.LeadingPosition,
+        )
+        self._search_input.setClearButtonEnabled(True)
+        self._search_input.setFixedHeight(BTN_HEIGHT_SM)
+        self._search_input.textChanged.connect(self._filter_items)
+        self._search_input.setStyleSheet(f"""
+            QLineEdit {{
+                background: {COLOR_BG_OVERLAY};
+                border: 1px solid {COLOR_BORDER_SUBTLE};
+                border-radius: {RADIUS_SM}px;
+                color: {COLOR_TEXT_PRIMARY};
+                font-size: {FONT_SIZE_SM}px;
+                padding: 0 8px;
+            }}
+            QLineEdit:focus {{
+                border-color: {COLOR_ACCENT_PRIMARY};
+            }}
+            QLineEdit::placeholder {{
+                color: {COLOR_TEXT_TERTIARY};
+            }}
+        """)
+        self._search_input.setVisible(self._expanded)
+        self._container_layout.addWidget(self._search_input)
+
         self._scroll.setWidget(self._container)
         self.layout().addWidget(self._scroll, 1)
 
@@ -214,6 +280,29 @@ class Sidebar(QFrame):
         divider = QFrame()
         divider.setStyleSheet(f"background: {BORDER_DEFAULT}; max-height: 1px; min-height: 1px;")
         bottom_layout.addWidget(divider)
+
+        # ── Collapse chevron button (visible only when expanded) ──
+        self._collapse_btn = QPushButton()
+        self._collapse_btn.setIcon(qta.icon("fa5s.chevron-left", color=COLOR_TEXT_TERTIARY))
+        self._collapse_btn.setToolTip(t("sidebar.collapse", default="Collapse sidebar"))
+        self._collapse_btn.setFixedHeight(28)
+        self._collapse_btn.setCursor(Qt.PointingHandCursor)
+        self._collapse_btn.setStyleSheet(f"""
+            QPushButton {{
+                background: transparent;
+                border: none;
+                color: {COLOR_TEXT_TERTIARY};
+                font-size: {FONT_SIZE_SM}px;
+                border-radius: {RADIUS_SM}px;
+            }}
+            QPushButton:hover {{
+                background: {COLOR_BG_HOVER};
+                color: {COLOR_TEXT_PRIMARY};
+            }}
+        """)
+        self._collapse_btn.clicked.connect(self._toggle_expand)
+        self._collapse_btn.setVisible(self._expanded)
+        bottom_layout.addWidget(self._collapse_btn)
 
         self._bottom_layout = bottom_layout
         self.layout().addWidget(bottom)
@@ -232,7 +321,7 @@ class Sidebar(QFrame):
         text = t(i18n_key).upper() if i18n_key else name.upper()
         lbl = QLabel(text)
         lbl.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 10px; font-weight: 600; "
+            f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600; "
             f"text-transform: uppercase; letter-spacing: 0.8px; padding-left: 8px;"
         )
         lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Fixed)
@@ -255,6 +344,7 @@ class Sidebar(QFrame):
         frame = self._create_item_frame(key, text)
         self._container_layout.addWidget(frame)
         self._items[key] = frame
+        self._item_groups[key] = group
 
     def add_settings_item(self, key: str, label: str):
         frame = self._create_item_frame(key, label)
@@ -302,7 +392,7 @@ class Sidebar(QFrame):
 
         # Left accent bar
         accent = QFrame()
-        accent.setFixedWidth(3)
+        accent.setFixedWidth(4)
         accent.setStyleSheet("background: transparent; border-radius: 2px;")
         layout.addWidget(accent)
 
@@ -312,6 +402,7 @@ class Sidebar(QFrame):
         icon_lbl.setPixmap(qta.icon(icon_name, color=TEXT_MUTED).pixmap(16, 16))
         icon_lbl.setFixedWidth(32)
         icon_lbl.setAlignment(Qt.AlignCenter)
+        icon_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         layout.addWidget(icon_lbl)
 
         # Text label
@@ -319,10 +410,25 @@ class Sidebar(QFrame):
         text_lbl.setStyleSheet(
             f"color: {TEXT_SECONDARY}; font-size: 13px; background: transparent;"
         )
+        text_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
         layout.addWidget(text_lbl, 1)
         if not self._expanded:
             text_lbl.hide()
 
+        # Keyboard shortcut hint (visible only when expanded)
+        shortcut_text = NAV_SHORTCUTS.get(key)
+        if shortcut_text:
+            shortcut_lbl = QLabel(shortcut_text)
+            shortcut_lbl.setStyleSheet(
+                f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px; background: transparent;"
+            )
+            shortcut_lbl.setAttribute(Qt.WA_TransparentForMouseEvents)
+            layout.addWidget(shortcut_lbl)
+            self._shortcut_labels[key] = shortcut_lbl
+            if not self._expanded:
+                shortcut_lbl.hide()
+
+        frame.setAccessibleName(label)
         frame.setToolTip(label)
         # Store the nav key so the event filter can dispatch to
         # ``self.select(key)`` without shadowing the virtual method.
@@ -342,7 +448,7 @@ class Sidebar(QFrame):
         icon_name = NAV_ICONS.get(key, "fa5s.circle")
         for child in frame.findChildren(QLabel):
             if child.width() == 32:  # icon label has fixedWidth(32)
-                child.setPixmap(qta.icon(icon_name, color=ACCENT_TEXT).pixmap(16, 16))
+                child.setPixmap(qta.icon(icon_name, color=COLOR_ACCENT_PRIMARY).pixmap(16, 16))
                 break
         # Update text label using stored reference (avoids fragile child detection)
         text_lbl = self._labels.get(key)
@@ -351,7 +457,7 @@ class Sidebar(QFrame):
                 f"color: {TEXT_PRIMARY}; font-size: 13px; font-weight: 600; background: transparent;"
             )
         frame.setStyleSheet(
-            f"background: {BG_OVERLAY}; border: none; border-left: 3px solid {ACCENT};"
+            f"background: {COLOR_BG_HOVER}; border: none; border-left: 4px solid {ACCENT};"
         )
 
     def _deactivate(self, key: str):
@@ -373,8 +479,11 @@ class Sidebar(QFrame):
     # ── Event filter — nav item clicks ──────────────────────────
 
     def eventFilter(self, obj, event) -> bool:
-        """Handle mouse press on nav-item QFrame without shadowing the virtual."""
+        """Handle mouse press on nav-item QFrame or monogram."""
         if event.type() == QEvent.MouseButtonPress:
+            if obj.property("is-monogram"):
+                self._toggle_expand()
+                return True
             key = obj.property("nav-key")
             if key is not None:
                 self.select(key)
@@ -413,7 +522,13 @@ class Sidebar(QFrame):
             self.setMinimumWidth(SIDEBAR_EXPANDED)
             self.setMaximumWidth(16777215)
             self._app_name_frame.show()
+            if self._search_input:
+                self._search_input.show()
+            if self._collapse_btn:
+                self._collapse_btn.show()
             for lbl in self._group_labels.values():
+                lbl.show()
+            for lbl in self._shortcut_labels.values():
                 lbl.show()
             for item in self._items.values():
                 text_lbl = self._text_label_for_item(item)
@@ -424,7 +539,14 @@ class Sidebar(QFrame):
             self.setMinimumWidth(SIDEBAR_COLLAPSED)
             self.setMaximumWidth(SIDEBAR_COLLAPSED)
             self._app_name_frame.hide()
+            if self._search_input:
+                self._search_input.hide()
+                self._search_input.clear()
+            if self._collapse_btn:
+                self._collapse_btn.hide()
             for lbl in self._group_labels.values():
+                lbl.hide()
+            for lbl in self._shortcut_labels.values():
                 lbl.hide()
             for item in self._items.values():
                 text_lbl = self._text_label_for_item(item)
@@ -443,22 +565,46 @@ class Sidebar(QFrame):
                 return child
         return None
 
-    # ── Hover expand / collapse ─────────────────────────────────
+    # ── Click-to-toggle expand / collapse ───────────────────────
 
-    def enterEvent(self, event):
-        if not self._expanded:
-            self._animate_width(SIDEBAR_EXPANDED)
-        super().enterEvent(event)
+    def _toggle_expand(self):
+        """Toggle sidebar between expanded and collapsed state."""
+        target = SIDEBAR_COLLAPSED if self._expanded else SIDEBAR_EXPANDED
+        self._animate_width(target)
 
-    def leaveEvent(self, event):
-        if self._expanded:
-            top_left = self.mapToGlobal(self.rect().topLeft())
-            bottom_right = self.mapToGlobal(self.rect().bottomRight())
-            cursor_global = QCursor.pos()
-            if not (top_left.x() <= cursor_global.x() <= bottom_right.x() and
-                    top_left.y() <= cursor_global.y() <= bottom_right.y()):
-                self._animate_width(SIDEBAR_COLLAPSED)
-        super().leaveEvent(event)
+    # ── Search / filter items ───────────────────────────────────
+
+    def _filter_items(self, text: str):
+        """Show/hide nav items based on search text."""
+        query = text.strip().lower()
+        if not query:
+            # Show all
+            for key in self._items:
+                frame = self._items[key]
+                frame.setVisible(True)
+            for name in self._group_labels:
+                self._group_labels[name].setVisible(True)
+            return
+
+        # Count visible items per group
+        visible_in_group: dict[str, int] = {}
+        for key, frame in self._items.items():
+            label = self._labels.get(key)
+            label_text = (label.text() if label else "").lower()
+            match = query in label_text
+            frame.setVisible(match)
+            grp = self._item_groups.get(key)
+            if match and grp:
+                visible_in_group[grp] = visible_in_group.get(grp, 0) + 1
+
+        # Show/hide group labels
+        for name in self._group_labels:
+            has_visible = any(
+                self._items[k].isVisible()
+                for k, g in self._item_groups.items()
+                if g == name
+            )
+            self._group_labels[name].setVisible(has_visible)
 
     # ── Language refresh ───────────────────────────────────────
 
@@ -481,6 +627,7 @@ class Sidebar(QFrame):
         self._stop_animation()
         self._items.clear()
         self._labels.clear()
+        self._shortcut_labels.clear()
         self._group_labels.clear()
         self._item_i18n_keys.clear()
         self._group_i18n_keys.clear()

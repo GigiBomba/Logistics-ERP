@@ -77,7 +77,14 @@ class RemotePreferences:
             except OSError as exc:
                 logger.warning("Failed to save preferences: %s", exc)
 
-    _SENSITIVE_KEYS: set[str] = {"smtp_password"}
+    _SENSITIVE_KEYS: set[str] = {
+        "smtp_password",
+        # Fleet-tracking provider credentials (Wialon/Frotcom/Traccar/Navixy/Generic).
+        "tracking.token",
+        "tracking.username",
+        "tracking.password",
+        "tracking.account",
+    }
 
     def get_setting(self, key: str, default: Optional[str] = None) -> Optional[str]:
         value = self._data.get(key, default)
@@ -95,10 +102,13 @@ class RemotePreferences:
         self.save()
 
     def save_settings(self, data: Dict[str, str]) -> None:
-        for k, v in data.items():
+        # Copy first: never mutate the caller's dict (PreferencesManager
+        # behaves the same way).
+        updates = dict(data)
+        for k, v in updates.items():
             if k in self._SENSITIVE_KEYS:
-                data[k] = encrypt_value(v)
-        self._data.update(data)
+                updates[k] = encrypt_value(v)
+        self._data.update(updates)
         self.save()
 
     def clear_cache(self) -> None:

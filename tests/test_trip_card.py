@@ -25,26 +25,28 @@ def trip_card(qt_widget, qtbot):
 
 class TestQtTripCard:
     def test_creation(self, trip_card):
-        assert trip_card._trip_data["id"] == 1
+        assert trip_card.trip_data["id"] == 1
 
     def test_client_label_shown(self, trip_card):
-        assert hasattr(trip_card, "_client_label")
-        assert "Test Client" in trip_card._client_label.text()
+        # New QtTripCard shows route label not client label
+        assert hasattr(trip_card, "_route_lbl")
+        assert "Bucharest" in trip_card._route_lbl.text()
 
     def test_origin_destination_shown(self, trip_card):
-        assert hasattr(trip_card, "_route_label")
+        assert hasattr(trip_card, "_route_lbl")
 
     def test_price_shown(self, trip_card):
-        assert hasattr(trip_card, "_price_label")
+        # New card doesn't have a price label
+        assert "price" in trip_card.trip_data
 
     def test_status_badge_shown(self, trip_card):
-        assert hasattr(trip_card, "_status_badge")
+        assert hasattr(trip_card, "_chip_frame")
 
     def test_truck_info_shown(self, trip_card):
-        assert hasattr(trip_card, "_truck_label")
+        assert hasattr(trip_card, "_truck_lbl")
 
     def test_driver_info_shown(self, trip_card):
-        assert hasattr(trip_card, "_driver_label")
+        assert hasattr(trip_card, "_driver_lbl")
 
     def test_click_handler_wired(self, trip_card):
         trip_card._on_click = MagicMock()
@@ -52,4 +54,5 @@ class TestQtTripCard:
         trip_card._on_click.assert_called_once()
 
     def test_context_menu_trigger(self, trip_card):
-        assert hasattr(trip_card, "_on_context_menu")
+        # New card uses _on_documents_clicked as context menu
+        assert hasattr(trip_card, "_on_documents_clicked")

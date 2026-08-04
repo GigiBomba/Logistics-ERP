@@ -4,7 +4,6 @@ from ui.views.analytics import QtAnalyticsView
 from ui.views.automation_view import QtAutomationView
 from ui.views.calculator_view import QtCalculatorView
 from ui.views.copilot_view import CoPilotView as QtCopilotView
-from ui.views.client_manager import QtClientManager
 from ui.views.client_workspace import QtClientWorkspace
 from ui.views.cmr_form_view import QtCmrFormView
 from ui.views.dashboard import QtFleetDashboard
@@ -32,7 +31,6 @@ __all__ = [
     "QtAutomationView",
     "QtCalculatorView",
     "QtCopilotView",
-    "QtClientManager",
     "QtClientWorkspace",
     "QtCmrFormView",
     "QtDispatchBoardView",

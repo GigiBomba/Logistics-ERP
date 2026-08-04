@@ -24,7 +24,7 @@ from PySide6.QtWidgets import (
 
 from services.fleet_maintenance_service import MAINT_DISPLAY, MaintType
 from services.i18n import register_listener, t, unregister_listener
-from ui.components import Btn, Card, Label, PageTitle
+from ui.components import Btn, Card, EmptyState, IconButton, Label, PageTitle
 from ui.mode_guard import ConnectionMode, detect_mode, guard_local_access
 from ui.design_tokens import SP
 from ui.icons import iconed
@@ -77,9 +77,14 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._mode = detect_mode(db, None)  # no api_client — local-only view
         guard_local_access(self._mode, "Maintenance analytics")
 
+        # ── Grid toggle state ────────────────────────────────────────────────
+        self._grid_visible = True
+
         # Chart widgets (created once, re-used)
-        self._chart_widget_a: PlotlyChartWidget | None = None
-        self._chart_widget_b: PlotlyChartWidget | None = None
+        self._chart_widget_a = None
+        self._chart_widget_b = None
+        self._chart_placeholder_a = None
+        self._chart_placeholder_b = None
         self._table_ref: StyledTableWidget | None = None
         self._table_container: QFrame | None = None
         self._i18n_widgets: list[tuple] = []
@@ -97,6 +102,7 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._vm = MaintenanceViewModel(self, db=db)
 
         self._build_ui()
+        self._empty_state_shown = False
         self._vm.data_changed.connect(self._on_data_changed)
 
         self._language_callback = self._on_language_changed
@@ -107,11 +113,31 @@ class QtMaintenanceAnalyticsView(QWidget):
     # ── UI Build ─────────────────────────────────────────────────
 
     def _build_ui(self):
+        self.setAccessibleName("Maintenance analytics")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SP["6"])
 
         self._build_view_header(layout)
+
+        self._empty_state = EmptyState(
+            self,
+            icon_name="fa5s.wrench",
+            title=t("maint_analytics.empty_title", default="No maintenance records"),
+            subtitle=t("maint_analytics.empty_desc", default="Schedule your first service to see maintenance analytics."),
+            cta_button=Btn(
+                self,
+                text=t("maint_analytics.schedule_service", default="Schedule Your First Service"),
+                variant="primary",
+            ),
+        )
+        self._empty_state.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        self._empty_state.hide()
+        layout.addWidget(self._empty_state)
+
+        self._chart_card = None
+        self._table_card_area = None
+
         self._build_chart_area(layout)
         self._build_table_area(layout)
 
@@ -129,9 +155,19 @@ class QtMaintenanceAnalyticsView(QWidget):
         hl.addWidget(subtitle)
         hl.addStretch(1)
 
-        self._refresh_btn = Btn(header, iconed("maint.refresh"), variant="primary", command=self._load_data)
+        self._refresh_btn = Btn(header, iconed("maint.refresh"), variant="primary", command=self.refresh)
         hl.addWidget(self._refresh_btn)
         self._i18n_widgets.append((self._refresh_btn, "maint.refresh", ""))
+
+        # ── Grid toggle button ──────────────────────────────────────
+        self._grid_btn = IconButton(
+            header,
+            icon_name="fa5s.th",
+            tooltip=t("chart.toggle_grid", "Toggle grid"),
+            variant="ghost",
+            command=self._toggle_grid,
+        )
+        hl.addWidget(self._grid_btn)
 
         layout.addWidget(header)
 
@@ -144,12 +180,15 @@ class QtMaintenanceAnalyticsView(QWidget):
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(SP["3"])
 
-        self._chart_widget_a = PlotlyChartWidget(min_height=300)
-        self._chart_widget_b = PlotlyChartWidget(min_height=300)
-        cl.addWidget(self._chart_widget_a, 1)
-        cl.addWidget(self._chart_widget_b, 1)
-        self._i18n_widgets.append((self._chart_widget_a, "maint_analytics.chart_cost_per_truck", "cost_per_truck"))
-        self._i18n_widgets.append((self._chart_widget_b, "maint_analytics.chart_fleet_trend", "fleet_trend"))
+        # Placeholder frames — real PlotlyChartWidget created lazily in _render_charts
+        self._chart_placeholder_a = QFrame()
+        self._chart_placeholder_a.setMinimumHeight(300)
+        self._chart_placeholder_a.setStyleSheet("background: #1C1C1F; border-radius: 6px;")
+        self._chart_placeholder_b = QFrame()
+        self._chart_placeholder_b.setMinimumHeight(300)
+        self._chart_placeholder_b.setStyleSheet("background: #1C1C1F; border-radius: 6px;")
+        cl.addWidget(self._chart_placeholder_a, 1)
+        cl.addWidget(self._chart_placeholder_b, 1)
 
         chart_card.layout().addWidget(frame)
         layout.addWidget(chart_card, 3)
@@ -166,12 +205,16 @@ class QtMaintenanceAnalyticsView(QWidget):
     # ── Data loading (dirty-flag aware) ──────────────────────────
 
     def refresh(self):
+        self._data_loaded = False  # Force re-load on explicit refresh
         self._load_data()
 
     def _load_data(self):
         if self._shutting_down:
             return
         if self.repo is None:
+            return
+        if self._data_loaded:
+            logger.debug("MaintenanceAnalyticsView: data already loaded, skipping re-load")
             return
 
         now = datetime.now()
@@ -197,6 +240,29 @@ class QtMaintenanceAnalyticsView(QWidget):
         self._render_charts()
         self._render_table()
 
+        # Show empty state when no maintenance data exists
+        has_data = bool(self._cost_by_truck_month or self._cost_by_month or self._truck_summary)
+        if has_data and self._empty_state_shown:
+            self._empty_state.hide()
+            if self._chart_card:
+                self._chart_card.show()
+            if self._table_card_area:
+                self._table_card_area.show()
+            self._empty_state_shown = False
+        elif not has_data and not self._empty_state_shown:
+            self._empty_state.show()
+            if self._chart_card:
+                self._chart_card.hide()
+            if self._table_card_area:
+                self._table_card_area.hide()
+            self._empty_state_shown = True
+        elif has_data:
+            self._empty_state.hide()
+            if self._chart_card:
+                self._chart_card.show()
+            if self._table_card_area:
+                self._table_card_area.show()
+
     def _on_data_changed(self):
         """ViewModel signals data change — re-render charts and table."""
         if self._shutting_down:
@@ -207,8 +273,30 @@ class QtMaintenanceAnalyticsView(QWidget):
     # ── Chart rendering (reuses existing widgets) ────────────────
 
     def _render_charts(self):
+        # Lazy creation: replace placeholders with real PlotlyChartWidget on first render
+        if self._chart_widget_a is None and self._chart_placeholder_a is not None:
+            from ui.plotly_renderer import PlotlyChartWidget
+            self._chart_widget_a = PlotlyChartWidget(min_height=300)
+            layout = self._chart_placeholder_a.parent().layout()
+            idx = layout.indexOf(self._chart_placeholder_a)
+            layout.insertWidget(idx, self._chart_widget_a)
+            self._chart_placeholder_a.deleteLater()
+            self._chart_placeholder_a = None
+            self._i18n_widgets.append((self._chart_widget_a, "maint_analytics.chart_cost_per_truck", "cost_per_truck"))
+
+        if self._chart_widget_b is None and self._chart_placeholder_b is not None:
+            from ui.plotly_renderer import PlotlyChartWidget
+            self._chart_widget_b = PlotlyChartWidget(min_height=300)
+            layout = self._chart_placeholder_b.parent().layout()
+            idx = layout.indexOf(self._chart_placeholder_b)
+            layout.insertWidget(idx, self._chart_widget_b)
+            self._chart_placeholder_b.deleteLater()
+            self._chart_placeholder_b = None
+            self._i18n_widgets.append((self._chart_widget_b, "maint_analytics.chart_fleet_trend", "fleet_trend"))
+
         if self._chart_widget_a is None or self._chart_widget_b is None:
             return
+
         try:
             self._chart_widget_a.set_figure(self._build_cost_by_truck_month_fig())
         except Exception:
@@ -312,6 +400,19 @@ class QtMaintenanceAnalyticsView(QWidget):
         # Data reload is not needed — the ViewModel already has fresh data.
         self._render_charts()
         self._render_table()
+
+    # ── Grid toggle ────────────────────────────────────────────
+
+    def _toggle_grid(self) -> None:
+        """Toggle grid lines on all charts in this view."""
+        self._grid_visible = not self._grid_visible
+        for chart in self.findChildren(PlotlyChartWidget):
+            try:
+                chart.fig.update_xaxes(showgrid=self._grid_visible)
+                chart.fig.update_yaxes(showgrid=self._grid_visible)
+                chart.render()
+            except Exception:
+                logger.exception("Failed to toggle grid on chart widget")
 
     # ── Helpers ──────────────────────────────────────────────────
 

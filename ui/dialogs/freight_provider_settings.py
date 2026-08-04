@@ -32,6 +32,7 @@ from ui.components import (
     Label,
     PageTitle,
 )
+from ui.form_utils import add_required_indicator
 from ui.design_tokens import (
     COLOR_BG_OVERLAY,
     COLOR_BORDER_SUBTLE,
@@ -328,26 +329,52 @@ class FreightProviderSettingsDialog(QDialog):
         form_fields = QFormLayout()
         form_fields.setSpacing(SPACE_3)
 
+        # ── Client ID ──
         client_id_input = QLineEdit()
         client_id_input.setPlaceholderText(
             t("freight.connection.client_id_placeholder")
         )
         client_id_input.setFixedHeight(INPUT_HEIGHT)
-        form_fields.addRow(
-            FieldLabel(form_widget, t("freight.connection.client_id")),
-            client_id_input,
-        )
 
+        client_id_label = FieldLabel(form_widget, t("freight.connection.client_id"))
+        add_required_indicator(client_id_label)
+
+        client_id_container = QWidget()
+        client_id_container_layout = QVBoxLayout(client_id_container)
+        client_id_container_layout.setContentsMargins(0, 0, 0, 0)
+        client_id_container_layout.setSpacing(0)
+        client_id_container_layout.addWidget(client_id_input)
+        client_id_error = QLabel()
+        client_id_error.setProperty("role", "field-error")
+        client_id_error.setVisible(False)
+        client_id_error.setWordWrap(True)
+        client_id_container_layout.addWidget(client_id_error)
+
+        form_fields.addRow(client_id_label, client_id_container)
+
+        # ── Client Secret ──
         client_secret_input = QLineEdit()
         client_secret_input.setPlaceholderText(
             t("freight.connection.client_secret_placeholder")
         )
         client_secret_input.setEchoMode(QLineEdit.EchoMode.Password)
         client_secret_input.setFixedHeight(INPUT_HEIGHT)
-        form_fields.addRow(
-            FieldLabel(form_widget, t("freight.connection.client_secret")),
-            client_secret_input,
-        )
+
+        client_secret_label = FieldLabel(form_widget, t("freight.connection.client_secret"))
+        add_required_indicator(client_secret_label)
+
+        client_secret_container = QWidget()
+        client_secret_container_layout = QVBoxLayout(client_secret_container)
+        client_secret_container_layout.setContentsMargins(0, 0, 0, 0)
+        client_secret_container_layout.setSpacing(0)
+        client_secret_container_layout.addWidget(client_secret_input)
+        client_secret_error = QLabel()
+        client_secret_error.setProperty("role", "field-error")
+        client_secret_error.setVisible(False)
+        client_secret_error.setWordWrap(True)
+        client_secret_container_layout.addWidget(client_secret_error)
+
+        form_fields.addRow(client_secret_label, client_secret_container)
 
         form_layout.addLayout(form_fields)
 
@@ -387,7 +414,9 @@ class FreightProviderSettingsDialog(QDialog):
         card._form_widget = form_widget
         card._provider_id = pid
         card._client_id_input = client_id_input
+        card._client_id_error = client_id_error
         card._client_secret_input = client_secret_input
+        card._client_secret_error = client_secret_error
 
         return card
 
@@ -424,8 +453,32 @@ class FreightProviderSettingsDialog(QDialog):
         client_secret = card._client_secret_input.text().strip()
         pid = card._provider_id
 
-        if not client_id or not client_secret:
-            logger.warning("Connection attempt with empty fields for %s", pid)
+        # ── Validate ──
+        has_errors = False
+
+        if not client_id:
+            card._client_id_input.setProperty("validation", "error")
+            card._client_id_input.style().unpolish(card._client_id_input)
+            card._client_id_input.style().polish(card._client_id_input)
+            card._client_id_error.setText(t("common.field_required", default="This field is required"))
+            card._client_id_error.setVisible(True)
+            has_errors = True
+        else:
+            card._client_id_input.setProperty("validation", "")
+            card._client_id_error.setVisible(False)
+
+        if not client_secret:
+            card._client_secret_input.setProperty("validation", "error")
+            card._client_secret_input.style().unpolish(card._client_secret_input)
+            card._client_secret_input.style().polish(card._client_secret_input)
+            card._client_secret_error.setText(t("common.field_required", default="This field is required"))
+            card._client_secret_error.setVisible(True)
+            has_errors = True
+        else:
+            card._client_secret_input.setProperty("validation", "")
+            card._client_secret_error.setVisible(False)
+
+        if has_errors:
             return
 
         logger.info("Connecting provider %s with client_id=%s", pid, client_id)
@@ -438,7 +491,7 @@ class FreightProviderSettingsDialog(QDialog):
     # ── Event handling ──────────────────────────────────────────────
 
     def keyPressEvent(self, event):
-        """Escape key collapses the open credential form."""
+        """Escape key collapses the open credential form (or dismisses dialog)."""
         if event.key() == Qt.Key_Escape and self._open_form_card is not None:
             self._collapse_form(self._open_form_card)
             event.accept()

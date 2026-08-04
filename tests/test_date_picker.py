@@ -24,7 +24,7 @@ class TestQtDatePickerExtended:
         from ui.widgets.date_picker import QtDatePicker
         picker = QtDatePicker(qt_widget, placeholder="Select date")
         qtbot.addWidget(picker)
-        assert picker.placeholderText() == "Select date"
+        assert picker.line_edit.placeholderText() == "Select date"
 
     def test_custom_date_pattern(self, qt_widget, qtbot):
         from ui.widgets.date_picker import QtDatePicker

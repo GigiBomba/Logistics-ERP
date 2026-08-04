@@ -7,6 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 
+class _DbMock(MagicMock):
+    """Mock DatabaseManager that supports repository _fetchone/_fetchall calls."""
+    pass
+
+
 class StrippedMock(MagicMock):
     """MagicMock subclass that strips company_id from all recorded calls.
 
@@ -73,10 +78,15 @@ def client(app):
 
 @pytest.fixture
 def mock_trip_service():
+    from datetime import date
+    from models.common import ServiceResult
+    from models.trip_models import TripResult
     svc = StrippedMock()
     svc.get_filtered.return_value = []
     svc.get_by_id.return_value = None
-    svc.add.return_value = 1
+    trip_result = TripResult(id=1, client_id=1, reference="", start_date=date(2000, 1, 1), price_eur=0.0, currency="EUR", status="Planned")
+    svc.create.return_value = ServiceResult(success=True, data=trip_result)
+    svc.update.return_value = ServiceResult(success=True, data=trip_result)
     return svc
 
 
@@ -101,6 +111,7 @@ def mock_driver_repo():
 @pytest.fixture
 def mock_document_service():
     svc = StrippedMock()
+    svc.upload_document.return_value = MagicMock(success=True, data=MagicMock(model_dump=lambda: {"id": 1, "doc_number": "DOC-2024-0001", "file_name": "test.pdf"}))
     return svc
 
 
@@ -113,7 +124,10 @@ def mock_analytics_service():
 @pytest.fixture
 def mock_db():
     """Mock DatabaseManager."""
-    return StrippedMock()
+    mock = _DbMock()
+    mock.row_to_dict.side_effect = lambda row: None if row is None else dict(row)
+    mock.rows_to_dicts.side_effect = lambda rows: [dict(r) for r in (rows or [])]
+    return mock
 
 
 @pytest.fixture

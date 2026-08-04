@@ -15,6 +15,15 @@ from backend.celery_app.tasks.retention_tasks import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _clear_tenant_context():
+    """Retention tasks call set_company_context; reset it after each test so it
+    cannot leak into unrelated tests in the same process."""
+    from database.tenant_context import clear_context
+    yield
+    clear_context()
+
+
 class TestRetentionTaskContract:
     """Retention and anonymization tasks must be importable and runnable."""
 
@@ -39,7 +48,13 @@ class TestRetentionTaskContract:
         mock_db = MagicMock()
         mock_db.conn.execute.return_value.rowcount = 0
 
-        with patch('backend.db.DatabaseManager', return_value=mock_db):
+        with (
+            patch('backend.db.DatabaseManager', return_value=mock_db),
+            patch(
+                'repositories.company_repository.CompanyRepository.get_active_ids',
+                return_value=[1],
+            ),
+        ):
             result = enforce_copilot_retention()
             assert isinstance(result, dict)
             assert "audit_log_deleted" in result
@@ -50,7 +65,13 @@ class TestRetentionTaskContract:
         mock_db = MagicMock()
         mock_db.conn.execute.return_value.fetchall.return_value = []
 
-        with patch('backend.db.DatabaseManager', return_value=mock_db):
+        with (
+            patch('backend.db.DatabaseManager', return_value=mock_db),
+            patch(
+                'repositories.company_repository.CompanyRepository.get_active_ids',
+                return_value=[1],
+            ),
+        ):
             result = anonymize_copilot_data(entity_type="user", entity_id=42)
             assert isinstance(result, dict)
             # Should handle empty result gracefully

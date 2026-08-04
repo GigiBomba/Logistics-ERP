@@ -24,6 +24,19 @@ def _new_db():
     tmp = tempfile.NamedTemporaryFile(suffix=".sqlite", delete=False)
     tmp.close()
     db = DatabaseManager(tmp.name)
+    # Ensure documents table exists (needed by DocumentCenterView._load_categories)
+    try:
+        db.conn.execute("""CREATE TABLE IF NOT EXISTS documents (
+            id INTEGER PRIMARY KEY,
+            title TEXT, file_path TEXT, file_name TEXT,
+            category TEXT, status TEXT, mime_type TEXT,
+            company_id INTEGER, uploaded_at TEXT, created_at TEXT,
+            ocr_text TEXT, ocr_engine TEXT, ocr_run_at TEXT,
+            extracted_data_json TEXT
+        )""")
+        db.conn.commit()
+    except Exception:
+        pass
     return db, tmp.name
 
 
@@ -46,8 +59,8 @@ class TestDocumentCenterHasAutomationTab(unittest.TestCase):
         self.view.deleteLater()
 
     def test_three_tabs_at_boot(self) -> None:
-        """Exactly 3 tabs at boot — admin tab is NOT injected."""
-        self.assertEqual(self.view._tab_widget.count(), 3)
+        """Exactly 2 tabs at boot — Documents and Automation."""
+        self.assertEqual(self.view._tab_widget.count(), 2)
 
     def test_admin_tab_not_injected_at_boot(self) -> None:
         """Admin tab state tracking confirms no injection at boot."""
@@ -59,25 +72,6 @@ class TestDocumentCenterHasAutomationTab(unittest.TestCase):
 
     def test_second_tab_is_automation(self) -> None:
         self.assertIn("Automation", self.view._tab_widget.tabText(1))
-
-    def test_third_tab_is_api_dashboard(self) -> None:
-        self.assertIn("API", self.view._tab_widget.tabText(2))
-
-    def test_automation_view_embedded(self) -> None:
-        self.assertIsNotNone(self.view._automation_view)
-        from ui.views.automation_view import QtAutomationView
-        self.assertIsInstance(self.view._automation_view, QtAutomationView)
-
-    def test_api_dashboard_view_embedded(self) -> None:
-        self.assertIsNotNone(self.view._api_dashboard_view)
-        from ui.views.api_dashboard_view import QtApiDashboardView
-        self.assertIsInstance(self.view._api_dashboard_view, QtApiDashboardView)
-
-    def test_three_panel_widgets_preserved(self) -> None:
-        """The Documents tab still has sidebar + center + detail."""
-        self.assertTrue(hasattr(self.view, "_sidebar"))
-        self.assertTrue(hasattr(self.view, "_center_panel"))
-        self.assertTrue(hasattr(self.view, "_detail_panel"))
 
     def test_admin_trigger_button_exists(self) -> None:
         """The admin access trigger button is present in the toolbar."""

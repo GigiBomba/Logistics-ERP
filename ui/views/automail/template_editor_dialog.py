@@ -26,7 +26,7 @@ from PySide6.QtWidgets import (
 
 from services.automail.template_service import get_available_variables, render_template
 from services.i18n import t
-from ui.theme import COLORS, RADIUS_CARD
+from ui.design_tokens import RADIUS_LG
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
@@ -55,6 +55,8 @@ class TemplateEditorDialog(QDialog):
         template: Optional[dict[str, Any]] = None,
     ) -> None:
         super().__init__(parent)
+        self.setAccessibleName("Template editor")
+        self.setAccessibleDescription("Dialog for editing email templates")
         self._template = template
 
         self.setWindowTitle(
@@ -66,7 +68,7 @@ class TemplateEditorDialog(QDialog):
         self.setMinimumHeight(500)
         self.setModal(True)
         self.setStyleSheet(
-            f"QDialog {{ background: {COLORS['bg_surface']}; border-radius: {RADIUS_CARD}px; }}"
+            f"QDialog {{ background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px; }}"
         )
 
         self._build_ui()
@@ -84,6 +86,7 @@ class TemplateEditorDialog(QDialog):
 
         from ui.widgets import StyledLineEdit
         self._name_edit = StyledLineEdit(self, placeholder="e.g. Professional Reminder")
+        self._name_edit.setAccessibleName("Template name")
         form.addRow(t("common.name", "Name") + ":", self._name_edit)
         layout.addLayout(form)
 
@@ -93,6 +96,7 @@ class TemplateEditorDialog(QDialog):
         layout.addWidget(subj_label)
 
         self._subject_edit = QLineEdit(self)
+        self._subject_edit.setAccessibleName("Template subject")
         self._subject_edit.setStyleSheet(
             f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
             f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 6px; "
@@ -106,6 +110,7 @@ class TemplateEditorDialog(QDialog):
         layout.addWidget(body_label)
 
         self._body_editor = QTextEdit(self)
+        self._body_editor.setAccessibleName("Template body")
         self._body_editor.setAcceptRichText(True)
         self._body_editor.setStyleSheet(
             f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
@@ -130,6 +135,8 @@ class TemplateEditorDialog(QDialog):
             QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel,
             self,
         )
+        for btn in buttons.buttons():
+            btn.setAccessibleName(btn.text())
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)

@@ -13,7 +13,7 @@ from PySide6.QtWidgets import QHBoxLayout, QHeaderView, QTableWidgetItem, QWidge
 
 from services.i18n import t
 from ui.components import Btn, Label, SectionTitle
-from ui.theme import COLORS, S
+from ui.design_tokens import SP
 from ui.widgets import StyledLineEdit, StyledTableWidget
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,7 @@ class LineItemsMixin:
         container = QWidget()
         layout = QHBoxLayout(container)
         layout.setContentsMargins(0, 0, 0, 0)
-        layout.setSpacing(S["3"])
+        layout.setSpacing(SP["3"])
 
         # ── Table card ──────────────────────────────────────────────────
         from ui.components import Card, Divider

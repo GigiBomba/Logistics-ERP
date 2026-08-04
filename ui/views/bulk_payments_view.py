@@ -34,9 +34,15 @@ from services.payment_batch_service import PaymentBatchService
 from services.payment_profile_service import PaymentProfileService
 from services.i18n import t, register_listener
 from ui.base_view import BaseView
-from ui.components import Btn, Card, PageTitle, SectionTitle
-from ui.design_tokens import SP
-from ui.theme import COLORS
+from ui.components import Btn, Card, EmptyState, IconButton, PageTitle, SectionTitle
+from ui.design_tokens import (
+    COLOR_ACCENT_SUBTLE,
+    COLOR_BG_OVERLAY,
+    COLOR_BORDER_SUBTLE,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    SP,
+)
 from ui.widgets import (
     StyledComboBox,
     StyledLineEdit,
@@ -306,7 +312,7 @@ class QtBulkPaymentsView(BaseView):
         self._search_entry.setPlaceholderText(t("bulk_payments.search_recipients"))
         self._add_selected_btn.setText(t("bulk_payments.add_selected"))
         self._batch_title.setText(t("bulk_payments.batch_title", default="Payment Batch"))
-        self._batch_empty_label.setText(t("bulk_payments.batch_empty"))
+        # Empty state uses EmptyState component — no text update needed
 
         self._recipient_table.setHorizontalHeaderLabels(_resolve_recipient_labels())
         self._batch_table.setHorizontalHeaderLabels(_resolve_batch_labels())
@@ -316,6 +322,7 @@ class QtBulkPaymentsView(BaseView):
     # ── UI construction ────────────────────────────────────────────────────
 
     def _build_ui(self) -> None:
+        self.setAccessibleName("Bulk payments")
         layout = QVBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(SP["4"])
@@ -363,6 +370,17 @@ class QtBulkPaymentsView(BaseView):
 
         toolbar_layout.addStretch()
 
+        # Density toggle
+        self._density_btn = IconButton(
+            self,
+            icon_name="fa5s.table",
+            tooltip=t("table.density", "Row density"),
+            variant="ghost",
+            size=32,
+        )
+        self._density_btn.clicked.connect(self._show_density_menu)
+        toolbar_layout.addWidget(self._density_btn)
+
         self._remove_selected_btn = Btn(
             self,
             t("bulk_payments.remove_selected"),
@@ -393,7 +411,9 @@ class QtBulkPaymentsView(BaseView):
 
         # Recipient table
         columns = _recipient_columns_for_table()
-        self._recipient_table = StyledTableWidget(self, columns=columns)
+        self._recipient_table = StyledTableWidget(self, columns=columns, prefs_key="bulk_payments_recipients")
+        self._recipient_table.setAccessibleName("Recipients table")
+        self._recipient_table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
         self._recipient_table.cellDoubleClicked.connect(self._add_to_batch)
         self._recipient_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._recipient_table.customContextMenuRequested.connect(
@@ -426,17 +446,20 @@ class QtBulkPaymentsView(BaseView):
         card_layout.addWidget(self._batch_title)
 
         # Empty state
-        self._batch_empty_label = QLabel(t("bulk_payments.batch_empty"))
-        self._batch_empty_label.setAlignment(Qt.AlignCenter)
-        self._batch_empty_label.setWordWrap(True)
-        self._batch_empty_label.setStyleSheet(
-            f"color: {COLORS['text_muted']}; padding: {SP['8']}px; font-size: 14px;"
+        self._batch_empty_state = EmptyState(
+            parent=card,
+            icon_name="fa5s.money-bill-wave",
+            title=t("bulk_payments.empty_title", "No bulk payments"),
+            subtitle=t("bulk_payments.empty_desc", "Create bulk payments for your invoices."),
         )
-        card_layout.addWidget(self._batch_empty_label)
+        self._batch_empty_state.setVisible(False)
+        card_layout.addWidget(self._batch_empty_state)
 
         # Batch table
         columns = _batch_columns_for_table()
-        self._batch_table = StyledTableWidget(self, columns=columns)
+        self._batch_table = StyledTableWidget(self, columns=columns, prefs_key="bulk_payments_batch")
+        self._batch_table.setAccessibleName("Payment batch table")
+        self._batch_table.setAccessibleDescription("Use arrow keys to navigate. Press Enter to select.")
         self._batch_table.set_column_alignment("amount", Qt.AlignRight | Qt.AlignVCenter)
         self._batch_table.setContextMenuPolicy(Qt.CustomContextMenu)
         self._batch_table.customContextMenuRequested.connect(
@@ -548,6 +571,7 @@ class QtBulkPaymentsView(BaseView):
             })
 
         self._recipient_table.set_data(rows)
+        self._recipient_table.restore_column_widths()
 
     # ── Batch operations ───────────────────────────────────────────────────
 
@@ -672,7 +696,7 @@ class QtBulkPaymentsView(BaseView):
         """Refresh the batch table display and empty state."""
         has_items = bool(self._batch_items)
         self._batch_table.setVisible(has_items)
-        self._batch_empty_label.setVisible(not has_items)
+        self._batch_empty_state.setVisible(not has_items)
 
         if not has_items:
             self._batch_table.setRowCount(0)
@@ -879,6 +903,16 @@ class QtBulkPaymentsView(BaseView):
                 str(ex),
             )
 
+    # ── Density menus ──────────────────────────────────────────────────────
+
+    def _show_density_menu(self):
+        """Show row density menu for the recipient table."""
+        menu = self._recipient_table._build_density_menu(self._density_btn)
+        if menu:
+            menu.exec_(self._density_btn.mapToGlobal(
+                self._density_btn.rect().bottomLeft()
+            ))
+
     # ── Context menus ──────────────────────────────────────────────────────
 
     def _show_recipient_context_menu(self, position) -> None:
@@ -890,12 +924,12 @@ class QtBulkPaymentsView(BaseView):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background-color: {COLORS['bg_elevated']};
-                color: {COLORS['text_primary']};
-                border: 1px solid {COLORS['border']};
+                background-color: {COLOR_BG_OVERLAY};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER_SUBTLE};
             }}
             QMenu::item:selected {{
-                background-color: {COLORS['accent_dim']};
+                background-color: {COLOR_ACCENT_SUBTLE};
             }}
         """)
 
@@ -919,7 +953,7 @@ class QtBulkPaymentsView(BaseView):
             )
             menu.addAction(delete_action)
 
-        menu.exec(self._recipient_table.viewport().mapToGlobal(position))
+        menu.popup(self._recipient_table.viewport().mapToGlobal(position))
 
     def _show_batch_context_menu(self, position) -> None:
         """Show context menu for the batch table."""
@@ -930,12 +964,12 @@ class QtBulkPaymentsView(BaseView):
         menu = QMenu(self)
         menu.setStyleSheet(f"""
             QMenu {{
-                background-color: {COLORS['bg_elevated']};
-                color: {COLORS['text_primary']};
-                border: 1px solid {COLORS['border']};
+                background-color: {COLOR_BG_OVERLAY};
+                color: {COLOR_TEXT_PRIMARY};
+                border: 1px solid {COLOR_BORDER_SUBTLE};
             }}
             QMenu::item:selected {{
-                background-color: {COLORS['accent_dim']};
+                background-color: {COLOR_ACCENT_SUBTLE};
             }}
         """)
 
@@ -949,4 +983,4 @@ class QtBulkPaymentsView(BaseView):
         remove_action.triggered.connect(self._remove_from_batch)
         menu.addAction(remove_action)
 
-        menu.exec(self._batch_table.viewport().mapToGlobal(position))
+        menu.popup(self._batch_table.viewport().mapToGlobal(position))

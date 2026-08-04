@@ -240,7 +240,18 @@ class TestFreightExchangeStatusTool:
 class TestToolRegistryIntegration:
     """New tools are registered and discoverable."""
 
+    @staticmethod
+    def _ensure_freight_tools_imported():
+        """Import the tool module so its @register_tool decorators run.
+
+        The registry is populated at import time; under pytest-xdist this
+        module's tests may execute on a worker where freight_tools.py was
+        never imported, leaving the registry empty.
+        """
+        import backend.copilot.tools.freight_tools  # noqa: F401
+
     def test_all_new_tools_registered(self):
+        self._ensure_freight_tools_imported()
         from backend.copilot.tools.registry import get_tool
         assert get_tool("freight.publish_to_exchange") is not None
         assert get_tool("freight.negotiate_offer") is not None
@@ -248,6 +259,7 @@ class TestToolRegistryIntegration:
         assert get_tool("freight.exchange_status") is not None
 
     def test_all_new_tools_have_valid_permissions(self):
+        self._ensure_freight_tools_imported()
         from backend.copilot.tools.registry import get_tool
         for name in ["freight.publish_to_exchange", "freight.negotiate_offer", "freight.monitor_transport", "freight.exchange_status"]:
             tool = get_tool(name)

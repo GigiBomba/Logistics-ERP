@@ -48,14 +48,29 @@ def _mock_db():
 
     Patches ``backend.db.DatabaseManager`` (which re-exports
     ``database.db_manager.DatabaseManager``) because the task imports it
-    lazily inside the function body.
+    lazily inside the function body.  Also stubs the per-company iteration
+    (``CompanyRepository.get_active_ids``) to a single active company so the
+    task's tenant-scoped delete loop runs.
     """
-    with patch("backend.db.DatabaseManager") as mock_cls:
+    from database.tenant_context import clear_context
+
+    with (
+        patch("backend.db.DatabaseManager") as mock_cls,
+        patch(
+            "repositories.company_repository.CompanyRepository.get_active_ids",
+            return_value=[1],
+        ),
+    ):
         mock_instance = MagicMock()
         mock_instance.conn = MagicMock()
         mock_instance.conn.execute.return_value.rowcount = 10
         mock_cls.return_value = mock_instance
-        yield mock_cls, mock_instance
+        try:
+            yield mock_cls, mock_instance
+        finally:
+            # The task sets the tenant context (set_company_context); clear it
+            # so it does not leak into unrelated tests in the same process.
+            clear_context()
 
 
 # ── cleanup_expired_data ─────────────────────────────────────────────────────
@@ -293,6 +308,49 @@ class TestCleanupExpiredData:
         mock_db.conn.execute.return_value.rowcount = 15
         r3 = cleanup_expired_data()
         assert r3 == {"gps_records_deleted": 15}
+
+    # ── Per-company tenant scoping (blocker 5) ──────────────────────────
+
+    def test_deletes_per_active_company(
+        self, _mock_backend_settings, _mock_db
+    ):
+        """The task loops over active companies, scoping each delete."""
+        _mock_db_cls, mock_db = _mock_db
+        mock_db.conn.execute.return_value.rowcount = 4
+
+        with patch(
+            "repositories.company_repository.CompanyRepository.get_active_ids",
+            return_value=[1, 2, 3],
+        ):
+            result = cleanup_expired_data()
+
+        assert result == {"gps_records_deleted": 12}
+        # One DELETE per active company, each scoped by company_id.
+        sqls = [call.args[0] for call in mock_db.conn.execute.call_args_list]
+        assert len(sqls) == 3
+        for sql in sqls:
+            assert "company_id = ?" in sql
+        params = [call.args[1] for call in mock_db.conn.execute.call_args_list]
+        assert [p[-1] for p in params] == [1, 2, 3]
+
+    def test_skips_admin_scope_company_zero(
+        self, _mock_backend_settings, _mock_db
+    ):
+        """company_id 0 (admin/global scope) is never deleted."""
+        _mock_db_cls, mock_db = _mock_db
+        mock_db.conn.execute.return_value.rowcount = 2
+
+        with patch(
+            "repositories.company_repository.CompanyRepository.get_active_ids",
+            return_value=[0, 1],
+        ):
+            result = cleanup_expired_data()
+
+        assert result == {"gps_records_deleted": 2}
+        sqls = [call.args[0] for call in mock_db.conn.execute.call_args_list]
+        assert len(sqls) == 1, "id 0 must be skipped"
+        assert "company_id = ?" in sqls[0]
+        assert mock_db.conn.execute.call_args_list[0].args[1][-1] == 1
 
 
 class TestCleanupExpiredDataRegistration:

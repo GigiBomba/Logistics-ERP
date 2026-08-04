@@ -477,9 +477,21 @@ class DriverTruckService:
         """Get the plate number of the truck assigned to a driver."""
         return self._repo.get_truck_plate_for_driver(driver_id)
 
+    def get_plates_by_driver_ids(self, driver_ids: list[int]) -> dict[int, str]:
+        """Batch version — one query for many drivers.
+
+        Returns ``{driver_id: plate_number}``, replacing the per-driver
+        ``get_truck_plate_for_driver`` loop (N+1) in the driver manager.
+        """
+        return self._repo.get_plates_by_driver_ids(driver_ids)
+
     def get_driver_name_for_truck(self, truck_id: int) -> str:
         """Get the name of the driver assigned to a truck."""
         return self._repo.get_driver_name_for_truck(truck_id)
+
+    def get_driver_names_for_trucks(self, truck_ids: list[int]) -> dict[int, str]:
+        """Batch version — one query for many trucks. Returns {truck_id: driver_name}."""
+        return self._repo.get_driver_names_for_trucks(truck_ids)
 
     def on_driver_deleted(self, driver_id: int) -> None:
         """Handle driver deletion — unassign from truck."""

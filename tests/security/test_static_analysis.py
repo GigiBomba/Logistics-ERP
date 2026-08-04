@@ -98,6 +98,15 @@ class TestHardcodedSecrets:
     ) -> None:
         """Append to *violations* if *var_name* looks like a secret with a non-empty string value."""
         name_lower = var_name.lower()
+        # Settings-table key NAME constants: the identifier used to look up a
+        # secret inside the settings store, NOT the secret itself.  They are
+        # referenced by name (e.g. ``prefs.get_setting(TRACKING_API_KEY_KEY)``)
+        # and their value is a dotted settings path, not a credential.
+        SETTINGS_KEY_NAME_CONSTANTS = {
+            "tracking_api_key_key",  # = "tracking.token" (backend/schemas/mobile.py)
+        }
+        if name_lower in SETTINGS_KEY_NAME_CONSTANTS:
+            return
         secret_keywords = {"password", "secret", "api_key", "api_secret", "token_key", "jwt_secret"}
         if not any(kw in name_lower for kw in secret_keywords):
             return
@@ -177,8 +186,12 @@ class TestUnsafeCalls:
         Skips files where random is used for non-crypto purposes (rate limiting, etc.).
         """
         violations: list[str] = []
-        # Files where random is legitimately used for non-crypto purposes
-        ALLOWED_RANDOM_USERS = {"rate_limiter.py"}
+        # Files where random is legitimately used for non-crypto purposes.
+        # rate_limiter.py         — exponential-backoff jitter.
+        # fleet_tracking_service.py — GPS poll backoff jitter
+        #   (random.uniform(0, POLL_JITTER_MAX_SECONDS) to avoid stampeding a
+        #   recovering partner; never used for tokens/keys/crypto).
+        ALLOWED_RANDOM_USERS = {"rate_limiter.py", "fleet_tracking_service.py"}
 
         for pyfile in _iter_source_files():
             if pyfile.name in ALLOWED_RANDOM_USERS:

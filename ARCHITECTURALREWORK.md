@@ -1318,8 +1318,8 @@ async def ingest_gps_ping(ping: GpsPing):
     key = f"gps:live:{ping.truck_id}"
     cache.set(key, ping.model_dump(), ttl=120)  # 2 min live
 
-    # Append to a Redis list for batch flush
-    cache._redis.rpush("gps:batch_queue", ping.model_dump_json())
+    # Append to a per-company Redis list for batch flush
+    cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
     return {"status": "accepted"}
 
 
@@ -1340,7 +1340,7 @@ async def ingest_gps_batch(pings: List[GpsPing]):
     for ping in pings:
         key = f"gps:live:{ping.truck_id}"
         cache.set(key, ping.model_dump(), ttl=120)
-        cache._redis.rpush("gps:batch_queue", ping.model_dump_json())
+        cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
     return {"status": "accepted", "count": len(pings)}
 ```
 
@@ -1357,8 +1357,9 @@ def flush_gps_batch_to_postgres():
     db = DatabaseManager(Config.DB_PATH, engine=Config.DB_ENGINE)
     try:
         while True:
-            raw = cache._redis.lpop("gps:batch_queue")
-            if raw is None:
+            # Per-company drain: lrange → insert → commit → ltrim (delete-after-commit)
+            items = cache.lrange(f"gps:batch:{company_id}", 0, -1)
+            if not items:
                 break
             ping = json.loads(raw)
             # INSERT INTO gps_telemetry (truck_id, lat, lon, ...) VALUES (...)
@@ -1386,7 +1387,7 @@ celery_app.conf.beat_schedule = {
 | **Redis not available** | `RedisCache` throws no exceptions — `_enabled = False`, all ops are no-ops. |
 | **PostgreSQL placeholder differences** | `_adapt_query()` in `BaseRepository` handles `?` → `%s`. `INSERT RETURNING id` is critical. |
 | **Celery worker memory leaks** | `worker_max_tasks_per_child=50` forces periodic worker recycling. |
-| **GPS batch queue can grow unbounded** | Periodic flush + `LTRIM gps:batch_queue 0 49999` to cap at 50K. |
+| **GPS batch queue can grow unbounded** | Per-company keys `gps:batch:{company_id}`; flush drains via `lrange` → insert → commit → `ltrim` (delete-after-commit), with `max_retries=3` on the Celery task. |
 | **SQLite FTS5 doesn't exist in PostgreSQL** | FTS5 queries are wrapped in `if self.db._engine == "sqlite"` blocks. PostgreSQL uses `tsvector`/`tsquery` alternative. |
 
 ## Definition of Done — Phase 3

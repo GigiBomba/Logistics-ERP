@@ -9,7 +9,7 @@ Tests cover three groups of static/pure methods:
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -186,3 +186,72 @@ class TestParseTachoDate:
     ) -> None:
         """OverflowError (e.g. huge int) is caught → ``None``."""
         assert service._parse_tacho_date(10**20) is None
+
+
+# ======================================================================
+# _resolve_parser_path (F5 version probe)
+# ======================================================================
+
+
+class TestResolveParserPath:
+    """The exists-check is now followed by a ``--version`` capability probe.
+
+    A missing binary, a broken binary (non-zero exit), a probe timeout, or
+    a subprocess failure must all yield ``None`` so the existing graceful
+    "no parser found" error path fires.
+    """
+
+    def test_missing_binary_returns_none(self, service: TachoService) -> None:
+        with patch("services.tacho_service.os.path.exists", return_value=False):
+            assert service._resolve_parser_path() is None
+
+    def test_valid_binary_with_version_probe_returns_path(
+        self, service: TachoService,
+    ) -> None:
+        with (
+            patch("services.tacho_service.TACHOGRAPH_PATH", "C:/tools/tachograph.exe"),
+            patch("services.tacho_service.os.path.exists", return_value=True),
+            patch(
+                "services.tacho_service.subprocess.run",
+                return_value=MagicMock(
+                    returncode=0, stdout=b"tachograph version 1.2.3\n", stderr=b"",
+                ),
+            ) as mock_run,
+        ):
+            path = service._resolve_parser_path()
+        assert path == "C:/tools/tachograph.exe"
+        mock_run.assert_called_once()
+        args = mock_run.call_args.args[0]
+        assert "--version" in args
+
+    def test_non_zero_exit_probe_returns_none(
+        self, service: TachoService,
+    ) -> None:
+        with (
+            patch("services.tacho_service.os.path.exists", return_value=True),
+            patch(
+                "services.tacho_service.subprocess.run",
+                return_value=MagicMock(returncode=1, stdout=b"", stderr=b"broken"),
+            ),
+        ):
+            assert service._resolve_parser_path() is None
+
+    def test_probe_timeout_returns_none(self, service: TachoService) -> None:
+        with (
+            patch("services.tacho_service.os.path.exists", return_value=True),
+            patch(
+                "services.tacho_service.subprocess.run",
+                side_effect=__import__("subprocess").TimeoutExpired("tachograph", 5),
+            ),
+        ):
+            assert service._resolve_parser_path() is None
+
+    def test_probe_subprocess_error_returns_none(self, service: TachoService) -> None:
+        with (
+            patch("services.tacho_service.os.path.exists", return_value=True),
+            patch(
+                "services.tacho_service.subprocess.run",
+                side_effect=OSError("cannot execute"),
+            ),
+        ):
+            assert service._resolve_parser_path() is None
