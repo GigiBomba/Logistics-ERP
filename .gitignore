@@ -20,6 +20,7 @@ venv/
 .venv/
 env/
 .env
+.env*
 admin.env
 securityprompt.env
 securityreworkplan.env
