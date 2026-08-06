@@ -1,12 +1,18 @@
-﻿import { Helmet } from "react-helmet-async"
+import { useMemo } from "react"
+import { SeoHead } from "@/components/seo/seo-head"
+import { JsonLd, articleSchema, breadcrumbSchema } from "@/components/seo/structured-data"
 import { motion } from "motion/react"
 import { useParams, Link } from "react-router"
 import { ArrowLeft, Calendar, Clock, Tag } from "lucide-react"
 import { PageHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { Badge } from "@/components/ui/badge"
+import { BlogCard } from "@/components/shared/blog-card"
 import { useAuth } from "@/contexts/auth-provider"
 import { formatDate } from "@/lib/utils"
+import { useBlogPost, useBlogPosts } from "@/services/queries"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { trackCTAClick } from "@/services/analytics"
 
 interface BlogArticleData {
   title: string
@@ -17,11 +23,145 @@ interface BlogArticleData {
   author_name: string
   category: string
   tags: string[]
+  featured_image?: string
   reading_time_minutes: number
   published_at: string
 }
 
+/**
+ * Per-post Open Graph image:
+ *  - `featured_image` when the API provides one (absolute URL kept as-is,
+ *    relative paths resolved against the site origin).
+ *  - Otherwise a deterministic per-slug URL. This keeps og:image unique per
+ *    article (never the global site logo) and stable across rebuilds; real
+ *    per-post assets can be dropped into `public/og/blog/{slug}.png` later.
+ */
+function getArticleOgImage(article: BlogArticleData): string {
+  if (article.featured_image) {
+    return article.featured_image.startsWith("http")
+      ? article.featured_image
+      : `https://operionerp.xyz${article.featured_image.startsWith("/") ? "" : "/"}${article.featured_image}`
+  }
+  return `https://operionerp.xyz/og/blog/${article.slug}.png`
+}
+
 const BLOG_ARTICLES: Record<string, BlogArticleData> = {
+  "operion-ai-copilot-intelligent-logistics-automation": {
+    title: "Operion AI Co-Pilot: Intelligent Automation for Modern Logistics",
+    slug: "operion-ai-copilot-intelligent-logistics-automation",
+    excerpt:
+      "Meet Operion AI Co-Pilot — the natural language interface that works alongside your team. Understand how AI-powered intent understanding, safety, and voice interaction are transforming logistics operations.",
+    seo_description:
+      "Learn how Operion AI Co-Pilot brings natural language understanding, safe execution, and voice interaction to logistics operations.",
+    content: `
+<p><strong>The Operion AI Co-Pilot is a natural language interface to the full Operion logistics platform — not a chatbot bolted on top, but an intelligent layer that understands intent and executes through the same business services your team already relies on.</strong></p>
+
+<p>This article walks through the architecture and capabilities of the Co-Pilot at a technical level. It covers design philosophy, how the system understands and acts on requests, how it keeps data safe, and how it fits into existing logistics workflows.</p>
+
+<h2>Design Philosophy: Augment, Never Replace</h2>
+
+<p>The Co-Pilot is built on a foundational principle: it is an interface to Operion's existing business logic, never a replacement for it. Every action the Co-Pilot takes routes through the same validated, permission-checked, multi-tenant service layer that the traditional desktop and web interfaces use. There is no secondary path to data, no bypass around business rules, and no shortcut past permission checks.</p>
+
+<p>This means the Co-Pilot cannot do anything a human operator cannot do through the standard interface — it simply does it faster. It does not touch databases directly, does not generate raw queries, and does not manipulate user interface widgets. Every capability maps to an existing, tested business service. If a service does not exist for a requested action, the Co-Pilot reports that the capability is unavailable rather than improvising a workaround.</p>
+
+<h2>The Understanding Pipeline</h2>
+
+<p>When a user speaks or types a request, the Co-Pilot processes it through several distinct stages before anything happens. The system does not jump from utterance to action — it builds understanding incrementally, with each stage producing an inspectable artifact.</p>
+
+<p><strong>Understanding.</strong> The raw input — whether typed text or speech transcribed by a self-hosted speech-to-text engine — is analysed to extract the user's intent and any relevant entities: customers, vehicles, dates, locations, amounts, and so on. The system operates across multiple languages, matching the full localization scope of the Operion platform itself.</p>
+
+<p><strong>Planning.</strong> The system compiles an execution plan — a sequence of steps with defined dependencies, each mapped to a specific business service. Steps are automatically assigned a confidence level based on what they do: read-only operations execute immediately, operations that create or modify business data require explicit user confirmation, and destructive actions require additional verification.</p>
+
+<p><strong>Validation and Execution.</strong> Before any business-mutating step executes, the system re-validates the facts that step depends on. In a busy logistics operation, a truck that was available thirty seconds ago may have been assigned by another dispatcher. The Co-Pilot checks — against live data, not cached assumptions — and if conditions have changed, it reports the situation honestly and offers to re-evaluate rather than silently executing against stale information. Every execution step is logged with a version-stamped tool identifier, the parameters used, and the result, creating a complete audit trail.</p>
+
+<p><strong>Summarization.</strong> Once execution completes — or if clarification is needed — the Co-Pilot explains what happened (or what it needs) in natural language, using the same localisation system as the rest of the Operion interface.</p>
+
+<h2>Safety Through Structure</h2>
+
+<p>The Co-Pilot uses a tiered confirmation system that maps directly to business impact. Read-only operations — searching for vehicles, looking up customer details, checking route distances — execute immediately with no friction. Operations that create or modify business data — dispatching a truck, generating an invoice, updating a driver record — pause for explicit user confirmation. Destructive or high-impact operations require a typed confirmation phrase, ensuring intentionality.</p>
+
+<p>Critically, the confirmation system cannot be bypassed through voice. High-impact actions always require a deliberate click or tap, protecting against ambient noise or misheard commands in a busy dispatch office. The human stays in the loop for every decision that matters.</p>
+
+<p>Every action the Co-Pilot takes — every tool call, every confirmation, every result — is recorded in a structured audit log. This log captures what was requested, what the system understood, what it planned to do, what actually executed, and what the result was. It is designed for compliance, dispute resolution, and continuous improvement, not just debugging.</p>
+
+<h2>Voice as a First-Class Modality</h2>
+
+<p>Voice is not an afterthought bolted onto a text interface. The Co-Pilot implements a full voice pipeline — speech-to-text for input, text-to-speech for output — with defined visual states that make microphone status unambiguous at all times. The system is designed for hands-free operation: a dispatcher should be able to complete an entire interaction without touching the screen, except at the deliberate confirmation step for business-critical actions.</p>
+
+<p>The voice pipeline processes input through self-hosted engines, keeping audio data within the operational environment. Language detection runs alongside transcription, and where confidence is low, the system falls back to the user's configured language rather than guessing.</p>
+
+<h2>Integration Architecture</h2>
+
+<p>The Co-Pilot exposes a single API surface that serves both the desktop and mobile clients identically. No endpoint, tool, or pipeline stage branches on which client is calling. Everything client-specific — widget implementation, offline caching, push notifications, mobile-specific voice constraints — lives entirely in the client layer. The same Co-Pilot session can in theory be started on desktop and continued on mobile, though in practice the system pins a conversation to the provider context it started with to ensure consistent behaviour throughout.</p>
+
+<p>The tool system is provider-agnostic at the architectural level. No component outside a narrowly scoped provider layer imports a vendor-specific SDK or references a model-specific request format. The planner and every other component talk to language models exclusively through a generic interface, making the system adaptable to different model providers through configuration rather than code changes.</p>
+
+<h2>What It Means for Your Operation</h2>
+
+<p>The Operion AI Co-Pilot transforms how logistics teams interact with their operational platform. Route planning, dispatch, fleet queries, document generation, and financial analysis all become accessible through natural conversation — typed or spoken — while the safety, auditability, and data integrity that professional logistics operations require are preserved and strengthened. The Co-Pilot does not replace the skilled dispatcher's judgment; it amplifies it by handling the mechanical work of querying, comparing, and validating, freeing the team to focus on the decisions that actually move the business forward.</p>
+`,
+    author_name: "Operion Team",
+    category: "AI & Automation",
+    tags: ["ai-copilot", "artificial-intelligence", "logistics-automation", "voice-assistant", "operion-ai"],
+    reading_time_minutes: 8,
+    published_at: "2026-07-16T10:00:00Z",
+  },
+  "operion-ai-workflow-transformation-non-technical": {
+    title: "How Operion AI Transforms Your Daily Workflow — No Technical Skills Required",
+    slug: "operion-ai-workflow-transformation-non-technical",
+    excerpt:
+      "See how Operion AI makes complex logistics tasks as easy as having a conversation. No menus, no forms — just tell it what you need and get back to running your business.",
+    seo_description:
+      "Discover how Operion AI makes logistics management effortless. Natural conversation, voice commands, proactive alerts — all designed for transport professionals, not programmers.",
+    content: `
+<p><strong>Imagine walking into your office, sitting down, and saying "what's my cheapest truck near Berlin for tomorrow's delivery" — and getting a clear answer, with a plan ready to go, without opening a single menu or filling out a single form. That is what Operion AI brings to your logistics operation.</strong></p>
+
+<p>The Operion AI Co-Pilot is like having an extra team member who knows your entire operation inside out — every vehicle, every driver, every customer, every route — and can answer questions, prepare documents, and coordinate tasks just by having a conversation with you. No coding. No complicated setup. Just talk or type naturally, the way you would ask a colleague.</p>
+
+<h2>From Clicking to Conversing</h2>
+
+<p>Think about how you run your operation today. To dispatch a truck, you probably need to open multiple screens: check which vehicles are available, look up driver hours, calculate a route, estimate costs, generate documents, and assign the job. Each step means clicking through menus, filling in fields, switching between tabs — and every click is a chance to make a mistake.</p>
+
+<p>With the AI Co-Pilot, you describe what you need in plain language. "Send truck 12 to pick up the Müller load in Frankfurt, deliver to Stuttgart, and email the paperwork to the customer." The Co-Pilot understands the request, checks availability against actual operational data, plans the route, calculates costs, generates the required documents, and presents everything to you for confirmation — all in one fluid interaction.</p>
+
+<p>You review the plan. If it looks right, you confirm with a single tap. The Co-Pilot executes the dispatch, sends the route to the driver's mobile app, and emails the customer. What used to take ten or fifteen minutes across half a dozen screens now takes less than a minute of conversation.</p>
+
+<h2>Talk Instead of Type</h2>
+
+<p>The Co-Pilot works with both text and voice, whichever is more natural in the moment. A busy dispatcher coordinating multiple drivers can speak requests hands-free while watching the board — "what's the ETA on the Bucharest run," "show me all open invoices from last week," "which trucks need maintenance in the next week" — and get instant spoken answers without looking away from the operation.</p>
+
+<p>Voice mode has four clear states that the interface shows you at all times: whether the microphone is idle, actively listening, processing your request, or responding. You always know exactly what is happening. And for any decision that matters — dispatching a truck, generating an invoice, changing a driver assignment — the system asks you to confirm with a deliberate tap, not just a spoken "yes," so there is never any ambiguity.</p>
+
+<h2>Catches Problems Before You Do</h2>
+
+<p>The Co-Pilot does not just wait for you to ask questions. It continuously watches your operation and alerts you about things that need attention — before they become problems. A vehicle approaching its scheduled maintenance date. An invoice that has been pending longer than usual. A driver whose hours are running tight for a planned route. The system flags these proactively, in plain language, so you can act on them early rather than discovering them when they turn into emergencies.</p>
+
+<p>You can also ask follow-up questions naturally. "What problems should I know about this morning?" gives you a plain-language summary of everything that needs attention. "What happened yesterday on the Milan run?" gives you a complete picture without digging through logs. The Co-Pilot keeps track of the overall state of your operation, so it can answer these broad questions without needing you to specify exactly what to look up.</p>
+
+<h2>Works the Way Your Team Works</h2>
+
+<p>Your team probably speaks multiple languages, especially in European transport. The Co-Pilot works in all the languages your Operion platform already supports — English, Romanian, German, French, Spanish, Polish, and more. Different team members can interact with it in their preferred language, and it will respond in the same language they used.</p>
+
+<p>Whether your team uses the desktop application in the office or the mobile app in the yard, the Co-Pilot is available in both. A dispatcher can start a conversation on desktop and a driver can follow up on mobile — or each can interact with the Co-Pilot independently, depending on who needs what.</p>
+
+<h2>Always in Your Control</h2>
+
+<p>The AI Co-Pilot is designed to make your team faster and more effective, not to take decisions out of your hands. Every action that affects your business data requires your confirmation before it happens. The system shows you what it plans to do, and you decide whether to proceed.</p>
+
+<p>And because every interaction is logged — what you asked, what the system understood, what it did, and when — you always have a complete record for compliance, disputes, or simply reviewing what happened during a busy shift. Nothing happens invisibly.</p>
+
+<h2>Getting Started</h2>
+
+<p>The Operion AI Co-Pilot is included in the Operion platform — there is nothing extra to install or configure to start using it. If you can already use Operion to manage your fleet, routes, and dispatch, you already have everything you need to start talking to the Co-Pilot. Open the Co-Pilot panel, type or speak what you need, and let it show you what it can do.</p>
+
+<p>The best way to understand the difference the Co-Pilot makes is to try it with a real task you handle every day. Pick one operation — dispatching a single truck, checking on an invoice, planning a route — and describe it in natural language the way you would to a colleague. The Co-Pilot will handle the rest.</p>
+`,
+    author_name: "Operion Team",
+    category: "AI & Automation",
+    tags: ["ai-copilot", "workflow-automation", "logistics-simplified", "voice-commands"],
+    reading_time_minutes: 5,
+    published_at: "2026-07-16T10:00:00Z",
+  },
   "how-to-calculate-trip-profitability-road-transport": {
     title: "Trip Profitability: How to Calculate Profit Per Transport Job",
     slug: "how-to-calculate-trip-profitability-road-transport",
@@ -1488,18 +1628,48 @@ export default function BlogArticlePage() {
   const { isAdmin } = useAuth()
   const { slug } = useParams<{ slug: string }>()
 
-  const article = slug ? BLOG_ARTICLES[slug] : undefined
+  const { data: postData, isLoading } = useBlogPost(slug || "")
+  const { data: postsData } = useBlogPosts()
+
+  const article = (postData as BlogArticleData | undefined) || (slug ? BLOG_ARTICLES[slug] : undefined)
+
+  // Related posts: same category and/or overlapping tags from the blog API,
+  // excluding the current slug, max 3.
+  const relatedPosts = useMemo(() => {
+    if (!article || !slug) return []
+    const others = (postsData?.items ?? []).filter((p: any) => p.slug !== slug)
+    const articleTags = article.tags ?? []
+    const scored = others
+      .map((p: any) => {
+        let score = 0
+        if (p.category && p.category === article.category) score += 2
+        if (Array.isArray(p.tags)) {
+          score += p.tags.filter((t: string) => articleTags.includes(t)).length
+        }
+        return { post: p, score }
+      })
+      .filter((s) => s.score > 0)
+      .sort((a, b) => b.score - a.score)
+    return scored.slice(0, 3).map((s) => s.post)
+  }, [postsData, slug, article])
+
+  if (isLoading) {
+    return (
+      <SectionWrapper>
+        <div className="flex min-h-[50vh] items-center justify-center">
+          <LoadingSpinner />
+        </div>
+      </SectionWrapper>
+    )
+  }
 
   if (!article) {
     return (
       <>
-        <Helmet>
-          <title>Article Not Found — Operion</title>
-          <meta
-            name="description"
-            content="The requested blog article could not be found."
-          />
-        </Helmet>
+        <SeoHead
+          title="Article Not Found — Operion"
+          description="The requested blog article could not be found."
+        />
 
         <PageHeader title="Article Not Found" />
 
@@ -1529,11 +1699,32 @@ export default function BlogArticlePage() {
 
   return (
     <>
-      <Helmet>
-        <title>{article.title} — Blog — Operion</title>
-        <meta name="description" content={article.excerpt} />
-        <link rel="canonical" href={`https://operion.com/blog/${article.slug}`} />
-      </Helmet>
+      <SeoHead
+        title={`${article.title} — Blog — Operion`}
+        description={article.seo_description || article.excerpt}
+        canonical={`https://operionerp.xyz/blog/${article.slug}`}
+        ogType="article"
+        ogImage={getArticleOgImage(article)}
+      />
+
+      {/* Structured Data: Article + BreadcrumbList */}
+      <JsonLd
+        data={articleSchema({
+          headline: article.title,
+          description: article.excerpt,
+          url: `https://operionerp.xyz/blog/${article.slug}`,
+          imageUrl: getArticleOgImage(article),
+          datePublished: article.published_at,
+          authorName: article.author_name,
+        })}
+      />
+      <JsonLd
+        data={breadcrumbSchema([
+          { name: "Home", url: "https://operionerp.xyz/" },
+          { name: "Blog", url: "https://operionerp.xyz/blog" },
+          { name: article.title, url: `https://operionerp.xyz/blog/${article.slug}` },
+        ])}
+      />
 
       <PageHeader
         title={article.title}
@@ -1557,7 +1748,7 @@ export default function BlogArticlePage() {
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="mx-auto max-w-3xl"
+          className="mx-auto max-w-4xl"
         >
           {/* Meta */}
           <div className="mb-8 flex flex-wrap items-center gap-4 text-sm text-muted-foreground">
@@ -1587,12 +1778,66 @@ export default function BlogArticlePage() {
 
           {/* Content */}
           <div
-            className="prose prose-gray max-w-none dark:prose-invert prose-headings:font-bold prose-h2:text-2xl prose-h2:mt-10 prose-h2:mb-4 prose-h3:text-xl prose-h3:mt-8 prose-h3:mb-3 prose-p:leading-relaxed prose-li:leading-relaxed"
+            className="prose prose-gray max-w-none dark:prose-invert
+              prose-headings:font-bold prose-headings:tracking-tight
+              prose-h2:text-2xl prose-h2:mt-12 prose-h2:mb-5 prose-h2:pb-2 prose-h2:border-b prose-h2:border-border/50
+              prose-h3:text-xl prose-h3:mt-10 prose-h3:mb-4
+              prose-h4:text-lg prose-h4:mt-8 prose-h4:mb-3
+              prose-p:text-base prose-p:leading-[1.75] prose-p:mb-5
+              prose-li:text-base prose-li:leading-[1.75] prose-li:my-1.5
+              prose-strong:font-semibold
+              prose-a:text-primary prose-a:no-underline hover:prose-a:underline
+              prose-table:w-full prose-table:border-collapse prose-table:my-8
+              prose-th:bg-muted prose-th:font-semibold prose-th:text-left prose-th:px-4 prose-th:py-3 prose-th:text-sm prose-th:border prose-th:border-border
+              prose-td:px-4 prose-td:py-3 prose-td:text-sm prose-td:border prose-td:border-border
+              prose-tr:even:bg-muted/30
+              prose-code:rounded prose-code:bg-muted prose-code:px-1.5 prose-code:py-0.5 prose-code:text-sm prose-code:font-normal
+              prose-pre:rounded-xl prose-pre:bg-muted prose-pre:border prose-pre:border-border
+              prose-blockquote:border-l-primary prose-blockquote:bg-muted/30 prose-blockquote:py-1 prose-blockquote:px-5 prose-blockquote:rounded-r-lg
+              prose-ol:pl-6 prose-ul:pl-6
+              prose-img:rounded-xl prose-img:border prose-img:border-border"
             dangerouslySetInnerHTML={{ __html: article.content }}
           />
 
+          {/* Conversion CTA — Operion ERP */}
+          <div className="mt-12 rounded-lg border border-primary/20 bg-gradient-to-br from-primary/5 via-primary/3 to-background p-8">
+            <h3 className="text-xl font-bold tracking-tight">Streamline Your Transport Operations with Operion ERP</h3>
+            <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+              Operion is a desktop logistics platform built for transport companies. It combines trip profit
+              calculation, route planning with GraphHopper, fleet management, dispatching, and CMR document
+              generation in one application. No monthly subscriptions — free during development.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-3">
+              <a
+                href="/waitlist"
+                onClick={() => trackCTAClick("blog_article", `/blog/${slug ?? ""}`)}
+                className="inline-flex items-center rounded-lg bg-primary px-5 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+              >
+                Join the waitlist
+              </a>
+              <a
+                href="/features"
+                className="inline-flex items-center rounded-lg border px-5 py-2.5 text-sm font-medium hover:bg-accent transition-colors"
+              >
+                Explore features
+              </a>
+              <a
+                href="/pricing"
+                className="inline-flex items-center rounded-lg border px-5 py-2.5 text-sm font-medium hover:bg-accent transition-colors"
+              >
+                See pricing
+              </a>
+              <a
+                href="/roi-calculator"
+                className="inline-flex items-center rounded-lg border px-5 py-2.5 text-sm font-medium hover:bg-accent transition-colors"
+              >
+                Calculate your ROI
+              </a>
+            </div>
+          </div>
+
           {/* Tags */}
-          {article.tags.length > 0 && (
+          {(article.tags ?? []).length > 0 && (
             <div className="mt-12 flex flex-wrap items-center gap-2 border-t pt-8">
               <Tag className="h-4 w-4 text-muted-foreground" />
               {article.tags.map((tag) => (
@@ -1602,6 +1847,22 @@ export default function BlogArticlePage() {
               ))}
             </div>
           )}
+
+          {/* Related Articles */}
+          <div className="mt-12 border-t pt-8">
+            <h3 className="mb-6 text-lg font-bold tracking-tight">Related Articles</h3>
+            {relatedPosts.length > 0 ? (
+              <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+                {relatedPosts.map((post: any) => (
+                  <BlogCard key={post.slug} post={post} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No related articles published yet. Check back soon.
+              </p>
+            )}
+          </div>
 
           {/* Back link */}
           <div className="mt-12 border-t pt-8">

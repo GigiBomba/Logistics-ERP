@@ -1,7 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState, useCallback } from "react"
-import { useNavigate } from "react-router"
+import { useAppNavigate } from "@/hooks/useAppNavigate"
 import { motion, AnimatePresence } from "motion/react"
 import {
   Search,
@@ -148,7 +148,7 @@ export function GlobalSearch({ open: controlledOpen, onOpenChange }: GlobalSearc
     api: t("search.typeApi"),
   }
 
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   const [internalOpen, setInternalOpen] = useState(false)
   const open = controlledOpen ?? internalOpen
   const setOpen = (val: boolean | ((prev: boolean) => boolean)) => {
@@ -229,7 +229,7 @@ export function GlobalSearch({ open: controlledOpen, onOpenChange }: GlobalSearc
       // Security: validate URL to prevent open redirect
       if (
         url.startsWith("http") &&
-        !url.includes("operion.com") &&
+        !url.includes("operionerp.xyz") &&
         !url.startsWith("http://localhost")
       ) {
         return
@@ -310,7 +310,7 @@ export function GlobalSearch({ open: controlledOpen, onOpenChange }: GlobalSearc
             className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh] sm:pt-[18vh]"
             role="dialog"
             aria-modal="true"
-            aria-label={t("common.aria.search")}
+            aria-label={t("common.search")}
           >
             <div
               className="w-full max-w-xl rounded-xl border border-border/50 bg-background shadow-2xl shadow-black/20 dark:border-border/30 dark:bg-zinc-900/95 dark:backdrop-blur-2xl"

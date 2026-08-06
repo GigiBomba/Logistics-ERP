@@ -1,5 +1,5 @@
-import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Download, Monitor, HardDrive, Cpu, CheckCircle2, History } from "lucide-react"
 import { HeroSection } from "@/components/shared/hero-section"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
@@ -11,6 +11,7 @@ import { ReleaseCard } from "@/components/shared/release-card"
 import type { Release } from "@/components/shared/release-card"
 import { CtaBanner } from "@/components/shared/cta-banner"
 import { toolkitConfig } from "@/config/site"
+import { useLocale } from "@/i18n/locale-context"
 
 const systemRequirements = [
   { icon: Monitor, label: "Operating System", value: "Windows 10/11 (64-bit), macOS 13+, Ubuntu 22.04+" },
@@ -135,12 +136,10 @@ const previousVersions = [
 ]
 
 export default function ToolkitPage() {
+  const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>Toolkit — Operion</title>
-        <meta name="description" content="Download the Operion Toolkit. Command-line utilities, authentication helpers, local development server, and integration tools for developers." />
-      </Helmet>
+      <SeoHead title="Toolkit — Operion" description="Download the Operion Toolkit. Command-line utilities, authentication helpers, local development server, and integration tools for developers." canonical="https://operionerp.xyz/developers/toolkit" />
 
       <HeroSection
         title="Operion Toolkit"
@@ -193,17 +192,17 @@ export default function ToolkitPage() {
                 <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10 mb-6">
                   <Download className="h-8 w-8 text-primary" />
                 </div>
-                <Badge variant="success" className="mb-3">Latest Release</Badge>
+                <Badge variant="success" className="mb-3">{t("toolkit.latestRelease")}</Badge>
                 <h2 className="text-2xl font-bold">Operion Toolkit {toolkitConfig.latestVersion}</h2>
-                <p className="mt-2 text-sm text-muted-foreground">Released {toolkitConfig.releaseDate}</p>
+                <p className="mt-2 text-sm text-muted-foreground">{t("toolkit.released").replace("{date}", toolkitConfig.releaseDate)}</p>
                 <Button size="xl" className="mt-6" asChild>
                   <a href={toolkitConfig.downloadUrl} download>
                     <Download className="mr-2 h-4 w-4" />
-                    Download Toolkit
+                    {t("toolkit.downloadToolkit")}
                   </a>
                 </Button>
                 <p className="mt-4 text-xs text-muted-foreground">
-                  Windows, macOS, and Linux installers included
+                  {t("toolkit.installersIncluded")}
                 </p>
               </div>
             </CardContent>
@@ -214,8 +213,8 @@ export default function ToolkitPage() {
       {/* Installation */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
-          title="Installation"
-          description="Get up and running in under two minutes."
+          title={t("toolkit.installation")}
+          description={t("toolkit.installationDesc")}
           className="mb-12"
         />
         <div className="mx-auto max-w-3xl">

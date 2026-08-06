@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { Mail, Check } from "lucide-react"
 import { useLocale } from "@/i18n/locale-context"
@@ -24,10 +24,7 @@ export default function EnterprisePage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("enterprise.pageTitle")}</title>
-        <meta name="description" content={t("enterprise.metaDesc")} />
-      </Helmet>
+      <SeoHead title={t("enterprise.pageTitle")} description={t("enterprise.metaDesc")} canonical="https://operionerp.xyz/enterprise" />
 
       <HeroSection
         title={t("enterprise.title")}

@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
 import { HeroSection } from "@/components/shared/hero-section"
@@ -9,13 +9,7 @@ export default function CustomersPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("customers.title")}</title>
-        <meta
-          name="description"
-          content={t("customers.metaDesc")}
-        />
-      </Helmet>
+      <SeoHead title={t("customers.title")} description={t("customers.metaDesc")} canonical="https://operionerp.xyz/customers" />
 
       <HeroSection
         title={t("customers.title")}

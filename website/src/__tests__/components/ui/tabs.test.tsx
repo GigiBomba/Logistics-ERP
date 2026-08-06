@@ -1,4 +1,4 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 
@@ -89,5 +89,93 @@ describe("Tabs", () => {
     )
 
     expect(container.firstChild).toHaveClass("custom-tabs")
+  })
+
+  it("navigates tabs with the right arrow key", () => {
+    render(
+      <Tabs defaultValue="tab1">
+        <TabsList>
+          <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+          <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tab1">Content 1</TabsContent>
+        <TabsContent value="tab2">Content 2</TabsContent>
+      </Tabs>
+    )
+
+    fireEvent.keyDown(screen.getByText("Tab 1"), { key: "ArrowRight" })
+    expect(screen.queryByText("Content 1")).not.toBeInTheDocument()
+    expect(screen.getByText("Content 2")).toBeInTheDocument()
+  })
+
+  it("wraps around with the left arrow key", () => {
+    render(
+      <Tabs defaultValue="tab1">
+        <TabsList>
+          <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+          <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tab1">Content 1</TabsContent>
+        <TabsContent value="tab2">Content 2</TabsContent>
+      </Tabs>
+    )
+
+    fireEvent.keyDown(screen.getByText("Tab 1"), { key: "ArrowLeft" })
+    expect(screen.getByText("Content 2")).toBeInTheDocument()
+  })
+
+  it("jumps to the first tab with the Home key", () => {
+    render(
+      <Tabs defaultValue="tab2">
+        <TabsList>
+          <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+          <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tab1">Content 1</TabsContent>
+        <TabsContent value="tab2">Content 2</TabsContent>
+      </Tabs>
+    )
+
+    fireEvent.keyDown(screen.getByText("Tab 2"), { key: "Home" })
+    expect(screen.getByText("Content 1")).toBeInTheDocument()
+  })
+
+  it("jumps to the last tab with the End key", () => {
+    render(
+      <Tabs defaultValue="tab1">
+        <TabsList>
+          <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+          <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+        </TabsList>
+        <TabsContent value="tab1">Content 1</TabsContent>
+        <TabsContent value="tab2">Content 2</TabsContent>
+      </Tabs>
+    )
+
+    fireEvent.keyDown(screen.getByText("Tab 1"), { key: "End" })
+    expect(screen.getByText("Content 2")).toBeInTheDocument()
+  })
+
+  it("supports controlled mode with onValueChange", () => {
+    const onChange = vi.fn()
+    render(
+      <Tabs defaultValue="tab1" value="tab1" onValueChange={onChange}>
+        <TabsList>
+          <TabsTrigger value="tab1">Tab 1</TabsTrigger>
+          <TabsTrigger value="tab2">Tab 2</TabsTrigger>
+        </TabsList>
+      </Tabs>
+    )
+
+    fireEvent.click(screen.getByText("Tab 2"))
+    expect(onChange).toHaveBeenCalledWith("tab2")
+  })
+
+  it("throws when a trigger is used outside Tabs", () => {
+    const spy = vi.spyOn(console, "error").mockImplementation(() => {})
+    expect(() => render(<TabsTrigger value="a">A</TabsTrigger>)).toThrow(
+      "Tabs compound components must be used within a <Tabs />"
+    )
+    spy.mockRestore()
   })
 })

@@ -1,5 +1,5 @@
 import { useState, useMemo } from "react"
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Link } from "react-router"
 import { motion, AnimatePresence } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
@@ -96,11 +96,11 @@ export default function FaqPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("faq.meta.title")}</title>
-        <meta name="description" content={t("faq.meta.description")} />
-        <link rel="canonical" href="https://operion.com/faq" />
-      </Helmet>
+      <SeoHead
+        title={t("faq.meta.title")}
+        description={t("faq.meta.description")}
+        canonical="https://operionerp.xyz/faq"
+      />
       <JsonLd data={faqSchema(allFaqItems)} />
       <PageHeader title={t("faq.title")} description={t("faq.subtitle")} />
 
@@ -183,7 +183,7 @@ export default function FaqPage() {
                                     transition={{ duration: 0.2 }}
                                     className="overflow-hidden"
                                   >
-                                    <p className="px-5 pb-5 text-sm text-muted-foreground">{item.a}</p>
+                                    <p className="px-5 pb-5 text-sm text-foreground/80">{item.a}</p>
                                   </motion.div>
                                 )}
                               </AnimatePresence>

@@ -53,7 +53,7 @@ export function FaqAccordion({ items, className }: FaqAccordionProps) {
                   transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
                   className="overflow-hidden"
                 >
-                  <div className="border-t border-border px-5 py-4 text-sm leading-relaxed text-muted-foreground">
+                  <div className="border-t border-border px-5 py-4 text-sm leading-relaxed text-foreground/80">
                     {item.answer}
                   </div>
                 </motion.div>

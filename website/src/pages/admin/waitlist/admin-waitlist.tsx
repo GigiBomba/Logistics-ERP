@@ -8,12 +8,13 @@ import { Skeleton } from "@/components/ui/loading-spinner"
 import { PageHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { useAuth } from "@/contexts/auth-provider"
+import { useLocale } from "@/i18n/locale-context"
 import { waitlistApi, type WaitlistStatsResponse } from "@/api/endpoints"
 import { extractApiError } from "@/api/client"
-import { useLocale } from "@/i18n/locale-context"
 import OverviewTab from "./overview-tab"
 import EntriesTab from "./entries-tab"
 import CampaignTab from "./campaign-tab"
+import ReferralTab from "./referral-tab"
 
 export default function AdminWaitlistPage() {
   const { isAdmin } = useAuth()
@@ -46,8 +47,8 @@ export default function AdminWaitlistPage() {
   if (!isAdmin) {
     return (
       <SectionWrapper>
-        <Callout variant="warning" title={t("adminWaitlist.accessDenied.title")}>
-          {t("adminWaitlist.accessDenied.message")}
+        <Callout variant="warning" title={t("admin.waitlist.accessDenied")}>
+          {t("admin.waitlist.accessDeniedDesc")}
         </Callout>
       </SectionWrapper>
     )
@@ -56,17 +57,17 @@ export default function AdminWaitlistPage() {
   return (
     <>
       <Helmet>
-        <title>{t("adminWaitlist.pageTitle")}</title>
+        <title>{t("admin.waitlist.title")} — Operion ERP</title>
       </Helmet>
 
       <PageHeader
-        title={t("adminWaitlist.pageHeader")}
+        title={t("admin.waitlist.title")}
         description={
           statsLoading
-            ? t("adminWaitlist.loading")
+            ? t("admin.waitlist.loading")
             : statsError
-              ? t("adminWaitlist.loadError")
-              : t("adminWaitlist.subtitle").replace("{count}", String(stats?.total ?? 0))
+              ? t("admin.waitlist.loadError")
+              : `${stats?.total ?? 0} ${t("admin.waitlist.overview.totalSignups")} · ${t("admin.waitlist.tab.entries")}, ${t("admin.waitlist.overview.bySource")}, ${t("admin.waitlist.tab.campaign")}`
         }
       />
 
@@ -84,9 +85,10 @@ export default function AdminWaitlistPage() {
 
           <Tabs defaultValue="overview">
             <TabsList>
-              <TabsTrigger value="overview">{t("adminWaitlist.tabs.overview")}</TabsTrigger>
-              <TabsTrigger value="entries">{t("adminWaitlist.tabs.entries")}</TabsTrigger>
-              <TabsTrigger value="campaign">{t("adminWaitlist.tabs.campaign")}</TabsTrigger>
+              <TabsTrigger value="overview">{t("admin.waitlist.tab.overview")}</TabsTrigger>
+              <TabsTrigger value="entries">{t("admin.waitlist.tab.entries")}</TabsTrigger>
+              <TabsTrigger value="campaign">{t("admin.waitlist.tab.campaign")}</TabsTrigger>
+              <TabsTrigger value="referrals">{t("admin.waitlist.tab.referrals")}</TabsTrigger>
             </TabsList>
 
             <TabsContent value="overview" className="mt-6">
@@ -110,6 +112,9 @@ export default function AdminWaitlistPage() {
 
             <TabsContent value="campaign" className="mt-6">
               <CampaignTab />
+            </TabsContent>
+            <TabsContent value="referrals" className="mt-6">
+              <ReferralTab />
             </TabsContent>
           </Tabs>
         </motion.div>

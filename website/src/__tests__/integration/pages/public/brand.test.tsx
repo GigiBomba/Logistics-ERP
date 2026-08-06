@@ -12,17 +12,21 @@ vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
-vi.mock("@/config/site", () => ({
-  pressConfig: {
-    contactEmail: "operion.contact@gmail.com",
-    companyFacts: {
-      founded: "April 2026",
-      headquarters: "Romania",
-      employees: "1",
-      customers: "0",
+vi.mock("@/config/site", async () => {
+  const actual = await vi.importActual<typeof import("@/config/site")>("@/config/site")
+  return {
+    ...actual,
+    pressConfig: {
+      contactEmail: "operion.contact@gmail.com",
+      companyFacts: {
+        founded: "April 2026",
+        headquarters: "Romania",
+        employees: "1",
+        customers: "0",
+      },
     },
-  },
-}))
+  }
+})
 
 describe("BrandPage", () => {
   it("renders heading", () => {

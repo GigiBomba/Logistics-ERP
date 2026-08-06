@@ -79,7 +79,9 @@ describe("Tooltip", () => {
     })
 
     const tooltip = screen.getByRole("tooltip")
-    expect(tooltip.className).toContain("bottom-full")
+    expect(tooltip).toHaveTextContent("Tooltip text")
+    expect(tooltip.style.position).toBe("fixed")
+    expect(document.body.contains(tooltip)).toBe(true)
   })
 
   it("applies bottom side positioning", () => {
@@ -99,6 +101,8 @@ describe("Tooltip", () => {
     })
 
     const tooltip = screen.getByRole("tooltip")
-    expect(tooltip.className).toContain("top-full")
+    expect(tooltip).toHaveTextContent("Tooltip text")
+    expect(tooltip.style.position).toBe("fixed")
+    expect(document.body.contains(tooltip)).toBe(true)
   })
 })

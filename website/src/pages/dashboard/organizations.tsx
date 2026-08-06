@@ -13,72 +13,20 @@ import {
   CheckCircle2,
   ArrowRightLeft,
   Settings,
+  RefreshCw,
 } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Skeleton } from "@/components/ui/skeleton"
+import { Callout } from "@/components/ui/callout"
+import { Input, Label } from "@/components/ui/input"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
-import type { Organization } from "@/types"
-
-const mockOrganizations: Array<Organization & { member_count: number; plan: string; user_role: "owner" | "admin" | "member" }> = [
-  {
-    id: "org-1",
-    name: "TransLogistica SRL",
-    slug: "translogistica",
-    industry: "Logistics & Transportation",
-    size: "11-50",
-    address: "Str. Logistica nr. 42, Sector 1",
-    city: "Bucharest",
-    country: "Romania",
-    postal_code: "010000",
-    phone: "+40 123 456 789",
-    website: "www.translogistica.ro",
-    created_at: "2025-03-15T10:00:00Z",
-    updated_at: "2026-07-01T08:30:00Z",
-    member_count: 20,
-    plan: "Professional",
-    user_role: "owner",
-  },
-  {
-    id: "org-2",
-    name: "FastRoute GmbH",
-    slug: "fastroute",
-    industry: "Courier & Delivery",
-    size: "51-200",
-    address: "Hauptstrasse 88",
-    city: "Berlin",
-    country: "Germany",
-    postal_code: "10115",
-    phone: "+49 30 1234567",
-    website: "www.fastroute.de",
-    created_at: "2025-06-20T14:00:00Z",
-    updated_at: "2026-06-28T09:15:00Z",
-    member_count: 64,
-    plan: "Enterprise",
-    user_role: "admin",
-  },
-  {
-    id: "org-3",
-    name: "GreenFleet Logistics",
-    slug: "greenfleet",
-    industry: "Sustainable Transport",
-    size: "1-10",
-    address: "Eco Park, Building C",
-    city: "Cluj-Napoca",
-    country: "Romania",
-    postal_code: "400000",
-    phone: "+40 234 567 890",
-    website: "www.greenfleet.ro",
-    created_at: "2026-01-10T11:00:00Z",
-    updated_at: "2026-07-05T16:45:00Z",
-    member_count: 7,
-    plan: "Starter",
-    user_role: "member",
-  },
-]
-
-const activeOrgId = "org-1"
+import { toast } from "sonner"
+import { extractApiError } from "@/api/client"
+import { useOrganizations, useCreateOrganization } from "@/services/queries"
+import { useLocale } from "@/i18n/locale-context"
 
 function getInitials(name: string) {
   return name
@@ -89,26 +37,98 @@ function getInitials(name: string) {
     .toUpperCase()
 }
 
-function roleIcon(role: string) {
+function roleIcon(role?: string) {
   if (role === "owner") return Crown
   if (role === "admin") return Shield
   return User
 }
 
-function roleBadgeVariant(role: string): "default" | "secondary" | "outline" | "success" | "destructive" {
+function roleBadgeVariant(role?: string): "default" | "secondary" | "outline" | "success" | "destructive" {
   if (role === "owner") return "default"
   if (role === "admin") return "secondary"
   return "outline"
 }
 
 export default function OrganizationsPage() {
-  const [orgs] = useState(mockOrganizations)
-  const activeOrg = orgs.find((o) => o.id === activeOrgId)
+  const { t } = useLocale()
+  const { data: orgs, isLoading, isError, error, refetch } = useOrganizations()
+  const activeOrg = orgs?.[0] ?? null
+  const createOrganization = useCreateOrganization()
+  const [showCreateForm, setShowCreateForm] = useState(false)
+  const [newOrgName, setNewOrgName] = useState("")
+
+  if (isLoading) {
+    return (
+      <>
+        <Helmet>
+          <title>{t("organizations.pageTitle")}</title>
+        </Helmet>
+        <SectionWrapper>
+          <Skeleton className="h-9 w-48" />
+          <Skeleton className="h-5 w-96 mt-2" />
+          <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Card key={i}>
+                <CardContent className="p-5">
+                  <div className="flex items-start gap-4">
+                    <Skeleton className="h-12 w-12 rounded-full" />
+                    <div className="flex-1 space-y-2">
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-3 w-24" />
+                      <Skeleton className="h-5 w-48" />
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </SectionWrapper>
+      </>
+    )
+  }
+
+  if (isError) {
+    return (
+      <>
+        <Helmet>
+          <title>{t("organizations.pageTitle")}</title>
+        </Helmet>
+        <SectionWrapper>
+          <Callout variant="danger" title={t("organizations.failedToLoad")}>
+            {error instanceof Error ? error.message : t("organizations.unexpectedError")}
+          </Callout>
+          <Button variant="outline" className="mt-4" onClick={() => refetch()}>
+            <RefreshCw className="mr-2 h-4 w-4" />
+            {t("organizations.tryAgain")}
+          </Button>
+        </SectionWrapper>
+      </>
+    )
+  }
+
+  if (!orgs || orgs.length === 0) {
+    return (
+      <>
+        <Helmet>
+          <title>{t("organizations.pageTitle")}</title>
+        </Helmet>
+        <SectionWrapper>
+          <h1 className="text-3xl font-bold tracking-tight">{t("organizations.title")}</h1>
+          <p className="mt-2 text-muted-foreground">
+            {t("organizations.description")}
+          </p>
+          <Callout variant="info" title={t("organizations.noOrganizations")} className="mt-8">
+            {t("organizations.noOrganizationsDesc")}
+          </Callout>
+        </SectionWrapper>
+      </>
+    )
+  }
 
   return (
     <>
       <Helmet>
-        <title>Organizations — Operion ERP</title>
+        <title>{t("organizations.pageTitle")}</title>
       </Helmet>
       <SectionWrapper>
         {/* Page Header */}
@@ -117,9 +137,9 @@ export default function OrganizationsPage() {
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
         >
-          <h1 className="text-3xl font-bold tracking-tight">Organizations</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t("organizations.title")}</h1>
           <p className="mt-2 text-muted-foreground">
-            Manage your organizations and team members
+            {t("organizations.description")}
           </p>
         </motion.div>
 
@@ -131,14 +151,14 @@ export default function OrganizationsPage() {
           transition={{ delay: 0.05 }}
           className="mt-8"
         >
-          <h2 className="text-lg font-semibold tracking-tight">Organization Selector</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("organizations.selector")}</h2>
           <p className="text-sm text-muted-foreground">
-            Your currently active organization is highlighted below.
+            {t("organizations.selectorDesc")}
           </p>
 
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {orgs.map((org, i) => {
-              const isActive = org.id === activeOrgId
+              const isActive = org.id === activeOrg?.id
               const RoleIcon = roleIcon(org.user_role)
               return (
                 <motion.div
@@ -168,7 +188,7 @@ export default function OrganizationsPage() {
                             {isActive && (
                               <Badge variant="success" className="shrink-0">
                                 <CheckCircle2 className="mr-1 h-3 w-3" />
-                                Current
+                                {t("organizations.current")}
                               </Badge>
                             )}
                           </div>
@@ -178,23 +198,25 @@ export default function OrganizationsPage() {
                           <div className="mt-3 flex flex-wrap items-center gap-2">
                             <Badge variant="secondary" className="text-xs">
                               <Users className="mr-1 h-3 w-3" />
-                              {org.member_count} members
+                              {t("organizations.members").replace("{count}", String(org.member_count ?? 0))}
                             </Badge>
-                            <Badge
-                              variant={
-                                org.plan === "Enterprise"
-                                  ? "default"
-                                  : org.plan === "Professional"
-                                    ? "success"
-                                    : "secondary"
-                              }
-                              className="text-xs"
-                            >
-                              {org.plan}
-                            </Badge>
+                            {org.subscription_tier && (
+                              <Badge
+                                variant={
+                                  org.subscription_tier === "Enterprise"
+                                    ? "default"
+                                    : org.subscription_tier === "Professional"
+                                      ? "success"
+                                      : "secondary"
+                                }
+                                className="text-xs"
+                              >
+                                {org.subscription_tier}
+                              </Badge>
+                            )}
                             <Badge variant={roleBadgeVariant(org.user_role)} className="text-xs">
                               <RoleIcon className="mr-1 h-3 w-3" />
-                              {org.user_role.charAt(0).toUpperCase() + org.user_role.slice(1)}
+                              {org.user_role ? org.user_role.charAt(0).toUpperCase() + org.user_role.slice(1) : t("organizations.memberRole")}
                             </Badge>
                           </div>
                         </div>
@@ -204,7 +226,7 @@ export default function OrganizationsPage() {
                         {!isActive && (
                           <Button variant="outline" size="sm" className="flex-1">
                             <ArrowRightLeft className="mr-1.5 h-3.5 w-3.5" />
-                            Switch to this org
+                            {t("organizations.switchToThisOrg")}
                           </Button>
                         )}
                         <Button
@@ -215,7 +237,7 @@ export default function OrganizationsPage() {
                         >
                           <Link to={`/dashboard/organizations/${org.slug}/settings`}>
                             <Settings className="mr-1.5 h-3.5 w-3.5" />
-                            Manage
+                            {t("organizations.manage")}
                             <ChevronRight className="ml-1 h-3 w-3" />
                           </Link>
                         </Button>
@@ -237,7 +259,7 @@ export default function OrganizationsPage() {
             transition={{ delay: 0.2 }}
             className="mt-10"
           >
-            <h2 className="text-lg font-semibold tracking-tight">Current Organization</h2>
+            <h2 className="text-lg font-semibold tracking-tight">{t("organizations.currentOrganization")}</h2>
             <div className="mt-4 grid gap-6 lg:grid-cols-3">
               <Card className="lg:col-span-2">
                 <CardHeader>
@@ -246,35 +268,35 @@ export default function OrganizationsPage() {
                     {activeOrg.name}
                   </CardTitle>
                   <CardDescription>
-                    Overview of your active organization.
+                    {t("organizations.currentOrganizationDesc")}
                   </CardDescription>
                 </CardHeader>
                 <CardContent>
                   <div className="grid gap-4 sm:grid-cols-2">
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Industry</p>
+                      <p className="text-xs text-muted-foreground">{t("organizations.industry")}</p>
                       <p className="text-sm font-medium">{activeOrg.industry}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Size</p>
-                      <p className="text-sm font-medium">{activeOrg.size} employees</p>
+                      <p className="text-xs text-muted-foreground">{t("organizations.size")}</p>
+                      <p className="text-sm font-medium">{t("organizations.sizeEmployees").replace("{size}", activeOrg.size ?? "")}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Address</p>
+                      <p className="text-xs text-muted-foreground">{t("organizations.address")}</p>
                       <p className="text-sm font-medium">{activeOrg.address}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">City</p>
+                      <p className="text-xs text-muted-foreground">{t("organizations.city")}</p>
                       <p className="text-sm font-medium">
                         {activeOrg.city}, {activeOrg.country}
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Phone</p>
+                      <p className="text-xs text-muted-foreground">{t("organizations.phone")}</p>
                       <p className="text-sm font-medium">{activeOrg.phone}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Website</p>
+                      <p className="text-xs text-muted-foreground">{t("organizations.website")}</p>
                       <p className="text-sm font-medium">{activeOrg.website}</p>
                     </div>
                   </div>
@@ -283,36 +305,37 @@ export default function OrganizationsPage() {
 
               <Card>
                 <CardHeader className="pb-3">
-                  <CardTitle className="text-base">Quick Stats</CardTitle>
+                  <CardTitle className="text-base">{t("organizations.quickStats")}</CardTitle>
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Members</span>
-                    <span className="text-sm font-medium">{activeOrg.member_count}</span>
+                    <span className="text-sm text-muted-foreground">{t("organizations.membersLabel")}</span>
+                    <span className="text-sm font-medium">{activeOrg.member_count ?? 0}</span>
                   </div>
+                  {activeOrg.subscription_tier && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-muted-foreground">{t("organizations.plan")}</span>
+                      <Badge
+                        variant={
+                          activeOrg.subscription_tier === "Enterprise"
+                            ? "default"
+                            : activeOrg.subscription_tier === "Professional"
+                              ? "success"
+                              : "secondary"
+                        }
+                      >
+                        {activeOrg.subscription_tier}
+                      </Badge>
+                    </div>
+                  )}
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Plan</span>
-                    <Badge
-                      variant={
-                        activeOrg.plan === "Enterprise"
-                          ? "default"
-                          : activeOrg.plan === "Professional"
-                            ? "success"
-                            : "secondary"
-                      }
-                    >
-                      {activeOrg.plan}
-                    </Badge>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Your Role</span>
+                    <span className="text-sm text-muted-foreground">{t("organizations.yourRole")}</span>
                     <Badge variant={roleBadgeVariant(activeOrg.user_role)}>
-                      {activeOrg.user_role.charAt(0).toUpperCase() +
-                        activeOrg.user_role.slice(1)}
+                      {activeOrg.user_role ? activeOrg.user_role.charAt(0).toUpperCase() + activeOrg.user_role.slice(1) : t("organizations.memberRole")}
                     </Badge>
                   </div>
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-muted-foreground">Created</span>
+                    <span className="text-sm text-muted-foreground">{t("organizations.created")}</span>
                     <span className="text-sm font-medium">
                       {new Date(activeOrg.created_at ?? "").toLocaleDateString()}
                     </span>
@@ -331,9 +354,9 @@ export default function OrganizationsPage() {
           transition={{ delay: 0.25 }}
           className="mt-10"
         >
-          <h2 className="text-lg font-semibold tracking-tight">Create Organization</h2>
+          <h2 className="text-lg font-semibold tracking-tight">{t("organizations.createOrganization")}</h2>
           <p className="text-sm text-muted-foreground">
-            Add a new organization to your account.
+            {t("organizations.createOrganizationDesc")}
           </p>
 
           <Card className="mt-4">
@@ -343,21 +366,64 @@ export default function OrganizationsPage() {
                   <Plus className="h-6 w-6 text-primary" />
                 </div>
                 <div className="flex-1">
-                  <p className="font-semibold text-sm">Start a new organization</p>
+                  <p className="font-semibold text-sm">{t("organizations.startNewOrganization")}</p>
                   <p className="text-sm text-muted-foreground mt-0.5">
-                    Multi-organization support lets you manage separate teams, billing, and
-                    settings under one account. Perfect for agencies, franchises, or
-                    subsidiaries.
+                    {t("organizations.startNewOrganizationDesc")}
                   </p>
                 </div>
-                <Button disabled className="shrink-0">
-                  <Plus className="mr-2 h-4 w-4" />
-                  Create Organization
-                </Button>
+                {!showCreateForm && (
+                  <Button className="shrink-0" onClick={() => setShowCreateForm(true)}>
+                    <Plus className="mr-2 h-4 w-4" />
+                    {t("organizations.createOrganization")}
+                  </Button>
+                )}
               </div>
-              <p className="mt-3 text-xs text-muted-foreground text-center sm:text-left">
-                Organization creation is coming soon.
-              </p>
+
+              {showCreateForm && (
+                <div className="mt-4 space-y-3 rounded-lg border p-4">
+                  <div className="space-y-2">
+                    <Label htmlFor="new-org-name">{t("organizations.name")}</Label>
+                    <Input
+                      id="new-org-name"
+                      placeholder={t("organizations.namePlaceholder")}
+                      value={newOrgName}
+                      onChange={(e) => setNewOrgName(e.target.value)}
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <Button
+                      onClick={() => {
+                        createOrganization.mutate(
+                          { name: newOrgName },
+                          {
+                            onSuccess: () => {
+                              toast.success(t("organizations.createdSuccess"))
+                              setShowCreateForm(false)
+                              setNewOrgName("")
+                            },
+                            onError: (err) => {
+                              toast.error(extractApiError(err))
+                            },
+                          }
+                        )
+                      }}
+                      disabled={!newOrgName.trim() || createOrganization.isPending}
+                    >
+                      <Plus className="mr-2 h-4 w-4" />
+                      {t("organizations.create")}
+                    </Button>
+                    <Button variant="ghost" onClick={() => { setShowCreateForm(false); setNewOrgName("") }}>
+                      {t("common.cancel")}
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {!showCreateForm && (
+                <p className="mt-3 text-xs text-muted-foreground text-center sm:text-left">
+                  {t("organizations.createOrganizationDesc")}
+                </p>
+              )}
             </CardContent>
           </Card>
         </motion.div>

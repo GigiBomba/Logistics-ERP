@@ -1,8 +1,12 @@
 import "@testing-library/jest-dom"
+import { beforeAll, afterEach, afterAll, vi } from "vitest"
+import { server } from "@/mocks/server"
 
 const localStorageStore: Record<string, string> = {}
 
 beforeAll(() => {
+  server.listen({ onUnhandledRequest: "warn" })
+
   // Mock matchMedia
   Object.defineProperty(window, "matchMedia", {
     writable: true,
@@ -54,3 +58,6 @@ beforeAll(() => {
   // Mock console.error to suppress act() warnings in tests
   vi.spyOn(console, "error").mockImplementation(() => {})
 })
+
+afterEach(() => server.resetHandlers())
+afterAll(() => server.close())

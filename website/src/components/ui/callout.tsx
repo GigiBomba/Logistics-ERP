@@ -42,6 +42,7 @@ export function Callout({
   ...props
 }: CalloutProps) {
   const { container, icon: DefaultIcon, iconColor } = calloutVariants[variant]
+  const isAlert = variant === "danger"
 
   const IconElement = icon ?? <DefaultIcon className={cn("h-5 w-5 shrink-0 mt-0.5", iconColor)} aria-hidden="true" />
 
@@ -52,6 +53,7 @@ export function Callout({
         container,
         className
       )}
+      role={isAlert ? "alert" : undefined}
       {...props}
     >
       {typeof IconElement === "object" && React.isValidElement(IconElement) ? (

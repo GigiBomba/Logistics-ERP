@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { renderHook, render, screen, waitFor } from "@testing-library/react"
+import { renderHook, render, screen } from "@testing-library/react"
 import { MemoryRouter, Routes, Route } from "react-router"
 import { useAuth } from "@/contexts/auth-provider"
 import { ProtectedRoute, AdminRoute } from "@/components/auth/protected-route"
@@ -7,6 +7,14 @@ import { createMockAuthUser, createMockAuthContext } from "@/test-utils"
 
 vi.mock("@/contexts/auth-provider", () => ({
   useAuth: vi.fn(),
+}))
+
+// FU-A: guard components now delegate redirects to vike via AppNavigate instead
+// of react-router's render-time <Navigate>. Assert the requested redirect target.
+vi.mock("@/components/navigation/app-navigate", () => ({
+  AppNavigate: ({ to, replace }: { to: string; replace?: boolean }) => (
+    <div data-testid="app-navigate" data-to={to} data-replace={String(replace)} />
+  ),
 }))
 
 describe("AuthContext - isAdmin", () => {
@@ -119,12 +127,10 @@ describe("ProtectedRoute and AdminRoute", () => {
     )
   }
 
-  it("AdminRoute redirects non-admin users to /dashboard", async () => {
+  it("AdminRoute redirects non-admin users to /dashboard", () => {
     renderRoute(false, true)
 
-    await waitFor(() => {
-      expect(screen.getByTestId("dashboard-redirect")).toBeInTheDocument()
-    })
+    expect(screen.getByTestId("app-navigate")).toHaveAttribute("data-to", "/dashboard")
     expect(screen.queryByTestId("protected-content")).not.toBeInTheDocument()
   })
 

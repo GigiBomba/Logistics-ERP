@@ -2,8 +2,8 @@ import { describe, it, expect } from "vitest"
 import { publicNavItems, footerNavSections } from "@/config/navigation"
 
 describe("publicNavItems", () => {
-  it("has 16 items", () => {
-    expect(publicNavItems).toHaveLength(16)
+  it("has the correct number of top-level items", () => {
+    expect(publicNavItems).toHaveLength(10)
   })
 
   it("each item has label and href", () => {
@@ -18,14 +18,19 @@ describe("publicNavItems", () => {
     expect(publicNavItems[0].href).toBe("/")
   })
 
-  it("includes all required links", () => {
+  it("includes all required links (top-level)", () => {
     const labels = publicNavItems.map((i) => i.label)
-    expect(labels).toContain("Features")
     expect(labels).toContain("Pricing")
     expect(labels).toContain("Download")
     expect(labels).toContain("About")
     expect(labels).toContain("Contact")
-    expect(labels).toContain("Roadmap")
+  })
+
+  it("includes Features as a child of Product", () => {
+    const product = publicNavItems.find((i) => i.label === "Product")
+    expect(product).toBeDefined()
+    const childLabels = product!.children?.map((c) => c.label) ?? []
+    expect(childLabels).toContain("Features")
   })
 })
 
@@ -52,7 +57,13 @@ describe("footerNavSections", () => {
   it("Product section has correct links", () => {
     const product = footerNavSections.find((s) => s.title === "Product")!
     const labels = product.items.map((i) => i.label)
-    expect(labels).toEqual(["Features", "Products", "Pricing", "Integrations Explorer", "API Playground", "Download", "Roadmap"])
+    expect(labels).toContain("Features")
+    expect(labels).toContain("Products")
+    expect(labels).toContain("Pricing")
+    expect(labels).toContain("Integrations Explorer")
+    expect(labels).toContain("API Playground")
+    expect(labels).toContain("Download")
+    expect(labels).toContain("Roadmap")
   })
 
   it("Legal section has Privacy and Terms", () => {

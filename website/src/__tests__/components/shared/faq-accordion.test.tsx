@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { FaqAccordion } from "@/components/shared/faq-accordion"
-import React from "react"
 
 vi.mock("motion/react", () => ({
   motion: {

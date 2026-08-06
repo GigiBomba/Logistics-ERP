@@ -53,7 +53,7 @@ export function Pagination({
   const pages = getPageNumbers(currentPage, totalPages, siblingCount)
 
   return (
-    <nav aria-label={t("common.aria.pagination")} className={cn("", className)} {...props}>
+    <nav aria-label={t("common.pagination")} className={cn("", className)} {...props}>
       <ul className="flex items-center gap-1">
         <li>
           <Button
@@ -61,7 +61,7 @@ export function Pagination({
             size="sm"
             onClick={() => onPageChange(currentPage - 1)}
             disabled={currentPage <= 1}
-            aria-label={t("common.aria.prevPage")}
+            aria-label={t("common.goToPrevPage")}
           >
             <ChevronLeft className="h-4 w-4" />
             <span className="sr-only sm:not-sr-only sm:ml-1">{t("common.back")}</span>
@@ -100,7 +100,7 @@ export function Pagination({
             size="sm"
             onClick={() => onPageChange(currentPage + 1)}
             disabled={currentPage >= totalPages}
-            aria-label={t("common.aria.nextPage")}
+            aria-label={t("common.goToNextPage")}
           >
             <span className="sr-only sm:not-sr-only sm:mr-1">{t("common.next")}</span>
             <ChevronRight className="h-4 w-4" />

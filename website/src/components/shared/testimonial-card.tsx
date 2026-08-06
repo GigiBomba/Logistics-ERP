@@ -1,7 +1,8 @@
 import { motion } from "motion/react"
 import { Quote } from "lucide-react"
 import { Card } from "@/components/ui/card"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
+import { useReducedMotion } from "@/services/accessibility"
 
 interface TestimonialCardProps {
   quote: string
@@ -20,18 +21,15 @@ export function TestimonialCard({
   index = 0,
   className,
 }: TestimonialCardProps) {
-  const initials = name
-    .split(" ")
-    .map((n) => n[0])
-    .join("")
-    .toUpperCase()
+  const prefersReducedMotion = useReducedMotion()
+  const initials = getInitials(name)
 
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ duration: 0.4, delay: index * 0.1, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.4, delay: prefersReducedMotion ? 0 : Math.min(index * 0.05, 0.3), ease: [0.22, 1, 0.36, 1] }}
     >
       <Card className={cn("h-full p-6", className)}>
         <Quote className="mb-4 h-8 w-8 text-muted-foreground/30" />

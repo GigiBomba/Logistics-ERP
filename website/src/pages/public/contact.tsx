@@ -1,4 +1,5 @@
-import { Helmet } from "react-helmet-async"
+import { useState } from "react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Link } from "react-router"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
@@ -6,7 +7,7 @@ import { z } from "zod"
 import { toast } from "sonner"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
-import { Mail, Phone, BookOpen, MessageCircle, ArrowRight } from "lucide-react"
+import { Mail, BookOpen, MessageCircle, ArrowRight } from "lucide-react"
 import { PageHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { Card, CardContent } from "@/components/ui/card"
@@ -14,6 +15,10 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Input, Label, Textarea } from "@/components/ui/input"
 import { JsonLd, contactPageSchema } from "@/components/seo/structured-data"
+import TurnstileWidget from "@/components/shared/turnstile-widget"
+import { contactApi } from "@/api/endpoints"
+import { extractApiError } from "@/api/client"
+import { AxiosError } from "axios"
 
 const contactSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -26,15 +31,14 @@ type ContactForm = z.infer<typeof contactSchema>
 
 export default function ContactPage() {
   const { t } = useLocale()
+  const [turnstileToken, setTurnstileToken] = useState("")
 
   const contactInfo = [
     { icon: Mail, label: t("contact.emailLabel"), value: "contact@operionerp.xyz" },
-    { icon: Phone, label: t("contact.phoneLabel"), value: "+40 123 456 789" },
   ]
 
   const contactMethods = [
     { icon: Mail, title: t("contact.emailSupport"), description: t("contact.emailSupportDesc"), detail: "contact@operionerp.xyz", badge: t("contact.bestWay") },
-    { icon: Phone, title: t("contact.phoneSupport"), description: t("contact.phoneSupportDesc"), detail: "+40 123 456 789", badge: t("contact.inquireDetails") },
   ]
 
   const {
@@ -46,19 +50,36 @@ export default function ContactPage() {
     resolver: zodResolver(contactSchema),
   })
 
-  function onSubmit(_data: ContactForm) {
-    // TODO: Implement backend endpoint - currently showing success toast
-    toast.success(t("contact.successMessage"))
-    reset()
+  async function onSubmit(data: ContactForm) {
+    try {
+      await contactApi.send({
+        name: data.name,
+        email: data.email,
+        subject: data.subject,
+        message: data.message,
+        hp_field: undefined,
+        turnstile_token: turnstileToken || undefined,
+      })
+
+      toast.success(t("contact.successMessage"))
+      reset()
+    } catch (error) {
+      if (error instanceof AxiosError && error.response?.status === 429) {
+        // Intentionally reuses the waitlist rate-limit message (same generic wording); add contact.error.rateLimited if wording diverges.
+        toast.error(t("waitlist.error.rateLimited"))
+        return
+      }
+      toast.error(extractApiError(error))
+    }
   }
 
   return (
     <>
-      <Helmet>
-        <title>{t("contact.meta.title")}</title>
-        <meta name="description" content={t("contact.meta.description")} />
-        <link rel="canonical" href="https://operion.com/contact" />
-      </Helmet>
+      <SeoHead
+        title={t("contact.meta.title")}
+        description={t("contact.meta.description")}
+        canonical="https://operionerp.xyz/contact"
+      />
       <JsonLd data={contactPageSchema()} />
       <PageHeader title={t("contact.title")} description={t("contact.subtitle")} />
 
@@ -96,6 +117,11 @@ export default function ContactPage() {
                     <Textarea id="message" rows={5} placeholder={t("contact.messagePlaceholder")} {...register("message")} />
                     {errors.message && <p className="text-xs text-destructive">{errors.message.message}</p>}
                   </div>
+                  <TurnstileWidget
+                    onVerify={setTurnstileToken}
+                    onExpired={() => setTurnstileToken("")}
+                    className="flex justify-center"
+                  />
                   <Button type="submit" disabled={isSubmitting} className="w-full">
                     {isSubmitting ? t("contact.sending") : t("contact.send")}
                   </Button>

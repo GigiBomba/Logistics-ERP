@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { cn, formatDate, formatCurrency } from "@/lib/utils"
+import { cn, formatDate, formatCurrency, getInitials } from "@/lib/utils"
 
 describe("cn()", () => {
   it("merges class names", () => {
@@ -78,5 +78,36 @@ describe("formatCurrency()", () => {
   it("formats decimal amounts", () => {
     const result = formatCurrency(29.5, "EUR")
     expect(result).toContain("29")
+  })
+})
+
+describe("getInitials()", () => {
+  it("returns the first letters of the first two words", () => {
+    expect(getInitials("Test User")).toBe("TU")
+  })
+
+  it("uppercases the result", () => {
+    expect(getInitials("john doe")).toBe("JD")
+  })
+
+  it("handles a single word", () => {
+    expect(getInitials("Operion")).toBe("O")
+  })
+
+  it("handles non-Latin / diacritic names", () => {
+    expect(getInitials("Ștefan Popescu")).toBe("ȘP")
+    expect(getInitials("Ăgnes Müller")).toBe("ĂM")
+    expect(getInitials("Björk Guðmundsdóttir")).toBe("BG")
+  })
+
+  it("returns '?' for empty input", () => {
+    expect(getInitials("")).toBe("?")
+    expect(getInitials("   ")).toBe("?")
+    expect(getInitials(null as unknown as string)).toBe("?")
+    expect(getInitials(undefined as unknown as string)).toBe("?")
+  })
+
+  it("collapses extra whitespace between words", () => {
+    expect(getInitials("  Ana    Maria  ")).toBe("AM")
   })
 })

@@ -12,32 +12,39 @@ vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
-vi.mock("@/config/site", () => ({
-  partnerConfig: {
-    contactEmail: "operion.contact@gmail.com",
-  },
-}))
+vi.mock("@/config/site", async () => {
+  const actual = await vi.importActual<typeof import("@/config/site")>("@/config/site")
+  return {
+    ...actual,
+    partnerConfig: {
+      contactEmail: "operion.contact@gmail.com",
+    },
+  }
+})
 
 describe("PartnersPage", () => {
-  it("renders heading", () => {
+  it("renders heading and partner benefits", () => {
     render(<PartnersPage />)
     expect(screen.getByText("Partner with Operion")).toBeInTheDocument()
-  })
-
-  it("renders partner benefits", () => {
-    render(<PartnersPage />)
-    expect(screen.getByText("Revenue Share")).toBeInTheDocument()
-    expect(screen.getByText("Early Access")).toBeInTheDocument()
-  })
-
-  it("renders partners heading section", () => {
-    render(<PartnersPage />)
     expect(screen.getByText("Our Partners")).toBeInTheDocument()
+    expect(screen.getAllByText(/Coming Soon/i).length).toBeGreaterThanOrEqual(1)
+  })
+
+  it("renders benefits section", () => {
+    render(<PartnersPage />)
+    expect(screen.getByText("Become a Partner")).toBeInTheDocument()
+    expect(screen.getByText("Revenue Share")).toBeInTheDocument()
+    expect(screen.getByText("Co-Marketing")).toBeInTheDocument()
+  })
+
+  it("renders partner program section", () => {
+    render(<PartnersPage />)
+    expect(screen.getByText("Partner Program")).toBeInTheDocument()
+    expect(screen.getByText("Reseller Program Coming Soon")).toBeInTheDocument()
   })
 
   it("renders call-to-action", () => {
     render(<PartnersPage />)
-    const ctaHeadings = screen.getAllByText("Become a Partner")
-    expect(ctaHeadings.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("Apply to become a partner")).toBeInTheDocument()
   })
 })

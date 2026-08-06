@@ -1,5 +1,5 @@
-import { Helmet } from "react-helmet-async"
 import { Link } from "react-router"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
 import {
@@ -93,13 +93,7 @@ export default function CommunityPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("community.pageTitle")}</title>
-        <meta
-          name="description"
-          content={t("community.metaDesc")}
-        />
-      </Helmet>
+      <SeoHead title={t("community.pageTitle")} description={t("community.metaDesc")} canonical="https://operionerp.xyz/community" />
 
       <HeroSection
         title={t("community.title")}

@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { motion } from "motion/react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Mail, CheckCircle2, Loader2, AlertCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -29,6 +30,7 @@ export default function NewsletterPage() {
 
   return (
     <div className="container-wide py-16 md:py-24">
+      <SeoHead title="Newsletter — Operion" description="Subscribe to the Operion newsletter for logistics industry insights, product updates, and transport management tips." canonical="https://operionerp.xyz/newsletter" />
       <div className="mx-auto max-w-2xl text-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

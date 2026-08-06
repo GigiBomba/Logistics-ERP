@@ -1,5 +1,6 @@
 import { cn } from "@/lib/utils"
 import { Loader2 } from "lucide-react"
+import { useLocale } from "@/i18n/locale-context"
 
 interface LoadingSpinnerProps {
   size?: "sm" | "md" | "lg"
@@ -7,8 +8,14 @@ interface LoadingSpinnerProps {
 }
 
 export function LoadingSpinner({ size = "md", className }: LoadingSpinnerProps) {
+  const { t } = useLocale()
   const sizeMap = { sm: "h-4 w-4", md: "h-8 w-8", lg: "h-12 w-12" }
-  return <Loader2 className={cn("animate-spin text-muted-foreground", sizeMap[size], className)} />
+  return (
+    <div role="status" className={cn(className)}>
+      <Loader2 className={cn("animate-spin text-muted-foreground", sizeMap[size])} />
+      <span className="sr-only">{t("common.loading")}</span>
+    </div>
+  )
 }
 
 export function Skeleton({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) {

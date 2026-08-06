@@ -1,7 +1,7 @@
-import { Helmet } from "react-helmet-async"
 import { Link } from "react-router"
 import { motion } from "motion/react"
 import { Wrench } from "lucide-react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Button } from "@/components/ui/button"
 import { useLocale } from "@/i18n/locale-context"
 
@@ -9,9 +9,7 @@ export default function ErrorMaintenancePage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("error.maintenance")} — Operion ERP</title>
-      </Helmet>
+      <SeoHead title={t("error.maintenance")} description="Operion is undergoing scheduled maintenance. Please check back shortly." noindex />
       <div className="flex min-h-[70vh] items-center justify-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

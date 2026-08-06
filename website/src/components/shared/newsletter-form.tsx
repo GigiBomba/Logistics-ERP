@@ -8,9 +8,9 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { useLocale } from "@/i18n/locale-context"
-// TODO: Implement when backend endpoint is ready
-// import { newsletterApi } from "@/api/endpoints"
-// import { extractApiError } from "@/api/client"
+import { newsletterApi, type NewsletterSubscribeRequest } from "@/api/endpoints"
+import { extractApiError } from "@/api/client"
+import TurnstileWidget from "@/components/shared/turnstile-widget"
 import { toast } from "sonner"
 
 interface NewsletterFormProps {
@@ -32,6 +32,7 @@ export function NewsletterForm({ variant = "card", className }: NewsletterFormPr
   )
   const [status, setStatus] = useState<"idle" | "loading" | "success" | "error">("idle")
   const [errorMessage, setErrorMessage] = useState("")
+  const [turnstileToken, setTurnstileToken] = useState("")
 
   const togglePreference = useCallback((id: string) => {
     setPreferences((prev) =>
@@ -48,17 +49,22 @@ export function NewsletterForm({ variant = "card", className }: NewsletterFormPr
       setErrorMessage("")
 
       try {
-        // TODO: Implement when backend endpoint is ready
-        // await newsletterApi.subscribe({ email: email.trim(), preferences })
+        const payload: NewsletterSubscribeRequest = {
+          email: email.trim(),
+          preferences,
+          ...(turnstileToken ? { turnstile_token: turnstileToken } : {}),
+        }
+        await newsletterApi.subscribe(payload)
         toast.success(t("newsletter.success"))
         setStatus("success")
         setEmail("")
-      } catch {
+        setTurnstileToken("")
+      } catch (error) {
         setStatus("error")
-        setErrorMessage(t("newsletter.error"))
+        setErrorMessage(extractApiError(error))
       }
     },
-    [email, preferences]
+    [email, preferences, turnstileToken, t]
   )
 
   // ── Success State ──────────────────────────────────────────
@@ -123,6 +129,7 @@ export function NewsletterForm({ variant = "card", className }: NewsletterFormPr
             t("newsletter.subscribe")
           )}
         </Button>
+        <TurnstileWidget onVerify={setTurnstileToken} onExpired={() => setTurnstileToken("")} className="w-full sm:w-auto" />
         {status === "error" && (
           <motion.p
             initial={{ opacity: 0, y: -4 }}
@@ -162,6 +169,7 @@ export function NewsletterForm({ variant = "card", className }: NewsletterFormPr
             )}
           </Button>
         </div>
+        <TurnstileWidget onVerify={setTurnstileToken} onExpired={() => setTurnstileToken("")} className="w-full" />
         {status === "error" && (
           <motion.p
             initial={{ opacity: 0 }}
@@ -220,6 +228,7 @@ export function NewsletterForm({ variant = "card", className }: NewsletterFormPr
               ))}
             </div>
           </fieldset>
+          <TurnstileWidget onVerify={setTurnstileToken} onExpired={() => setTurnstileToken("")} className="flex justify-center" />
           {status === "error" && (
             <motion.p
               initial={{ opacity: 0, y: -4 }}

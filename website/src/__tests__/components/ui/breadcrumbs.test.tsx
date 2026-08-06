@@ -1,6 +1,23 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import { Breadcrumbs } from "@/components/ui/breadcrumbs"
+
+vi.mock("@/i18n/locale-context", async () => {
+  const actual = await vi.importActual<typeof import("@/i18n/locale-context")>("@/i18n/locale-context")
+  return {
+    ...actual,
+    useLocale: () => ({
+      locale: "en" as const,
+      setLocale: vi.fn(),
+      t: (key: string) => {
+        const defaults: Record<string, string> = {
+          "common.breadcrumb": "Breadcrumb",
+        }
+        return defaults[key] || key
+      },
+    }),
+  }
+})
 
 const defaultItems = [
   { label: "Home", href: "/" },

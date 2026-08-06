@@ -30,20 +30,20 @@ describe("DevelopersPage", () => {
 
   it("shows Quick Start section", () => {
     render(<DevelopersPage />)
-    const quickStartEls = screen.getAllByText("Quick Start")
-    expect(quickStartEls.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText("Quick Start").length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("Install the toolkit")).toBeInTheDocument()
+    expect(screen.getByText("Make your first request")).toBeInTheDocument()
   })
 
-  it("shows resource badges", () => {
+  it("shows 'Coming Soon' badges on future resources", () => {
     render(<DevelopersPage />)
-    const badgeEls = screen.getAllByText("Coming soon")
-    expect(badgeEls.length).toBeGreaterThanOrEqual(1)
+    const comingSoonBadges = screen.getAllByText("Coming soon")
+    expect(comingSoonBadges.length).toBe(5)
   })
 
   it("shows CTA section", () => {
     render(<DevelopersPage />)
-    const ctaEls = screen.getAllByText("Explore the documentation")
-    expect(ctaEls.length).toBeGreaterThanOrEqual(1)
+    expect(screen.getAllByText("Explore the documentation").length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("View docs")).toBeInTheDocument()
   })
 

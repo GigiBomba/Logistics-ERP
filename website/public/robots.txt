@@ -1,7 +1,7 @@
 User-agent: *
 Allow: /
 
-# Disallow admin and dashboard pages
+# Disallow private/authenticated-only pages
 Disallow: /admin/
 Disallow: /dashboard/
 Disallow: /login
@@ -9,15 +9,25 @@ Disallow: /register
 Disallow: /forgot-password
 Disallow: /reset-password
 Disallow: /verify-email
+Disallow: /500
+Disallow: /maintenance
+Disallow: /offline
 
-# Allow blog and public pages
+# Allow all public content (explicit is redundant after Allow: / but clarifies intent)
 Allow: /blog
 Allow: /features
 Allow: /pricing
+Allow: /download
 Allow: /about
 Allow: /contact
 Allow: /faq
 Allow: /roadmap
-Allow: /download
+Allow: /changelog
+Allow: /tutorials
+Allow: /roi-calculator
+Allow: /route-demo
+Allow: /industries/
+Allow: /docs/
 
-Sitemap: https://operion.com/sitemap.xml
+# Sitemap location
+Sitemap: https://operionerp.xyz/sitemap.xml

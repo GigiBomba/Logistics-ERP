@@ -1,5 +1,5 @@
-import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { useLocale } from "@/i18n/locale-context"
 import {
   Lightbulb,
@@ -51,13 +51,7 @@ export default function CareersPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("careers.pageTitle")}</title>
-        <meta
-          name="description"
-          content={t("careers.metaDesc")}
-        />
-      </Helmet>
+      <SeoHead title={t("careers.pageTitle")} description={t("careers.metaDesc")} canonical="https://operionerp.xyz/careers" />
 
       <HeroSection
         title={t("careers.title")}

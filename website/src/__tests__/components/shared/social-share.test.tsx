@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@/test-utils"
 import { SocialShare } from "@/components/shared/social-share"
 
-const testUrl = "https://operion.com/blog/test"
+const testUrl = "https://operionerp.xyz/blog/test"
 const testTitle = "Test Article"
 
 describe("SocialShare", () => {
@@ -21,6 +21,7 @@ describe("SocialShare", () => {
     expect(screen.getByRole("button", { name: /share on x \(twitter\)/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /share on linkedin/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /share on facebook/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /share on whatsapp/i })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /copy link/i })).toBeInTheDocument()
   })
 
@@ -72,6 +73,16 @@ describe("SocialShare", () => {
     fireEvent.click(facebookButton)
 
     const expectedUrl = `https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(testUrl)}`
+    expect(openSpy).toHaveBeenCalledWith(expectedUrl, "_blank", "noopener,noreferrer")
+  })
+
+  it("opens WhatsApp share URL with title and url combined", () => {
+    render(<SocialShare url={testUrl} title={testTitle} />)
+
+    const whatsappButton = screen.getByRole("button", { name: /share on whatsapp/i })
+    fireEvent.click(whatsappButton)
+
+    const expectedUrl = `https://wa.me/?text=${encodeURIComponent(`${testTitle} ${testUrl}`)}`
     expect(openSpy).toHaveBeenCalledWith(expectedUrl, "_blank", "noopener,noreferrer")
   })
 })

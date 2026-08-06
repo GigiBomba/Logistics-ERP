@@ -1,5 +1,4 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import * as React from "react"
 import { render, screen } from "@/test-utils"
 import { AppShell } from "@/components/layout/app-shell"
 import { useAuth } from "@/contexts/auth-provider"
@@ -14,11 +13,11 @@ vi.mock("@/contexts/theme-provider", () => ({
   useTheme: vi.fn(),
 }))
 
-vi.mock("@/i18n/locale-context", () => {
-  const LocaleProvider = ({ children }: { children: React.ReactNode }) => <>{children}</>
+vi.mock("@/i18n/locale-context", async () => {
+  const actual = await vi.importActual<typeof import("@/i18n/locale-context")>("@/i18n/locale-context")
   return {
-    LocaleProvider,
-    useLocale: vi.fn(() => ({
+    ...actual,
+    useLocale: () => ({
       locale: "en" as const,
       setLocale: vi.fn(),
       t: (key: string) => {
@@ -31,22 +30,12 @@ vi.mock("@/i18n/locale-context", () => {
           "footer.terms": "Terms",
           "footer.tagline": "Enterprise logistics management platform.",
           "common.search": "Search...",
-          "common.aria.openSearch": "Search",
-          "common.aria.toggleTheme": "Toggle theme",
-          "common.aria.toggleMenu": "Toggle menu",
+          "common.toggleTheme": "Toggle theme",
           "common.dashboard": "Dashboard",
-          "common.signIn": "Sign In",
-          "common.getStarted": "Get Started",
-          "common.signOut": "Sign out",
-          "common.profile": "Profile",
-          "common.settings": "Settings",
-          "common.aria.notifications": "Notifications",
-          "footer.status": "Status",
-          "footer.copyright": "All rights reserved.",
         }
         return defaults[key] || key
       },
-    })),
+    }),
   }
 })
 
@@ -92,8 +81,9 @@ describe("AppShell", () => {
   it("renders theme toggle button", () => {
     vi.mocked(useAuth).mockReturnValue(mockUnauthenticated)
     render(<AppShell />)
-    const toggleBtn = screen.getByLabelText(/toggle theme/i)
-    expect(toggleBtn).toBeInTheDocument()
+    // Desktop and mobile headers each have a labeled theme toggle.
+    const toggleBtns = screen.getAllByLabelText(/toggle theme/i)
+    expect(toggleBtns.length).toBeGreaterThanOrEqual(1)
   })
 
   it("renders footer sections", () => {
@@ -101,5 +91,36 @@ describe("AppShell", () => {
     render(<AppShell />)
     expect(screen.getByText("Product")).toBeInTheDocument()
     expect(screen.getByText("Resources")).toBeInTheDocument()
+  })
+
+  describe("public header avatar", () => {
+    it("shows avatar in public header when authenticated", () => {
+      vi.mocked(useAuth).mockReturnValue(mockAuthenticated)
+      render(<AppShell />)
+      // The avatar contains the user initials as fallback
+      const avatarElement = screen.getByText("TU") // "Test User" → "TU"
+      expect(avatarElement).toBeInTheDocument()
+    })
+
+    it("shows initials fallback when authenticated user has no avatar_url", () => {
+      vi.mocked(useAuth).mockReturnValue(mockAuthenticated)
+      render(<AppShell />)
+      const fallback = screen.getByText("TU")
+      expect(fallback).toBeInTheDocument()
+      expect(fallback.className).toContain("text-xs")
+    })
+
+    it("avatar links to dashboard", () => {
+      vi.mocked(useAuth).mockReturnValue(mockAuthenticated)
+      render(<AppShell />)
+      const avatarLink = screen.getByLabelText("Dashboard").closest("a")
+      expect(avatarLink).toHaveAttribute("href", "/dashboard")
+    })
+
+    it("does not show avatar when not authenticated", () => {
+      vi.mocked(useAuth).mockReturnValue(mockUnauthenticated)
+      render(<AppShell />)
+      expect(screen.queryByLabelText("Dashboard")).not.toBeInTheDocument()
+    })
   })
 })

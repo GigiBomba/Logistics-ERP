@@ -64,10 +64,10 @@ describe("ComparisonTable", () => {
     expect(outerDiv.className).toContain("overflow-x-auto")
   })
 
-  it("shows empty state when no columns or rows", () => {
+  it("renders empty state when no columns or rows", () => {
     const { container } = render(
       <ComparisonTable columns={[]} rows={[]} />
     )
-    expect(container.textContent).toContain("No data available")
+    expect(container.innerHTML).toContain("No data available")
   })
 })

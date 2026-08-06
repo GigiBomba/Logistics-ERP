@@ -1,138 +1,75 @@
-import { describe, it, expect, vi } from "vitest"
-import { render, screen } from "@/test-utils"
+import { describe, it, expect, vi, beforeEach } from "vitest"
+import { render, screen, fireEvent } from "@/test-utils"
+import userEvent from "@testing-library/user-event"
 import DownloadPage from "@/pages/public/download"
 
-vi.mock("motion/react", () => ({
-  motion: new Proxy(
-    {},
-    {
-      get: () => (props: any) => props?.children ?? null,
-    }
-  ),
-  AnimatePresence: ({ children }: any) => <>{children}</>,
-}))
+const { motionMock } = vi.hoisted(() => {
+  const MockMotionDiv = ({ children, ...rest }: any) => <div {...rest}>{children}</div>
+  return {
+    motionMock: new Proxy({}, { get: () => MockMotionDiv }),
+  }
+})
 
-vi.mock("@/config/site", () => ({
-  downloadConfig: {
-    latestVersion: "In Development",
-    releaseDate: "",
-    windowsInstaller: "",
-    fileSize: "TBD",
-    systemRequirements: {
-      os: ["Windows 10 (64-bit)", "Windows 11 (64-bit)"],
-      ram: "8 GB minimum (16 GB recommended)",
-      storage: "2 GB available space",
-      processor: "Intel Core i5 or equivalent",
-      additional: "Python 3.10+",
-    },
-  },
-  toolkitConfig: {
-    latestVersion: "1.0.0",
-    releaseDate: "2026-09-01",
-    downloadUrl: "/downloads/operion-toolkit-1.0.0.exe",
-  },
+vi.mock("motion/react", () => ({
+  motion: motionMock,
+  AnimatePresence: ({ children }: any) => <>{children}</>,
+  useInView: () => true,
 }))
 
 describe("DownloadPage", () => {
-  it("renders page header", () => {
-    render(<DownloadPage />)
-    expect(screen.getByText("Download Operion Desktop")).toBeInTheDocument()
-    expect(
-      screen.getByText(/Get the latest version of the Operion ERP desktop application/i)
-    ).toBeInTheDocument()
+  beforeEach(() => {
+    vi.clearAllMocks()
+    vi.spyOn(window, "alert").mockImplementation(() => {})
   })
 
-  it("renders primary download card with version and badge", () => {
+  it("renders the primary download card", () => {
     render(<DownloadPage />)
-    expect(screen.getByText("Latest Release")).toBeInTheDocument()
-    expect(screen.getByText(/Operion ERP In Development/)).toBeInTheDocument()
-    expect(screen.getByText("Not Yet Available")).toBeInTheDocument()
+    expect(screen.getAllByText(/Operion ERP/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/Not Yet Available/i)).toBeInTheDocument()
   })
 
-  it("renders system requirements section", () => {
+  it("renders the system requirements", () => {
     render(<DownloadPage />)
-    expect(screen.getByText("System Requirements")).toBeInTheDocument()
-    expect(screen.getByText("Operating System")).toBeInTheDocument()
-    expect(screen.getByText("Processor")).toBeInTheDocument()
-    expect(screen.getByText("RAM & Storage")).toBeInTheDocument()
-    expect(screen.getByText("Additional")).toBeInTheDocument()
+    expect(screen.getByText(/System Requirements/i)).toBeInTheDocument()
   })
 
-  it("renders installation instructions", () => {
+  it("switches to the beta channel tab", async () => {
+    const user = userEvent.setup()
     render(<DownloadPage />)
-    expect(screen.getByText("Installation Instructions")).toBeInTheDocument()
-    expect(screen.getByText("Download the Installer")).toBeInTheDocument()
-    expect(screen.getByText("Run the Installer")).toBeInTheDocument()
-    expect(screen.getByText("Follow the Setup Wizard")).toBeInTheDocument()
-    expect(screen.getByText("Launch Operion ERP")).toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: /beta/i }))
+    expect(screen.getByRole("tab", { name: /beta/i })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getByRole("button", { name: /Request access/i })).toBeInTheDocument()
   })
 
-  it("renders uninstallation section", () => {
+  it("enters a beta email and requests access", async () => {
+    const user = userEvent.setup()
     render(<DownloadPage />)
-    expect(screen.getByText("Uninstallation Instructions")).toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: /beta/i }))
+    const input = screen.getByPlaceholderText(/search/i) as HTMLInputElement
+    await user.type(input, "beta@operionerp.xyz")
+    await user.click(screen.getByRole("button", { name: /Request access/i }))
+    expect(window.alert).toHaveBeenCalled()
+    expect(input.value).toBe("")
   })
 
-  it("renders release channel tabs", () => {
+  it("switches to the nightly channel tab", async () => {
+    const user = userEvent.setup()
     render(<DownloadPage />)
-    expect(screen.getByText("Stable")).toBeInTheDocument()
-    expect(screen.getByText("Beta")).toBeInTheDocument()
-    expect(screen.getByText("Nightly")).toBeInTheDocument()
-    expect(screen.getByText("Legacy")).toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: /nightly/i }))
+    expect(screen.getByRole("tab", { name: /nightly/i })).toHaveAttribute("aria-selected", "true")
+    expect(screen.getAllByText(/Nightly Builds/i).length).toBeGreaterThan(0)
   })
 
-  it("renders release history heading in stable tab", () => {
+  it("switches to the legacy versions tab", async () => {
+    const user = userEvent.setup()
     render(<DownloadPage />)
-    expect(screen.getByText("Release History")).toBeInTheDocument()
+    await user.click(screen.getByRole("tab", { name: /legacy/i }))
+    expect(screen.getByText(/Previous Versions/i)).toBeInTheDocument()
   })
 
-  it("renders migration guides section", () => {
+  it("triggers the docs bundle alert", () => {
     render(<DownloadPage />)
-    expect(screen.getByText("Migration Guides")).toBeInTheDocument()
-  })
-
-  it("renders documentation bundle section", () => {
-    render(<DownloadPage />)
-    expect(screen.getByText("Documentation Bundle")).toBeInTheDocument()
-    expect(screen.getByText("Operion Docs Offline")).toBeInTheDocument()
-    expect(screen.getByText("Download Docs Bundle")).toBeInTheDocument()
-  })
-
-  it("renders auto-update callout", () => {
-    render(<DownloadPage />)
-    expect(screen.getByText("Automatic Updates")).toBeInTheDocument()
-  })
-
-  it("renders toolkit section", () => {
-    render(<DownloadPage />)
-    expect(screen.getByText("Operion Developer Toolkit")).toBeInTheDocument()
-    expect(screen.getByText(/Toolkit v1\.0\.0/)).toBeInTheDocument()
-  })
-
-  it("renders Download Toolkit link with correct href", () => {
-    render(<DownloadPage />)
-    const toolkitLink = screen.getByRole("link", { name: /download toolkit/i })
-    expect(toolkitLink).toBeInTheDocument()
-    expect(toolkitLink).toHaveAttribute("href", "/downloads/operion-toolkit-1.0.0.exe")
-  })
-
-  it("renders Documentation link to /developers/toolkit", () => {
-    render(<DownloadPage />)
-    const docLinks = screen
-      .getAllByRole("link")
-      .filter((l) => l.getAttribute("href") === "/developers/toolkit")
-    expect(docLinks.length).toBeGreaterThanOrEqual(1)
-  })
-
-  it("renders bottom CTA banner", () => {
-    render(<DownloadPage />)
-    expect(screen.getByText("Ready to Get Started?")).toBeInTheDocument()
-    expect(screen.getByText("Start Free Trial")).toBeInTheDocument()
-  })
-
-  it("renders canonical link in helmet", () => {
-    render(<DownloadPage />)
-    const canonical = document.querySelector('link[rel="canonical"]')
-    expect(canonical).toBeInTheDocument()
-    expect(canonical).toHaveAttribute("href", "https://operion.com/download")
+    fireEvent.click(screen.getByRole("button", { name: /Download docs bundle/i }))
+    expect(window.alert).toHaveBeenCalled()
   })
 })

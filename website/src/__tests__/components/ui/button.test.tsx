@@ -65,6 +65,35 @@ describe("Button", () => {
     expect(screen.getByRole("button")).toBeDisabled()
   })
 
+  it("renders a spinner and disables the button when isLoading is true", () => {
+    render(<Button isLoading>Save</Button>)
+    const btn = screen.getByRole("button")
+    expect(btn).toBeDisabled()
+    expect(btn).toHaveAttribute("aria-busy", "true")
+    expect(document.querySelector(".animate-spin")).not.toBeNull()
+    expect(screen.getByText("Save")).toBeInTheDocument()
+  })
+
+  it("still applies variant + size classes while loading", () => {
+    render(
+      <Button variant="destructive" size="lg" isLoading>
+        Delete
+      </Button>
+    )
+    const btn = screen.getByRole("button")
+    expect(btn.className).toContain("bg-destructive")
+    expect(btn.className).toContain("h-10")
+    expect(btn).toHaveAttribute("aria-busy", "true")
+  })
+
+  it("renders children normally when not loading", () => {
+    render(<Button>Save</Button>)
+    const btn = screen.getByRole("button")
+    expect(btn).not.toBeDisabled()
+    expect(btn).not.toHaveAttribute("aria-busy")
+    expect(document.querySelector(".animate-spin")).toBeNull()
+  })
+
   it("supports asChild with Link", () => {
     render(
       <Button asChild>

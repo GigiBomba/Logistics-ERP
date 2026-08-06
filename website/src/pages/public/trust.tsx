@@ -1,5 +1,5 @@
-import { Helmet } from "react-helmet-async"
 import { Link } from "react-router"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
 import {
@@ -15,6 +15,12 @@ import {
   AlertTriangle,
   Fingerprint,
   Search,
+  Users,
+  Cookie,
+  Bot,
+  Key,
+  FileSearch,
+  Wifi,
 } from "lucide-react"
 import { HeroSection } from "@/components/shared/hero-section"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
@@ -60,10 +66,7 @@ export default function TrustPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("trust.pageTitle")}</title>
-        <meta name="description" content={t("trust.pageDesc")} />
-      </Helmet>
+      <SeoHead title={t("trust.pageTitle")} description={t("trust.pageDesc")} canonical="https://operionerp.xyz/trust" />
 
       <HeroSection
         title={t("trust.title")}
@@ -133,6 +136,70 @@ export default function TrustPage() {
         </motion.div>
       </SectionWrapper>
 
+      {/* Security Features Table */}
+      <SectionWrapper className="bg-muted/30">
+        <SectionHeader
+          title={t("security.featuresTitle")}
+          description={t("security.featuresDesc")}
+          className="mb-12"
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mx-auto max-w-5xl"
+        >
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-5 py-4 text-left font-semibold text-muted-foreground">{t("security.features.table.feature")}</th>
+                      <th className="px-5 py-4 text-left font-semibold text-muted-foreground">{t("security.features.table.status")}</th>
+                      <th className="px-5 py-4 text-left font-semibold text-muted-foreground">{t("security.features.table.management")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {([
+                      { icon: Fingerprint, featureKey: "security.features.mfa", descKey: "security.features.mfaDesc", manageKey: "security.features.mfaManage" },
+                      { icon: Users, featureKey: "security.features.rbac", descKey: "security.features.rbacDesc", manageKey: "security.features.rbacManage" },
+                      { icon: Cookie, featureKey: "security.features.cookies", descKey: "security.features.cookiesDesc", manageKey: "security.features.cookiesManage" },
+                      { icon: Bot, featureKey: "security.features.bot", descKey: "security.features.botDesc", manageKey: "security.features.botManage" },
+                      { icon: Shield, featureKey: "security.features.headers", descKey: "security.features.headersDesc", manageKey: "security.features.headersManage" },
+                      { icon: Key, featureKey: "security.features.tokens", descKey: "security.features.tokensDesc", manageKey: "security.features.tokensManage" },
+                      { icon: FileSearch, featureKey: "security.features.audit", descKey: "security.features.auditDesc", manageKey: "security.features.auditManage" },
+                      { icon: Wifi, featureKey: "security.features.api", descKey: "security.features.apiDesc", manageKey: "security.features.apiManage" },
+                    ]).map((row, i) => {
+                      const Icon = row.icon
+                      return (
+                        <tr key={row.featureKey} className={i < 7 ? "border-b border-border" : ""}>
+                          <td className="px-5 py-4">
+                            <div className="flex items-start gap-3">
+                              <div className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                                <Icon className="h-4 w-4 text-primary" />
+                              </div>
+                              <div>
+                                <p className="font-medium text-foreground">{t(row.featureKey)}</p>
+                                <p className="mt-1 text-xs text-muted-foreground leading-relaxed">{t(row.descKey)}</p>
+                              </div>
+                            </div>
+                          </td>
+                          <td className="px-5 py-4 align-middle">
+                            <Badge variant="default" className="bg-green-600/15 text-green-700 dark:text-green-400 hover:bg-green-600/20">{t("security.statusActive")}</Badge>
+                          </td>
+                          <td className="px-5 py-4 align-middle text-sm text-muted-foreground">{t(row.manageKey)}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </SectionWrapper>
+
       {/* Privacy */}
       <SectionWrapper>
         <SectionHeader
@@ -171,6 +238,80 @@ export default function TrustPage() {
               </Link>
             </Button>
           </div>
+        </motion.div>
+      </SectionWrapper>
+
+      {/* Data Processing Agreement */}
+      <SectionWrapper id="dpa" className="bg-muted/30">
+        <SectionHeader
+          title={t("trust.dpaTitle")}
+          description=""
+          className="mb-12"
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mx-auto max-w-3xl"
+        >
+          <Card>
+            <CardContent className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+                  <FileCheck className="h-5 w-5 text-primary" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">{t("trust.dpaTitle")}</h3>
+                  <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
+                    {t("trust.dpaContent")}
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </motion.div>
+      </SectionWrapper>
+
+      {/* Data Retention */}
+      <SectionWrapper>
+        <SectionHeader
+          title={t("trust.dataRetention")}
+          description={t("trust.dataRetentionDesc")}
+          className="mb-12"
+        />
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mx-auto max-w-3xl"
+        >
+          <Card>
+            <CardContent className="p-0">
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="px-6 py-3 text-left font-semibold text-muted-foreground">{t("trust.retentionDataType")}</th>
+                      <th className="px-6 py-3 text-left font-semibold text-muted-foreground">{t("trust.retentionPeriod")}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {([
+                      { dataKey: "trust.retentionAccountData", periodKey: "trust.retentionAccountPeriod" },
+                      { dataKey: "trust.retentionAuditLogs", periodKey: "trust.retentionAuditPeriod" },
+                      { dataKey: "trust.retentionBackup", periodKey: "trust.retentionBackupPeriod" },
+                      { dataKey: "trust.retentionDeleted", periodKey: "trust.retentionDeletedPeriod" },
+                    ]).map((row, i) => (
+                      <tr key={row.dataKey} className={i < 3 ? "border-b border-border" : ""}>
+                        <td className="px-6 py-3 text-foreground font-medium">{t(row.dataKey)}</td>
+                        <td className="px-6 py-3 text-muted-foreground">{t(row.periodKey)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </CardContent>
+          </Card>
         </motion.div>
       </SectionWrapper>
 
@@ -301,8 +442,8 @@ export default function TrustPage() {
                   <h3 className="font-semibold">{t("trust.reportVuln")}</h3>
                   <p className="mt-2 text-sm text-muted-foreground leading-relaxed">
                     {t("trust.reportVulnText1")}{" "}
-                    <a href="mailto:security@operion.com" className="underline underline-offset-4">
-                      security@operion.com
+                    <a href="mailto:security@operionerp.xyz" className="underline underline-offset-4">
+                      security@operionerp.xyz
                     </a>
                     {t("trust.reportVulnText2")}
                   </p>
@@ -332,7 +473,7 @@ export default function TrustPage() {
           title={t("trust.ctaTitle")}
           description={t("trust.ctaDesc")}
           buttonText={t("trust.ctaButton")}
-          buttonHref="mailto:security@operion.com"
+          buttonHref="mailto:security@operionerp.xyz"
           variant="primary"
         />
       </SectionWrapper>

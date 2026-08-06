@@ -1,3 +1,5 @@
+import type { ReactElement } from "react"
+
 interface JsonLdProps {
   data: Record<string, unknown>
 }
@@ -16,8 +18,8 @@ export function organizationSchema() {
     "@context": "https://schema.org",
     "@type": "Organization",
     name: "Operion",
-    url: "https://operion.com",
-    logo: "https://operion.com/favicon.svg",
+    url: "https://operionerp.xyz",
+    logo: "https://operionerp.xyz/logo3.png",
     description:
       "Operion is a logistics management application for trip profit calculation, route planning, fleet management, dispatch, and document generation.",
     email: "operion.contact@gmail.com",
@@ -41,12 +43,12 @@ export function websiteSchema() {
     "@context": "https://schema.org",
     "@type": "WebSite",
     name: "Operion",
-    url: "https://operion.com",
+    url: "https://operionerp.xyz",
     description:
       "Operion is a logistics management application for trip profit calculation, route planning, fleet management, dispatch, and document generation.",
     potentialAction: {
       "@type": "SearchAction",
-      target: "https://operion.com/search?q={search_term_string}",
+      target: "https://operionerp.xyz/search?q={search_term_string}",
       "query-input": "required name=search_term_string",
     },
   }
@@ -65,7 +67,7 @@ export function softwareApplicationSchema() {
       "@type": "Offer",
       price: "0",
       priceCurrency: "EUR",
-      description: "Free during development phase",
+      description: "Free during productization phase — all major features complete",
     },
     softwareVersion: "0.1.0",
     datePublished: "2026-04",
@@ -118,7 +120,7 @@ export function contactPageSchema() {
     "@context": "https://schema.org",
     "@type": "ContactPage",
     name: "Contact Operion",
-    url: "https://operion.com/contact",
+    url: "https://operionerp.xyz/contact",
     mainEntity: {
       "@type": "Organization",
       name: "Operion",
@@ -126,4 +128,105 @@ export function contactPageSchema() {
       telephone: "+40-123-456-789",
     },
   }
+}
+
+export function articleSchema(params: {
+  headline: string
+  description: string
+  url: string
+  imageUrl: string
+  datePublished: string
+  dateModified?: string
+  authorName: string
+  publisherName?: string
+  publisherLogoUrl?: string
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: params.headline,
+    description: params.description,
+    url: params.url,
+    image: params.imageUrl,
+    datePublished: params.datePublished,
+    dateModified: params.dateModified || params.datePublished,
+    author: {
+      "@type": "Person",
+      name: params.authorName,
+    },
+    publisher: {
+      "@type": "Organization",
+      name: params.publisherName || "Operion",
+      logo: {
+        "@type": "ImageObject",
+        url: params.publisherLogoUrl || "https://operionerp.xyz/logo3.png",
+      },
+    },
+    mainEntityOfPage: {
+      "@type": "WebPage",
+      "@id": params.url,
+    },
+  }
+}
+
+export function itemListSchema(params: {
+  items: Array<{ title: string; url: string }>
+  itemType?: string
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "ItemList",
+    itemListElement: params.items.map((item, index) => ({
+      "@type": "ListItem",
+      position: index + 1,
+      name: item.title,
+      url: item.url,
+    })),
+  }
+}
+
+export function productSchema(params: {
+  name: string
+  description: string
+  url: string
+  price: string
+  priceCurrency?: string
+  category?: string
+  offers?: Array<{ name: string; price: string; priceCurrency: string; description?: string }>
+}) {
+  return {
+    "@context": "https://schema.org",
+    "@type": "Product",
+    name: params.name,
+    description: params.description,
+    url: params.url,
+    category: params.category || "BusinessApplication",
+    offers: params.offers?.length
+      ? params.offers.map((offer) => ({
+          "@type": "Offer",
+          name: offer.name,
+          price: offer.price,
+          priceCurrency: offer.priceCurrency,
+          description: offer.description,
+        }))
+      : {
+          "@type": "Offer",
+          price: params.price,
+          priceCurrency: params.priceCurrency || "EUR",
+        },
+  }
+}
+
+/**
+ * Render multiple JSON-LD blocks in a single component.
+ * Useful for pages that need e.g. BreadcrumbList + Article simultaneously.
+ */
+export function JsonLdMultiple({ schemas }: { schemas: Record<string, unknown>[] }): ReactElement {
+  return (
+    <>
+      {schemas.map((schema, index) => (
+        <JsonLd key={index} data={schema} />
+      ))}
+    </>
+  )
 }

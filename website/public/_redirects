@@ -1,0 +1,27 @@
+# Cloudflare Pages `_redirects`
+#
+# ─────────────────────────────────────────────────────────────────────────────
+# 404 HTTP-status handling (blueprint §13.4 / gap #19)
+#
+# IMPORTANT — Cloudflare Pages DOES NOT support status-code rewrites to 404 in
+# `_redirects`. Only 301 / 302 / 303 / 307 / 308 are accepted; a rule like
+# `/* /404 404` is invalid and would be ignored (or break the fallback below).
+#
+# So the SPA fallback below is the best available: every unknown path is served
+# index.html with HTTP 200. Known public routes are pre-rendered to static HTML
+# by vike (pages/+onBeforePrerenderStart.ts, 37 routes) and serve real 200s.
+# Only genuinely missing URLs (typos/stale links) return 200-instead-of-404 —
+# this is the documented SPA limitation.
+#
+# noindex mitigation (applied): the on-brand 404 page
+# (src/pages/public/not-found.tsx) renders <meta name="robots"
+# content="noindex, nofollow"> via SeoHead, so stray/missing URLs never get
+# indexed. Verified present — do not remove `noindex` from that page.
+#
+# If true HTTP-404 statuses become a requirement, switch to a Pages Function
+# (e.g. an `_routes.json`-protected catch-all returning `Response 404`) — that
+# is the only supported mechanism on Cloudflare Pages.
+# ─────────────────────────────────────────────────────────────────────────────
+# SPA fallback — must stay the LAST rule and keep the 200 status so app routing
+# and pre-rendered pages are never broken.
+/*    /index.html    200

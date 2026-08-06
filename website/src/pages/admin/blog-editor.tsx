@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react"
 import { Helmet } from "react-helmet-async"
-import { useNavigate, useParams, Link } from "react-router"
+import { useParams, Link } from "react-router"
+import { useAppNavigate } from "@/hooks/useAppNavigate"
 import { useForm, Controller } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -29,14 +30,13 @@ import { Callout } from "@/components/ui/callout"
 import { PageHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { Skeleton } from "@/components/ui/loading-spinner"
-// TODO: Implement when backend endpoint is ready
-// import {
-//   useCreateBlogPost,
-//   useUpdateBlogPost,
-//   useDeleteBlogPost,
-//   useBlogPost,
-//   useBlogCategories,
-// } from "@/services/queries"
+import {
+  useCreateBlogPost,
+  useUpdateBlogPost,
+  useDeleteBlogPost,
+  useBlogPost,
+  useBlogCategories,
+} from "@/services/queries"
 import { useAuth } from "@/contexts/auth-provider"
 import { useLocale } from "@/i18n/locale-context"
 
@@ -130,27 +130,17 @@ function renderMarkdown(md: string): string {
 
 export default function BlogEditorPage() {
   const { slug } = useParams<{ slug?: string }>()
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   const { isAdmin } = useAuth()
   const { t } = useLocale()
   const isEditMode = !!slug
 
-  // TODO: Implement when backend endpoint is ready
-  // const { data: existingPost, isLoading: postLoading } = useBlogPost(slug || "")
-  // const { data: categories, isLoading: categoriesLoading } = useBlogCategories()
-  //
-  // const createPost = useCreateBlogPost()
-  // const updatePost = useUpdateBlogPost()
-  // const deletePost = useDeleteBlogPost()
+  const { data: existingPost, isLoading: postLoading } = useBlogPost(slug || "")
+  const { data: categories, isLoading: categoriesLoading } = useBlogCategories()
 
-  const existingPost = undefined as { title: string; slug: string; excerpt: string; content: string; category_id: string; tags?: string[]; featured_image?: string; seo_title?: string; seo_description?: string; published_at?: string | null } | undefined
-  const postLoading = false
-  const categories = undefined as { id: string; name: string }[] | undefined
-  const categoriesLoading = false
-
-  const createPost = { mutate: (_payload: unknown, _options?: { onSuccess?: (res: { data: { slug: string } }) => void }) => {}, isPending: false } as const
-  const updatePost = { mutate: (_payload: unknown, _options?: { onSuccess?: (res: { data: { slug: string } }) => void }) => {}, isPending: false } as const
-  const deletePost = { mutate: (_slug: string, _options?: { onSuccess?: () => void }) => {}, isPending: false } as const
+  const createPost = useCreateBlogPost()
+  const updatePost = useUpdateBlogPost()
+  const deletePost = useDeleteBlogPost()
 
   const [previewTab, setPreviewTab] = useState("edit")
   const [autoSlug, setAutoSlug] = useState(true)
@@ -181,8 +171,8 @@ export default function BlogEditorPage() {
         title: existingPost.title,
         slug: existingPost.slug,
         excerpt: existingPost.excerpt,
-        content: existingPost.content,
-        category_id: existingPost.category_id,
+        content: existingPost.content || "",
+        category_id: String(existingPost.category_id ?? ""),
         tags: existingPost.tags?.join(", ") || "",
         featured_image: existingPost.featured_image || "",
         seo_title: existingPost.seo_title || "",
@@ -226,11 +216,10 @@ export default function BlogEditorPage() {
       published: data.published,
     }
 
-    // TODO: Implement when backend endpoint is ready - navigate on success
     if (isEditMode && slug) {
       const { slug: _payloadSlug, ...updatePayload } = payload
       updatePost.mutate(
-        { slug, ...updatePayload },
+        { slug, data: updatePayload },
         {
           onSuccess: (res: { data: { slug: string } }) => {
             navigate(`/blog/${res.data.slug}`)
@@ -546,8 +535,8 @@ export default function BlogEditorPage() {
                         className="flex h-9 w-full rounded-md border border-input bg-transparent px-3 py-1 text-sm shadow-sm focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
                       >
                         <option value="">{t("blogEditor.categoryPlaceholder")}</option>
-                        {categories?.map((cat: { id: string; name: string }) => (
-                          <option key={cat.id} value={cat.id}>
+                        {categories?.map((cat) => (
+                          <option key={String(cat.id)} value={String(cat.id)}>
                             {cat.name}
                           </option>
                         ))}
@@ -611,7 +600,7 @@ export default function BlogEditorPage() {
                       <img
                         loading="lazy"
                         src={form.watch("featured_image")}
-                        alt="Featured preview"
+                        alt={t("blogEditor.featuredImageAlt")}
                         className="h-32 w-full object-cover"
                         onError={(e) => {
                           (e.target as HTMLImageElement).style.display = "none"

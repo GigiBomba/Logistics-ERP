@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import {
   Package,
@@ -10,7 +10,6 @@ import {
   Anchor,
   Handshake,
   ArrowRight,
-  ImageIcon,
   Timer,
   TrendingDown,
   TrendingUp,
@@ -23,14 +22,58 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-function ScreenshotPlaceholder({ name }: { name: string }) {
+function SiteBoardVisual() {
+  const sites = [
+    { name: "Site A — Residential", status: "active", deliveries: 3, next: "08:30", equipment: "Crane #2" },
+    { name: "Site B — Office Park", status: "waiting", deliveries: 1, next: "10:00", equipment: "Mixer #1" },
+    { name: "Site C — Highway", status: "active", deliveries: 5, next: "07:00", equipment: "Excavator #4" },
+  ]
   return (
-    <div className="mt-8 rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-        <ImageIcon className="h-7 w-7 text-muted-foreground" />
+    <div className="mt-8 rounded-xl border bg-card p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <span className="text-sm font-medium">Site Coordination Board</span>
+        <span className="text-xs text-muted-foreground">3 active sites</span>
       </div>
-      <p className="text-sm font-medium text-muted-foreground">Screenshot: {name}</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">Preview coming soon</p>
+      <div className="space-y-3">
+        {sites.map((site, i) => (
+          <motion.div
+            key={site.name}
+            initial={{ opacity: 0, x: -10 }}
+            whileInView={{ opacity: 1, x: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.1 }}
+            className="rounded-lg border p-4"
+          >
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className={`h-2 w-2 rounded-full ${site.status === "active" ? "bg-green-500" : "bg-amber-500"}`} />
+                <span className="text-sm font-medium">{site.name}</span>
+              </div>
+              <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${site.status === "active" ? "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300" : "bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300"}`}>
+                {site.status}
+              </span>
+            </div>
+            <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+              <div className="rounded-md bg-muted/50 p-2">
+                <p className="font-semibold text-foreground">{site.deliveries}</p>
+                <p>Deliveries today</p>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <p className="font-semibold text-foreground">{site.next}</p>
+                <p>Next window</p>
+              </div>
+              <div className="rounded-md bg-muted/50 p-2">
+                <p className="font-semibold text-foreground">{site.equipment}</p>
+                <p>Equipment</p>
+              </div>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-lg bg-muted/40 p-3 flex items-center gap-2 text-xs text-muted-foreground">
+        <HardHat className="h-3.5 w-3.5" />
+        <span>All sites comply with today&apos;s safety checklist</span>
+      </div>
     </div>
   )
 }
@@ -99,14 +142,11 @@ const stats = [
 export default function IndustryConstructionPage() {
   return (
     <>
-      <Helmet>
-        <title>Operion for Construction Logistics — Site Coordination & Equipment</title>
-        <meta
-          name="description"
-          content="Coordinate material deliveries and heavy equipment across multiple sites without delays using Operion's construction logistics tools."
-        />
-        <link rel="canonical" href="https://operion.com/industries/construction" />
-      </Helmet>
+      <SeoHead
+        title="Operion for Construction Logistics — Site Coordination & Equipment"
+        description="Coordinate material deliveries and heavy equipment across multiple sites without delays using Operion's construction logistics tools."
+        canonical="https://operionerp.xyz/industries/construction"
+      />
 
       <PageHeader
         title="Operion for Construction Logistics"
@@ -229,14 +269,14 @@ export default function IndustryConstructionPage() {
         </div>
       </SectionWrapper>
 
-      {/* Screenshot */}
+      {/* Site Coordination Board */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
           title="See It in Action"
           description="The construction logistics board shows every delivery, equipment move, and site status in real time."
           className="mb-8"
         />
-        <ScreenshotPlaceholder name="Construction Logistics Board" />
+        <SiteBoardVisual />
       </SectionWrapper>
 
       {/* CTA */}

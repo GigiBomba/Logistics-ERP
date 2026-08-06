@@ -1,5 +1,5 @@
-import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { useLocale } from "@/i18n/locale-context"
 import {
   ArrowRight,
@@ -41,13 +41,7 @@ export default function PressPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("press.pageTitle")}</title>
-        <meta
-          name="description"
-          content={t("press.metaDesc")}
-        />
-      </Helmet>
+      <SeoHead title={t("press.pageTitle")} description={t("press.metaDesc")} canonical="https://operionerp.xyz/press" />
 
       <HeroSection
         title={t("press.title")}

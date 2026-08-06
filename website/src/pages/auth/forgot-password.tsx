@@ -11,6 +11,7 @@ import { Input, Label } from "@/components/ui/input"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { authApi } from "@/api/endpoints"
 import { useLocale } from "@/i18n/locale-context"
+import { AxiosError } from "axios"
 
 const schema = z.object({
   email: z.string().email("Please enter a valid email"),
@@ -27,14 +28,18 @@ export default function ForgotPasswordPage() {
   function onSubmit(data: FormData) {
     authApi.forgotPassword(data.email).then(() => {
       toast.success(t("auth.resetLinkSent"))
-    }).catch(() => {
+    }).catch((error) => {
+      if (error instanceof AxiosError && error.response?.status === 429) {
+        toast.error(t("auth.tooManyAttempts"))
+        return
+      }
       toast.error(t("auth.resetFailed"))
     })
   }
 
   return (
     <>
-      <Helmet><title>{t("auth.resetPassword")} — Operion ERP</title></Helmet>
+      <Helmet><title>{`${t("auth.resetPassword")} — Operion ERP`}</title></Helmet>
       <div className="flex min-h-[80vh] items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

@@ -30,6 +30,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src"],
-  "exclude": ["src/__tests__", "src/test-utils.tsx", "src/test-setup.ts"]
+  "include": ["src", "pages"]
 }

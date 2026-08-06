@@ -22,3 +22,20 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Deepwork state files (git-local, not committed)
+.slim/deepwork/
+
+test-results/
+playwright-report/
+coverage/
+# Stryker mutation-testing sandbox dirs (broke vike build once)
+.stryker-tmp/
+# local env files (never commit)
+.env
+.env.local
+.env.*
+!.env.example
+
+# Stryker mutation report artifacts
+reports/

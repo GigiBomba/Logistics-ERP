@@ -1,26 +1,27 @@
-import { useEffect, useState } from "react"
+import { useEffect, useState, useRef, type ChangeEvent } from "react"
 import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { User, Lock, Bell, Globe, Monitor, Smartphone, Shield, Clock, Languages, Palette, LogOut, Fingerprint, KeyRound } from "lucide-react"
+import { User, Lock, Bell, Globe, Monitor, Smartphone, Shield, Clock, Languages, Palette, LogOut, Fingerprint, KeyRound, Upload, X, Loader2 } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input, Label } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { Callout } from "@/components/ui/callout"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
+import { Skeleton } from "@/components/ui/skeleton"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
+import { EmptyState } from "@/components/shared/empty-state"
 import { useAuth } from "@/contexts/auth-provider"
 import { useTheme } from "@/contexts/theme-provider"
-// TODO: Implement when backend endpoint is ready
-// import { useProfile, useUpdateProfile, useChangePassword } from "@/services/queries"
+import { useProfile, useUpdateProfile, useChangePassword, useSessions, useRevokeSession, useAvatarUpload, useUpdateNotificationPreferences } from "@/services/queries"
 import { toast } from "sonner"
 import { useLocale } from "@/i18n/locale-context"
-import type { UserSession, NotificationPreference } from "@/types"
+import type { NotificationPreference } from "@/types"
 
 const profileSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters"),
@@ -61,12 +62,6 @@ const availableLanguages = [
 
 const unavailableLanguages = [] as { code: string; labelKey: string }[]
 
-const mockSessions: UserSession[] = [
-  { id: "sess-1", device: "Windows 11", browser: "Chrome 126", ip: "192.168.1.105", location: "Bucharest, Romania", last_active: "Just now", is_current: true },
-  { id: "sess-2", device: "macOS Sonoma", browser: "Safari 17", ip: "203.0.113.42", location: "Remote", last_active: "2 hours ago", is_current: false },
-  { id: "sess-3", device: "iPhone 15", browser: "Chrome Mobile", ip: "198.51.100.8", location: "Bucharest, Romania", last_active: "1 day ago", is_current: false },
-]
-
 const defaultNotifications: NotificationPreference = {
   email_notifications: true,
   product_updates: true,
@@ -76,22 +71,74 @@ const defaultNotifications: NotificationPreference = {
 }
 
 export default function ProfilePage() {
-  const { user } = useAuth()
+  const { user, updateUser } = useAuth()
   const { theme, setTheme } = useTheme()
   const { t } = useLocale()
-  // TODO: Implement when backend endpoint is ready
-  // const { data: profile, isLoading } = useProfile()
-  // const updateProfile = useUpdateProfile()
-  // const changePassword = useChangePassword()
-
-  const profile = undefined as { display_name?: string; name?: string; email: string } | undefined
-  const isLoading = false
-  const updateProfile = { mutate: (_data: unknown) => { toast.success(t("common.comingSoon")) }, isPending: false } as const
-  const changePassword = { mutate: (_data: unknown) => { toast.success(t("common.comingSoon")) }, isPending: false } as const
+  const { data: profile, isLoading } = useProfile()
+  const updateProfileMutation = useUpdateProfile()
+  const changePasswordMutation = useChangePassword()
+  const { data: sessions, isLoading: sessionsLoading, isError: sessionsError } = useSessions()
+  const revokeSession = useRevokeSession()
+  const avatarUpload = useAvatarUpload()
+  const updatePrefs = useUpdateNotificationPreferences()
 
   const [timezone, setTimezone] = useState("Europe/Bucharest (EET)")
   const [language, setLanguage] = useState("en")
   const [notifications, setNotifications] = useState<NotificationPreference>(defaultNotifications)
+  const [avatarPreview, setAvatarPreview] = useState<string | null>(null)
+  const [avatarFile, setAvatarFile] = useState<File | null>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+
+  const ACCEPTED_TYPES = ["image/png", "image/jpeg", "image/webp"]
+  const MAX_SIZE = 5 * 1024 * 1024 // 5MB
+
+  function validateAvatarFile(file: File): string | null {
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      return t("profile.avatarTypeError")
+    }
+    if (file.size > MAX_SIZE) {
+      return t("profile.avatarSizeError")
+    }
+    return null
+  }
+
+  function handleAvatarSelect(e: ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (!file) return
+    const error = validateAvatarFile(file)
+    if (error) {
+      toast.error(error)
+      if (fileInputRef.current) fileInputRef.current.value = ""
+      return
+    }
+    setAvatarFile(file)
+    const reader = new FileReader()
+    reader.onload = () => setAvatarPreview(reader.result as string)
+    reader.readAsDataURL(file)
+  }
+
+  function handleSaveAvatar() {
+    if (!avatarFile || !user) return
+    avatarUpload.mutate(avatarFile, {
+      onSuccess: (res) => {
+        const avatarUrl = res.data.avatar_url
+        updateUser({ ...user, avatar_url: avatarUrl })
+        setAvatarPreview(null)
+        setAvatarFile(null)
+        if (fileInputRef.current) fileInputRef.current.value = ""
+        toast.success(t("profile.photoSaved"))
+      },
+      onError: () => {
+        toast.error(t("profile.avatarUploadError"))
+      },
+    })
+  }
+
+  function handleCancelAvatar() {
+    setAvatarPreview(null)
+    setAvatarFile(null)
+    if (fileInputRef.current) fileInputRef.current.value = ""
+  }
 
   const profileForm = useForm<ProfileForm>({
     resolver: zodResolver(profileSchema),
@@ -110,11 +157,11 @@ export default function ProfilePage() {
   }, [profile, user, profileForm])
 
   function onProfileSubmit(data: ProfileForm) {
-    updateProfile.mutate(data)
+    updateProfileMutation.mutate({ name: data.name, email: data.email })
   }
 
   function onPasswordSubmit(data: PasswordForm) {
-    changePassword.mutate({
+    changePasswordMutation.mutate({
       current_password: data.current_password,
       new_password: data.new_password,
     })
@@ -172,8 +219,8 @@ export default function ProfilePage() {
                           <Input id="email" type="email" {...profileForm.register("email")} />
                           {profileForm.formState.errors.email && <p className="text-xs text-destructive">{profileForm.formState.errors.email.message}</p>}
                         </div>
-                        <Button type="submit" disabled={updateProfile.isPending}>
-                          {updateProfile.isPending ? t("profile.saving") : t("profile.saveChanges")}
+                        <Button type="submit" disabled={updateProfileMutation.isPending}>
+                          {updateProfileMutation.isPending ? t("profile.saving") : t("profile.saveChanges")}
                         </Button>
                       </form>
                     </CardContent>
@@ -189,12 +236,44 @@ export default function ProfilePage() {
                     </CardHeader>
                     <CardContent>
                       <div className="flex items-center gap-4">
-                        <Avatar size="lg">
+                        <Avatar size="lg" className="ring-2 ring-border">
+                          {avatarPreview || user?.avatar_url ? (
+                            <AvatarImage src={avatarPreview || user!.avatar_url!} alt={userName} />
+                          ) : null}
                           <AvatarFallback>{userInitials}</AvatarFallback>
                         </Avatar>
-                        <div className="flex-1">
-                          <p className="text-sm font-medium">{t("profile.avatarComingSoon")}</p>
-                          <p className="text-xs text-muted-foreground">{t("profile.avatarComingSoonDesc")}</p>
+                        <div className="flex-1 space-y-2">
+                          {avatarPreview ? (
+                            <div className="flex items-center gap-2">
+                              <Button size="sm" onClick={handleSaveAvatar} disabled={avatarUpload.isPending}>
+                                {avatarUpload.isPending ? (
+                                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+                                ) : (
+                                  <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                )}
+                                {avatarUpload.isPending ? t("profile.saving") : t("profile.savePhoto")}
+                              </Button>
+                              <Button size="sm" variant="outline" onClick={handleCancelAvatar} disabled={avatarUpload.isPending}>
+                                <X className="mr-1.5 h-3.5 w-3.5" />
+                                {t("common.cancel")}
+                              </Button>
+                            </div>
+                          ) : (
+                            <>
+                              <Button size="sm" variant="outline" onClick={() => fileInputRef.current?.click()}>
+                                <Upload className="mr-1.5 h-3.5 w-3.5" />
+                                {user?.avatar_url ? t("profile.changePhoto") : t("profile.uploadAvatar")}
+                              </Button>
+                              <p className="text-xs text-muted-foreground">{t("profile.uploadHint")}</p>
+                            </>
+                          )}
+                          <input
+                            ref={fileInputRef}
+                            type="file"
+                            accept="image/png,image/jpeg,image/webp"
+                            className="hidden"
+                            onChange={handleAvatarSelect}
+                          />
                         </div>
                       </div>
                     </CardContent>
@@ -321,8 +400,8 @@ export default function ProfilePage() {
                           <Input id="confirm_password" type="password" {...passwordForm.register("confirm_password")} />
                           {passwordForm.formState.errors.confirm_password && <p className="text-xs text-destructive">{passwordForm.formState.errors.confirm_password.message}</p>}
                         </div>
-                        <Button type="submit" disabled={changePassword.isPending}>
-                          {changePassword.isPending ? t("profile.changing") : t("profile.changePassword")}
+                        <Button type="submit" disabled={changePasswordMutation.isPending}>
+                          {changePasswordMutation.isPending ? t("profile.changing") : t("profile.changePassword")}
                         </Button>
                       </form>
                     </CardContent>
@@ -428,8 +507,21 @@ export default function ProfilePage() {
                       ))}
                     </div>
                     <div className="mt-6">
-                      <Button variant="outline" disabled>{t("profile.savePreferences")}</Button>
-                      <p className="mt-2 text-xs text-muted-foreground">{t("profile.savePrefsPlaceholder")}</p>
+                      <Button
+                        variant="outline"
+                        onClick={() =>
+                          updatePrefs.mutate(notifications, {
+                            onSuccess: () => toast.success(t("profile.preferencesSaved")),
+                            onError: () => toast.error(t("profile.preferencesSaveError")),
+                          })
+                        }
+                        disabled={updatePrefs.isPending}
+                      >
+                        {updatePrefs.isPending ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : null}
+                        {t("profile.savePreferences")}
+                      </Button>
                     </div>
                   </CardContent>
                 </Card>
@@ -446,36 +538,77 @@ export default function ProfilePage() {
                       <CardDescription>{t("profile.activeSessionsDesc")}</CardDescription>
                     </CardHeader>
                     <CardContent>
-                      <div className="space-y-3">
-                        {mockSessions.map((session) => (
-                          <div key={session.id} className="flex items-center justify-between rounded-lg border p-3">
-                            <div className="flex items-center gap-3">
-                              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-                                {session.device.includes("iPhone") || session.device.includes("Mobile") ? (
-                                  <Smartphone className="h-4 w-4 text-primary" />
-                                ) : (
-                                  <Monitor className="h-4 w-4 text-primary" />
-                                )}
-                              </div>
-                              <div>
-                                <div className="flex items-center gap-2">
-                                  <p className="text-sm font-medium">{session.device}</p>
-                                  {session.is_current && <Badge variant="success">{t("common.current")}</Badge>}
-                                </div>
-                                <p className="text-xs text-muted-foreground">
-                                  {session.browser} · {session.ip} · {session.location}
-                                </p>
-                                <p className="text-xs text-muted-foreground">{t("profile.lastActive")}: {session.last_active}</p>
+                      {sessionsLoading ? (
+                        <div className="space-y-3">
+                          {[1, 2, 3].map((i) => (
+                            <div key={i} className="flex items-center gap-3 rounded-lg border p-3">
+                              <Skeleton className="h-8 w-8 rounded-lg" />
+                              <div className="flex-1 space-y-1.5">
+                                <Skeleton className="h-4 w-48" />
+                                <Skeleton className="h-3 w-64" />
+                                <Skeleton className="h-3 w-32" />
                               </div>
                             </div>
-                            {!session.is_current && (
-                              <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive">
-                                <LogOut className="h-4 w-4" />
-                              </Button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
+                          ))}
+                        </div>
+                      ) : sessionsError ? (
+                        <Callout variant="danger" title={t("profile.failedToLoadSessions")}>
+                          {t("profile.failedToLoadSessionsDesc")}
+                        </Callout>
+                      ) : !sessions || sessions.length === 0 ? (
+                        <EmptyState
+                          icon={<Monitor className="h-12 w-12" />}
+                          title={t("profile.noActiveSessions")}
+                          description={t("profile.noActiveSessionsDesc")}
+                        />
+                      ) : (
+                        <div className="space-y-3">
+                          {sessions.map((session) => {
+                            const s = {
+                              id: String(session.id),
+                              device: session.device_name || session.device_platform || "Unknown device",
+                              browser: session.device_platform || "Unknown",
+                              ip: session.ip_address,
+                              last_active: session.last_active_at,
+                              is_current: false,
+                            }
+                            return (
+                              <div key={s.id} className="flex items-center justify-between rounded-lg border p-3">
+                                <div className="flex items-center gap-3">
+                                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
+                                    {s.device.includes("iPhone") || s.device.includes("Mobile") ? (
+                                      <Smartphone className="h-4 w-4 text-primary" />
+                                    ) : (
+                                      <Monitor className="h-4 w-4 text-primary" />
+                                    )}
+                                  </div>
+                                  <div>
+                                    <div className="flex items-center gap-2">
+                                      <p className="text-sm font-medium">{s.device}</p>
+                                      {s.is_current && <Badge variant="success">{t("common.current")}</Badge>}
+                                    </div>
+                                    <p className="text-xs text-muted-foreground">
+                                      {s.browser} · {s.ip}
+                                    </p>
+                                    <p className="text-xs text-muted-foreground">{t("profile.lastActive")}: {s.last_active}</p>
+                                  </div>
+                                </div>
+                                {!s.is_current && (
+                                  <Button
+                                    variant="ghost"
+                                    size="sm"
+                                    className="text-destructive hover:text-destructive"
+                                    onClick={() => revokeSession.mutate(session.id)}
+                                    disabled={revokeSession.isPending}
+                                  >
+                                    <LogOut className="h-4 w-4" />
+                                  </Button>
+                                )}
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </CardContent>
                   </Card>
                 </motion.div>

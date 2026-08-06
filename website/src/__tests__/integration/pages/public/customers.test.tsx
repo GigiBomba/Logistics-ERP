@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen, fireEvent } from "@/test-utils"
+import { render, screen } from "@/test-utils"
 import CustomersPage from "@/pages/public/customers"
 
 vi.mock("motion/react", () => ({
@@ -21,6 +21,9 @@ describe("CustomersPage", () => {
   it("shows coming soon message", () => {
     render(<CustomersPage />)
     expect(screen.getByText("Coming soon")).toBeInTheDocument()
+    expect(
+      screen.getByText(/success stories will appear here/i)
+    ).toBeInTheDocument()
   })
 
   it("renders call-to-action section", () => {

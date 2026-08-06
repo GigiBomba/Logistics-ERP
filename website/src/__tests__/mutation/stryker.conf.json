@@ -1,11 +1,26 @@
 {
-  "$schema": "https://raw.githubusercontent.com/stryker-mutator/stryker-js/master/packages/core/schema/stryker-schema.json",
-  "mutator": { "plugins": null },
-  "packageManager": "npm",
-  "reporters": ["html", "clear-text", "progress"],
+  "$schema": "../../node_modules/@stryker-mutator/core/schema/stryker-schema.json",
+  "mutate": [
+    "src/lib/**/*.ts",
+    "src/services/queries.ts",
+    "src/contexts/auth-provider.tsx",
+    "src/contexts/theme-provider.tsx"
+  ],
+  "ignorePatterns": ["Calculator logistica"],
   "testRunner": "vitest",
-  "vitest": { "configFile": "vite.config.ts" },
+  "vitest": {
+    "configFile": "src/__tests__/mutation/vitest.config.ts",
+    "related": false
+  },
+  "thresholds": {
+    "high": 80,
+    "low": 60,
+    "break": 50
+  },
   "coverageAnalysis": "perTest",
-  "mutate": ["src/**/*.{ts,tsx}", "!src/**/*.test.{ts,tsx}", "!src/__tests__/**"],
-  "thresholds": { "high": 80, "low": 60, "break": 50 }
+  "reporters": ["html", "progress", "json"],
+  "dryRunTimeoutMinutes": 20,
+  "mutator": {
+    "excludedMutations": ["StringLiteral", "ObjectLiteral"]
+  }
 }

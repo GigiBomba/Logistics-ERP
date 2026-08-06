@@ -1,5 +1,5 @@
-import { Helmet } from "react-helmet-async"
 import { Link } from "react-router"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
 import { Wrench, BookOpen, Code, Puzzle, Webhook, Users, ArrowRight, Key, Terminal, Zap } from "lucide-react"
@@ -78,10 +78,7 @@ export default function DevelopersPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("developers.pageTitle")}</title>
-        <meta name="description" content={t("developers.metaDesc")} />
-      </Helmet>
+      <SeoHead title={t("developers.pageTitle")} description={t("developers.metaDesc")} canonical="https://operionerp.xyz/developers" />
 
       <HeroSection
         title={t("developers.title")}

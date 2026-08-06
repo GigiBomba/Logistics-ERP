@@ -1,6 +1,7 @@
 import { motion } from "motion/react"
 import { cn } from "@/lib/utils"
 import { Check, Dot } from "lucide-react"
+import { useReducedMotion } from "@/services/accessibility"
 
 type TimelineStatus = "completed" | "current" | "upcoming"
 
@@ -36,6 +37,7 @@ const statusColors: Record<TimelineStatus, { dot: string; line: string; bg: stri
 }
 
 export function Timeline({ items, className }: TimelineProps) {
+  const prefersReducedMotion = useReducedMotion()
   return (
     <div className={cn("relative", className)}>
       {items.map((item, index) => {
@@ -46,10 +48,10 @@ export function Timeline({ items, className }: TimelineProps) {
         return (
           <motion.div
             key={index}
-            initial={{ opacity: 0, x: -20 }}
+            initial={prefersReducedMotion ? { opacity: 1, x: 0 } : { opacity: 0, x: -20 }}
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
-            transition={{ duration: 0.4, delay: index * 0.1, ease: [0.22, 1, 0.36, 1] }}
+            transition={{ duration: 0.4, delay: prefersReducedMotion ? 0 : Math.min(index * 0.05, 0.3), ease: [0.22, 1, 0.36, 1] }}
             className="relative flex gap-6 pb-8 last:pb-0"
           >
             {/* Vertical line */}

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { waitForHydration } from "../helpers"
 
 test.describe("Chaos — Navigation Stress", () => {
   test("rapid back/forward navigation across 10+ pages doesn't error", async ({ page }) => {
@@ -24,9 +25,16 @@ test.describe("Chaos — Navigation Stress", () => {
       }
     }
 
+    // The rapid traversal can leave a navigation in flight that interrupts the
+    // next goto ("interrupted by another navigation") — let the browser settle.
+    await page.waitForTimeout(1000)
+
     // Navigate to a known page to confirm app is still functional
     await page.goto("/", { waitUntil: "networkidle" })
-    await expect(page.getByRole("heading", { name: /enterprise logistics/i })).toBeVisible()
+    // networkidle can fire before the lazy route renders client-side — settle
+    // on hydration before asserting.
+    await waitForHydration(page)
+    await expect(page.getByRole("heading", { name: /the complete logistics operating system/i })).toBeVisible()
   })
 
   test("opening many pages in quick succession doesn't lose state", async ({ page }) => {
@@ -48,6 +56,9 @@ test.describe("Chaos — Navigation Stress", () => {
 
     for (const { path, text } of routes) {
       await page.goto(path, { waitUntil: "networkidle", timeout: 15000 })
+      // Lazy routes render client-side after networkidle — wait for React
+      // hydration so the assertion can't race the render.
+      await waitForHydration(page)
       await expect(page.getByText(text).first()).toBeVisible()
     }
   })
@@ -71,7 +82,7 @@ test.describe("Chaos — Navigation Stress", () => {
     }
 
     // Verify the page still renders correctly at the final size
-    await expect(page.getByRole("heading", { name: /enterprise logistics/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /the complete logistics operating system/i })).toBeVisible()
 
     // Check that navigation menu is still interactive
     const navLinks = page.locator("nav a, header a").first()

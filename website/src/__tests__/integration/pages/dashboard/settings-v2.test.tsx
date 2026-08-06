@@ -3,7 +3,17 @@ import { render, screen } from "@/test-utils"
 import { fireEvent } from "@testing-library/react"
 import SettingsPage from "@/pages/dashboard/settings"
 import { useTheme } from "@/contexts/theme-provider"
-import { createMockThemeContext } from "@/test-utils"
+import { useAuth } from "@/contexts/auth-provider"
+import {
+  useSessions,
+  useCreateTicket,
+  useUpdateNotificationPreferences,
+  useMfaStatus,
+  useMfaEnroll,
+  useMfaConfirm,
+  useMfaDisable,
+} from "@/services/queries"
+import { createMockThemeContext, createMockAuthContext } from "@/test-utils"
 
 vi.mock("motion/react", () => ({
   motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
@@ -11,6 +21,20 @@ vi.mock("motion/react", () => ({
 
 vi.mock("@/contexts/theme-provider", () => ({
   useTheme: vi.fn(),
+}))
+
+vi.mock("@/contexts/auth-provider", () => ({
+  useAuth: vi.fn(),
+}))
+
+vi.mock("@/services/queries", () => ({
+  useSessions: vi.fn(),
+  useCreateTicket: vi.fn(),
+  useUpdateNotificationPreferences: vi.fn(),
+  useMfaStatus: vi.fn(),
+  useMfaEnroll: vi.fn(),
+  useMfaConfirm: vi.fn(),
+  useMfaDisable: vi.fn(),
 }))
 
 describe("SettingsPage (Enhanced)", () => {
@@ -21,6 +45,16 @@ describe("SettingsPage (Enhanced)", () => {
     vi.mocked(useTheme).mockReturnValue(
       createMockThemeContext({ setTheme: mockSetTheme })
     )
+    vi.mocked(useAuth).mockReturnValue(
+      createMockAuthContext({ user: { id: "1", name: "Test", email: "test@test.com", role: "dispatcher", is_admin: false }, isAuthenticated: true })
+    )
+    vi.mocked(useSessions).mockReturnValue({ data: [], isLoading: false, isError: false } as any)
+    vi.mocked(useCreateTicket).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
+    vi.mocked(useUpdateNotificationPreferences).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
+    vi.mocked(useMfaStatus).mockReturnValue({ data: { mfa_enabled: false }, isLoading: false } as any)
+    vi.mocked(useMfaEnroll).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, data: undefined } as any)
+    vi.mocked(useMfaConfirm).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false, data: undefined } as any)
+    vi.mocked(useMfaDisable).mockReturnValue({ mutate: vi.fn(), isPending: false, isError: false } as any)
   })
 
   it("shows tabs (Appearance / Notifications / Language / Security / Data)", () => {
@@ -77,12 +111,24 @@ describe("SettingsPage (Enhanced)", () => {
     expect(screen.getByText("Europe/Bucharest (EET)")).toBeInTheDocument()
   })
 
-  it("shows security section with 2FA placeholder", () => {
+  it("shows 2FA enroll flow when MFA is disabled", () => {
+    vi.mocked(useMfaStatus).mockReturnValue({ data: { mfa_enabled: false }, isLoading: false } as any)
     render(<SettingsPage />)
     fireEvent.click(screen.getByRole("tab", { name: /security/i }))
     expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument()
+    // Enroll flow is visible (Enable 2FA CTA + description)
     expect(screen.getByText("Enable 2FA")).toBeInTheDocument()
-    expect(screen.getByText(/Coming Soon/i)).toBeInTheDocument()
+    expect(screen.queryByText("Disable two-factor authentication")).not.toBeInTheDocument()
+  })
+
+  it("shows 2FA disable flow when MFA is enabled", () => {
+    vi.mocked(useMfaStatus).mockReturnValue({ data: { mfa_enabled: true }, isLoading: false } as any)
+    render(<SettingsPage />)
+    fireEvent.click(screen.getByRole("tab", { name: /security/i }))
+    expect(screen.getByText("Two-Factor Authentication")).toBeInTheDocument()
+    // Disable flow is visible; enroll flow is not
+    expect(screen.getByText("Disable two-factor authentication")).toBeInTheDocument()
+    expect(screen.queryByText("Enable 2FA")).not.toBeInTheDocument()
   })
 
   it("shows API keys placeholder", () => {

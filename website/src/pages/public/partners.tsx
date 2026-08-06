@@ -1,23 +1,26 @@
-import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
+import { Link } from "react-router"
+import { SeoHead } from "@/components/seo/seo-head"
 import { useLocale } from "@/i18n/locale-context"
 import {
-  Globe,
   Mail,
   TrendingUp,
   Megaphone,
   Sparkles,
   HeadphonesIcon,
   BadgeCheck,
+  FileCheck,
+  Puzzle,
 } from "lucide-react"
 import { HeroSection } from "@/components/shared/hero-section"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { SectionHeader } from "@/components/shared/page-header"
 import { FeatureCard } from "@/components/shared/feature-card"
 import { Card, CardContent } from "@/components/ui/card"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { CtaBanner } from "@/components/shared/cta-banner"
-import { partnerConfig } from "@/config/site"
+import { partnerConfig, integrationList } from "@/config/site"
 
 const partnerBenefits = [
   {
@@ -46,10 +49,7 @@ export default function PartnersPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("partners.pageTitle")}</title>
-        <meta name="description" content={t("partners.metaDesc")} />
-      </Helmet>
+      <SeoHead title={t("partners.pageTitle")} description={t("partners.metaDesc")} canonical="https://operionerp.xyz/partners" />
 
       <HeroSection
         title={t("partners.title")}
@@ -58,7 +58,7 @@ export default function PartnersPage() {
         size="large"
       />
 
-      {/* Partner listings — coming soon */}
+      {/* Current integrations — honest ecosystem status */}
       <SectionWrapper>
         <SectionHeader
           title={t("partners.ourPartners")}
@@ -66,19 +66,62 @@ export default function PartnersPage() {
           className="mb-10"
         />
 
+        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          {integrationList.map((integration) => (
+            <Card key={integration.name} className="h-full">
+              <CardContent className="p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div
+                      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-sm font-bold ${integration.color}`}
+                    >
+                      {integration.initials}
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold">{integration.name}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {t(`integrations.category.${integration.category.toLowerCase()}`)}
+                      </p>
+                    </div>
+                  </div>
+                  <Badge variant={integration.statusVariant} className="text-[10px]">
+                    {t(`integrations.status.${integration.status.toLowerCase()}`)}
+                  </Badge>
+                </div>
+                <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+                  {integration.description}
+                </p>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+
+        <div className="mt-6 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+          <Puzzle className="h-4 w-4" />
+          {t("partners.integrationsNote")}
+        </div>
+
+        {/* DPA reference */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           whileInView={{ opacity: 1, y: 0 }}
           viewport={{ once: true }}
-          className="mx-auto max-w-2xl py-8 text-center"
+          className="mx-auto mt-12 max-w-2xl"
         >
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-muted">
-            <Globe className="h-8 w-8 text-muted-foreground" />
-          </div>
-          <h3 className="mt-6 text-xl font-semibold tracking-tight">{t("partners.comingSoon")}</h3>
-          <p className="mt-3 leading-relaxed text-muted-foreground">
-            {t("partners.comingSoonDesc")}
-          </p>
+          <Card className="border-dashed">
+            <CardContent className="p-6 text-center">
+              <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
+                <FileCheck className="h-6 w-6 text-primary" />
+              </div>
+              <h3 className="mt-4 font-semibold">{t("partners.dpaTitle")}</h3>
+              <p className="mx-auto mt-2 max-w-md text-sm leading-relaxed text-muted-foreground">
+                {t("partners.dpaDesc")}
+              </p>
+              <Button variant="outline" size="sm" className="mt-4" asChild>
+                <Link to="/trust#dpa">{t("partners.dpaCta")}</Link>
+              </Button>
+            </CardContent>
+          </Card>
         </motion.div>
       </SectionWrapper>
 
@@ -139,7 +182,7 @@ export default function PartnersPage() {
                 {t("partners.resellerDesc")}
               </p>
               <Button variant="outline" size="lg" className="mt-6">
-                <Globe className="mr-2 h-4 w-4" />
+                <BadgeCheck className="mr-2 h-4 w-4" />
                 {t("partners.getNotified")}
               </Button>
             </CardContent>

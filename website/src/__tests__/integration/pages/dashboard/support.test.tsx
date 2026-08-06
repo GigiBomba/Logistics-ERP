@@ -6,10 +6,29 @@ import { useCreateTicket } from "@/services/queries"
 vi.mock("@/services/queries", () => ({
   useCreateTicket: vi.fn(),
   useTickets: vi.fn(() => ({ data: [], isLoading: false })),
+  useTutorials: vi.fn(() => ({
+    data: [
+      {
+        id: "t-1",
+        title: "Your First Route Plan",
+        slug: "your-first-route-plan",
+        excerpt: "Plan your first multi-stop route.",
+        category: "beginner",
+        reading_time_minutes: 7,
+        published_at: "2026-07-01T00:00:00Z",
+        updated_at: "2026-07-01T00:00:00Z",
+        content: "<p>x</p>",
+      },
+    ],
+    isLoading: false,
+    isError: false,
+    refetch: vi.fn(),
+  })),
 }))
 
 vi.mock("motion/react", () => ({
   motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
 describe("SupportPage", () => {
@@ -33,14 +52,21 @@ describe("SupportPage", () => {
   it("renders contact information", () => {
     render(<SupportPage />)
     expect(screen.getByText("Contact Information")).toBeInTheDocument()
-    expect(screen.getByText("support@operion.com")).toBeInTheDocument()
+    expect(screen.getByText("support@operionerp.xyz")).toBeInTheDocument()
   })
 
   it("shows ticket history as empty state", () => {
     render(<SupportPage />)
     fireEvent.click(screen.getByRole("tab", { name: /my tickets/i }))
     expect(screen.getByText("Ticket History")).toBeInTheDocument()
-    expect(screen.getByText(/no tickets found/i)).toBeInTheDocument()
+    expect(screen.getByText(/No tickets/i)).toBeInTheDocument()
+  })
+
+  it("renders real tutorials in the knowledge base tab", () => {
+    render(<SupportPage />)
+    fireEvent.click(screen.getByRole("tab", { name: /knowledge base/i }))
+    expect(screen.getByText("Your First Route Plan")).toBeInTheDocument()
+    expect(screen.getByText("7 min read")).toBeInTheDocument()
   })
 
   it("renders bug form fields", () => {
