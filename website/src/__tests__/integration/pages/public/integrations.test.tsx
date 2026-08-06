@@ -36,6 +36,6 @@ describe("IntegrationsPage", () => {
 
   it("renders call-to-action section", () => {
     render(<IntegrationsPage />)
-    expect(screen.getByText("Don't see your tool?")).toBeInTheDocument()
+    expect(screen.getByText("Do not see your freight exchange or tool?")).toBeInTheDocument()
   })
 })

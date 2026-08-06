@@ -1,13 +1,13 @@
 import { useMemo, useState } from "react"
 import { Helmet } from "react-helmet-async"
 import { Link, useParams } from "react-router"
+import { useLocale } from "@/i18n/locale-context"
 import { motion } from "motion/react"
 import { ChevronRight, BookOpen, Clock } from "lucide-react"
 import { Card, CardContent } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { SearchInput } from "@/components/shared/search-input"
 import { docsConfig } from "@/config/site"
-import { useLocale } from "@/i18n/locale-context"
 
 // ─── Data ───────────────────────────────────────────────────────────
 
@@ -107,15 +107,15 @@ export default function DocsCategoryPage() {
   if (!category) {
     return (
       <>
-        <Helmet><title>Documentation — Operion ERP</title></Helmet>
+        <Helmet><title>{t("docs.pageTitle")}</title></Helmet>
         <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
-          <h1 className="text-3xl font-bold tracking-tight">Documentation</h1>
-          <p className="mt-2 text-muted-foreground">Everything you need to know about Operion ERP.</p>
+          <h1 className="text-3xl font-bold tracking-tight">{t("docs.title")}</h1>
+          <p className="mt-2 text-muted-foreground">{t("docs.categoryDesc")}</p>
 
           {/* Search */}
           <div className="mt-6 max-w-md">
             <SearchInput
-              placeholder={t("docs.searchPlaceholder")}
+              placeholder={t("common.searchCategories")}
               value={searchQuery}
               onChange={setSearchQuery}
               onClear={() => setSearchQuery("")}
@@ -137,10 +137,10 @@ export default function DocsCategoryPage() {
                     <h3 className="font-semibold">{cat.title}</h3>
                     <p className="mt-1 text-sm text-muted-foreground">{cat.description}</p>
                     <div className="mt-3 flex flex-wrap items-center gap-2">
-                      <Badge variant="secondary" className="text-xs">{cat.articles.length} article{cat.articles.length !== 1 ? "s" : ""}</Badge>
-                      <span className="flex items-center gap-1 text-xs text-muted-foreground/60">
+                      <Badge variant="secondary" className="text-xs">{t("docs.articleCount").replace("{count}", String(cat.articles.length))}</Badge>
+                      <span className="flex items-center gap-1 text-xs text-foreground/80">
                         <Clock className="h-3 w-3" />
-                        {totalReadingTime(cat.articles)} min
+                        {t("docs.minTotal").replace("{minutes}", String(totalReadingTime(cat.articles)))}
                       </span>
                       <ChevronRight className="h-4 w-4 text-muted-foreground ml-auto" />
                     </div>
@@ -151,7 +151,7 @@ export default function DocsCategoryPage() {
           ) : (
             <div className="col-span-full text-center py-12">
               <BookOpen className="mx-auto h-10 w-10 text-muted-foreground/30" />
-              <p className="mt-3 text-sm text-muted-foreground">No categories match your search.</p>
+              <p className="mt-3 text-sm text-muted-foreground">{t("docs.noCategoriesMatch")}</p>
             </div>
           )}
         </motion.div>
@@ -167,12 +167,12 @@ export default function DocsCategoryPage() {
   if (!cat) {
     return (
       <>
-        <Helmet><title>Not Found — Operion ERP</title></Helmet>
+        <Helmet><title>{t("docs.notFoundPageTitle")}</title></Helmet>
         <div className="text-center py-16">
           <BookOpen className="mx-auto h-12 w-12 text-muted-foreground/40" />
-          <h1 className="mt-4 text-2xl font-bold">Category not found</h1>
-          <p className="mt-2 text-muted-foreground">The documentation category you're looking for doesn't exist.</p>
-          <Link to="/docs" className="mt-4 inline-block text-sm text-primary hover:underline">Browse all documentation</Link>
+          <h1 className="mt-4 text-2xl font-bold">{t("docs.categoryNotFound")}</h1>
+          <p className="mt-2 text-muted-foreground">{t("docs.categoryNotFoundDesc")}</p>
+          <Link to="/docs" className="mt-4 inline-block text-sm text-primary hover:underline">{t("docs.browseAll")}</Link>
         </div>
       </>
     )
@@ -180,28 +180,28 @@ export default function DocsCategoryPage() {
 
   return (
     <>
-      <Helmet><title>{cat.title} — Documentation — Operion ERP</title></Helmet>
+      <Helmet><title>{`${cat.title} — Documentation — Operion ERP`}</title></Helmet>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         <Link to="/docs" className="text-sm text-muted-foreground hover:text-foreground mb-4 inline-flex items-center gap-1 transition-colors">
-          ← Back to Documentation
+          {t("docs.backToDocumentation")}
         </Link>
         <h1 className="text-3xl font-bold tracking-tight">{cat.title}</h1>
         <p className="mt-2 text-muted-foreground">{cat.description}</p>
 
         {/* Category meta */}
         <div className="mt-3 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
-          <Badge variant="secondary" className="text-xs">{cat.articles.length} article{cat.articles.length !== 1 ? "s" : ""}</Badge>
-          <span className="flex items-center gap-1 text-xs text-muted-foreground/60">
+          <Badge variant="secondary" className="text-xs">{t("docs.articleCount").replace("{count}", String(cat.articles.length))}</Badge>
+          <span className="flex items-center gap-1 text-xs text-foreground/80">
             <Clock className="h-3 w-3" />
-            {totalReadingTime(cat.articles)} min total
+            {t("docs.minTotal").replace("{minutes}", String(totalReadingTime(cat.articles)))}
           </span>
         </div>
 
         {/* Search within category */}
         <div className="mt-6 max-w-md">
           <SearchInput
-            placeholder={`Search in ${cat.title}...`}
+            placeholder={t("docs.searchIn").replace("{title}", cat.title)}
             value={searchQuery}
             onChange={setSearchQuery}
             onClear={() => setSearchQuery("")}
@@ -229,7 +229,7 @@ export default function DocsCategoryPage() {
         ) : (
           <div className="text-center py-12">
             <BookOpen className="mx-auto h-10 w-10 text-muted-foreground/30" />
-            <p className="mt-3 text-sm text-muted-foreground">No articles match your search.</p>
+            <p className="mt-3 text-sm text-muted-foreground">{t("docs.noArticlesMatch")}</p>
           </div>
         )}
       </div>

@@ -1,11 +1,16 @@
 import { test, expect } from "@playwright/test"
+import { stabilizeHydration, waitForHydration } from "./helpers"
 
 test.describe("Authentication Flow", () => {
+  test.beforeEach(async ({ page }) => {
+    stabilizeHydration(page)
+  })
+
   test("login page renders correctly", async ({ page }) => {
     await page.goto("/login")
     await expect(page.getByText("Welcome back")).toBeVisible()
-    await expect(page.getByLabelText("Email")).toBeVisible()
-    await expect(page.getByLabelText("Password")).toBeVisible()
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible()
+    await expect(page.getByLabel(/^password$/i)).toBeVisible()
     await expect(page.getByRole("button", { name: /sign in/i })).toBeVisible()
     await expect(page.getByText(/don't have an account/i)).toBeVisible()
   })
@@ -24,12 +29,12 @@ test.describe("Authentication Flow", () => {
 
   test("register page renders correctly", async ({ page }) => {
     await page.goto("/register")
-    await expect(page.getByText("Create your account")).toBeVisible()
-    await expect(page.getByLabelText(/full name/i)).toBeVisible()
-    await expect(page.getByLabelText("Email")).toBeVisible()
-    await expect(page.getByLabelText(/^password$/i)).toBeVisible()
-    await expect(page.getByLabelText(/confirm password/i)).toBeVisible()
-    await expect(page.getByRole("button", { name: /create account/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /create account/i })).toBeVisible()
+    await expect(page.getByLabel(/full name/i)).toBeVisible()
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible()
+    await expect(page.getByLabel(/^password$/i)).toBeVisible()
+    await expect(page.getByLabel(/confirm password/i)).toBeVisible()
+    await expect(page.getByRole("button", { name: /^create$/i })).toBeVisible()
   })
 
   test("register links to login", async ({ page }) => {
@@ -40,8 +45,8 @@ test.describe("Authentication Flow", () => {
 
   test("forgot password page renders", async ({ page }) => {
     await page.goto("/forgot-password")
-    await expect(page.getByText("Reset your password")).toBeVisible()
-    await expect(page.getByLabelText("Email")).toBeVisible()
+    await expect(page.getByRole("heading", { name: /reset password/i })).toBeVisible()
+    await expect(page.getByLabel("Email", { exact: true })).toBeVisible()
     await expect(page.getByRole("button", { name: /send reset link/i })).toBeVisible()
   })
 
@@ -65,7 +70,11 @@ test.describe("Authentication Flow", () => {
 
   test("register form shows validation errors", async ({ page }) => {
     await page.goto("/register")
-    await page.getByRole("button", { name: /create account/i }).click()
+    await waitForHydration(page)
+    // The terms checkbox is `required` (native HTML5 validation), so submission
+    // is blocked until it is checked — then zod validation runs on the empty form.
+    await page.check("#termsAccepted")
+    await page.getByRole("button", { name: /^create$/i }).click()
     await expect(page.getByText(/name must be at least 2 characters/i)).toBeVisible()
     await expect(page.getByText("Please enter a valid email")).toBeVisible()
   })

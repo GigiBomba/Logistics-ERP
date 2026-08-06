@@ -1,6 +1,7 @@
 import { useMemo } from "react"
 import { Helmet } from "react-helmet-async"
 import { Link, useParams } from "react-router"
+import { useLocale } from "@/i18n/locale-context"
 import { motion } from "motion/react"
 import { useState } from "react"
 import { ArrowLeft, Clock, ThumbsUp, ThumbsDown, BookOpen, Star, Video, Code } from "lucide-react"
@@ -226,7 +227,7 @@ When you first launch Operion, you'll be prompted to sign in or create a new acc
 - **Installation fails** — Run the installer as Administrator by right-clicking and selecting "Run as Administrator".
 
 :::info Need Help?
-Visit our [Community Forum](https://community.operion.com) for additional troubleshooting tips and support from other users.
+Visit our [Community Forum](https://community.operionerp.xyz) for additional troubleshooting tips and support from other users.
 :::`,
   },
   "first-route": {
@@ -301,7 +302,7 @@ Track the route's progress in real-time from the Dispatch dashboard. You can see
     version: "v1.0+",
     content: `## Sign Up
 
-1. Visit [operion.com/register](/register)
+1. Visit [operionerp.xyz/register](/register)
 2. Enter your name, email, and choose a password.
 3. Optionally provide your company name.
 4. Click **Create Account**.
@@ -355,6 +356,7 @@ function getRelatedArticles(slugs: string[]): { title: string; slug: string; cat
 // ─── Component ──────────────────────────────────────────────────────
 
 export default function DocsArticlePage() {
+  const { t } = useLocale()
   const { slug } = useParams<{ category: string; slug: string }>()
   const key = slug || ""
   const article = articles[key]
@@ -382,8 +384,8 @@ export default function DocsArticlePage() {
         <Helmet><title>Article Not Found — Operion ERP</title></Helmet>
         <div className="text-center py-16">
           <h1 className="text-2xl font-bold">Article Not Found</h1>
-          <p className="mt-2 text-muted-foreground">The article you're looking for doesn't exist yet.</p>
-          <Link to="/docs" className="mt-4 inline-block text-primary hover:underline">Back to Documentation</Link>
+          <p className="mt-2 text-muted-foreground">{t("docs.articleNotFoundDesc")}</p>
+          <Link to="/docs" className="mt-4 inline-block text-primary hover:underline">{t("docs.backToDocs")}</Link>
         </div>
       </>
     )
@@ -391,7 +393,7 @@ export default function DocsArticlePage() {
 
   return (
     <article>
-      <Helmet><title>{article.title} — Documentation — Operion ERP</title></Helmet>
+      <Helmet><title>{`${article.title} — Documentation — Operion ERP`}</title></Helmet>
 
       <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }}>
         {/* Breadcrumbs */}
@@ -416,7 +418,7 @@ export default function DocsArticlePage() {
                 <span>{readTime} min read</span>
               </div>
               <span className="text-muted-foreground/30">·</span>
-              <span>Last updated: July 2026</span>
+              <span>{t("docs.lastUpdated")}</span>
               {article.version && (
                 <>
                   <span className="text-muted-foreground/30">·</span>
@@ -456,7 +458,7 @@ export default function DocsArticlePage() {
         {/* Video tutorial placeholder */}
         {article.hasVideo && (
           <Callout variant="info" icon={<Video className="h-5 w-5 shrink-0 mt-0.5 text-blue-500 dark:text-blue-400" />} className="mt-8">
-            <p className="font-medium">Video walkthrough coming soon</p>
+            <p className="font-medium">{t("docs.videoComingSoon")}</p>
             <p className="text-sm text-muted-foreground">A step-by-step video tutorial for this guide is in production. Check back in a few days.</p>
           </Callout>
         )}
@@ -500,8 +502,8 @@ export default function DocsArticlePage() {
       >
         <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div>
-            <p className="font-medium text-sm">Was this article helpful?</p>
-            <p className="text-xs text-muted-foreground mt-0.5">Your feedback helps us improve the documentation.</p>
+            <p className="font-medium text-sm">{t("docs.wasHelpful")}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{t("docs.feedback")}</p>
           </div>
           <div className="flex items-center gap-2">
             <Button variant="outline" size="sm" className="gap-1.5">
@@ -519,7 +521,7 @@ export default function DocsArticlePage() {
         <div className="mt-5 pt-5 border-t">
           <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
             <div>
-              <p className="font-medium text-sm">Rate this article</p>
+              <p className="font-medium text-sm">{t("docs.rateArticle")}</p>
               <p className="text-xs text-muted-foreground mt-0.5">
                 {rated ? "Thank you for your feedback." : "How would you rate the quality of this guide?"}
               </p>

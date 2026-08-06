@@ -12,13 +12,17 @@ vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
-vi.mock("@/config/site", () => ({
-  toolkitConfig: {
-    latestVersion: "1.0.0",
-    releaseDate: "2026-09-01",
-    downloadUrl: "/downloads/operion-toolkit-1.0.0.exe",
-  },
-}))
+vi.mock("@/config/site", async () => {
+  const actual = await vi.importActual<typeof import("@/config/site")>("@/config/site")
+  return {
+    ...actual,
+    toolkitConfig: {
+      latestVersion: "1.0.0",
+      releaseDate: "2026-09-01",
+      downloadUrl: "/downloads/operion-toolkit-1.0.0.exe",
+    },
+  }
+})
 
 describe("ToolkitPage", () => {
   it("renders 'Operion Toolkit' heading", () => {

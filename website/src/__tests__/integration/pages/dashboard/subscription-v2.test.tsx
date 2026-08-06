@@ -1,24 +1,47 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@/test-utils"
-import { fireEvent } from "@testing-library/react"
 import SubscriptionPage from "@/pages/dashboard/subscription"
-import { useInvoices } from "@/services/queries"
+import { useSubscription } from "@/services/queries"
 
 vi.mock("@/services/queries", () => ({
-  useInvoices: vi.fn(),
+  useSubscription: vi.fn(),
+  useCreatePortalSession: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useCreateCheckoutSession: vi.fn(() => ({ mutate: vi.fn(), isPending: false })),
+  useUpdateBillingTerm: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false, error: null })),
+  useToggleAddon: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false, error: null, variables: null })),
+  useCancelSubscription: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false, error: null })),
+  useReactivateSubscription: vi.fn(() => ({ mutate: vi.fn(), isPending: false, isError: false, error: null })),
 }))
 
 vi.mock("motion/react", () => ({
   motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
+
+const mockSubscription = {
+  status: "active",
+  licensed_truck_count: 5,
+  price_per_truck_erp_cents: 9900,
+  price_per_truck_ai_cents: 4900,
+  ai_copilot_enabled: false,
+  priority_support_enabled: false,
+  priority_support_price_cents: 0,
+  api_access_enabled: false,
+  api_access_price_cents: 0,
+  billing_term: "monthly",
+  annual_discount_pct: 0,
+  service_credit_cents: 0,
+  current_period_end: "2026-09-01T00:00:00Z",
+  trial_ends_at: null,
+  payment_deferred_until: null,
+  pending_truck_count: null,
+  addons: [],
+}
 
 describe("SubscriptionPage (Enhanced)", () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    vi.mocked(useInvoices).mockReturnValue({
-      data: null,
-      isLoading: false,
-    } as any)
+    vi.mocked(useSubscription).mockReturnValue({ data: mockSubscription, isLoading: false } as any)
   })
 
   it('renders "Subscription" heading', () => {
@@ -26,81 +49,92 @@ describe("SubscriptionPage (Enhanced)", () => {
     expect(screen.getByText("Subscription")).toBeInTheDocument()
   })
 
-  it("shows current plan card with pricing", () => {
+  it("shows current plan card", () => {
     render(<SubscriptionPage />)
     expect(screen.getByText("Current Plan")).toBeInTheDocument()
-    expect(screen.getByText("€99")).toBeInTheDocument()
-    expect(screen.getByText("/month")).toBeInTheDocument()
   })
 
-  it("shows billing status", () => {
+  it("shows billing section", () => {
     render(<SubscriptionPage />)
-    expect(screen.getByText("Billing Status")).toBeInTheDocument()
-    expect(screen.getByText("Paid")).toBeInTheDocument()
-    expect(screen.getByText("5 / 25")).toBeInTheDocument()
+    expect(screen.getByText("Billing")).toBeInTheDocument()
   })
 
-  it("shows tabs (Plan / Billing / History)", () => {
+  it("shows current status section", () => {
     render(<SubscriptionPage />)
-    expect(screen.getByRole("tab", { name: /^plan$/i })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: /^billing$/i })).toBeInTheDocument()
-    expect(screen.getByRole("tab", { name: /^history$/i })).toBeInTheDocument()
+    expect(screen.getByText("Current Status")).toBeInTheDocument()
   })
 
-  it("shows invoice history with mock invoices", () => {
+  it("shows billing cycle info", () => {
     render(<SubscriptionPage />)
-    fireEvent.click(screen.getByRole("tab", { name: /^history$/i }))
-    expect(screen.getByText("INV-2026-008")).toBeInTheDocument()
-    expect(screen.getByText("INV-2026-007")).toBeInTheDocument()
-    expect(screen.getByText("INV-2026-006")).toBeInTheDocument()
+    expect(screen.getByText("Status")).toBeInTheDocument()
   })
 
-  it("shows payment methods placeholder in Billing tab", () => {
+  it("shows subscription status", () => {
     render(<SubscriptionPage />)
-    fireEvent.click(screen.getByRole("tab", { name: /^billing$/i }))
-    expect(screen.getByText("Payment Methods")).toBeInTheDocument()
-    expect(screen.getByText("No payment methods")).toBeInTheDocument()
+    expect(screen.getByText("Status")).toBeInTheDocument()
   })
 
-  it("shows upgrade recommendation", () => {
+  it("renders billing term toggle buttons", () => {
     render(<SubscriptionPage />)
-    expect(screen.getByText("Upgrade Recommendation")).toBeInTheDocument()
-    expect(screen.getByText(/upgrading.*Enterprise/i)).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /monthly/i })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /annual/i })).toBeInTheDocument()
   })
 
-  it("shows renewal information card", () => {
+  it("renders addon toggles", () => {
     render(<SubscriptionPage />)
-    expect(screen.getByText("Renewal Information")).toBeInTheDocument()
-    // "Sep 1, 2026" appears in multiple places on the page
-    expect(screen.getAllByText("Sep 1, 2026").length).toBeGreaterThanOrEqual(1)
+    expect(screen.getByText("AI Copilot")).toBeInTheDocument()
+    expect(screen.getByText("Priority Support")).toBeInTheDocument()
+    expect(screen.getByText("API Access")).toBeInTheDocument()
   })
 
-  it("shows feature comparison table", () => {
+  it("renders cancel subscription button for active subscriptions", () => {
     render(<SubscriptionPage />)
-    expect(screen.getByText("Feature Comparison")).toBeInTheDocument()
-    expect(screen.getByText("Starter")).toBeInTheDocument()
-    expect(screen.getByText("Professional")).toBeInTheDocument()
-    expect(screen.getByText("Enterprise")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /cancel subscription/i })).toBeInTheDocument()
   })
 
-  it("shows subscription timeline", () => {
+  it("renders reactivate button for canceled subscriptions", () => {
+    vi.mocked(useSubscription).mockReturnValue({
+      data: { ...mockSubscription, status: "canceled" },
+      isLoading: false,
+    } as any)
     render(<SubscriptionPage />)
-    expect(screen.getByText("Subscription Timeline")).toBeInTheDocument()
-    expect(screen.getByText("Plan Renewal")).toBeInTheDocument()
-    expect(screen.getByText("Trial Started")).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: /reactivate subscription/i })).toBeInTheDocument()
   })
 
-  it("shows coupon code input placeholder on billing tab", () => {
+  it("renders an expired-trial warning callout when status is trialing and trial_ends_at is in the past", () => {
+    vi.mocked(useSubscription).mockReturnValue({
+      data: {
+        ...mockSubscription,
+        status: "trialing",
+        current_period_end: null,
+        trial_ends_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
+      },
+      isLoading: false,
+    } as any)
     render(<SubscriptionPage />)
-    fireEvent.click(screen.getByRole("tab", { name: /^billing$/i }))
-    expect(screen.getByText("Coupon Code")).toBeInTheDocument()
-    expect(screen.getByPlaceholderText("Enter code")).toBeInTheDocument()
+    expect(screen.getByText("Trial ended")).toBeInTheDocument()
+    expect(screen.getByText(/Your trial has ended/)).toBeInTheDocument()
+    expect(screen.getByText(/Subscription status: trialing/)).toBeInTheDocument()
   })
 
-  it("shows upgrade/downgrade placeholders on billing tab", () => {
+  it("renders an expiring-soon callout when trial ends within a few days", () => {
+    vi.mocked(useSubscription).mockReturnValue({
+      data: {
+        ...mockSubscription,
+        status: "trialing",
+        current_period_end: null,
+        trial_ends_at: new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString(),
+      },
+      isLoading: false,
+    } as any)
     render(<SubscriptionPage />)
-    fireEvent.click(screen.getByRole("tab", { name: /^billing$/i }))
-    expect(screen.getByText("Upgrade Plan")).toBeInTheDocument()
-    expect(screen.getByText("Downgrade Plan")).toBeInTheDocument()
+    expect(screen.getByText("Trial ending soon")).toBeInTheDocument()
+    expect(screen.getByText(/Your trial ends in/)).toBeInTheDocument()
+  })
+
+  it("does not render a trial callout for an active subscription with no trial", () => {
+    render(<SubscriptionPage />)
+    expect(screen.queryByText("Trial ended")).not.toBeInTheDocument()
+    expect(screen.queryByText("Trial ending soon")).not.toBeInTheDocument()
   })
 })

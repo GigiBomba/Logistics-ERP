@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import {
   Receipt,
@@ -10,7 +10,6 @@ import {
   PackageSearch,
   HardDrive,
   ArrowRight,
-  ImageIcon,
   Zap,
   TrendingUp,
   DollarSign,
@@ -21,14 +20,54 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-function ScreenshotPlaceholder({ name }: { name: string }) {
+function MobileAppVisual() {
   return (
-    <div className="mt-8 rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-        <ImageIcon className="h-7 w-7 text-muted-foreground" />
-      </div>
-      <p className="text-sm font-medium text-muted-foreground">Screenshot: {name}</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">Preview coming soon</p>
+    <div className="mt-8 flex justify-center">
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        whileInView={{ opacity: 1, y: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+        className="w-full max-w-sm rounded-[2rem] border bg-card p-4 shadow-xl"
+      >
+        <div className="rounded-[1.5rem] border bg-background p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground">Operion</span>
+            <span className="text-xs text-muted-foreground">{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</span>
+          </div>
+          <div className="space-y-3">
+            <div className="rounded-xl border bg-card p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <PackageSearch className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Next Load</span>
+              </div>
+              <p className="text-xs text-muted-foreground">Bucharest → Timisoara · 12t refrigerated</p>
+              <p className="text-xs text-green-600 mt-1 font-medium">€1,240 · 420 km</p>
+            </div>
+            <div className="rounded-xl border bg-card p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Receipt className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Pending Invoice</span>
+              </div>
+              <p className="text-xs text-muted-foreground">#INV-2847 · due in 3 days</p>
+              <p className="text-xs text-amber-600 mt-1 font-medium">€890 pending</p>
+            </div>
+            <div className="rounded-xl border bg-card p-3">
+              <div className="flex items-center gap-2 mb-2">
+                <Wallet className="h-4 w-4 text-primary" />
+                <span className="text-sm font-medium">Today&apos;s Expenses</span>
+              </div>
+              <div className="flex gap-2 text-xs text-muted-foreground">
+                <span className="rounded-md bg-muted px-2 py-1">Fuel €142</span>
+                <span className="rounded-md bg-muted px-2 py-1">Toll €38</span>
+              </div>
+            </div>
+          </div>
+          <div className="flex justify-center pt-1">
+            <div className="h-1 w-16 rounded-full bg-muted" />
+          </div>
+        </div>
+      </motion.div>
     </div>
   )
 }
@@ -113,14 +152,11 @@ const benefits = [
 export default function IndustryOwnerOpsPage() {
   return (
     <>
-      <Helmet>
-        <title>Operion for Owner-Operators — Invoicing, Expenses & Load Matching</title>
-        <meta
-          name="description"
-          content="Run your one-person business like a full dispatch office with automated invoicing, expense tracking, and load matching."
-        />
-        <link rel="canonical" href="https://operion.com/industries/owner-operators" />
-      </Helmet>
+      <SeoHead
+        title="Operion for Owner-Operators — Invoicing, Expenses & Load Matching"
+        description="Run your one-person business like a full dispatch office with automated invoicing, expense tracking, and load matching."
+        canonical="https://operionerp.xyz/industries/owner-operators"
+      />
 
       <PageHeader
         title="Operion for Owner-Operators"
@@ -251,14 +287,14 @@ export default function IndustryOwnerOpsPage() {
         </div>
       </SectionWrapper>
 
-      {/* Screenshot */}
+      {/* Mobile App Preview */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
           title="See It in Action"
           description="The owner-operator mobile app puts dispatch, invoicing, and expenses in your pocket."
           className="mb-8"
         />
-        <ScreenshotPlaceholder name="Owner-Operator Mobile App" />
+        <MobileAppVisual />
       </SectionWrapper>
 
       {/* CTA */}

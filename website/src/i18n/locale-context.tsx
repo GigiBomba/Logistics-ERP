@@ -9,13 +9,26 @@ import fr from "@/i18n/locales/fr.json"
 import es from "@/i18n/locales/es.json"
 import pl from "@/i18n/locales/pl.json"
 
+function flattenObject(obj: Record<string, unknown>, prefix = ""): Record<string, string> {
+  let result: Record<string, string> = {}
+  for (const [key, value] of Object.entries(obj)) {
+    const flatKey = prefix ? `${prefix}.${key}` : key
+    if (value && typeof value === "object" && !Array.isArray(value)) {
+      result = { ...result, ...flattenObject(value as Record<string, unknown>, flatKey) }
+    } else {
+      result[flatKey] = String(value)
+    }
+  }
+  return result
+}
+
 const translations: Record<LocaleCode, Record<string, string>> = {
-  en: en as Record<string, string>,
-  ro: ro as Record<string, string>,
-  de: de as Record<string, string>,
-  fr: fr as Record<string, string>,
-  es: es as Record<string, string>,
-  pl: pl as Record<string, string>,
+  en: flattenObject(en as Record<string, unknown>),
+  ro: flattenObject(ro as Record<string, unknown>),
+  de: flattenObject(de as Record<string, unknown>),
+  fr: flattenObject(fr as Record<string, unknown>),
+  es: flattenObject(es as Record<string, unknown>),
+  pl: flattenObject(pl as Record<string, unknown>),
 }
 
 interface LocaleContextValue {

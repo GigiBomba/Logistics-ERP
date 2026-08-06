@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion, AnimatePresence } from "motion/react"
 import {
   Search,
@@ -175,10 +175,7 @@ export default function IntegrationsExplorerPage() {
 
   return (
     <>
-      <Helmet>
-        <title>Integration Explorer — Operion</title>
-        <meta name="description" content="Connect Operion with your entire technology stack. Browse available, beta, and planned integrations." />
-      </Helmet>
+      <SeoHead title="Integration Explorer — Operion" description="Connect Operion with your entire technology stack. Browse available, beta, and planned integrations." canonical="https://operionerp.xyz/integrations-explorer" />
 
       <HeroSection
         title="Integration Explorer"
@@ -202,7 +199,7 @@ export default function IntegrationsExplorerPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder={t("integrations.searchPlaceholder")}
+                placeholder={t("common.searchIntegrations")}
                 className="w-full rounded-lg border bg-background py-3 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
               />
             </div>
@@ -318,18 +315,18 @@ export default function IntegrationsExplorerPage() {
                               <div className="mt-5 flex items-center gap-3">
                                 <Button variant="outline" size="sm" asChild>
                                   <a href={integration.docsHref}>
-                                    Documentation
+                                    {t("common.documentation")}
                                     <ArrowRight className="ml-1 h-3.5 w-3.5" />
                                   </a>
                                 </Button>
                                 {integration.status === "available" && (
-                                  <Button size="sm">Connect</Button>
+                                  <Button size="sm">{t("integrations.connect")}</Button>
                                 )}
                                 {integration.status === "beta" && (
-                                  <Badge variant="secondary">Join Beta</Badge>
+                                  <Badge variant="secondary">{t("integrations.joinBeta")}</Badge>
                                 )}
                                 {integration.status === "planned" && (
-                                  <Badge variant="outline">Coming Soon</Badge>
+                                  <Badge variant="outline">{t("integrations.comingSoon")}</Badge>
                                 )}
                               </div>
                             </CardContent>
@@ -346,7 +343,7 @@ export default function IntegrationsExplorerPage() {
           {filtered.length === 0 && (
             <div className="py-16 text-center">
               <Search className="mx-auto h-10 w-10 text-muted-foreground/50" />
-              <p className="mt-4 text-muted-foreground">No integrations match your search.</p>
+              <p className="mt-4 text-muted-foreground">{t("integrations.noMatches")}</p>
               <Button
                 variant="link"
                 className="mt-2"
@@ -368,7 +365,7 @@ export default function IntegrationsExplorerPage() {
           title="Can't find what you need?"
           description="We're always expanding our integration catalog. Tell us what you need and we'll prioritize it."
           buttonText="Request an integration"
-          buttonHref="mailto:integrations@operion.com"
+          buttonHref="mailto:integrations@operionerp.xyz"
           variant="outline"
         />
       </SectionWrapper>

@@ -5,6 +5,8 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { cn } from "@/lib/utils"
 import { Link } from "react-router"
+import { useReducedMotion } from "@/services/accessibility"
+import { useLocale } from "@/i18n/locale-context"
 
 interface PricingCardProps {
   name: string
@@ -29,12 +31,14 @@ export function PricingCard({
   ctaHref = "/register",
   index = 0,
 }: PricingCardProps) {
+  const prefersReducedMotion = useReducedMotion()
+  const { t } = useLocale()
   return (
     <motion.div
-      initial={{ opacity: 0, y: 20 }}
+      initial={prefersReducedMotion ? { opacity: 1, y: 0 } : { opacity: 0, y: 20 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true }}
-      transition={{ duration: 0.4, delay: index * 0.1, ease: [0.22, 1, 0.36, 1] }}
+      transition={{ duration: 0.4, delay: prefersReducedMotion ? 0 : Math.min(index * 0.05, 0.3), ease: [0.22, 1, 0.36, 1] }}
     >
       <Card
         className={cn(
@@ -44,7 +48,7 @@ export function PricingCard({
       >
         {highlighted && (
           <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-            <Badge>Most Popular</Badge>
+            <Badge>{t("common.mostPopular")}</Badge>
           </div>
         )}
         <CardHeader className="pb-4">
@@ -52,11 +56,11 @@ export function PricingCard({
           <CardDescription>{description}</CardDescription>
           <div className="mt-4">
             <span className="text-4xl font-bold">{price}</span>
-            <span className="text-muted-foreground">/month</span>
+            <span className="text-muted-foreground">{t("common.perMonth")}</span>
           </div>
           {yearlyPrice && (
             <p className="mt-1 text-sm text-muted-foreground">
-              {yearlyPrice}/month billed yearly
+              {t("common.billedYearly").replace("{price}", yearlyPrice)}
             </p>
           )}
         </CardHeader>

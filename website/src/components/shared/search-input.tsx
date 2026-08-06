@@ -48,7 +48,7 @@ export function SearchInput({
             "absolute right-2 top-1/2 -translate-y-1/2 rounded-sm p-1",
             "text-muted-foreground transition-colors hover:text-foreground"
           )}
-          aria-label={t("common.aria.clearSearch")}
+          aria-label={t("common.clearSearch")}
         >
           <X className="h-4 w-4" />
         </button>

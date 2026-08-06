@@ -5,6 +5,7 @@ type StatusType =
   | "degraded"
   | "outage"
   | "maintenance"
+  | "unknown"
   | "active"
   | "inactive"
   | "pending"
@@ -43,6 +44,12 @@ const statusConfig: Record<StatusType, { dot: string; bg: string; text: string; 
     bg: "bg-blue-100 dark:bg-blue-900/30",
     text: "text-blue-700 dark:text-blue-300",
     defaultLabel: "Maintenance",
+  },
+  unknown: {
+    dot: "bg-gray-400",
+    bg: "bg-gray-100 dark:bg-gray-800/60",
+    text: "text-gray-600 dark:text-gray-300",
+    defaultLabel: "Unknown",
   },
   active: {
     dot: "bg-green-500",

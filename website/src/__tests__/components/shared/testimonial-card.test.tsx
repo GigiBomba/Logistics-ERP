@@ -45,7 +45,7 @@ describe("TestimonialCard", () => {
     expect(screen.getByText("A")).toBeInTheDocument()
   })
 
-  it("renders three-char initials from three names", () => {
+  it("renders two-char initials for a multi-word name", () => {
     render(
       <TestimonialCard
         quote="Ok"
@@ -54,6 +54,6 @@ describe("TestimonialCard", () => {
         company="Inc"
       />
     )
-    expect(screen.getByText("JMD")).toBeInTheDocument()
+    expect(screen.getByText("JM")).toBeInTheDocument()
   })
 })

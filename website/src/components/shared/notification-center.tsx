@@ -15,6 +15,7 @@ import {
   Inbox,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 import type { PortalNotification } from "@/types"
 
 // ─── Type Config ────────────────────────────────────────────
@@ -69,6 +70,7 @@ export function NotificationCenter({
   loading = false,
   className,
 }: NotificationCenterProps) {
+  const { t } = useLocale()
   const [open, setOpen] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
   const buttonRef = useRef<HTMLButtonElement>(null)
@@ -145,14 +147,14 @@ export function NotificationCenter({
             <div className="overflow-hidden rounded-xl border border-border/50 bg-background shadow-xl shadow-black/10 dark:border-border/30 dark:bg-zinc-900/95 dark:backdrop-blur-2xl">
               {/* Header */}
               <div className="flex items-center justify-between border-b border-border/50 px-4 py-3 dark:border-border/30">
-                <h3 className="text-sm font-semibold">Notifications</h3>
+                <h3 className="text-sm font-semibold">{t("common.notifications")}</h3>
                 {hasUnread && !loading && (
                   <button
                     onClick={onMarkAllRead}
                     className="flex items-center gap-1 text-xs font-medium text-primary hover:text-primary/80 transition-colors"
                   >
                     <CheckCheck className="h-3.5 w-3.5" />
-                    Mark all read
+                    {t("common.markAllRead")}
                   </button>
                 )}
               </div>
@@ -179,9 +181,9 @@ export function NotificationCenter({
                 {!loading && sortedNotifications.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-12 text-center">
                     <Inbox className="mb-3 h-10 w-10 text-muted-foreground/40" />
-                    <p className="text-sm font-medium">No new notifications</p>
+                    <p className="text-sm font-medium">{t("common.noNewNotifications")}</p>
                     <p className="mt-1 text-xs text-muted-foreground">
-                      We'll let you know when something arrives.
+                      {t("common.noNewNotificationsDesc")}
                     </p>
                   </div>
                 )}

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { stabilizeHydration, waitForHydration } from "./helpers"
 
 test.describe("Accessibility", () => {
   test("main landmark element is present on key pages", async ({ page }) => {
@@ -114,7 +115,13 @@ test.describe("Accessibility", () => {
   })
 
   test("focus styles are visible on keyboard navigation", async ({ page }) => {
+    // Hydration-timing hardening (mirrors the critical tier): pin the client
+    // to the SSR environment (consent + navigator.onLine) and wait for React
+    // to hydrate before tabbing, so the tab stops are the deterministic DOM
+    // (no consent-dialog/offline-banner churn mid-tab under parallel load).
+    stabilizeHydration(page)
     await page.goto("/")
+    await waitForHydration(page)
 
     // Tab through interactive elements and verify focus is applied
     const focusableSelectors = [
@@ -162,14 +169,15 @@ test.describe("Accessibility", () => {
     // Mock prefers-reduced-motion: reduce
     await page.emulateMedia({ reducedMotion: "reduce" })
     await page.goto("/")
+    await waitForHydration(page)
 
-    // Verify the page renders without animation-related errors
-    const motionElements = page.locator("[data-motion], [class*='motion'], [class*='animate']")
-    const allElements = await motionElements.all()
-
-    // The page should still render all content even with reduced motion
-    await expect(page.getByRole("heading", { name: /enterprise logistics/i })).toBeVisible()
-    await expect(page.getByRole("link", { name: /start free trial/i })).toBeVisible()
-    await expect(page.getByText(/intelligent route planning/i)).toBeVisible()
+    // The page should still render all content even with reduced motion.
+    // Selectors updated to the current home hero copy (S-grade redesign):
+    // "Enterprise Logistics" -> "The Complete Logistics Operating System",
+    // "Start Free Trial" -> "Waitlist" nav CTA, "Intelligent Route Planning"
+    // -> "Smart Route Planning".
+    await expect(page.getByRole("heading", { name: /The Complete Logistics Operating System/i })).toBeVisible()
+    await expect(page.getByRole("link", { name: /waitlist|early access/i }).first()).toBeVisible()
+    await expect(page.getByText(/Smart Route Planning/i)).toBeVisible()
   })
 })

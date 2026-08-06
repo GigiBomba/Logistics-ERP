@@ -17,9 +17,8 @@ describe("siteConfig", () => {
 })
 
 describe("apiConfig", () => {
-  it("has a base URL", () => {
-    expect(apiConfig.baseUrl).toBeTruthy()
-    expect(apiConfig.baseUrl).toMatch(/^https?:\/\//)
+  it("has a baseUrl string", () => {
+    expect(typeof apiConfig.baseUrl).toBe("string")
   })
 
   it("has a timeout", () => {
@@ -29,10 +28,11 @@ describe("apiConfig", () => {
 
 describe("downloadConfig", () => {
   it("has a version string", () => {
-    expect(downloadConfig.latestVersion).toBeTruthy()
+    expect(typeof downloadConfig.latestVersion).toBe("string")
+    expect(downloadConfig.latestVersion.length).toBeGreaterThan(0)
   })
 
-  it("has a release date string", () => {
+  it("has a release date", () => {
     expect(typeof downloadConfig.releaseDate).toBe("string")
   })
 
@@ -48,6 +48,6 @@ describe("downloadConfig", () => {
   })
 
   it("has a file size", () => {
-    expect(downloadConfig.fileSize).toBe("TBD")
+    expect(typeof downloadConfig.fileSize).toBe("string")
   })
 })

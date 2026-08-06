@@ -18,11 +18,15 @@ describe("SecurityPage", () => {
     expect(screen.getByText("Security at Operion")).toBeInTheDocument()
   })
 
-  it("shows security practices", () => {
+  it("shows security practices section", () => {
     render(<SecurityPage />)
     expect(screen.getByText("Security Practices")).toBeInTheDocument()
-    expect(screen.getByText("Encryption in Transit")).toBeInTheDocument()
-    expect(screen.getByText("Access Control")).toBeInTheDocument()
+    expect(screen.getByText("Security Features")).toBeInTheDocument()
+  })
+
+  it("shows responsible disclosure section", () => {
+    render(<SecurityPage />)
+    expect(screen.getByText("Responsible Disclosure")).toBeInTheDocument()
   })
 
   it("shows security FAQ", () => {
@@ -30,8 +34,15 @@ describe("SecurityPage", () => {
     expect(screen.getByText("Security FAQ")).toBeInTheDocument()
   })
 
+  it("shows bug bounty placeholder", () => {
+    render(<SecurityPage />)
+    expect(screen.getByText("Bug Bounty Program")).toBeInTheDocument()
+    expect(screen.getByText("Coming Soon")).toBeInTheDocument()
+  })
+
   it("shows CTA", () => {
     render(<SecurityPage />)
-    expect(screen.getByText("Ready to see Operion in action?")).toBeInTheDocument()
+    expect(screen.getByText("Ready to dispatch with a single instruction?")).toBeInTheDocument()
+    expect(screen.getByText("Get Started")).toBeInTheDocument()
   })
 })

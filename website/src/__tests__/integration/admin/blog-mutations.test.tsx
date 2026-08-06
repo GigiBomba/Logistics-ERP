@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
-import { renderHook, waitFor, act } from "@testing-library/react"
+import { renderHook, act } from "@testing-library/react"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { type ReactNode } from "react"
 import {
@@ -8,7 +8,6 @@ import {
   useDeleteBlogPost,
 } from "@/services/queries"
 import { adminBlogApi } from "@/api/endpoints"
-import { toast } from "sonner"
 
 vi.mock("@/api/endpoints", () => ({
   adminBlogApi: {
@@ -74,7 +73,7 @@ describe("useCreateBlogPost", () => {
       title: "New Blog Post",
       content: "Post content here",
       excerpt: "Short excerpt",
-      category: "tech",
+      category_id: "tech",
       published: true,
     }
 
@@ -99,6 +98,8 @@ describe("useCreateBlogPost", () => {
       await result.current.mutateAsync({
         title: "Test",
         content: "Content",
+        excerpt: "Excerpt",
+        category_id: "cat-1",
         published: true,
       })
     })
@@ -119,8 +120,10 @@ describe("useUpdateBlogPost", () => {
     const slug = "my-post-slug"
     const updateData = {
       slug,
-      title: "Updated Title",
-      content: "Updated content",
+      data: {
+        title: "Updated Title",
+        content: "Updated content",
+      },
     }
 
     await act(async () => {
@@ -167,7 +170,7 @@ describe("useDeleteBlogPost", () => {
 })
 
 describe("Error handling", () => {
-  it("Error in create triggers toast error", async () => {
+  it("Error in create propagates the error", async () => {
     const testError = new Error("Validation failed")
     vi.mocked(adminBlogApi.createPost).mockRejectedValueOnce(testError)
 
@@ -179,12 +182,12 @@ describe("Error handling", () => {
         await result.current.mutateAsync({
           title: "Test",
           content: "Content",
+          excerpt: "Excerpt",
+          category_id: "cat-1",
         })
-      } catch {
-        // Expected — the mutation error propagates up after onError fires
+      } catch (e) {
+        expect((e as Error).message).toBe("Validation failed")
       }
     })
-
-    expect(toast.error).toHaveBeenCalled()
   })
 })

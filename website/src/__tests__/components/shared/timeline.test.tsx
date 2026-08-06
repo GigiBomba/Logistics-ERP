@@ -1,7 +1,6 @@
 import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@/test-utils"
 import { Timeline } from "@/components/shared/timeline"
-import React from "react"
 
 vi.mock("motion/react", () => ({
   motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
@@ -70,7 +69,6 @@ describe("Timeline", () => {
 
   it("renders upcoming status with muted dot", () => {
     const { container } = render(<Timeline items={sampleItems} />)
-    const upcomingDots = container.querySelectorAll(".border-muted-foreground\\/30")
     // The class includes "/30" so we check adjacent
     const hasUpcomingStyle = container.innerHTML.includes("border-muted-foreground")
     expect(hasUpcomingStyle).toBe(true)

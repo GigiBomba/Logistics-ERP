@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from "react"
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
+import { JsonLd, softwareApplicationSchema } from "@/components/seo/structured-data"
 import { motion, AnimatePresence } from "motion/react"
 import {
   Clock,
@@ -17,8 +18,8 @@ import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { SectionHeader } from "@/components/shared/page-header"
 import { Card, CardContent } from "@/components/ui/card"
 import { StatCard } from "@/components/shared/stat-card"
-import { CtaBanner } from "@/components/shared/cta-banner"
 import { useLocale } from "@/i18n/locale-context"
+import { trackCTAClick } from "@/services/analytics"
 
 /* ─── Animated number helper ─── */
 function useAnimatedNumber(target: number, duration = 900) {
@@ -169,13 +170,9 @@ export default function RoiCalculatorPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("roiCalculator.pageTitle")}</title>
-        <meta
-          name="description"
-          content={t("roiCalculator.metaDesc")}
-        />
-      </Helmet>
+      <SeoHead title={t("roiCalculator.pageTitle")} description={t("roiCalculator.metaDesc")} canonical="https://operionerp.xyz/roi-calculator" />
+
+      <JsonLd data={softwareApplicationSchema()} />
 
       <HeroSection
         title={t("roiCalculator.title")}
@@ -418,28 +415,28 @@ export default function RoiCalculatorPage() {
                   <CardContent className="p-6">
                     <ul className="space-y-3 text-sm text-muted-foreground">
                       <li className="flex gap-2">
-                        <span className="font-medium text-foreground shrink-0">Fuel savings:</span>
-                        <span>12% reduction in fuel consumption through optimized routing. Based on industry benchmarks.</span>
+                        <span className="font-medium text-foreground shrink-0">{t("roiCalculator.fuelSavingsLabel")}</span>
+                        <span>{t("roiCalculator.fuelSavingsDesc")}</span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="font-medium text-foreground shrink-0">Toll savings:</span>
-                        <span>8% reduction in distance through route optimization, reducing toll costs proportionally.</span>
+                        <span className="font-medium text-foreground shrink-0">{t("roiCalculator.tollSavingsLabel")}</span>
+                        <span>{t("roiCalculator.tollSavingsDesc")}</span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="font-medium text-foreground shrink-0">Time savings:</span>
-                        <span>90% reduction in manual coordination time per trip through dispatch automation and bulk operations.</span>
+                        <span className="font-medium text-foreground shrink-0">{t("roiCalculator.timeSavingsLabel")}</span>
+                        <span>{t("roiCalculator.timeSavingsDesc")}</span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="font-medium text-foreground shrink-0">Admin savings:</span>
-                        <span>Dispatchers save ~90% of their time through automation of coordination, status updates, data entry, and bulk CSV payment processing.</span>
+                        <span className="font-medium text-foreground shrink-0">{t("roiCalculator.adminSavingsLabel")}</span>
+                        <span>{t("roiCalculator.adminSavingsDesc")}</span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="font-medium text-foreground shrink-0">Invoice savings:</span>
-                        <span>€2 per invoice saved through bulk CSV generation and automated payment processing.</span>
+                        <span className="font-medium text-foreground shrink-0">{t("roiCalculator.invoiceSavingsLabel")}</span>
+                        <span>{t("roiCalculator.invoiceSavingsDesc")}</span>
                       </li>
                       <li className="flex gap-2">
-                        <span className="font-medium text-foreground shrink-0">Disclaimer:</span>
-                        <span>These figures are estimates based on aggregated customer data and the TripCalculator formulas from Operion's desktop application. Actual savings depend on fleet size, routes, and current workflow efficiency.</span>
+                        <span className="font-medium text-foreground shrink-0">{t("roiCalculator.disclaimerLabel")}</span>
+                        <span>{t("roiCalculator.disclaimerDesc")}</span>
                       </li>
                     </ul>
                   </CardContent>
@@ -450,15 +447,29 @@ export default function RoiCalculatorPage() {
         </div>
       </SectionWrapper>
 
-      {/* CTA */}
-      <SectionWrapper className="pb-24">
-        <CtaBanner
-          title="Get a detailed quote"
-          description="Want a personalized ROI analysis? Our team will model your exact fleet profile and show you the projected return."
-          buttonText="Talk to sales"
-          buttonHref="/enterprise"
-          variant="primary"
-        />
+      {/* Powered by Operion ERP */}
+      <SectionWrapper className="border-t bg-muted/30">
+        <div className="mx-auto max-w-2xl text-center py-16">
+          <h2 className="text-2xl font-bold tracking-tight">{t("roiCalculator.poweredBy")}</h2>
+          <p className="mt-4 text-muted-foreground leading-relaxed">
+            {t("roiCalculator.poweredByDesc")}
+          </p>
+          <div className="mt-8 flex flex-wrap justify-center gap-4">
+            <a
+              href="/waitlist"
+              onClick={() => trackCTAClick("roi_calculator", "/roi-calculator")}
+              className="inline-flex items-center rounded-lg bg-primary px-6 py-3 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              {t("roiCalculator.joinWaitlist")}
+            </a>
+            <a
+              href="/features"
+              className="inline-flex items-center rounded-lg border px-6 py-3 text-sm font-medium hover:bg-accent transition-colors"
+            >
+              {t("roiCalculator.exploreFeatures")}
+            </a>
+          </div>
+        </div>
       </SectionWrapper>
     </>
   )

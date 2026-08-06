@@ -10,14 +10,18 @@ import {
   announcementsApi,
   invoicesApi,
   adminBlogApi,
-  CreateBlogPostRequest,
-  UpdateBlogPostRequest,
+  mfaApi,
+  subscriptionApi,
+  waitlistApi,
+  avatarApi,
+  type CreateBlogPostRequest,
+  type UpdateBlogPostRequest,
 } from "@/api/endpoints"
 import apiClient from "@/api/client"
 
-vi.mock("@/api/client", {
+vi.mock("@/api/client", () => ({
   default: { get: vi.fn(), post: vi.fn(), patch: vi.fn(), delete: vi.fn() },
-})
+}))
 
 describe("blogApi (V2)", () => {
   beforeEach(() => {
@@ -29,15 +33,15 @@ describe("blogApi (V2)", () => {
     expect(typeof blogApi.getPosts).toBe("function")
   })
 
-  it("getPosts calls GET /api/blog/posts with optional params", () => {
+  it("getPosts calls GET /api/v1/blog/posts with optional params", () => {
     const params = { page: 2, category: "releases", tag: "v2" }
     blogApi.getPosts(params)
-    expect(apiClient.get).toHaveBeenCalledWith("/api/blog/posts", { params })
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/blog/posts", { params })
   })
 
   it("getPosts works without params", () => {
     blogApi.getPosts()
-    expect(apiClient.get).toHaveBeenCalledWith("/api/blog/posts", { params: undefined })
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/blog/posts", { params: undefined })
   })
 
   it("has getPost method", () => {
@@ -45,9 +49,9 @@ describe("blogApi (V2)", () => {
     expect(typeof blogApi.getPost).toBe("function")
   })
 
-  it("getPost calls GET /api/blog/posts/:slug", () => {
+  it("getPost calls GET /api/v1/blog/posts/:slug", () => {
     blogApi.getPost("hello-world")
-    expect(apiClient.get).toHaveBeenCalledWith("/api/blog/posts/hello-world")
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/blog/posts/hello-world")
   })
 
   it("has getCategories method", () => {
@@ -55,9 +59,9 @@ describe("blogApi (V2)", () => {
     expect(typeof blogApi.getCategories).toBe("function")
   })
 
-  it("getCategories calls GET /api/blog/categories", () => {
+  it("getCategories calls GET /api/v1/blog/categories", () => {
     blogApi.getCategories()
-    expect(apiClient.get).toHaveBeenCalledWith("/api/blog/categories")
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/blog/categories")
   })
 
   it("has getAuthor method", () => {
@@ -65,9 +69,9 @@ describe("blogApi (V2)", () => {
     expect(typeof blogApi.getAuthor).toBe("function")
   })
 
-  it("getAuthor calls GET /api/blog/authors/:id", () => {
+  it("getAuthor calls GET /api/v1/blog/authors/:id", () => {
     blogApi.getAuthor("author-1")
-    expect(apiClient.get).toHaveBeenCalledWith("/api/blog/authors/author-1")
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/blog/authors/author-1")
   })
 })
 
@@ -220,7 +224,7 @@ describe("adminBlogApi (V2)", () => {
     expect(typeof adminBlogApi.createPost).toBe("function")
   })
 
-  it("createPost calls POST /api/admin/blog/posts with data", () => {
+  it("createPost calls POST /api/v1/blog/admin/posts with data", () => {
     const data: CreateBlogPostRequest = {
       title: "New Post",
       excerpt: "Excerpt",
@@ -229,7 +233,7 @@ describe("adminBlogApi (V2)", () => {
       tags: ["tag1"],
     }
     adminBlogApi.createPost(data)
-    expect(apiClient.post).toHaveBeenCalledWith("/api/admin/blog/posts", data)
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/blog/admin/posts", data)
   })
 
   it("has updatePost method", () => {
@@ -237,10 +241,10 @@ describe("adminBlogApi (V2)", () => {
     expect(typeof adminBlogApi.updatePost).toBe("function")
   })
 
-  it("updatePost calls PATCH /api/admin/blog/posts/:slug with data", () => {
+  it("updatePost calls PATCH /api/v1/blog/admin/posts/:slug with data", () => {
     const data: UpdateBlogPostRequest = { title: "Updated Title", published: true }
     adminBlogApi.updatePost("my-post", data)
-    expect(apiClient.patch).toHaveBeenCalledWith("/api/admin/blog/posts/my-post", data)
+    expect(apiClient.patch).toHaveBeenCalledWith("/api/v1/blog/admin/posts/my-post", data)
   })
 
   it("has deletePost method", () => {
@@ -248,9 +252,9 @@ describe("adminBlogApi (V2)", () => {
     expect(typeof adminBlogApi.deletePost).toBe("function")
   })
 
-  it("deletePost calls DELETE /api/admin/blog/posts/:slug", () => {
+  it("deletePost calls DELETE /api/v1/blog/admin/posts/:slug", () => {
     adminBlogApi.deletePost("my-post")
-    expect(apiClient.delete).toHaveBeenCalledWith("/api/admin/blog/posts/my-post")
+    expect(apiClient.delete).toHaveBeenCalledWith("/api/v1/blog/admin/posts/my-post")
   })
 })
 
@@ -323,5 +327,127 @@ describe("UpdateBlogPostRequest type", () => {
     expect(request.title).toBe("Just the title")
     expect(request.slug).toBeUndefined()
     expect(request.published).toBeUndefined()
+  })
+})
+
+describe("mfaApi (V2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("has enroll/confirm/disable/backupCode/status methods", () => {
+    expect(typeof mfaApi.enroll).toBe("function")
+    expect(typeof mfaApi.confirm).toBe("function")
+    expect(typeof mfaApi.disable).toBe("function")
+    expect(typeof mfaApi.backupCode).toBe("function")
+    expect(typeof mfaApi.status).toBe("function")
+  })
+
+  it("enroll calls POST /api/v1/auth/mfa/enroll with empty body", () => {
+    mfaApi.enroll()
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/auth/mfa/enroll", {})
+  })
+
+  it("confirm calls POST /api/v1/auth/mfa/confirm with code", () => {
+    mfaApi.confirm("123456")
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/auth/mfa/confirm", { code: "123456" })
+  })
+
+  it("disable calls POST /api/v1/auth/mfa/disable with password", () => {
+    mfaApi.disable("hunter2")
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/auth/mfa/disable", { password: "hunter2" })
+  })
+
+  it("backupCode calls POST /api/v1/auth/mfa/backup-code with session token and code", () => {
+    mfaApi.backupCode("sess-1", "ABCD-1234")
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/auth/mfa/backup-code", {
+      mfa_session_token: "sess-1",
+      backup_code: "ABCD-1234",
+    })
+  })
+
+  it("status calls GET /api/v1/auth/me/mfa-status", () => {
+    mfaApi.status()
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/auth/me/mfa-status")
+  })
+})
+
+describe("subscriptionApi billing additions (V2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("billingTerm calls POST /api/v1/subscriptions/billing-term with term", () => {
+    subscriptionApi.billingTerm("annual")
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/subscriptions/billing-term", { term: "annual" })
+  })
+
+  it("cancel calls POST /api/v1/subscriptions/cancel with empty body", () => {
+    subscriptionApi.cancel()
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/subscriptions/cancel", {})
+  })
+
+  it("reactivate calls POST /api/v1/subscriptions/reactivate with empty body", () => {
+    subscriptionApi.reactivate()
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/subscriptions/reactivate", {})
+  })
+
+  it("addTruck calls POST /api/v1/subscriptions/trucks/add with truck_id", () => {
+    subscriptionApi.addTruck("truck-42")
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/subscriptions/trucks/add", {
+      truck_id: "truck-42",
+      source: undefined,
+    })
+  })
+
+  it("addTruck includes source when provided", () => {
+    subscriptionApi.addTruck("truck-42", "desktop")
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/subscriptions/trucks/add", {
+      truck_id: "truck-42",
+      source: "desktop",
+    })
+  })
+
+  it("removeTruck calls POST /api/v1/subscriptions/trucks/remove with truck_id", () => {
+    subscriptionApi.removeTruck("truck-42")
+    expect(apiClient.post).toHaveBeenCalledWith("/api/v1/subscriptions/trucks/remove", {
+      truck_id: "truck-42",
+      source: undefined,
+    })
+  })
+})
+
+describe("waitlistApi.getCount (V2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("getCount calls GET /api/v1/waitlist/count", () => {
+    waitlistApi.getCount()
+    expect(apiClient.get).toHaveBeenCalledWith("/api/v1/waitlist/count")
+  })
+})
+
+describe("avatarApi.upload (V2)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+  })
+
+  it("posts multipart FormData to /api/v1/auth/me/avatar", () => {
+    const file = new File(["binary"], "avatar.png", { type: "image/png" })
+    avatarApi.upload(file)
+
+    expect(apiClient.post).toHaveBeenCalledTimes(1)
+    const [url, body, config] = vi.mocked(apiClient.post).mock.calls[0] as [
+      string,
+      FormData,
+      { headers: { "Content-Type": string | undefined } },
+    ]
+    expect(url).toBe("/api/v1/auth/me/avatar")
+    expect(body).toBeInstanceOf(FormData)
+    // Axios instance defaults to application/json — the avatar call must clear it
+    expect(config.headers["Content-Type"]).toBeUndefined()
+    // The file must be appended under the `file` field name the backend expects
+    expect((body as FormData).get("file")).toBe(file)
   })
 })

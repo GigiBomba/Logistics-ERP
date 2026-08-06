@@ -2,10 +2,15 @@ import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import SettingsPage from "@/pages/dashboard/settings"
 import { useTheme } from "@/contexts/theme-provider"
-import { createMockThemeContext } from "@/test-utils"
+import { useAuth } from "@/contexts/auth-provider"
+import { createMockThemeContext, createMockAuthContext } from "@/test-utils"
 
 vi.mock("@/contexts/theme-provider", () => ({
   useTheme: vi.fn(),
+}))
+
+vi.mock("@/contexts/auth-provider", () => ({
+  useAuth: vi.fn(),
 }))
 
 describe("SettingsPage", () => {
@@ -15,6 +20,9 @@ describe("SettingsPage", () => {
     vi.clearAllMocks()
     vi.mocked(useTheme).mockReturnValue(
       createMockThemeContext({ setTheme: mockSetTheme })
+    )
+    vi.mocked(useAuth).mockReturnValue(
+      createMockAuthContext({ user: { id: "1", name: "Test", email: "test@test.com", role: "dispatcher", is_admin: false }, isAuthenticated: true })
     )
   })
 

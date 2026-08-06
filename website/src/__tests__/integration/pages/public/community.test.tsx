@@ -21,9 +21,8 @@ describe("CommunityPage", () => {
 
   it("renders announcements", () => {
     render(<CommunityPage />)
-    expect(screen.getByText("Operion ERP v1.0 Released")).toBeInTheDocument()
-    expect(screen.getByText("Toolkit CLI Now Available")).toBeInTheDocument()
-    expect(screen.getByText("Partnership with Geotab")).toBeInTheDocument()
+    expect(screen.getByText("Announcements")).toBeInTheDocument()
+    expect(screen.getByText("Autonomous Dispatch Engine Released")).toBeInTheDocument()
   })
 
   it("renders community section cards", () => {

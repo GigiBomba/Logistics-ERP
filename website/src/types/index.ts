@@ -1,5 +1,5 @@
 // ─── User & Auth ────────────────────────────────────────────
-export type UserRole = "admin" | "dispatcher" | "manager" | "driver"
+export type UserRole = "owner" | "admin" | "dispatcher" | "manager" | "driver"
 
 export interface User {
   id: number | string
@@ -21,6 +21,7 @@ export interface User {
 export interface LoginRequest {
   username: string
   password: string
+  turnstile_token?: string
 }
 
 export interface RegisterRequest {
@@ -28,14 +29,19 @@ export interface RegisterRequest {
   password: string
   name: string
   company_name?: string
+  referral_code?: string
+  turnstile_token?: string
 }
 
 export interface AuthResponse {
   access_token: string
-  refresh_token: string
+  /** Only present on the transitional body fallback — the refresh token is normally delivered via httpOnly cookie. */
+  refresh_token?: string
   token_type: string
   expires_in?: number
   user?: User
+  mfa_required?: boolean
+  mfa_session_token?: string
 }
 
 export interface PasswordResetRequest {
@@ -85,27 +91,46 @@ export interface CompanyUpdateRequest {
 
 // ─── Subscription ──────────────────────────────────────────
 export type PlanTier = "starter" | "professional" | "enterprise"
-export type SubscriptionStatus = "active" | "past_due" | "canceled" | "trialing" | "incomplete"
+
+export type BillingTerm = "monthly" | "annual"
+export type SubscriptionStatus = "trialing" | "active" | "past_due" | "payment_deferred" | "canceled" | "locked"
 
 export interface Subscription {
   id: string
-  plan_tier: PlanTier
+  company_id: string
+  billing_term: BillingTerm
   status: SubscriptionStatus
-  current_period_start: string
-  current_period_end: string
-  cancel_at_period_end: boolean
-  licenses: number
-  licenses_used: number
+  licensed_truck_count: number
+  pending_truck_count?: number
+  ai_copilot_enabled: boolean
+  priority_support_enabled: boolean
+  api_access_enabled: boolean
+  price_per_truck_erp_cents: number
+  price_per_truck_ai_cents: number
+  priority_support_price_cents: number
+  api_access_price_cents: number
+  annual_discount_pct: number
+  current_period_start?: string
+  current_period_end?: string
+  trial_ends_at?: string
+  payment_deferred_until?: string
+  service_credit_cents: number
+  stripe_customer_id?: string
+  stripe_subscription_id?: string
+  created_at: string
+  updated_at: string
 }
 
-export interface Plan {
-  tier: PlanTier
+export interface SubscriptionPlan {
+  id: string
   name: string
   description: string
-  price_monthly: number
-  price_yearly: number
+  price_per_truck_monthly_cents: number
+  price_per_truck_annual_cents: number
+  ai_copilot_monthly_cents: number
+  ai_copilot_annual_cents: number
+  annual_discount_pct: number
   features: string[]
-  highlighted?: boolean
 }
 
 // ─── Downloads ─────────────────────────────────────────────
@@ -156,7 +181,7 @@ export interface DocArticle {
 
 // ─── Support ───────────────────────────────────────────────
 export interface SupportTicket {
-  id: string
+  id: number | string
   subject: string
   status: "open" | "in_progress" | "resolved" | "closed"
   priority: "low" | "medium" | "high" | "urgent"
@@ -180,35 +205,41 @@ export interface PaginatedResponse<T> {
 
 // ─── Blog ───────────────────────────────────────────────────
 export interface BlogAuthor {
-  id: string
+  id: number | string
   name: string
   avatar_url?: string
   bio?: string
-  role: string
+  role?: string
 }
 
 export interface BlogCategory {
-  id: string
+  id: number | string
   name: string
   slug: string
-  post_count: number
+  description?: string
+  post_count?: number
 }
 
 export interface BlogPost {
-  id: string
+  id: number | string
   title: string
   slug: string
   excerpt: string
-  content: string
-  author: BlogAuthor
-  category_id: string
+  content?: string
+  // Denormalized from blog_authors table
+  author_name?: string
+  author_avatar?: string
+  // Denormalized from blog_categories table
+  category?: string
+  category_id?: number | string
   tags: string[]
   featured_image?: string
   reading_time_minutes: number
-  published_at: string
-  updated_at: string
+  published_at?: string
   seo_title?: string
   seo_description?: string
+  created_at?: string
+  updated_at?: string
 }
 
 // ─── Changelog ──────────────────────────────────────────────
@@ -352,17 +383,20 @@ export interface AnalyticsEvent {
 }
 
 // ─── Organization ──────────────────────────────────────────
-// FRONTEND-ONLY: Backend only supports one company per user (via users.company_id FK).
-// Multi-org support is a planned future backend feature. These types represent the
-// eventual multi-org model and currently map to the single companies table.
+// The backend Organizations API (/api/v1/organizations router) is canonical for
+// teams, membership, and invitations: GET /organizations, GET/POST/PATCH /organizations/{slug},
+// GET /organizations/{slug}/members, DELETE /organizations/{slug}/members/{member_id},
+// GET/POST /organizations/{slug}/invitations, POST /organizations/invitations/{token}/accept.
+// users.company_id remains for legacy single-company billing ownership and coexists by design —
+// these types map to the backend org model, not to the legacy companies table.
 export interface Organization {
   id: string | number
   name: string
   company_name?: string
   subscription_tier?: PlanTier
   is_active?: boolean
-  slug?: string          // frontend-computed from company_name
-  logo_url?: string      // frontend-only, from settings JSON
+  slug?: string          // backend-provided (Organizations API); frontend may compute it as a fallback
+  logo_url?: string      // backend-provided via Organizations API / settings JSON
   // Extended settings (from /api/v1/settings/company JSON)
   industry?: string
   address?: string
@@ -375,29 +409,36 @@ export interface Organization {
   size?: "1-10" | "11-50" | "51-200" | "201-500" | "501+"
   created_at?: string
   updated_at?: string
+  member_count?: number
+  user_role?: "owner" | "admin" | "member"
 }
 
-// FRONTEND-ONLY: Backend has no org membership system (only users.company_id FK).
-// This represents the planned member model.
+// Backend-backed: mirrors the Organizations API member records (GET /organizations/{slug}/members,
+// DELETE /organizations/{slug}/members/{member_id}). users.company_id is separate and only tracks
+// legacy single-company billing ownership.
 export interface OrganizationMember {
-  id: string
-  org_id: string
-  user_id: string
+  id: string | number
+  org_id: string | number
+  user_id: string | number
   role: "owner" | "admin" | "member"  // NOTE: "admin" here = org admin, NOT developer admin (is_admin flag)
-  invited_at?: string
-  joined_at: string
   status: "active" | "pending" | "suspended"
+  name?: string          // from JOIN with users table
+  email?: string         // from JOIN with users table
+  joined_at?: string
+  invited_at?: string    // only in mock data
 }
 
 export interface OrganizationInvitation {
-  id: string
-  org_id: string
+  id: string | number
+  org_id: string | number
   email: string
-  role: "owner" | "admin" | "member"
-  invited_by: string
-  created_at: string
-  expires_at: string
+  role: string
+  token: string
+  invited_by?: string | number
+  invited_by_name?: string  // from JOIN
   status: "pending" | "accepted" | "expired"
+  created_at?: string
+  expires_at?: string
 }
 
 // ─── User Management ───────────────────────────────────────
@@ -422,25 +463,38 @@ export interface UserRole_ {
 
 // ─── Licensing ─────────────────────────────────────────────
 export interface License {
-  id: string
-  org_id: string
+  id: string | number
+  license_key: string
   plan_tier: string
-  seats_total: number
+  seats: number
   seats_used: number
-  status: "active" | "expired" | "suspended" | "trial"
+  status: "active" | "suspended" | "expired" | "revoked"
   issued_at: string
   expires_at?: string
-  renewal_date?: string
-  features: string[]
+  created_at?: string
 }
 
-export interface Device {
-  id: string
-  license_id: string
+export interface LicenseDevice {
+  id: string | number
+  license_id?: string | number
   name: string
+  os?: string
+  ip?: string
+  last_seen?: string
+  activated_at?: string
+}
+
+// ─── Device Management ─────────────────────────────────────
+export interface DeviceInfo {
+  id: number
+  device_id: string
+  device_name: string
   platform: string
-  last_active: string
+  user_email: string
+  user_name: string
   is_active: boolean
+  last_seen: string
+  created_at: string
 }
 
 // ─── Onboarding ────────────────────────────────────────────
@@ -555,6 +609,127 @@ export interface SearchResults {
   results: SearchResult[]
   total: number
 }
+
+// ─── Support / Live Chat ──────────────────────────────────
+export interface SupportMessageRequest {
+  conversation_id: string | null
+  message: string
+  channel: "chat" | "in_app"
+}
+
+export interface SupportMessageResponse {
+  conversation_id: string
+  reply: string
+  requires_action: boolean
+  escalated: boolean
+}
+
+// ─── Ops Console ──────────────────────────────────────────────
+export interface OpsTicket {
+  issue_id: string
+  company_id?: string
+  summary: string
+  risk_tier: "low" | "medium" | "high" | "critical"
+  status: string
+  customer_impact?: string
+  created_at: string
+  updated_at: string
+}
+
+export interface OpsTicketDetail extends OpsTicket {
+  customer_id: string
+  reported_by_channel: string
+  reproduction_steps: string[]
+  logs: string | null
+  attachments: any[]
+  suspected_module: string
+  app_version: string
+  environment: string
+  linked_known_issue_id: string | null
+  confidence_at_escalation: number | null
+}
+
+export interface StateLogEntry {
+  id: number
+  issue_id: string
+  from_state: string | null
+  to_state: string
+  entered_at: string
+  duration_ms: number | null
+  outcome: string | null
+  detail: Record<string, any> | null
+}
+
+export interface OpsApproval {
+  issue_id: string
+  summary: string
+  risk_tier: string
+  status: string
+  files_changed: number
+  tests_passed: number
+  invariants_passed: number
+  has_elevated_scrutiny: boolean
+  created_at: string
+}
+
+export interface GuardrailViolation {
+  id: number
+  guardrail_id: string
+  severity: string
+  diff_excerpt: string
+  issue_id: string | null
+  resolved: boolean
+  created_at: string
+}
+
+export interface OpsSummary {
+  unresolved: number
+  pending_approvals: number
+  patch_success_rate: number
+  critical_escalations: number
+}
+
+export interface KnowledgeDraft {
+  id: number
+  corpus: string
+  doc_id: string
+  section: string | null
+  content: string
+  status: string
+  last_updated: string
+}
+
+// ─── Audit Log ────────────────────────────────────────────
+export interface AuditLogEntry {
+  id: string
+  company_id: string
+  actor_user_id: string
+  actor_name?: string
+  action: AuditAction
+  target_type?: string
+  target_id?: string
+  metadata?: Record<string, string>
+  ip_address?: string
+  created_at: string
+}
+
+export type AuditAction =
+  | "login"
+  | "logout"
+  | "password_change"
+  | "mfa_enabled"
+  | "mfa_disabled"
+  | "member_invited"
+  | "member_removed"
+  | "role_changed"
+  | "device_deactivated"
+  | "license_transferred"
+  | "subscription_changed"
+  | "settings_updated"
+  | "data_exported"
+  | "account_deleted"
+  | "referral_created"
+  | "referral_redeemed"
 
 // ─── Notifications ─────────────────────────────────────────
 export interface PortalNotification {

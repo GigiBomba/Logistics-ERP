@@ -1,36 +1,25 @@
 import { Helmet } from "react-helmet-async"
 import { Link } from "react-router"
 import { motion } from "motion/react"
-import { Download, BookOpen, LifeBuoy, ChevronRight, CreditCard, Key, Megaphone, Activity, HardDrive, Globe, Zap, FileText, Map, Radio, Puzzle, Code, Rocket, Clock, Shield, CheckCircle2 } from "lucide-react"
+import { Download, BookOpen, LifeBuoy, ChevronRight, CreditCard, Key, Megaphone, Activity, HardDrive, Globe, Map, Radio, Puzzle, Code, Rocket, Clock, Smartphone, LayoutGrid, AlertTriangle } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
+import { Skeleton } from "@/components/ui/skeleton"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { ReleaseCard } from "@/components/shared/release-card"
 import { StatCard } from "@/components/shared/stat-card"
+import { EmptyState } from "@/components/shared/empty-state"
 import { downloadConfig } from "@/config/site"
 import type { Release } from "@/components/shared/release-card"
 import { useLocale } from "@/i18n/locale-context"
+import { useDevices, useCompany, useTickets, useServiceStatus, useAnnouncements, useChangelog } from "@/services/queries"
 
 const shortcuts = [
   { icon: Download, labelKey: "dashboard.downloads", descriptionKey: "dashboard.downloadsDesc", href: "/dashboard/downloads" },
   { icon: BookOpen, labelKey: "dashboard.documentation", descriptionKey: "dashboard.documentationDesc", href: "/dashboard/docs" },
   { icon: LifeBuoy, labelKey: "dashboard.support", descriptionKey: "dashboard.supportDesc", href: "/dashboard/support" },
-]
-
-const announcements = [
-  { title: "Operion 1.0 launching September 2026", date: "July 2026", description: "We're preparing for our first major release. Early access available for beta testers." },
-  { title: "New documentation center now live", date: "June 2026", description: "Explore our comprehensive guides, tutorials, and API references." },
-]
-
-const activities = [
-  { icon: CheckCircle2, text: "You logged in from Bucharest, Romania", time: "2 minutes ago", type: "success" as const },
-  { icon: Zap, text: "New release v1.0.0 is available for download", time: "3 hours ago", type: "info" as const },
-  { icon: Shield, text: "Security alert: password changed successfully", time: "2 days ago", type: "warning" as const },
-  { icon: CreditCard, text: "Subscription renewed — Professional Plan", time: "5 days ago", type: "success" as const },
-  { icon: FileText, text: "Invoice #INV-2026-001 paid", time: "1 week ago", type: "success" as const },
 ]
 
 const docLinks = [
@@ -41,34 +30,39 @@ const docLinks = [
   { icon: Code, labelKey: "dashboard.apiReference", descriptionKey: "dashboard.apiReferenceDesc", href: "/docs/api-reference" },
 ]
 
-const latestRelease: Release = {
-  version: "1.0.0",
-  release_date: "2026-09-01",
-  type: "app",
-  size_mb: 245,
-  downloads_url: "/dashboard/downloads",
-  sections: [
-    {
-      title: "New Features",
-      items: [
-        "Fleet management dashboard with real-time tracking",
-        "Advanced route optimization with multi-stop support",
-        "Dispatch console for live coordination",
-      ],
-    },
-    {
-      title: "Improvements",
-      items: [
-        "Improved performance for large vehicle fleets",
-        "Enhanced reporting with exportable PDF summaries",
-        "Better integration with third-party logistics providers",
-      ],
-    },
-  ],
-}
-
 export default function DashboardPage() {
   const { t } = useLocale()
+
+  const { data: devices, isLoading: devicesLoading } = useDevices()
+  const { data: tickets, isLoading: ticketsLoading } = useTickets()
+  const { data: serviceStatus, isLoading: statusLoading } = useServiceStatus()
+  const { data: changelog, isLoading: changelogLoading, isError: changelogError } = useChangelog()
+  const { data: announcements, isLoading: announcementsLoading, isError: announcementsError } = useAnnouncements()
+  const { data: company, isLoading: companyLoading } = useCompany()
+
+  const deviceCount = devices?.length ?? 0
+  const openTicketCount = tickets?.filter((t) => t.status === "open").length ?? 0
+
+  const latestChangelogEntry = changelog?.[0]
+  const latestRelease: Release | undefined = latestChangelogEntry
+    ? {
+        version: latestChangelogEntry.version,
+        release_date: latestChangelogEntry.release_date,
+        type: "app" as const,
+        sections: latestChangelogEntry.sections.map((s) => ({
+          title: s.type.charAt(0).toUpperCase() + s.type.slice(1),
+          items: s.items,
+        })),
+      }
+    : undefined
+
+  const allServices = serviceStatus?.flatMap((g) => g.services) ?? []
+  const anyOutage = allServices.some((s) => s.status === "outage")
+  const anyDegraded = allServices.some((s) => s.status === "degraded")
+  const portalStatusLabel = anyOutage ? "Outage" : anyDegraded ? "Degraded" : allServices.length > 0 ? "Active" : "Unknown"
+  const portalStatusColor = anyOutage ? "text-red-600" : anyDegraded ? "text-yellow-600" : "text-green-600"
+  const portalPingColor = anyOutage ? "bg-red-500" : anyDegraded ? "bg-yellow-500" : "bg-green-500"
+
   return (
     <>
       <Helmet><title>{t("common.dashboard")} — Operion ERP</title></Helmet>
@@ -91,7 +85,14 @@ export default function DashboardPage() {
             viewport={{ once: true }}
             transition={{ delay: 0.05 }}
           >
-            <StatCard value="5" label={t("dashboard.activeLicenses")} icon={Key} />
+            {devicesLoading ? (
+              <div className="rounded-xl border bg-card p-6 shadow-sm">
+                <Skeleton className="h-8 w-16" />
+                <Skeleton className="mt-2 h-4 w-28" />
+              </div>
+            ) : (
+              <StatCard value={String(deviceCount)} label={t("dashboard.registeredDevices")} icon={Smartphone} />
+            )}
           </motion.div>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -99,7 +100,14 @@ export default function DashboardPage() {
             viewport={{ once: true }}
             transition={{ delay: 0.1 }}
           >
-            <StatCard value="12" label={t("dashboard.teamMembers")} icon={Globe} />
+            {ticketsLoading ? (
+              <div className="rounded-xl border bg-card p-6 shadow-sm">
+                <Skeleton className="h-8 w-16" />
+                <Skeleton className="mt-2 h-4 w-24" />
+              </div>
+            ) : (
+              <StatCard value={String(openTicketCount)} label={t("dashboard.openTickets")} icon={LayoutGrid} />
+            )}
           </motion.div>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -107,7 +115,30 @@ export default function DashboardPage() {
             viewport={{ once: true }}
             transition={{ delay: 0.15 }}
           >
-            <StatCard value="3" label={t("dashboard.activeSessions")} icon={Activity} trend={{ direction: "up", value: "+1" }} />
+            {statusLoading ? (
+              <div className="rounded-xl border bg-card p-6 shadow-sm">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="mt-3 h-5 w-16" />
+              </div>
+            ) : (
+              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm transition-shadow hover:shadow-md h-full flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">{t("dashboard.onlinePortal")}</p>
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="relative flex h-2.5 w-2.5">
+                        <span className={`animate-ping absolute inline-flex h-full w-full rounded-full ${portalPingColor} opacity-75`} />
+                        <span className={`relative inline-flex rounded-full h-2.5 w-2.5 ${portalPingColor}`} />
+                      </span>
+                      <span className={`text-sm font-semibold ${portalStatusColor}`}>{portalStatusLabel}</span>
+                    </div>
+                  </div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+                    <Globe className="h-5 w-5" />
+                  </div>
+                </div>
+              </div>
+            )}
           </motion.div>
           <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -115,7 +146,37 @@ export default function DashboardPage() {
             viewport={{ once: true }}
             transition={{ delay: 0.2 }}
           >
-            <StatCard value="2.3 GB" label={t("dashboard.storageUsed")} icon={HardDrive} trend={{ direction: "up", value: "+0.4 GB" }} />
+            {changelogLoading ? (
+              <div className="rounded-xl border bg-card p-6 shadow-sm">
+                <Skeleton className="h-4 w-24" />
+                <Skeleton className="mt-3 h-6 w-20" />
+              </div>
+            ) : changelogError || !latestChangelogEntry ? (
+              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm h-full flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">{t("dashboard.latestRelease")}</p>
+                    <p className="text-sm text-muted-foreground">{t("dashboard.noReleaseData")}</p>
+                  </div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+                    <Rocket className="h-5 w-5" />
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="rounded-xl border bg-card p-6 text-card-foreground shadow-sm transition-shadow hover:shadow-md h-full flex flex-col justify-between">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-1">
+                    <p className="text-sm text-muted-foreground">{t("dashboard.latestRelease")}</p>
+                    <p className="text-2xl font-bold tracking-tight">v{latestChangelogEntry.version}</p>
+                    <p className="text-xs text-muted-foreground">{latestChangelogEntry.release_date}</p>
+                  </div>
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-accent text-primary">
+                    <Rocket className="h-5 w-5" />
+                  </div>
+                </div>
+              </div>
+            )}
           </motion.div>
         </div>
 
@@ -134,21 +195,41 @@ export default function DashboardPage() {
                 viewport={{ once: true }}
                 transition={{ delay: 0.1 }}
               >
-                <Card>
-                  <CardHeader className="pb-3">
-                    <CardDescription className="flex items-center gap-2">
-                      <CreditCard className="h-4 w-4" /> {t("dashboard.subscription")}
-                    </CardDescription>
-                    <CardTitle className="text-lg">{t("dashboard.professionalPlan")}</CardTitle>
-                  </CardHeader>
-                  <CardContent>
-                    <Badge variant="success">{t("common.active")}</Badge>
-                    <p className="mt-2 text-sm text-muted-foreground">{t("dashboard.renewsOn")} Sep 1, 2026</p>
-                    <Button variant="link" className="mt-2 h-auto p-0" asChild>
-                      <Link to="/dashboard/subscription">{t("dashboard.manageSubscription")} <ChevronRight className="ml-1 h-3 w-3" /></Link>
-                    </Button>
-                  </CardContent>
-                </Card>
+                {companyLoading ? (
+                  <Card>
+                    <CardHeader className="pb-3"><Skeleton className="h-4 w-32" /><Skeleton className="mt-2 h-5 w-40" /></CardHeader>
+                    <CardContent><Skeleton className="h-5 w-16" /><Skeleton className="mt-2 h-4 w-36" /></CardContent>
+                  </Card>
+                ) : company?.subscription_tier ? (
+                  <Card>
+                    <CardHeader className="pb-3">
+                      <CardDescription className="flex items-center gap-2">
+                        <CreditCard className="h-4 w-4" /> {t("dashboard.subscription")}
+                      </CardDescription>
+                      <CardTitle className="text-lg">
+                        {company.subscription_tier.charAt(0).toUpperCase() + company.subscription_tier.slice(1)} Plan
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      <Badge variant={company.is_active === false ? "secondary" : "success"}>
+                        {company.is_active === false ? t("common.inactive") : t("common.active")}
+                      </Badge>
+                      <Button variant="link" className="mt-2 h-auto p-0" asChild>
+                        <Link to="/dashboard/subscription">{t("dashboard.manageSubscription")} <ChevronRight className="ml-1 h-3 w-3" /></Link>
+                      </Button>
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <Card>
+                    <CardContent className="p-6">
+                      <EmptyState
+                        icon={<CreditCard className="h-8 w-8" />}
+                        title={t("dashboard.noSubscriptionData")}
+                        description={t("dashboard.noSubscriptionDataDesc")}
+                      />
+                    </CardContent>
+                  </Card>
+                )}
               </motion.div>
 
               <motion.div
@@ -238,13 +319,11 @@ export default function DashboardPage() {
                     </CardTitle>
                     <CardDescription>{t("dashboard.storageDesc")}</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <div className="flex items-center justify-between text-sm">
-                      <span className="text-muted-foreground">{t("dashboard.used")}</span>
-                      <span className="font-medium">2.3 GB / 10 GB</span>
-                    </div>
-                    <Progress value={23} />
-                    <p className="text-xs text-muted-foreground">{t("dashboard.storageWarning")}</p>
+                  <CardContent>
+                    <EmptyState
+                      title={t("dashboard.noStorageData")}
+                      description={t("dashboard.noStorageDataDesc")}
+                    />
                   </CardContent>
                 </Card>
               </motion.div>
@@ -263,21 +342,10 @@ export default function DashboardPage() {
                     <CardDescription>{t("dashboard.sessionsDesc")}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent">
-                          <Globe className="h-4 w-4 text-primary" />
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium">{t("dashboard.sessionCount")}</p>
-                          <p className="text-xs text-muted-foreground">Windows · Chrome · Bucharest</p>
-                        </div>
-                      </div>
-                      <Badge variant="success">{t("common.current")}</Badge>
-                    </div>
-                    <Button variant="outline" size="sm" className="w-full" asChild>
-                      <Link to="/dashboard/profile">{t("dashboard.manageSessions")}</Link>
-                    </Button>
+                    <EmptyState
+                      title={t("dashboard.noSessionData")}
+                      description={t("dashboard.noSessionDataDesc")}
+                    />
                   </CardContent>
                 </Card>
               </motion.div>
@@ -319,7 +387,27 @@ export default function DashboardPage() {
             >
               <h2 className="text-xl font-bold tracking-tight">{t("dashboard.latestRelease")}</h2>
               <div className="mt-4">
-                <ReleaseCard release={latestRelease} />
+                {changelogLoading ? (
+                  <Card>
+                    <CardContent className="p-5 space-y-3">
+                      <Skeleton className="h-5 w-48" />
+                      <Skeleton className="h-4 w-32" />
+                      <Skeleton className="h-4 w-full" />
+                      <Skeleton className="h-4 w-3/4" />
+                    </CardContent>
+                  </Card>
+                ) : changelogError || !latestRelease ? (
+                  <Card>
+                    <CardContent className="p-6">
+                      <EmptyState
+                        title={t("dashboard.noReleaseData")}
+                        description={t("dashboard.noReleaseDataDesc")}
+                      />
+                    </CardContent>
+                  </Card>
+                ) : (
+                  <ReleaseCard release={latestRelease} />
+                )}
               </div>
             </motion.div>
 
@@ -332,22 +420,49 @@ export default function DashboardPage() {
             >
               <h2 className="text-xl font-bold tracking-tight">{t("dashboard.announcements")}</h2>
               <div className="mt-4 space-y-3">
-                {announcements.map((a) => (
-                  <Card key={a.title}>
-                    <CardContent className="p-5">
-                      <div className="flex items-start gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent">
-                          <Megaphone className="h-4 w-4 text-primary" />
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-sm">{a.title}</h3>
-                          <p className="mt-1 text-xs text-muted-foreground">{a.description}</p>
-                          <p className="mt-2 text-xs text-muted-foreground/60">{a.date}</p>
-                        </div>
-                      </div>
+                {announcementsLoading ? (
+                  <>
+                    <Card><CardContent className="p-5"><Skeleton className="h-5 w-64" /><Skeleton className="mt-2 h-4 w-full" /><Skeleton className="mt-2 h-3 w-24" /></CardContent></Card>
+                    <Card><CardContent className="p-5"><Skeleton className="h-5 w-56" /><Skeleton className="mt-2 h-4 w-full" /><Skeleton className="mt-2 h-3 w-24" /></CardContent></Card>
+                  </>
+                ) : announcementsError ? (
+                  <Card>
+                    <CardContent className="p-6">
+                      <EmptyState
+                        icon={<AlertTriangle className="h-8 w-8" />}
+                        title={t("dashboard.failedLoadAnnouncements")}
+                        description={t("dashboard.failedLoadAnnouncementsDesc")}
+                      />
                     </CardContent>
                   </Card>
-                ))}
+                ) : !announcements || announcements.length === 0 ? (
+                  <Card>
+                    <CardContent className="p-6">
+                      <EmptyState
+                        icon={<Megaphone className="h-8 w-8" />}
+                        title={t("dashboard.noAnnouncements")}
+                        description={t("dashboard.noAnnouncementsDesc")}
+                      />
+                    </CardContent>
+                  </Card>
+                ) : (
+                  announcements.map((a) => (
+                    <Card key={a.id}>
+                      <CardContent className="p-5">
+                        <div className="flex items-start gap-3">
+                          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-accent">
+                            <Megaphone className="h-4 w-4 text-primary" />
+                          </div>
+                          <div>
+                            <h3 className="font-semibold text-sm">{a.title}</h3>
+                            <p className="mt-1 text-xs text-muted-foreground">{a.content}</p>
+                            <p className="mt-2 text-xs text-muted-foreground/60">{a.published_at}</p>
+                          </div>
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ))
+                )}
               </div>
             </motion.div>
           </TabsContent>
@@ -366,25 +481,10 @@ export default function DashboardPage() {
                   <CardDescription>{t("dashboard.activityDesc")}</CardDescription>
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-0">
-                    {activities.map((activity, i) => (
-                      <div
-                        key={i}
-                        className="relative flex gap-4 pb-6 last:pb-0"
-                      >
-                        {!activities[i + 1] ? null : (
-                          <div className="absolute left-[15px] top-8 h-full w-px bg-border" />
-                        )}
-                        <div className="relative z-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent">
-                          <activity.icon className="h-4 w-4 text-primary" />
-                        </div>
-                        <div className="flex-1 space-y-1 pt-0.5">
-                          <p className="text-sm font-medium">{activity.text}</p>
-                          <p className="text-xs text-muted-foreground">{activity.time}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
+                  <EmptyState
+                    title={t("dashboard.noActivity")}
+                    description={t("dashboard.noActivityDesc")}
+                  />
                 </CardContent>
               </Card>
             </motion.div>

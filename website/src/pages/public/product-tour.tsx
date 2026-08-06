@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { useLocale } from "@/i18n/locale-context"
 import { motion, AnimatePresence } from "motion/react"
 import {
@@ -60,7 +60,7 @@ function DashboardPage() {
           <h2 className="text-xl font-semibold tracking-tight">{t("productTour.dashboard.welcome")}</h2>
           <p className="text-sm text-muted-foreground">{t("productTour.dashboard.todaySummary")}</p>
         </div>
-        <Badge variant="outline" className="text-xs">Live demo data</Badge>
+        <Badge variant="outline" className="text-xs">{t("productTour.liveDemoData")}</Badge>
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -164,14 +164,14 @@ function RoutesPage() {
 
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Map View</CardTitle>
+            <CardTitle className="text-base">{t("productTour.mapView")}</CardTitle>
           </CardHeader>
           <CardContent>
             <div className="flex aspect-square items-center justify-center rounded-lg border border-dashed bg-muted/30">
               <div className="text-center">
                 <MapPin className="mx-auto h-8 w-8 text-muted-foreground/50" />
-                <p className="mt-2 text-xs text-muted-foreground">Interactive map</p>
-                <p className="text-[10px] text-muted-foreground/70">Powered by Google Maps / HERE</p>
+                <p className="mt-2 text-xs text-muted-foreground">{t("productTour.interactiveMap")}</p>
+                <p className="text-[10px] text-muted-foreground/70">{t("productTour.poweredByMaps")}</p>
               </div>
             </div>
           </CardContent>
@@ -227,7 +227,7 @@ function FleetPage() {
               </div>
               <div className="space-y-1">
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Fuel</span>
+                  <span className="text-muted-foreground">{t("productTour.fuel")}</span>
                   <span className="font-medium">{v.fuel}%</span>
                 </div>
                 <div className="h-1.5 w-full rounded-full bg-muted">
@@ -306,7 +306,7 @@ function InvoicesPage() {
       <div className="flex items-center justify-between">
         <h2 className="text-xl font-semibold tracking-tight">{t("productTour.invoices.title")}</h2>
         <div className="flex items-center gap-3">
-          <span className="text-sm text-muted-foreground">Total outstanding: <span className="font-semibold text-foreground">€{total.toLocaleString()}</span></span>
+          <span className="text-sm text-muted-foreground">{t("productTour.totalOutstanding")} <span className="font-semibold text-foreground">€{total.toLocaleString()}</span></span>
           <Button size="sm"><FileText className="mr-1.5 h-4 w-4" /> {t("productTour.invoices.createInvoice")}</Button>
         </div>
       </div>
@@ -314,11 +314,11 @@ function InvoicesPage() {
       <Card>
         <CardContent className="p-0">
           <div className="grid grid-cols-12 gap-4 border-b bg-muted/40 px-4 py-3 text-xs font-medium text-muted-foreground uppercase tracking-wider">
-            <div className="col-span-3">Invoice</div>
-            <div className="col-span-3">Client</div>
-            <div className="col-span-2">Date</div>
-            <div className="col-span-2 text-right">Amount</div>
-            <div className="col-span-2 text-right">Status</div>
+            <div className="col-span-3">{t("productTour.invoiceHeader")}</div>
+            <div className="col-span-3">{t("productTour.clientHeader")}</div>
+            <div className="col-span-2">{t("productTour.dateHeader")}</div>
+            <div className="col-span-2 text-right">{t("productTour.amountHeader")}</div>
+            <div className="col-span-2 text-right">{t("productTour.statusHeader")}</div>
           </div>
           <div className="divide-y">
             {invoices.map((inv) => (
@@ -432,7 +432,7 @@ function SettingsPage() {
       <Card>
         <CardHeader>
           <CardTitle className="text-base">{t("productTour.settings.general")}</CardTitle>
-          <CardDescription>Manage your account and application settings.</CardDescription>
+          <CardDescription>{t("productTour.settingsDesc")}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           {items.map((item) => (
@@ -476,10 +476,7 @@ export default function ProductTourPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("productTour.pageTitle")}</title>
-        <meta name="description" content={t("productTour.metaDesc")} />
-      </Helmet>
+      <SeoHead title={t("productTour.pageTitle")} description={t("productTour.metaDesc")} canonical="https://operionerp.xyz/product-tour" />
 
       {/* Demo Banner */}
       <div className="border-b bg-amber-50 text-amber-900 dark:bg-amber-950/30 dark:text-amber-200">
@@ -511,7 +508,7 @@ export default function ProductTourPage() {
                   className="h-8 w-48 rounded-md border bg-background pl-8 pr-3 text-sm outline-none ring-offset-background placeholder:text-muted-foreground focus:ring-1 focus:ring-ring"
                 />
               </div>
-              <button aria-label={t("common.aria.notifications")} className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground">
+              <button aria-label={t("common.notifications")} className="relative rounded-md p-2 text-muted-foreground hover:bg-accent hover:text-foreground">
                 <Bell className="h-4 w-4" />
                 <span className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-red-500" />
               </button>

@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
 import { Target, Zap, Leaf, Sparkles, TrendingUp, Eye, Code, Shield, HeartHandshake } from "lucide-react"
@@ -68,11 +68,11 @@ export default function MissionPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("mission.meta.title")}</title>
-        <meta name="description" content={t("mission.meta.description")} />
-        <link rel="canonical" href="https://operion.com/mission" />
-      </Helmet>
+      <SeoHead
+        title={t("mission.meta.title")}
+        description={t("mission.meta.description")}
+        canonical="https://operionerp.xyz/mission"
+      />
       <PageHeader title={t("mission.title")} description={t("mission.subtitle")} />
 
       {/* Mission Statement */}

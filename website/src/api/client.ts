@@ -14,7 +14,18 @@ const apiClient = axios.create({
   headers: {
     "Content-Type": "application/json",
   },
+  withCredentials: true,
 })
+
+let accessToken: string | null = null
+
+export function setAccessToken(token: string | null) {
+  accessToken = token
+}
+
+export function getAccessToken(): string | null {
+  return accessToken
+}
 
 let isRefreshing = false
 let failedQueue: Array<{
@@ -33,10 +44,6 @@ function processQueue(error: unknown, token: string | null = null) {
   failedQueue = []
 }
 
-function getAccessToken(): string | null {
-  return localStorage.getItem("operion-access-token")
-}
-
 // CSRF token management
 function getCsrfToken(): string | null {
   // Read CSRF token from cookie (set by backend)
@@ -44,13 +51,31 @@ function getCsrfToken(): string | null {
   return match ? match[1] : null
 }
 
-function getRefreshToken(): string | null {
-  return localStorage.getItem("operion-refresh-token")
-}
-
 function clearAuth() {
+  accessToken = null
+  // Legacy cleanup — remove any tokens still in localStorage/sessionStorage
   localStorage.removeItem("operion-access-token")
   localStorage.removeItem("operion-refresh-token")
+  sessionStorage.removeItem("operion-refresh-token")
+}
+
+/**
+ * Exchange the httpOnly refresh cookie for a fresh access token.
+ * The backend reads the refresh token from the httpOnly cookie, so the request
+ * body must be empty (cookie is sent automatically via withCredentials).
+ */
+async function refreshAccessToken(): Promise<string | null> {
+  try {
+    const { data } = await axios.post<{ access_token: string }>(
+      `${apiConfig.baseUrl}/api/v1/auth/refresh`,
+      null,
+      { withCredentials: true }
+    )
+    setAccessToken(data.access_token)
+    return data.access_token
+  } catch {
+    return null
+  }
 }
 
 apiClient.interceptors.request.use((config) => {
@@ -91,11 +116,12 @@ apiClient.interceptors.response.use(
       originalRequest._retry = true
       isRefreshing = true
 
-      const refreshToken = getRefreshToken()
-      if (!refreshToken) {
+      // Refresh via the httpOnly cookie (no body token needed).
+      const freshToken = await refreshAccessToken()
+      if (!freshToken) {
         clearAuth()
         isRefreshing = false
-        processQueue(new Error("No refresh token"))
+        processQueue(new Error("Session expired"))
         if (typeof window !== "undefined" && !window.location.pathname.startsWith("/login")) {
           window.location.href = "/login"
         }
@@ -103,14 +129,8 @@ apiClient.interceptors.response.use(
       }
 
       try {
-        const { data } = await axios.post<{ access_token: string; refresh_token: string }>(
-          `${apiConfig.baseUrl}/api/v1/auth/refresh`,
-          { refresh_token: refreshToken }
-        )
-        localStorage.setItem("operion-access-token", data.access_token)
-        localStorage.setItem("operion-refresh-token", data.refresh_token)
-        originalRequest.headers.Authorization = `Bearer ${data.access_token}`
-        processQueue(null, data.access_token)
+        originalRequest.headers.Authorization = `Bearer ${freshToken}`
+        processQueue(null, freshToken)
         return apiClient(originalRequest)
       } catch (refreshError) {
         clearAuth()
@@ -124,9 +144,21 @@ apiClient.interceptors.response.use(
       }
     }
 
+    if (error.response?.status === 429) {
+      const retryAfter = error.response.headers?.["retry-after"]
+      console.warn(`[Rate Limited] Retry after: ${retryAfter || "unknown"}s`)
+      // Intentionally NOT retrying — doing so would likely make the situation worse.
+      // Individual callers (e.g. login page) may show their own toast with context-aware messages.
+      return Promise.reject(error)
+    }
+
     return Promise.reject(error)
   }
 )
+
+export function generateIdempotencyKey(): string {
+  return `${Date.now()}-${crypto.randomUUID()}`
+}
 
 export function extractApiError(error: unknown): string {
   if (error instanceof AxiosError && error.response?.data) {

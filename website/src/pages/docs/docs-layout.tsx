@@ -8,38 +8,38 @@ import { cn } from "@/lib/utils"
 import { useLocale } from "@/i18n/locale-context"
 
 const sidebarItems = [
-  { icon: BookOpen, label: "Getting Started", href: "/docs/getting-started" },
-  { icon: MapPin, label: "Route Planning", href: "/docs/route-planning" },
-  { icon: Radio, label: "Fleet Tracking", href: "/docs/fleet-tracking" },
-  { icon: Send, label: "Dispatch", href: "/docs/dispatch" },
-  { icon: Scan, label: "OCR & Documents", href: "/docs/ocr" },
-  { icon: BarChart3, label: "Analytics", href: "/docs/analytics" },
-  { icon: Users, label: "Administration", href: "/docs/administration" },
-  { icon: FileText, label: "API Reference", href: "/docs/api" },
+  { icon: BookOpen, labelKey: "docs.sidebar.gettingStarted", href: "/docs/getting-started" },
+  { icon: MapPin, labelKey: "docs.sidebar.routePlanning", href: "/docs/route-planning" },
+  { icon: Radio, labelKey: "docs.sidebar.fleetTracking", href: "/docs/fleet-tracking" },
+  { icon: Send, labelKey: "docs.sidebar.dispatch", href: "/docs/dispatch" },
+  { icon: Scan, labelKey: "docs.sidebar.ocrDocuments", href: "/docs/ocr" },
+  { icon: BarChart3, labelKey: "docs.sidebar.analytics", href: "/docs/analytics" },
+  { icon: Users, labelKey: "docs.sidebar.administration", href: "/docs/administration" },
+  { icon: FileText, labelKey: "docs.sidebar.apiReference", href: "/docs/api" },
 ]
 
 export default function DocsLayout() {
-  const { t } = useLocale()
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [searchQuery, setSearchQuery] = useState("")
   const [versionOpen, setVersionOpen] = useState(false)
+const { t } = useLocale()
   const location = useLocation()
 
   const filteredItems = searchQuery
     ? sidebarItems.filter((item) =>
-        item.label.toLowerCase().includes(searchQuery.toLowerCase())
+        t(item.labelKey).toLowerCase().includes(searchQuery.toLowerCase())
       )
     : sidebarItems
 
   return (
     <>
-      <Helmet><title>Documentation — Operion ERP</title></Helmet>
+      <Helmet><title>{t("docs.pageTitle")}</title></Helmet>
       <div className="flex min-h-[80vh]">
         {/* Mobile sidebar toggle */}
         <div className="lg:hidden fixed top-16 left-4 z-40">
           <Button variant="outline" size="sm" onClick={() => setSidebarOpen(!sidebarOpen)}>
             {sidebarOpen ? <X className="h-4 w-4" /> : <Menu className="h-4 w-4" />}
-            <span className="ml-2">Menu</span>
+            <span className="ml-2">{t("docs.menu")}</span>
           </Button>
         </div>
 
@@ -59,14 +59,14 @@ export default function DocsLayout() {
           <div className="p-4 border-b">
             <Link to="/docs" className="flex items-center gap-2" onClick={() => setSidebarOpen(false)}>
               <BookOpen className="h-5 w-5 text-primary" />
-              <span className="font-semibold">Documentation</span>
+              <span className="font-semibold">{t("docs.title")}</span>
             </Link>
           </div>
 
           {/* Search */}
           <div className="px-4 pt-3 pb-1">
             <SearchInput
-              placeholder={t("docs.filterSections")}
+              placeholder={t("common.filterSections")}
               value={searchQuery}
               onChange={setSearchQuery}
               onClear={() => setSearchQuery("")}
@@ -94,12 +94,12 @@ export default function DocsLayout() {
                       ? "text-primary"
                       : "text-muted-foreground group-hover:text-foreground"
                   )} />
-                  {item.label}
+                  {t(item.labelKey)}
                 </Link>
               ))
             ) : (
               <p className="px-3 py-8 text-center text-sm text-muted-foreground">
-                No sections found
+                {t("docs.noSectionsFound")}
               </p>
             )}
           </nav>
@@ -111,11 +111,11 @@ export default function DocsLayout() {
               <div className="flex items-center gap-1.5 mb-1.5">
                 <Clock className="h-3 w-3 text-muted-foreground" />
                 <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
-                  On this page
+                  {t("docs.onThisPage")}
                 </span>
               </div>
-              <p className="text-[11px] text-muted-foreground/50 leading-relaxed">
-                Open an article to see its section headings.
+              <p className="text-[11px] text-foreground/80 leading-relaxed">
+                {t("docs.onThisPageDesc")}
               </p>
             </div>
 
@@ -133,7 +133,7 @@ export default function DocsLayout() {
                   <div className="fixed inset-0 z-10" onClick={() => setVersionOpen(false)} />
                   <div className="absolute bottom-full left-0 right-0 mb-1 z-20 rounded-md border bg-popover p-3 shadow-md">
                     <p className="text-xs text-muted-foreground">
-                      Version history coming soon
+                      {t("docs.versionHistoryComingSoon")}
                     </p>
                   </div>
                 </>
@@ -147,7 +147,7 @@ export default function DocsLayout() {
               onClick={() => setSidebarOpen(false)}
             >
               <ChevronLeft className="h-3 w-3" />
-              Documentation Home
+              {t("docs.documentationHome")}
             </Link>
           </div>
         </aside>

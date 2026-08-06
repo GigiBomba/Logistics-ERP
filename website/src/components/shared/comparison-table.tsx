@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react"
 import { Check, X } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 
 interface ComparisonColumn {
   label: string
@@ -19,8 +20,9 @@ interface ComparisonTableProps {
 }
 
 export function ComparisonTable({ columns, rows, className }: ComparisonTableProps) {
+  const { t } = useLocale()
   if (columns.length === 0 || rows.length === 0) {
-    return <div className="text-center py-8 text-muted-foreground text-sm">No data available.</div>
+    return <div className="text-center py-8 text-muted-foreground text-sm">{t("common.noDataAvailable")}</div>
   }
 
   return (
@@ -29,7 +31,7 @@ export function ComparisonTable({ columns, rows, className }: ComparisonTablePro
         <thead>
           <tr>
             <th className="sticky left-0 z-10 min-w-[160px] bg-background px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-              Feature
+              {t("common.feature")}
             </th>
             {columns.map((col, i) => (
               <th

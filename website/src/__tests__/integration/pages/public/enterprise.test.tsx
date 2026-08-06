@@ -12,22 +12,28 @@ vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
-vi.mock("@/config/site", () => ({
-  enterpriseConfig: {
-    contactEmail: "operion.contact@gmail.com",
-    phoneNumber: "+40 123 456 789",
-  },
-}))
+vi.mock("@/config/site", async () => {
+  const actual = await vi.importActual<typeof import("@/config/site")>("@/config/site")
+  return {
+    ...actual,
+    enterpriseConfig: {
+      contactEmail: "operion.contact@gmail.com",
+      phoneNumber: "+40 123 456 789",
+    },
+  }
+})
 
 describe("EnterprisePage", () => {
   it("renders heading", () => {
     render(<EnterprisePage />)
-    expect(screen.getByText("Operion Enterprise")).toBeInTheDocument()
+    expect(screen.getByText("Operion for Enterprise Fleets")).toBeInTheDocument()
   })
 
-  it("renders planned capabilities", () => {
+  it("renders enterprise features", () => {
     render(<EnterprisePage />)
-    expect(screen.getByText("Planned Enterprise Capabilities")).toBeInTheDocument()
+    expect(screen.getByText("Enterprise Capabilities")).toBeInTheDocument()
+    expect(screen.getByText(/Single Sign-On \(SSO\)/)).toBeInTheDocument()
+    expect(screen.getByText(/SCIM user provisioning/)).toBeInTheDocument()
   })
 
   it("renders contact information", () => {

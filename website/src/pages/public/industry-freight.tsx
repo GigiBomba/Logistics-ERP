@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import {
   Scale,
@@ -10,9 +10,10 @@ import {
   Scan,
   Map,
   ArrowRight,
-  ImageIcon,
   Zap,
   Truck,
+  XCircle,
+  CheckCircle2,
 } from "lucide-react"
 import { PageHeader, SectionHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
@@ -20,14 +21,53 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-function ScreenshotPlaceholder({ name }: { name: string }) {
+function BeforeAfterVisual() {
   return (
-    <div className="mt-8 rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-        <ImageIcon className="h-7 w-7 text-muted-foreground" />
-      </div>
-      <p className="text-sm font-medium text-muted-foreground">Screenshot: {name}</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">Preview coming soon</p>
+    <div className="mt-8 grid gap-4 md:grid-cols-2">
+      <motion.div
+        initial={{ opacity: 0, x: -20 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5 }}
+        className="rounded-xl border border-red-200 bg-red-50/50 p-6 dark:border-red-900 dark:bg-red-950/20"
+      >
+        <p className="text-xs font-bold uppercase tracking-wider text-red-700 dark:text-red-300 mb-4">Before Operion</p>
+        <ul className="space-y-3">
+          {[
+            "CMRs typed manually in spreadsheets",
+            "Load matching via phone calls & email",
+            "Customs docs prepared one by one",
+            "Multi-leg tracking in separate tools",
+          ].map((item, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-red-800 dark:text-red-200">
+              <XCircle className="mt-0.5 h-4 w-4 shrink-0" />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </motion.div>
+      <motion.div
+        initial={{ opacity: 0, x: 20 }}
+        whileInView={{ opacity: 1, x: 0 }}
+        viewport={{ once: true }}
+        transition={{ duration: 0.5, delay: 0.15 }}
+        className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-6 dark:border-emerald-900 dark:bg-emerald-950/20"
+      >
+        <p className="text-xs font-bold uppercase tracking-wider text-emerald-700 dark:text-emerald-300 mb-4">After Operion</p>
+        <ul className="space-y-3">
+          {[
+            "CMRs generated automatically from shipment data",
+            "AI matches loads to carriers in seconds",
+            "Customs declarations pre-filled & validated",
+            "Unified multi-leg tracking in one view",
+          ].map((item, i) => (
+            <li key={i} className="flex items-start gap-2 text-sm text-emerald-800 dark:text-emerald-200">
+              <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+              {item}
+            </li>
+          ))}
+        </ul>
+      </motion.div>
     </div>
   )
 }
@@ -113,14 +153,11 @@ const benefits = [
 export default function IndustryFreightPage() {
   return (
     <>
-      <Helmet>
-        <title>Operion for Freight Forwarders — Document Automation & Load Matching</title>
-        <meta
-          name="description"
-          content="Streamline multi-leg shipments and automate documentation from first mile to last with Operion's freight forwarding tools."
-        />
-        <link rel="canonical" href="https://operion.com/industries/freight" />
-      </Helmet>
+      <SeoHead
+        title="Operion for Freight Forwarders — Document Automation & Load Matching"
+        description="Streamline multi-leg shipments and automate documentation from first mile to last with Operion's freight forwarding tools."
+        canonical="https://operionerp.xyz/industries/freight"
+      />
 
       <PageHeader
         title="Operion for Freight Forwarders"
@@ -251,14 +288,14 @@ export default function IndustryFreightPage() {
         </div>
       </SectionWrapper>
 
-      {/* Screenshot */}
+      {/* Before / After */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
           title="See It in Action"
           description="The freight operations hub keeps every shipment, document, and handoff in one place."
           className="mb-8"
         />
-        <ScreenshotPlaceholder name="Freight Operations Hub" />
+        <BeforeAfterVisual />
       </SectionWrapper>
 
       {/* CTA */}

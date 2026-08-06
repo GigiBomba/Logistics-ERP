@@ -1,13 +1,22 @@
 import { describe, it, expect, vi, beforeEach } from "vitest"
 import { render, screen } from "@/test-utils"
-import { fireEvent } from "@testing-library/react"
 import DashboardPage from "@/pages/dashboard/dashboard"
+
+vi.mock("@/services/queries", () => ({
+  useDevices: vi.fn(() => ({ data: [], isLoading: false })),
+  useCompany: vi.fn(() => ({ data: { company_name: "Test Corp", subscription_tier: "professional", storage_used_mb: 2355, storage_limit_mb: 10240 }, isLoading: false })),
+  useTickets: vi.fn(() => ({ data: [], isLoading: false })),
+  useServiceStatus: vi.fn(() => ({ data: [{ titleKey: "status.components", descKey: "status.componentsDesc", services: [{ nameKey: "status.desktopApp", descKey: "status.desktopAppDesc", status: "maintenance", updatedAt: "2026-01-01" }] }], isLoading: false })),
+  useAnnouncements: vi.fn(() => ({ data: [], isLoading: false })),
+  useChangelog: vi.fn(() => ({ data: [], isLoading: false })),
+}))
 
 vi.mock("motion/react", () => ({
   motion: { div: ({ children, ...props }: any) => <div {...props}>{children}</div> },
+  AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
-describe("DashboardPage", () => {
+describe("DashboardPage (Enhanced)", () => {
   beforeEach(() => {
     vi.clearAllMocks()
   })
@@ -17,31 +26,36 @@ describe("DashboardPage", () => {
     expect(screen.getByText("Welcome back")).toBeInTheDocument()
   })
 
-  it("renders stats cards", () => {
+  it("renders dashboard sections", () => {
     render(<DashboardPage />)
-    expect(screen.getByText("Active Licenses")).toBeInTheDocument()
-    expect(screen.getByText("Team Members")).toBeInTheDocument()
+    expect(screen.getByText("Latest Version")).toBeInTheDocument()
+    expect(screen.getByText("Storage Usage")).toBeInTheDocument()
   })
 
-  it("shows tabs (Overview / Recent Activity)", () => {
+  it("shows tabs (Overview)", () => {
     render(<DashboardPage />)
     expect(screen.getByText("Overview")).toBeInTheDocument()
-    expect(screen.getByText("Recent Activity")).toBeInTheDocument()
   })
 
-  it("shows quick action cards", () => {
+  it("shows Documentation shortcuts", () => {
+    render(<DashboardPage />)
+    expect(screen.getByText("Getting Started")).toBeInTheDocument()
+    expect(screen.getByText("Route Planning")).toBeInTheDocument()
+    expect(screen.getByText("Dispatch")).toBeInTheDocument()
+    expect(screen.getByText("Integrations")).toBeInTheDocument()
+    expect(screen.getByText("API Reference")).toBeInTheDocument()
+  })
+
+  it("shows quick action cards (Downloads, Documentation, Support)", () => {
     render(<DashboardPage />)
     expect(screen.getByText("Downloads")).toBeInTheDocument()
+    expect(screen.getAllByText("Documentation").length).toBeGreaterThanOrEqual(1)
     expect(screen.getByText("Support")).toBeInTheDocument()
   })
 
-  it("shows announcements", () => {
+  it("shows version badge", () => {
     render(<DashboardPage />)
-    expect(screen.getByText("Announcements")).toBeInTheDocument()
-  })
-
-  it("shows Quick Actions heading", () => {
-    render(<DashboardPage />)
-    expect(screen.getByText("Quick Actions")).toBeInTheDocument()
+    // Version badge shows "Latest Version" from dashboard.latestVersion
+    expect(screen.getByText("Latest Version")).toBeInTheDocument()
   })
 })

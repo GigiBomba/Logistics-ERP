@@ -1,4 +1,5 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
+import { JsonLd, productSchema, faqSchema } from "@/components/seo/structured-data"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
 import { PageHeader, SectionHeader } from "@/components/shared/page-header"
@@ -36,14 +37,33 @@ export default function PricingPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("pricing.pageTitle")}</title>
-        <meta
-          name="description"
-          content={t("pricing.metaDesc")}
-        />
-        <link rel="canonical" href="https://operion.com/pricing" />
-      </Helmet>
+      <SeoHead
+        title={t("pricing.pageTitle")}
+        description={t("pricing.metaDesc")}
+        canonical="https://operionerp.xyz/pricing"
+      />
+
+      {/* Structured Data: Product + FAQ */}
+      <JsonLd
+        data={productSchema({
+          name: "Operion ERP",
+          description: "Logistics operations platform for transport companies — route planning, fleet management, dispatch, and document generation.",
+          url: "https://operionerp.xyz/pricing",
+          price: "0",
+          priceCurrency: "EUR",
+          category: "BusinessApplication",
+          offers: [
+            {
+              name: "Early Access (Free)",
+              price: "0",
+              priceCurrency: "EUR",
+              description: "Free during productization phase — all major features complete",
+            },
+          ],
+        })}
+      />
+      <JsonLd data={faqSchema(faqItems)} />
+
       <PageHeader
         title={t("pricing.title")}
         description={t("pricing.headerDesc")}

@@ -2,6 +2,26 @@ import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent } from "@/test-utils"
 import { Pagination } from "@/components/ui/pagination"
 
+vi.mock("@/i18n/locale-context", async () => {
+  const actual = await vi.importActual<typeof import("@/i18n/locale-context")>("@/i18n/locale-context")
+  return {
+    ...actual,
+    useLocale: () => ({
+      locale: "en" as const,
+      setLocale: vi.fn(),
+      t: (key: string) => {
+        const defaults: Record<string, string> = {
+          "common.pagination": "Pagination",
+          "common.goToPrevPage": "Go to previous page",
+          "common.goToNextPage": "Go to next page",
+          "common.goToPage": "Go to page",
+        }
+        return defaults[key] || key
+      },
+    }),
+  }
+})
+
 describe("Pagination", () => {
   it("renders current page number", () => {
     render(<Pagination currentPage={3} totalPages={10} onPageChange={vi.fn()} />)
@@ -50,7 +70,7 @@ describe("Pagination", () => {
   })
 
   it("does not render pagination when totalPages is 1", () => {
-    const { container } = render(<Pagination currentPage={1} totalPages={1} onPageChange={vi.fn()} />)
+    render(<Pagination currentPage={1} totalPages={1} onPageChange={vi.fn()} />)
     // The nav should exist but the page buttons should be empty or just the nav
     expect(screen.getByLabelText("Pagination")).toBeInTheDocument()
     // With 1 page, only prev/next should exist but both disabled

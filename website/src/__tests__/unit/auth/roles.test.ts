@@ -36,7 +36,7 @@ describe("User role field", () => {
   it("allows role to be 'admin'", () => {
     const user: User = {
       id: "1",
-      email: "admin@operion.com",
+      email: "admin@operionerp.xyz",
       role: "admin",
       is_admin: true,
       display_name: "Admin",
@@ -51,7 +51,7 @@ describe("User role field", () => {
   it("allows role to be 'dispatcher'", () => {
     const user: User = {
       id: "2",
-      email: "dispatcher@operion.com",
+      email: "dispatcher@operionerp.xyz",
       role: "dispatcher",
       is_admin: false,
       company_id: 1,
@@ -67,7 +67,7 @@ describe("User role field", () => {
   it("allows role to be undefined (optional)", () => {
     const user: User = {
       id: "3",
-      email: "guest@operion.com",
+      email: "guest@operionerp.xyz",
       role: "dispatcher",
       is_admin: false,
       display_name: "Guest",
@@ -94,7 +94,7 @@ describe("createMockAuthUser", () => {
   it("includes default fields when no overrides given", () => {
     const mockUser = createMockAuthUser()
     expect(mockUser.id).toBe("user-1")
-    expect(mockUser.email).toBe("test@operion.com")
+    expect(mockUser.email).toBe("test@operionerp.xyz")
     expect(mockUser.display_name).toBe("Test User")
     expect(mockUser.name).toBe("Test User")
     expect(mockUser.email_verified).toBe(true)

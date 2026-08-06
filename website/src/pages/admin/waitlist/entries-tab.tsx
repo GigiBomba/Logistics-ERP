@@ -27,6 +27,19 @@ import { useLocale } from "@/i18n/locale-context"
 
 const STATUS_OPTIONS = ["", "joined", "invited", "activated", "converted", "churned", "unsubscribed"]
 
+function statusLabel(status: string, t: (key: string) => string): string {
+  const map: Record<string, string> = {
+    "": "admin.waitlist.entries.filter.allStatuses",
+    joined: "admin.waitlist.entries.status.joined",
+    invited: "admin.waitlist.entries.status.invited",
+    activated: "admin.waitlist.entries.status.activated",
+    converted: "admin.waitlist.entries.status.converted",
+    churned: "admin.waitlist.entries.status.churned",
+    unsubscribed: "admin.waitlist.entries.status.unsubscribed",
+  }
+  return t(map[status] ?? status)
+}
+
 function StatusBadge({ status }: { status: string }) {
   const styles: Record<string, string> = {
     joined: "bg-secondary text-secondary-foreground",
@@ -81,6 +94,7 @@ function ConfirmDialog({
   onConfirm,
   onCancel,
   isLoading,
+  t,
 }: {
   open: boolean
   title: string
@@ -88,8 +102,8 @@ function ConfirmDialog({
   onConfirm: () => void
   onCancel: () => void
   isLoading: boolean
+  t: (key: string) => string
 }) {
-  const { t } = useLocale()
   if (!open) return null
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
@@ -105,7 +119,7 @@ function ConfirmDialog({
             {t("common.cancel")}
           </Button>
           <Button variant="destructive" size="sm" onClick={onConfirm} disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("adminWaitlist.actions.confirm")}
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.waitlist.entries.confirm")}
           </Button>
         </div>
       </motion.div>
@@ -119,14 +133,15 @@ function NotesModal({
   onSave,
   onClose,
   isLoading,
+  t,
 }: {
   open: boolean
   entry: WaitlistEntry | null
   onSave: (notes: string) => void
   onClose: () => void
   isLoading: boolean
+  t: (key: string) => string
 }) {
-  const { t } = useLocale()
   const [notes, setNotes] = useState(entry?.notes ?? "")
   useEffect(() => {
     setNotes(entry?.notes ?? "")
@@ -141,19 +156,19 @@ function NotesModal({
         animate={{ opacity: 1, scale: 1 }}
         className="w-full max-w-lg rounded-xl border bg-card p-6 shadow-lg"
       >
-        <h3 className="text-lg font-semibold">{t("adminWaitlist.actions.editNotes")}</h3>
+        <h3 className="text-lg font-semibold">{t("admin.waitlist.entries.editNotes")}</h3>
         <p className="mt-1 text-sm text-muted-foreground">
           {entry.company_name} — {entry.email}
         </p>
         <div className="mt-4 space-y-2">
-          <Label htmlFor="notes">{t("adminWaitlist.labels.notes")}</Label>
+          <Label htmlFor="notes">{t("admin.waitlist.entries.notes")}</Label>
           <textarea
             id="notes"
             rows={4}
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
             className="flex min-h-[80px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            placeholder={t("adminWaitlist.placeholders.notes")}
+            placeholder={t("admin.waitlist.entries.notesPlaceholder")}
           />
         </div>
         <div className="mt-6 flex justify-end gap-3">
@@ -161,7 +176,7 @@ function NotesModal({
             {t("common.cancel")}
           </Button>
           <Button size="sm" onClick={() => onSave(notes)} disabled={isLoading}>
-            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("common.save")}
+            {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : t("admin.waitlist.entries.save")}
           </Button>
         </div>
       </motion.div>
@@ -171,16 +186,6 @@ function NotesModal({
 
 export default function EntriesTab() {
   const { t } = useLocale()
-  const STATUS_LABELS = useMemo<Record<string, string>>(() => ({
-    "": t("adminWaitlist.status.all"),
-    joined: t("adminWaitlist.status.joined"),
-    invited: t("adminWaitlist.status.invited"),
-    activated: t("adminWaitlist.status.activated"),
-    converted: t("adminWaitlist.status.converted"),
-    churned: t("adminWaitlist.status.churned"),
-    unsubscribed: t("adminWaitlist.status.unsubscribed"),
-  }), [t])
-
   const [entries, setEntries] = useState<WaitlistEntry[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -228,24 +233,21 @@ export default function EntriesTab() {
       const data = res.data as WaitlistPageResponse
       setEntries(data.entries)
       setTotal(data.total)
-      // Update filter options from response if available
-      if (data.by_status) {
-        // Derive other dimensions from entries as fallback
-        const c = new Set<string>()
-        const cs = new Set<string>()
-        const fs = new Set<string>()
-        const s = new Set<string>()
-        data.entries.forEach((e) => {
-          if (e.country) c.add(e.country)
-          if (e.company_size) cs.add(e.company_size)
-          if (e.fleet_size) fs.add(e.fleet_size)
-          if (e.source) s.add(e.source)
-        })
-        setCountries(Array.from(c).sort())
-        setCompanySizes(Array.from(cs).sort())
-        setFleetSizes(Array.from(fs).sort())
-        setSources(Array.from(s).sort())
-      }
+      // Derive filter options from entries
+      const c = new Set<string>()
+      const cs = new Set<string>()
+      const fs = new Set<string>()
+      const s = new Set<string>()
+      data.entries.forEach((e) => {
+        if (e.country) c.add(e.country)
+        if (e.company_size) cs.add(e.company_size)
+        if (e.fleet_size) fs.add(e.fleet_size)
+        if (e.source) s.add(e.source)
+      })
+      setCountries(Array.from(c).sort())
+      setCompanySizes(Array.from(cs).sort())
+      setFleetSizes(Array.from(fs).sort())
+      setSources(Array.from(s).sort())
     } catch (err) {
       setError(extractApiError(err))
     } finally {
@@ -275,7 +277,7 @@ export default function EntriesTab() {
         window.URL.revokeObjectURL(url)
       })
       .catch((err) => {
-        setError(t("adminWaitlist.messages.exportFailed", { error: extractApiError(err) }))
+        setError(`Export failed: ${extractApiError(err)}`)
       })
   }
 
@@ -291,7 +293,7 @@ export default function EntriesTab() {
       setDeleteTarget(null)
       await fetchEntries()
     } catch (err) {
-      setError(t("adminWaitlist.messages.deleteFailed", { error: extractApiError(err) }))
+      setError(`Delete failed: ${extractApiError(err)}`)
     } finally {
       setActionLoading(null)
     }
@@ -302,7 +304,7 @@ export default function EntriesTab() {
     waitlistApi
       .updateEntry(entry.id, { status: newStatus })
       .then(() => fetchEntries())
-      .catch((err) => setError(t("adminWaitlist.messages.updateFailed", { error: extractApiError(err) })))
+      .catch((err) => setError(`Update failed: ${extractApiError(err)}`))
       .finally(() => {
         setActionLoading(null)
         setDropdownOpen(null)
@@ -318,7 +320,7 @@ export default function EntriesTab() {
         setNotesTarget(null)
         fetchEntries()
       })
-      .catch((err) => setError(t("adminWaitlist.messages.updateFailed", { error: extractApiError(err) })))
+      .catch((err) => setError(`Update failed: ${extractApiError(err)}`))
       .finally(() => setActionLoading(null))
   }
 
@@ -345,7 +347,7 @@ export default function EntriesTab() {
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder={t("adminWaitlist.placeholders.search")}
+                placeholder={t("admin.waitlist.entries.search")}
                 value={search}
                 onChange={(e) => {
                   setSearch(e.target.value)
@@ -356,45 +358,45 @@ export default function EntriesTab() {
             </div>
             <div className="flex flex-wrap gap-3">
               <FilterSelect
-                label={t("adminWaitlist.filters.status")}
+                label={t("admin.waitlist.entries.filterStatus")}
                 value={status}
-                options={STATUS_OPTIONS.map((s) => ({ value: s, label: STATUS_LABELS[s] }))}
+                options={STATUS_OPTIONS.map((s) => ({ value: s, label: statusLabel(s, t) }))}
                 onChange={(v) => {
                   setStatus(v)
                   setPage(1)
                 }}
               />
               <FilterSelect
-                label={t("adminWaitlist.filters.country")}
+                label={t("admin.waitlist.entries.filterCountry")}
                 value={country}
-                options={[{ value: "", label: t("adminWaitlist.filters.allCountries") }, ...countries.map((c) => ({ value: c, label: c }))]}
+                options={[{ value: "", label: "All countries" }, ...countries.map((c) => ({ value: c, label: c }))]}
                 onChange={(v) => {
                   setCountry(v)
                   setPage(1)
                 }}
               />
               <FilterSelect
-                label={t("adminWaitlist.filters.companySize")}
+                label={t("admin.waitlist.entries.filterCompanySize")}
                 value={companySize}
-                options={[{ value: "", label: t("adminWaitlist.filters.allSizes") }, ...companySizes.map((c) => ({ value: c, label: c }))]}
+                options={[{ value: "", label: "All sizes" }, ...companySizes.map((c) => ({ value: c, label: c }))]}
                 onChange={(v) => {
                   setCompanySize(v)
                   setPage(1)
                 }}
               />
               <FilterSelect
-                label={t("adminWaitlist.filters.fleetSize")}
+                label={t("admin.waitlist.entries.filterFleetSize")}
                 value={fleetSize}
-                options={[{ value: "", label: t("adminWaitlist.filters.allFleets") }, ...fleetSizes.map((c) => ({ value: c, label: c }))]}
+                options={[{ value: "", label: "All fleets" }, ...fleetSizes.map((c) => ({ value: c, label: c }))]}
                 onChange={(v) => {
                   setFleetSize(v)
                   setPage(1)
                 }}
               />
               <FilterSelect
-                label={t("adminWaitlist.filters.source")}
+                label={t("admin.waitlist.entries.filterSource")}
                 value={source}
-                options={[{ value: "", label: t("adminWaitlist.filters.allSources") }, ...sources.map((c) => ({ value: c, label: c }))]}
+                options={[{ value: "", label: "All sources" }, ...sources.map((c) => ({ value: c, label: c }))]}
                 onChange={(v) => {
                   setSource(v)
                   setPage(1)
@@ -405,7 +407,7 @@ export default function EntriesTab() {
 
           <div className="flex flex-wrap items-end gap-3">
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">{t("adminWaitlist.filters.from")}</Label>
+              <Label className="text-xs text-muted-foreground">{t("admin.waitlist.entries.from")}</Label>
               <Input
                 type="date"
                 value={dateFrom}
@@ -416,7 +418,7 @@ export default function EntriesTab() {
               />
             </div>
             <div className="space-y-1.5">
-              <Label className="text-xs text-muted-foreground">{t("adminWaitlist.filters.to")}</Label>
+              <Label className="text-xs text-muted-foreground">{t("admin.waitlist.entries.to")}</Label>
               <Input
                 type="date"
                 value={dateTo}
@@ -429,13 +431,13 @@ export default function EntriesTab() {
             {hasFilters && (
               <Button variant="ghost" size="sm" onClick={clearFilters} className="h-9">
                 <X className="h-4 w-4 mr-1" />
-                {t("adminWaitlist.actions.clear")}
+                {t("admin.waitlist.entries.clear")}
               </Button>
             )}
             <div className="flex-1" />
             <Button variant="outline" size="sm" onClick={handleExportCsv}>
               <Download className="h-4 w-4 mr-1.5" />
-              {t("adminWaitlist.actions.exportCsv")}
+              {t("admin.waitlist.entries.exportCsv")}
             </Button>
           </div>
         </CardContent>
@@ -446,7 +448,7 @@ export default function EntriesTab() {
           {error}
           <div className="mt-2">
             <Button size="sm" variant="outline" onClick={fetchEntries}>
-              {t("adminWaitlist.actions.retry")}
+              Retry
             </Button>
           </div>
         </Callout>
@@ -456,9 +458,12 @@ export default function EntriesTab() {
       <Card>
         <CardHeader className="pb-3">
           <CardTitle className="text-base flex items-center justify-between">
-            <span>{t("adminWaitlist.title")}</span>
+            <span>{t("admin.waitlist.tab.entries")}</span>
             <span className="text-sm font-normal text-muted-foreground">
-              {t("adminWaitlist.pagination.full", { total, page, totalPages })}
+              {t("admin.waitlist.entries.paginationFull")
+                .replace("{total}", String(total))
+                .replace("{page}", String(page))
+                .replace("{totalPages}", String(totalPages))}
             </span>
           </CardTitle>
         </CardHeader>
@@ -467,13 +472,13 @@ export default function EntriesTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left font-medium">{t("adminWaitlist.table.company")}</th>
-                  <th className="px-4 py-3 text-left font-medium">{t("adminWaitlist.table.email")}</th>
-                  <th className="px-4 py-3 text-left font-medium">{t("adminWaitlist.table.contact")}</th>
-                  <th className="px-4 py-3 text-left font-medium">{t("adminWaitlist.table.status")}</th>
-                  <th className="px-4 py-3 text-left font-medium">{t("adminWaitlist.table.source")}</th>
-                  <th className="px-4 py-3 text-left font-medium">{t("adminWaitlist.table.joined")}</th>
-                  <th className="px-4 py-3 text-right font-medium">{t("adminWaitlist.table.actions")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("admin.waitlist.entries.company")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("admin.waitlist.entries.email")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("admin.waitlist.entries.contact")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("admin.waitlist.entries.status")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("admin.waitlist.entries.source")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("admin.waitlist.entries.joined")}</th>
+                  <th className="px-4 py-3 text-right font-medium">{t("admin.waitlist.entries.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -506,7 +511,7 @@ export default function EntriesTab() {
                 ) : entries.length === 0 ? (
                   <tr>
                     <td colSpan={7} className="px-4 py-12 text-center text-muted-foreground">
-                      {t("adminWaitlist.messages.noEntries")}
+                      {t("admin.waitlist.entries.noEntries")}
                     </td>
                   </tr>
                 ) : (
@@ -550,10 +555,10 @@ export default function EntriesTab() {
                                   }}
                                 >
                                   <Pencil className="h-4 w-4" />
-                                  {t("adminWaitlist.actions.editNotes")}
+                                  {t("admin.waitlist.entries.editNotes")}
                                 </button>
                                 <div className="px-3 py-1 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-                                  {t("adminWaitlist.actions.changeStatus")}
+                                  {t("admin.waitlist.entries.changeStatus")}
                                 </div>
                                 {STATUS_OPTIONS.filter((s) => s && s !== entry.status).map((s) => (
                                   <button
@@ -562,8 +567,8 @@ export default function EntriesTab() {
                                     onClick={() => handleUpdateStatus(entry, s)}
                                   >
                                     <span className="h-2 w-2 rounded-full bg-current" />
-                                    {STATUS_LABELS[s]}
-                                  </button>
+                                  {statusLabel(s, t)}
+                                </button>
                                 ))}
                                 <div className="my-1 border-t" />
                                 <button
@@ -574,7 +579,7 @@ export default function EntriesTab() {
                                   }}
                                 >
                                   <Trash2 className="h-4 w-4" />
-                                  {t("common.delete")}
+                                  {t("admin.waitlist.entries.delete")}
                                 </button>
                               </div>
                             </div>
@@ -591,7 +596,9 @@ export default function EntriesTab() {
           {/* Pagination */}
           <div className="flex items-center justify-between px-4 py-4 border-t">
             <p className="text-sm text-muted-foreground">
-              {t("adminWaitlist.pagination.showing", { count: entries.length, total })}
+              {t("admin.waitlist.entries.pagination")
+                .replace("{count}", String(entries.length))
+                .replace("{total}", String(total))}
             </p>
             <Pagination
               currentPage={page}
@@ -605,11 +612,12 @@ export default function EntriesTab() {
       {/* Modals */}
       <ConfirmDialog
         open={!!deleteTarget}
-        title={t("adminWaitlist.confirm.deleteTitle")}
-        description={t("adminWaitlist.confirm.deleteDescription", { name: deleteTarget?.company_name })}
+        title={t("admin.waitlist.entries.deleteTitle")}
+        description={t("admin.waitlist.entries.deleteConfirm").replace("{name}", deleteTarget?.company_name ?? "")}
         onConfirm={confirmDelete}
         onCancel={() => setDeleteTarget(null)}
         isLoading={actionLoading === deleteTarget?.id}
+        t={t}
       />
 
       <NotesModal
@@ -618,6 +626,7 @@ export default function EntriesTab() {
         onSave={handleSaveNotes}
         onClose={() => setNotesTarget(null)}
         isLoading={actionLoading === notesTarget?.id}
+        t={t}
       />
     </div>
   )

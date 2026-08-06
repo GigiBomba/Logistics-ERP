@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react"
-import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
 import { WifiOff, Wifi, RefreshCw } from "lucide-react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Button } from "@/components/ui/button"
 import { useLocale } from "@/i18n/locale-context"
 
@@ -27,9 +27,7 @@ export default function ErrorOfflinePage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("error.offline")} — Operion ERP</title>
-      </Helmet>
+      <SeoHead title={t("error.offline")} description="You are offline. Please check your internet connection and try again." noindex />
       <div className="flex min-h-[70vh] items-center justify-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

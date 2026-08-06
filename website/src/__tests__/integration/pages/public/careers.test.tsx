@@ -12,11 +12,15 @@ vi.mock("motion/react", () => ({
   AnimatePresence: ({ children }: any) => <>{children}</>,
 }))
 
-vi.mock("@/config/site", () => ({
-  careersConfig: {
-    contactEmail: "operion.contact@gmail.com",
-  },
-}))
+vi.mock("@/config/site", async () => {
+  const actual = await vi.importActual<typeof import("@/config/site")>("@/config/site")
+  return {
+    ...actual,
+    careersConfig: {
+      contactEmail: "operion.contact@gmail.com",
+    },
+  }
+})
 
 describe("CareersPage", () => {
   it("renders heading", () => {
@@ -36,12 +40,14 @@ describe("CareersPage", () => {
     render(<CareersPage />)
     expect(screen.getByText("Remote-first culture")).toBeInTheDocument()
     expect(screen.getByText("Flexible hours")).toBeInTheDocument()
-    expect(screen.getByText("Health coverage")).toBeInTheDocument()
     expect(screen.getByText("Home office stipend")).toBeInTheDocument()
+    expect(screen.getByText("Health coverage")).toBeInTheDocument()
   })
 
-  it("shows no open positions message", () => {
+  it("renders job openings section", () => {
     render(<CareersPage />)
+    expect(screen.getByText("Current Openings")).toBeInTheDocument()
+    // Page shows "no open positions" state when no jobs are listed
     expect(screen.getByText("No open positions at this time")).toBeInTheDocument()
   })
 

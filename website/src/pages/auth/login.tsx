@@ -1,6 +1,7 @@
 import { useState } from "react"
 import { Helmet } from "react-helmet-async"
-import { Link, useNavigate } from "react-router"
+import { Link, useSearchParams } from "react-router"
+import { useAppNavigate } from "@/hooks/useAppNavigate"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
@@ -12,19 +13,23 @@ import { Input, Label } from "@/components/ui/input"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from "@/components/ui/card"
 import { useAuth } from "@/contexts/auth-provider"
 import { useLocale } from "@/i18n/locale-context"
+import TurnstileWidget from "@/components/shared/turnstile-widget"
 
 const loginSchema = z.object({
   email: z.string().email("Please enter a valid email"),
   password: z.string().min(1, "Password is required"),
+  rememberMe: z.boolean().optional(),
 })
 
 type LoginForm = z.infer<typeof loginSchema>
 
 export default function LoginPage() {
-  const navigate = useNavigate()
+  const navigate = useAppNavigate()
   const { login } = useAuth()
   const { t } = useLocale()
+  const [searchParams] = useSearchParams()
   const [showPassword, setShowPassword] = useState(false)
+  const [turnstileToken, setTurnstileToken] = useState("")
 
   const {
     register,
@@ -34,17 +39,30 @@ export default function LoginPage() {
 
   async function onSubmit(data: LoginForm) {
     try {
-      await login(data.email, data.password)
+      const result = await login(data.email, data.password, data.rememberMe, turnstileToken)
+      // If MFA is required, redirect to the challenge page
+      if (result?.mfaRequired) {
+        navigate("/auth/mfa-challenge", { replace: true })
+        return
+      }
       toast.success(t("auth.signedIn"))
-      navigate("/dashboard")
-    } catch {
-      toast.error(t("auth.invalidCredentials"))
+      const returnUrl = searchParams.get("returnUrl")
+      const isValidReturnUrl = returnUrl && returnUrl.startsWith("/") && !returnUrl.startsWith("//")
+      navigate(isValidReturnUrl ? returnUrl : "/dashboard", { replace: true })
+    } catch (error: unknown) {
+      const apiError = error as { response?: { status?: number; data?: { detail?: string } } }
+      if (apiError?.response?.status === 429) {
+        const retryAfter = apiError.response.data?.detail || t("auth.tooManyAttempts")
+        toast.error(retryAfter)
+      } else {
+        toast.error(t("auth.invalidCredentials"))
+      }
     }
   }
 
   return (
     <>
-      <Helmet><title>{t("common.signIn")} — Operion ERP</title></Helmet>
+      <Helmet><title>{`${t("common.signIn")} — Operion ERP`}</title></Helmet>
       <div className="flex min-h-[80vh] items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -78,15 +96,30 @@ export default function LoginPage() {
                   <div className="relative">
                     <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input id="password" type={showPassword ? "text" : "password"} className="pl-10 pr-10" placeholder={t("auth.passwordPlaceholder")} {...register("password")} />
-                    <button type="button" onClick={() => setShowPassword(!showPassword)} className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground">
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      aria-label={showPassword ? t("mfa.hidePassword") : t("mfa.showPassword")}
+                      aria-pressed={showPassword}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                    >
                       {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
                     </button>
                   </div>
                   {errors.password && <p className="text-xs text-destructive">{errors.password.message}</p>}
                 </div>
-                <div className="text-right">
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      {...register("rememberMe")}
+                      className="h-4 w-4 rounded border-input text-primary focus:ring-primary"
+                    />
+                    {t("auth.rememberMe")}
+                  </label>
                   <Link to="/forgot-password" className="text-sm text-primary hover:underline">{t("auth.forgotPassword")}</Link>
                 </div>
+                <TurnstileWidget onVerify={setTurnstileToken} onExpired={() => setTurnstileToken("")} className="flex justify-center" />
                 <Button type="submit" className="w-full" disabled={isSubmitting}>
                   {isSubmitting ? t("auth.signingIn") : t("common.signIn")}
                 </Button>

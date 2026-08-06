@@ -54,7 +54,7 @@ describe("DocsCategoryPage", () => {
       expect(screen.getByText("5 articles")).toBeInTheDocument() // Getting Started
       expect(screen.getByText("4 articles")).toBeInTheDocument() // Route Planning
       // 6 other categories each have 1 article
-      const singleArticleBadges = screen.getAllByText("1 article")
+      const singleArticleBadges = screen.getAllByText("1 articles")
       expect(singleArticleBadges.length).toBe(6)
     })
 

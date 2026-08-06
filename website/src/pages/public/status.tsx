@@ -1,58 +1,41 @@
 import { useState } from "react"
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
-import { CheckCircle, AlertTriangle, XCircle, Wrench, Mail, BarChart3 } from "lucide-react"
+import { CheckCircle, AlertTriangle, XCircle, Wrench, Mail, BarChart3, HelpCircle } from "lucide-react"
 import { PageHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { StatusBadge } from "@/components/shared/status-badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
+import { LoadingSpinner } from "@/components/ui/loading-spinner"
 import { cn } from "@/lib/utils"
 import { formatDate } from "@/lib/utils"
+import { useServiceStatus } from "@/services/queries"
 
-type ServiceStatus = "operational" | "degraded" | "outage" | "maintenance"
+type ServiceStatus = "operational" | "degraded" | "outage" | "maintenance" | "unknown"
 
 interface Service {
-  nameKey: string
-  descKey: string
+  name: string
+  description?: string
   status: ServiceStatus
-  updatedAt: string
+  updatedAt?: string
 }
 
 interface ServiceGroup {
-  titleKey: string
-  descKey: string
+  name: string
+  description?: string
   services: Service[]
 }
 
-const serviceGroups: ServiceGroup[] = [
-  {
-    titleKey: "status.components",
-    descKey: "status.componentsDesc",
-    services: [
-      {
-        nameKey: "status.desktopApp",
-        descKey: "status.desktopAppDesc",
-        status: "maintenance",
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        nameKey: "status.webPortal",
-        descKey: "status.webPortalDesc",
-        status: "maintenance",
-        updatedAt: new Date().toISOString(),
-      },
-      {
-        nameKey: "status.apiBackend",
-        descKey: "status.apiBackendDesc",
-        status: "maintenance",
-        updatedAt: new Date().toISOString(),
-      },
-    ],
-  },
-]
+const KNOWN_STATUSES: ServiceStatus[] = ["operational", "degraded", "outage", "maintenance"]
+
+// Map whatever the backend reports to a known status; anything unexpected
+// becomes "unknown" rather than rendering a broken badge.
+function normalizeStatus(value: string | undefined): ServiceStatus {
+  return value && KNOWN_STATUSES.includes(value as ServiceStatus) ? (value as ServiceStatus) : "unknown"
+}
 
 function getOverallStatus(groups: ServiceGroup[]): {
   status: ServiceStatus
@@ -63,9 +46,19 @@ function getOverallStatus(groups: ServiceGroup[]): {
 } {
   const allServices = groups.flatMap((g) => g.services)
 
-  const allInDevelopment = allServices.length > 0 && allServices.every((s) => s.status === "maintenance")
+  // No live data at all → honest "unknown" state, never a green pulse.
+  if (allServices.length === 0 || allServices.every((s) => s.status === "unknown")) {
+    return {
+      status: "unknown",
+      labelKey: "status.unavailable",
+      descKey: "status.unavailableDesc",
+      icon: <HelpCircle className="h-6 w-6" />,
+      bannerClass: "border-gray-200 bg-gray-50 dark:border-gray-800 dark:bg-gray-950/40",
+    }
+  }
 
-  if (allInDevelopment) {
+  // All services in active development (maintenance) → in-development banner.
+  if (allServices.every((s) => s.status === "maintenance")) {
     return {
       status: "maintenance",
       labelKey: "status.inDevelopment",
@@ -105,6 +98,7 @@ function getOverallStatus(groups: ServiceGroup[]): {
     }
   }
 
+  // Only reachable when every service is explicitly "operational".
   return {
     status: "operational",
     labelKey: "status.operational",
@@ -119,21 +113,62 @@ const statusColorMap: Record<ServiceStatus, string> = {
   degraded: "text-yellow-600 dark:text-yellow-400",
   outage: "text-red-600 dark:text-red-400",
   maintenance: "text-blue-600 dark:text-blue-400",
+  unknown: "text-gray-500 dark:text-gray-400",
 }
 
 const lastPageUpdated = new Date().toISOString()
 
 export default function StatusPage() {
   const { t } = useLocale()
-  const overall = getOverallStatus(serviceGroups)
   const [subEmail, setSubEmail] = useState("")
+
+  const { data, isLoading, isError, refetch } = useServiceStatus()
+
+  const serviceGroups: ServiceGroup[] =
+    data && data.length > 0
+      ? data.map((group) => ({
+          name: group.name,
+          services: group.services.map((service) => ({
+            name: service.name,
+            description: service.description,
+            status: normalizeStatus(service.status),
+            updatedAt: service.updated_at,
+          })),
+        }))
+      : [
+          {
+            name: t("status.components"),
+            services: [
+              {
+                name: t("status.desktopApp"),
+                description: t("status.desktopAppDesc"),
+                status: "unknown",
+              },
+              {
+                name: t("status.webPortal"),
+                description: t("status.webPortalDesc"),
+                status: "unknown",
+              },
+              {
+                name: t("status.apiBackend"),
+                description: t("status.apiBackendDesc"),
+                status: "unknown",
+              },
+            ],
+          },
+        ]
+
+  const overall = getOverallStatus(isError || !data ? [] : serviceGroups)
+
+  const badgeLabel = (status: ServiceStatus) => {
+    if (status === "unknown") return t("status.unknownShort")
+    if (status === "maintenance") return t("status.inDevelopmentShort")
+    return undefined
+  }
 
   return (
     <>
-      <Helmet>
-        <title>{t("status.pageTitle")}</title>
-        <meta name="description" content={t("status.metaDesc")} />
-      </Helmet>
+      <SeoHead title={t("status.pageTitle")} description={t("status.metaDesc")} canonical="https://operionerp.xyz/status" />
 
       <PageHeader
         title={t("status.title")}
@@ -148,20 +183,31 @@ export default function StatusPage() {
           viewport={{ once: true }}
           className="mx-auto max-w-3xl"
         >
-          <div
-            className={cn(
-              "flex items-start gap-4 rounded-xl border p-5",
-              overall.bannerClass
-            )}
-          >
-            <div className={cn("mt-0.5", statusColorMap[overall.status])}>
-              {overall.icon}
+          {isLoading ? (
+            <div className="flex items-center justify-center rounded-xl border p-10">
+              <LoadingSpinner />
             </div>
-            <div>
-              <h2 className="text-base font-semibold">{t(overall.labelKey)}</h2>
-              <p className="mt-1 text-sm text-muted-foreground">{t(overall.descKey)}</p>
+          ) : (
+            <div
+              className={cn(
+                "flex items-start gap-4 rounded-xl border p-5",
+                overall.bannerClass
+              )}
+            >
+              <div className={cn("mt-0.5", statusColorMap[overall.status])}>
+                {overall.icon}
+              </div>
+              <div className="flex-1">
+                <h2 className="text-base font-semibold">{t(overall.labelKey)}</h2>
+                <p className="mt-1 text-sm text-muted-foreground">{t(overall.descKey)}</p>
+                {isError && (
+                  <Button variant="outline" size="sm" className="mt-3" onClick={() => refetch()}>
+                    {t("common.tryAgain")}
+                  </Button>
+                )}
+              </div>
             </div>
-          </div>
+          )}
         </motion.div>
       </SectionWrapper>
 
@@ -170,32 +216,38 @@ export default function StatusPage() {
         <div className="mx-auto max-w-3xl space-y-12">
           {serviceGroups.map((group, groupIndex) => (
             <motion.div
-              key={group.titleKey}
+              key={`${group.name}-${groupIndex}`}
               initial={{ opacity: 0, y: 20 }}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.4, delay: groupIndex * 0.1, ease: [0.22, 1, 0.36, 1] }}
             >
               <div className="mb-4">
-                <h3 className="text-lg font-bold">{t(group.titleKey)}</h3>
-                <p className="text-sm text-muted-foreground">{t(group.descKey)}</p>
+                <h3 className="text-lg font-bold">{group.name}</h3>
+                {group.description && (
+                  <p className="text-sm text-muted-foreground">{group.description}</p>
+                )}
               </div>
               <div className="space-y-3">
                 {group.services.map((service) => (
-                  <Card key={service.nameKey}>
+                  <Card key={`${group.name}-${service.name}`}>
                     <CardContent className="flex items-center justify-between p-4">
                       <div className="flex-1">
                         <div className="flex items-center gap-2">
-                          <span className="text-sm font-medium">{t(service.nameKey)}</span>
-                          <StatusBadge status={service.status} label={service.status === "maintenance" ? t("status.inDevelopmentShort") : undefined} />
+                          <span className="text-sm font-medium">{service.name}</span>
+                          <StatusBadge status={service.status} label={badgeLabel(service.status)} />
                         </div>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {t(service.descKey)}
-                        </p>
+                        {service.description && (
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {service.description}
+                          </p>
+                        )}
                       </div>
-                      <span className="shrink-0 text-[11px] text-muted-foreground">
-                        {t("status.updated")} {formatDate(service.updatedAt)}
-                      </span>
+                      {service.updatedAt && (
+                        <span className="shrink-0 text-[11px] text-muted-foreground">
+                          {t("status.updated")} {formatDate(service.updatedAt)}
+                        </span>
+                      )}
                     </CardContent>
                   </Card>
                 ))}

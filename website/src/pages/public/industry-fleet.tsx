@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import {
   Wrench,
@@ -10,7 +10,6 @@ import {
   MapPin,
   BarChart3,
   ArrowRight,
-  ImageIcon,
   Timer,
 } from "lucide-react"
 import { PageHeader, SectionHeader } from "@/components/shared/page-header"
@@ -20,14 +19,68 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-function ScreenshotPlaceholder({ name }: { name: string }) {
+function FleetHealthVisual() {
+  const metrics = [
+    { label: "Fleet uptime", value: 94, color: "bg-green-500" },
+    { label: "Compliance score", value: 100, color: "bg-emerald-500" },
+    { label: "GPS coverage", value: 98, color: "bg-blue-500" },
+    { label: "Cost efficiency", value: 87, color: "bg-amber-500" },
+  ]
   return (
-    <div className="mt-8 rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-        <ImageIcon className="h-7 w-7 text-muted-foreground" />
+    <div className="mt-8 rounded-xl border bg-card p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-6">
+        <span className="text-sm font-medium">Fleet Health Monitor</span>
+        <span className="text-xs text-muted-foreground">Updated 30s ago</span>
       </div>
-      <p className="text-sm font-medium text-muted-foreground">Screenshot: {name}</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">Preview coming soon</p>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {metrics.map((m, i) => (
+          <motion.div
+            key={m.label}
+            initial={{ opacity: 0, scale: 0.9 }}
+            whileInView={{ opacity: 1, scale: 1 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.1 }}
+            className="flex flex-col items-center gap-3"
+          >
+            <div className="relative h-20 w-20">
+              <svg className="h-full w-full -rotate-90" viewBox="0 0 36 36">
+                <path className="text-muted/30" d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831" fill="none" stroke="currentColor" strokeWidth="3" />
+                <motion.path
+                  className={m.color}
+                  d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="3"
+                  strokeDasharray={`${m.value}, 100`}
+                  initial={{ strokeDasharray: "0, 100" }}
+                  whileInView={{ strokeDasharray: `${m.value}, 100` }}
+                  viewport={{ once: true }}
+                  transition={{ duration: 1, delay: i * 0.15 }}
+                />
+              </svg>
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="text-sm font-bold">{m.value}%</span>
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground text-center">{m.label}</p>
+          </motion.div>
+        ))}
+      </div>
+      <div className="mt-6 rounded-lg bg-muted/40 p-4 space-y-2">
+        <div className="flex items-center justify-between text-xs text-muted-foreground">
+          <span>Next maintenance window</span>
+          <span className="font-medium text-foreground">Tomorrow 06:00 — 3 vehicles</span>
+        </div>
+        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+          <motion.div
+            initial={{ width: 0 }}
+            whileInView={{ width: "60%" }}
+            viewport={{ once: true }}
+            transition={{ duration: 1 }}
+            className="h-full rounded-full bg-primary/60"
+          />
+        </div>
+      </div>
     </div>
   )
 }
@@ -96,14 +149,11 @@ const stats = [
 export default function IndustryFleetPage() {
   return (
     <>
-      <Helmet>
-        <title>Operion for Fleet Managers — Maintenance, Compliance & Cost Control</title>
-        <meta
-          name="description"
-          content="Keep every vehicle maintained, compliant, and profitable with unified fleet intelligence, GPS tracking, and automated maintenance alerts."
-        />
-        <link rel="canonical" href="https://operion.com/industries/fleet" />
-      </Helmet>
+      <SeoHead
+        title="Operion for Fleet Managers — Maintenance, Compliance & Cost Control"
+        description="Keep every vehicle maintained, compliant, and profitable with unified fleet intelligence, GPS tracking, and automated maintenance alerts."
+        canonical="https://operionerp.xyz/industries/fleet"
+      />
 
       <PageHeader
         title="Operion for Fleet Managers"
@@ -226,14 +276,14 @@ export default function IndustryFleetPage() {
         </div>
       </SectionWrapper>
 
-      {/* Screenshot */}
+      {/* Fleet Health Monitor */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
           title="See It in Action"
           description="The fleet dashboard gives you health, location, and cost data for every asset at a glance."
           className="mb-8"
         />
-        <ScreenshotPlaceholder name="Fleet Health Dashboard" />
+        <FleetHealthVisual />
       </SectionWrapper>
 
       {/* CTA */}

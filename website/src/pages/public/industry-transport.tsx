@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import {
   Route,
@@ -10,7 +10,6 @@ import {
   BarChart3,
   Clock,
   ArrowRight,
-  ImageIcon,
   Truck,
   Timer,
 } from "lucide-react"
@@ -21,14 +20,63 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-function ScreenshotPlaceholder({ name }: { name: string }) {
+function DispatchBoardVisual() {
+  const drivers = [
+    { name: "Alex D.", status: "on-time", eta: "10:24" },
+    { name: "Maria L.", status: "delayed", eta: "11:05" },
+    { name: "Jonas K.", status: "on-time", eta: "09:45" },
+    { name: "Sofia R.", status: "loading", eta: "12:00" },
+  ]
   return (
-    <div className="mt-8 rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-        <ImageIcon className="h-7 w-7 text-muted-foreground" />
+    <div className="mt-8 rounded-xl border bg-card p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-green-500 animate-pulse" />
+          <span className="text-sm font-medium">Live Dispatch</span>
+        </div>
+        <span className="text-xs text-muted-foreground">4 active routes</span>
       </div>
-      <p className="text-sm font-medium text-muted-foreground">Screenshot: {name}</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">Preview coming soon</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {drivers.map((d, i) => (
+          <motion.div
+            key={d.name}
+            initial={{ opacity: 0, y: 10 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay: i * 0.1 }}
+            className="flex items-center justify-between rounded-lg border p-3"
+          >
+            <div className="flex items-center gap-3">
+              <div className={`h-8 w-8 rounded-full flex items-center justify-center text-xs font-bold text-white ${d.status === "delayed" ? "bg-red-500" : d.status === "loading" ? "bg-amber-500" : "bg-green-600"}`}>
+                {d.name.charAt(0)}
+              </div>
+              <div>
+                <p className="text-sm font-medium">{d.name}</p>
+                <p className="text-xs text-muted-foreground capitalize">{d.status}</p>
+              </div>
+            </div>
+            <div className="text-right">
+              <p className="text-sm font-semibold">{d.eta}</p>
+              <p className="text-xs text-muted-foreground">ETA</p>
+            </div>
+          </motion.div>
+        ))}
+      </div>
+      <div className="mt-4 rounded-lg bg-muted/40 p-4">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground mb-2">
+          <Route className="h-3.5 w-3.5" />
+          <span>Route density — Bucharest hub</span>
+        </div>
+        <div className="h-2 w-full rounded-full bg-muted overflow-hidden">
+          <motion.div
+            initial={{ width: 0 }}
+            whileInView={{ width: "72%" }}
+            viewport={{ once: true }}
+            transition={{ duration: 1.2, ease: "easeOut" }}
+            className="h-full rounded-full bg-primary/70"
+          />
+        </div>
+      </div>
     </div>
   )
 }
@@ -97,14 +145,11 @@ const stats = [
 export default function IndustryTransportPage() {
   return (
     <>
-      <Helmet>
-        <title>Operion for Transport Companies — Route Optimization & Fleet Tracking</title>
-        <meta
-          name="description"
-          content="Cut fuel costs and deliver on time with AI-powered routing, real-time GPS tracking, and automated dispatch for transport companies."
-        />
-        <link rel="canonical" href="https://operion.com/industries/transport" />
-      </Helmet>
+      <SeoHead
+        title="Operion for Transport Companies — Route Optimization & Fleet Tracking"
+        description="Cut fuel costs and deliver on time with AI-powered routing, real-time GPS tracking, and automated dispatch for transport companies."
+        canonical="https://operionerp.xyz/industries/transport"
+      />
 
       <PageHeader
         title="Operion for Transport Companies"
@@ -227,14 +272,14 @@ export default function IndustryTransportPage() {
         </div>
       </SectionWrapper>
 
-      {/* Screenshot */}
+      {/* Live Dispatch Board */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
           title="See It in Action"
           description="The Operion transport dashboard gives you complete visibility from dispatch to delivery."
           className="mb-8"
         />
-        <ScreenshotPlaceholder name="Transport Dispatch Dashboard" />
+        <DispatchBoardVisual />
       </SectionWrapper>
 
       {/* CTA */}

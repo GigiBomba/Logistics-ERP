@@ -3,21 +3,23 @@ import { test, expect } from "@playwright/test"
 test.describe("Docs Navigation", () => {
   test("docs home shows all categories", async ({ page }) => {
     await page.goto("/docs")
-    await expect(page.getByText("Getting Started")).toBeVisible()
-    await expect(page.getByText("Route Planning")).toBeVisible()
-    await expect(page.getByText("Fleet Tracking")).toBeVisible()
-    await expect(page.getByText("Dispatch")).toBeVisible()
-    await expect(page.getByText("OCR & Documents")).toBeVisible()
-    await expect(page.getByText("Analytics")).toBeVisible()
-    await expect(page.getByText("Administration")).toBeVisible()
-    await expect(page.getByText("API Reference")).toBeVisible()
+    // Category cards (h3) duplicate the sidebar labels — scope to heading role.
+    await expect(page.getByRole("heading", { name: /getting started/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /route planning/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /fleet tracking/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /^dispatch$/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /ocr & documents/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /analytics/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /administration/i })).toBeVisible()
+    await expect(page.getByRole("heading", { name: /api reference/i })).toBeVisible()
+    // Data-driven article counts (docs-category.tsx: 5 + 4).
     await expect(page.getByText("5 articles")).toBeVisible()
     await expect(page.getByText("4 articles")).toBeVisible()
   })
 
   test("category page lists articles", async ({ page }) => {
     await page.goto("/docs/getting-started")
-    await expect(page.getByText("Getting Started")).toBeVisible()
+    await expect(page.getByRole("heading", { name: /getting started/i })).toBeVisible()
     await expect(page.getByText("Installing Operion ERP")).toBeVisible()
     await expect(page.getByText("Creating Your Account")).toBeVisible()
     await expect(page.getByText("System Requirements")).toBeVisible()
@@ -26,7 +28,8 @@ test.describe("Docs Navigation", () => {
 
   test("article page renders content", async ({ page }) => {
     await page.goto("/docs/getting-started/installation")
-    await expect(page.getByText("Installing Operion ERP")).toBeVisible()
+    // Title renders in both the breadcrumb and the h1 — scope to heading.
+    await expect(page.getByRole("heading", { name: /installing operion erp/i })).toBeVisible()
     await expect(page.getByText(/before you begin/i)).toBeVisible()
     await expect(page.getByText(/download the installer/i)).toBeVisible()
     await expect(page.getByText(/installation steps/i)).toBeVisible()
@@ -47,17 +50,18 @@ test.describe("Docs Navigation", () => {
 
   test("unknown category shows not found", async ({ page }) => {
     await page.goto("/docs/unknown-category")
-    await expect(page.getByText(/category not found/i)).toBeVisible()
+    await expect(page.getByRole("heading", { name: /category not found/i })).toBeVisible()
   })
 
   test("unknown article shows not found", async ({ page }) => {
     await page.goto("/docs/getting-started/nonexistent")
-    await expect(page.getByText(/article not found/i)).toBeVisible()
+    await expect(page.getByRole("heading", { name: /article not found/i })).toBeVisible()
   })
 
   test("sidebar navigation works on desktop", async ({ page }) => {
     await page.goto("/docs")
-    await page.getByText("Route Planning").click()
+    // "Route Planning" appears in both the sidebar and the category card — use the sidebar link.
+    await page.locator("aside").getByRole("link", { name: /route planning/i }).click()
     await expect(page).toHaveURL(/\/route-planning/)
     await expect(page.getByText("Creating Your First Route")).toBeVisible()
   })

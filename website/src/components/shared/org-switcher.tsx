@@ -4,7 +4,7 @@ import { motion, AnimatePresence } from "motion/react"
 import { ChevronDown, Check, Building2, Plus, Settings } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { Badge } from "@/components/ui/badge"
-import { cn } from "@/lib/utils"
+import { cn, getInitials } from "@/lib/utils"
 import { useLocale } from "@/i18n/locale-context"
 import type { Organization } from "@/types"
 
@@ -12,15 +12,6 @@ interface OrgSwitcherProps {
   organizations: Organization[]
   activeOrgId: string
   onSwitch: (orgId: string) => void
-}
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase()
 }
 
 export function OrgSwitcher({ organizations, activeOrgId, onSwitch }: OrgSwitcherProps) {
@@ -149,7 +140,7 @@ export function OrgSwitcher({ organizations, activeOrgId, onSwitch }: OrgSwitche
             transition={{ duration: 0.15 }}
             className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border bg-popover shadow-lg"
             role="listbox"
-            aria-label={t("common.aria.organizations")}
+            aria-label={t("common.organizations")}
             ref={listRef}
           >
             {/* Org List */}
@@ -213,7 +204,7 @@ export function OrgSwitcher({ organizations, activeOrgId, onSwitch }: OrgSwitche
                 )}
               >
                 <Settings className="h-4 w-4" />
-                Manage organizations
+                {t("common.manageOrganizations")}
               </Link>
               <button
                 type="button"
@@ -229,8 +220,8 @@ export function OrgSwitcher({ organizations, activeOrgId, onSwitch }: OrgSwitche
                 )}
               >
                 <Plus className="h-4 w-4" />
-                Create organization
-                <span className="ml-auto text-[10px] text-muted-foreground">Soon</span>
+                {t("common.createOrganization")}
+                <span className="ml-auto text-[10px] text-muted-foreground">{t("common.soon")}</span>
               </button>
             </div>
           </motion.div>

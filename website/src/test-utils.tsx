@@ -3,8 +3,12 @@ import { MemoryRouter, type MemoryRouterProps } from "react-router"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { render, type RenderOptions } from "@testing-library/react"
 import { HelmetProvider } from "react-helmet-async"
-import type { ReactNode } from "react"
 import { LocaleProvider } from "@/i18n/locale-context"
+import type { ReactNode } from "react"
+import { vi } from "vitest"
+import type { User } from "@/types"
+import type { Permission } from "@/lib/permissions"
+import type { AxiosResponse, InternalAxiosRequestConfig } from "axios"
 
 function createTestQueryClient() {
   return new QueryClient({
@@ -18,24 +22,21 @@ function createTestQueryClient() {
 interface WrapperOptions {
   initialEntries?: MemoryRouterProps["initialEntries"]
   queryClient?: QueryClient
-  withLocale?: boolean
 }
 
-/** Minimal wrapper — add ThemeProvider/AuthProvider per-test via mock wrappers. */
-export function createWrapper({ initialEntries = ["/"], queryClient, withLocale = true }: WrapperOptions = {}) {
+/** Minimal wrapper — no ThemeProvider or AuthProvider (mock in tests) */
+export function createWrapper({ initialEntries = ["/"], queryClient }: WrapperOptions = {}) {
   const qc = queryClient ?? createTestQueryClient()
 
   function TestWrapper({ children }: { children: ReactNode }) {
-    let content = children
-    if (withLocale) {
-      content = <LocaleProvider>{content}</LocaleProvider>
-    }
     return (
       <HelmetProvider>
         <QueryClientProvider client={qc}>
-          <MemoryRouter initialEntries={initialEntries}>
-            {content}
-          </MemoryRouter>
+          <LocaleProvider>
+            <MemoryRouter initialEntries={initialEntries}>
+              {children}
+            </MemoryRouter>
+          </LocaleProvider>
         </QueryClientProvider>
       </HelmetProvider>
     )
@@ -52,10 +53,10 @@ export function renderWithProviders(
   return { ...render(ui, { wrapper, ...options }), queryClient }
 }
 
-export function createMockAuthUser(overrides = {}) {
+export function createMockAuthUser(overrides: Partial<User> = {}): User {
   return {
     id: "user-1",
-    email: "test@operion.com",
+    email: "test@operionerp.xyz",
     role: "dispatcher" as const,
     is_admin: false,
     company_id: 1,
@@ -66,21 +67,54 @@ export function createMockAuthUser(overrides = {}) {
     created_at: "2026-01-01T00:00:00Z",
     updated_at: "2026-06-01T00:00:00Z",
     ...overrides,
-  }
+  } as User
 }
 
-export function createMockAuthContext(overrides = {}) {
+interface MockAuthContextValue {
+  user: User | null
+  isLoading: boolean
+  isAuthenticated: boolean
+  isAdmin: boolean
+  permissions: Permission[]
+  hasPermission: (permission: Permission) => boolean
+  mfaRequired: boolean
+  mfaSessionToken: string | null
+  login: (email: string, password: string, rememberMe?: boolean, turnstileToken?: string) => Promise<{ mfaRequired: boolean }>
+  register: (data: { email: string; password: string; name: string; company_name?: string; turnstile_token?: string }) => Promise<void>
+  logout: () => void
+  refreshUser: () => Promise<void>
+  updateUser: (user: User) => void
+  verifyMfa: (code: string) => Promise<void>
+}
+
+export function createMockAuthContext(overrides: Partial<MockAuthContextValue> = {}): MockAuthContextValue {
   return {
     user: null,
     isLoading: false,
     isAuthenticated: false,
     isAdmin: false,
+    permissions: [],
+    hasPermission: vi.fn(),
+    mfaRequired: false,
+    mfaSessionToken: null,
     login: vi.fn(),
     register: vi.fn(),
     logout: vi.fn(),
     refreshUser: vi.fn(),
     updateUser: vi.fn(),
+    verifyMfa: vi.fn(),
     ...overrides,
+  }
+}
+
+/** Build a minimal AxiosResponse wrapper around `data` for mockResolvedValue callbacks. */
+export function mockAxiosResponse<T>(data: T): AxiosResponse<T> {
+  return {
+    data,
+    status: 200,
+    statusText: "OK",
+    headers: {},
+    config: { headers: {} } as InternalAxiosRequestConfig,
   }
 }
 

@@ -1,5 +1,5 @@
-import { Helmet } from "react-helmet-async"
 import { motion } from "motion/react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { useLocale } from "@/i18n/locale-context"
 import { Download, Mail, Image, Type, Shapes, Check, X, AlertCircle } from "lucide-react"
 import { HeroSection } from "@/components/shared/hero-section"
@@ -95,10 +95,7 @@ export default function BrandPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>{t("brand.pageTitle")}</title>
-        <meta name="description" content={t("brand.metaDesc")} />
-      </Helmet>
+      <SeoHead title={t("brand.pageTitle")} description={t("brand.metaDesc")} canonical="https://operionerp.xyz/brand" />
 
       <HeroSection
         title={t("brand.title")}

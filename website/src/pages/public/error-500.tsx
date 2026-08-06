@@ -1,17 +1,20 @@
-import { Helmet } from "react-helmet-async"
 import { Link } from "react-router"
 import { motion } from "motion/react"
-import { AlertTriangle, RefreshCw, Home, LifeBuoy } from "lucide-react"
+import { AlertTriangle, RefreshCw, Home, LifeBuoy, Bug } from "lucide-react"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Button } from "@/components/ui/button"
 import { useLocale } from "@/i18n/locale-context"
 
 export default function Error500Page() {
   const { t } = useLocale()
+
+  const reportUrl =
+    `/dashboard/support?subject=${encodeURIComponent("Error 500 — Server Error")}` +
+    `&message=${encodeURIComponent("I encountered a 500 error while browsing. Error context:\n\n- Page: " + window.location.href + "\n- Timestamp: " + new Date().toISOString() + "\n- User Agent: " + navigator.userAgent + "\n\nPlease describe what you were doing when the error occurred:")}`
+
   return (
     <>
-      <Helmet>
-        <title>{t("error.serverError")} — Operion ERP</title>
-      </Helmet>
+      <SeoHead title={t("error.serverError")} description="Internal server error — please try again or contact support." noindex />
       <div className="flex min-h-[70vh] items-center justify-center">
         <motion.div
           initial={{ opacity: 0, y: 20 }}
@@ -50,11 +53,19 @@ export default function Error500Page() {
           >
             {t("error.serverErrorDesc")}
           </motion.p>
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.45 }}
+            className="mt-3 max-w-md text-sm text-muted-foreground/70"
+          >
+            {t("error.reportIssueDesc")}
+          </motion.p>
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.5 }}
-            className="mt-8 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
+            className="mt-6 flex flex-col items-center gap-3 sm:flex-row sm:justify-center"
           >
             <Button onClick={() => window.location.reload()}>
               <RefreshCw className="h-4 w-4" />
@@ -70,6 +81,12 @@ export default function Error500Page() {
               <Link to="/contact">
                 <LifeBuoy className="h-4 w-4" />
                 {t("error.contactSupport")}
+              </Link>
+            </Button>
+            <Button variant="secondary" asChild>
+              <Link to={reportUrl}>
+                <Bug className="h-4 w-4" />
+                {t("error.reportIssue")}
               </Link>
             </Button>
           </motion.div>

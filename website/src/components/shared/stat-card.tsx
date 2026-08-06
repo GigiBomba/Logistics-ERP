@@ -1,6 +1,7 @@
 import type { LucideIcon } from "lucide-react"
 import { TrendingUp, TrendingDown } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useLocale } from "@/i18n/locale-context"
 
 interface StatCardProps {
   value: string
@@ -14,6 +15,7 @@ interface StatCardProps {
 }
 
 export function StatCard({ value, label, icon: Icon, trend, className }: StatCardProps) {
+  const { t } = useLocale()
   return (
     <div
       className={cn(
@@ -47,7 +49,7 @@ export function StatCard({ value, label, icon: Icon, trend, className }: StatCar
           >
             {trend.value}
           </span>
-          <span className="text-muted-foreground">vs last month</span>
+          <span className="text-muted-foreground">{t("common.vsLastMonth")}</span>
         </div>
       )}
     </div>

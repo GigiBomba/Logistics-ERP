@@ -50,7 +50,7 @@ interface PageSEOProps {
  *   title="Features"
  *   description="Explore Operion's powerful logistics features."
  *   ogImage="/features-og.png"
- *   canonicalUrl="https://operion.com/features"
+ *   canonicalUrl="https://operionerp.xyz/features"
  *   type="website"
  * />
  */

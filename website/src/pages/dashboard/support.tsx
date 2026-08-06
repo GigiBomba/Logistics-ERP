@@ -4,19 +4,21 @@ import { motion } from "motion/react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { LifeBuoy, Bug, Lightbulb, Mail, Phone, MapPin, Clock, MessageSquare, BookOpen, ChevronDown, ChevronUp, Filter, Headphones, Bot, FileText, Wrench, Wifi } from "lucide-react"
+import { Link } from "react-router"
+import { LifeBuoy, Bug, Lightbulb, Mail, Phone, MapPin, Clock, MessageSquare, BookOpen, ChevronDown, ChevronUp, Filter, Headphones, Bot, AlertCircle } from "lucide-react"
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Input, Label, Textarea } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Callout } from "@/components/ui/callout"
 import { EmptyState } from "@/components/shared/empty-state"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
-import { useCreateTicket, useTickets } from "@/services/queries"
+import { useCreateTicket, useTickets, useTutorials } from "@/services/queries"
 import { useLocale } from "@/i18n/locale-context"
 import { LoadingSpinner } from "@/components/ui/loading-spinner"
-import type { SupportTicket } from "@/types"
+import { SupportModal } from "@/components/shared/support-modal"
+import { LiveChat } from "@/components/shared/live-chat"
+
 
 const bugSchema = z.object({
   title: z.string().min(5, "Title must be at least 5 characters"),
@@ -33,13 +35,6 @@ const featureSchema = z.object({
 type BugForm = z.infer<typeof bugSchema>
 type FeatureForm = z.infer<typeof featureSchema>
 
-const knowledgeBaseCategories = [
-  { icon: BookOpen, title: "Getting Started", description: "Quick start guides and onboarding", href: "/docs/getting-started" },
-  { icon: FileText, title: "Documentation", description: "Comprehensive guides and references", href: "/docs" },
-  { icon: Wrench, title: "Troubleshooting", description: "Common issues and solutions", href: "/docs/troubleshooting" },
-  { icon: Wifi, title: "API & Integrations", description: "API docs and integration guides", href: "/docs/api-reference" },
-]
-
 const faqKeys = [
   { q: "support.faq1q", a: "support.faq1a" },
   { q: "support.faq2q", a: "support.faq2a" },
@@ -47,23 +42,25 @@ const faqKeys = [
   { q: "support.faq4q", a: "support.faq4a" },
 ]
 
-const mockTickets: SupportTicket[] = [
-  { id: "tkt-1", subject: "[Bug] Route calculation error on long distances", status: "in_progress", priority: "high", created_at: "2026-07-05T10:00:00Z", updated_at: "2026-07-06T14:00:00Z" },
-  { id: "tkt-2", subject: "[Feature] Dark mode for dispatch console", status: "open", priority: "medium", created_at: "2026-07-01T09:00:00Z", updated_at: "2026-07-01T09:00:00Z" },
-  { id: "tkt-3", subject: "[Bug] Invoice PDF not generating", status: "resolved", priority: "urgent", created_at: "2026-06-20T08:00:00Z", updated_at: "2026-06-22T16:00:00Z" },
-]
-
 const statusFilterOptions = ["all", "open", "in_progress", "resolved", "closed"] as const
 
 export default function SupportPage() {
   const { t } = useLocale()
   const createTicket = useCreateTicket()
-  const { data: ticketsData, isLoading: ticketsLoading } = useTickets()
+  const { data: ticketsData, isLoading: ticketsLoading, isError } = useTickets()
+  const {
+    data: tutorialsData,
+    isLoading: tutorialsLoading,
+    isError: tutorialsError,
+    refetch: tutorialsRefetch,
+  } = useTutorials()
+  const tutorials = tutorialsData ?? []
   const bugForm = useForm<BugForm>({ resolver: zodResolver(bugSchema) })
   const featureForm = useForm<FeatureForm>({ resolver: zodResolver(featureSchema) })
 
   const [expandedSolution, setExpandedSolution] = useState<number | null>(null)
   const [statusFilter, setStatusFilter] = useState<string>("all")
+  const [supportModalOpen, setSupportModalOpen] = useState(false)
 
   function onBugSubmit(data: BugForm) {
     createTicket.mutate({
@@ -85,7 +82,7 @@ export default function SupportPage() {
     featureForm.reset()
   }
 
-  const allTickets = (ticketsData as SupportTicket[] | undefined) || mockTickets
+  const allTickets = ticketsData ?? []
   const filteredTickets = statusFilter === "all" ? allTickets : allTickets.filter((t) => t.status === statusFilter)
 
   const priorityBadge = (priority: string) => {
@@ -122,6 +119,10 @@ export default function SupportPage() {
             <TabsTrigger value="submit">{t("support.submitTicket")}</TabsTrigger>
             <TabsTrigger value="tickets">{t("support.myTickets")}</TabsTrigger>
             <TabsTrigger value="knowledge">{t("support.knowledgeBase")}</TabsTrigger>
+            <TabsTrigger value="chat">
+              <Bot className="mr-1.5 h-4 w-4" />
+              {t("support.chat.title")}
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="submit" className="space-y-8">
@@ -199,7 +200,7 @@ export default function SupportPage() {
                 <CardContent>
                   <div className="grid gap-4 sm:grid-cols-4">
                     {[
-                      { icon: Mail, label: t("support.email"), value: "support@operion.com" },
+                      { icon: Mail, label: t("support.email"), value: "support@operionerp.xyz" },
                       { icon: Phone, label: t("support.phone"), value: "+40 123 456 789" },
                       { icon: MapPin, label: t("support.office"), value: "Bucharest, Romania" },
                       { icon: Clock, label: t("support.hours"), value: "Mon–Fri, 9–18 EET" },
@@ -219,7 +220,7 @@ export default function SupportPage() {
               </Card>
             </motion.div>
 
-            {/* Live Chat & AI Assistant Placeholders */}
+            {/* Live Chat */}
             <div className="grid gap-8 lg:grid-cols-2">
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.25 }}>
                 <Card>
@@ -227,11 +228,11 @@ export default function SupportPage() {
                     <CardTitle className="flex items-center gap-2"><Headphones className="h-5 w-5" /> {t("support.liveChat")}</CardTitle>
                     <CardDescription>{t("support.liveChatDesc")}</CardDescription>
                   </CardHeader>
-                  <CardContent className="space-y-4">
-                    <Callout variant="info" title={t("support.comingSoon")}>
-                      {t("support.comingSoonDesc")}
-                    </Callout>
-                    <Button variant="outline" className="w-full" disabled>{t("support.startChat")}</Button>
+                  <CardContent>
+                    <Button className="w-full" onClick={() => setSupportModalOpen(true)}>
+                      <MessageSquare className="mr-2 h-4 w-4" />
+                      {t("support.startChat")}
+                    </Button>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -239,14 +240,19 @@ export default function SupportPage() {
               <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.3 }}>
                 <Card>
                   <CardHeader>
-                    <CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" /> {t("support.aiAssistant")}</CardTitle>
+                    <CardTitle className="flex items-center gap-2"><Bot className="h-5 w-5" /> {t("support.chat.title")}</CardTitle>
                     <CardDescription>{t("support.aiAssistantDesc")}</CardDescription>
                   </CardHeader>
                   <CardContent className="space-y-4">
-                    <Callout variant="info" title={t("support.comingSoon")}>
-                      {t("support.comingSoonDesc")}
-                    </Callout>
-                    <Button variant="outline" className="w-full" disabled>{t("support.askAi")}</Button>
+                    <p className="text-sm text-muted-foreground">
+                      {t("support.chat.welcome")}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="success" className="text-xs">{t("support.online")}</Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      {t("support.liveChatDesc")} Use the <strong>{t("support.aiChat")}</strong> tab above or the chat bubble at the bottom-right to start talking with ARGO.
+                    </p>
                   </CardContent>
                 </Card>
               </motion.div>
@@ -281,8 +287,16 @@ export default function SupportPage() {
                     <div className="flex justify-center py-12">
                       <LoadingSpinner size="lg" />
                     </div>
+                  ) : isError ? (
+                    <EmptyState
+                      icon={<AlertCircle className="h-12 w-12" />}
+                      title={t("support.failedToLoadTickets")}
+                      description={t("support.failedToLoadTicketsDesc")}
+                    />
+                  ) : allTickets.length === 0 ? (
+                    <EmptyState title={t("support.noTickets")} description={t("support.noTicketsDesc")} />
                   ) : filteredTickets.length === 0 ? (
-                    <EmptyState title="No tickets found" description="No tickets match the selected filter." />
+                    <EmptyState title={t("dashboard.noTicketsFound")} description={t("dashboard.noTicketsFilter")} />
                   ) : (
                     <div className="space-y-3">
                       {filteredTickets.map((ticket) => (
@@ -294,7 +308,9 @@ export default function SupportPage() {
                             <div>
                               <p className="text-sm font-medium">{ticket.subject}</p>
                               <p className="text-xs text-muted-foreground">
-                                Created {new Date(ticket.created_at).toLocaleDateString()} · Updated {new Date(ticket.updated_at).toLocaleDateString()}
+                                {t("support.createdUpdated")
+                                  .replace("{created}", new Date(ticket.created_at).toLocaleDateString())
+                                  .replace("{updated}", new Date(ticket.updated_at).toLocaleDateString())}
                               </p>
                             </div>
                           </div>
@@ -314,24 +330,51 @@ export default function SupportPage() {
           <TabsContent value="knowledge" className="space-y-8">
             {/* Knowledge Base */}
             <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ delay: 0.1 }}>
-              <h2 className="text-xl font-bold tracking-tight mb-4">{t("support.knowledgeBase")}</h2>
-              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                {knowledgeBaseCategories.map((cat) => (
-                  <a key={cat.href} href={cat.href}>
-                    <Card className="h-full transition-shadow hover:shadow-md">
-                      <CardContent className="flex flex-col items-start gap-3 p-5">
-                        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-                          <cat.icon className="h-5 w-5 text-primary" />
-                        </div>
-                        <div>
-                          <p className="font-medium text-sm">{cat.title}</p>
-                          <p className="text-xs text-muted-foreground">{cat.description}</p>
-                        </div>
-                      </CardContent>
-                    </Card>
-                  </a>
-                ))}
-              </div>
+              <h2 className="text-xl font-bold tracking-tight mb-2">{t("support.knowledgeBase")}</h2>
+              <p className="text-sm text-muted-foreground mb-6">{t("support.knowledgeBaseDesc")}</p>
+
+              {tutorialsLoading ? (
+                <div className="flex justify-center py-12">
+                  <LoadingSpinner size="lg" />
+                </div>
+              ) : tutorialsError ? (
+                <EmptyState
+                  icon={<AlertCircle className="h-12 w-12 text-destructive/70" />}
+                  title={t("support.kbError")}
+                  description={t("support.kbErrorDesc")}
+                  action={
+                    <Button variant="outline" onClick={() => tutorialsRefetch()}>
+                      {t("support.kbRetry")}
+                    </Button>
+                  }
+                />
+              ) : tutorials.length === 0 ? (
+                <EmptyState
+                  icon={<BookOpen className="h-12 w-12 text-muted-foreground/50" />}
+                  title={t("support.kbEmpty")}
+                  description={t("support.kbEmptyDesc")}
+                />
+              ) : (
+                <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                  {tutorials.map((tutorial) => (
+                    <Link key={tutorial.slug} to={`/tutorials/${tutorial.slug}`} className="h-full">
+                      <Card className="h-full transition-shadow hover:shadow-md">
+                        <CardContent className="flex h-full flex-col items-start gap-2 p-5">
+                          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-primary/10">
+                            <BookOpen className="h-5 w-5 text-primary" />
+                          </div>
+                          <p className="mt-1 font-medium text-sm leading-snug">{tutorial.title}</p>
+                          <p className="line-clamp-2 text-xs text-muted-foreground">{tutorial.excerpt}</p>
+                          <span className="mt-auto flex items-center gap-1 pt-2 text-xs text-muted-foreground">
+                            <Clock className="h-3 w-3" />
+                            {tutorial.reading_time_minutes} min read
+                          </span>
+                        </CardContent>
+                      </Card>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </motion.div>
 
             {/* Common Solutions */}
@@ -369,7 +412,25 @@ export default function SupportPage() {
               </Card>
             </motion.div>
           </TabsContent>
+
+          <TabsContent value="chat" className="space-y-8">
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: 0.1 }}
+              className="h-[600px]"
+            >
+              <LiveChat variant="embedded" />
+            </motion.div>
+          </TabsContent>
         </Tabs>
+        <SupportModal open={supportModalOpen} onOpenChange={setSupportModalOpen} />
+
+        {/* Floating chat widget */}
+        <div className="fixed bottom-6 right-6 z-50">
+          <LiveChat variant="floating" />
+        </div>
       </SectionWrapper>
     </>
   )

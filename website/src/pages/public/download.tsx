@@ -1,9 +1,9 @@
 import { useState } from "react"
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Link } from "react-router"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
-import { Download, Monitor, HardDrive, Cpu, Shield, ArrowLeftRight, BookOpen, Wrench, Zap, Mail } from "lucide-react"
+import { Download, Monitor, HardDrive, Cpu, Shield, ArrowLeftRight, BookOpen, Wrench, Zap, Mail, Smartphone } from "lucide-react"
 import { PageHeader } from "@/components/shared/page-header"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
 import { Card, CardContent } from "@/components/ui/card"
@@ -22,11 +22,11 @@ export default function DownloadPage() {
 
   return (
     <>
-      <Helmet>
-        <title>{t("download.pageTitle")}</title>
-        <meta name="description" content={t("download.metaDesc")} />
-        <link rel="canonical" href="https://operion.com/download" />
-      </Helmet>
+      <SeoHead
+        title={t("download.pageTitle")}
+        description={t("download.metaDesc")}
+        canonical="https://operionerp.xyz/download"
+      />
       <PageHeader
         title={t("download.title")}
         description={t("download.headerDesc")}
@@ -343,6 +343,49 @@ export default function DownloadPage() {
               {t("download.autoUpdatesDesc")}
             </p>
           </Callout>
+        </motion.div>
+      </SectionWrapper>
+
+      {/* Mobile App */}
+      <SectionWrapper>
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          className="mx-auto max-w-3xl"
+        >
+          <div className="text-center mb-10">
+            <h2 className="text-3xl font-bold tracking-tight">{t("download.mobile")}</h2>
+            <p className="mt-2 text-muted-foreground">{t("download.mobileDesc")}</p>
+          </div>
+          <Card>
+            <CardContent className="p-6 sm:p-8">
+              <div className="flex flex-col items-center text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/10 mb-4">
+                  <Smartphone className="h-7 w-7 text-primary" />
+                </div>
+                <h3 className="text-lg font-semibold">{t("download.mobileName")}</h3>
+                <p className="mt-2 text-sm text-muted-foreground max-w-md">
+                  {t("download.mobileDesc2")}
+                </p>
+                <div className="mt-6 flex flex-col sm:flex-row gap-3">
+                  <Button asChild>
+                    <a href="#">
+                      <Download className="mr-2 h-4 w-4" />
+                      {t("download.downloadMobileAndroid")}
+                    </a>
+                  </Button>
+                  <Button variant="outline" asChild>
+                    <a href="#">
+                      <Download className="mr-2 h-4 w-4" />
+                      {t("download.downloadMobileIOS")}
+                    </a>
+                  </Button>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">{t("download.mobileNote")}</p>
+              </div>
+            </CardContent>
+          </Card>
         </motion.div>
       </SectionWrapper>
 

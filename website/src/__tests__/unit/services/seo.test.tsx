@@ -1,225 +1,187 @@
 import { describe, it, expect } from "vitest"
 import { render } from "@/test-utils"
+import { HelmetProvider } from "react-helmet-async"
 import { getPageTitle, generateMetaTags, StructuredData } from "@/services/seo"
-import { seoConfig, siteConfig, socialLinks } from "@/config/site"
+import { SEOHelmet, PageSEO, getPageMeta } from "@/services/seo-improvements"
 
-// ---------------------------------------------------------------------------
-// getPageTitle
-// ---------------------------------------------------------------------------
-describe("getPageTitle", () => {
-  it("returns correct format 'Page — SiteName'", () => {
+describe("seo.tsx — getPageTitle", () => {
+  it("applies the title template", () => {
     expect(getPageTitle("Features")).toBe("Features — Operion")
-    expect(getPageTitle("Pricing")).toBe("Pricing — Operion")
-  })
-
-  it("handles empty page name", () => {
-    expect(getPageTitle("")).toBe(" — Operion")
   })
 })
 
-// ---------------------------------------------------------------------------
-// generateMetaTags
-// ---------------------------------------------------------------------------
-describe("generateMetaTags", () => {
+describe("seo.tsx — generateMetaTags", () => {
   it("returns default tags when no options provided", () => {
     const tags = generateMetaTags()
-    expect(tags).toHaveLength(13)
-
-    const desc = tags.find((t) => t.name === "description")
-    expect(desc?.content).toBe(seoConfig.defaultDescription)
-
-    const ogTitle = tags.find((t) => t.property === "og:title")
-    expect(ogTitle?.content).toBe(seoConfig.defaultTitle)
-
-    const ogImage = tags.find((t) => t.property === "og:image")
-    expect(ogImage?.content).toBe(`${siteConfig.url}${siteConfig.ogImage}`)
-
-    const ogUrl = tags.find((t) => t.property === "og:url")
-    expect(ogUrl?.content).toBe(siteConfig.url)
+    expect(tags.length).toBeGreaterThan(0)
+    expect(tags.find((t) => t.name === "description")?.content).toContain("logistics operations system")
+    expect(tags.find((t) => t.property === "og:title")?.content).toBe("Operion — Logistics Operations System")
+    expect(tags.find((t) => t.property === "og:site_name")?.content).toBe("Operion")
+    expect(tags.find((t) => t.property === "og:locale")?.content).toBe("en_US")
   })
 
-  it("includes description, OG tags, and Twitter tags", () => {
-    const tags = generateMetaTags({ title: "Test", description: "Desc" })
-
-    const ogProps = tags.map((t) => t.property).filter(Boolean)
-    expect(ogProps).toContain("og:title")
-    expect(ogProps).toContain("og:description")
-    expect(ogProps).toContain("og:image")
-    expect(ogProps).toContain("og:url")
-    expect(ogProps).toContain("og:type")
-    expect(ogProps).toContain("og:site_name")
-    expect(ogProps).toContain("og:locale")
-
-    const names = tags.map((t) => t.name).filter(Boolean)
-    expect(names).toContain("description")
-    expect(names).toContain("twitter:card")
-    expect(names).toContain("twitter:site")
-    expect(names).toContain("twitter:title")
-    expect(names).toContain("twitter:description")
-    expect(names).toContain("twitter:image")
-  })
-
-  it("uses provided custom options", () => {
+  it("applies title/description/image/url overrides", () => {
     const tags = generateMetaTags({
       title: "Pricing",
-      description: "See our plans",
-      image: "/pricing.png",
-      url: "https://operion.com/pricing",
+      description: "Flexible plans",
+      image: "/custom-og.png",
+      url: "https://operionerp.xyz/pricing",
     })
-
-    expect(tags.find((t) => t.property === "og:title")?.content).toBe(
-      "Pricing — Operion"
-    )
-    expect(tags.find((t) => t.property === "og:description")?.content).toBe(
-      "See our plans"
-    )
-    expect(tags.find((t) => t.property === "og:image")?.content).toBe(
-      "https://operion.com/pricing.png"
-    )
-    expect(tags.find((t) => t.property === "og:url")?.content).toBe(
-      "https://operion.com/pricing"
-    )
+    expect(tags.find((t) => t.name === "description")?.content).toBe("Flexible plans")
+    expect(tags.find((t) => t.property === "og:title")?.content).toBe("Pricing — Operion")
+    expect(tags.find((t) => t.property === "og:url")?.content).toBe("https://operionerp.xyz/pricing")
+    // Relative image is absolutized against the site URL
+    expect(tags.find((t) => t.property === "og:image")?.content).toBe("https://operionerp.xyz/custom-og.png")
   })
 
-  it("resolves relative image to absolute URL", () => {
-    const tags = generateMetaTags({ image: "/custom.png" })
-    expect(tags.find((t) => t.property === "og:image")?.content).toBe(
-      "https://operion.com/custom.png"
-    )
-  })
-
-  it("keeps absolute image URL unchanged", () => {
-    const tags = generateMetaTags({
-      image: "https://cdn.example.com/image.jpg",
-    })
-    expect(tags.find((t) => t.property === "og:image")?.content).toBe(
-      "https://cdn.example.com/image.jpg"
-    )
+  it("keeps absolute image URLs untouched", () => {
+    const tags = generateMetaTags({ image: "https://cdn.example.com/og.png" })
+    expect(tags.find((t) => t.property === "og:image")?.content).toBe("https://cdn.example.com/og.png")
   })
 })
 
-// ---------------------------------------------------------------------------
-// StructuredData
-// ---------------------------------------------------------------------------
-describe("StructuredData", () => {
-  function getLdJsonScript() {
-    return document.querySelector('script[type="application/ld+json"]')
-  }
-
-  function parseLdJson() {
-    const script = getLdJsonScript()
-    expect(script).toBeInTheDocument()
-    return JSON.parse(script!.textContent || "")
-  }
-
-  it("renders Organization schema with correct type and valid JSON", () => {
-    render(<StructuredData type="Organization" />)
-
-    const script = getLdJsonScript()
-    expect(script).toBeInTheDocument()
-    expect(script).toHaveAttribute("type", "application/ld+json")
-
-    const parsed = parseLdJson()
+describe("seo.tsx — StructuredData", () => {
+  it("renders Organization JSON-LD schema", () => {
+    render(
+      <HelmetProvider>
+        <StructuredData type="Organization" />
+      </HelmetProvider>
+    )
+    const script = document.querySelector('script[type="application/ld+json"]')
+    expect(script).not.toBeNull()
+    const parsed = JSON.parse(script!.textContent || "{}")
     expect(parsed["@type"]).toBe("Organization")
-    expect(parsed["@context"]).toBe("https://schema.org")
-    expect(parsed.name).toBe(siteConfig.name)
-    expect(parsed.url).toBe(siteConfig.url)
-    expect(parsed.logo).toBe(`${siteConfig.url}${siteConfig.ogImage}`)
-    expect(parsed.description).toBe(siteConfig.description)
-    expect(parsed.sameAs).toEqual([
-      socialLinks.twitter,
-      socialLinks.github,
-      socialLinks.linkedin,
-    ])
+    expect(parsed.name).toBe("Operion")
+    expect(parsed.url).toBe("https://operionerp.xyz")
+    expect(parsed.sameAs).toHaveLength(3)
   })
 
   it("renders WebSite schema", () => {
-    render(<StructuredData type="WebSite" />)
-
-    const parsed = parseLdJson()
+    render(
+      <HelmetProvider>
+        <StructuredData type="WebSite" />
+      </HelmetProvider>
+    )
+    const script = document.querySelector('script[type="application/ld+json"]')
+    const parsed = JSON.parse(script!.textContent || "{}")
     expect(parsed["@type"]).toBe("WebSite")
-    expect(parsed["@context"]).toBe("https://schema.org")
-    expect(parsed.name).toBe(siteConfig.name)
-    expect(parsed.url).toBe(siteConfig.url)
-    expect(parsed.description).toBe(siteConfig.description)
   })
 
-  it("renders BreadcrumbList schema with provided items", () => {
+  it("renders BreadcrumbList with provided items", () => {
     const items = [
-      { "@type": "ListItem", position: 1, name: "Home", item: "https://operion.com" },
-      { "@type": "ListItem", position: 2, name: "Blog", item: "https://operion.com/blog" },
+      { "@type": "ListItem", position: 1, name: "Home", item: "https://operionerp.xyz" },
     ]
-    render(<StructuredData type="BreadcrumbList" data={{ items }} />)
-
-    const parsed = parseLdJson()
+    render(
+      <HelmetProvider>
+        <StructuredData type="BreadcrumbList" data={{ items }} />
+      </HelmetProvider>
+    )
+    const script = document.querySelector('script[type="application/ld+json"]')
+    const parsed = JSON.parse(script!.textContent || "{}")
     expect(parsed["@type"]).toBe("BreadcrumbList")
-    expect(parsed["@context"]).toBe("https://schema.org")
     expect(parsed.itemListElement).toEqual(items)
   })
 
-  it("renders BreadcrumbList with empty array when items are missing", () => {
-    render(<StructuredData type="BreadcrumbList" data={{}} />)
-
-    const parsed = parseLdJson()
-    expect(parsed["@type"]).toBe("BreadcrumbList")
-    expect(parsed.itemListElement).toEqual([])
-  })
-
-  it("renders BreadcrumbList with empty array when data is undefined", () => {
-    render(<StructuredData type="BreadcrumbList" />)
-
-    const parsed = parseLdJson()
-    expect(parsed["@type"]).toBe("BreadcrumbList")
-    expect(parsed.itemListElement).toEqual([])
-  })
-
-  it("renders Article schema with custom data", () => {
-    const articleData = {
-      headline: "Test Article",
-      author: "John Doe",
-      datePublished: "2026-07-19",
-    }
-    render(<StructuredData type="Article" data={articleData} />)
-
-    const parsed = parseLdJson()
+  it("renders Article schema merging data", () => {
+    render(
+      <HelmetProvider>
+        <StructuredData type="Article" data={{ headline: "Hello", datePublished: "2026-01-01" }} />
+      </HelmetProvider>
+    )
+    const script = document.querySelector('script[type="application/ld+json"]')
+    const parsed = JSON.parse(script!.textContent || "{}")
     expect(parsed["@type"]).toBe("Article")
-    expect(parsed["@context"]).toBe("https://schema.org")
-    expect(parsed.headline).toBe("Test Article")
-    expect(parsed.author).toBe("John Doe")
-    expect(parsed.datePublished).toBe("2026-07-19")
+    expect(parsed.headline).toBe("Hello")
   })
 
   it("renders Article schema without data", () => {
-    render(<StructuredData type="Article" />)
-
-    const parsed = parseLdJson()
+    render(
+      <HelmetProvider>
+        <StructuredData type="Article" />
+      </HelmetProvider>
+    )
+    const script = document.querySelector('script[type="application/ld+json"]')
+    const parsed = JSON.parse(script!.textContent || "{}")
     expect(parsed["@type"]).toBe("Article")
-    expect(parsed["@context"]).toBe("https://schema.org")
-    // Only @context and @type should be present when no data passed
-    expect(Object.keys(parsed)).toHaveLength(2)
+  })
+})
+
+describe("seo-improvements.tsx — SEOHelmet", () => {
+  it("renders default title and description meta", () => {
+    render(
+      <HelmetProvider>
+        <SEOHelmet />
+      </HelmetProvider>
+    )
+    const title = document.querySelector("title")
+    expect(title?.textContent).toContain("Operion")
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe("https://operionerp.xyz")
+  })
+})
+
+describe("seo-improvements.tsx — PageSEO", () => {
+  it("renders title/description/canonical with defaults", () => {
+    render(
+      <HelmetProvider>
+        <PageSEO title="Features" description="All features" />
+      </HelmetProvider>
+    )
+    expect(document.querySelector("title")?.textContent).toBe("Features — Operion")
+    // canonical derived from the title slug
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe(
+      "https://operionerp.xyz/features"
+    )
   })
 
-  it("produces valid parseable JSON for Organization schema", () => {
-    render(<StructuredData type="Organization" />)
-    const parsed = parseLdJson()
-    expect(parsed["@type"]).toBe("Organization")
+  it("uses canonicalUrl override and absolute og image", () => {
+    render(
+      <HelmetProvider>
+        <PageSEO
+          title="Pricing"
+          description="Plans"
+          canonicalUrl="https://operionerp.xyz/pricing"
+          ogImage="https://cdn.example.com/pricing.png"
+        />
+      </HelmetProvider>
+    )
+    expect(document.querySelector('link[rel="canonical"]')?.getAttribute("href")).toBe(
+      "https://operionerp.xyz/pricing"
+    )
   })
 
-  it("produces valid parseable JSON for WebSite schema", () => {
-    render(<StructuredData type="WebSite" />)
-    const parsed = parseLdJson()
-    expect(parsed["@type"]).toBe("WebSite")
+  it("uses explicit type and relative ogImage absolutized", () => {
+    render(
+      <HelmetProvider>
+        <PageSEO title="Blog" description="News" type="article" ogImage="/blog-og.png" />
+      </HelmetProvider>
+    )
+    expect(document.querySelector("title")?.textContent).toBe("Blog — Operion")
+  })
+})
+
+describe("seo-improvements.tsx — getPageMeta", () => {
+  it("returns defaults without options", () => {
+    const meta = getPageMeta()
+    expect(meta.pageTitle).toBe("Operion — Logistics Operations System")
+    expect(meta.description).toContain("logistics operations system")
+    expect(meta.url).toBe("https://operionerp.xyz")
+    expect(meta.image).toBe("https://operionerp.xyz/logo3.png")
   })
 
-  it("produces valid parseable JSON for BreadcrumbList schema", () => {
-    render(<StructuredData type="BreadcrumbList" />)
-    const parsed = parseLdJson()
-    expect(parsed["@type"]).toBe("BreadcrumbList")
+  it("applies title/description overrides", () => {
+    const meta = getPageMeta({ title: "Contact", description: "Reach us" })
+    expect(meta.pageTitle).toBe("Contact — Operion")
+    expect(meta.description).toBe("Reach us")
   })
 
-  it("produces valid parseable JSON for Article schema", () => {
-    render(<StructuredData type="Article" />)
-    const parsed = parseLdJson()
-    expect(parsed["@type"]).toBe("Article")
+  it("keeps absolute image and override url", () => {
+    const meta = getPageMeta({ image: "https://cdn.example.com/x.png", url: "https://operionerp.xyz/x" })
+    expect(meta.image).toBe("https://cdn.example.com/x.png")
+    expect(meta.url).toBe("https://operionerp.xyz/x")
+  })
+
+  it("absolutizes relative image against the site url", () => {
+    const meta = getPageMeta({ image: "/custom-og.png" })
+    expect(meta.image).toBe("https://operionerp.xyz/custom-og.png")
   })
 })

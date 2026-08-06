@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import {
   CalendarDays,
@@ -10,7 +10,6 @@ import {
   Route,
   Wrench,
   ArrowRight,
-  ImageIcon,
   Leaf,
   TrendingUp,
   Fuel,
@@ -23,14 +22,83 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-function ScreenshotPlaceholder({ name }: { name: string }) {
+function SeasonalTimelineVisual() {
+  const months = [
+    { label: "Mar", event: "Planting", active: false },
+    { label: "Apr", event: "Spray", active: false },
+    { label: "May", event: "Growth", active: false },
+    { label: "Jun", event: "Prep", active: true },
+    { label: "Jul", event: "Harvest", active: true },
+    { label: "Aug", event: "Peak", active: true },
+    { label: "Sep", event: "Storage", active: false },
+    { label: "Oct", event: "Delivery", active: false },
+  ]
   return (
-    <div className="mt-8 rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-        <ImageIcon className="h-7 w-7 text-muted-foreground" />
+    <div className="mt-8 rounded-xl border bg-card p-6 shadow-sm space-y-6">
+      <div className="flex items-center justify-between">
+        <span className="text-sm font-medium">Seasonal Logistics Calendar</span>
+        <span className="text-xs text-muted-foreground">2026 cycle</span>
       </div>
-      <p className="text-sm font-medium text-muted-foreground">Screenshot: {name}</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">Preview coming soon</p>
+      <div className="relative">
+        <div className="absolute left-0 right-0 top-1/2 h-0.5 bg-muted -translate-y-1/2" />
+        <div className="relative flex justify-between">
+          {months.map((m, i) => (
+            <motion.div
+              key={m.label}
+              initial={{ opacity: 0, y: 10 }}
+              whileInView={{ opacity: 1, y: 0 }}
+              viewport={{ once: true }}
+              transition={{ delay: i * 0.06 }}
+              className="flex flex-col items-center gap-2"
+            >
+              <div className={`h-3 w-3 rounded-full border-2 ${m.active ? "border-amber-500 bg-amber-500" : "border-muted bg-background"}`} />
+              <span className={`text-xs font-medium ${m.active ? "text-amber-700 dark:text-amber-300" : "text-muted-foreground"}`}>{m.label}</span>
+              <span className={`text-[10px] ${m.active ? "text-amber-600 dark:text-amber-400" : "text-muted-foreground/60"}`}>{m.event}</span>
+            </motion.div>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-3 sm:grid-cols-3">
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.3 }}
+          className="rounded-lg border p-3"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Snowflake className="h-4 w-4 text-blue-500" />
+            <span className="text-xs font-medium">Cold Chain</span>
+          </div>
+          <p className="text-xs text-muted-foreground">2°C to 6°C maintained across 340 km route</p>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.4 }}
+          className="rounded-lg border p-3"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Route className="h-4 w-4 text-primary" />
+            <span className="text-xs font-medium">Rural Routes</span>
+          </div>
+          <p className="text-xs text-muted-foreground">Unpaved road weight limits auto-applied</p>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.5 }}
+          className="rounded-lg border p-3"
+        >
+          <div className="flex items-center gap-2 mb-1">
+            <Tractor className="h-4 w-4 text-amber-600" />
+            <span className="text-xs font-medium">Equipment</span>
+          </div>
+          <p className="text-xs text-muted-foreground">Harvesters synced to delivery windows</p>
+        </motion.div>
+      </div>
     </div>
   )
 }
@@ -99,14 +167,11 @@ const stats = [
 export default function IndustryAgriculturePage() {
   return (
     <>
-      <Helmet>
-        <title>Operion for Agriculture Logistics — Seasonal Scaling & Cold Chain</title>
-        <meta
-          name="description"
-          content="Move perishable goods from farm to market with precision timing, temperature monitoring, and rural route optimization."
-        />
-        <link rel="canonical" href="https://operion.com/industries/agriculture" />
-      </Helmet>
+      <SeoHead
+        title="Operion for Agriculture Logistics — Seasonal Scaling & Cold Chain"
+        description="Move perishable goods from farm to market with precision timing, temperature monitoring, and rural route optimization."
+        canonical="https://operionerp.xyz/industries/agriculture"
+      />
 
       <PageHeader
         title="Operion for Agriculture Logistics"
@@ -229,14 +294,14 @@ export default function IndustryAgriculturePage() {
         </div>
       </SectionWrapper>
 
-      {/* Screenshot */}
+      {/* Seasonal Timeline */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
           title="See It in Action"
           description="The agriculture dashboard connects harvest schedules, routes, and cold chain data in one view."
           className="mb-8"
         />
-        <ScreenshotPlaceholder name="Agriculture Logistics Dashboard" />
+        <SeasonalTimelineVisual />
       </SectionWrapper>
 
       {/* CTA */}

@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test"
+import { stabilizeHydration, waitForHydration } from "./helpers"
 
 test.describe("SEO Validation", () => {
   const PUBLIC_PAGES = [
@@ -57,7 +58,7 @@ test.describe("SEO Validation", () => {
     await page.goto("/")
     const canonical = await page.getAttribute('link[rel="canonical"]', "href")
     expect(canonical).toBeTruthy()
-    expect(canonical).toContain("operion.com")
+    expect(canonical).toContain("operionerp.xyz")
   })
 
   test("404 page has appropriate title", async ({ page }) => {
@@ -66,8 +67,18 @@ test.describe("SEO Validation", () => {
   })
 
   test("each public page has an h1 heading", async ({ page }) => {
+    // Seed consent + pin navigator.onLine so hydration is deterministic and
+    // waitForHydration's "interactive element" signal isn't satisfied early by
+    // the consent dialog (which made the home h1 race to 0 under load).
+    stabilizeHydration(page)
     for (const { path, name } of PUBLIC_PAGES) {
       await page.goto(path)
+      // Pages are client-rendered (the static shell has no <h1> until React
+      // hydrates), so wait for hydration before counting headings.
+      await waitForHydration(page)
+      // Auto-retrying presence check — a bare count() is a single snapshot and
+      // can still race a not-yet-rendered heading.
+      await expect(page.locator("h1").first()).toBeVisible()
       const h1Count = await page.locator("h1").count()
       expect(h1Count, `${name} page (${path}) should have at least one h1`).toBeGreaterThanOrEqual(1)
     }

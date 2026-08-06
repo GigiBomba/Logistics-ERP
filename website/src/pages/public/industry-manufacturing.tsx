@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { motion } from "motion/react"
 import {
   Link2,
@@ -10,7 +10,6 @@ import {
   Route,
   Network,
   ArrowRight,
-  ImageIcon,
   TrendingUp,
   Timer,
   Recycle,
@@ -21,14 +20,77 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 import { Card, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
-function ScreenshotPlaceholder({ name }: { name: string }) {
+function SupplyChainVisual() {
+  const steps = [
+    { icon: Boxes, label: "Demand Signal", desc: "Production plan triggers replenishment", color: "bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300" },
+    { icon: PackageCheck, label: "Inventory Check", desc: "Auto-sync stock levels across warehouses", color: "bg-indigo-100 text-indigo-700 dark:bg-indigo-950 dark:text-indigo-300" },
+    { icon: Route, label: "JIT Routing", desc: "Time-window constrained last-mile routes", color: "bg-violet-100 text-violet-700 dark:bg-violet-950 dark:text-violet-300" },
+    { icon: Network, label: "Delivery", desc: "To line or warehouse dock on schedule", color: "bg-purple-100 text-purple-700 dark:bg-purple-950 dark:text-purple-300" },
+    { icon: Building2, label: "Production", desc: "Continuous flow maintained", color: "bg-fuchsia-100 text-fuchsia-700 dark:bg-fuchsia-950 dark:text-fuchsia-300" },
+  ]
   return (
-    <div className="mt-8 rounded-xl border border-dashed bg-muted/30 p-10 text-center">
-      <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-xl bg-muted">
-        <ImageIcon className="h-7 w-7 text-muted-foreground" />
+    <div className="mt-8 rounded-xl border bg-card p-6 shadow-sm">
+      <div className="flex items-center justify-between mb-6">
+        <span className="text-sm font-medium">Supply Chain Flow</span>
+        <span className="text-xs text-muted-foreground">Live synchronization</span>
       </div>
-      <p className="text-sm font-medium text-muted-foreground">Screenshot: {name}</p>
-      <p className="mt-1 text-xs text-muted-foreground/70">Preview coming soon</p>
+      <div className="flex flex-wrap items-start justify-center gap-3">
+        {steps.map((step, i) => {
+          const Icon = step.icon
+          return (
+            <div key={step.label} className="flex items-center gap-3">
+              <motion.div
+                initial={{ opacity: 0, y: 10 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ delay: i * 0.1 }}
+                className="flex flex-col items-center text-center min-w-[120px]"
+              >
+                <div className={`mb-2 flex h-10 w-10 items-center justify-center rounded-lg ${step.color}`}>
+                  <Icon className="h-5 w-5" />
+                </div>
+                <p className="text-xs font-semibold">{step.label}</p>
+                <p className="text-[10px] text-muted-foreground max-w-[120px]">{step.desc}</p>
+              </motion.div>
+              {i < steps.length - 1 && (
+                <ArrowRight className="hidden h-4 w-4 text-muted-foreground md:block mt-[-12px]" />
+              )}
+            </div>
+          )
+        })}
+      </div>
+      <div className="mt-6 grid gap-3 sm:grid-cols-3">
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.5 }}
+          className="rounded-lg border p-3 text-center"
+        >
+          <p className="text-lg font-bold">12</p>
+          <p className="text-xs text-muted-foreground">Active inbound routes</p>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.6 }}
+          className="rounded-lg border p-3 text-center"
+        >
+          <p className="text-lg font-bold">98.2%</p>
+          <p className="text-xs text-muted-foreground">On-time to dock</p>
+        </motion.div>
+        <motion.div
+          initial={{ opacity: 0 }}
+          whileInView={{ opacity: 1 }}
+          viewport={{ once: true }}
+          transition={{ delay: 0.7 }}
+          className="rounded-lg border p-3 text-center"
+        >
+          <p className="text-lg font-bold">3</p>
+          <p className="text-xs text-muted-foreground">Facilities synced</p>
+        </motion.div>
+      </div>
     </div>
   )
 }
@@ -113,14 +175,11 @@ const benefits = [
 export default function IndustryManufacturingPage() {
   return (
     <>
-      <Helmet>
-        <title>Operion for Manufacturing Logistics — JIT & Multi-Site Management</title>
-        <meta
-          name="description"
-          content="Connect suppliers, warehouses, and production lines with synchronized just-in-time delivery and multi-site logistics management."
-        />
-        <link rel="canonical" href="https://operion.com/industries/manufacturing" />
-      </Helmet>
+      <SeoHead
+        title="Operion for Manufacturing Logistics — JIT & Multi-Site Management"
+        description="Connect suppliers, warehouses, and production lines with synchronized just-in-time delivery and multi-site logistics management."
+        canonical="https://operionerp.xyz/industries/manufacturing"
+      />
 
       <PageHeader
         title="Operion for Manufacturing Logistics"
@@ -251,14 +310,14 @@ export default function IndustryManufacturingPage() {
         </div>
       </SectionWrapper>
 
-      {/* Screenshot */}
+      {/* Supply Chain Flow */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
           title="See It in Action"
           description="The manufacturing supply dashboard connects demand, inventory, and inbound logistics in one synchronized view."
           className="mb-8"
         />
-        <ScreenshotPlaceholder name="Manufacturing Supply Dashboard" />
+        <SupplyChainVisual />
       </SectionWrapper>
 
       {/* CTA */}

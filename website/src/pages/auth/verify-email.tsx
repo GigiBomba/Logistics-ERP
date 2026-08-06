@@ -10,7 +10,7 @@ export default function VerifyEmailPage() {
   const { t } = useLocale()
   return (
     <>
-      <Helmet><title>{t("auth.checkEmail")} — Operion ERP</title></Helmet>
+      <Helmet><title>{`${t("auth.checkEmail")} — Operion ERP`}</title></Helmet>
       <div className="flex min-h-[80vh] items-center justify-center px-4">
         <motion.div
           initial={{ opacity: 0, y: 20 }}

@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Link } from "react-router"
 import { motion } from "motion/react"
 import {
@@ -9,9 +9,11 @@ import {
   BarChart3,
   Terminal,
   Layers,
+  Sparkles,
 } from "lucide-react"
 import { HeroSection } from "@/components/shared/hero-section"
 import { SectionWrapper } from "@/components/shared/section-wrapper"
+import { useLocale } from "@/i18n/locale-context"
 import { SectionHeader } from "@/components/shared/page-header"
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -21,9 +23,27 @@ import { CtaBanner } from "@/components/shared/cta-banner"
 const products = [
   {
     icon: Boxes,
-    title: "Operion ERP",
+    title: "Operion Core",
     description:
-      "Enterprise logistics management platform for route planning, fleet management, and dispatch.",
+      "AI logistics operating system. Tell Operion what outcome you want \u2014 find a return load, dispatch a truck, generate documents \u2014 and it executes the full workflow autonomously.",
+    badge: "Available",
+    href: "/features",
+    variant: "default" as const,
+  },
+  {
+    icon: Sparkles,
+    title: "Operion AI Dispatch",
+    description:
+      "Autonomous dispatch engine that searches freight exchanges, checks driver legality, calculates profitability, creates dispatches, generates CMRs and invoices, and notifies drivers \u2014 all from a single instruction.",
+    badge: "Available",
+    href: "/features",
+    variant: "default" as const,
+  },
+  {
+    icon: Smartphone,
+    title: "Operion Mobile",
+    description:
+      "Driver companion app with live GPS tracking, signature capture, proof of delivery, and real-time messaging \u2014 fully integrated with the autonomous dispatch engine.",
     badge: "Available",
     href: "/download",
     variant: "default" as const,
@@ -32,7 +52,7 @@ const products = [
     icon: Terminal,
     title: "Operion Toolkit",
     description:
-      "Command-line toolkit for automation, scripting, and custom integrations.",
+      "Command-line toolkit for automation, scripting, and custom workflow integrations with the autonomous dispatch engine.",
     badge: "Available",
     href: "/developers/toolkit",
     variant: "default" as const,
@@ -41,16 +61,7 @@ const products = [
     icon: Cloud,
     title: "Operion Cloud",
     description:
-      "Cloud synchronization, real-time collaboration, and fleet data sharing across organizations.",
-    badge: "Coming 2027",
-    href: "#",
-    variant: "secondary" as const,
-  },
-  {
-    icon: Smartphone,
-    title: "Operion Mobile",
-    description:
-      "Mobile companion app for drivers with offline mode, signature capture, and proof of delivery.",
+      "Cloud synchronization and real-time fleet data sharing across organizations \u2014 extending autonomous dispatch capabilities across your entire operation.",
     badge: "Coming 2027",
     href: "#",
     variant: "secondary" as const,
@@ -59,7 +70,7 @@ const products = [
     icon: BarChart3,
     title: "Operion Analytics",
     description:
-      "Advanced business intelligence with custom dashboards, predictive analytics, and KPI monitoring.",
+      "Self-updating business intelligence powered by every autonomous dispatch. Profitability, fleet utilization, and empty-kilometer trends without manual report building.",
     badge: "Planned",
     href: "#",
     variant: "outline" as const,
@@ -67,19 +78,14 @@ const products = [
 ]
 
 export default function ProductsPage() {
+  const { t } = useLocale()
   return (
     <>
-      <Helmet>
-        <title>Operion Products — Enterprise Logistics Suite</title>
-        <meta
-          name="description"
-          content="Explore the Operion product ecosystem: ERP, Toolkit, Cloud, Mobile, and Analytics. Built for modern logistics teams."
-        />
-      </Helmet>
+      <SeoHead title="Autonomous Logistics Operating System \u2014 Operion Products" description="Explore the Operion autonomous logistics operating system. The AI dispatch engine that turns dispatcher intent into executed workflows. Mobile, Toolkit, Cloud, and Analytics extend the core." canonical="https://operionerp.xyz/products" />
 
       <HeroSection
-        title="Operion Products"
-        description="A suite of tools for modern logistics teams. Each product is designed to work standalone or as part of a connected ecosystem."
+        title="The Autonomous Logistics Operating System"
+        description="Not a collection of separate tools. A single AI-driven system where you state the outcome and Operion executes the workflow \u2014 from freight discovery to driver notification."
         align="center"
         size="large"
       />
@@ -87,8 +93,8 @@ export default function ProductsPage() {
       {/* Product Cards */}
       <SectionWrapper className="bg-muted/30">
         <SectionHeader
-          title="Product Ecosystem"
-          description="Five products, one vision. Choose what you need today, expand when you are ready."
+          title="Capabilities That Work Together"
+          description="One AI operating system, multiple capability layers. The dispatch engine is the core; mobile, toolkit, cloud, and analytics extend what you can automate."
           className="mb-12"
         />
         <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
@@ -137,8 +143,8 @@ export default function ProductsPage() {
       {/* How Products Work Together */}
       <SectionWrapper>
         <SectionHeader
-          title="How Products Work Together"
-          description="Operion is designed as a modular system. Start with the core and layer on capabilities as your operation grows."
+          title="How the Autonomous System Fits Together"
+          description="Start with the core dispatch engine. Add mobile for driver connectivity, toolkit for custom automation, and analytics for self-updating intelligence \u2014 all powered by the same AI operating system."
           className="mb-12"
         />
         <motion.div
@@ -149,50 +155,57 @@ export default function ProductsPage() {
         >
           <Card className="overflow-hidden">
             <CardContent className="p-8 md:p-12">
-              <div className="flex flex-col items-center gap-8 md:flex-row md:justify-center">
+              <div className="flex flex-col items-center gap-6 md:flex-row md:flex-wrap md:justify-center">
                 {/* ERP */}
-                <div className="flex w-full max-w-[200px] flex-col items-center gap-3 text-center">
+                <div className="flex w-full max-w-[180px] flex-col items-center gap-3 text-center">
                   <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary text-primary-foreground shadow-sm">
                     <Boxes className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="font-semibold tracking-tight">Operion ERP</p>
-                    <p className="text-xs text-muted-foreground">Core platform</p>
+                    <p className="font-semibold tracking-tight">{t("products.core")}</p>
+                    <p className="text-xs text-muted-foreground">{t("products.coreDesc")}</p>
                   </div>
                 </div>
 
                 {/* Arrow */}
-                <div className="flex flex-col items-center gap-1 text-muted-foreground md:pt-0">
-                  <ArrowRight className="hidden h-5 w-5 md:block" />
-                  <span className="text-xs font-medium uppercase tracking-wider md:hidden">connects to</span>
-                  <span className="hidden text-xs font-medium uppercase tracking-wider md:block">connects to</span>
+                <ArrowRight className="hidden h-5 w-5 text-muted-foreground md:block" />
+
+                {/* Mobile */}
+                <div className="flex w-full max-w-[180px] flex-col items-center gap-3 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-accent text-primary shadow-sm">
+                    <Smartphone className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <p className="font-semibold tracking-tight">{t("products.mobile")}</p>
+                    <p className="text-xs text-muted-foreground">{t("products.mobileDesc")}</p>
+                  </div>
                 </div>
 
+                {/* Arrow */}
+                <ArrowRight className="hidden h-5 w-5 text-muted-foreground md:block" />
+
                 {/* Toolkit */}
-                <div className="flex w-full max-w-[200px] flex-col items-center gap-3 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-accent text-primary shadow-sm">
+                <div className="flex w-full max-w-[180px] flex-col items-center gap-3 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-secondary text-secondary-foreground shadow-sm">
                     <Terminal className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="font-semibold tracking-tight">Operion Toolkit</p>
-                    <p className="text-xs text-muted-foreground">Automation & scripting</p>
+                    <p className="font-semibold tracking-tight">{t("products.toolkit")}</p>
+                    <p className="text-xs text-muted-foreground">{t("products.toolkitDesc")}</p>
                   </div>
                 </div>
 
                 {/* Arrow */}
-                <div className="flex flex-col items-center gap-1 text-muted-foreground">
-                  <ArrowRight className="hidden h-5 w-5 md:block" />
-                  <span className="text-xs font-medium uppercase tracking-wider">syncs via</span>
-                </div>
+                <ArrowRight className="hidden h-5 w-5 text-muted-foreground md:block" />
 
-                {/* Cloud */}
-                <div className="flex w-full max-w-[200px] flex-col items-center gap-3 text-center">
-                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-secondary text-secondary-foreground shadow-sm">
-                    <Cloud className="h-6 w-6" />
+                {/* AI */}
+                <div className="flex w-full max-w-[180px] flex-col items-center gap-3 text-center">
+                  <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-primary/20 text-primary shadow-sm">
+                    <Sparkles className="h-6 w-6" />
                   </div>
                   <div>
-                    <p className="font-semibold tracking-tight">Operion Cloud</p>
-                    <p className="text-xs text-muted-foreground">Fleet data sharing</p>
+                    <p className="font-semibold tracking-tight">{t("products.ai")}</p>
+                    <p className="text-xs text-muted-foreground">{t("products.aiDesc")}</p>
                   </div>
                 </div>
               </div>
@@ -200,7 +213,7 @@ export default function ProductsPage() {
               <div className="mt-10 flex items-center justify-center gap-2 rounded-lg border border-dashed bg-muted/30 px-4 py-3 text-sm text-muted-foreground">
                 <Layers className="h-4 w-4" />
                 <span>
-                  Mobile and Analytics layers consume data from the core stack via the Cloud layer.
+                  Every capability is designed around the autonomous dispatch engine. State the outcome. Operion executes the workflow.
                 </span>
               </div>
             </CardContent>
@@ -211,10 +224,10 @@ export default function ProductsPage() {
       {/* CTA Banner */}
       <SectionWrapper className="pb-24">
         <CtaBanner
-          title="Need help choosing the right products?"
-          description="Our team can walk you through the ecosystem and recommend the best setup for your logistics operation."
-          buttonText="Talk to sales"
-          buttonHref="/enterprise"
+          title="Ready to dispatch with a single instruction?"
+          description="Tell Operion what outcome you want and watch it execute the logistics workflow \u2014 from freight discovery to driver notification. Free during the current phase."
+          buttonText="Try Autonomous Dispatching"
+          buttonHref="/features"
           variant="primary"
         />
       </SectionWrapper>

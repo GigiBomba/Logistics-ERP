@@ -1,4 +1,4 @@
-import { Helmet } from "react-helmet-async"
+import { SeoHead } from "@/components/seo/seo-head"
 import { Link } from "react-router"
 import { motion } from "motion/react"
 import { useLocale } from "@/i18n/locale-context"
@@ -43,18 +43,20 @@ export default function AboutPage() {
     { date: "June 2026", title: t("about.timeline.fleet"), description: t("about.timeline.fleetDesc"), status: "completed" as const },
     { date: "June 2026", title: t("about.timeline.documents"), description: t("about.timeline.documentsDesc"), status: "completed" as const },
     { date: "July 2026", title: t("about.timeline.dispatch"), description: t("about.timeline.dispatchDesc"), status: "completed" as const },
-    { date: t("about.timeline.inProgress"), title: t("about.timeline.refactor"), description: t("about.timeline.refactorDesc"), status: "current" as const },
+    { date: "July 2026", title: t("about.timeline.refactor"), description: t("about.timeline.refactorDesc"), status: "completed" as const },
+    { date: "July 2026", title: t("about.timeline.ai"), description: t("about.timeline.aiDesc"), status: "completed" as const },
+    { date: "July 2026", title: t("about.timeline.mobile"), description: t("about.timeline.mobileDesc"), status: "completed" as const },
+    { date: t("about.timeline.inProgress"), title: t("about.timeline.productization"), description: t("about.timeline.productizationDesc"), status: "current" as const },
     { date: t("about.timeline.planned"), title: t("about.timeline.postgres"), description: t("about.timeline.postgresDesc"), status: "upcoming" as const },
-    { date: t("about.timeline.planned"), title: t("about.timeline.mobile"), description: t("about.timeline.mobileDesc"), status: "upcoming" as const },
   ]
 
   return (
     <>
-      <Helmet>
-        <title>{t("about.meta.title")}</title>
-        <meta name="description" content={t("about.meta.description")} />
-        <link rel="canonical" href="https://operion.com/about" />
-      </Helmet>
+      <SeoHead
+        title={t("about.meta.title")}
+        description={t("about.meta.description")}
+        canonical="https://operionerp.xyz/about"
+      />
       <PageHeader title={t("about.title")} description={t("about.subtitle")} />
 
       <SectionWrapper>
@@ -65,10 +67,10 @@ export default function AboutPage() {
           className="mx-auto max-w-3xl"
         >
           <h2 className="text-2xl font-bold tracking-tight">{t("about.story")}</h2>
-          <p className="mt-4 leading-relaxed text-muted-foreground">
+          <p className="mt-4 leading-relaxed text-foreground/80">
             {t("about.story.p1")}
           </p>
-          <p className="mt-4 leading-relaxed text-muted-foreground">
+          <p className="mt-4 leading-relaxed text-foreground/80">
             {t("about.story.p2")}
           </p>
         </motion.div>
@@ -83,7 +85,7 @@ export default function AboutPage() {
           className="mx-auto max-w-3xl text-center"
         >
           <h2 className="text-3xl font-bold tracking-tight">{t("about.mission")}</h2>
-          <p className="mt-4 leading-relaxed text-muted-foreground max-w-2xl mx-auto">
+          <p className="mt-4 leading-relaxed text-foreground/80 max-w-2xl mx-auto">
             {t("about.mission.text")}
           </p>
           <Button variant="outline" size="lg" className="mt-6" asChild>
@@ -206,7 +208,7 @@ export default function AboutPage() {
           className="mx-auto max-w-3xl text-center"
         >
           <h2 className="text-2xl font-bold tracking-tight">{t("about.team")}</h2>
-          <p className="mt-4 leading-relaxed text-muted-foreground">
+          <p className="mt-4 leading-relaxed text-foreground/80">
             {t("about.team.text")}
           </p>
         </motion.div>
