@@ -364,10 +364,14 @@ class ApiClient:
 
     def list_clients(self, query: str = "", limit: int = 200,
                      include_inactive: bool = False,
-                     page: int = 1) -> Dict[str, Any]:
+                     page: int = 1,
+                     page_size: int | None = None) -> Dict[str, Any]:
         # The backend caps page_size at 200; send it explicitly so search
         # results respect the requested limit (the backend ignores `limit`).
-        page_size = min(limit, 200) if limit else 200
+        # An explicit page_size overrides the limit-derived default (used by
+        # RemoteClientService.get_all_with_revenue pagination).
+        if page_size is None:
+            page_size = min(limit, 200) if limit else 200
         return self._get("/api/v1/clients/", params=self._clean_params(
             query=query, limit=limit, page_size=page_size,
             include_inactive=include_inactive, page=page,
