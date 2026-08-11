@@ -1147,6 +1147,96 @@ INDEX_GPS_TELEMETRY_UNIQUE = (
     "ON gps_telemetry(truck_id, recorded_at)"
 )
 
+# ── Copilot tables (SQLite mirror of the Alembic copilot_* migrations) ──
+# Column contract mirrors the Alembic revisions:
+#   d4e5f6a7b8c4 (copilot_audit_log), e5f6a7b8c9d5 (conversation_summary),
+#   f6a7b8c9d0e6 (copilot_reasoning_graphs), a7b8c9d0e1f7 (copilot_insights)
+# using SQLite-friendly types (UUID→TEXT, JSON→TEXT, timestamps→TEXT) and
+# matching the repositories/copilot_repository.py COLUMNS allowlists.
+TABLE_COPILOT_AUDIT_LOG = """
+CREATE TABLE IF NOT EXISTS copilot_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER REFERENCES companies(id),
+    user_id INTEGER,
+    conversation_id TEXT,
+    plan_id TEXT,
+    step_id TEXT,
+    tool_name TEXT,
+    tool_version TEXT,
+    parameters TEXT,
+    permission_checked TEXT,
+    permission_granted INTEGER,
+    confidence_score REAL,
+    confirmation_level INTEGER,
+    status TEXT,
+    result TEXT,
+    error TEXT,
+    model_used TEXT,
+    provider_id TEXT,
+    prompt_version TEXT,
+    execution_time_ms INTEGER,
+    started_at TEXT,
+    finished_at TEXT,
+    created_at TEXT,
+    corrects_audit_id TEXT,
+    action TEXT,
+    entity_type TEXT,
+    entity_id TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    performed_by TEXT
+);
+"""
+
+TABLE_CONVERSATION_SUMMARY = """
+CREATE TABLE IF NOT EXISTS conversation_summary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER REFERENCES companies(id),
+    user_id INTEGER,
+    conversation_id TEXT,
+    summary TEXT,
+    model TEXT,
+    token_count INTEGER,
+    started_at TEXT,
+    ended_at TEXT,
+    turn_count INTEGER DEFAULT 0,
+    outcome TEXT,
+    pinned_provider_id TEXT,
+    pinned_model_id TEXT,
+    pinned_prompt_version TEXT,
+    created_at TEXT
+);
+"""
+
+TABLE_COPILOT_REASONING_GRAPHS = """
+CREATE TABLE IF NOT EXISTS copilot_reasoning_graphs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER REFERENCES companies(id),
+    conversation_id TEXT,
+    plan_id TEXT,
+    status TEXT DEFAULT 'building',
+    root_node_id TEXT,
+    graph TEXT,
+    graph_json TEXT,
+    created_at TEXT,
+    finalized_at TEXT
+);
+"""
+
+TABLE_COPILOT_INSIGHTS = """
+CREATE TABLE IF NOT EXISTS copilot_insights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    insight_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'low',
+    status TEXT NOT NULL DEFAULT 'new',
+    created_at TEXT,
+    read_at TEXT,
+    dismissed_at TEXT
+);
+"""
+
 # Unique (company_id, insight_type, payload) — makes insight-job retries
 # idempotent: a replayed INSERT OR IGNORE (translated to ON CONFLICT DO
 # NOTHING on PostgreSQL) is a no-op instead of a duplicate row.

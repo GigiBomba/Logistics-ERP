@@ -346,6 +346,7 @@ class DatabaseManager:
         else:
             self._create_tables_and_indices()
             self._run_column_migrations()
+            self._ensure_documents_fts()
             self._migrate_legacy_data()
 
         # Run Alembic migrations for Freight Exchange tables (PostgreSQL only)
@@ -513,6 +514,7 @@ class DatabaseManager:
             S.TABLE_TRIPS, S.TABLE_INVOICES,
             S.INDEX_INVOICES_ISSUE_DATE, S.INDEX_INVOICES_DUE_DATE,
             S.TABLE_TRUCKS,
+            S.TABLE_ROUTES, S.TABLE_ROUTE_HISTORY,
             S.TABLE_ROUTE_HISTORY_V2,
             S.INDEX_ROUTE_HISTORY_V2_CREATED, S.INDEX_ROUTE_HISTORY_V2_LAST_CALCULATED,
             S.INDEX_ROUTE_HISTORY_V2_TRUCK, S.INDEX_ROUTE_HISTORY_V2_PROFILE,
@@ -525,7 +527,7 @@ class DatabaseManager:
             S.INDEX_TRIPS_DRIVER_NAME, S.INDEX_TRIPS_STATUS, S.INDEX_TRIPS_CLIENT_STATUS,
             S.INDEX_TRIPS_START_DATE, S.INDEX_TRIPS_DELIVERY_COUNTRY,
             S.INDEX_TRIPS_LOADING_COUNTRY, S.INDEX_TRIPS_DRIVER_ID,
-            S.INDEX_TRIPS_CLIENT_ID, S.INDEX_TRIPS_PAYMENT_DATE,
+            S.INDEX_TRIPS_PAYMENT_DATE,
             S.TABLE_SETTINGS, S.TABLE_EMAIL_LOGS,
             # Dunner / Invoice Reminders
             S.TABLE_INVOICE_REMINDERS, S.INDEX_INVOICE_REMINDERS_LOOKUP,
@@ -554,7 +556,6 @@ class DatabaseManager:
             S.TABLE_DOCUMENTS, S.TABLE_DOCUMENT_LINKS,
             S.INDEX_DOCUMENTS_CATEGORY, S.INDEX_DOCUMENTS_ENTITY,
             S.INDEX_DOCUMENTS_HASH, S.INDEX_DOCUMENTS_NUMBER,
-            S.INDEX_DOCUMENTS_EXPIRY_DATE,
             S.INDEX_DOC_LINKS_DOCUMENT, S.INDEX_DOC_LINKS_ENTITY,
             S.TABLE_DOCUMENT_VERSIONS, S.INDEX_VERSIONS_DOCUMENT,
             S.TABLE_CONTRACTS, S.INDEX_CONTRACTS_CLIENT, S.INDEX_CONTRACTS_STATUS,
@@ -597,23 +598,16 @@ class DatabaseManager:
             S.INDEX_AUTOMAIL_SCHEDULES_TEMPLATE,
             S.INDEX_AUTOMAIL_SCHEDULES_ACTIVE_SORT,
             S.INDEX_AUTOMAIL_CLIENT_OVERRIDES_CLIENT,
-            S.INDEX_GPS_TRUCK, S.INDEX_GPS_RECORDED, S.INDEX_GPS_TELEMETRY_UNIQUE,
-            S.INDEX_COPILOT_INSIGHTS_DEDUP,
-            # Multi-tenant company_id indexes
-            S.INDEX_TRIPS_COMPANY, S.INDEX_INVOICES_COMPANY,
-            S.INDEX_TRUCKS_COMPANY, S.INDEX_DRIVERS_COMPANY,
-            S.INDEX_ROUTES_COMPANY, S.INDEX_ROUTE_HISTORY_COMPANY,
-            S.INDEX_ROUTE_HISTORY_V2_COMPANY, S.INDEX_ALERTS_COMPANY,
-            S.INDEX_OPERATION_EVENTS_COMPANY, S.INDEX_TRIP_STATUS_HISTORY_COMPANY,
-            S.INDEX_MAINTENANCE_RECORDS_COMPANY, S.INDEX_MAINTENANCE_SCHEDULES_COMPANY,
-            S.INDEX_TRUCK_HEALTH_SCORES_COMPANY, S.INDEX_RECEIPTS_COMPANY,
-            S.INDEX_GPS_TELEMETRY_COMPANY, S.INDEX_PIPELINE_RUNS_COMPANY,
-            S.INDEX_DOCUMENT_PACKAGE_COMPANY, S.INDEX_PROFORMA_COMPANY,
-            S.INDEX_CONTRACTS_COMPANY, S.INDEX_TACHO_IMPORTS_COMPANY,
-            # Composite multi-tenant indexes
-            S.INDEX_TRIPS_COMPANY_STATUS, S.INDEX_TRIPS_COMPANY_CREATED,
-            S.INDEX_TRIPS_COMPANY_START_DATE,
-            S.INDEX_TRUCKS_COMPANY_STATUS, S.INDEX_INVOICES_COMPANY_STATUS,
+            S.INDEX_GPS_TRUCK, S.INDEX_GPS_RECORDED,
+            # Copilot tables (SQLite mirror of the Alembic copilot_* tables).
+            # NOTE: idx_gps_telemetry_unique / idx_copilot_insights_dedup are
+            # created in _run_column_migrations AFTER legacy duplicates are
+            # removed (dedupe-before-unique-index), not here.
+            S.TABLE_COPILOT_AUDIT_LOG, S.TABLE_CONVERSATION_SUMMARY,
+            S.TABLE_COPILOT_REASONING_GRAPHS, S.TABLE_COPILOT_INSIGHTS,
+            # Multi-tenant company_id indexes (single + composite) are created
+            # in _run_column_migrations too — their columns only exist after
+            # the column migrations run.
             # Additional performance indexes
             S.INDEX_INVOICES_STATUS, S.INDEX_GPS_TRUCK_TIME,
             S.INDEX_CMR_AUDIT_EVENT_TYPE,
@@ -658,10 +652,6 @@ class DatabaseManager:
             except Exception as e:
                 logger.warning("Schema statement failed (may be harmless): %s", e)
         try:
-            self.conn.execute(S.INDEX_TRIPS_MONTH)
-        except Exception:
-            pass
-        try:
             self.conn.execute(S.INDEX_TRIPS_START_DATE)
         except Exception:
             pass
@@ -675,10 +665,6 @@ class DatabaseManager:
             pass
         try:
             self.conn.execute(S.INDEX_TRIPS_DRIVER_ID)
-        except Exception:
-            pass
-        try:
-            self.conn.execute(S.INDEX_DOCUMENTS_EXPIRY_DATE)
         except Exception:
             pass
         try:
@@ -701,10 +687,25 @@ class DatabaseManager:
                 self.conn.execute(S.MIGRATION_DOCUMENTS_FTS_V2)
             except Exception as e:
                 logger.warning("FTS migration (drop old table) failed: %s", e)
-            for stmt in (S.TABLE_DOCUMENTS_FTS, S.TRIGGER_DOCUMENTS_FTS_INSERT,
-                         S.TRIGGER_DOCUMENTS_FTS_DELETE, S.TRIGGER_DOCUMENTS_FTS_UPDATE):
+            try:
+                self.conn.execute(S.TABLE_DOCUMENTS_FTS)
+            except Exception as e:
+                logger.warning("Migration step failed: %s", e)
+            # DROP the external-content FTS triggers BEFORE column migrations
+            # run.  The triggers reference documents columns (text_content,
+            # cmr_number, extracted_data_json, ...) that only exist AFTER
+            # _run_column_migrations — creating them here on a fresh DB would
+            # fail ("no such column") and leave the FTS index malformed.  They
+            # are recreated in _ensure_documents_fts() after migrations run.
+            for _fts_trigger in (
+                S.TRIGGER_DOCUMENTS_FTS_INSERT,
+                S.TRIGGER_DOCUMENTS_FTS_DELETE,
+                S.TRIGGER_DOCUMENTS_FTS_UPDATE,
+            ):
+                # "CREATE TRIGGER IF NOT EXISTS documents_fts_ai AFTER INSERT ..."
+                _name = _fts_trigger.split()[5]
                 try:
-                    self.conn.execute(stmt)
+                    self.conn.execute(f"DROP TRIGGER IF EXISTS {_name}")
                 except Exception as e:
                     logger.warning("Migration step failed: %s", e)
         # Seed initial schema migration version
@@ -749,6 +750,23 @@ class DatabaseManager:
         except Exception:
             return False
 
+    def _index_exists(self, index: str) -> bool:
+        """Check if an index exists (engine-agnostic)."""
+        try:
+            if self._engine == "postgresql":
+                row = self.conn.execute(
+                    "SELECT 1 FROM pg_indexes WHERE indexname = %s", (index,)
+                ).fetchone()
+                return row is not None
+            else:
+                row = self.conn.execute(
+                    "SELECT name FROM sqlite_master "
+                    "WHERE type='index' AND name=?", (index,)
+                ).fetchone()
+                return row is not None
+        except Exception:
+            return False
+
     def _ensure_column(self, table: str, column: str, alter_sql: str) -> None:
         """Add a column if it doesn't already exist in the table."""
         try:
@@ -762,7 +780,7 @@ class DatabaseManager:
                 if not row:
                     self.conn.execute(alter_sql)
             else:
-                cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
+                cols = [r[1] for r in self.conn.execute(f"PRAGMA table_xinfo({table})").fetchall()]
                 if column not in cols:
                     self.conn.execute(alter_sql)
         except Exception as e:
@@ -783,7 +801,7 @@ class DatabaseManager:
                         except Exception as e:
                             logger.warning("Migration step failed for %s.%s: %s", table, column, e)
             else:
-                cols = [r[1] for r in self.conn.execute(f"PRAGMA table_info({table})").fetchall()]
+                cols = [r[1] for r in self.conn.execute(f"PRAGMA table_xinfo({table})").fetchall()]
                 for column, alter_sql in migrations:
                     if column not in cols:
                         try:
@@ -1132,12 +1150,24 @@ class DatabaseManager:
             ("document_versions", "ALTER TABLE document_versions ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("export_jobs", "ALTER TABLE export_jobs ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
         ]
+        # Resolve the lowest existing company id ONCE.  A hardcoded backfill of
+        # ``company_id = 1`` fails under PRAGMA foreign_keys=ON whenever
+        # companies(1) does not exist (old DBs whose lowest company id is > 1),
+        # leaving legacy documents NULL → invisible to tenant queries.
+        try:
+            _min_cid_row = self.conn.execute(
+                "SELECT MIN(id) FROM companies"
+            ).fetchone()
+            _min_company_id = _min_cid_row[0] if _min_cid_row and _min_cid_row[0] is not None else 1
+        except Exception:
+            _min_company_id = 1
         for table, alter_sql in _tenant_tables:
             self._ensure_column(table, "company_id", alter_sql)
             # Backfill any rows that still have NULL company_id (legacy data)
             try:
                 self.conn.execute(
-                    f"UPDATE {table} SET company_id = 1 WHERE company_id IS NULL"
+                    f"UPDATE {table} SET company_id = ? WHERE company_id IS NULL",
+                    (_min_company_id,),
                 )
             except Exception as e:
                 logger.warning("Backfill failed for %s: %s", table, e)
@@ -1178,7 +1208,37 @@ class DatabaseManager:
             except Exception as e:
                 logger.warning("Migration step failed for operation_events.%s: %s", col_name, e)
 
+        # ── Dedupe before unique indexes ─────────────────────────────────
+        # A legacy DB may contain duplicate gps_telemetry rows (same
+        # truck_id, recorded_at) or copilot_insights rows (same company_id,
+        # insight_type, payload) created before the unique indexes existed.
+        # CREATE UNIQUE INDEX would fail on them, so delete duplicates first
+        # — guarded to only run when the index is missing (once it exists the
+        # data is already unique).
+        if not self._index_exists("idx_gps_telemetry_unique"):
+            try:
+                self.conn.execute(
+                    "DELETE FROM gps_telemetry WHERE rowid NOT IN "
+                    "(SELECT MIN(rowid) FROM gps_telemetry "
+                    "GROUP BY truck_id, recorded_at)"
+                )
+            except Exception as e:
+                logger.warning("Dedupe gps_telemetry failed: %s", e)
+        if not self._index_exists("idx_copilot_insights_dedup"):
+            try:
+                self.conn.execute(
+                    "DELETE FROM copilot_insights WHERE rowid NOT IN "
+                    "(SELECT MIN(rowid) FROM copilot_insights "
+                    "GROUP BY company_id, insight_type, payload)"
+                )
+            except Exception as e:
+                logger.warning("Dedupe copilot_insights failed: %s", e)
+
         # ── Additional performance indexes ───────────────────────────────
+        # These reference columns (month, expiry_date, client_id,
+        # company_id, ...) that only exist AFTER the column migrations above,
+        # so they are created here — NOT in _create_tables_and_indices —
+        # for a zero-warning first init.
         for idx_stmt in (
             S.INDEX_INVOICES_STATUS,
             S.INDEX_GPS_TRUCK_TIME,
@@ -1188,6 +1248,13 @@ class DatabaseManager:
             S.INDEX_EMAIL_LOGS_TRIP,
             S.INDEX_EMAIL_LOGS_STATUS,
             S.INDEX_TRIPS_COMPANY_START_DATE,
+            S.INDEX_TRIPS_COMPANY_STATUS,
+            S.INDEX_TRIPS_COMPANY_CREATED,
+            S.INDEX_TRUCKS_COMPANY_STATUS,
+            S.INDEX_INVOICES_COMPANY_STATUS,
+            S.INDEX_TRIPS_CLIENT_ID,
+            S.INDEX_DOCUMENTS_EXPIRY_DATE,
+            S.INDEX_TRIPS_MONTH,
         ):
             try:
                 self.conn.execute(idx_stmt)
@@ -1301,6 +1368,28 @@ class DatabaseManager:
             logger.warning("Migration step failed: %s", e)
 
         self._seed_automail_defaults()
+
+    def _ensure_documents_fts(self) -> None:
+        """Create the documents_fts external-content triggers and rebuild index.
+
+        The FTS triggers reference documents columns (text_content,
+        cmr_number, extracted_data_json, ...) that only exist AFTER
+        ``_run_column_migrations`` runs, so they are created here — after
+        migrations — and the index is rebuilt so existing rows are searchable.
+        """
+        if self._engine == "postgresql":
+            return
+        S = _schema
+        try:
+            for stmt in (S.TRIGGER_DOCUMENTS_FTS_INSERT,
+                         S.TRIGGER_DOCUMENTS_FTS_DELETE,
+                         S.TRIGGER_DOCUMENTS_FTS_UPDATE):
+                self.conn.execute(stmt)
+            self.conn.execute("INSERT INTO documents_fts(documents_fts) VALUES('rebuild')")
+            self.conn.commit()
+            logger.info("documents_fts triggers recreated and index rebuilt")
+        except Exception as e:
+            logger.warning("FTS trigger creation failed: %s", e)
 
     def _migrate_legacy_data(self):
         """One-off data migrations (legacy maintenance table, etc.)."""
