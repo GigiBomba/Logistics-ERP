@@ -65,7 +65,7 @@ jobs:
         continue-on-error: true
 
       - name: Assert performance thresholds
-        run: python tests/loadtest/assert_thresholds.py ci-load_stats.csv || echo "⚠️  Threshold check completed (may show warnings)"
+        run: python tests/loadtest/assert_thresholds.py ci-load_stats.csv || echo "[warn]  Threshold check completed (may show warnings)"
 
       - name: Upload load test report
         uses: actions/upload-artifact@v4
@@ -112,7 +112,7 @@ jobs:
         continue-on-error: true
 
       - name: Check for regressions
-        run: python tests/loadtest/regression_detection.py full-load_stats.csv || echo "⚠️  Regression check completed"
+        run: python tests/loadtest/regression_detection.py full-load_stats.csv || echo "[warn]  Regression check completed"
 
       - name: Upload full report
         uses: actions/upload-artifact@v4

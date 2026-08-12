@@ -30,6 +30,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
+    env:
+      JWT_ALGORITHM: HS256
+      JWT_SECRET: ${{ secrets.OPERION_JWT_SECRET_KEY || 'test-key-ci-32-chars-required-here!!' }}
+      OPERION_JWT_SECRET_KEY: ${{ secrets.OPERION_JWT_SECRET_KEY || 'test-key-ci-32-chars-required-here!!' }}
+      OPERION_ENV: test
+      BF_ENABLED: "true"
+      BF_MAX_ATTEMPTS: "5"
+      BF_WINDOW_MINUTES: "15"
+      BF_LOCKOUT_MINUTES: "30"
+
     steps:
       - uses: actions/checkout@v4
 
