@@ -12,7 +12,10 @@ config = context.config
 
 # ── Logging ─────────────────────────────────────────────────────────────
 if config.config_file_name is not None:
-    fileConfig(config.config_file_name)
+    # disable_existing_loggers=False keeps the application's own loggers
+    # (JSON/structlog handlers) alive; the default (True) silently kills
+    # them on the first PG boot, so DB errors after migration never log.
+    fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 # ── Metadata ────────────────────────────────────────────────────────────
 # This project uses raw SQL (not SQLAlchemy ORM), so target_metadata is None.
