@@ -34,8 +34,20 @@ def _split_pg_statements(sql: str) -> list:
         return f"\x00DOLLAR{len(dollar_blocks)-1}\x00"
     # Match $$...$$ blocks (non-greedy, across newlines)
     protected = re.sub(r'\$\$.*?\$\$', _replace_dollar, sql, flags=re.DOTALL)
+    # Strip line comments BEFORE splitting on ';' — a '--' comment that
+    # itself contains a semicolon (e.g. "… `created_at`; the old index…")
+    # would otherwise produce an executable fragment after the split.
+    # Dollar-quoted blocks are already placeholders, so their contents
+    # (which may legitimately contain '--') are safe from this pass.
+    no_comments = []
+    for line in protected.split("\n"):
+        idx = line.find("--")
+        if idx != -1:
+            line = line[:idx]
+        no_comments.append(line)
+    protected = "\n".join(no_comments)
     for part in protected.split(";"):
-        # Restore dollar blocks, strip comments and whitespace
+        # Restore dollar blocks, strip whitespace
         stmt = part.strip()
         if not stmt:
             continue
@@ -43,11 +55,8 @@ def _split_pg_statements(sql: str) -> list:
         # statements may also need placeholder replacement).
         for i, block in enumerate(dollar_blocks):
             stmt = stmt.replace(f"\x00DOLLAR{i}\x00", block)
-        # Skip comment-only statements
-        lines = [l for l in stmt.split("\n") if l.strip() and not l.strip().startswith("--")]
-        clean = "\n".join(lines).strip()
-        if clean:
-            statements.append(clean)
+        if stmt.strip():
+            statements.append(stmt.strip())
     return statements
 
 
@@ -76,6 +85,14 @@ class DatabaseManager:
         self._local = threading.local()
         # tenant context now managed via tenant_context module
         if self._engine == "postgresql":
+            # Celery tasks and other callers may pass Config.DB_PATH (a SQLite
+            # file path) with engine=postgresql; resolve the real DSN here,
+            # mirroring backend/dependencies.py. Only override when the given
+            # value is clearly not a DSN (no "://").
+            if "://" not in db_path:
+                dsn = os.environ.get("OPERION_POSTGRES_DSN", "")
+                if dsn:
+                    db_path = dsn
             self._init_pg(db_path)
         else:
             self._pool = ConnectionPool(db_path, timeout=30)
@@ -243,6 +260,12 @@ class DatabaseManager:
         except Exception:
             if self._engine == "postgresql" and self._pg_pool:
                 self._pg_pool.record_error()
+                # Clear the aborted implicit transaction so the cached
+                # connection survives the failed statement.
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    pass
             raise
 
     def executemany(self, query: str, seq_of_params):
@@ -252,9 +275,20 @@ class DatabaseManager:
         For SQLite: ``sqlite3.Connection.executemany()`` returns a cursor directly.
         """
         if self._engine == "postgresql":
-            cur = self.conn.cursor()
-            cur.executemany(self._adapt_placeholders(query), seq_of_params)
-            return cur
+            try:
+                cur = self.conn.cursor()
+                cur.executemany(self._adapt_placeholders(query), seq_of_params)
+                if self._pg_pool:
+                    self._pg_pool.record_query()
+                return cur
+            except Exception:
+                if self._pg_pool:
+                    self._pg_pool.record_error()
+                    try:
+                        self.conn.rollback()
+                    except Exception:
+                        pass
+                raise
         conn = self.conn
         was_in_tx = bool(getattr(conn, "in_transaction", False))
         try:
@@ -415,8 +449,12 @@ class DatabaseManager:
                 "CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id)",
                 # Copilot insights dedup — runs AFTER Alembic migrations so the
                 # copilot_insights table (a7b8c9d0e1f7) already exists on fresh DBs.
+                # payload is a json column on PG: btree cannot index it directly,
+                # so the dedup key uses a (payload::text) expression index. A bare
+                # ON CONFLICT DO NOTHING honors expression unique indexes, so the
+                # INSERT OR IGNORE translation still dedups correctly.
                 "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
-                "ON copilot_insights(company_id, insight_type, payload)",
+                "ON copilot_insights(company_id, insight_type, (payload::text))",
             ]
             for ddl in _pg_extra_ddl:
                 try:
@@ -641,6 +679,11 @@ class DatabaseManager:
             S.TABLE_SAVED_SEARCHES,
             S.INDEX_SAVED_SEARCHES_COMPANY,
             S.INDEX_SAVED_SEARCHES_USER,
+            # Freight Exchange: local negotiation threads (no external push)
+            S.TABLE_FREIGHT_NEGOTIATIONS,
+            S.INDEX_FREIGHT_NEGOTIATIONS_COMPANY,
+            S.INDEX_FREIGHT_NEGOTIATIONS_THREAD,
+            S.INDEX_FREIGHT_NEGOTIATIONS_STATUS,
             # Mobile Phase 2: async export jobs
             S.TABLE_EXPORT_JOBS,
             S.INDEX_EXPORT_JOBS_COMPANY,

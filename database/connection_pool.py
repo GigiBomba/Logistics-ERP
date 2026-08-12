@@ -249,6 +249,19 @@ class PostgresConnectionPool:
             import psycopg2.extras
             conn.cursor_factory = psycopg2.extras.RealDictCursor
             self._local.conn = conn
+        else:
+            # Self-heal: a failed statement leaves the implicit transaction
+            # aborted (InFailedSqlTransaction); roll back so the cached
+            # connection is usable for the next request instead of failing
+            # every subsequent statement on this thread.
+            cached = self._local.conn
+            try:
+                import psycopg2.extensions
+                if cached.get_transaction_status() == psycopg2.extensions.TRANSACTION_STATUS_INERROR:
+                    cached.rollback()
+                    logger.info("PostgreSQL cached connection rolled back (aborted transaction)")
+            except Exception:
+                pass
         return self._local.conn
 
     def return_connection(self, conn) -> None:

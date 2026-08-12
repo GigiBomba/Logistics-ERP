@@ -243,7 +243,25 @@ class IdempotencyMiddleware(BaseHTTPMiddleware):
         # ── 4. Cache the response in both stores ──────────────────────
         body = ""
         if hasattr(response, "body"):
-            body = response.body.decode("utf-8", errors="replace")
+            try:
+                body = response.body.decode("utf-8", errors="replace")
+            except Exception:
+                body = ""
+        if not body:
+            # Starlette's BaseHTTPMiddleware streams responses through
+            # ``call_next`` — the materialized ``.body`` is unavailable, so
+            # read the stream and rebuild the response.  Replays must return
+            # the real payload, not an empty body.
+            chunks = [chunk async for chunk in response.body_iterator]
+            raw = b"".join(chunks)
+            body = raw.decode("utf-8", errors="replace")
+            if raw:
+                response = Response(
+                    content=raw,
+                    status_code=response.status_code,
+                    media_type=response.headers.get("content-type", "application/json"),
+                    headers=dict(response.headers),
+                )
         content_type = response.headers.get("content-type", "application/json")
 
         # Store in Redis (primary)

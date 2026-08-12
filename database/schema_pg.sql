@@ -963,7 +963,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_gps_telemetry_unique ON gps_telemetry(truc
 -- created by the Alembic migration a7b8c9d0e1f7 (payload JSON column); the
 -- index is also ensured in db_manager._pg_extra_ddl (which runs after Alembic)
 -- so fresh databases get it on first boot.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup ON copilot_insights(company_id, insight_type, payload);
+-- payload is json on PG: btree cannot index it directly, so the dedup key
+-- uses a (payload::text) expression index. A bare ON CONFLICT DO NOTHING
+-- honors expression unique indexes, so dedup still works.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup ON copilot_insights(company_id, insight_type, (payload::text));
 
 -- ── API Keys / OAuth2 ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS api_keys (
@@ -1165,3 +1168,31 @@ ON CONFLICT (version) DO NOTHING;
 INSERT INTO schema_migrations (version, name)
 VALUES (9, 'add_trips_promised_date')
 ON CONFLICT (version) DO NOTHING;
+
+-- =============================================================================
+-- §FREIGHT NEGOTIATIONS (Tier-2): local provider-agnostic negotiation thread.
+-- Mirrors database/schema.py TABLE_FREIGHT_NEGOTIATIONS.  No external
+-- TransEu/TIMOCOM push — the thread is a LOCAL record; the adapter push can
+-- come later.  Idempotent (IF NOT EXISTS).  Existing PG deployments created
+-- before this section would need the matching Alembic revision.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS freight_negotiations (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    provider_id TEXT NOT NULL,
+    provider_load_id TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'inbound',
+    status TEXT NOT NULL DEFAULT 'offered',
+    amount_eur DOUBLE PRECISION,
+    currency TEXT NOT NULL DEFAULT 'EUR',
+    counterparty_name TEXT DEFAULT '',
+    counterparty_id TEXT DEFAULT '',
+    parent_negotiation_id INTEGER REFERENCES freight_negotiations(id),
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+    updated_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
+);
+CREATE INDEX IF NOT EXISTS idx_freight_negotiations_company ON freight_negotiations(company_id);
+CREATE INDEX IF NOT EXISTS idx_freight_negotiations_thread ON freight_negotiations(company_id, provider_id, provider_load_id);
+CREATE INDEX IF NOT EXISTS idx_freight_negotiations_status ON freight_negotiations(company_id, status);
+

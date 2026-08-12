@@ -168,11 +168,11 @@ class BaseRepository:
 
     def _fetchone(self, query: str, params: tuple = ()) -> Optional[Dict[str, Any]]:
         q = self._adapt_query(query)
-        return self.db.row_to_dict(self.db.conn.execute(q, _convert_params(params)).fetchone())
+        return self.db.row_to_dict(self.db.execute(q, _convert_params(params)).fetchone())
 
     def _fetchall(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         q = self._adapt_query(query)
-        return self.db.rows_to_dicts(self.db.conn.execute(q, _convert_params(params)).fetchall())
+        return self.db.rows_to_dicts(self.db.execute(q, _convert_params(params)).fetchall())
 
     @staticmethod
     def _rollback_if_implicit(conn, was_in_tx: bool) -> None:
@@ -205,7 +205,7 @@ class BaseRepository:
         # that must NOT be treated as an open transaction.
         was_in_tx = getattr(conn, "in_transaction", None) is True
         try:
-            conn.execute(q, _convert_params(params))
+            self.db.execute(q, _convert_params(params))
         except Exception:
             # A failed DML inside sqlite's implicit transaction would otherwise
             # leak the WAL write lock on this pooled connection.
@@ -225,7 +225,7 @@ class BaseRepository:
         conn = self.db.conn
         was_in_tx = getattr(conn, "in_transaction", None) is True
         try:
-            cursor = conn.execute(q, _convert_params(params))
+            cursor = self.db.execute(q, _convert_params(params))
         except Exception:
             self._rollback_if_implicit(conn, was_in_tx)
             raise
@@ -244,7 +244,7 @@ class BaseRepository:
         conn = self.db.conn
         was_in_tx = getattr(conn, "in_transaction", None) is True
         try:
-            cursor = conn.execute(q, _convert_params(params))
+            cursor = self.db.execute(q, _convert_params(params))
         except Exception:
             self._rollback_if_implicit(conn, was_in_tx)
             raise
@@ -264,10 +264,14 @@ class BaseRepository:
             raise
 
     def begin_transaction(self) -> None:
-        self.db.conn.execute("BEGIN IMMEDIATE")
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            # psycopg2 (autocommit=False) opens transactions implicitly;
+            # "BEGIN IMMEDIATE" is SQLite-only syntax and would raise.
+            return
+        self.db.execute("BEGIN IMMEDIATE")
 
     def commit_transaction(self) -> None:
         self.db.conn.commit()
 
     def rollback_transaction(self) -> None:
-        self.db.conn.execute("ROLLBACK")
+        self.db.conn.rollback()

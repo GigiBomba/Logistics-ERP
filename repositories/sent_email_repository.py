@@ -31,7 +31,7 @@ class SentEmailRepository(BaseRepository):
             "(document_id, recipient, status, created_at) "
             "VALUES (?, ?, 'pending', ?)"
         )
-        cursor = self.db.conn.execute(query, (document_id, recipient, now))
+        cursor = self.db.execute(query, (document_id, recipient, now))
         self.db.conn.commit()
         return cursor.rowcount > 0
 
@@ -41,7 +41,7 @@ class SentEmailRepository(BaseRepository):
             "UPDATE sent_emails SET status = 'sent', sent_at = ? "
             "WHERE document_id = ? AND recipient = ?"
         )
-        self.db.conn.execute(query, (self._now(), document_id, recipient))
+        self.db.execute(query, (self._now(), document_id, recipient))
         self.db.conn.commit()
 
     def remove_pending(self, document_id: int, recipient: str) -> None:
@@ -49,7 +49,7 @@ class SentEmailRepository(BaseRepository):
         query = self._adapt_query(
             "DELETE FROM sent_emails WHERE document_id = ? AND recipient = ?"
         )
-        self.db.conn.execute(query, (document_id, recipient))
+        self.db.execute(query, (document_id, recipient))
         self.db.conn.commit()
 
     def get_by_document(self, document_id: int) -> List[Dict[str, Any]]:

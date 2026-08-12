@@ -133,7 +133,7 @@ class DocumentRepository(BaseRepository):
         year = datetime.datetime.now().year
         _managed = commit and not self.db.conn.in_transaction
         if _managed:
-            self.db.conn.execute("BEGIN IMMEDIATE")
+            self.begin_transaction()
         try:
             row = self._fetchone(
                 f"SELECT MAX(doc_number) AS last_num FROM {self.TABLE} "

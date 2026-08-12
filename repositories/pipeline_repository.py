@@ -556,15 +556,19 @@ class PipelineRepository(BaseRepository):
             self.begin_transaction()
             company_id = self._user_company_id if self._scoped else None
             if company_id is not None:
-                self.db.conn.executemany(
-                    "INSERT OR IGNORE INTO document_package_items "
-                    "(package_id, document_id, sort_order, company_id) VALUES (?, ?, ?, ?)",
+                self.db.executemany(
+                    self._adapt_query(
+                        "INSERT OR IGNORE INTO document_package_items "
+                        "(package_id, document_id, sort_order, company_id) VALUES (?, ?, ?, ?)"
+                    ),
                     [(package_id, did, i, company_id) for i, did in enumerate(document_ids)],
                 )
             else:
-                self.db.conn.executemany(
-                    "INSERT OR IGNORE INTO document_package_items "
-                    "(package_id, document_id, sort_order) VALUES (?, ?, ?)",
+                self.db.executemany(
+                    self._adapt_query(
+                        "INSERT OR IGNORE INTO document_package_items "
+                        "(package_id, document_id, sort_order) VALUES (?, ?, ?)"
+                    ),
                     [(package_id, did, i) for i, did in enumerate(document_ids)],
                 )
             self.commit_transaction()
@@ -609,9 +613,11 @@ class PipelineRepository(BaseRepository):
                 except (TypeError, ValueError):
                     continue
             if rows:
-                self.db.conn.executemany(
-                    "INSERT INTO document_package_items (package_id, document_id, sort_order) "
-                    "VALUES (?, ?, ?)",
+                self.db.executemany(
+                    self._adapt_query(
+                        "INSERT INTO document_package_items (package_id, document_id, sort_order) "
+                        "VALUES (?, ?, ?)"
+                    ),
                     rows,
                 )
             self.commit_transaction()
