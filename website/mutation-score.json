@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "1.0",
+  "mutationScore": 67.32,
+  "mutationScoreBasedOnCoveredCode": 67.41,
+  "totalMutants": 1068,
+  "totalDetected": 482,
+  "totalUndetected": 233,
+  "totalNoCoverage": 1,
+  "lastRun": "2026-08-05T15:10:07.536Z",
+  "breakThreshold": 50,
+  "previousScore": 67.32
+}
