@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-"""Validate PostgreSQL migration — compare row counts between SQLite and PostgreSQL.
+"""Validate PostgreSQL migration - compare row counts between SQLite and PostgreSQL.
 
 Usage:
     python scripts/validate_migration.py [--sqlite data/cashflow.db] [--pg-dsn postgresql://...]
@@ -55,17 +55,17 @@ def validate(sqlite_path: str, pg_dsn: str) -> dict:
         print(f"{'='*60}")
 
         if results["passed"]:
-            print(f"\n✅ PASSED ({len(results['passed'])} tables):")
+            print(f"\n[OK] PASSED ({len(results['passed'])} tables):")
             for table, count in results["passed"]:
                 print(f"  {table:<35} {count:>8,} rows")
 
         if results["failed"]:
-            print(f"\n❌ FAILED ({len(results['failed'])} tables):")
+            print(f"\n[FAIL] FAILED ({len(results['failed'])} tables):")
             for table, sql, pg_cnt, diff in results["failed"]:
                 print(f"  {table:<35} SQLite={sql:>8,}  PG={pg_cnt:>8,}  diff={diff:+}")
 
         if results["errors"]:
-            print(f"\n⚠ ERROR ({len(results['errors'])} tables):")
+            print(f"\n[ERR] ERROR ({len(results['errors'])} tables):")
             for table, err in results["errors"]:
                 print(f"  {table:<35} {err}")
 
@@ -83,7 +83,7 @@ def validate(sqlite_path: str, pg_dsn: str) -> dict:
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Validate SQLite → PostgreSQL migration")
+    parser = argparse.ArgumentParser(description="Validate SQLite -> PostgreSQL migration")
     parser.add_argument("--sqlite", default="data/cashflow.db", help="SQLite DB path")
     parser.add_argument("--pg-dsn", default=os.environ.get(
         "OPERION_POSTGRES_DSN", "postgresql://operion:operion@localhost:5432/operion"

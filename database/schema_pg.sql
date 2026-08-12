@@ -196,12 +196,16 @@ CREATE TABLE IF NOT EXISTS invoice_reminders (
 CREATE INDEX IF NOT EXISTS idx_invoice_reminders_lookup ON invoice_reminders(invoice_id, reminder_type, status);
 
 -- ── Settings ────────────────────────────────────────────────────────────
+-- SQLite settings are global key→value rows with NO company_id column; the
+-- import path therefore feeds NULL company_id.  A composite PK would force
+-- NOT NULL on company_id and reject those rows, so the key is the PK and
+-- company_id is a nullable tenant-scoping extension.
 CREATE TABLE IF NOT EXISTS settings (
-    key TEXT NOT NULL,
+    key TEXT NOT NULL PRIMARY KEY,
     value TEXT,
-    company_id INTEGER REFERENCES companies(id),
-    PRIMARY KEY (key, company_id)
+    company_id INTEGER REFERENCES companies(id)
 );
+CREATE INDEX IF NOT EXISTS idx_settings_company ON settings(company_id);
 
 -- ── Trucks ──────────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS trucks (
@@ -444,7 +448,11 @@ CREATE TABLE IF NOT EXISTS drivers (
     adr_certificate_expiry TEXT DEFAULT '',
     driver_card_number TEXT DEFAULT '',
     company_id INTEGER,
-    deleted_at TEXT
+    deleted_at TEXT,
+    bank_account TEXT DEFAULT '',
+    bank_code TEXT DEFAULT '',
+    bank_bic TEXT DEFAULT '',
+    iban TEXT DEFAULT ''
 );
 CREATE INDEX IF NOT EXISTS idx_drivers_active ON drivers(is_active);
 CREATE INDEX IF NOT EXISTS idx_drivers_company ON drivers(company_id);
@@ -455,9 +463,10 @@ CREATE TABLE IF NOT EXISTS driver_truck_assignments (
     driver_id INTEGER NOT NULL UNIQUE,
     truck_id INTEGER NOT NULL,
     assigned_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
-);
+    );
 CREATE INDEX IF NOT EXISTS idx_dta_driver ON driver_truck_assignments(driver_id);
 CREATE INDEX IF NOT EXISTS idx_dta_truck ON driver_truck_assignments(truck_id);
 
@@ -908,27 +917,30 @@ CREATE TABLE IF NOT EXISTS automail_settings (
 
 -- ── Multi-tenant / Auth ─────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS companies (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    company_name TEXT NOT NULL,
-    subscription_tier TEXT NOT NULL DEFAULT 'starter'
-        CHECK (subscription_tier IN ('starter', 'professional', 'enterprise')),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    created_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
-    updated_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-);
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  company_name TEXT NOT NULL,
+  subscription_tier TEXT NOT NULL DEFAULT 'starter'
+  CHECK (subscription_tier IN ('starter', 'professional', 'enterprise')),
+  is_active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+  updated_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+  trial_ends_at TEXT
+  );
 CREATE INDEX IF NOT EXISTS idx_companies_name ON companies(company_name);
 
 CREATE TABLE IF NOT EXISTS users (
-    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    email TEXT NOT NULL UNIQUE,
-    password_hash TEXT NOT NULL,
-    role TEXT NOT NULL DEFAULT 'dispatcher',
-    company_id INTEGER REFERENCES companies(id),
-    is_active INTEGER NOT NULL DEFAULT 1,
-    display_name TEXT DEFAULT '',
-    driver_id INTEGER REFERENCES drivers(id),
-    created_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC')
-);
+  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  role TEXT NOT NULL DEFAULT 'dispatcher',
+  company_id INTEGER REFERENCES companies(id),
+  is_active INTEGER NOT NULL DEFAULT 1,
+  display_name TEXT DEFAULT '',
+  driver_id INTEGER REFERENCES drivers(id),
+  created_at TEXT DEFAULT (CURRENT_TIMESTAMP AT TIME ZONE 'UTC'),
+  mfa_enabled INTEGER NOT NULL DEFAULT 0,
+  mfa_secret TEXT
+  );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id);
 

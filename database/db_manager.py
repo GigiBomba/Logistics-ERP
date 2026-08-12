@@ -447,6 +447,16 @@ class DatabaseManager:
                 "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_reference_id TEXT",
                 "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)",
                 "CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id)",
+                # SQLite-schema parity columns (drill-verified: the app reads
+                # these on PG — mfa.py, subscriptions.py, fleet/driver forms).
+                "ALTER TABLE companies ADD COLUMN IF NOT EXISTS trial_ends_at TEXT",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0",
+                "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT",
+                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_account TEXT DEFAULT ''",
+                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_code TEXT DEFAULT ''",
+                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_bic TEXT DEFAULT ''",
+                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS iban TEXT DEFAULT ''",
+                "ALTER TABLE driver_truck_assignments ADD COLUMN IF NOT EXISTS active INTEGER NOT NULL DEFAULT 1",
                 # Copilot insights dedup — runs AFTER Alembic migrations so the
                 # copilot_insights table (a7b8c9d0e1f7) already exists on fresh DBs.
                 # payload is a json column on PG: btree cannot index it directly,

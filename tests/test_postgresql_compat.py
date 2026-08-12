@@ -106,6 +106,10 @@ class TestSchemaCoverage:
         "auth_sessions",                # not yet ported to PG schema
         "freight_exchange_connections", # created via Alembic (a1b2c3d4e5f1), not in schema_pg.sql
         "saved_searches",               # created via Alembic (b2c3d4e5f6a2), not in schema_pg.sql
+        "conversation_summary",         # created via Alembic (e5f6a7b8c9d5), not in schema_pg.sql
+        "copilot_audit_log",            # created via Alembic (d4e5f6a7b8c4), not in schema_pg.sql
+        "copilot_insights",             # created via Alembic (a7b8c9d0e1f7), not in schema_pg.sql
+        "copilot_reasoning_graphs",     # created via Alembic (f6a7b8c9d0e6), not in schema_pg.sql
     })
 
     # Tables that exist in schema_pg.sql without a corresponding TABLE_*

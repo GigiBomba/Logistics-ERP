@@ -7,6 +7,10 @@ on:
 
 jobs:
   e2e:
+    # The website/ app is being removed (WIP deletion); skip this job
+    # entirely when the directory is no longer present in the repo so the
+    # workflow never fails on a fresh checkout.
+    if: hashFiles('website/package.json') != ''
     runs-on: ubuntu-latest
 
     defaults:
