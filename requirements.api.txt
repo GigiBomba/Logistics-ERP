@@ -63,8 +63,15 @@ Babel>=2.18.0
 # --- AI / Copilot ---
 google-genai>=1.47.0
 
+# --- Firebase / Push notifications ---
+# FCM/APNs delivery for alert/approval pushes (services/operations/push_sender.py).
+# firebase-admin handles both transports from one token namespace.
+firebase-admin>=6.5.0
+
 # --- Monitoring ---
 prometheus-client>=0.20.0
+# Error tracking — no-op when OPERION_SENTRY_DSN is unset (backend/main.py).
+sentry-sdk>=2.0.0
 
 # --- System ---
 psutil>=6.0.0

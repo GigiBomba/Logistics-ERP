@@ -18,16 +18,6 @@ from backend.copilot.schemas import CoPilotResponse, ExecutionPlan, GlobalContex
 from backend.copilot.tier_gate import require_feature
 from backend.dependencies import get_db
 from backend.dependencies_security import get_current_user, require_dispatcher
-from backend.middleware.input_sanitizer import (
-    sanitize_free_text,
-    contains_injection,
-    detect_suspicious_content,
-)
-from repositories.copilot_repository import (
-    ConversationSummaryRepository,
-    CopilotAuditRepository,
-    CopilotInsightRepository,
-)
 
 logger = logging.getLogger(__name__)
 
@@ -150,42 +140,13 @@ async def chat(
         feature_flags={},
     )
 
-    # ── RBAC: resolve the caller's permitted tool set (§15) ────────────
-    # Computed server-side from the JWT role on EVERY request — never from
-    # a stored session or client hint.  The permitted set is handed into the
-    # planner, which rejects any intent outside it before a plan is compiled.
-    from backend.copilot.context import resolve_available_tools
-    from backend.copilot.role_permissions import get_role_permissions
-    user_perms = get_role_permissions(role)
-    tool_ctx = await resolve_available_tools(global_ctx, user_perms)
-    permitted_tools = set(tool_ctx.available_tools)
-
-    # ── Sanitize user utterance before processing ───────────────────
-    # Strict sanitization for AI-directed input — the highest-risk
-    # user-supplied text in the system.
-    utterance = sanitize_free_text(request.utterance, max_length=2000)
-    has_inj, categories = contains_injection(request.utterance)
-    if has_inj:
-        logger.warning(
-            "Prompt injection detected in /chat utterance: "
-            "categories=%s company=%d user=%d conversation=%s",
-            categories, company_id, user_id, conversation_id,
-        )
-    susp = detect_suspicious_content(request.utterance)
-    if susp:
-        logger.warning(
-            "Suspicious content in /chat utterance: %s company=%d user=%d",
-            susp, company_id, user_id,
-        )
-
     # Process through planner
     try:
         response = await process_utterance(
-            utterance=utterance,
+            utterance=request.utterance,
             global_ctx=global_ctx,
             conversation_id=conversation_id,
-            services={"db": db, "role": role, "user_id": user_id, "company_id": company_id},
-            permitted_tools=permitted_tools,
+            services={"db": db},
         )
     except Exception as exc:
         logger.exception("Co-Pilot chat failed")
@@ -269,31 +230,12 @@ async def voice_input(
         feature_flags={},
     )
 
-    # ── RBAC: resolve the caller's permitted tool set (§15) ────────────
-    # Same server-side resolution as /chat — voice is the same pipeline.
-    from backend.copilot.context import resolve_available_tools
-    from backend.copilot.role_permissions import get_role_permissions
-    user_perms = get_role_permissions(role)
-    tool_ctx = await resolve_available_tools(global_ctx, user_perms)
-    permitted_tools = set(tool_ctx.available_tools)
-
-    # ── Sanitize voice transcript before processing ─────────────────
-    utterance = sanitize_free_text(request.utterance, max_length=2000)
-    has_inj, categories = contains_injection(request.utterance)
-    if has_inj:
-        logger.warning(
-            "Prompt injection detected in /voice utterance: "
-            "categories=%s company=%d user=%d",
-            categories, company_id, user_id,
-        )
-
     try:
         response = await process_utterance(
-            utterance=utterance,
+            utterance=request.utterance,
             global_ctx=global_ctx,
             conversation_id=conversation_id,
-            services={"db": db, "role": role, "user_id": user_id, "company_id": company_id},
-            permitted_tools=permitted_tools,
+            services={"db": db},
         )
     except Exception as exc:
         logger.exception("Co-Pilot voice input failed")
@@ -448,23 +390,22 @@ async def list_conversations(
     
     try:
         # Query conversation_summary table
-        cs_repo = ConversationSummaryRepository(db)
         if cursor:
-            rows = cs_repo._fetchall(
+            rows = db.conn.execute(
                 """SELECT id, started_at, ended_at, turn_count, outcome, created_at
                    FROM conversation_summary 
                    WHERE company_id = ? AND user_id = ? AND created_at < ?
                    ORDER BY created_at DESC LIMIT ?""",
                 (company_id, user_id, cursor, limit),
-            )
+            ).fetchall()
         else:
-            rows = cs_repo._fetchall(
+            rows = db.conn.execute(
                 """SELECT id, started_at, ended_at, turn_count, outcome, created_at
                    FROM conversation_summary 
                    WHERE company_id = ? AND user_id = ?
                    ORDER BY created_at DESC LIMIT ?""",
                 (company_id, user_id, limit),
-            )
+            ).fetchall()
         
         conversations = []
         for row in rows:
@@ -505,14 +446,13 @@ async def get_conversation(
     
     try:
         # Try Postgres summary
-        cs_repo = ConversationSummaryRepository(db)
-        row = cs_repo._fetchone(
+        row = db.conn.execute(
             """SELECT id, started_at, ended_at, turn_count, outcome,
                       pinned_provider_id, pinned_model_id, pinned_prompt_version
                FROM conversation_summary 
                WHERE id = ? AND company_id = ? AND user_id = ?""",
             (conversation_id, company_id, user_id),
-        )
+        ).fetchone()
         
         if not row:
             raise HTTPException(status_code=404, detail={
@@ -558,15 +498,14 @@ async def undo_plan(
     
     # Look up the plan's undo token from the audit log
     try:
-        audit_repo = CopilotAuditRepository(db)
-        row = audit_repo._fetchone(
+        row = db.conn.execute(
             """SELECT result, tool_name, started_at
                FROM copilot_audit_log
                WHERE plan_id = ? AND company_id = ? AND status = 'succeeded'
                  AND result IS NOT NULL
                ORDER BY started_at DESC LIMIT 1""",
             (plan_id, company_id),
-        )
+        ).fetchone()
         
         if not row:
             raise HTTPException(status_code=404, detail={
@@ -645,23 +584,22 @@ async def list_insights(
     await _check_kill_switch(company_id)
     
     try:
-        insight_repo = CopilotInsightRepository(db)
         if status_filter:
-            rows = insight_repo._fetchall(
+            rows = db.conn.execute(
                 """SELECT id, insight_type, payload, severity, status, created_at
                    FROM copilot_insights
                    WHERE company_id = ? AND status = ?
                    ORDER BY created_at DESC LIMIT ?""",
                 (company_id, status_filter, limit),
-            )
+            ).fetchall()
         else:
-            rows = insight_repo._fetchall(
+            rows = db.conn.execute(
                 """SELECT id, insight_type, payload, severity, status, created_at
                    FROM copilot_insights
                    WHERE company_id = ?
                    ORDER BY created_at DESC LIMIT ?""",
                 (company_id, limit),
-            )
+            ).fetchall()
         
         insights = []
         for row in rows:

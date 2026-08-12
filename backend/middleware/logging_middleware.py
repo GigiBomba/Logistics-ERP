@@ -23,12 +23,5 @@ class LoggingMiddleware(BaseHTTPMiddleware):
             response.status_code,
             duration * 1000,
             correlation_id,
-            extra={
-                "request_id": correlation_id,
-                "method": request.method,
-                "path": request.url.path,
-                "status": response.status_code,
-                "duration_ms": round(duration * 1000, 3),
-            },
         )
         return response

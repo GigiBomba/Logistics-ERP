@@ -76,59 +76,6 @@ def is_undo_expired(started_at: Optional[datetime] = None) -> bool:
 # original action's started_at timestamp before reversing state.
 
 
-def _check_tool_permission(tool: Any, role: str) -> bool:
-    """Permission gate — is this role allowed to use this tool?
-
-    Blueprint: §15 — Permission System.
-
-    Uses the tool's ``required_permission`` attribute (e.g. ``"trips:read"``)
-    and a simple role-based access table.  Admin can do everything.  Drivers
-    are limited to read-only access on trips, fleet, tracking and routes.
-    Dispatchers get read/write on operational resources but no delete.
-    Managers get nearly everything except system-level operations.
-    """
-    if not tool.required_permission:
-        return True  # No permission required = accessible to all
-
-    if role == "admin":
-        return True  # Admin bypass
-
-    # Extract the resource (e.g. "trips" from "trips:read")
-    resource = tool.required_permission.split(":")[0]
-    operation = tool.required_permission.split(":")[1] if ":" in tool.required_permission else ""
-
-    # Role → allowed resource prefixes
-    role_access: dict[str, set[str]] = {
-        "manager": {
-            "trips", "fleet", "drivers", "dispatch", "clients",
-            "invoices", "documents", "routes", "tracking",
-            "export", "payments", "automail", "email",
-            "analytics", "currency", "freight", "help",
-            "maintenance", "proforma", "receipts", "tacho", "system",
-        },
-        "dispatcher": {
-            "trips", "fleet", "drivers", "dispatch", "clients",
-            "documents", "routes", "tracking", "currency",
-            "freight", "help", "receipts",
-        },
-        "driver": {
-            "trips", "fleet", "tracking", "routes", "help",
-        },
-    }
-
-    allowed_resources = role_access.get(role, set())
-    if resource not in allowed_resources:
-        return False
-
-    # Further restrict by operation for non-manager roles
-    if role == "driver" and operation and operation != "read":
-        return False  # Drivers: read-only
-    if role == "dispatcher" and operation == "delete":
-        return False  # Dispatchers: no delete
-
-    return True
-
-
 def validate_guardrails(plan: ExecutionPlan) -> List[str]:
     """Check whether a plan exceeds cost/safety ceilings. Returns error i18n keys.
     
@@ -207,25 +154,14 @@ async def execute_plan(
         step.started_at = datetime.utcnow()
 
         try:
-            # Build execution context with actual user role (not hardcoded)
+            # Build execution context
             ctx = ToolExecutionContext(
                 company_id=(services or {}).get("company_id", 0),
-                user_id=(services or {}).get("user_id", 0),
-                role=(services or {}).get("role", "dispatcher"),
+                user_id=0,
+                role="dispatcher",
                 session_context=SessionContext(),
                 services=services,
             )
-
-            # ── Permission gate (§15) — check before any tool execution ──
-            if not _check_tool_permission(tool, ctx.role):
-                step.status = "failed"
-                step.error = f"Tool '{step.tool_name}' not available for role '{ctx.role}'"
-                step.finished_at = datetime.utcnow()
-                logger.warning(
-                    "Permission denied: tool=%s role=%s user_id=%d",
-                    step.tool_name, ctx.role, ctx.user_id,
-                )
-                continue
 
             # Construct params from step parameters
             params_dict = step.parameters or {}
@@ -344,19 +280,6 @@ async def confirm_and_execute(
                 session_context=SessionContext(),
                 services=services,
             )
-
-            # ── Permission gate (§15) — check before any tool execution ──
-            if not _check_tool_permission(tool, ctx.role):
-                step.status = "failed"
-                step.error = f"Tool '{step.tool_name}' not available for role '{ctx.role}'"
-                step.finished_at = datetime.utcnow()
-                logger.warning(
-                    "Permission denied: tool=%s role=%s user_id=%d",
-                    step.tool_name, ctx.role, ctx.user_id,
-                )
-                if on_step_update:
-                    on_step_update(step.step_id, "failed", step.tool_name)
-                continue
 
             params_dict = step.parameters or {}
             params = tool.parameters_schema(**params_dict)

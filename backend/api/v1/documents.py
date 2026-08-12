@@ -1,18 +1,27 @@
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, Response, UploadFile
 
-from backend.dependencies import get_document_service
+from backend.dependencies import get_document_service, get_db
 from backend.dependencies_security import require_dispatcher
-from backend.middleware.input_sanitizer import sanitize_filename, sanitize_free_text
+from backend.errors import ErrorCode
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.document import (
+    DocumentLinkCreate,
     DocumentLinkResponse,
+    DocumentLinkUpdate,
     DocumentReadResult,
     DocumentResponse,
     DocumentUpdate,
 )
+from backend.uploads import (
+    DOCUMENT_SAFE_EXTENSIONS,
+    sanitize_filename,
+    strip_exif,
+    validate_magic_bytes,
+)
+from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
@@ -31,10 +40,8 @@ def list_documents(
     page_size: int = Query(20, ge=1, le=100),
     service=Depends(get_document_service),
 ):
-    company_id = current_user.get("company_id", 0)
     result = service.advanced_search(
         query=query,
-        company_id=company_id,
         category=category,
         entity_type=entity_type,
         date_from=date_from,
@@ -57,8 +64,7 @@ def get_document(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    company_id = current_user.get("company_id", 0)
-    doc = service.get_by_id(doc_id, company_id=company_id)
+    doc = service.get_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return DocumentResponse(**doc)
@@ -70,8 +76,7 @@ def read_document_info(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    company_id = current_user.get("company_id", 0)
-    doc = service.get_by_id(doc_id, company_id=company_id)
+    doc = service.get_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
 
@@ -140,42 +145,58 @@ def upload_document(
 ):
     _validate_upload(file)
 
-    # Sanitize user-supplied filename before any use — prevents path
-    # traversal, injection via filename metadata, and control characters.
-    raw_filename = file.filename or "upload.bin"
-    safe_filename = sanitize_filename(raw_filename)
-    # Also sanitize form-supplied metadata fields.
-    safe_category = sanitize_free_text(category, max_length=100)
-    safe_entity_type = sanitize_free_text(entity_type, max_length=50)
-
     import os
     import tempfile
 
-    temp = tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(safe_filename)[1])  # noqa: SIM115
+    # ── Hardening (blueprint §18c.2) ──────────────────────────────────
+    # 1) Filename sanitization: basename + whitelisted extension only.
+    safe_name = sanitize_filename(file.filename, allow_extensions=DOCUMENT_SAFE_EXTENSIONS)
+    if not safe_name:
+        raise HTTPException(
+            status_code=415,
+            detail={
+                "error_code": ErrorCode.UNSUPPORTED_MEDIA_TYPE.value,
+                "detail": "Filename is invalid or has a disallowed extension.",
+            },
+        )
+    ext = os.path.splitext(safe_name)[1].lower()
+
+    # 2) Read + size cap.
+    content = file.file.read()
+    if len(content) > MAX_UPLOAD_SIZE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024*1024)} MB.",
+        )
+
+    # 3) Magic-byte sniffing — never trust MIME/extension alone.
+    if not validate_magic_bytes(content, file.content_type):
+        raise HTTPException(
+            status_code=415,
+            detail={
+                "error_code": ErrorCode.UNSUPPORTED_MEDIA_TYPE.value,
+                "detail": "File content does not match its declared type.",
+            },
+        )
+
+    # 4) EXIF stripping for JPEG payloads (before persistence).
+    if (file.content_type or "").lower() == "image/jpeg":
+        content = strip_exif(content)
+
+    temp = tempfile.NamedTemporaryFile(delete=False, suffix=ext)  # noqa: SIM115
     try:
-        content = file.file.read()
-        if len(content) > MAX_UPLOAD_SIZE:
-            raise HTTPException(
-                status_code=400,
-                detail=f"File too large. Maximum size is {MAX_UPLOAD_SIZE // (1024*1024)} MB.",
-            )
         temp.write(content)
         temp.close()
 
-        from models.document_models import DocumentUpload
-        user_id = current_user.get("id", 0)
-        result = service.upload_document(
-            DocumentUpload(
-                source_path=temp.name,
-                title=sanitize_free_text(os.path.splitext(safe_filename)[0], max_length=255),
-                category=safe_category,
-                entity_type=safe_entity_type,
-                entity_id=entity_id,
-            ),
-            user_id=user_id,
+        result = service.upload(
+            source_path=temp.name,
+            category=category,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            uploaded_by=uploaded_by,
         )
-        if result.success:
-            return DocumentResponse(**result.data.model_dump())
+        if result:
+            return DocumentResponse(**result)
         raise HTTPException(status_code=500, detail="Upload failed")
     finally:
         os.unlink(temp.name)
@@ -189,9 +210,8 @@ def update_document_partial(
     service=Depends(get_document_service),
 ):
     """Partially update a document (PATCH)."""
-    company_id = current_user.get("company_id", 0)
-    service.update(doc_id, company_id=company_id, **update.model_dump(exclude_none=True))
-    doc = service.get_by_id(doc_id, company_id=company_id)
+    service.update(doc_id, **update.model_dump(exclude_none=True))
+    doc = service.get_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     return DocumentResponse(**doc)
@@ -206,9 +226,8 @@ def update_document(
     response: Response = None,
 ):
     """[DEPRECATED] Use PATCH /{doc_id} instead."""
-    company_id = current_user.get("company_id", 0)
-    service.update(doc_id, company_id=company_id, **update.model_dump(exclude_none=True))
-    doc = service.get_by_id(doc_id, company_id=company_id)
+    service.update(doc_id, **update.model_dump(exclude_none=True))
+    doc = service.get_by_id(doc_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Document not found")
     response.headers["Deprecation"] = "true"
@@ -222,8 +241,77 @@ def delete_document(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service=Depends(get_document_service),
 ):
-    company_id = current_user.get("company_id", 0)
-    success = service.delete(doc_id, company_id=company_id)
+    success = service.delete(doc_id)
     if not success:
         raise HTTPException(status_code=404, detail="Document not found")
     return {"status": "deleted"}
+
+
+# ── Document links ─────────────────────────────────────────────────
+
+@router.get("/{doc_id}/links", response_model=List[DocumentLinkResponse])
+def list_document_links(
+    doc_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service=Depends(get_document_service),
+):
+    """List all links attached to a document."""
+    links = service.get_links(doc_id) if hasattr(service, "get_links") else []
+    return [DocumentLinkResponse(**lk) for lk in links]
+
+
+@router.post("/{doc_id}/links", response_model=DocumentLinkResponse)
+def create_document_link(
+    doc_id: int,
+    link: DocumentLinkCreate,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    service=Depends(get_document_service),
+):
+    """Attach a document to an entity (e.g. proforma/trip/invoice)."""
+    ok = service.link_document(
+        doc_id, link.linked_entity_type, link.linked_entity_id,
+        relation_type=link.relation_type,
+    )
+    if not ok:
+        raise HTTPException(status_code=400, detail="Failed to link document")
+    for lk in service.get_links(doc_id):
+        if (lk.get("linked_entity_type") == link.linked_entity_type
+                and lk.get("linked_entity_id") == link.linked_entity_id):
+            return DocumentLinkResponse(**lk)
+    raise HTTPException(status_code=500, detail="Link created but could not be returned")
+
+
+@router.put("/links/{link_id}", response_model=DocumentLinkResponse)
+def update_document_link(
+    link_id: int,
+    update: DocumentLinkUpdate,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Update a link (e.g. backfill a placeholder entity_id=0 with the real id)."""
+    from repositories.document_repository import DocumentRepository
+    repo = DocumentRepository(db)
+    link = repo.get_link_by_id(link_id)
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    repo.update_link_entity_id_by_link_id(link_id, update.linked_entity_id)
+    updated = repo.get_link_by_id(link_id)
+    if not updated:
+        raise HTTPException(status_code=500, detail="Link update failed")
+    return DocumentLinkResponse(**updated)
+
+
+@router.delete("/links/{link_id}")
+def delete_document_link(
+    link_id: int,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Remove a document link."""
+    from repositories.document_repository import DocumentRepository
+    repo = DocumentRepository(db)
+    link = repo.get_link_by_id(link_id)
+    if not link:
+        raise HTTPException(status_code=404, detail="Link not found")
+    repo.remove_link(link_id)
+    return {"status": "deleted", "link_id": link_id}

@@ -76,6 +76,13 @@ class TableInfoResponse(BaseModel):
     columns: List[ColumnInfo]
 
 
+class RawQueryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    query: str
+    limit: int = 100
+
+
 # ── Document stats ───────────────────────────────────────────────────────────
 
 

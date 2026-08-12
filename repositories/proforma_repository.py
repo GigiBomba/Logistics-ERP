@@ -150,7 +150,7 @@ class ProformaRepository(BaseRepository):
             self._execute(
                 f"UPDATE {self.TABLE} SET {set_clause} WHERE id = ? {self._company_filter()}",
                 tuple(values) + self._company_params(),
-            commit=True)
+            )
             return True
         except Exception as exc:
             logger.warning("ProformaRepository.update failed for id %s: %s", proforma_id, exc)
@@ -179,27 +179,12 @@ class ProformaRepository(BaseRepository):
         return int(row["cnt"]) if row else 0
 
     def get_next_number(self, format_key: Optional[str] = None) -> str:
-        """Generate the next proforma number using a transaction-safe sequence."""
         year = datetime.now().year
         fmt_key = format_key or DEFAULT_PROFORMA_FORMAT_KEY
-        entry = PROFORMA_NUMBER_FORMATS.get(fmt_key, PROFORMA_NUMBER_FORMATS[DEFAULT_PROFORMA_FORMAT_KEY])
-        template = entry[0]
-        series = fmt_key
-
-        self._execute(
-            "INSERT OR IGNORE INTO invoice_number_sequences (series, year, last_number) VALUES (?, ?, 0)",
-            (series, year),
-            commit=False,
-        )
+        template = PROFORMA_NUMBER_FORMATS.get(fmt_key, PROFORMA_NUMBER_FORMATS[DEFAULT_PROFORMA_FORMAT_KEY])[0]
         row = self._fetchone(
-            "SELECT last_number FROM invoice_number_sequences WHERE series = ? AND year = ?",
-            (series, year),
+            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
+            self._company_params(),
         )
-        nxt = (int(row["last_number"]) if row else 0) + 1
-        self._execute(
-            "UPDATE invoice_number_sequences SET last_number = ? WHERE series = ? AND year = ?",
-            (nxt, series, year),
-            commit=False,
-        )
-        self.db.conn.commit()
+        nxt = int(row["nxt"]) if row else 1
         return template.format(year=year, seq=nxt)

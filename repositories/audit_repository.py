@@ -75,10 +75,6 @@ class AuditRepository(BaseRepository):
                 raise
         except Exception as e:
             import logging
-            try:
-                self.rollback_transaction()
-            except Exception:
-                pass
             logging.getLogger("audit_repo").warning("Audit log write failed: %s", e)
 
     def log_event_with_details(self, event_id: str, event_type: str, data_json: str, created_at: str) -> None:

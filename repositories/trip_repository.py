@@ -10,17 +10,16 @@ class TripRepository(BaseRepository):
     COLUMNS = [
         "id", "created_at", "truck_number", "driver_name", "client_name",
         "distance_km", "total_price_eur", "rate_per_km", "gross_per_km", "net_profit",
-        "start_date", "end_date", "promised_date", "payment_date", "extra_costs", "fuel_cost", "toll_cost",
-        "salary_cost", "currency", "status", "loading_country", "delivery_country",
+        "start_date", "end_date", "payment_date", "extra_costs", "fuel_cost", "toll_cost",
+        "salary_cost", "currency", "status", "loading_city", "delivery_city",
+        "loading_country", "delivery_country", "reference", "notes", "updated_at",
         "driver_id", "route_history_v2_id", "truck_consumption_l_per_100km", "context_json",
         "client_id", "truck_id", "price_pre_vat", "vat_percent", "cmr_number", "cmr_sequence",
         "cargo_description", "cargo_marks", "package_count", "package_type", "gross_weight_kg",
         "volume_m3", "hs_code", "carrier_instructions", "carrier_reservations",
         "special_agreements", "carriage_payer", "documents_attached", "place_of_loading",
-        "place_of_loading_date",         "adr_info_json", "cmr_status", "cmr_remarks",
-        "transport_order_number", "dispatch_reference",
+        "place_of_loading_date", "adr_info_json", "cmr_status", "cmr_remarks",
         "company_id",
-        "source", "source_provider_id", "source_reference_id",
     ]
     COLUMNS_CMR_COUNTER = ["id", "year", "sequence_number"]
 
@@ -54,10 +53,10 @@ class TripRepository(BaseRepository):
                 continue
         return out
 
-    def get_by_id(self, trip_id: int, company_id=None) -> Optional[Dict[str, Any]]:
+    def get_by_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
-            (trip_id,) + self._company_params_for(company_id),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (trip_id,) + self._company_params(),
         )
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
@@ -68,21 +67,29 @@ class TripRepository(BaseRepository):
 
     def create(self, data: Dict[str, Any]) -> int:
         self._validate_columns(data)
+        data = dict(data)
+        # A trip must always carry created_at (the response schemas require it
+        # and the create endpoint passes model_dump(exclude_unset=True) which
+        # omits unset defaults).  Also fill the TripResponse-required text
+        # columns so API-created trips can be read back.
+        data.setdefault("created_at", datetime.now().isoformat(timespec="seconds") + "Z")
+        for col in ("loading_city", "delivery_city", "reference", "notes", "updated_at"):
+            data.setdefault(col, "")
         data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        commit=True)
+        )
 
-    def update(self, trip_id: int, data: Dict[str, Any], company_id=None) -> None:
+    def update(self, trip_id: int, data: Dict[str, Any]) -> None:
         self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
-            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter_for(company_id)}",
-            tuple(data.values()) + (trip_id,) + self._company_params_for(company_id),
-        commit=True)
+            f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
+            tuple(data.values()) + (trip_id,) + self._company_params(),
+        )
 
     def get_next_cmr_sequence(self, year: int) -> tuple[str, int]:
         import time
@@ -111,12 +118,9 @@ class TripRepository(BaseRepository):
                 self.commit_transaction()
                 break
             except Exception as e:
-                try:
-                    self.rollback_transaction()
-                except Exception:
-                    pass
+                self.rollback_transaction()
                 if attempt < 2:
-                    time.sleep(0.1 * (attempt + 1))  # exponential backoff
+                    time.sleep(0.1)
                     continue
                 logger = __import__('logging').getLogger(__name__)
                 logger.warning("cmr_counter DB error after 3 retries: %s", e)
@@ -144,13 +148,13 @@ class TripRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET cmr_number = ?, cmr_sequence = ?, cmr_status = 'generated' WHERE id = ? {self._company_filter()}",
             (cmr_number, cmr_seq, trip_id) + self._company_params(),
-        commit=True)
+        )
 
-    def delete(self, trip_id: int, company_id=None) -> None:
+    def delete(self, trip_id: int) -> None:
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
-            (trip_id,) + self._company_params_for(company_id),
-        commit=True)
+            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            (trip_id,) + self._company_params(),
+        )
 
     # ── Status history ──────────────────────────────────────────────
 
@@ -161,25 +165,20 @@ class TripRepository(BaseRepository):
             "INSERT INTO trip_status_history (trip_id, old_status, new_status, trigger, created_at) "
             "VALUES (?, ?, ?, ?, ?)",
             (trip_id, old_status, new_status, trigger, datetime.now().isoformat()),
-        commit=True)
+        )
 
     # ── Domain-specific queries ───────────────────────────────────────
 
-    def get_by_driver_id(self, driver_id: int, limit: int = 500) -> List[Dict[str, Any]]:
+    def get_by_driver_id(self, driver_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
-            (driver_id,) + self._company_params() + (limit,),
+            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC",
+            (driver_id,) + self._company_params(),
         )
 
-    def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200, company_id=None) -> List[Dict[str, Any]]:
-        """Dynamic filter for trip history with pagination.
-
-        ``company_id`` (resolved from the JWT by the API layer) scopes the
-        query explicitly — without it the context filter is a no-op in the
-        HTTP request path.
-        """
-        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)}"
-        params: list = list(self._company_params_for(company_id))
+    def get_filtered(self, search: str = "", truck: str = "", status: str = "", limit: int = 200) -> List[Dict[str, Any]]:
+        """Dynamic filter for trip history with pagination."""
+        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()}"
+        params: list = list(self._company_params())
         if search:
             query += " AND (client_name LIKE ? OR driver_name LIKE ?)"
             params.extend([f"%{search}%", f"%{search}%"])
@@ -196,17 +195,12 @@ class TripRepository(BaseRepository):
     def get_by_status(self, status: str) -> List[Dict[str, Any]]:
         return self.get_by_statuses([status])
 
-    def get_by_statuses(self, statuses: List[str], limit: Optional[int] = None) -> List[Dict[str, Any]]:
+    def get_by_statuses(self, statuses: List[str]) -> List[Dict[str, Any]]:
         placeholders = ", ".join("?" for _ in statuses)
-        query = (
-            f"SELECT * FROM {self.TABLE} WHERE status IN ({placeholders}) "
-            f"{self._company_filter()} ORDER BY created_at DESC"
+        return self._fetchall(
+            f"SELECT * FROM {self.TABLE} WHERE status IN ({placeholders}) {self._company_filter()} ORDER BY created_at DESC",
+            tuple(statuses) + self._company_params(),
         )
-        params: list = list(tuple(statuses) + self._company_params())
-        if limit is not None:
-            query += " LIMIT ?"
-            params.append(limit)
-        return self._fetchall(query, tuple(params))
 
     def get_by_date_range(self, start: str, end: str) -> List[Dict[str, Any]]:
         return self._fetchall(
@@ -245,7 +239,8 @@ class TripRepository(BaseRepository):
                            - COALESCE(toll_cost,0) - COALESCE(salary_cost,0)
                            - COALESCE(extra_costs,0), 0)) AS profit
                 FROM {self.TABLE}
-                WHERE start_date >= ?
+                WHERE LENGTH(start_date) >= 10
+                  AND start_date >= ?
                   AND start_date <= ?
                   AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
                   {self._company_filter()}
@@ -255,28 +250,24 @@ class TripRepository(BaseRepository):
         )
         return [(r["day"], float(r["profit"] or 0)) for r in rows]
 
-    def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4, company_id=None) -> List[Dict[str, Any]]:
-        """Return top trucks by revenue for a date range (canonical truck_id grouping).
-
-        ``company_id`` (resolved from the JWT by the API layer) scopes the
-        query explicitly — without it the context filter is a no-op in the
-        HTTP request path (mirrors ``get_filtered``).
-        """
+    def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4) -> List[Dict[str, Any]]:
+        """Return top trucks by revenue for a date range (canonical truck_id grouping)."""
         month_start = month_start.strip()
         month_end = month_end.strip()
         return self._fetchall(
-            f"""SELECT COALESCE(MAX(t.plate_number), MAX(tr.truck_number)) AS truck_number,
+            f"""SELECT COALESCE(t.plate_number, tr.truck_number) AS truck_number,
                        SUM(COALESCE(tr.total_price_eur, 0)) AS revenue
                  FROM {self.TABLE} tr
                  LEFT JOIN trucks t ON tr.truck_id = t.id
-                 WHERE tr.start_date >= ?
+                 WHERE LENGTH(tr.start_date) >= 10
+                   AND tr.start_date >= ?
                    AND tr.start_date <= ?
                    AND LOWER(tr.status) IN ('delivered', 'completed', 'done', 'paid')
-                   {self._company_filter_for(company_id, "tr")}
+                   {self._company_filter("tr")}
                  GROUP BY COALESCE(tr.truck_id, tr.truck_number)
                  ORDER BY revenue DESC
                  LIMIT ?""",
-            (month_start, month_end, limit) + self._company_params_for(company_id),
+            (month_start, month_end, limit) + self._company_params(),
         )
 
     # ── Document Automation matchers ─────────────────────────────────────
@@ -432,7 +423,7 @@ class TripRepository(BaseRepository):
         start = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
-            "WHERE start_date >= ? AND start_date <= ? "
+            "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
             f"{self._company_filter()} "
             "ORDER BY id DESC LIMIT ?",
             (start, end) + self._company_params() + (limit,),
@@ -444,10 +435,7 @@ class TripRepository(BaseRepository):
         window_days: int = 14,
         limit: int = 25,
     ) -> List[Dict[str, Any]]:
-        """Return trips whose start_date is within ±window_days of target_date.
-
-        Sorted by date proximity in Python to support both SQLite and PostgreSQL.
-        """
+        """Return trips whose start_date is within ±window_days of target_date."""
         from datetime import datetime, timedelta
         try:
             anchor = datetime.strptime(target_date[:10], "%Y-%m-%d")
@@ -455,22 +443,13 @@ class TripRepository(BaseRepository):
             return self.get_recent_trips_for_matching()
         start = (anchor - timedelta(days=window_days)).strftime("%Y-%m-%d")
         end = (anchor + timedelta(days=window_days)).strftime("%Y-%m-%d")
-        rows = self._fetchall(
+        return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
-            "WHERE start_date >= ? AND start_date <= ? "
+            "WHERE LENGTH(start_date) >= 10 AND start_date >= ? AND start_date <= ? "
             f"{self._company_filter()} "
-            "ORDER BY id DESC",
-            (start, end) + self._company_params(),
+            "ORDER BY ABS(JULIANDAY(start_date) - JULIANDAY(?)) ASC LIMIT ?",
+            (start, end) + self._company_params() + (target_date, limit),
         )
-        # Sort by proximity in Python (portable across DB engines)
-        def _proximity(row: Dict[str, Any]) -> float:
-            try:
-                row_date = datetime.strptime(str(row.get("start_date", ""))[:10], "%Y-%m-%d")
-                return abs((row_date - anchor).total_seconds())
-            except (ValueError, TypeError):
-                return float("inf")
-        rows.sort(key=_proximity)
-        return rows[:limit]
 
     def get_by_client_name_fuzzy(
         self,

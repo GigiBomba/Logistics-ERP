@@ -265,15 +265,7 @@ class DispatchCreateTool(BaseTool):
                         message_key="copilot.error.no_db",
                     )
 
-            from models.trip_models import TripUpdate
-            # Map DB column names to TripUpdate field names
-            _db_to_model = {"truck_number": "truck_plate", "net_profit": "profit"}
-            mapped = {}
-            for k, v in previous_state.items():
-                model_key = _db_to_model.get(k, k)
-                if model_key in TripUpdate.model_fields:
-                    mapped[model_key] = v
-            update_result = trip_service.update(trip_id, TripUpdate(**mapped))
+            update_result = trip_service.update(trip_id, previous_state)
             if update_result is None or not getattr(update_result, 'success', False):
                 err = str(getattr(update_result, 'errors', 'Update failed')) if update_result else 'Update returned None'
                 return ToolResult(status="failed", message_key="copilot.dispatch.undo_failed", message_params={"error": err})

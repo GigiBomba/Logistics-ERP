@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -18,25 +18,6 @@ class OcrResult(BaseModel):
     extracted_fields: Dict[str, Any]
     confidence: float = 0.0
     processing_time_ms: int = 0
-    # Roadmap 12: lets clients distinguish "not started" (pending),
-    # "ran but extracted nothing" (empty), and "ran with text" (done).
-    # Defaults keep old consumers working when the fields are not supplied.
-    status: str = "pending"
-    error: Optional[str] = None
-
-
-class OcrUploadResponse(BaseModel):
-    """Response from ``POST /api/v1/ocr/process`` (blueprint §5.4).
-
-    Hard rule: status is **never** ``completed`` synchronously — the mobile
-    client only ever sees ``queued``/``processing``, and extracted fields are
-    never returned here.  The ``idempotency_key`` is echoed back so the
-    client can confirm deduplication worked.
-    """
-
-    document_id: str
-    status: Literal["queued", "processing"]
-    idempotency_key: str
 
 
 class OcrFieldExtractionRequest(BaseModel):

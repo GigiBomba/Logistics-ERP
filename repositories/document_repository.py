@@ -1,6 +1,7 @@
 """Document Center repository — CRUD and search for documents + links."""
 import datetime
 import logging
+import sqlite3
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
@@ -47,32 +48,46 @@ class DocumentRepository(BaseRepository):
                uploaded_at: str, updated_at: str,
                copy_type: str = "", cmr_number: str = "",
                cmr_metadata_json: str = "{}", is_signed: int = 0,
-               commit: bool = True,
-               company_id: Optional[int] = None) -> int:
-        data = {
-            "doc_number": doc_number, "title": title, "category": category,
-            "entity_type": entity_type, "entity_id": entity_id,
-            "file_path": file_path, "file_name": file_name, "file_size": file_size,
-            "mime_type": mime_type, "file_hash": file_hash,
-            "tags": tags, "description": description, "uploaded_by": uploaded_by,
-            "uploaded_at": uploaded_at, "updated_at": updated_at,
-            "copy_type": copy_type, "cmr_number": cmr_number,
-            "cmr_metadata_json": cmr_metadata_json, "is_signed": is_signed,
-        }
-        self._validate_columns(data, extra_allowed={"company_id"})
-        data = self._set_company_from_context(data)
-        # Explicit caller-supplied company_id (resolved from the JWT in the
-        # HTTP path) wins over the context default — the row is CREATED
-        # scoped, so there is never an unscoped window (blueprint §1.8).
-        if company_id:
-            data["company_id"] = company_id
-        cols = ", ".join(data.keys())
-        vals = ", ".join("?" for _ in data)
-        return self._execute_insert(
-            f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-            commit=commit,
-        )
+               commit: bool = True) -> int:
+        year = datetime.datetime.now().year
+        for attempt in range(5):
+            data = {
+                "doc_number": doc_number, "title": title, "category": category,
+                "entity_type": entity_type, "entity_id": entity_id,
+                "file_path": file_path, "file_name": file_name, "file_size": file_size,
+                "mime_type": mime_type, "file_hash": file_hash,
+                "tags": tags, "description": description, "uploaded_by": uploaded_by,
+                "uploaded_at": uploaded_at, "updated_at": updated_at,
+                "copy_type": copy_type, "cmr_number": cmr_number,
+                "cmr_metadata_json": cmr_metadata_json, "is_signed": is_signed,
+            }
+            self._validate_columns(data, extra_allowed={"company_id"})
+            data = self._set_company_from_context(data)
+            cols = ", ".join(data.keys())
+            vals = ", ".join("?" for _ in data)
+            try:
+                return self._execute_insert(
+                    f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
+                    tuple(data.values()),
+                    commit=commit,
+                )
+            except sqlite3.IntegrityError:
+                if attempt >= 4:
+                    raise
+                logger.warning(
+                    "doc_number %s collided (UNIQUE), regenerating and retrying",
+                    doc_number,
+                )
+                # A concurrent registration may have claimed this number.
+                # Recompute from the current MAX and bump until free.
+                doc_number = self.get_next_doc_number(commit=commit)
+                while self._doc_number_exists(doc_number):
+                    try:
+                        seq = int(doc_number.split("-")[-1]) + 1
+                    except ValueError:
+                        seq = 1
+                    doc_number = f"DOC-{year}-{seq:04d}"
+        return 0  # pragma: no cover — loop always returns or raises
 
     def get_by_id(self, doc_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
@@ -107,13 +122,13 @@ class DocumentRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET is_archived = 1, updated_at = ? WHERE id = ? {self._company_filter()}",
             (datetime.datetime.now().isoformat(), doc_id) + self._company_params(),
-        commit=True)
+        )
 
     def delete(self, doc_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
             (doc_id,) + self._company_params(),
-        commit=True)
+        )
 
     def count(self) -> int:
         row = self._fetchone(
@@ -129,11 +144,25 @@ class DocumentRepository(BaseRepository):
             self._company_params(),
         )
 
+    def _doc_number_exists(self, doc_number: str) -> bool:
+        """Return True if a non-archived document already carries doc_number."""
+        row = self._fetchone(
+            f"SELECT 1 FROM {self.TABLE} WHERE doc_number = ? {self._company_filter()}",
+            (doc_number,) + self._company_params(),
+        )
+        return row is not None
+
     def get_next_doc_number(self, commit: bool = True) -> str:
         year = datetime.datetime.now().year
-        _managed = commit and not self.db.conn.in_transaction
-        if _managed:
-            self.begin_transaction()
+        opened_tx = False
+        # Only take the write lock if we are not already inside a
+        # transaction.  Callers that wrap work in their own transaction
+        # (or that leave one open from an earlier swallowed error) would
+        # otherwise hit sqlite3 "cannot start a transaction within a
+        # transaction" here.
+        if commit and not self.db.conn.in_transaction:
+            self.db.conn.execute("BEGIN IMMEDIATE")
+            opened_tx = True
         try:
             row = self._fetchone(
                 f"SELECT MAX(doc_number) AS last_num FROM {self.TABLE} "
@@ -147,17 +176,24 @@ class DocumentRepository(BaseRepository):
                     seq = 1
             else:
                 seq = 1
-            return f"DOC-{year}-{seq:04d}"
+            candidate = f"DOC-{year}-{seq:04d}"
+            # Bump past any row that claimed this number outside the
+            # current snapshot (e.g. a concurrent connection) so the
+            # returned number is unique before the INSERT is attempted.
+            while self._doc_number_exists(candidate):
+                seq += 1
+                candidate = f"DOC-{year}-{seq:04d}"
+            return candidate
         except Exception:
             try:
-                if _managed and self.db.conn.in_transaction:
+                if opened_tx and self.db.conn.in_transaction:
                     self.rollback_transaction()
             except Exception:
                 pass
             raise
         finally:
             try:
-                if _managed and self.db.conn.in_transaction:
+                if opened_tx and self.db.conn.in_transaction:
                     self.commit_transaction()
             except Exception:
                 pass
@@ -450,7 +486,19 @@ class DocumentRepository(BaseRepository):
             f"WHERE document_id = ? AND linked_entity_type = ? AND linked_entity_id = ? "
             f"{self._company_filter()}",
             (new_entity_id, document_id, entity_type, old_entity_id) + self._company_params(),
-        commit=True)
+        )
+
+    def get_link_by_id(self, link_id: int) -> Optional[Dict[str, Any]]:
+        return self._fetchone(
+            f"SELECT * FROM {self.TABLE_LINKS} WHERE id = ? {self._company_filter()}",
+            (link_id,) + self._company_params(),
+        )
+
+    def update_link_entity_id_by_link_id(self, link_id: int, new_entity_id: int) -> None:
+        self._execute(
+            f"UPDATE {self.TABLE_LINKS} SET linked_entity_id = ? WHERE id = ? {self._company_filter()}",
+            (new_entity_id, link_id) + self._company_params(),
+        )
 
     def add_link(self, document_id: int, linked_entity_type: str,
                  linked_entity_id: int, relation_type: str = "attached",
@@ -477,13 +525,13 @@ class DocumentRepository(BaseRepository):
         self._execute(
             f"DELETE FROM {self.TABLE_LINKS} WHERE id = ? {self._company_filter()}",
             (link_id,) + self._company_params(),
-        commit=True)
+        )
 
     def remove_all_links(self, document_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE_LINKS} WHERE document_id = ? {self._company_filter()}",
             (document_id,) + self._company_params(),
-        commit=True)
+        )
 
     def remove_all_links_batch(self, doc_ids: list) -> None:
         if not doc_ids:
@@ -492,7 +540,7 @@ class DocumentRepository(BaseRepository):
         self._execute(
             f"DELETE FROM {self.TABLE_LINKS} WHERE document_id IN ({placeholders}) {self._company_filter()}",
             tuple(doc_ids) + self._company_params(),
-        commit=True)
+        )
 
     def get_links(self, document_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
@@ -546,20 +594,8 @@ class DocumentRepository(BaseRepository):
         params: list = list(self._company_params())
 
         if query:
-            if getattr(self.db, "_engine", "sqlite") == "postgresql":
-                terms = query.strip().split()
-                like_clauses = []
-                for term in terms:
-                    p = f"%{term}%"
-                    like_clauses.append(
-                        "(d.title ILIKE ? OR d.file_name ILIKE ? "
-                        "OR d.description ILIKE ? OR d.text_content ILIKE ?)"
-                    )
-                    params.extend([p, p, p, p])
-                conditions.append(f"({' AND '.join(like_clauses)})")
-            else:
-                conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
-                params.append(self._fts_query(query))
+            conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
+            params.append(self._fts_query(query))
 
         if category:
             conditions.append("d.category = ?")
@@ -588,20 +624,8 @@ class DocumentRepository(BaseRepository):
         params: list = list(self._company_params())
 
         if query:
-            if getattr(self.db, "_engine", "sqlite") == "postgresql":
-                terms = query.strip().split()
-                like_clauses = []
-                for term in terms:
-                    p = f"%{term}%"
-                    like_clauses.append(
-                        "(d.title ILIKE ? OR d.file_name ILIKE ? "
-                        "OR d.description ILIKE ? OR d.text_content ILIKE ?)"
-                    )
-                    params.extend([p, p, p, p])
-                conditions.append(f"({' AND '.join(like_clauses)})")
-            else:
-                conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
-                params.append(self._fts_query(query))
+            conditions.append("d.id IN (SELECT rowid FROM documents_fts WHERE documents_fts MATCH ?)")
+            params.append(self._fts_query(query))
 
         if category:
             conditions.append("d.category = ?")
@@ -659,7 +683,7 @@ class DocumentRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO document_versions ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        commit=True)
+        )
 
     def get_versions(self, document_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
@@ -682,7 +706,7 @@ class DocumentRepository(BaseRepository):
             "DELETE FROM document_versions WHERE document_id = ? "
             + self._company_filter(),
             (document_id,) + self._company_params(),
-        commit=True)
+        )
 
     # ── Contracts ───────────────────────────────────────────────────────
 
@@ -706,7 +730,7 @@ class DocumentRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO contracts ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        commit=True)
+        )
 
     def get_contracts(self, client_id: Optional[int] = None,
                       status: str = "") -> List[Dict[str, Any]]:
@@ -746,7 +770,7 @@ class DocumentRepository(BaseRepository):
         self._execute(
             f"UPDATE contracts SET {sets} WHERE id = ? {self._company_filter()}",
             tuple(fields.values()) + (contract_id,) + self._company_params(),
-        commit=True)
+        )
 
     def get_expiring_contracts(self, days_ahead: int = 30) -> List[Dict[str, Any]]:
         cutoff = (datetime.datetime.now() + datetime.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
@@ -775,7 +799,7 @@ class DocumentRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO document_templates ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        commit=True)
+        )
 
     def get_templates(self, category: str = "") -> List[Dict[str, Any]]:
         if category:
@@ -802,23 +826,14 @@ class DocumentRepository(BaseRepository):
         self._execute(
             "DELETE FROM document_templates WHERE id = ? " + self._company_filter(),
             (template_id,) + self._company_params(),
-        commit=True)
+        )
 
     # ── Rebuild FTS5 index on startup ───────────────────────────────────
 
     def rebuild_fts_index(self) -> None:
         try:
-            if getattr(self.db, "_engine", "sqlite") == "postgresql":
-                self._execute(
-                    "UPDATE documents SET search_vector = "
-                    "to_tsvector('english', "
-                    "COALESCE(title,'') || ' ' "
-                    "|| COALESCE(description,'') || ' ' "
-                    "|| COALESCE(text_content,''))",
-                commit=True)
-            else:
-                self._execute(
-                    "INSERT INTO documents_fts(documents_fts) VALUES('rebuild')",
-                commit=True)
+            self._execute(
+                "INSERT INTO documents_fts(documents_fts) VALUES('rebuild')"
+            )
         except Exception as e:
-            logger.warning("FTS index rebuild failed: %s", e)
+            logger.warning("FTS5 index rebuild failed: %s", e)

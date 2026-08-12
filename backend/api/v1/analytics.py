@@ -20,7 +20,7 @@ from backend.schemas.analytics import (
     RouteProfitabilityItem,
     TripStatusBreakdown,
 )
-from backend.services.analytics_service import AnalyticsService
+from services.analytics_service import AnalyticsService
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -34,14 +34,13 @@ def get_financial_analytics(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> FinancialSummary:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_financial(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_financial(from_date=start, to_date=end)
     if not result:
         return FinancialSummary()
     if isinstance(result, dict):
@@ -70,14 +69,13 @@ def get_monthly_financial(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> MonthlyFinancialResponse:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_monthly_financial(company_id=company_id, months=months, from_date=start, to_date=end)
+    result = service.get_monthly_financial(months=months, from_date=start, to_date=end)
     if not result:
         return MonthlyFinancialResponse()
     data = [MonthlyDataPoint(**r) if isinstance(r, dict) else MonthlyDataPoint() for r in result]
@@ -105,14 +103,13 @@ def get_cost_breakdown(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> CostBreakdown:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_cost_breakdown(company_id=company_id, months=months, from_date=start, to_date=end)
+    result = service.get_cost_breakdown(months=months, from_date=start, to_date=end)
     if not result:
         return CostBreakdown()
     if isinstance(result, dict):
@@ -141,14 +138,13 @@ def get_trip_status_distribution(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[TripStatusBreakdown]:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_trip_status_distribution(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_trip_status_distribution(from_date=start, to_date=end)
     if not result:
         return []
     items = [TripStatusBreakdown(**r) if isinstance(r, dict) else TripStatusBreakdown() for r in result]
@@ -168,14 +164,13 @@ def get_monthly_trip_volume(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> MonthlyFinancialResponse:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_monthly_trip_volume(company_id=company_id, months=months, from_date=start, to_date=end)
+    result = service.get_monthly_trip_volume(months=months, from_date=start, to_date=end)
     if not result:
         return MonthlyFinancialResponse()
     data = []
@@ -200,14 +195,13 @@ def get_revenue_by_country(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_revenue_by_country(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_revenue_by_country(from_date=start, to_date=end)
     return list(result) if result else []
 
 
@@ -221,14 +215,13 @@ def get_revenue_quarterly(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> MonthlyFinancialResponse:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_revenue_quarterly(company_id=company_id, quarters=quarters, from_date=start, to_date=end)
+    result = service.get_revenue_quarterly(quarters=quarters, from_date=start, to_date=end)
     if not result:
         return MonthlyFinancialResponse()
     data = []
@@ -259,8 +252,7 @@ def get_invoice_aging(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> dict:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_invoice_aging(company_id=company_id)
+    result = service.get_invoice_aging()
     return dict(result) if result else {}
 
 
@@ -273,14 +265,13 @@ def get_revenue_by_client(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> ClientRevenueResponse:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_revenue_by_client(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_revenue_by_client(from_date=start, to_date=end)
     if not result:
         return ClientRevenueResponse()
     items = []
@@ -309,14 +300,13 @@ def get_client_analytics(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> ClientRevenueResponse:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_client_analytics(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_client_analytics(from_date=start, to_date=end)
     if not result:
         return ClientRevenueResponse()
     items = []
@@ -352,8 +342,7 @@ def get_client_growth(
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    company_id = current_user.get("company_id", 0)
-    result = service.get_client_growth(company_id=company_id, months=months, from_date=start, to_date=end)
+    result = service.get_client_growth(months=months, from_date=start, to_date=end)
     return list(result) if result else []
 
 
@@ -362,8 +351,7 @@ def get_client_retention(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_client_retention(company_id=company_id)
+    result = service.get_client_retention()
     return list(result) if result else []
 
 
@@ -372,8 +360,7 @@ def get_revenue_concentration(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_revenue_concentration(company_id=company_id)
+    result = service.get_revenue_concentration()
     return list(result) if result else []
 
 
@@ -386,14 +373,13 @@ def get_fleet_analytics(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[FleetUtilizationItem]:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_fleet(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_fleet(from_date=start, to_date=end)
     if not result:
         return []
     items = []
@@ -416,8 +402,7 @@ def get_truck_utilization(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[FleetUtilizationItem]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_truck_utilization(company_id=company_id)
+    result = service.get_truck_utilization()
     if not result:
         return []
     items = []
@@ -449,8 +434,7 @@ def get_route_profitability(
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    company_id = current_user.get("company_id", 0)
-    result = service.get_route_profitability(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_route_profitability(from_date=start, to_date=end)
     if not result:
         return []
     items = []
@@ -474,8 +458,7 @@ def get_profit_per_km_by_country(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_profit_per_km_by_country(company_id=company_id)
+    result = service.get_profit_per_km_by_country()
     return list(result) if result else []
 
 
@@ -485,8 +468,7 @@ def get_profit_vs_distance(
     limit: int = Query(100, ge=1, le=1000),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_profit_vs_distance(company_id=company_id, limit=limit)
+    result = service.get_profit_vs_distance(limit=limit)
     return list(result) if result else []
 
 
@@ -499,14 +481,13 @@ def get_driver_analytics(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[DriverComparisonItem]:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_driver(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_driver(from_date=start, to_date=end)
     if not result:
         return []
     items = []
@@ -539,8 +520,7 @@ def get_driver_comparison(
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    company_id = current_user.get("company_id", 0)
-    result = service.get_driver_comparison(company_id=company_id, from_date=start, to_date=end)
+    result = service.get_driver_comparison(from_date=start, to_date=end)
     if not result:
         return []
     items = []
@@ -565,8 +545,7 @@ def get_driver_profit_per_km(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[DriverComparisonItem]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_driver_profit_per_km(company_id=company_id)
+    result = service.get_driver_profit_per_km()
     if not result:
         return []
     items = []
@@ -590,8 +569,7 @@ def get_driver_tacho_violations(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_driver_tacho_violations(company_id=company_id)
+    result = service.get_driver_tacho_violations()
     return list(result) if result else []
 
 
@@ -605,14 +583,13 @@ def get_driver_monthly_activity(
     to_date: Optional[str] = Query(None, description="[DEPRECATED] Use date_to"),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
     if from_date:
         warnings.warn("'from_date' is deprecated, use 'date_from'", DeprecationWarning)
     if to_date:
         warnings.warn("'to_date' is deprecated, use 'date_to'", DeprecationWarning)
     start = date_from or from_date
     end = date_to or to_date
-    result = service.get_driver_monthly_activity(company_id=company_id, months=months, from_date=start, to_date=end)
+    result = service.get_driver_monthly_activity(months=months, from_date=start, to_date=end)
     return list(result) if result else []
 
 
@@ -621,8 +598,7 @@ def get_document_analytics(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> dict:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_document(company_id=company_id)
+    result = service.get_document()
     return dict(result) if result else {}
 
 
@@ -632,8 +608,7 @@ def get_document_upload_trend(
     months: int = Query(12, ge=1, le=60),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[dict]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_document_upload_trend(company_id=company_id, months=months)
+    result = service.get_document_upload_trend(months=months)
     return list(result) if result else []
 
 
@@ -642,8 +617,7 @@ def get_maintenance_alerts(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> List[MaintenanceAlertItem]:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_maintenance_alerts(company_id=company_id)
+    result = service.get_maintenance_alerts()
     if not result:
         return []
     items = []
@@ -667,8 +641,7 @@ def invalidate_cache(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> dict:
-    company_id = current_user.get("company_id", 0)
-    service.invalidate(company_id=company_id)
+    service.invalidate()
     return {"status": "cache invalidated"}
 
 
@@ -677,8 +650,7 @@ def get_overview(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: AnalyticsService = Depends(get_analytics_service),
 ) -> AnalyticsOverview:
-    company_id = current_user.get("company_id", 0)
-    result = service.get_data(company_id=company_id)
+    result = service.get_data()
     if not result:
         return AnalyticsOverview()
     if isinstance(result, dict):
@@ -688,13 +660,8 @@ def get_overview(
         if isinstance(alerts, list):
             critical = sum(1 for a in alerts if isinstance(a, dict) and a.get("type") == "RED")
             warning = sum(1 for a in alerts if isinstance(a, dict) and a.get("type") == "YELLOW")
-            # overdue_amount may come through as a list (e.g. per_driver data) — coerce safely
-            try:
-                amount = float(overdue_amount) if not isinstance(overdue_amount, (list, tuple)) else 0.0
-            except (TypeError, ValueError):
-                amount = 0.0
             return AnalyticsOverview(
-                overdue_amount=amount,
+                overdue_amount=float(overdue_amount),
                 alerts=AlertSummary(total=len(alerts), critical=critical, warning=warning),
             )
     return AnalyticsOverview()

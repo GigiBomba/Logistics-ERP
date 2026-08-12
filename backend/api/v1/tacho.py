@@ -1,5 +1,3 @@
-from __future__ import annotations
-
 import os
 import tempfile
 from typing import Any, Dict
@@ -9,7 +7,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
-from backend.db import DatabaseManager
+from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/tacho", tags=["tacho"])
 
@@ -55,10 +53,9 @@ def import_tacho_file(
     try:
         temp.write(content)
         temp.close()
-        from backend.services.tacho_service import TachoService
-        company_id = current_user.get("company_id", 0)
+        from services.tacho_service import TachoService
         svc = TachoService(db)
-        result = svc.import_ddd_file(temp.name, company_id=company_id)
+        result = svc.import_ddd_file(temp.name)
         return {"status": "imported", "result": str(result)}
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
@@ -72,21 +69,13 @@ def get_tacho_import_history(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(50, ge=1, le=200, description="Items per page"),
-    limit: int | None = Query(None, description="Backward-compat alias for page_size"),
     db: DatabaseManager = Depends(get_db),
 ):
     """Return paginated tacho import history."""
-    company_id = current_user.get("company_id", 0)
-    effective_page_size = limit if limit is not None else page_size
-    try:
-        from backend.repositories.tacho_import_repository import TachoImportRepository
-        repo = TachoImportRepository(db)
-        rows = repo.get_recent(company_id=company_id, limit=effective_page_size)
-        return PaginatedResponse.from_items(
-            items=rows, total=len(rows), page=page, page_size=effective_page_size,
-        )
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    from repositories.tacho_import_repository import TachoImportRepository
+    repo = TachoImportRepository(db)
+    rows = repo.get_recent(limit=page_size)
+    return PaginatedResponse.from_items(items=rows, total=len(rows), page=page, page_size=page_size)
 
 
 @router.get("/status")
@@ -95,7 +84,6 @@ def get_tacho_status(
     db: DatabaseManager = Depends(get_db),
 ):
     from services.tacho_service import TachoService
-    company_id = current_user.get("company_id", 0)
     try:
         svc = TachoService(db)
     except Exception as exc:

@@ -1,6 +1,6 @@
 """Waitlist request/response schemas."""
 
-from typing import Any, Optional
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field
 
@@ -16,6 +16,11 @@ class WaitlistJoinRequest(BaseModel):
     country: Optional[str] = Field(None, max_length=2, description="ISO 3166-1 alpha-2 country code")
     source: str = Field("landing_page", description="Signup source / campaign")
     hp_field: Optional[str] = Field(None, description="Honeypot — leave empty")
+    turnstile_token: Optional[str] = Field(None, description="Cloudflare Turnstile token")
+    referred_by: Optional[str] = Field(
+        None, max_length=16,
+        description="Referrer's waitlist referral code (redeemed on join)",
+    )
 
 
 class WaitlistJoinResponse(BaseModel):
@@ -89,3 +94,19 @@ class WaitlistStatsResponse(BaseModel):
     by_source: dict[str, int]
     growth_daily: list[dict[str, Any]]
     conversion_rate: float
+
+
+class WaitlistCampaignRequest(BaseModel):
+    """Admin campaign send payload (simulated send — no email infra yet)."""
+
+    subject: str = Field(..., min_length=1, description="Email subject (required)")
+    body: str = Field("", description="Email body")
+    segment: Literal["all", "invited", "joined", "converted"] = Field(
+        "all", description="Recipient segment (churned/unsubscribed never included)"
+    )
+
+
+class WaitlistCampaignResponse(BaseModel):
+    status: str
+    count: int
+    total_recipients: int

@@ -32,11 +32,6 @@ from backend.copilot.tools.registry import available_tools, get_tool
 
 logger = logging.getLogger(__name__)
 
-# i18n key surfaced when an intent's tool is not in the caller's permitted
-# tool set (§15 — permission system).  The client resolves it via ``t()``
-# exactly like every other ``copilot.*`` message key.
-PERMISSION_DENIED_KEY = "copilot.error.permission_denied"
-
 # ── Tool auto-loading ───────────────────────────────────────────────────────
 
 def _ensure_tools_loaded() -> None:
@@ -55,22 +50,6 @@ def _ensure_tools_loaded() -> None:
         import backend.copilot.tools.help_tools         # noqa: F401
     except ImportError:
         pass  # Tools not yet implemented
-
-
-def _ensure_llm_providers_loaded() -> None:
-    """Import all LLM provider modules to trigger @register_llm_provider decorators.
-
-    Must be called before any LLM routing decision so that the provider
-    registry is populated and routing validation can pass.
-
-    Same pattern as _ensure_tools_loaded() — each provider module
-    self-registers at import time via its decorator.
-    """
-    try:
-        import backend.copilot.llm.providers.google_provider   # noqa: F401
-        import backend.copilot.llm.providers.ocr_ai_provider   # noqa: F401
-    except ImportError:
-        pass  # Providers not yet available
 
 # ── Phase 1: Keyword-based intent mapping ───────────────────────────────────
 # Maps user query patterns to (intent_name, entity_mappings)
@@ -271,17 +250,11 @@ async def process_utterance(
     conversation_id: str,
     session_ctx: Optional[SessionContext] = None,
     services: Optional[Dict[str, Any]] = None,
-    permitted_tools: Optional[List[str]] = None,
 ) -> CoPilotResponse:
     """Process a user utterance through the full Co-Pilot pipeline.
 
     Pipeline: Understand → Build ReasoningGraph → Resolve → Compile ExecutionPlan
               → Execute (Level 0 only) → Summarize
-
-    ``permitted_tools`` is the server-side RBAC-resolved set of tool names the
-    caller may use (see ``backend/copilot/context.py:resolve_available_tools``).
-    When provided, any intent whose tool is outside this set is rejected with a
-    clear denial BEFORE a plan is compiled — the tool is never executed.
     """
     # ── Graceful degradation (§23.5) — LLM provider calls should use
     # executor.execute_with_fallback() with a sensible timeout and a
@@ -289,16 +262,10 @@ async def process_utterance(
     # the normal UI. This is wired here as infrastructure; Phase 6+
     # will use it when LLM-based intent extraction is enabled.
 
-    # Normalise the permitted set once — callers may pass a list or a set.
-    permitted_set: Optional[set] = set(permitted_tools) if permitted_tools is not None else None
-
     # ── 0. Ensure all tool modules are loaded ───────────────────────────
     _ensure_tools_loaded()
 
     try:
-        # ── 0b. Ensure LLM providers are loaded ────────────────────────────
-        _ensure_llm_providers_loaded()
-
         # ── 1. Understand: Extract intent ───────────────────────────────────
         intent = await extract_intent(utterance)
 
@@ -317,26 +284,6 @@ async def process_utterance(
                 conversation_id=conversation_id,
                 clarification_question_key="copilot.clarification.tool_unavailable",
                 clarification_params={"intent": intent.name},
-            )
-
-        # ── 1b. RBAC permission gate (§15) ─────────────────────────────────
-        # ``get_tool`` is a registry lookup, NOT an authorization check.  The
-        # permitted set was resolved server-side from the caller's JWT role
-        # before this request entered the pipeline (copilot_router →
-        # resolve_available_tools).  An intent whose tool is missing from that
-        # set must never be compiled or executed.
-        if permitted_set is not None and intent.name not in permitted_set:
-            logger.warning(
-                "RBAC denied tool '%s' for role '%s' user=%s company=%s",
-                intent.name, global_ctx.role, global_ctx.user_id, global_ctx.company_id,
-            )
-            return CoPilotResponse(
-                conversation_id=conversation_id,
-                clarification_question_key=PERMISSION_DENIED_KEY,
-                clarification_params={
-                    "intent": intent.name,
-                    "role": global_ctx.role,
-                },
             )
 
         # ── 2. Confidence check ─────────────────────────────────────────────
@@ -404,7 +351,6 @@ async def process_utterance(
             global_ctx=global_ctx,
             session_ctx=session_ctx,
             services=services,
-            permitted_tools=permitted_set,
         )
 
         if plan is None:
@@ -473,27 +419,14 @@ async def compile_execution_plan(
     global_ctx: GlobalContext,
     session_ctx: Optional[SessionContext] = None,
     services: Optional[Dict[str, Any]] = None,
-    permitted_tools: Optional[set] = None,
 ) -> Optional[ExecutionPlan]:
     """Compile an ExecutionPlan from a resolved ReasoningGraph and Intent.
 
     Phase 1: Creates a single-step ExecutionPlan for the resolved intent.
     Each entity becomes a parameter in the tool call.
-
-    Defense-in-depth RBAC: when ``permitted_tools`` is provided and
-    ``intent.name`` is not in it, NO step is created and ``None`` is
-    returned (the caller surfaces a denial).  The authoritative check also
-    runs earlier in :func:`process_utterance`; this guards any direct callers.
     """
     tool = get_tool(intent.name)
     if tool is None:
-        return None
-
-    if permitted_tools is not None and intent.name not in permitted_tools:
-        logger.warning(
-            "compile_execution_plan: RBAC denied tool '%s' for role '%s'",
-            intent.name, global_ctx.role,
-        )
         return None
 
     # Build parameters from entities

@@ -20,9 +20,9 @@ class InvoiceGenerateRequest(BaseModel):
 
 
 class InvoiceSendEmailRequest(BaseModel):
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "ignore"}
 
-    recipient_email: str = Field(..., max_length=255)
+    recipient: str = Field(default="", max_length=255)
     trip_id: Optional[int] = None
     trip_data: Optional[Dict[str, Any]] = None
     mode: str = Field(default="client", max_length=50)
