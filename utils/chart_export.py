@@ -262,6 +262,18 @@ class _RenderEngine:
                     "Render timed out after %.1fs — recycling browser",
                     request.get("timeout", 30),
                 )
+                # Retry with a software-rendering-compatible flag set: the
+                # aggressive GPU-suppression flags can deadlock headless
+                # Chrome on GPU-less environments (Page.loadEventFired never
+                # fires), so the next recycle must drop them.
+                global _SOFTWARE_RENDER_FALLBACK
+                if not _SOFTWARE_RENDER_FALLBACK:
+                    _SOFTWARE_RENDER_FALLBACK = True
+                    _log.warning(
+                        "Switching to software-rendering Chrome flags for "
+                        "subsequent recycles (set OPERION_CHROME_SOFTWARE=1 "
+                        "to force this mode from the start)"
+                    )
                 self._needs_recycle.set()
                 if not future.done():
                     future.set_exception(TimeoutError("Render timed out"))
@@ -627,6 +639,31 @@ class _RenderEngine:
             self._thread.join(timeout=5)
 
 
+_SOFTWARE_RENDER_FALLBACK: bool = False
+"""True once a render timed out (or OPERION_CHROME_SOFTWARE=1 is set).
+
+On environments without GPU compositing, the default flag set
+(``--disable-software-rasterizer`` + ``--disable-gpu-compositing``) can
+leave ``--headless=new`` Chrome with no rendering path at all, so
+``Page.loadEventFired`` never fires and every render hangs until the
+timeout.  After the first timeout (or when the env var is set), recycle
+with a software-rendering-compatible flag set instead of retrying the
+same aggressive combination.
+"""
+
+
+def _software_render_mode() -> bool:
+    """True when the software-rendering flag set should be used.
+
+    Either the env override ``OPERION_CHROME_SOFTWARE=1`` is set (force
+    from the start — useful on VMs/containers without GPU compositing)
+    or a render timeout already switched the engine to the fallback.
+    """
+    if os.environ.get("OPERION_CHROME_SOFTWARE", "").strip() in ("1", "true", "yes"):
+        return True
+    return _SOFTWARE_RENDER_FALLBACK
+
+
 class _SilentChromium:
     """Subclass of Choreographer's Chromium browser with aggressive silent flags.
 
@@ -693,9 +730,7 @@ class _SilentChromium:
             "--headless=new",
             "--window-position=-10000,-10000",
             "--window-size=10,10",
-            "--disable-software-rasterizer",
             "--disable-crashpad-for-testing",
-            "--disable-gpu-compositing",
             "--disable-features=TranslateUI,Crashpad,ChromeWhatsNewUI",
             "--disable-background-networking",
             "--disable-component-extensions-with-background-pages",
@@ -704,6 +739,12 @@ class _SilentChromium:
             "--no-first-run",
             f"--user-data-dir={_ensure_profile_dir()}",
         ]
+        # Software-rendering fallback: drop the two flags that can leave
+        # headless Chrome with no rendering path on GPU-less environments
+        # (they made Page.loadEventFired never fire → render timeout).
+        if not _software_render_mode():
+            flags_to_add.insert(3, "--disable-software-rasterizer")
+            flags_to_add.insert(5, "--disable-gpu-compositing")
         for flag in flags_to_add:
             if flag not in cli:
                 cli.append(flag)

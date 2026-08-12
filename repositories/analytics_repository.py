@@ -49,7 +49,8 @@ class AnalyticsRepository(BaseRepository):
 
     def _month_expr(self) -> str:
         if getattr(self.db, "_engine", "sqlite") == "postgresql":
-            return "SUBSTRING(created_at, 1, 7)"
+            # created_at is timestamptz on PG: substring() needs a text cast
+            return "SUBSTRING(created_at::text, 1, 7)"
         self._ensure_month_checked()
         return "month" if self._month_col_available else "SUBSTR(created_at, 1, 7)"
 
@@ -89,7 +90,7 @@ class AnalyticsRepository(BaseRepository):
         best_month = self._fetchone(
             f"SELECT {month_expr} as month, SUM(net_profit) as m_profit "
             f"FROM trips WHERE 1=1 {self._company_filter()} "
-            "GROUP BY month "
+            f"GROUP BY {month_expr} "
             "ORDER BY m_profit DESC LIMIT 1",
             self._company_params(),
         )
@@ -113,7 +114,7 @@ class AnalyticsRepository(BaseRepository):
         bm = self._fetchone(
             f"SELECT {month_expr} as month, SUM(net_profit) as m_profit "
             f"FROM trips WHERE 1=1 {self._company_filter()} "
-            "GROUP BY month ORDER BY m_profit DESC LIMIT 1",
+            f"GROUP BY {month_expr} ORDER BY m_profit DESC LIMIT 1",
             self._company_params(),
         )
         return bt, bd, bm
@@ -128,7 +129,7 @@ class AnalyticsRepository(BaseRepository):
         month_expr = self._month_expr()
         monthly = self._fetchall(
             f"SELECT {month_expr} as month, SUM(net_profit) as p FROM trips "
-            f"WHERE 1=1 {self._company_filter()} GROUP BY month ORDER BY month DESC LIMIT 6",
+            f"WHERE 1=1 {self._company_filter()} GROUP BY {month_expr} ORDER BY month DESC LIMIT 6",
             self._company_params(),
         )
         monthly.reverse()
@@ -136,7 +137,7 @@ class AnalyticsRepository(BaseRepository):
 
     def get_available_years(self):
         """Anii disponibili pentru filtre."""
-        year_expr = "SUBSTRING(created_at, 1, 4)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 4)"
+        year_expr = "SUBSTRING(created_at::text, 1, 4)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 4)"
         rows = self._fetchall(
             f"SELECT DISTINCT {year_expr} as year FROM trips WHERE 1=1 {self._company_filter()} ORDER BY year DESC",
             self._company_params(),
@@ -242,7 +243,7 @@ class AnalyticsRepository(BaseRepository):
             SELECT {self._month_expr()} as month,
             SUM(total_price_eur) as rev,
             SUM(total_price_eur - net_profit) as exp
-            FROM trips {date_clause} GROUP BY month ORDER BY month DESC LIMIT 6
+            FROM trips {date_clause} GROUP BY {self._month_expr()} ORDER BY month DESC LIMIT 6
         """, tuple(date_params))
         rev_exp.reverse()
         return per_truck, per_driver, rev_exp
@@ -253,13 +254,17 @@ class AnalyticsRepository(BaseRepository):
         """Revenue, profit, margin over time by month."""
         clause, params = self._date_clause(from_date, to_date)
         month_expr = self._month_expr()
+        # Group by the expression itself: trips.month is a real (generated)
+        # column on both engines, so `GROUP BY month` binds to the column on
+        # PG (alias resolution is column-first there) and the SELECT's
+        # SUBSTRING expression would violate PG's strict GROUP BY.
         monthly = self._fetchall(f"""
             SELECT {month_expr} AS month,
                    SUM(total_price_eur) AS revenue,
                    SUM(net_profit) AS profit,
                    AVG(CASE WHEN total_price_eur > 0 THEN net_profit * 100.0 / total_price_eur END) AS margin_pct
             FROM trips {clause}
-            GROUP BY month ORDER BY month ASC LIMIT 24
+            GROUP BY {month_expr} ORDER BY {month_expr} ASC LIMIT 24
         """, tuple(params))
         return monthly
 
@@ -494,11 +499,11 @@ class AnalyticsRepository(BaseRepository):
             extra = " AND created_at >= ? AND created_at <= ?"
             extra_params.extend([from_date, to_date])
         company_filter = self._company_filter()
-        month_expr = "SUBSTRING(created_at, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 7)"
+        month_expr = "SUBSTRING(created_at::text, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 7)"
         return self._fetchall(
             f"SELECT {month_expr} AS month, COUNT(*) AS new_clients "
             f"FROM clients WHERE is_active = 1 {company_filter}{extra} "
-            "GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(extra_params + [months]),
         )
 
@@ -515,27 +520,34 @@ class AnalyticsRepository(BaseRepository):
         """, self._company_params())
 
     def get_document_upload_trend(self, months: int = 12):
-        month_expr = "SUBSTRING(uploaded_at, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(uploaded_at, 1, 7)"
+        month_expr = "SUBSTRING(uploaded_at::text, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(uploaded_at, 1, 7)"
         return self._fetchall(
             f"SELECT {month_expr} AS month, COUNT(*) AS count, "
             f"SUM(CASE WHEN category IN ('invoices','trips','cmr') THEN 1 ELSE 0 END) AS doc_count, "
             f"SUM(CASE WHEN category = 'cmr' THEN 1 ELSE 0 END) AS cmr_count "
-            f"FROM documents WHERE is_archived = 0 {self._company_filter()} "
-            "GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM documents {self._company_filter()} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             self._company_params() + (months,),
         )
 
     def get_driver_tacho_violations(self):
         activity_cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            # violations is TEXT on PG (SQLite SUM coerces implicitly; PG does not)
+            violations_sum = (
+                "COALESCE(SUM(CASE WHEN da.violations ~ '^[0-9]+$' "
+                "THEN da.violations::int ELSE 0 END), 0)"
+            )
+        else:
+            violations_sum = "COALESCE(SUM(da.violations), 0)"
         return self._fetchall(f"""
             SELECT d.name AS driver, COUNT(da.id) AS activity_days,
-                   COALESCE(SUM(da.violations), 0) AS total_violations,
+                   {violations_sum} AS total_violations,
                    COALESCE(SUM(da.driving_minutes) / 60.0, 0) AS driving_hours,
                    COALESCE(SUM(da.rest_minutes) / 60.0, 0) AS rest_hours
             FROM tacho_driver_activity da
             JOIN drivers d ON da.driver_id = d.id
             WHERE da.activity_date >= ? {self._company_filter('da')}
-            GROUP BY da.driver_id ORDER BY total_violations DESC LIMIT 15
+            GROUP BY da.driver_id, d.name ORDER BY total_violations DESC LIMIT 15
         """, (activity_cutoff,) + self._company_params())
 
     def get_profit_per_km_by_country(self):
@@ -583,7 +595,7 @@ class AnalyticsRepository(BaseRepository):
             "     ELSE 0 END AS margin_pct, "
             "SUM(CASE WHEN status IN ('Invoiced', 'Paid') THEN 1 ELSE 0 END) AS invoiced_count, "
             "SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count "
-            f"FROM trips {clause} GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM trips {clause} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(list(clause_params) + [months]),
         )
 
@@ -610,7 +622,7 @@ class AnalyticsRepository(BaseRepository):
             "COALESCE(SUM(extra_costs), 0) AS extra_costs, "
             "COALESCE(SUM(total_price_eur), 0) AS revenue, "
             "COALESCE(SUM(net_profit), 0) AS net_profit "
-            f"FROM trips {clause} GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM trips {clause} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(list(clause_params) + [months]),
         )
 
@@ -622,7 +634,7 @@ class AnalyticsRepository(BaseRepository):
             f"SELECT {month_expr} AS month, COUNT(*) AS trip_count, "
             "COALESCE(SUM(distance_km), 0) AS total_distance, "
             "COALESCE(AVG(distance_km), 0) AS avg_distance "
-            f"FROM trips {clause} GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM trips {clause} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(list(clause_params) + [months]),
         )
 
@@ -680,8 +692,8 @@ class AnalyticsRepository(BaseRepository):
         clause, clause_params = self._date_clause(from_date, to_date)
         if getattr(self.db, "_engine", "sqlite") == "postgresql":
             quarter_expr = (
-                "SUBSTRING(created_at, 1, 4) || '-Q' || "
-                "(CAST(SUBSTRING(created_at, 6, 2) AS INTEGER) + 2) / 3"
+                "SUBSTRING(created_at::text, 1, 4) || '-Q' || "
+                "(CAST(SUBSTRING(created_at::text, 6, 2) AS INTEGER) + 2) / 3"
             )
         else:
             quarter_expr = (
@@ -740,8 +752,10 @@ class AnalyticsRepository(BaseRepository):
         full_clause = f"{clause} {company_filter}" if company_filter else clause
         full_params = params + company_params
         if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            # payment_date is timestamptz on PG: the ''-guard is SQLite-only
+            # (PG cannot compare a timestamp to an empty string)
             delay_case = (
-                "CASE WHEN t.payment_date IS NOT NULL AND t.payment_date != '' "
+                "CASE WHEN t.payment_date IS NOT NULL "
                 "THEN (t.payment_date::date - i.issue_date::date) "
                 "ELSE (i.due_date::date - i.issue_date::date) "
                 "END"

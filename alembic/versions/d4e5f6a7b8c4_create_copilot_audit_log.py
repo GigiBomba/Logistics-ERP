@@ -20,8 +20,11 @@ def upgrade() -> None:
         sa.Column('id', sa.UUID(), primary_key=True, server_default=sa.text('gen_random_uuid()')),
         sa.Column('company_id', sa.BigInteger(), sa.ForeignKey('companies.id'), nullable=False),
         sa.Column('user_id', sa.BigInteger(), sa.ForeignKey('users.id'), nullable=False),
-        sa.Column('conversation_id', sa.UUID(), nullable=False),
-        sa.Column('plan_id', sa.UUID(), nullable=False),
+        # conversation_id / plan_id are free-form caller-supplied strings in
+        # the app (see backend/copilot/audit.py) and TEXT on the SQLite side;
+        # UUID here would reject real app writes at runtime.
+        sa.Column('conversation_id', sa.Text(), nullable=False),
+        sa.Column('plan_id', sa.Text(), nullable=False),
         sa.Column('step_id', sa.Text(), nullable=False),
         sa.Column('tool_name', sa.Text(), nullable=False),
         sa.Column('tool_version', sa.Text(), nullable=False),
