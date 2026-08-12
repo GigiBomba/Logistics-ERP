@@ -7,7 +7,7 @@ from fastapi.responses import FileResponse
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.receipt import ReceiptGenerateRequest
-from backend.db import DatabaseManager
+from database.db_manager import DatabaseManager
 
 router = APIRouter(prefix="/receipts", tags=["receipts"])
 

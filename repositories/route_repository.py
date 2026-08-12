@@ -24,22 +24,16 @@ class RouteRepository(BaseRepository):
             RouteRepository._migrate_done = True
 
     def _run_migration(self):
-        # PostgreSQL schema (schema_pg.sql) already includes is_committed
-        # and the unique index — skip the migration entirely.
-        if getattr(self.db, "_engine", "sqlite") == "postgresql":
-            RouteRepository._migrate_done = True
-            return
-
         # 1. Ensure is_committed column exists
         cols = self._fetchall(f"PRAGMA table_info({self.TABLE})")
         if not any(r["name"] == "is_committed" for r in cols):
             self._execute(
                 f"ALTER TABLE {self.TABLE} ADD COLUMN is_committed INTEGER NOT NULL DEFAULT 0"
-            , commit=True)
+            )
         # 2. Ensure unique index on route_fingerprint (required by ON CONFLICT in upsert)
         self._execute(
             f"CREATE UNIQUE INDEX IF NOT EXISTS idx_route_fingerprint ON {self.TABLE}(route_fingerprint)"
-        , commit=True)
+        )
 
     # ── Base CRUD ─────────────────────────────────────────────────────
 
@@ -49,30 +43,15 @@ class RouteRepository(BaseRepository):
             (route_id,) + self._company_params(),
         )
 
-    def get_routes_by_ids(self, route_ids: List[int]) -> List[Dict[str, Any]]:
-        """Return the subset of *route_ids* belonging to the given company.
-
-        Single ``id IN (...)`` query so the dispatch board can resolve route
-        stops for a batch of trips in one lookup instead of N sequential
-        ``get_by_id`` calls (mirrors ``FleetRepository.get_trucks_by_ids``).
-        """
-        if not route_ids:
-            return []
-        placeholders = ", ".join("?" for _ in route_ids)
-        return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()}",
-            tuple(route_ids) + self._company_params(),
-        )
-
     def get_all(self, limit: int = 100, offset: int = 0, include_archived: bool = False) -> List[Dict[str, Any]]:
         if include_archived:
             return self._fetchall(
                 f"SELECT * FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-                self._company_params() + (limit, offset),
+                (limit, offset) + self._company_params(),
             )
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL AND is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
-            self._company_params() + (limit, offset),
+            (limit, offset) + self._company_params(),
         )
 
     def create(self, data: Dict[str, Any]) -> int:
@@ -83,22 +62,22 @@ class RouteRepository(BaseRepository):
         vals = ", ".join("?" for _ in filtered)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(filtered.values()), commit=True,
-		)
+            tuple(filtered.values()),
+        )
 
     def update(self, route_id: int, data: Dict[str, Any]) -> None:
         self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (route_id,) + self._company_params(), commit=True,
-		)
+            tuple(data.values()) + (route_id,) + self._company_params(),
+        )
 
     def delete(self, route_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (route_id,) + self._company_params(), commit=True,
-		)
+            (route_id,) + self._company_params(),
+        )
 
     # ── Domain-specific queries ───────────────────────────────────────
 
@@ -141,20 +120,20 @@ class RouteRepository(BaseRepository):
         ts = archived_at or datetime.utcnow().isoformat(timespec="seconds") + "Z"
         self._execute(
             f"UPDATE {self.TABLE} SET archived_at = ? WHERE id = ? {self._company_filter()}",
-            (ts, route_id,) + self._company_params(), commit=True,
-		)
+            (ts, route_id,) + self._company_params(),
+        )
 
     def commit(self, route_id: int) -> None:
         self._execute(
             f"UPDATE {self.TABLE} SET is_committed = 1 WHERE id = ? {self._company_filter()}",
-            (route_id,) + self._company_params(), commit=True,
-		)
+            (route_id,) + self._company_params(),
+        )
 
     def discard(self, route_id: int) -> None:
         self._execute(
             f"UPDATE {self.TABLE} SET is_committed = -1 WHERE id = ? {self._company_filter()}",
-            (route_id,) + self._company_params(), commit=True,
-		)
+            (route_id,) + self._company_params(),
+        )
 
     def count(self) -> int:
         row = self._fetchone(
@@ -183,8 +162,8 @@ class RouteRepository(BaseRepository):
                     calculation_count = {self.TABLE}.calculation_count + 1,
                     metadata_version = excluded.metadata_version,
                     {set_clauses}""",
-            tuple(filtered.values()), commit=True,
-		)
+            tuple(filtered.values()),
+        )
 
     def get_id_by_fingerprint(self, fingerprint: str) -> Optional[int]:
         row = self._fetchone(
@@ -301,11 +280,11 @@ class RouteRepository(BaseRepository):
     def clear_all(self) -> int:
         return self._execute_with_count(
             f"DELETE FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
-            self._company_params(), commit=True,
-		)
+            self._company_params(),
+        )
 
     def prune_before(self, cutoff_iso: str) -> int:
         return self._execute_with_count(
             f"DELETE FROM {self.TABLE} WHERE last_calculated_at < datetime(?) {self._company_filter()}",
-            (cutoff_iso,) + self._company_params(), commit=True,
-		)
+            (cutoff_iso,) + self._company_params(),
+        )

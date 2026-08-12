@@ -8,7 +8,7 @@ from fastapi.responses import JSONResponse
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_admin
-from backend.db import DatabaseManager
+from database.db_manager import DatabaseManager
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/health", tags=["health"])
 
 
 @router.get("/")
-async def health_check(db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
+async def health_check(db: DatabaseManager = Depends(get_db), _=Depends(require_admin)) -> Dict[str, Any]:
     """Legacy health check — returns basic status with DB connectivity.
 
     This is a combined liveness + readiness check. For separate probes, use:
@@ -26,7 +26,7 @@ async def health_check(db: DatabaseManager = Depends(get_db)) -> Dict[str, Any]:
     db_ok = False
     pool_stats = None
     try:
-        db.execute("SELECT 1").fetchone()
+        db.conn.execute("SELECT 1").fetchone()
         db_ok = True
         pool_stats = db.health_stats
     except Exception as exc:
@@ -52,7 +52,7 @@ async def liveness_probe() -> Dict[str, Any]:
 
 
 @router.get("/ready")
-async def readiness_probe(db: DatabaseManager = Depends(get_db)):
+async def readiness_probe(db: DatabaseManager = Depends(get_db), _=Depends(require_admin)):
     """Kubernetes readiness probe.
 
     Returns 200 if the application is ready to serve traffic.
@@ -68,7 +68,7 @@ async def readiness_probe(db: DatabaseManager = Depends(get_db)):
 
     # 1. Database connectivity
     try:
-        db.execute("SELECT 1")
+        db.conn.execute("SELECT 1")
         checks["database"] = "ok"
     except Exception as e:
         checks["database"] = f"error: {e}"

@@ -1,7 +1,7 @@
 """SLO/SLA status endpoints."""
 from fastapi import APIRouter, Depends
 from backend.dependencies_security import require_admin
-from backend.services.slo_service import get_slo_service
+from services.slo_service import get_slo_service
 
 router = APIRouter(tags=["slo"])
 

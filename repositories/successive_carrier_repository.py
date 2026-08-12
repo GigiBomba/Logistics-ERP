@@ -6,7 +6,7 @@ from repositories import BaseRepository
 class SuccessiveCarrierRepository(BaseRepository):
     TABLE = "successive_carriers"
     COLUMNS = [
-        "id", "trip_id", "company_id", "sequence_order", "carrier_name",
+        "id", "trip_id", "sequence_order", "carrier_name",
         "carrier_address", "carrier_country", "vehicle_plate",
         "trailer_plate", "driver_name", "from_location", "to_location",
     ]
@@ -24,28 +24,28 @@ class SuccessiveCarrierRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def update(self, carrier_id: int, data: Dict[str, Any]) -> None:
         self._validate_columns(data)
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (carrier_id,) + self._company_params(), commit=True,
-		)
+            tuple(data.values()) + (carrier_id,) + self._company_params(),
+        )
 
     def delete(self, carrier_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (carrier_id,) + self._company_params(), commit=True,
-		)
+            (carrier_id,) + self._company_params(),
+        )
 
     def delete_by_trip(self, trip_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE trip_id = ? {self._company_filter()}",
-            (trip_id,) + self._company_params(), commit=True,
-		)
+            (trip_id,) + self._company_params(),
+        )
 
     def replace_for_trip(self, trip_id: int, carriers: List[Dict[str, Any]]) -> None:
         self.begin_transaction()

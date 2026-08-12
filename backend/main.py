@@ -1,9 +1,7 @@
-from __future__ import annotations
-
-import asyncio
 import logging
 import os
-from typing import Optional
+from contextlib import asynccontextmanager
+from typing import Dict, Optional
 
 # Load .env before any config is read
 try:
@@ -20,28 +18,39 @@ from fastapi.responses import JSONResponse
 
 from backend.api.v1.router import api_v1_router
 from backend.config import BackendSettings
-from backend.logging_config import configure_backend_logging
 from backend.metrics import PrometheusMiddleware
 from backend.middleware.auth_middleware import AuthMiddleware
 from backend.middleware.correlation_middleware import CorrelationMiddleware
+from backend.middleware.csrf import CSRFMiddleware
 from backend.middleware.idempotency_middleware import IdempotencyMiddleware
 from backend.middleware.logging_middleware import LoggingMiddleware
 from backend.middleware.rate_limit_middleware import RateLimitMiddleware
-from backend.middleware.input_sanitization_middleware import InputSanitizationMiddleware
 from backend.middleware.security_headers_middleware import SecurityHeadersMiddleware
 from backend.middleware.webhook_middleware import WebhookBodyMiddleware
 
 logger = logging.getLogger(__name__)
 
 
+@asynccontextmanager
+async def lifespan(_: FastAPI):
+    """Application lifecycle — shutdown releases shared clients best-effort.
+
+    In-flight requests are drained by the server (uvicorn/gunicorn handle
+    SIGTERM natively); this hook closes shared resources (Redis client).
+    """
+    yield
+    try:
+        from backend.utils import rate_limit as _rl
+        if _rl._redis_client is not None:
+            _rl._redis_client.close()
+    except Exception:
+        pass
+    logger.info("Operion API shutdown complete")
+
+
 def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
     if settings is None:
         settings = BackendSettings()
-
-    # JSON logging (F5 observability): one JSON object per log line, with
-    # request_id when present on the record.  Idempotent — preserves any
-    # logging already configured by gunicorn (only swaps formatters).
-    configure_backend_logging()
 
     env_mode = os.environ.get("OPERION_ENV", "development")
     is_production = env_mode == "production"
@@ -49,6 +58,7 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
     app = FastAPI(
         title="Operion ERP API",
         version="1.0.0",
+        lifespan=lifespan,
         docs_url="/docs" if not is_production else None,
         redoc_url="/redoc" if not is_production else None,
         openapi_url="/openapi.json" if not is_production else None,
@@ -68,10 +78,12 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
         allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-API-Key"],
     )
     if not is_production:
-        cors_kwargs["allow_origin_regex"] = r"https?://(localhost|127\.0\.0\.1|operionerp\.xyz|.*\.operionerp\.xyz)(:\d+)?"
+        cors_kwargs["allow_origin_regex"] = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
         cors_kwargs["allow_origins"] = []
     else:
         cors_kwargs["allow_origins"] = allowed_origins
+        # Pages preview deployments (<hash>.operion-website.pages.dev)
+        cors_kwargs["allow_origin_regex"] = r"https://([\w-]+\.)?operion-website\.pages\.dev"
 
     app.add_middleware(CORSMiddleware, **cors_kwargs)
 
@@ -87,11 +99,16 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
     # Idempotency middleware before rate limiter so replayed keys aren't counted
     app.add_middleware(IdempotencyMiddleware)
     app.add_middleware(RateLimitMiddleware)
+    # CSRF (double-submit cookie) — placed after the rate limiter so flood
+    # traffic is throttled before CSRF work, and before WebhookBodyMiddleware
+    # because CSRF only inspects headers (the raw body is left untouched for
+    # the webhook signature check that runs later in the stack).
+    app.add_middleware(
+        CSRFMiddleware,
+        is_production=is_production,
+    )
     app.add_middleware(WebhookBodyMiddleware)
     app.add_middleware(PrometheusMiddleware)
-    # Input sanitization — strips dangerous characters and neutralises
-    # injection patterns from all JSON request bodies (defence-in-depth).
-    app.add_middleware(InputSanitizationMiddleware)
 
     @app.exception_handler(Exception)
     async def global_exception_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -121,15 +138,13 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
         )
 
         logger.error("Unhandled error [%s]: %s %s — %s",
-                     get_correlation_id(), request.method, request.url.path, exc,
-                     exc_info=True, extra={"request_id": get_correlation_id()})
+                     get_correlation_id(), request.method, request.url.path, exc, exc_info=True)
 
         return JSONResponse(status_code=status, content=problem.to_dict())
 
     @app.exception_handler(500)
     async def internal_error_handler(request: Request, exc: Exception) -> JSONResponse:
         from backend.errors import ProblemDetail, get_error_code_for_exception
-        from backend.middleware.correlation_middleware import get_correlation_id
 
         error_code, status = get_error_code_for_exception(exc)
         problem = ProblemDetail(
@@ -140,68 +155,19 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
             instance=str(request.url),
             error_code=error_code.value,
         )
-        logger.error("500 error on %s %s: %s", request.method, request.url.path, exc,
-                     exc_info=True, extra={"request_id": get_correlation_id()})
+        logger.error("500 error on %s %s: %s", request.method, request.url.path, exc, exc_info=True)
         return JSONResponse(status_code=status, content=problem.to_dict())
 
+    @app.get("/api/v1/version")
+    def version_endpoint() -> Dict[str, str]:
+        """Public version + environment info (deployment verification)."""
+        return {
+            "name": "operion-api",
+            "version": app.version,
+            "environment": env_mode,
+        }
+
     app.include_router(api_v1_router)
-
-    # ── Warm the router match caches (F5, spurious-404 fix) ───────────────
-    # FastAPI >= 0.139 defers route flattening: ``include_router`` stores an
-    # ``_IncludedRouter`` per sub-router and lazily builds the effective
-    # candidate list on the first request.  That lazy rebuild is not
-    # thread-safe — a burst of concurrent requests against a fresh app can
-    # observe an empty/partial candidate list and return spurious 404
-    # "Not Found" for valid routes.  Walking the router tree once here
-    # populates every cache before any request can race on them.
-    try:
-        for _route in app.router.routes:
-            _route.matches({
-                "type": "http",
-                "method": "GET",
-                "path": "/__operion_route_warmup__",
-                "headers": [],
-                "query_string": b"",
-                "scheme": "http",
-                "root_path": "",
-                "server": ("127.0.0.1", 80),
-                "client": ("127.0.0.1", 12345),
-                "app": app,
-            })
-    except Exception:
-        # Warm-up is purely defensive — a failure here must never block startup.
-        logger.debug("Router cache warm-up skipped: %s", exc_info=True)
-
-    # ── Hourly idempotency-store cleanup (F5) ─────────────────────────────
-    # ``cleanup_expired_entries()`` prunes expired in-memory idempotency
-    # entries + their per-key locks.  Redis entries expire via TTL natively,
-    # so this only touches the in-memory fallback store.  One background task
-    # per app instance; cancelled cleanly on shutdown.
-    @app.on_event("startup")
-    async def _start_idempotency_cleanup() -> None:
-        from backend.middleware.idempotency_middleware import cleanup_expired_entries
-
-        async def _hourly_cleanup() -> None:
-            while True:
-                try:
-                    await asyncio.sleep(3600)
-                    cleanup_expired_entries()
-                except asyncio.CancelledError:
-                    break
-                except Exception:
-                    logger.exception("Idempotency cleanup task failed")
-
-        app.state._idempotency_cleanup_task = asyncio.create_task(_hourly_cleanup())
-
-    @app.on_event("shutdown")
-    async def _stop_idempotency_cleanup() -> None:
-        task = getattr(app.state, "_idempotency_cleanup_task", None)
-        if task is not None:
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass  # Task already stopped — shutdown proceeds normally
 
     return app
 

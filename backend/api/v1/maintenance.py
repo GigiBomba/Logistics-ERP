@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
-from backend.db import DatabaseManager
-from backend.repositories.fleet_repository import FleetRepository
+from database.db_manager import DatabaseManager
+from repositories.fleet_repository import FleetRepository
 
 router = APIRouter(prefix="/maintenance", tags=["maintenance"])
 
@@ -49,11 +49,10 @@ def get_maintenance_summary(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return maintenance summary including truck breakdown and monthly costs."""
-    company_id = current_user.get("company_id", 0)
     repo = FleetRepository(db)
     since_date = _resolve_since("", "")
-    truck_summary = repo.get_maintenance_truck_summary(since_date, company_id=company_id)
-    cost_monthly = repo.get_maintenance_cost_monthly(since_date, company_id=company_id)
+    truck_summary = repo.get_maintenance_truck_summary(since_date)
+    cost_monthly = repo.get_maintenance_cost_monthly(since_date)
     return MaintenanceSummaryResponse(
         trucks=truck_summary,
         cost_monthly=cost_monthly,
@@ -69,10 +68,9 @@ def get_maintenance_cost_monthly(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return monthly maintenance costs."""
-    company_id = current_user.get("company_id", 0)
     repo = FleetRepository(db)
     since_date = _resolve_since(date_from, since)
-    return MaintenanceDataResponse(data=repo.get_maintenance_cost_monthly(since_date, company_id=company_id))
+    return MaintenanceDataResponse(data=repo.get_maintenance_cost_monthly(since_date))
 
 
 @router.get("/cost-by-truck-monthly", response_model=MaintenanceDataResponse)
@@ -83,10 +81,9 @@ def get_maintenance_cost_by_truck_monthly(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return monthly maintenance costs broken down by truck."""
-    company_id = current_user.get("company_id", 0)
     repo = FleetRepository(db)
     since_date = _resolve_since(date_from, since)
-    return MaintenanceDataResponse(data=repo.get_maintenance_cost_truck_monthly(since_date, company_id=company_id))
+    return MaintenanceDataResponse(data=repo.get_maintenance_cost_truck_monthly(since_date))
 
 
 @router.get("/truck-summary", response_model=MaintenanceDataResponse)
@@ -97,10 +94,9 @@ def get_maintenance_truck_summary(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return maintenance summary per truck."""
-    company_id = current_user.get("company_id", 0)
     repo = FleetRepository(db)
     since_date = _resolve_since(date_from, since)
-    return MaintenanceDataResponse(data=repo.get_maintenance_truck_summary(since_date, company_id=company_id))
+    return MaintenanceDataResponse(data=repo.get_maintenance_truck_summary(since_date))
 
 
 @router.get("/top-categories", response_model=MaintenanceDataResponse)
@@ -111,7 +107,6 @@ def get_maintenance_top_categories(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return most expensive maintenance categories."""
-    company_id = current_user.get("company_id", 0)
     repo = FleetRepository(db)
     since_date = _resolve_since(date_from, since)
-    return MaintenanceDataResponse(data=repo.get_maintenance_most_expensive_category(since_date, company_id=company_id))
+    return MaintenanceDataResponse(data=repo.get_maintenance_most_expensive_category(since_date))

@@ -9,7 +9,7 @@ logger = logging.getLogger(__name__)
 from backend.dependencies import get_payment_batch_service
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.payment_profile import PaymentBatchRequest
-from backend.services.payment_batch_service import PaymentBatchService
+from services.payment_batch_service import PaymentBatchService
 
 from backend.dependencies_security import require_dispatcher
 
@@ -26,8 +26,7 @@ def list_recipients(
 ):
     """Get paginated list of payment recipients (clients + drivers + custom profiles) that have payment info."""
     try:
-        company_id = current_user.get("company_id", 0)
-        recipients = service.get_all_recipients(query=query, company_id=company_id)
+        recipients = service.get_all_recipients(query=query)
         return PaginatedResponse.from_items(items=recipients, total=len(recipients), page=page, page_size=page_size)
     except Exception as exc:
         logger.exception("Operation failed: %s", exc)
@@ -70,8 +69,7 @@ def validate_recipient(
 ):
     """Validate that a recipient has sufficient payment information for export."""
     try:
-        company_id = current_user.get("company_id", 0)
-        errors = service.validate_recipient_payment_info(recipient_id, recipient_type, company_id=company_id)
+        errors = service.validate_recipient_payment_info(recipient_id, recipient_type)
         return {"valid": len(errors) == 0, "errors": errors}
     except Exception as exc:
         logger.exception("Validation failed: %s", exc)
@@ -90,9 +88,8 @@ def export_batch_csv_direct(
     and doesn't need backend resolution.
     """
     try:
-        company_id = current_user.get("company_id", 0)
         items = [item.model_dump() for item in data.items]
-        csv_content = service.build_batch_csv(items, company_id=company_id)
+        csv_content = service.build_batch_csv(items)
         filename = (data.batch_name or "payment_batch").replace(" ", "_")
         return StreamingResponse(
             iter([csv_content]),

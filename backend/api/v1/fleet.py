@@ -1,4 +1,4 @@
-from typing import Any, Dict
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 
@@ -6,9 +6,9 @@ from backend.cache import get_cache
 from backend.dependencies import get_db, get_fleet_service
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
-from backend.schemas.fleet import GpsBatchRequest, GpsPing, GpsPosition, TruckResponse
-from backend.db import DatabaseManager
-from backend.services.fleet_service import FleetService
+from backend.schemas.fleet import GpsPing, GpsPosition, TruckResponse
+from database.db_manager import DatabaseManager
+from services.fleet_service import FleetService
 
 router = APIRouter(prefix="/fleet", tags=["fleet"])
 
@@ -25,8 +25,7 @@ def list_trucks(
     service: FleetService = Depends(get_fleet_service),
 ):
     """Return paginated list of trucks."""
-    company_id = current_user.get("company_id", 0)
-    trucks = service.get_trucks(company_id=company_id)
+    trucks = service.get_trucks()
     return PaginatedResponse.from_items(
         items=[TruckResponse(**t) for t in trucks],
         total=len(trucks),
@@ -41,8 +40,7 @@ def get_truck(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
-    company_id = current_user.get("company_id", 0)
-    truck = service.get_truck(truck_id, company_id=company_id)
+    truck = service.get_truck(truck_id)
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
     return TruckResponse(**truck)
@@ -54,8 +52,7 @@ def create_truck(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
-    company_id = current_user.get("company_id", 0)
-    truck_id = service.add_truck(data, company_id=company_id)
+    truck_id = service.add_truck(data)
     return {"id": truck_id}
 
 
@@ -67,8 +64,7 @@ def update_truck_partial(
     service: FleetService = Depends(get_fleet_service),
 ):
     """Partially update a truck (PATCH)."""
-    company_id = current_user.get("company_id", 0)
-    service.update_truck(truck_id, data, company_id=company_id)
+    service.update_truck(truck_id, data)
     return {"status": "updated"}
 
 
@@ -81,8 +77,7 @@ def update_truck(
     response: Response = None,
 ):
     """[DEPRECATED] Use PATCH /trucks/{truck_id} instead."""
-    company_id = current_user.get("company_id", 0)
-    service.update_truck(truck_id, data, company_id=company_id)
+    service.update_truck(truck_id, data)
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
     return {"status": "updated"}
@@ -94,8 +89,7 @@ def delete_truck(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     service: FleetService = Depends(get_fleet_service),
 ):
-    company_id = current_user.get("company_id", 0)
-    service.delete_truck(truck_id, company_id=company_id)
+    service.delete_truck(truck_id)
     return {"status": "deleted"}
 
 
@@ -103,17 +97,11 @@ def delete_truck(
 def ingest_gps_ping(
     ping: GpsPing,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    service: FleetService = Depends(get_fleet_service),
 ):
-    # Tenant-scoped check: never store a ping for a truck outside the caller's company.
-    company_id = current_user.get("company_id", 0)
-    truck = service.get_truck(ping.truck_id, company_id=company_id)
-    if not truck:
-        raise HTTPException(status_code=404, detail="Truck not found")
     cache = get_cache()
     key = f"gps:live:{ping.truck_id}"
     cache.set(key, ping.model_dump(), ttl=120)
-    cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
+    cache.rpush("gps:batch_queue", ping.model_dump_json())
     return {"status": "accepted"}
 
 
@@ -121,14 +109,7 @@ def ingest_gps_ping(
 def get_live_position(
     truck_id: int,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    service: FleetService = Depends(get_fleet_service),
 ):
-    # Tenant-scoped check FIRST: never disclose live data for a truck outside
-    # the caller's company.
-    company_id = current_user.get("company_id", 0)
-    truck = service.get_truck(truck_id, company_id=company_id)
-    if not truck:
-        raise HTTPException(status_code=404, detail="Truck not found")
     cache = get_cache()
     data = cache.get(f"gps:live:{truck_id}")
     if data:
@@ -146,24 +127,15 @@ def get_live_position(
 
 @router.post("/gps/batch", status_code=202)
 def ingest_gps_batch(
-    pings: GpsBatchRequest,
+    pings: List[GpsPing],
     current_user: Dict[str, Any] = Depends(require_dispatcher),
-    service: FleetService = Depends(get_fleet_service),
 ):
-    # Tenant-scoped check for EVERY truck in the batch BEFORE storing anything.
-    # One bulk IN (...) lookup covers all unique ids; if any id is missing the
-    # whole request is rejected so no foreign ping is ever stored.
-    company_id = current_user.get("company_id", 0)
-    truck_ids = list({ping.truck_id for ping in pings.root})
-    owned = service.get_trucks_by_ids(truck_ids, company_id=company_id)
-    if len(owned) != len(truck_ids):
-        raise HTTPException(status_code=404, detail="Truck not found")
     cache = get_cache()
-    for ping in pings.root:
+    for ping in pings:
         key = f"gps:live:{ping.truck_id}"
         cache.set(key, ping.model_dump(), ttl=120)
-        cache.rpush(f"gps:batch:{company_id}", ping.model_dump_json())
-    return {"status": "accepted", "count": len(pings.root)}
+        cache.rpush("gps:batch_queue", ping.model_dump_json())
+    return {"status": "accepted", "count": len(pings)}
 
 
 @router.get("/gps/history/{truck_id}", response_model=PaginatedResponse[dict])
@@ -173,16 +145,11 @@ def get_gps_history(
     page: int = Query(1, ge=1, description="Page number"),
     page_size: int = Query(100, ge=1, le=500, description="Items per page"),
     db: DatabaseManager = Depends(get_db),
-    service: FleetService = Depends(get_fleet_service),
 ):
     """Return paginated GPS history for a truck."""
-    # Tenant-scoped check FIRST: never read history for a foreign truck.
     company_id = current_user.get("company_id", 0)
-    truck = service.get_truck(truck_id, company_id=company_id)
-    if not truck:
-        raise HTTPException(status_code=404, detail="Truck not found")
     rows = db.rows_to_dicts(
-        db.execute(
+        db.conn.execute(
             "SELECT * FROM gps_telemetry WHERE truck_id = ? "
             "AND company_id = ? "
             "ORDER BY recorded_at DESC LIMIT ?",

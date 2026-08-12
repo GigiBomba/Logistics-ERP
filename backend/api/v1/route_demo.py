@@ -72,7 +72,7 @@ def calculate_route_demo(data: Dict[str, Any]):
     points = [origin_coords, dest_coords]
 
     # Route with both profiles
-    from backend.services.route_service import GraphHopperClient
+    from services.route_service import GraphHopperClient
 
     gh_client = GraphHopperClient()
 

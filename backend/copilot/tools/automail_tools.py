@@ -162,7 +162,7 @@ class ScheduleReminderTool(BaseTool):
 class SendNowParams(BaseModel):
     model_config = ConfigDict(extra="forbid")
     invoice_id: int = Field(..., gt=0, description="Invoice to send reminder for")
-    recipient_email: str = Field(..., min_length=1, description="Recipient email address")
+    recipient_email: str = Field(..., description="Recipient email address")
     subject: str = Field(default="", description="Email subject override")
     body: str = Field(default="", description="Email body override (plain text)")
 

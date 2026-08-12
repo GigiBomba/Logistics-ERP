@@ -16,13 +16,10 @@ from google import genai
 from google.genai import types as genai_types
 
 from backend.copilot.llm.base import LLMMessage, LLMProvider, LLMRequest, LLMResponse, ToolSpec
-from backend.copilot.llm.registry import register_llm_provider
-from services.preferences import get_ai_api_key
 
 logger = logging.getLogger(__name__)
 
 
-@register_llm_provider
 class GoogleProvider(LLMProvider):
     """Gemini provider via Google AI Studio / Vertex AI."""
 
@@ -38,10 +35,7 @@ class GoogleProvider(LLMProvider):
 
     def _get_client(self) -> Any:
         if self._client is None:
-            # Explicit key > OPERION_GEMINI_API_KEY env > SDK default
-            # (GOOGLE_API_KEY env var or ADC).
-            key = self._api_key or get_ai_api_key("gemini", None) or None
-            self._client = genai.Client(api_key=key)
+            self._client = genai.Client(api_key=self._api_key)
         return self._client
 
     # ── Message conversion ──────────────────────────────────────────────

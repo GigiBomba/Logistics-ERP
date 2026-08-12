@@ -64,8 +64,8 @@ class FreightExchangeRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         raw_id = self._execute_insert(
             f"INSERT INTO {self.TABLE_CONNECTIONS} ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
         if is_postgresql(self.db):
             return str(raw_id)      # UUID string from RETURNING id
@@ -78,16 +78,16 @@ class FreightExchangeRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE_CONNECTIONS} SET {sets} "
             f"WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (connection_id,) + self._company_params(), commit=True,
-		)
+            tuple(data.values()) + (connection_id,) + self._company_params(),
+        )
 
     def delete_connection(self, connection_id: str) -> None:
         """Delete a freight exchange connection by UUID."""
         self._execute(
             f"DELETE FROM {self.TABLE_CONNECTIONS} "
             f"WHERE id = ? {self._company_filter()}",
-            (connection_id,) + self._company_params(), commit=True,
-		)
+            (connection_id,) + self._company_params(),
+        )
 
     def get_connected_providers(self, company_id: int) -> List[Dict[str, Any]]:
         """Return only connections where ``status = 'connected'``."""
@@ -106,8 +106,8 @@ class FreightExchangeRepository(BaseRepository):
             f"UPDATE {self.TABLE_CONNECTIONS} "
             f"SET last_health_check_status = ?, last_health_check_at = ? "
             f"WHERE id = ? {self._company_filter()}",
-            (status, checked_at, connection_id) + self._company_params(), commit=True,
-		)
+            (status, checked_at, connection_id) + self._company_params(),
+        )
 
     # ── Saved Searches ───────────────────────────────────────────────
 
@@ -146,8 +146,8 @@ class FreightExchangeRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         raw_id = self._execute_insert(
             f"INSERT INTO {self.TABLE_SEARCHES} ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
         if is_postgresql(self.db):
             return str(raw_id)
@@ -160,13 +160,13 @@ class FreightExchangeRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE_SEARCHES} SET {sets} "
             f"WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (search_id,) + self._company_params(), commit=True,
-		)
+            tuple(data.values()) + (search_id,) + self._company_params(),
+        )
 
     def delete_search(self, search_id: str) -> None:
         """Delete a saved search by UUID."""
         self._execute(
             f"DELETE FROM {self.TABLE_SEARCHES} "
             f"WHERE id = ? {self._company_filter()}",
-            (search_id,) + self._company_params(), commit=True,
-		)
+            (search_id,) + self._company_params(),
+        )

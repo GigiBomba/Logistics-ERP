@@ -6,7 +6,7 @@ from fastapi import Request, Response
 from prometheus_client import Counter, Histogram, Gauge, generate_latest, CONTENT_TYPE_LATEST
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from backend.services.slo_service import get_slo_service
+from services.slo_service import get_slo_service
 
 logger = logging.getLogger(__name__)
 

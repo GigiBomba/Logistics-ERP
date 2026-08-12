@@ -3,7 +3,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException
 from backend.dependencies import get_db
 from backend.dependencies_security import require_admin
-from backend.services.feature_flags_service import FeatureFlagService, FEATURE_FLAGS
+from services.feature_flags import FeatureFlagService, FEATURE_FLAGS
 
 logger = logging.getLogger(__name__)
 

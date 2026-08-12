@@ -29,10 +29,3 @@ celery_app.conf.beat_schedule = {
         "schedule": 30.0,
     },
 }
-
-# Merge declarative schedule entries
-try:
-    from backend.celery_app.schedule import CELERY_BEAT_SCHEDULE
-    celery_app.conf.beat_schedule.update(CELERY_BEAT_SCHEDULE)
-except ImportError:
-    pass

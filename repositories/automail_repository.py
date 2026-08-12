@@ -78,8 +78,8 @@ class AutoMailRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO automail_templates ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def update_template(self, template_id: int, data: dict[str, Any]) -> None:
         self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_TEMPLATES))
@@ -88,14 +88,14 @@ class AutoMailRepository(BaseRepository):
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
             f"UPDATE automail_templates SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (template_id,) + self._company_params(), commit=True,
-		)
+            tuple(data.values()) + (template_id,) + self._company_params(),
+        )
 
     def delete_template(self, template_id: int) -> None:
         self._execute(
             "DELETE FROM automail_templates WHERE id = ? " + self._company_filter(),
-            (template_id,) + self._company_params(), commit=True,
-		)
+            (template_id,) + self._company_params(),
+        )
 
     # ── Schedules ──────────────────────────────────────────────────────────
 
@@ -148,8 +148,8 @@ class AutoMailRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO automail_schedules ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def update_schedule(self, schedule_id: int, data: dict[str, Any]) -> None:
         self._validate_columns(data, extra_allowed=set(self.COLUMNS_AUTOMAIL_SCHEDULES))
@@ -161,14 +161,14 @@ class AutoMailRepository(BaseRepository):
         sets = ", ".join(f"{k} = ?" for k in data)
         self._execute(
             f"UPDATE automail_schedules SET {sets} WHERE id = ? {self._company_filter()}",
-            tuple(data.values()) + (schedule_id,) + self._company_params(), commit=True,
-		)
+            tuple(data.values()) + (schedule_id,) + self._company_params(),
+        )
 
     def delete_schedule(self, schedule_id: int) -> None:
         self._execute(
             "DELETE FROM automail_schedules WHERE id = ? " + self._company_filter(),
-            (schedule_id,) + self._company_params(), commit=True,
-		)
+            (schedule_id,) + self._company_params(),
+        )
 
     def reorder_schedules(self, ordered_ids: list[int]) -> None:
         """Update ``sort_order`` for all given IDs in the order provided."""
@@ -207,8 +207,8 @@ class AutoMailRepository(BaseRepository):
             sets = ", ".join(f"{k} = ?" for k in data)
             self._execute(
                 f"UPDATE automail_client_overrides SET {sets} WHERE client_id = ? {self._company_filter()}",
-                tuple(data.values()) + (client_id,) + self._company_params(), commit=True,
-		)
+                tuple(data.values()) + (client_id,) + self._company_params(),
+            )
         else:
             data["client_id"] = client_id
             data["created_at"] = now
@@ -218,15 +218,15 @@ class AutoMailRepository(BaseRepository):
             vals = ", ".join("?" for _ in data)
             self._execute_insert(
                 f"INSERT INTO automail_client_overrides ({cols}) VALUES ({vals})",
-                tuple(data.values()), commit=True,
-		)
+                tuple(data.values()),
+            )
 
     def delete_override(self, client_id: int) -> None:
         self._execute(
             "DELETE FROM automail_client_overrides WHERE client_id = ? "
             + self._company_filter(),
-            (client_id,) + self._company_params(), commit=True,
-		)
+            (client_id,) + self._company_params(),
+        )
 
     # ── Settings ───────────────────────────────────────────────────────────
 
@@ -245,8 +245,8 @@ class AutoMailRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT OR REPLACE INTO automail_settings ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def get_all_settings(self) -> dict[str, str]:
         rows = self._fetchall(
@@ -269,8 +269,8 @@ class AutoMailRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def log_email(self, trip_id: Optional[int], recipient: str, subject: str, status: str = "sent") -> None:
         from datetime import datetime
@@ -284,8 +284,8 @@ class AutoMailRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT INTO email_logs ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def skip_reminder(self, invoice_id: int, trip_id: int) -> None:
         from datetime import datetime
@@ -301,8 +301,8 @@ class AutoMailRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def cancel_all_reminders(self, invoice_id: int, trip_id: int) -> None:
         from datetime import datetime
@@ -318,8 +318,8 @@ class AutoMailRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def get_sent_reminder_count(self, invoice_id: int) -> int:
         row = self._fetchone(

@@ -38,7 +38,7 @@ class AlertRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         self._execute(
             f"INSERT OR REPLACE INTO alerts ({cols}) VALUES ({vals})",
-            tuple(data.values()), commit=True,
+            tuple(data.values()),
         )
 
     def create_batch(self, alerts: List[tuple]) -> int:
@@ -89,12 +89,12 @@ class AlertRepository(BaseRepository):
     def resolve(self, alert_id: str, resolved_at: Optional[str]) -> None:
         self._execute(
             f"UPDATE {self.TABLE} SET resolved = 1, resolved_at = ? WHERE id = ? {self._company_filter()}",
-            (resolved_at, alert_id) + self._company_params(), commit=True,
+            (resolved_at, alert_id) + self._company_params(),
         )
 
     def cleanup_old(self, days: int = 90) -> int:
         cutoff = (datetime.now() - timedelta(days=days)).isoformat()
         return self._execute_with_count(
             f"DELETE FROM {self.TABLE} WHERE created_at < ? AND resolved = 1 {self._company_filter()}",
-            (cutoff,) + self._company_params(), commit=True,
+            (cutoff,) + self._company_params(),
         )

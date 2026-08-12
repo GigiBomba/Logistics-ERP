@@ -1,6 +1,4 @@
 """User repository — user DB access consolidated here."""
-from __future__ import annotations
-
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
@@ -14,17 +12,10 @@ class UserRepository(BaseRepository):
     ]
 
     def get_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Fetch a user by primary key."""
+        """Return a single user row by id (used by PermissionService)."""
         return self._fetchone(
             f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
             (user_id,) + self._company_params(),
-        )
-
-    def get_by_email(self, email: str) -> Optional[Dict[str, Any]]:
-        """Fetch a user by email (global — no company scoping)."""
-        return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE email = ?",
-            (email,),
         )
 
     def list_users(self) -> List[Dict[str, Any]]:
@@ -42,7 +33,6 @@ class UserRepository(BaseRepository):
         password_hash: str,
         role: str,
         display_name: str,
-        company_id: int | None = None,
     ) -> int:
         """Insert a new active user scoped to the current company and return the new row id."""
         data = {
@@ -51,8 +41,6 @@ class UserRepository(BaseRepository):
             "role": role,
             "display_name": display_name,
         }
-        if company_id is not None:
-            data["company_id"] = company_id
         self._validate_columns(data, extra_allowed={"company_id"})
         data = self._set_company_from_context(data)
 
@@ -63,12 +51,12 @@ class UserRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}, is_active) "
             f"VALUES ({placeholders}, 1)",
-            values, commit=True,
+            values,
         )
 
     def deactivate_user(self, user_id: int) -> None:
         """Set *user_id* as inactive (scoped to the current company)."""
         self._execute(
             f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ? {self._company_filter()}",
-            (user_id,) + self._company_params(), commit=True,
-		)
+            (user_id,) + self._company_params(),
+        )

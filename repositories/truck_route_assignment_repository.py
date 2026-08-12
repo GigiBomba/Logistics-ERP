@@ -27,16 +27,16 @@ class TruckRouteAssignmentRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({', '.join(data.keys())}) "
             f"VALUES ({', '.join('?' for _ in data)})",
-            tuple(data.values()), commit=True,
-		)
+            tuple(data.values()),
+        )
 
     def complete(self, route_id: int, completed_at: str) -> bool:
         return self._execute_with_count(
             f"UPDATE {self.TABLE} SET status = 'completed', completed_at = ? "
             f"WHERE route_id = ? AND status IN ('assigned', 'active') "
             f"{self._company_filter()}",
-            (completed_at, route_id) + self._company_params(), commit=True,
-		) > 0
+            (completed_at, route_id) + self._company_params(),
+        ) > 0
 
     def get_by_truck(
         self, truck_id: str, status: Optional[str] = None
