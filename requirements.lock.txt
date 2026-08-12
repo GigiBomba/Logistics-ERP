@@ -63,7 +63,7 @@ colorama==0.4.6
     #   qrcode
 colorlog==6.12.0
     # via -r requirements.api.txt
-cryptography==49.0.0
+cryptography==50.0.0
     # via
     #   -r requirements.api.txt
     #   google-auth
@@ -155,7 +155,7 @@ pyjwt[crypto]==2.13.0
     # via
     #   -r requirements.api.txt
     #   pyjwt
-pypdf==6.14.2
+pypdf==6.15.0
     # via -r requirements.api.txt
 python-dateutil==2.9.0.post0
     # via

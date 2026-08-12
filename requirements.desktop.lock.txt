@@ -88,7 +88,7 @@ colormap==1.3.0
     #   reports
 contourpy==1.3.3
     # via matplotlib
-cryptography==49.0.0
+cryptography==50.0.0
     # via
     #   -r requirements.txt
     #   google-auth
@@ -308,7 +308,7 @@ pymupdf==1.28.0
     # via -r requirements.txt
 pyparsing==3.3.2
     # via matplotlib
-pypdf==6.14.2
+pypdf==6.15.0
     # via -r requirements.txt
 pyperclip==1.11.0
     # via -r requirements.txt
