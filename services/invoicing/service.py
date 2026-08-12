@@ -178,9 +178,6 @@ class InvoiceService:
             pdf_path=row.get("pdf_path"),
             efactura_status=row.get("efactura_status", ""),
             efactura_xml_path=row.get("efactura_xml_path"),
-            efactura_submission_id=row.get("efactura_submission_id"),
-            efactura_response_code=row.get("efactura_response_code", ""),
-            efactura_response_message=row.get("efactura_response_message", ""),
             created_at=created_at,
             updated_at=updated_at,
         )
@@ -469,7 +466,7 @@ class InvoiceService:
 
         # Immutable archival: finalized invoices cannot be edited
         current_status = row.get("status", "")
-        if current_status in ("finalized", "accepted", "paid", "cancelled"):
+        if current_status in ("finalized", "paid", "cancelled"):
             return InvoiceCreateResult(
                 success=False,
                 errors=[ErrorDetail(
@@ -965,7 +962,7 @@ class InvoiceService:
 
         # Immutable archival: finalized invoices cannot be deleted
         current_status = row.get("status", "")
-        if current_status in ("finalized", "accepted", "paid", "cancelled"):
+        if current_status in ("finalized", "paid", "cancelled"):
             return InvoiceCreateResult(
                 success=False,
                 errors=[ErrorDetail(

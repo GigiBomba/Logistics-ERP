@@ -12,7 +12,7 @@ from backend.dependencies_security import require_manager
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.user import UserCreateRequest, UserResponse, UserUpdateRequest
 from backend.security import hash_password
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -31,7 +31,7 @@ def list_users(
     """Return paginated list of users belonging to the current user's company."""
     company_id = current_user["company_id"]
 
-    cursor = db.conn.execute(
+    cursor = db.execute(
         "SELECT u.id, u.email, u.role, u.display_name, u.is_active, "
         "u.created_at, u.driver_id, d.name AS driver_name "
         "FROM users u "
@@ -66,7 +66,7 @@ def create_user(
         )
 
     # ── Check email uniqueness within company ─────────────────────────
-    existing = db.conn.execute(
+    existing = db.execute(
         "SELECT id FROM users WHERE email = ? AND company_id = ?",
         (data.email, company_id),
     ).fetchone()
@@ -81,7 +81,7 @@ def create_user(
 
     driver_id = None
     if data.role == "driver":
-        cursor = db.conn.execute(
+        cursor = db.execute(
             "INSERT INTO drivers (name, email, company_id, is_active) "
             "VALUES (?, ?, ?, 1)",
             (data.display_name, data.email, company_id),
@@ -89,14 +89,14 @@ def create_user(
         driver_id = cursor.lastrowid
 
     # ── Insert user ──────────────────────────────────────────────────
-    cursor = db.conn.execute(
+    cursor = db.execute(
         "INSERT INTO users (email, password_hash, role, company_id, "
         "display_name, is_active, driver_id) "
         "VALUES (?, ?, ?, ?, ?, 1, ?)",
         (data.email, hashed_pw, data.role, company_id, data.display_name, driver_id),
     )
     user_id = cursor.lastrowid
-    db.conn.commit()
+    db.commit()
     return {"id": user_id}
 
 
@@ -112,7 +112,7 @@ def update_user_partial(
     my_id = current_user["id"]
 
     # ── Verify user exists in same company ────────────────────────────
-    row = db.conn.execute(
+    row = db.execute(
         "SELECT id FROM users WHERE id = ? AND company_id = ?",
         (user_id, company_id),
     ).fetchone()
@@ -145,8 +145,8 @@ def update_user_partial(
 
     set_clause = ", ".join(f"{k} = ?" for k in update_fields)
     values = list(update_fields.values()) + [user_id]
-    db.conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)  # nosec B608
-    db.conn.commit()
+    db.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)  # nosec B608
+    db.commit()
     return {"status": "updated"}
 
 
@@ -163,7 +163,7 @@ def update_user(
     my_id = current_user["id"]
 
     # ── Verify user exists in same company ────────────────────────────
-    row = db.conn.execute(
+    row = db.execute(
         "SELECT id FROM users WHERE id = ? AND company_id = ?",
         (user_id, company_id),
     ).fetchone()
@@ -198,8 +198,8 @@ def update_user(
 
     set_clause = ", ".join(f"{k} = ?" for k in update_fields)
     values = list(update_fields.values()) + [user_id]
-    db.conn.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)  # nosec B608
-    db.conn.commit()
+    db.execute(f"UPDATE users SET {set_clause} WHERE id = ?", values)  # nosec B608
+    db.commit()
     response.headers["Deprecation"] = "true"
     response.headers["Sunset"] = "Tue, 12 Jan 2027 00:00:00 GMT"
     return {"status": "updated"}
@@ -216,7 +216,7 @@ def deactivate_user(
     my_id = current_user["id"]
 
     # ── Verify user exists in same company ────────────────────────────
-    row = db.conn.execute(
+    row = db.execute(
         "SELECT id FROM users WHERE id = ? AND company_id = ?",
         (user_id, company_id),
     ).fetchone()
@@ -233,6 +233,6 @@ def deactivate_user(
             detail="You cannot deactivate yourself.",
         )
 
-    db.conn.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
-    db.conn.commit()
+    db.execute("UPDATE users SET is_active = 0 WHERE id = ?", (user_id,))
+    db.commit()
     return {"status": "deactivated"}

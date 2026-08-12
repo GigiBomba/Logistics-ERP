@@ -801,8 +801,7 @@ def check_enum_values_valid(ctx: InvariantContext) -> InvariantResult:
             "table": "invoices",
             "column": "status",
             "allowed": {
-                "draft", "finalized", "xml_generated", "submitted_externally",
-                "queued", "submitting", "accepted", "paid", "cancelled",
+                "draft", "finalized", "xml_generated", "paid", "cancelled",
             },
         },
         {

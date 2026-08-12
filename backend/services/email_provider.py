@@ -7,9 +7,8 @@ line — never call a provider SDK directly from business logic.
 from __future__ import annotations
 
 import logging
-import os
 from abc import ABC, abstractmethod
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 logger = logging.getLogger(__name__)
 
@@ -78,15 +77,13 @@ class ResendProvider(EmailProvider):
         try:
             import resend
             resend.api_key = self._api_key
-            subject = variables.get("subject", "")
-            html = variables.get("html", "")
-            if not html:
-                html = f"<p>{variables.get('body', '')}</p>"
+            # Resend sends via their API — this call is non-blocking for the provider
+            # but we still call it synchronously here (Celery task wrapper handles async).
             resend.Emails.send({
                 "from": "Operion <noreply@operionerp.xyz>",
                 "to": [to],
-                "subject": subject,
-                "html": html,
+                "subject": "",  # template-driven
+                "html": "",     # template-driven
                 "tags": [{"name": "template_id", "value": template_id}],
             })
             logger.info("Resend: sent template=%s to %s", template_id, to)
@@ -102,28 +99,24 @@ class ResendProvider(EmailProvider):
             return False
 
 
-# ── Default provider ──────────────────────────────────────────────────
-# get_email_provider() auto-selects: ResendProvider when RESEND_API_KEY
-# is set (production), otherwise LoggingEmailProvider (dev/tests).
-# Tests override via set_email_provider().
-_email_provider: Optional[EmailProvider] = None
-_auto_provider: Optional[EmailProvider] = None
+# ── Default provider (swap via DI for production) ────────────────────
+
+# Change this ONE line to swap providers:
+#   email_provider = ResendProvider(api_key="re_...")
+#   email_provider = LoggingEmailProvider()
+_email_provider: EmailProvider = LoggingEmailProvider()
 
 
 def get_email_provider() -> EmailProvider:
-    """Return the current email provider (injected, else auto-selected)."""
-    global _auto_provider
-    if _email_provider is not None:
-        return _email_provider
-    if _auto_provider is None:
-        if os.environ.get("RESEND_API_KEY"):
-            _auto_provider = ResendProvider()
-        else:
-            _auto_provider = LoggingEmailProvider()
-    return _auto_provider
+    """Return the current email provider instance.
+
+    Replace the module-level default with dependency injection
+    in production (e.g. FastAPI Depends or a config switch).
+    """
+    return _email_provider
 
 
-def set_email_provider(provider: Optional[EmailProvider]) -> None:
-    """Inject a different provider (tests/DI). Pass None to reset to auto."""
+def set_email_provider(provider: EmailProvider) -> None:
+    """Inject a different provider (used in tests or DI setup)."""
     global _email_provider
     _email_provider = provider

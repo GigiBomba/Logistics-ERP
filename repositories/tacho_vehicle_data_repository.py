@@ -12,14 +12,31 @@ class TachoVehicleDataRepository(BaseRepository):
     ]
 
     def create(self, data: Dict[str, Any]) -> int:
+        # ``tacho_vehicle_data`` has NO ``company_id`` column in the base
+        # schema (database/schema.py ``TABLE_TACHO_VEHICLE_DATA``), so
+        # ``company_id`` is injected ONLY when a scoped deployment actually
+        # has the column (detected at runtime) — otherwise the INSERT would
+        # fail in production.  Rows are import/truck-scoped; callers
+        # company-verify the truck first.
         self._validate_columns(data)
-        data = self._set_company_from_context(data)
+        if self._scoped and self._has_column("company_id"):
+            data = self._set_company_from_context(data)
         cols = ", ".join(data.keys())
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
+
+    def _has_column(self, column: str) -> bool:
+        """Return True if the table has *column* (runtime schema detection)."""
+        try:
+            cols = [r[1] for r in self.db.conn.execute(
+                f"PRAGMA table_info({self.TABLE})"
+            ).fetchall()]
+            return column in cols
+        except Exception:
+            return False
 
     def get_by_truck(self, truck_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
@@ -44,8 +61,10 @@ class TachoVehicleDataRepository(BaseRepository):
         )
 
     def get_tacho_status_data(self) -> List[Dict[str, Any]]:
+        company_filter = self._company_filter("t")
+        company_params = self._company_params()
         rows = self._fetchall(
-            """SELECT
+            f"""SELECT
                 t.id AS truck_id,
                 t.plate_number,
                 tvd.calibration_date,
@@ -60,8 +79,9 @@ class TachoVehicleDataRepository(BaseRepository):
                 JOIN tacho_imports ti2 ON ti2.id = tvd2.import_id
             ) tvd ON tvd.truck_id = t.id AND tvd.rn = 1
             LEFT JOIN tacho_imports ti ON ti.id = tvd.import_id
-            WHERE t.active_status = 1
-            ORDER BY t.plate_number ASC"""
+            WHERE t.active_status = 1 {company_filter}
+            ORDER BY t.plate_number ASC""",
+            company_params,
         )
         return rows
 
@@ -76,5 +96,7 @@ class TachoVehicleDataRepository(BaseRepository):
                     WHERE tvd_inner.truck_id IS NOT NULL
                     GROUP BY tvd_inner.truck_id
                 ) latest ON latest.truck_id = tvd.truck_id
-                JOIN tacho_imports ti2 ON ti2.id = tvd.import_id AND ti2.imported_at = latest.latest_at"""
+                JOIN tacho_imports ti2 ON ti2.id = tvd.import_id AND ti2.imported_at = latest.latest_at
+                {self._company_filter('tvd')}""",
+            self._company_params(),
         )

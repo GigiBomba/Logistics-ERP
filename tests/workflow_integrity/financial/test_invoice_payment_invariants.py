@@ -107,9 +107,7 @@ class TestInvoiceInvariants:
     def test_invoice_status_valid(self, workflow_env, invoice_service):
         """Invoice status must always be one of the recognised statuses."""
         valid_statuses = {
-            "draft", "finalized", "xml_generated", "submitted_externally",
-            "queued", "submitting", "accepted", "rejected",
-            "manual_review", "cancelled", "paid",
+            "draft", "finalized", "xml_generated", "cancelled", "paid",
         }
         from tests.workflow_integrity.personas import build_ana_persona
 

@@ -406,26 +406,19 @@ class RouteEstimateCostTool(BaseTool):
                     )
                 data = _cost_result_to_dict(op_result)
             else:
-                # Legacy path — no truck, use defaults
-                legacy = cost_engine.estimate(
-                    distance_km=p.distance_km,
-                    truck={},
-                    country_code=p.country_code,
+                # No truck — use typed interface with defaults
+                from models.cost_models import CostEstimateRequest
+                op_result = cost_engine.estimate(
+                    CostEstimateRequest(distance_km=p.distance_km),
                 )
-                # The estimate() method returns dict in legacy mode
-                legacy_dict: dict = legacy  # type: ignore[assignment]
-                data = {
-                    "fuel_cost": legacy_dict.get("fuel_cost", 0.0),
-                    "toll_cost": legacy_dict.get("toll_cost", 0.0),
-                    "total_cost": legacy_dict.get("total_cost", 0.0),
-                    "driver_cost": 0.0,
-                    "breakdown": {
-                        "fuel_liters": legacy_dict.get("fuel_liters", 0.0),
-                        "fuel_cost": legacy_dict.get("fuel_cost", 0.0),
-                        "toll_cost": legacy_dict.get("toll_cost", 0.0),
-                        "total_cost": legacy_dict.get("total_cost", 0.0),
-                    },
-                }
+                if not op_result.success:
+                    errors = [e.message for e in op_result.errors]
+                    return ToolResult(
+                        status="failed",
+                        message_key="copilot.route.estimate_cost.error",
+                        message_params={"error": "; ".join(errors)},
+                    )
+                data = _cost_result_to_dict(op_result)
 
             return ToolResult(
                 status="success",

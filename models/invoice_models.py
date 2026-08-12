@@ -32,28 +32,16 @@ INVOICE_STATUSES = [
     "draft",
     "finalized",
     "xml_generated",
-    "submitted_externally",
-    "queued",
-    "submitting",
-    "accepted",
-    "rejected",
-    "manual_review",
     "cancelled",
     "paid",
 ]
 
 INVOICE_STATUS_TRANSITIONS: dict[str, list[str]] = {
-    "draft":                ["finalized", "cancelled"],
-    "finalized":            ["xml_generated", "cancelled", "paid"],
-    "xml_generated":        ["submitted_externally", "draft"],
-    "submitted_externally": ["queued", "rejected"],
-    "queued":               ["submitting", "rejected"],
-    "submitting":           ["accepted", "rejected", "manual_review"],
-    "accepted":             ["paid"],
-    "rejected":             ["draft", "manual_review"],
-    "manual_review":        ["draft", "accepted", "rejected"],
-    "cancelled":            [],
-    "paid":                 [],
+    "draft":         ["finalized", "cancelled"],
+    "finalized":     ["xml_generated", "cancelled", "paid"],
+    "xml_generated": ["paid", "draft"],
+    "paid":          [],
+    "cancelled":     [],
 }
 
 
@@ -124,13 +112,11 @@ class InvoiceResult(BaseModel):
     status: str = "draft"
     notes: str
     pdf_path: Optional[str] = None
-    # E-Factura tracking
+    # e-Factura XML artifact tracking: the XML FILE is the legal deliverable
+    # (UBL CIUS-RO via xml_export.py).  The invoice generator never submits to
+    # ANAF — there is no submission reference / submitted-at / response state.
     efactura_status: str = ""
     efactura_xml_path: Optional[str] = None
-    efactura_submission_id: Optional[str] = None
-    efactura_submitted_at: Optional[datetime] = None
-    efactura_response_code: str = ""
-    efactura_response_message: str = ""
     # Audit
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None

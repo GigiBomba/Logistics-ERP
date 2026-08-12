@@ -1,0 +1,2 @@
+# Visual regression baselines
+tests/baselines/**/*.png filter=lfs diff=lfs merge=lfs -text

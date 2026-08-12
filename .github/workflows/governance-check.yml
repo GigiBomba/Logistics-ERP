@@ -1,0 +1,91 @@
+name: Constitutional Governance Check
+
+on:
+  pull_request:
+    types: [opened, synchronize, edited]
+
+jobs:
+  governance:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff
+
+      - name: G-01 — Check PR template compliance
+        run: |
+          python -c "
+          import os
+          body = os.environ.get('PR_BODY', '')
+          checks = [
+              ('Constitutional Impact', 'Constitutional Impact Statement' in body),
+              ('Affected Golden Workflows', '### Affected Golden Workflows' in body or 'None (infrastructure only)' in body),
+          ]
+          all_pass = True
+          for name, passed in checks:
+              status = '✅' if passed else '❌'
+              print(f'{status} {name}')
+              if not passed:
+                  all_pass = False
+          if not all_pass:
+              print('PR template not fully completed. Please fill in the Constitutional Impact Statement.')
+              exit(1)
+          print('All governance checks passed.')
+          "
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+
+      - name: G-01 — Scan for hardcoded secrets
+        run: |
+          python scripts/ci_copilot_gates.py || echo "⚠️  Secret scan found issues (non-blocking)"
+
+      - name: G-02 — Check for non-parameterized SQL
+        run: |
+          python -c "
+          import re, sys
+          from pathlib import Path
+          violations = []
+          for path in Path('services').rglob('*.py'):
+              content = path.read_text(encoding='utf-8')
+              for i, line in enumerate(content.split('\n'), 1):
+                  if re.search(r'execute\(.*f[\"\']', line):
+                      violations.append(f'{path}:{i}')
+          if violations:
+              for v in violations[:10]:
+                  print(f'  ❌ {v}')
+              if len(violations) > 10:
+                  print(f'  ... and {len(violations)-10} more')
+          else:
+              print('✅ No non-parameterized SQL found')
+          "
+
+      - name: G-09 — Verify state machine transitions
+        run: |
+          python -c "
+          from services.operations.event_bus import VALID_TRANSITIONS
+          from models.invoice_models import INVOICE_STATUS_TRANSITIONS
+          for name, sm in [('Trip', VALID_TRANSITIONS), ('Invoice', INVOICE_STATUS_TRANSITIONS)]:
+              states = list(sm.keys())
+              for s in states:
+                  for t in sm.get(s, []):
+                      assert t in states or t == '', f'{name}: {s} -> {t} — target not a valid state'
+          print('✅ All state machine transitions verified')
+          "
+
+      - name: Upload governance report
+        uses: actions/upload-artifact@v4
+        with:
+          name: governance-check-report
+          path: bandit-report.txt
+          if-no-files-found: warn

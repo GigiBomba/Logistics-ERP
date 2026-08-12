@@ -82,13 +82,6 @@ class DocumentLinkCreate(BaseModel):
     relation_type: str = "attached"
 
 
-class DocumentLinkUpdate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    linked_entity_id: int
-    relation_type: Optional[str] = None
-
-
 class DocumentLinkResponse(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

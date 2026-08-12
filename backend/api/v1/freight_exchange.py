@@ -5,7 +5,7 @@ from the JWT, never trusted from the client request body.
 """
 import logging
 from datetime import date
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
@@ -17,6 +17,7 @@ from models.freight_exchange_models import (
     LoadSearchFilters,
     ProviderCredentials,
 )
+from repositories.freight_negotiation_repository import FreightNegotiationRepository
 from services.freight_exchange.connection_manager import ConnectionManagerService
 from services.freight_exchange.evaluation import EvaluationEngineService
 from services.freight_exchange.fleet_matcher import FleetMatcherService
@@ -66,6 +67,53 @@ class SearchRequest(BaseModel):
     min_trucks: Optional[int] = None
 
 
+class FreightLoadListItem(BaseModel):
+    """Provider-agnostic load-board list item (blueprint §6.3).
+
+    Mirrors the mobile ``FreightLoad`` model in ``freight_load.dart`` field
+    for field — NO provider-specific field names (no TIMOCOM/Trans.eu
+    identifiers leak into this contract).  ``distance_km`` is a string to
+    match the Dart model's ``String? distanceKm`` parsing exactly.
+    """
+
+    id: str
+    origin: str = ""
+    destination: str = ""
+    cargo_type: Optional[str] = None
+    price: Optional[float] = None
+    currency: Optional[str] = None
+    pickup_date: Optional[str] = None
+    deadline_date: Optional[str] = None
+    weight_kg: Optional[float] = None
+    distance_km: Optional[str] = None
+
+
+def _to_freight_load_item(load) -> FreightLoadListItem:
+    """Map a provider ``LoadSearchResult`` to the provider-agnostic list item."""
+    price = load.price
+    pickup_window = getattr(load, "pickup_window", None) or ()
+    delivery_window = getattr(load, "delivery_window", None) or ()
+    pickup_date = (
+        pickup_window[0].isoformat() if pickup_window else (load.loading_date or None)
+    )
+    deadline_date = (
+        delivery_window[1].isoformat() if delivery_window else (load.unloading_date or None)
+    )
+    distance_km = getattr(load, "distance_km", None)
+    return FreightLoadListItem(
+        id=load.result_id or f"{load.provider_id}:{load.provider_load_id}",
+        origin=load.origin or "",
+        destination=load.destination or "",
+        cargo_type=getattr(load, "trailer_type", None) or None,
+        price=float(price.amount) if price is not None else None,
+        currency=price.currency if price is not None else None,
+        pickup_date=pickup_date,
+        deadline_date=deadline_date,
+        weight_kg=getattr(load, "weight_kg", 0.0) or None,
+        distance_km=(str(round(distance_km, 1)) if distance_km else None),
+    )
+
+
 class SaveSearchRequest(BaseModel):
     label: str
     filters: dict
@@ -76,6 +124,19 @@ class ConnectTransEuRequest(BaseModel):
     """Request to connect a user's Trans.eu account via OAuth authorization_code."""
     authorization_code: str
     redirect_uri: str
+
+
+class NegotiationActionRequest(BaseModel):
+    """One negotiation action for a freight load.
+
+    ``counter`` requires ``amount_eur`` (the handler returns 422
+    ``amount_required`` when it is missing); ``accept`` / ``reject`` are
+    terminal records and may carry an optional amount.
+    """
+
+    action: Literal["accept", "reject", "counter"]
+    amount_eur: Optional[float] = Field(None, ge=0, description="Counter-offer / agreed amount (EUR)")
+    counterparty_name: Optional[str] = None
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -325,6 +386,35 @@ async def save_search(
     return saved.model_dump(mode="json")
 
 
+@router.delete("/searches/{search_id}")
+async def delete_search(
+    search_id: str,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Delete a saved search (owner-only: company + user scoped).
+
+    ``search_id`` must belong to the JWT's company AND the JWT's user —
+    otherwise 404 (never leaks which part failed).
+    """
+    company_id = current_user["company_id"]
+    user_id = current_user["id"]
+
+    row = db.execute(
+        "SELECT id FROM saved_searches WHERE id = ? AND company_id = ? AND user_id = ?",
+        (search_id, company_id, user_id),
+    ).fetchone()
+    if not row:
+        raise HTTPException(status_code=404, detail="Saved search not found")
+
+    db.execute(
+        "DELETE FROM saved_searches WHERE id = ? AND company_id = ? AND user_id = ?",
+        (search_id, company_id, user_id),
+    )
+    db.commit()
+    return {"status": "deleted"}
+
+
 @router.post("/searches/{search_id}/refresh")
 async def refresh_search(
     search_id: str,
@@ -342,6 +432,66 @@ async def refresh_search(
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Load-board LIST (blueprint §6.3 — provider-agnostic mobile contract)
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/loads", response_model=list[FreightLoadListItem])
+async def list_loads(
+    origin: Optional[str] = Query(None, description="Loading place filter"),
+    destination: Optional[str] = Query(None, description="Unloading place filter"),
+    date: Optional[str] = Query(None, description="Single pickup date filter (ISO YYYY-MM-DD)"),
+    cargo_type: Optional[str] = Query(None, description="Trailer/cargo type filter"),
+    limit: int = Query(50, ge=1, le=200, description="Max results"),
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """List freight loads across connected providers (provider-agnostic).
+
+    Mobile load-board contract (§6.3): every item is a ``FreightLoadListItem``
+    with provider-agnostic fields mirroring the mobile ``FreightLoad`` model —
+    no TIMOCOM/Trans.eu-specific field names ever reach this response.
+
+    Company-scoped: ``company_id`` comes from the JWT only, never from query
+    params or the body.  Filters (origin, destination, date, cargo_type) are
+    all optional; when no ``date`` is given the pickup window defaults to a
+    3-week rolling window around today so the load board is never empty.
+    """
+    from datetime import date as _date_type  # noqa: A004 (param shadows module)
+
+    company_id = current_user["company_id"]
+
+    today = _date_type.today()
+    if date:
+        try:
+            filter_from = _date_type.fromisoformat(date)
+            filter_to = filter_from
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid 'date' filter — expected ISO YYYY-MM-DD.",
+            )
+    else:
+        from datetime import timedelta
+
+        filter_from = today - timedelta(days=7)
+        filter_to = today + timedelta(days=14)
+
+    filters = LoadSearchFilters(
+        origin=GeoFilter(location=origin, radius_km=50) if origin else None,
+        destination=GeoFilter(location=destination, radius_km=30) if destination else None,
+        pickup_date_from=filter_from,
+        pickup_date_to=filter_to,
+        trailer_type=[cargo_type] if cargo_type else None,
+    )
+
+    search_svc = SearchEngineService(db)
+    result_set = await search_svc.search_loads(company_id=company_id, filters=filters)
+
+    return [_to_freight_load_item(r) for r in result_set.results[:limit]]
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -438,3 +588,85 @@ async def match_trucks(
         return {"matches": [r.model_dump(mode="json") for r in ranked]}
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Negotiation threads (Tier-2) — LOCAL provider-agnostic records
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/loads/{provider_id}/{load_id}/negotiation")
+async def get_negotiation(
+    provider_id: str,
+    load_id: str,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return the negotiation thread for a freight load (oldest → newest).
+
+    Company-scoped: ``company_id`` comes from the JWT only.  An empty thread
+    returns ``{"thread": []}`` (HTTP 200) — the load simply has no negotiation
+    records yet.
+    """
+    company_id = current_user["company_id"]
+    repo = FreightNegotiationRepository(db)
+    thread = repo.get_thread(company_id, provider_id, load_id)
+    return {"thread": thread}
+
+
+@router.post("/loads/{provider_id}/{load_id}/negotiation")
+async def create_negotiation_action(
+    provider_id: str,
+    load_id: str,
+    body: NegotiationActionRequest,
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Append one action to a freight-load negotiation thread.
+
+    The thread is a LOCAL provider-agnostic record — there is NO external
+    TransEu/TIMOCOM call (no adapter method exists; the push can come later).
+    Semantics:
+      * the FIRST action on an empty thread is the provider's base offer
+        (``direction='inbound'``, status per action, no parent);
+      * every subsequent action is our reply (``direction='outbound'``) and is
+        chained to the latest record via ``parent_negotiation_id``;
+      * ``counter`` requires ``amount_eur`` (422 ``amount_required``);
+      * ``accept`` / ``reject`` append terminal records (no further-machine
+        enforcement yet — the client controls the thread).
+    """
+    company_id = current_user["company_id"]
+    user_id = current_user.get("id") or 0
+    repo = FreightNegotiationRepository(db)
+
+    if body.action == "counter" and body.amount_eur is None:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error_code": "amount_required",
+                "detail": "A counter-offer requires amount_eur.",
+            },
+        )
+
+    latest = repo.latest(company_id, provider_id, load_id)
+    direction = "outbound" if latest else "inbound"
+    parent_id = latest["id"] if latest else None
+
+    record_id = repo.create({
+        "company_id": company_id,
+        "provider_id": provider_id,
+        "provider_load_id": load_id,
+        "direction": direction,
+        "status": {"accept": "accepted", "reject": "rejected", "counter": "countered"}[body.action],
+        "amount_eur": body.amount_eur,
+        "currency": "EUR",
+        "counterparty_name": body.counterparty_name
+        or (latest["counterparty_name"] if latest else "")
+        or "",
+        "counterparty_id": (latest["counterparty_id"] if latest else "") or "",
+        "parent_negotiation_id": parent_id,
+        "created_by": user_id,
+    })
+
+    record = repo.get_by_id(record_id, company_id=company_id)
+    return {"negotiation": record}

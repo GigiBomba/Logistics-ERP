@@ -33,8 +33,8 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
+from backend.desktop_config import Config
 from backend.errors import ErrorCode
-from config import Config
 
 logger = logging.getLogger(__name__)
 
@@ -60,36 +60,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
             )
 
     # ── Public-path prefixes exempt from auth ──────────────────────────
-    # These are public website endpoints — the marketing/SPA frontend
-    # (src/api/endpoints.ts) calls them WITHOUT an X-API-Key header, so
-    # they must be exempt from API-key enforcement in production.
-    # Admin/ops/subscriptions/licenses/organizations/fleet stay protected.
     SKIP_PREFIXES = (
         "/docs", "/redoc", "/openapi.json", "/api/v1/health",
         "/api/v1/auth", "/api/v1/registration", "/api/v1/route-demo",
-        "/api/v1/waitlist",
-        # ── Public forms (bot-protected via Turnstile) ─────────────────
-        "/api/v1/contact",
-        "/api/v1/newsletter",
-        # ── Public pricing (website pricing page, no auth) ─────────────
-        "/api/v1/subscriptions/plans",
-        # ── Public marketing read endpoints (see src/api/endpoints.ts) ──
-        "/api/v1/blog/posts",
-        "/api/v1/blog/categories",
-        "/api/v1/blog/authors",
-        "/api/v1/changelog",
-        "/api/v1/roadmap",
-        "/api/v1/status",
-        "/api/v1/tutorials",
-        "/api/v1/developers",
-        "/api/v1/security",
-        "/api/v1/announcements",
-        "/api/v1/integrations",
-        "/api/v1/customer-stories",
-        "/api/v1/careers",
-        "/api/v1/press",
-        "/api/v1/partners",
-        "/api/v1/search",
+        "/api/v1/waitlist", "/api/v1/status",
     )
 
     @staticmethod
@@ -116,16 +90,6 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if self._is_public_path(request.url.path):
             return await call_next(request)
 
-        # ── Skip requests authenticated with a Bearer JWT ──────────────
-        # The website SPA authenticates with Bearer tokens only (no
-        # X-API-Key). Route-level dependencies (get_current_user /
-        # require_dispatcher / require_admin) enforce the JWT, so passing
-        # Bearer requests through here is safe. X-API-Key enforcement
-        # remains for partner integrations (no Bearer token).
-        authorization = request.headers.get("Authorization", "")
-        if authorization.startswith("Bearer "):
-            return await call_next(request)
-
         api_key = request.headers.get("X-API-Key", "")
         if not api_key:
             # No key provided — allow through only in non-production
@@ -148,7 +112,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # ── 2. Check per-partner keys ──────────────────────────────────
-        from repositories.api_key_repository import ApiKeyRepository
+        from backend.repositories.api_key_repository import ApiKeyRepository
 
         repo = ApiKeyRepository(self._get_db())
         key_data = repo.validate_key(api_key)

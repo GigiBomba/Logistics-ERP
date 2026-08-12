@@ -64,7 +64,6 @@ ENDPOINTS_BY_PERMISSION = {
     "can_finalize_invoice": [
         ("POST", "/api/v1/mobile/invoices/1/transition", {"action": "finalize"}),
         ("POST", "/api/v1/mobile/invoices/1/transition", {"action": "generate_xml"}),
-        ("POST", "/api/v1/mobile/invoices/1/transition", {"action": "submit"}),
         ("POST", "/api/v1/mobile/invoices/1/transition", {"action": "mark_paid"}),
     ],
     "can_cancel_invoice": [
@@ -211,10 +210,12 @@ class TestMobileRbacMatrix:
         mobile_app.dependency_overrides.clear()
 
         # Phase-1 gates (9×4) + analytics (4×4) + export (1×4) = 56
-        # Phase 3A: +1×4 create_invoice, +4×4 finalize_invoice transitions,
+        # Phase 3A: +1×4 create_invoice, +3×4 finalize_invoice transitions
+        # (finalize / generate_xml / mark_paid — the ANAF submit action was
+        # removed and is now 422 action_not_supported for every role),
         # +1×4 cancel_invoice, +1×4 schedule-maintenance endpoint,
-        # +1×4 generate_cmr  → 32 more endpoint gates (5 permissions × 4 roles).
+        # +1×4 generate_cmr  → 28 more endpoint gates (5 permissions × 4 roles).
         # Phase 4A: can_manage_users ×3, can_view_company_settings ×1,
         # can_manage_company_settings ×2, can_upload_document ×2 → 8×4 = 32 more.
-        assert checked >= 120, f"expected to check at least 120 endpoint gates, checked {checked}"
+        assert checked >= 116, f"expected to check at least 116 endpoint gates, checked {checked}"
         assert not failures, "\n".join(failures)

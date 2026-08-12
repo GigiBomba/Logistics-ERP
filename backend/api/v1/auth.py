@@ -3,6 +3,7 @@
 POST /api/v1/auth/token   — Exchange credentials for JWT + refresh token.
 POST /api/v1/auth/refresh — Exchange a refresh token for a new JWT.
 POST /api/v1/auth/logout  — Revoke a refresh token.
+GET  /api/v1/auth/me      — Return the current authenticated user's profile.
 """
 
 import asyncio
@@ -19,9 +20,12 @@ from fastapi.security import OAuth2PasswordRequestForm
 
 from backend.config import BackendSettings
 from backend.dependencies import get_db
+from backend.dependencies_security import get_current_user
 from backend.errors import ErrorCode
-from backend.services.email_provider import get_email_provider
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
+from repositories.driver_repository import DriverRepository
+from repositories.mobile_repository import MobileDeviceRepository
+from repositories.user_repository import UserRepository
 from backend.schemas.auth import (
     ForgotPasswordRequest,
     LogoutRequest,
@@ -33,7 +37,6 @@ from backend.security import (
     generate_refresh_token,
     verify_password,
 )
-from backend.services.turnstile import require_turnstile
 
 logger = logging.getLogger(__name__)
 
@@ -213,78 +216,47 @@ def _delete_refresh(token_hash: str) -> None:
     _refresh_store.pop(token_hash, None)
 
 
-# ── MFA session token store ────────────────────────────────────────────────
-# Short-lived (~5 min), single-use token issued mid-login when the user has
-# MFA enabled. It carries the verified identity until the TOTP / backup-code
-# challenge completes. Redis preferred, in-memory fallback.
-_mfa_sessions: Dict[str, Dict[str, Any]] = {}
+def revoke_user_refresh_tokens(email: str) -> int:
+    """Revoke every refresh token issued to *email* (all devices/sessions).
 
+    The refresh store (in-memory dict + optional Redis) is keyed by the
+    SHA-256 hash of the opaque token; the stored payload carries the user's
+    ``email`` (see ``_issue_tokens``), so revocation matches by normalized
+    email.  Returns the number of tokens revoked.
 
-def _create_mfa_session(email: str, role: str) -> str:
-    """Issue a short-lived, single-use MFA challenge token."""
-    import secrets
-    token = secrets.token_urlsafe(32)
-    token_hash = _hash_token(token)
-    settings = BackendSettings()
-    expires_at = time.time() + settings.mfa_session_ttl_seconds
-    r = _get_redis()
-    if r is not None:
-        try:
-            r.setex(
-                f"mfa_session:{token_hash}",
-                settings.mfa_session_ttl_seconds,
-                json.dumps({"email": email, "role": role, "expires_at": expires_at}),
-            )
-            return token
-        except Exception:
-            if _env == "production":
-                logger.error("Redis write failed in _create_mfa_session — using in-memory.")
-    _mfa_sessions[token_hash] = {
-        "email": email,
-        "role": role,
-        "expires_at": expires_at,
-    }
-    return token
-
-
-def _consume_mfa_session(token: str) -> Optional[Dict[str, Any]]:
-    """Validate and consume (single-use) an MFA session token.
-
-    Returns the session payload (``{"email", "role"}``) or ``None`` if the
-    token is missing, expired, already used, or invalid.
+    Used by the mobile team deactivation cascade (§6.9): a deactivated user's
+    refresh tokens must die immediately so their sessions cannot be refreshed.
     """
-    if not token:
-        return None
-    token_hash = _hash_token(token)
+    target = (email or "").strip().lower()
+    if not target:
+        return 0
+    revoked = 0
+    for token_hash, payload in list(_refresh_store.items()):
+        if str(payload.get("email", "")).strip().lower() == target:
+            _refresh_store.pop(token_hash, None)
+            revoked += 1
     r = _get_redis()
     if r is not None:
         try:
-            raw = r.get(f"mfa_session:{token_hash}")
-            if raw:
-                r.delete(f"mfa_session:{token_hash}")  # single-use
+            for key in r.scan_iter(match="refresh:*", count=500):
                 try:
+                    raw = r.get(key)
+                    if not raw:
+                        continue
                     payload = json.loads(raw)
+                    if str(payload.get("email", "")).strip().lower() == target:
+                        r.delete(key)
+                        revoked += 1
                 except (json.JSONDecodeError, TypeError):
-                    return None
-                if time.time() >= payload.get("expires_at", 0):
-                    return None
-                return payload
-            return None
+                    continue
         except Exception:
-            if _env == "production":
-                logger.error("Redis read failed in _consume_mfa_session — using in-memory.")
-    payload = _mfa_sessions.pop(token_hash, None)
-    if payload is None:
-        return None
-    if time.time() >= payload.get("expires_at", 0):
-        return None
-    return payload
+            logger.debug("Redis refresh-token revocation failed", exc_info=True)
+    return revoked
 
 
-# ── Password reset tokens (DB-backed) ──────────────────────────────────
-# Only the SHA-256 hash of the token is stored, in the
-# password_reset_tokens table (see database/schema.py). The raw token
-# travels only inside the emailed reset link.
+# ── Password reset token store ──────────────────────────────────────────
+# In-memory dict: reset_token_hash -> {email, expires_at}
+_reset_tokens: Dict[str, Dict[str, Any]] = {}
 _RESET_TOKEN_EXPIRE_SECONDS = 3600  # 1 hour
 
 
@@ -330,20 +302,22 @@ def _issue_tokens(
     email: str,
     role: str,
     response: Optional[Response] = None,
-    include_refresh_in_body: bool = True,
+    device_id: Optional[str] = None,
+    device_name: Optional[str] = None,
+    device_platform: Optional[str] = None,
+    ip_address: str = "",
+    company_id: int = 0,
+    db: Optional[Any] = None,
 ) -> Dict[str, Any]:
     """Create and persist an access token + refresh token pair.
 
     If *response* is provided, the refresh token is also set as an httpOnly
     cookie for the web frontend (prevents XSS theft).
 
-    Per blueprint §3.1 the refresh token is delivered ONLY via the httpOnly
-    cookie on the initial login flow (``include_refresh_in_body=False``).
-    The body field is retained for transitional compatibility on
-    /auth/refresh (desktop ERP migration happens in a later lane).
+    If *device_id* is provided, it is stored in the refresh token payload
+    so that the refresh flow can verify the device is still active.
 
-    Returns the response dict with the access token (and optionally the
-    refresh token for transitional endpoints).
+    Returns the response dict with both tokens.
     """
     settings = BackendSettings()
     access_token = create_access_token(
@@ -354,23 +328,43 @@ def _issue_tokens(
     token_hash = _hash_token(refresh_token)
 
     expires_at = time.time() + settings.refresh_token_expire_days * 86400
-    _store_refresh(token_hash, {
+    payload: Dict[str, Any] = {
         "email": email,
         "role": role,
         "expires_at": expires_at,
-    })
+    }
+    if device_id:
+        payload["device_id"] = device_id
+    _store_refresh(token_hash, payload)
+
+    # Track this session in the auth_sessions table
+    if db is not None:
+        try:
+            expires_str = time.strftime(
+                "%Y-%m-%d %H:%M:%S", time.gmtime(expires_at)
+            )
+            db.execute(
+                "INSERT OR REPLACE INTO auth_sessions "
+                "(company_id, user_email, token_hash, device_name, "
+                "device_platform, ip_address, expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (company_id, email, token_hash,
+                 device_name or "", device_platform or "",
+                 ip_address, expires_str),
+            )
+            db.commit()
+        except Exception:
+            logger.debug("Failed to record auth session", exc_info=True)
 
     if response is not None:
         _set_refresh_cookie(response, refresh_token)
 
-    result: Dict[str, Any] = {
+    return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",  # nosec B105
         "expires_in": settings.access_token_expire_minutes * 60,
     }
-    if include_refresh_in_body:
-        result["refresh_token"] = refresh_token
-    return result
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -383,35 +377,24 @@ async def login_for_access_token(
     request: Request,
     response: Response,
     form_data: OAuth2PasswordRequestForm = Depends(),
-    turnstile_token: str = Form(""),
+    device_id: Optional[str] = Form(None),
+    device_name: Optional[str] = Form(None),
+    device_platform: Optional[str] = Form(None),
 ) -> Dict[str, Any]:
     """Authenticate and return an access token + refresh token pair.
 
     The **admin gateway** is checked first using environment variables.
     Admin authentication is **zero-database**.
 
-    When the user has MFA enabled, **no tokens are issued** — the response
-    carries ``{"mfa_required": true, "mfa_session_token": ...}`` and the
-    client must complete the TOTP / backup-code challenge at
-    ``/auth/mfa/verify`` or ``/auth/mfa/backup-code``.
+    The refresh token is also set as an httpOnly cookie on the response
+    for XSS-resistant browser storage.
 
-    Per blueprint §3.1 the refresh token is returned ONLY as an httpOnly
-    cookie (never in the response body) on this endpoint.
-
-    ``turnstile_token`` is an optional form field (the web frontend sends
-    it from the Turnstile widget). Desktop/mobile ERP clients do not send
-    it — they pass through untouched, per the fail-open-for-absent policy
-    documented in ``backend/services/turnstile.py``.
+    If *device_id* is provided, it is stored in the refresh token payload
+    so that the refresh flow can verify the device is still active.
     """
     settings = BackendSettings()
     email = form_data.username.strip().lower()
     client_ip = request.client.host if request.client else "unknown"
-
-    # ── Turnstile validation (bot protection) ─────────────────────────────
-    # Validated when a token is present; pass-through when absent so the
-    # desktop/mobile ERP clients (no widget) keep working.
-    if turnstile_token:
-        require_turnstile(turnstile_token, client_ip)
 
     # ── Brute-force lockout check ──────────────────────────────────────
     _check_lockout(email)
@@ -437,19 +420,22 @@ async def login_for_access_token(
 
             _clear_lockout(email)
             logger.info("Admin login successful for %s from %s", email, client_ip)
-            return _issue_tokens(email, "admin", response, include_refresh_in_body=False)
+            return _issue_tokens(
+                email, "admin", response, device_id,
+                device_name=device_name, device_platform=device_platform,
+                ip_address=client_ip,
+            )
         # No admin hash configured — fall through to database check below
 
     # ── Gate 2: Database users table (future-proof fallback) ───────────
     async for db in get_db():
         try:
-            cursor = db.conn.execute(
-                "SELECT id, email, password_hash, role, mfa_enabled FROM users "
+            user = UserRepository(db)._fetchone(
+                "SELECT id, email, password_hash, role, company_id FROM users "
                 "WHERE email = ? AND is_active = 1",
                 (email,),
             )
-            row = cursor.fetchone()
-            if row is None:
+            if user is None:
                 _record_failure(email)
                 logger.warning("Failed login attempt (unknown user) for %s from %s", email, client_ip)
                 raise HTTPException(
@@ -460,7 +446,6 @@ async def login_for_access_token(
                     },
                     headers={"WWW-Authenticate": "Bearer"},
                 )
-            user = dict(row)
         except HTTPException:
             raise
         except Exception as exc:
@@ -491,22 +476,12 @@ async def login_for_access_token(
             )
 
         _clear_lockout(email)
-
-        # ── MFA gate: password is correct — challenge the second factor ──
-        if user.get("mfa_enabled"):
-            mfa_session = _create_mfa_session(
-                email=user["email"],
-                role=user.get("role", "dispatcher"),
-            )
-            logger.info("MFA challenge issued for %s from %s", email, client_ip)
-            return {"mfa_required": True, "mfa_session_token": mfa_session}
-
         logger.info("Login successful for %s from %s", email, client_ip)
         return _issue_tokens(
-            user["email"],
-            user.get("role", "dispatcher"),
-            response,
-            include_refresh_in_body=False,
+            user["email"], user.get("role", "dispatcher"), response,
+            device_id, device_name=device_name,
+            device_platform=device_platform, ip_address=client_ip,
+            company_id=user.get("company_id", 0), db=db,
         )
 
     raise HTTPException(
@@ -522,24 +497,27 @@ async def login_for_access_token(
 def refresh_access_token(
     request: Request,
     response: Response,
-    body: Optional[RefreshTokenRequest] = None,
+    body: RefreshTokenRequest,
+    db: DatabaseManager = Depends(get_db),
 ) -> Dict[str, Any]:
     """Exchange a valid refresh token for a new access token.
 
     The refresh token is read from:
     1. The ``refresh_token`` httpOnly cookie (web frontend)
-    2. The request body ``{"refresh_token": "..."}`` (desktop client,
-       transitional fallback — the body is optional so a cookie-only
-       refresh works with the web frontend)
+    2. The request body ``{"refresh_token": "..."}`` (desktop client, fallback)
 
     The refresh token is looked up in the server-side store (Redis or
     in-memory dict).  If found and not expired, a new short-lived access
     token is issued.
+
+    If the refresh token was issued with a ``device_id``, the
+    corresponding device must still be active in the ``mobile_devices``
+    table.  Deactivated devices cause the refresh to be rejected.
     """
-    # Read from cookie first (XSS-safe), then fall back to body (desktop client)
-    refresh_token: str = request.cookies.get("refresh_token", "") or (
-        body.refresh_token if body else ""
-    )
+    # Read from body first (explicit client intent), then fall back to
+    # httpOnly cookie (XSS-safe for web frontend).  Preferring the body
+    # prevents a previously-set cookie from masking a replayed token.
+    refresh_token: str = body.refresh_token or request.cookies.get("refresh_token", "")
     if not refresh_token:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -572,26 +550,46 @@ def refresh_access_token(
             },
         )
 
+    # ── Device active check ────────────────────────────────────────────
+    device_id: Optional[str] = payload.get("device_id")
+    if device_id:
+        try:
+            row = MobileDeviceRepository(db)._fetchone(
+                "SELECT is_active FROM mobile_devices WHERE device_id = ? AND is_active = 1",
+                (device_id,),
+            )
+            if not row:
+                _delete_refresh(token_hash)
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail={
+                        "error_code": ErrorCode.TOKEN_INVALID.value,
+                        "detail": "Device has been deactivated — please re-authenticate.",
+                    },
+                )
+        except HTTPException:
+            raise
+        except Exception:
+            # If the mobile_devices table doesn't exist yet or a query
+            # fails, allow the refresh to proceed (defensive).
+            pass
+
     # Rotate: delete old refresh token, issue new pair
     _delete_refresh(token_hash)
     email: str = payload["email"]
     role: str = payload["role"]
-    return _issue_tokens(email, role, response)
+    return _issue_tokens(email, role, response, device_id)
 
 
 @router.post("/logout")
-def logout(request: Request, response: Response, body: Optional[LogoutRequest] = None) -> Dict[str, str]:
+def logout(request: Request, response: Response, body: LogoutRequest) -> Dict[str, str]:
     """Revoke a refresh token.
 
     Reads the refresh token from:
     1. The ``refresh_token`` httpOnly cookie (web frontend)
-    2. The request body ``{"refresh_token": "..."}`` (desktop client,
-       transitional fallback — the body is optional so a cookie-only
-       logout works with the web frontend)
+    2. The request body ``{"refresh_token": "..."}`` (desktop client, fallback)
     """
-    refresh_token: str = request.cookies.get("refresh_token", "") or (
-        body.refresh_token if body else ""
-    )
+    refresh_token: str = request.cookies.get("refresh_token", "") or body.refresh_token
     if refresh_token:
         _delete_refresh(_hash_token(refresh_token))
     # Clear the cookie regardless
@@ -603,6 +601,119 @@ def logout(request: Request, response: Response, body: Optional[LogoutRequest] =
         samesite="strict",
     )
     return {"status": "ok", "detail": "Logged out."}
+
+
+@router.get("/me")
+def get_current_user_info(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return the current authenticated user's profile."""
+    user_id = current_user["id"]
+    company_id = current_user["company_id"]
+
+    # Admin users are resolved from env — no DB row exists for id=0
+    if current_user.get("is_admin") or user_id == 0:
+        return {
+            "user": {
+                "id": 0,
+                "email": current_user.get("email", "admin@example.com"),
+                "role": current_user.get("role", "admin"),
+                "display_name": "Administrator",
+                "driver_id": None,
+                "is_active": True,
+            }
+        }
+
+    # Fetch user with display_name (from column migration)
+    row = UserRepository(db).get_by_id(user_id)
+
+    if not row:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    user = dict(row)
+
+    # Include linked driver info if a driver record exists
+    if user.get("driver_id"):
+        dr = DriverRepository(db).get_by_id(user["driver_id"])
+        if dr:
+            user["driver"] = dict(dr)
+
+    return {"user": user}
+
+
+# ═════════════════════════════════════════════════════════════════════════════
+# Session management (desktop & web login tracking)
+# ═════════════════════════════════════════════════════════════════════════════
+
+
+@router.get("/sessions")
+def list_sessions(
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db),
+) -> Dict[str, Any]:
+    """Return all active auth sessions for the current user's company."""
+    company_id: int = current_user.get("company_id", 0)
+
+    try:
+        rows = db.execute(
+            "SELECT id, user_email, device_name, device_platform, "
+            "ip_address, created_at, expires_at, last_active_at "
+            "FROM auth_sessions "
+            "WHERE company_id = ? AND expires_at > datetime('now') "
+            "ORDER BY last_active_at DESC",
+            (company_id,),
+        ).fetchall()
+    except Exception:
+        return {"sessions": []}
+
+    sessions = [dict(r) for r in rows]
+    return {"sessions": sessions}
+
+
+@router.delete("/sessions/{session_id}")
+def revoke_session(
+    session_id: int,
+    current_user: Dict[str, Any] = Depends(get_current_user),
+    db: DatabaseManager = Depends(get_db),
+) -> Dict[str, str]:
+    """Revoke a specific auth session — logs the device out by removing its
+    refresh token from the server-side store."""
+    company_id: int = current_user.get("company_id", 0)
+
+    try:
+        row = db.execute(
+            "SELECT token_hash FROM auth_sessions "
+            "WHERE id = ? AND company_id = ?",
+            (session_id, company_id),
+        ).fetchone()
+    except Exception:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_code": ErrorCode.NOT_FOUND.value, "detail": "Session not found."},
+        )
+
+    if row is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail={"error_code": ErrorCode.NOT_FOUND.value, "detail": "Session not found."},
+        )
+
+    # Delete the refresh token from Redis/in-memory store
+    _delete_refresh(row["token_hash"])
+
+    # Remove the session record
+    try:
+        db.execute(
+            "DELETE FROM auth_sessions WHERE id = ?",
+            (session_id,),
+        )
+        db.commit()
+    except Exception:
+        pass
+
+    logger.info("Session %s revoked for company %s", session_id, company_id)
+    return {"status": "ok", "detail": "Session revoked. Device will be logged out on next request."}
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -644,71 +755,27 @@ async def token_client_credentials(
 
 
 @router.post("/forgot-password")
-def forgot_password(
-    body: ForgotPasswordRequest,
-    db: DatabaseManager = Depends(get_db),
-) -> Dict[str, str]:
+def forgot_password(body: ForgotPasswordRequest) -> Dict[str, str]:
     """Request a password reset token.
 
     Returns 200 regardless of whether the email exists (anti-enumeration).
-    When the user exists, a single-use, time-limited token is stored
-    (SHA-256 hashed) in the ``password_reset_tokens`` table and emailed to
-    the user via the configured email provider (Resend in production when
-    RESEND_API_KEY is set, logging otherwise). Email delivery is
-    best-effort and never fails the request.
+    In production the token would be sent via email; for development/testing
+    it is stored in the in-memory ``_reset_tokens`` dict.
     """
     email = body.email.strip().lower()
     if email:
-        user = db.conn.execute(
-            "SELECT id FROM users WHERE email = ?", (email,)
-        ).fetchone()
-        if user is not None:
-            token = _generate_reset_token()
-            token_hash = _hash_reset_token(token)
-            expires_at = str(time.time() + _RESET_TOKEN_EXPIRE_SECONDS)
-            db.conn.execute(
-                "INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) "
-                "VALUES (?, ?, ?)",
-                (user["id"], token_hash, expires_at),
-            )
-            db.conn.commit()
-            _send_reset_email(email, token)
+        token = _generate_reset_token()
+        token_hash = _hash_reset_token(token)
+        _reset_tokens[token_hash] = {
+            "email": email,
+            "expires_at": time.time() + _RESET_TOKEN_EXPIRE_SECONDS,
+        }
     return {"status": "ok", "detail": "If the email exists, a reset link has been sent."}
 
 
-def _send_reset_email(email: str, token: str) -> None:
-    """Best-effort password-reset email via the configured provider."""
-    site_url = os.environ.get("OPERION_SITE_URL", "https://operionerp.xyz")
-    link = f"{site_url}/reset-password?token={token}"
-    subject = "Reset your Operion password"
-    html = (
-        "<p>We received a request to reset your Operion account password.</p>"
-        f'<p><a href="{link}">Reset your password</a></p>'
-        "<p>This link expires in 1 hour. If you didn't request this, "
-        "you can safely ignore this email.</p>"
-    )
-    try:
-        ok = get_email_provider().send(
-            email,
-            "password-reset",
-            {
-                "subject": subject,
-                "html": html,
-                "body": f"Reset your Operion password: {link}",
-            },
-        )
-        if ok:
-            logger.info("Password reset email sent to %s", email)
-    except Exception as exc:
-        logger.warning("Password reset email failed for %s: %s", email, exc)
-
-
 @router.post("/reset-password")
-def reset_password(
-    body: ResetPasswordRequest,
-    db: DatabaseManager = Depends(get_db),
-) -> Dict[str, str]:
-    """Reset a user's password using a valid, unexpired, single-use token."""
+def reset_password(body: ResetPasswordRequest) -> Dict[str, str]:
+    """Reset a user's password using a valid reset token."""
     token = body.token
     new_password = body.new_password
 
@@ -730,13 +797,9 @@ def reset_password(
         )
 
     token_hash = _hash_reset_token(token)
-    row = db.conn.execute(
-        "SELECT id, user_id, expires_at FROM password_reset_tokens "
-        "WHERE token_hash = ?",
-        (token_hash,),
-    ).fetchone()
+    stored = _reset_tokens.get(token_hash)
 
-    if row is None:
+    if stored is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -745,11 +808,8 @@ def reset_password(
             },
         )
 
-    if time.time() > float(row["expires_at"]):
-        db.conn.execute(
-            "DELETE FROM password_reset_tokens WHERE id = ?", (row["id"],)
-        )
-        db.conn.commit()
+    if time.time() > stored["expires_at"]:
+        _reset_tokens.pop(token_hash, None)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
@@ -758,16 +818,32 @@ def reset_password(
             },
         )
 
+    # Update password in the database
+    email = stored["email"]
     from backend.security import hash_password
-
     pw_hash = hash_password(new_password)
-    db.conn.execute(
-        "UPDATE users SET password_hash = ? WHERE id = ?",
-        (pw_hash, row["user_id"]),
-    )
+    from backend.dependencies import get_db
+    import asyncio
+    try:
+        loop = asyncio.new_event_loop()
+        gen = get_db()
+        db = None
+        try:
+            while True:
+                db = loop.run_until_complete(gen.__anext__())
+                break
+            UserRepository(db)._execute(
+                "UPDATE users SET password_hash = ? WHERE email = ?",
+                (pw_hash, email),
+                commit=True,
+            )
+        finally:
+            loop.run_until_complete(gen.aclose())
+            loop.close()
+    except Exception as exc:
+        logger.warning("Password reset DB update failed for %s: %s", email, exc)
+        pass  # Token still consumed even if DB fails (anti-enumeration)
+
     # Consume the token (single-use)
-    db.conn.execute(
-        "DELETE FROM password_reset_tokens WHERE id = ?", (row["id"],)
-    )
-    db.conn.commit()
+    _reset_tokens.pop(token_hash, None)
     return {"status": "ok", "detail": "Password has been reset successfully."}

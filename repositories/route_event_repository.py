@@ -23,13 +23,13 @@ class RouteEventRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({', '.join(data.keys())}) "
             f"VALUES ({', '.join('?' for _ in data)})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def delete_orphans(self) -> int:
         return self._execute_with_count(
             f"DELETE FROM {self.TABLE} WHERE route_id IS NOT NULL "
             f"AND route_id NOT IN (SELECT id FROM route_history_v2) "
             f"{self._company_filter()}",
-            self._company_params(),
-        )
+            self._company_params(), commit=True,
+		)

@@ -31,6 +31,11 @@ class AnalyticsQueryParams(BaseModel):
     months: Optional[int] = Field(None, description="Number of months for time-series queries.", ge=1)
     quarters: Optional[int] = Field(None, description="Number of quarters for quarterly queries.", ge=1)
     limit: Optional[int] = Field(None, description="Result limit for queries that support it.", ge=1)
+    source_provider: Optional[str] = Field(
+        None,
+        description="Filter results by source provider ID (e.g. 'trans_eu', 'timocom'). "
+                    "Use 'freight_exchange' for all exchange-sourced trips, or omit for all.",
+    )
 
 
 # ── Valid domain set ────────────────────────────────────────────────────────
@@ -63,7 +68,7 @@ class AnalyticsQueryTool(BaseTool):
     description = (
         "Query analytics data across multiple domains (financial, fleet, driver, "
         "client, route profitability, etc.). Use the `domain` parameter to select "
-        "the analytics category and optional date/months/quarters/limit filters."
+        "the analytics category and optional date/months/quarters/limit/source_provider filters."
     )
     required_permission = "analytics:read"
     confirmation_level = ConfirmationLevel.SAFE
@@ -121,25 +126,26 @@ class AnalyticsQueryTool(BaseTool):
         months = params.months
         quarters = params.quarters
         limit = params.limit
+        source_provider = params.source_provider
 
         if domain == "financial":
-            return service.get_financial(date_from=date_from, date_to=date_to)
+            return service.get_financial(date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "fleet":
-            return service.get_fleet(date_from=date_from, date_to=date_to)
+            return service.get_fleet(date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "driver":
-            return service.get_driver(date_from=date_from, date_to=date_to)
+            return service.get_driver(date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "client":
-            return service.get_client_analytics(date_from=date_from, date_to=date_to)
+            return service.get_client_analytics(date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "route_profitability":
-            return service.get_route_profitability(date_from=date_from, date_to=date_to)
+            return service.get_route_profitability(date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "trip_status":
-            return service.get_trip_status_distribution(date_from=date_from, date_to=date_to)
+            return service.get_trip_status_distribution(date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "cost_breakdown":
-            return service.get_cost_breakdown(months=months or 12, date_from=date_from, date_to=date_to)
+            return service.get_cost_breakdown(months=months or 12, date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "monthly_volume":
-            return service.get_monthly_trip_volume(months=months or 12, date_from=date_from, date_to=date_to)
+            return service.get_monthly_trip_volume(months=months or 12, date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "revenue_quarterly":
-            return service.get_revenue_quarterly(quarters=quarters or 8, date_from=date_from, date_to=date_to)
+            return service.get_revenue_quarterly(quarters=quarters or 8, date_from=date_from, date_to=date_to, source_provider=source_provider)
         elif domain == "maintenance":
             return service.get_maintenance_alerts()
         elif domain == "truck_utilization":
@@ -150,7 +156,7 @@ class AnalyticsQueryTool(BaseTool):
             alerts, total_amount = service.get_overdue_data()
             return {"alerts": alerts, "total_overdue_amount": total_amount}
         elif domain == "summary":
-            return service.get_data(date_from=date_from, date_to=date_to)
+            return service.get_data(date_from=date_from, date_to=date_to, source_provider=source_provider)
 
         # Should never reach here due to validate() guard
         raise ValueError(f"Unknown analytics domain: {domain}")

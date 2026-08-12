@@ -1,7 +1,8 @@
-"""Invoice state machine: Draft → Finalized → XML Generated → Submitted → Queued → Submitting → Accepted → Paid.
+"""Invoice state machine: Draft → Finalized → XML Generated → Paid.
 
-Also supports: Draft → Cancelled, Finalized → Cancelled, and reversion paths
-(xml_generated → draft, rejected → draft/manual_review, etc.).
+Also supports: Draft → Cancelled, Finalized → Cancelled, and the reversion
+path xml_generated → draft.  There is NO ANAF submission chain — the invoice
+generator never submits externally; the XML FILE is the legal deliverable.
 """
 
 from __future__ import annotations
@@ -166,15 +167,16 @@ class TestInvoiceInvalidTransitions:
         "from_status,to_status",
         [
             ("draft", "paid"),             # skip finalization
-            ("draft", "accepted"),         # skip finalized + xml + submit + accept
+            ("draft", "xml_generated"),    # skip finalization
+            ("finalized", "draft"),        # no reversion from finalized
+            ("xml_generated", "finalized"),  # xml_generated only → paid / draft
+            ("xml_generated", "cancelled"),  # no cancel once XML exists
             ("paid", "draft"),             # no backward from terminal
             ("paid", "finalized"),         # no backward from terminal
             ("paid", "cancelled"),         # terminal → no transition
             ("cancelled", "draft"),        # terminal → no transition
             ("cancelled", "finalized"),    # terminal → no transition
-            ("accepted", "draft"),         # accepted only → paid
-            ("accepted", "finalized"),     # accepted only → paid
-            ("accepted", "cancelled"),     # accepted only → paid
+            ("cancelled", "xml_generated"),  # terminal → no transition
         ],
     )
     def test_invalid_transition_rejected(

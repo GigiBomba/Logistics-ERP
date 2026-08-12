@@ -17,8 +17,8 @@ class TachoImportRepository(BaseRepository):
         vals = ", ".join("?" for _ in data)
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
-            tuple(data.values()),
-        )
+            tuple(data.values()), commit=True,
+		)
 
     def get_by_hash(self, file_hash: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
@@ -26,7 +26,7 @@ class TachoImportRepository(BaseRepository):
             (file_hash,) + self._company_params(),
         )
 
-    def get_recent(self, limit: int = 50) -> List[Dict[str, Any]]:
+    def get_recent(self, limit: int = 50, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY imported_at DESC LIMIT ?",
             self._company_params() + (limit,),

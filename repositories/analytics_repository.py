@@ -13,6 +13,14 @@ from repositories import BaseRepository
 logger = logging.getLogger(__name__)
 
 
+def _next_month(ym: str) -> str:
+    """Return YYYY-MM of the month after *ym* (YYYY-MM)."""
+    y, m = int(ym[:4]), int(ym[5:7])
+    if m == 12:
+        return f"{y+1}-01"
+    return f"{y}-{m+1:02d}"
+
+
 class AnalyticsRepository(BaseRepository):
 
     _month_col_available: Optional[bool] = None
@@ -20,6 +28,10 @@ class AnalyticsRepository(BaseRepository):
     _month_lock: Any = None  # set via threading.Lock() lazily
 
     def _ensure_month_checked(self) -> None:
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            AnalyticsRepository._month_col_available = False
+            AnalyticsRepository._month_check_done = True
+            return
         import threading
         if AnalyticsRepository._month_lock is None:
             AnalyticsRepository._month_lock = threading.Lock()
@@ -36,6 +48,9 @@ class AnalyticsRepository(BaseRepository):
             AnalyticsRepository._month_check_done = True
 
     def _month_expr(self) -> str:
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            # created_at is timestamptz on PG: substring() needs a text cast
+            return "SUBSTRING(created_at::text, 1, 7)"
         self._ensure_month_checked()
         return "month" if self._month_col_available else "SUBSTR(created_at, 1, 7)"
 
@@ -75,7 +90,7 @@ class AnalyticsRepository(BaseRepository):
         best_month = self._fetchone(
             f"SELECT {month_expr} as month, SUM(net_profit) as m_profit "
             f"FROM trips WHERE 1=1 {self._company_filter()} "
-            "GROUP BY month "
+            f"GROUP BY {month_expr} "
             "ORDER BY m_profit DESC LIMIT 1",
             self._company_params(),
         )
@@ -99,7 +114,7 @@ class AnalyticsRepository(BaseRepository):
         bm = self._fetchone(
             f"SELECT {month_expr} as month, SUM(net_profit) as m_profit "
             f"FROM trips WHERE 1=1 {self._company_filter()} "
-            "GROUP BY month ORDER BY m_profit DESC LIMIT 1",
+            f"GROUP BY {month_expr} ORDER BY m_profit DESC LIMIT 1",
             self._company_params(),
         )
         return bt, bd, bm
@@ -114,7 +129,7 @@ class AnalyticsRepository(BaseRepository):
         month_expr = self._month_expr()
         monthly = self._fetchall(
             f"SELECT {month_expr} as month, SUM(net_profit) as p FROM trips "
-            f"WHERE 1=1 {self._company_filter()} GROUP BY month ORDER BY month DESC LIMIT 6",
+            f"WHERE 1=1 {self._company_filter()} GROUP BY {month_expr} ORDER BY month DESC LIMIT 6",
             self._company_params(),
         )
         monthly.reverse()
@@ -122,8 +137,9 @@ class AnalyticsRepository(BaseRepository):
 
     def get_available_years(self):
         """Anii disponibili pentru filtre."""
+        year_expr = "SUBSTRING(created_at::text, 1, 4)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 4)"
         rows = self._fetchall(
-            f"SELECT DISTINCT SUBSTR(created_at, 1, 4) as year FROM trips WHERE 1=1 {self._company_filter()} ORDER BY year DESC",
+            f"SELECT DISTINCT {year_expr} as year FROM trips WHERE 1=1 {self._company_filter()} ORDER BY year DESC",
             self._company_params(),
         )
         return [r["year"] for r in rows if r.get("year")]
@@ -137,8 +153,8 @@ class AnalyticsRepository(BaseRepository):
             SELECT COALESCE(SUM(total_price_eur), 0) AS m_rev,
                    COALESCE(SUM(net_profit), 0) AS m_profit,
                    COALESCE(SUM(distance_km), 0) AS m_km
-            FROM trips WHERE created_at LIKE ? {self._company_filter()}
-        """, (f"%{current_month}%",) + self._company_params())
+            FROM trips WHERE created_at >= ? AND created_at < ? {self._company_filter()}
+        """, (f"{current_month}-01", f"{_next_month(current_month)}-01") + self._company_params())
         m_rev = m_row["m_rev"] if m_row else 0
         m_profit = m_row["m_profit"] if m_row else 0
         m_km = m_row["m_km"] if m_row else 0
@@ -174,9 +190,13 @@ class AnalyticsRepository(BaseRepository):
                   due_date, total_amount, days_late (computed via SQL).
                 - neg_margin_rows: each with keys id, truck_number.
         """
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            days_late_expr = "(CURRENT_DATE - i.due_date::date) AS days_late"
+        else:
+            days_late_expr = "CAST(JULIANDAY('now') - JULIANDAY(i.due_date) AS INTEGER) AS days_late"
         overdue_query = f"""
             SELECT t.id, t.client_name, i.invoice_number, i.due_date, i.total_amount,
-                   CAST(JULIANDAY('now') - JULIANDAY(i.due_date) AS INTEGER) AS days_late
+                   {days_late_expr}
             FROM trips t
             JOIN invoices i ON t.id = i.trip_id
             WHERE i.status = 'Unpaid' {self._company_filter('t')}
@@ -223,7 +243,7 @@ class AnalyticsRepository(BaseRepository):
             SELECT {self._month_expr()} as month,
             SUM(total_price_eur) as rev,
             SUM(total_price_eur - net_profit) as exp
-            FROM trips {date_clause} GROUP BY month ORDER BY month DESC LIMIT 6
+            FROM trips {date_clause} GROUP BY {self._month_expr()} ORDER BY month DESC LIMIT 6
         """, tuple(date_params))
         rev_exp.reverse()
         return per_truck, per_driver, rev_exp
@@ -234,13 +254,17 @@ class AnalyticsRepository(BaseRepository):
         """Revenue, profit, margin over time by month."""
         clause, params = self._date_clause(from_date, to_date)
         month_expr = self._month_expr()
+        # Group by the expression itself: trips.month is a real (generated)
+        # column on both engines, so `GROUP BY month` binds to the column on
+        # PG (alias resolution is column-first there) and the SELECT's
+        # SUBSTRING expression would violate PG's strict GROUP BY.
         monthly = self._fetchall(f"""
             SELECT {month_expr} AS month,
                    SUM(total_price_eur) AS revenue,
                    SUM(net_profit) AS profit,
                    AVG(CASE WHEN total_price_eur > 0 THEN net_profit * 100.0 / total_price_eur END) AS margin_pct
             FROM trips {clause}
-            GROUP BY month ORDER BY month ASC LIMIT 24
+            GROUP BY {month_expr} ORDER BY {month_expr} ASC LIMIT 24
         """, tuple(params))
         return monthly
 
@@ -284,12 +308,20 @@ class AnalyticsRepository(BaseRepository):
 
     def get_client_analytics(self, from_date=None, to_date=None):
         clause, params = self._date_clause(from_date, to_date)
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            delay_expr = (
+                "ROUND(AVG(COALESCE(payment_date, CURRENT_DATE)::date - created_at::date), 1)"
+            )
+        else:
+            delay_expr = (
+                "ROUND(AVG(JULIANDAY(COALESCE(payment_date, 'now')) - JULIANDAY(created_at)), 1)"
+            )
         return self._fetchall(f"""
             SELECT COALESCE(NULLIF(client_name, ''), 'Unknown') AS client,
                    COUNT(*) AS trip_count,
                    SUM(total_price_eur) AS revenue,
                    SUM(net_profit) AS profit,
-                   ROUND(AVG(JULIANDAY(COALESCE(payment_date, 'now')) - JULIANDAY(created_at)), 1) AS avg_payment_delay_days
+                   {delay_expr} AS avg_payment_delay_days
             FROM trips {clause}
             GROUP BY COALESCE(NULLIF(client_name, ''), 'Unknown')
             ORDER BY profit DESC LIMIT 12
@@ -309,6 +341,71 @@ class AnalyticsRepository(BaseRepository):
             ORDER BY profit DESC LIMIT 15
         """, tuple(params))
         return truck_stats
+
+    def get_otd_percentage(self, from_date=None, to_date=None):
+        """On-Time Delivery (OTD) percentage for delivered trips.
+
+        OTD % = (delivered trips with end_date <= promised_date) /
+                (delivered trips with promised_date set) × 100.
+
+        Only trips in a delivered/completed/done/paid status with a
+        non-empty ``promised_date`` are counted.  Returns ``0.0`` when
+        there are no qualifying trips (avoids division by zero).
+        """
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
+        date_clause = ""
+        date_params: list = []
+        if from_date and to_date:
+            date_clause = "AND end_date >= ? AND end_date <= ?"
+            date_params = [from_date, to_date]
+        row = self._fetchone(
+            f"""SELECT ROUND(100.0 * SUM(
+                        CASE WHEN end_date <= promised_date THEN 1 ELSE 0 END
+                    ) / COUNT(*), 1) AS otd_pct
+                FROM trips
+                WHERE LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
+                  AND promised_date IS NOT NULL AND promised_date != ''
+                  {date_clause} {company_filter}""",
+            tuple(date_params + company_params),
+        )
+        if not row or row.get("otd_pct") is None:
+            return 0.0
+        try:
+            return float(row["otd_pct"])
+        except (TypeError, ValueError):
+            return 0.0
+
+    def get_driver_otd(self, from_date=None, to_date=None):
+        """Per-driver On-Time Delivery percentage (mobile Phase 2 aggregator).
+
+        Same OTD definition as :meth:`get_otd_percentage` (delivered trips
+        with ``promised_date`` where ``end_date <= promised_date``), grouped
+        per driver.  Returns ``{driver_name: otd_pct}``; drivers without
+        qualifying delivered trips are absent (the aggregator defaults to 0).
+        """
+        company_filter = self._company_filter()
+        company_params = list(self._company_params())
+        date_clause = ""
+        date_params: list = []
+        if from_date and to_date:
+            date_clause = "AND end_date >= ? AND end_date <= ?"
+            date_params = [from_date, to_date]
+        rows = self._fetchall(
+            f"""SELECT COALESCE(NULLIF(driver_name, ''), 'Driver') AS driver,
+                       ROUND(100.0 * SUM(
+                           CASE WHEN end_date <= promised_date THEN 1 ELSE 0 END
+                       ) / COUNT(*), 1) AS otd_pct
+                FROM trips
+                WHERE LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
+                  AND promised_date IS NOT NULL AND promised_date != ''
+                  AND driver_name IS NOT NULL AND driver_name != ''
+                  AND driver_name != 'Unassigned'
+                  {date_clause} {company_filter}
+                GROUP BY driver_name""",
+            tuple(date_params + company_params),
+        )
+        return {r["driver"]: r.get("otd_pct") or 0.0 for r in (rows or [])}
 
     def get_driver_analytics(self, from_date=None, to_date=None):
         clause, params = self._date_clause(from_date, to_date)
@@ -360,14 +457,16 @@ class AnalyticsRepository(BaseRepository):
         )
         inv_count = (inv_row.get("cnt", 0) or 0) if inv_row else 0
         cmr_row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM documents WHERE tags LIKE '%cmr%' {self._company_filter()}",
+            # Match the exact JSON array element "cmr" (tags stored as JSON array)
+            f"SELECT COUNT(*) AS cnt FROM documents WHERE tags LIKE '%\"cmr\"%' {self._company_filter()}",
             self._company_params(),
         )
         cmr_count = (cmr_row.get("cnt", 0) or 0) if cmr_row else 0
+        expiry_cutoff = (datetime.now() + timedelta(days=30)).strftime("%Y-%m-%d")
         expiring = self._fetchall(
             f"SELECT title, expiry_date FROM documents WHERE expiry_date IS NOT NULL "
-            f"AND expiry_date <= date('now', '+30 days') {self._company_filter()} ORDER BY expiry_date ASC LIMIT 10",
-            self._company_params(),
+            f"AND expiry_date <= ? {self._company_filter()} ORDER BY expiry_date ASC LIMIT 10",
+            (expiry_cutoff,) + self._company_params(),
         )
         total_row = self._fetchone(
             f"SELECT COUNT(*) AS cnt FROM documents WHERE 1=1 {self._company_filter()}",
@@ -400,10 +499,11 @@ class AnalyticsRepository(BaseRepository):
             extra = " AND created_at >= ? AND created_at <= ?"
             extra_params.extend([from_date, to_date])
         company_filter = self._company_filter()
+        month_expr = "SUBSTRING(created_at::text, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(created_at, 1, 7)"
         return self._fetchall(
-            f"SELECT SUBSTR(created_at, 1, 7) AS month, COUNT(*) AS new_clients "
+            f"SELECT {month_expr} AS month, COUNT(*) AS new_clients "
             f"FROM clients WHERE is_active = 1 {company_filter}{extra} "
-            "GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(extra_params + [months]),
         )
 
@@ -420,26 +520,35 @@ class AnalyticsRepository(BaseRepository):
         """, self._company_params())
 
     def get_document_upload_trend(self, months: int = 12):
+        month_expr = "SUBSTRING(uploaded_at::text, 1, 7)" if getattr(self.db, "_engine", "sqlite") == "postgresql" else "SUBSTR(uploaded_at, 1, 7)"
         return self._fetchall(
-            f"SELECT SUBSTR(uploaded_at, 1, 7) AS month, COUNT(*) AS count, "
+            f"SELECT {month_expr} AS month, COUNT(*) AS count, "
             f"SUM(CASE WHEN category IN ('invoices','trips','cmr') THEN 1 ELSE 0 END) AS doc_count, "
             f"SUM(CASE WHEN category = 'cmr' THEN 1 ELSE 0 END) AS cmr_count "
-            f"FROM documents WHERE is_archived = 0 {self._company_filter()} "
-            "GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM documents {self._company_filter()} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             self._company_params() + (months,),
         )
 
     def get_driver_tacho_violations(self):
+        activity_cutoff = (datetime.now() - timedelta(days=90)).strftime("%Y-%m-%d")
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            # violations is TEXT on PG (SQLite SUM coerces implicitly; PG does not)
+            violations_sum = (
+                "COALESCE(SUM(CASE WHEN da.violations ~ '^[0-9]+$' "
+                "THEN da.violations::int ELSE 0 END), 0)"
+            )
+        else:
+            violations_sum = "COALESCE(SUM(da.violations), 0)"
         return self._fetchall(f"""
             SELECT d.name AS driver, COUNT(da.id) AS activity_days,
-                   COALESCE(SUM(da.violations), 0) AS total_violations,
+                   {violations_sum} AS total_violations,
                    COALESCE(SUM(da.driving_minutes) / 60.0, 0) AS driving_hours,
                    COALESCE(SUM(da.rest_minutes) / 60.0, 0) AS rest_hours
             FROM tacho_driver_activity da
             JOIN drivers d ON da.driver_id = d.id
-            WHERE da.activity_date >= DATE('now', '-90 days') {self._company_filter('da')}
-            GROUP BY da.driver_id ORDER BY total_violations DESC LIMIT 15
-        """, self._company_params())
+            WHERE da.activity_date >= ? {self._company_filter('da')}
+            GROUP BY da.driver_id, d.name ORDER BY total_violations DESC LIMIT 15
+        """, (activity_cutoff,) + self._company_params())
 
     def get_profit_per_km_by_country(self):
         return self._fetchall(f"""
@@ -486,7 +595,7 @@ class AnalyticsRepository(BaseRepository):
             "     ELSE 0 END AS margin_pct, "
             "SUM(CASE WHEN status IN ('Invoiced', 'Paid') THEN 1 ELSE 0 END) AS invoiced_count, "
             "SUM(CASE WHEN status = 'Paid' THEN 1 ELSE 0 END) AS paid_count "
-            f"FROM trips {clause} GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM trips {clause} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(list(clause_params) + [months]),
         )
 
@@ -513,7 +622,7 @@ class AnalyticsRepository(BaseRepository):
             "COALESCE(SUM(extra_costs), 0) AS extra_costs, "
             "COALESCE(SUM(total_price_eur), 0) AS revenue, "
             "COALESCE(SUM(net_profit), 0) AS net_profit "
-            f"FROM trips {clause} GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM trips {clause} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(list(clause_params) + [months]),
         )
 
@@ -525,7 +634,7 @@ class AnalyticsRepository(BaseRepository):
             f"SELECT {month_expr} AS month, COUNT(*) AS trip_count, "
             "COALESCE(SUM(distance_km), 0) AS total_distance, "
             "COALESCE(AVG(distance_km), 0) AS avg_distance "
-            f"FROM trips {clause} GROUP BY month ORDER BY month ASC LIMIT ?",
+            f"FROM trips {clause} GROUP BY {month_expr} ORDER BY month ASC LIMIT ?",
             tuple(list(clause_params) + [months]),
         )
 
@@ -581,9 +690,18 @@ class AnalyticsRepository(BaseRepository):
     def get_revenue_quarterly(self, quarters: int = 8, from_date=None, to_date=None):
         """Quarterly revenue and profit summary."""
         clause, clause_params = self._date_clause(from_date, to_date)
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            quarter_expr = (
+                "SUBSTRING(created_at::text, 1, 4) || '-Q' || "
+                "(CAST(SUBSTRING(created_at::text, 6, 2) AS INTEGER) + 2) / 3"
+            )
+        else:
+            quarter_expr = (
+                "SUBSTR(created_at, 1, 4) || '-Q' || "
+                "(CAST(SUBSTR(created_at, 6, 2) AS INTEGER) + 2) / 3"
+            )
         return self._fetchall(
-            f"SELECT SUBSTR(created_at, 1, 4) || '-Q' || "
-            "(CAST(SUBSTR(created_at, 6, 2) AS INTEGER) + 2) / 3 AS quarter, "
+            f"SELECT {quarter_expr} AS quarter, "
             "COALESCE(SUM(total_price_eur), 0) AS revenue, "
             "COALESCE(SUM(net_profit), 0) AS profit, "
             "COUNT(*) AS trip_count "
@@ -592,8 +710,11 @@ class AnalyticsRepository(BaseRepository):
         )
 
     def get_invoice_aging(self):
-        """Invoice aging breakdown: unpaid invoices by overdue days.
+        """Invoice aging breakdown: outstanding (non-terminal) invoices by overdue days.
 
+        Counts every invoice that is NOT in a terminal state ('paid' /
+        'cancelled') — includes both the legacy 'Unpaid' value and the
+        Phase-3 status machine (draft/finalized/xml_generated/...).
         Returns buckets: current (0-30d overdue), 31-60d, 61-90d, 90+ days.
         """
         today = datetime.now()
@@ -610,7 +731,7 @@ class AnalyticsRepository(BaseRepository):
                 COALESCE(SUM(CASE WHEN due_date BETWEEN ? AND ? THEN total_amount ELSE 0 END), 0) AS bucket_61_90,
                 COALESCE(SUM(CASE WHEN due_date < ? THEN total_amount ELSE 0 END), 0) AS overdue_bucket,
                 COALESCE(SUM(total_amount), 0) AS total_outstanding
-            FROM invoices WHERE status = 'Unpaid' {self._company_filter()}
+            FROM invoices WHERE LOWER(status) NOT IN ('paid', 'cancelled') {self._company_filter()}
         """, (d_30, d_today, d_60, d_31, d_90, d_61, d_90) + self._company_params())
 
     def get_client_payment_timeline(self, from_date=None, to_date=None):
@@ -630,6 +751,22 @@ class AnalyticsRepository(BaseRepository):
             params = [from_date, to_date]
         full_clause = f"{clause} {company_filter}" if company_filter else clause
         full_params = params + company_params
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            # payment_date is timestamptz on PG: the ''-guard is SQLite-only
+            # (PG cannot compare a timestamp to an empty string)
+            delay_case = (
+                "CASE WHEN t.payment_date IS NOT NULL "
+                "THEN (t.payment_date::date - i.issue_date::date) "
+                "ELSE (i.due_date::date - i.issue_date::date) "
+                "END"
+            )
+        else:
+            delay_case = (
+                "CASE WHEN t.payment_date IS NOT NULL AND t.payment_date != '' "
+                "THEN ROUND(JULIANDAY(t.payment_date) - JULIANDAY(i.issue_date), 0) "
+                "ELSE ROUND(JULIANDAY(i.due_date) - JULIANDAY(i.issue_date), 0) "
+                "END"
+            )
         return self._fetchall(
             f"""WITH client_totals AS (
                     SELECT t.client_name,
@@ -645,10 +782,7 @@ class AnalyticsRepository(BaseRepository):
                     SELECT t.client_name, i.invoice_number, i.issue_date,
                            i.due_date, i.total_amount, i.status,
                            t.payment_date,
-                           CASE WHEN t.payment_date IS NOT NULL AND t.payment_date != ''
-                                THEN ROUND(JULIANDAY(t.payment_date) - JULIANDAY(i.issue_date), 0)
-                                ELSE ROUND(JULIANDAY(i.due_date) - JULIANDAY(i.issue_date), 0)
-                           END AS delay_days,
+                           {delay_case} AS delay_days,
                            ROW_NUMBER() OVER (
                                PARTITION BY t.client_name
                                ORDER BY i.issue_date DESC
@@ -678,10 +812,18 @@ class AnalyticsRepository(BaseRepository):
             drivers_clause = f"WHERE {filter_condition} {self._company_filter()}"
         else:
             drivers_clause = f"{clause} AND {filter_condition}"
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            week_start_expr = (
+                "(created_at::date - EXTRACT(DOW FROM created_at::date)::integer) AS week_start"
+            )
+        else:
+            week_start_expr = (
+                "DATE(created_at, '-' || CAST((JULIANDAY(created_at) - JULIANDAY("
+                "DATE(created_at, 'weekday 0'))) AS INTEGER) || ' days') AS week_start"
+            )
         return self._fetchall(
             f"""SELECT driver_name,
-                       DATE(created_at, '-' || CAST((JULIANDAY(created_at) - JULIANDAY(
-                           DATE(created_at, 'weekday 0'))) AS INTEGER) || ' days') AS week_start,
+                       {week_start_expr},
                        COUNT(*) AS trip_count
                 FROM trips
                 {drivers_clause}
