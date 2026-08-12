@@ -25,6 +25,7 @@ CREATE TABLE IF NOT EXISTS trips (
     net_profit REAL,
     start_date TEXT,
     end_date TEXT,
+    promised_date TEXT,
     payment_date TEXT,
     extra_costs REAL,
     fuel_cost REAL,
@@ -32,13 +33,8 @@ CREATE TABLE IF NOT EXISTS trips (
     salary_cost REAL,
     currency TEXT,
     status TEXT,
-    loading_city TEXT,
-    delivery_city TEXT,
     loading_country TEXT,
     delivery_country TEXT,
-    reference TEXT,
-    notes TEXT,
-    updated_at TEXT,
     driver_id INTEGER
     -- route_history_v2_id INTEGER REFERENCES route_history_v2(id),  (added by migration)
     -- truck_consumption_l_per_100km REAL,                          (added by migration)
@@ -146,6 +142,28 @@ CREATE TABLE IF NOT EXISTS email_logs (
     FOREIGN KEY (trip_id) REFERENCES trips (id)
 );
 """
+
+# ── Sent-email dedup (roadmap 12) ─────────────────────────────────────
+# UNIQUE(document_id, recipient) makes a Celery retry of build_email_package
+# idempotent: a replayed INSERT OR IGNORE of a 'pending' row is a no-op
+# instead of a second send to the same recipient.
+TABLE_SENT_EMAILS = """
+CREATE TABLE IF NOT EXISTS sent_emails (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    document_id INTEGER NOT NULL,
+    recipient TEXT NOT NULL,
+    status TEXT NOT NULL DEFAULT 'pending',
+    sent_at TEXT,
+    created_at TEXT NOT NULL,
+    UNIQUE(document_id, recipient),
+    FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
+);
+"""
+
+INDEX_SENT_EMAILS_STATUS = (
+    "CREATE INDEX IF NOT EXISTS idx_sent_emails_status "
+    "ON sent_emails(status)"
+)
 
 TABLE_INVOICE_REMINDERS = """
 CREATE TABLE IF NOT EXISTS invoice_reminders (
@@ -414,10 +432,15 @@ CREATE TABLE IF NOT EXISTS drivers (
     monthly_salary REAL DEFAULT 0,
     notes TEXT,
     is_active INTEGER DEFAULT 1,
+    company_id INTEGER,
+    user_id INTEGER REFERENCES users(id),
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
 """
+
+ALTER_DRIVERS_ADD_COMPANY_ID = "ALTER TABLE drivers ADD COLUMN company_id INTEGER"
+ALTER_DRIVERS_ADD_USER_ID = "ALTER TABLE drivers ADD COLUMN user_id INTEGER REFERENCES users(id)"
 
 INDEX_DRIVERS_ACTIVE = "CREATE INDEX IF NOT EXISTS idx_drivers_active ON drivers(is_active);"
 
@@ -427,6 +450,7 @@ CREATE TABLE IF NOT EXISTS driver_truck_assignments (
     driver_id INTEGER NOT NULL UNIQUE,
     truck_id INTEGER NOT NULL,
     assigned_at TEXT NOT NULL,
+    active INTEGER NOT NULL DEFAULT 1,
     FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
@@ -507,8 +531,6 @@ CREATE TABLE IF NOT EXISTS clients (
     email TEXT,
     address TEXT,
     vat_number TEXT,
-    company_code TEXT DEFAULT '',
-    city TEXT DEFAULT '',
     currency_preference TEXT DEFAULT 'EUR',
     notes TEXT,
     is_active INTEGER DEFAULT 1,
@@ -589,7 +611,6 @@ CREATE TABLE IF NOT EXISTS document_links (
     linked_entity_id INTEGER NOT NULL,
     relation_type TEXT DEFAULT 'attached',
     created_at TEXT NOT NULL,
-    company_id INTEGER REFERENCES companies(id),
     UNIQUE(document_id, linked_entity_type, linked_entity_id, relation_type)
 );
 """
@@ -601,7 +622,6 @@ INDEX_DOCUMENTS_NUMBER = "CREATE INDEX IF NOT EXISTS idx_documents_number ON doc
 INDEX_DOCUMENTS_EXPIRY_DATE = "CREATE INDEX IF NOT EXISTS idx_documents_expiry_date ON documents(expiry_date);"
 INDEX_DOC_LINKS_DOCUMENT = "CREATE INDEX IF NOT EXISTS idx_doc_links_document ON document_links(document_id);"
 INDEX_DOC_LINKS_ENTITY = "CREATE INDEX IF NOT EXISTS idx_doc_links_entity ON document_links(linked_entity_type, linked_entity_id);"
-INDEX_DOC_LINKS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_doc_links_company ON document_links(company_id);"
 
 # ── Document Center P2: FTS5, versions, contracts, templates ───────────────
 
@@ -721,6 +741,7 @@ TABLE_SUCCESSIVE_CARRIERS = """
 CREATE TABLE IF NOT EXISTS successive_carriers (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     trip_id INTEGER NOT NULL REFERENCES trips(id) ON DELETE CASCADE,
+    company_id INTEGER DEFAULT 0 REFERENCES companies(id),
     sequence_order INTEGER NOT NULL DEFAULT 1,
     carrier_name TEXT NOT NULL,
     carrier_address TEXT,
@@ -795,6 +816,13 @@ ALTER_DOCUMENTS_ADD_COPY_TYPE = "ALTER TABLE documents ADD COLUMN copy_type TEXT
 ALTER_DOCUMENTS_ADD_CMR_NUMBER = "ALTER TABLE documents ADD COLUMN cmr_number TEXT DEFAULT ''"
 ALTER_DOCUMENTS_ADD_CMR_METADATA = "ALTER TABLE documents ADD COLUMN cmr_metadata_json TEXT DEFAULT '{}'"
 ALTER_DOCUMENTS_ADD_IS_SIGNED = "ALTER TABLE documents ADD COLUMN is_signed INTEGER DEFAULT 0"
+
+# ── Multi-tenant: company_id for tables that lacked it (P0.6) ──────────
+ALTER_DOCUMENTS_ADD_COMPANY_ID = "ALTER TABLE documents ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_CLIENT_CONTACTS_ADD_COMPANY_ID = "ALTER TABLE client_contacts ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_CLIENT_TAGS_ADD_COMPANY_ID = "ALTER TABLE client_tags ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_DOCUMENT_LINKS_ADD_COMPANY_ID = "ALTER TABLE document_links ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
+ALTER_DOCUMENT_VERSIONS_ADD_COMPANY_ID = "ALTER TABLE document_versions ADD COLUMN company_id INTEGER DEFAULT 0 REFERENCES companies(id)"
 
 INDEX_TRIPS_CMR_STATUS = "CREATE INDEX IF NOT EXISTS idx_trips_cmr_status ON trips(cmr_status);"
 INDEX_DOCUMENTS_COPY_TYPE = "CREATE INDEX IF NOT EXISTS idx_documents_copy_type ON documents(copy_type);"
@@ -1057,7 +1085,6 @@ CREATE TABLE IF NOT EXISTS companies (
     subscription_tier TEXT NOT NULL DEFAULT 'starter'
         CHECK (subscription_tier IN ('starter', 'professional', 'enterprise')),
     is_active INTEGER NOT NULL DEFAULT 1,
-    trial_ends_at TEXT,
     created_at TEXT DEFAULT (datetime('now')),
     updated_at TEXT DEFAULT (datetime('now'))
 );
@@ -1075,11 +1102,14 @@ CREATE TABLE IF NOT EXISTS users (
     role TEXT NOT NULL DEFAULT 'dispatcher',
     company_id INTEGER REFERENCES companies(id),
     is_active INTEGER NOT NULL DEFAULT 1,
-    mfa_enabled BOOLEAN NOT NULL DEFAULT 0,
-    mfa_secret TEXT,
+    display_name TEXT DEFAULT '',
+    driver_id INTEGER REFERENCES drivers(id),
     created_at TEXT DEFAULT (datetime('now'))
 );
 """
+
+ALTER_USERS_ADD_DISPLAY_NAME = "ALTER TABLE users ADD COLUMN display_name TEXT DEFAULT ''"
+ALTER_USERS_ADD_DRIVER_ID = "ALTER TABLE users ADD COLUMN driver_id INTEGER REFERENCES drivers(id)"
 
 INDEX_USERS_EMAIL = (
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email ON users(email)"
@@ -1087,54 +1117,6 @@ INDEX_USERS_EMAIL = (
 
 INDEX_USERS_COMPANY = (
     "CREATE INDEX IF NOT EXISTS idx_users_company ON users(company_id)"
-)
-
-# ── MFA (TOTP + single-use backup codes) ─────────────────────────────────
-# mfa_secret is XOR-encrypted at rest (see backend.security.encrypt_at_rest);
-# NULL/empty = not enrolled. mfa_backup_codes stores bcrypt hashes only.
-
-ALTER_USERS_ADD_MFA_ENABLED = (
-    "ALTER TABLE users ADD COLUMN mfa_enabled BOOLEAN NOT NULL DEFAULT 0"
-)
-ALTER_USERS_ADD_MFA_SECRET = "ALTER TABLE users ADD COLUMN mfa_secret TEXT"
-
-TABLE_MFA_BACKUP_CODES = """
-CREATE TABLE IF NOT EXISTS mfa_backup_codes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id),
-    code_hash TEXT NOT NULL,
-    used_at TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-);
-"""
-
-INDEX_MFA_BACKUP_CODES_USER = (
-    "CREATE INDEX IF NOT EXISTS idx_mfa_backup_codes_user ON mfa_backup_codes(user_id)"
-)
-
-INSERT_SCHEMA_MIGRATION_MFA = (
-    "INSERT OR IGNORE INTO schema_migrations (version, name) "
-    "VALUES (4, 'add_mfa_columns_and_backup_codes');"
-)
-
-# ── Password reset tokens (DB-backed password reset flow) ──────────────
-# Single-use, time-limited password reset tokens. Only the SHA-256 hash of
-# the raw token is persisted; the raw token travels only inside the emailed
-# reset link. Expired / already-used rows are ignored by the lookup.
-TABLE_PASSWORD_RESET_TOKENS = """
-CREATE TABLE IF NOT EXISTS password_reset_tokens (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    token_hash TEXT NOT NULL UNIQUE,
-    expires_at TEXT NOT NULL,
-    used_at TEXT,
-    created_at TEXT DEFAULT (datetime('now'))
-);
-"""
-
-INDEX_PASSWORD_RESET_TOKENS_USER = (
-    "CREATE INDEX IF NOT EXISTS idx_password_reset_tokens_user "
-    "ON password_reset_tokens(user_id)"
 )
 
 TABLE_GPS_TELEMETRY = """
@@ -1158,6 +1140,128 @@ INDEX_GPS_TRUCK = (
 INDEX_GPS_RECORDED = (
     "CREATE INDEX IF NOT EXISTS idx_gps_recorded ON gps_telemetry(recorded_at)"
 )
+# Unique (truck_id, recorded_at) — makes GPS batch-flush retries idempotent:
+# a replayed INSERT OR IGNORE is a no-op instead of a duplicate row.
+INDEX_GPS_TELEMETRY_UNIQUE = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_gps_telemetry_unique "
+    "ON gps_telemetry(truck_id, recorded_at)"
+)
+
+# ── Copilot tables (SQLite mirror of the Alembic copilot_* migrations) ──
+# Column contract mirrors the Alembic revisions:
+#   d4e5f6a7b8c4 (copilot_audit_log), e5f6a7b8c9d5 (conversation_summary),
+#   f6a7b8c9d0e6 (copilot_reasoning_graphs), a7b8c9d0e1f7 (copilot_insights)
+# using SQLite-friendly types (UUID→TEXT, JSON→TEXT, timestamps→TEXT) and
+# matching the repositories/copilot_repository.py COLUMNS allowlists.
+TABLE_COPILOT_AUDIT_LOG = """
+CREATE TABLE IF NOT EXISTS copilot_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER REFERENCES companies(id),
+    user_id INTEGER,
+    conversation_id TEXT,
+    plan_id TEXT,
+    step_id TEXT,
+    tool_name TEXT,
+    tool_version TEXT,
+    parameters TEXT,
+    permission_checked TEXT,
+    permission_granted INTEGER,
+    confidence_score REAL,
+    confirmation_level INTEGER,
+    status TEXT,
+    result TEXT,
+    error TEXT,
+    model_used TEXT,
+    provider_id TEXT,
+    prompt_version TEXT,
+    execution_time_ms INTEGER,
+    started_at TEXT,
+    finished_at TEXT,
+    created_at TEXT,
+    corrects_audit_id TEXT,
+    action TEXT,
+    entity_type TEXT,
+    entity_id TEXT,
+    old_value TEXT,
+    new_value TEXT,
+    performed_by TEXT
+);
+"""
+
+TABLE_CONVERSATION_SUMMARY = """
+CREATE TABLE IF NOT EXISTS conversation_summary (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER REFERENCES companies(id),
+    user_id INTEGER,
+    conversation_id TEXT,
+    summary TEXT,
+    model TEXT,
+    token_count INTEGER,
+    started_at TEXT,
+    ended_at TEXT,
+    turn_count INTEGER DEFAULT 0,
+    outcome TEXT,
+    pinned_provider_id TEXT,
+    pinned_model_id TEXT,
+    pinned_prompt_version TEXT,
+    created_at TEXT
+);
+"""
+
+TABLE_COPILOT_REASONING_GRAPHS = """
+CREATE TABLE IF NOT EXISTS copilot_reasoning_graphs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER REFERENCES companies(id),
+    conversation_id TEXT,
+    plan_id TEXT,
+    status TEXT DEFAULT 'building',
+    root_node_id TEXT,
+    graph TEXT,
+    graph_json TEXT,
+    created_at TEXT,
+    finalized_at TEXT
+);
+"""
+
+TABLE_COPILOT_INSIGHTS = """
+CREATE TABLE IF NOT EXISTS copilot_insights (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    insight_type TEXT NOT NULL,
+    payload TEXT NOT NULL,
+    severity TEXT NOT NULL DEFAULT 'low',
+    status TEXT NOT NULL DEFAULT 'new',
+    created_at TEXT,
+    read_at TEXT,
+    dismissed_at TEXT
+);
+"""
+
+# Unique (company_id, insight_type, payload) — makes insight-job retries
+# idempotent: a replayed INSERT OR IGNORE (translated to ON CONFLICT DO
+# NOTHING on PostgreSQL) is a no-op instead of a duplicate row.
+# payload is the JSON-serialized insight payload (real column name per the
+# Alembic copilot_insights migration; the legacy ``payload_json`` name was
+# never part of the schema).
+INDEX_COPILOT_INSIGHTS_DEDUP = (
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
+    "ON copilot_insights(company_id, insight_type, payload)"
+)
+
+# ── Soft delete: deleted_at for all business tables (P0.7) ───────────
+ALTER_TRIPS_ADD_DELETED_AT = "ALTER TABLE trips ADD COLUMN deleted_at TEXT"
+ALTER_INVOICES_ADD_DELETED_AT = "ALTER TABLE invoices ADD COLUMN deleted_at TEXT"
+ALTER_CLIENTS_ADD_DELETED_AT = "ALTER TABLE clients ADD COLUMN deleted_at TEXT"
+ALTER_DRIVERS_ADD_DELETED_AT = "ALTER TABLE drivers ADD COLUMN deleted_at TEXT"
+ALTER_TRUCKS_ADD_DELETED_AT = "ALTER TABLE trucks ADD COLUMN deleted_at TEXT"
+ALTER_ROUTES_ADD_DELETED_AT = "ALTER TABLE routes ADD COLUMN deleted_at TEXT"
+ALTER_ROUTE_HISTORY_V2_ADD_DELETED_AT = "ALTER TABLE route_history_v2 ADD COLUMN deleted_at TEXT"
+ALTER_RECEIPTS_ADD_DELETED_AT = "ALTER TABLE receipts ADD COLUMN deleted_at TEXT"
+ALTER_CONTRACTS_ADD_DELETED_AT = "ALTER TABLE contracts ADD COLUMN deleted_at TEXT"
+ALTER_PROFORMA_ADD_DELETED_AT = "ALTER TABLE proforma_invoices ADD COLUMN deleted_at TEXT"
+ALTER_MAINTENANCE_RECORDS_ADD_DELETED_AT = "ALTER TABLE maintenance_records ADD COLUMN deleted_at TEXT"
+ALTER_MAINTENANCE_SCHEDULES_ADD_DELETED_AT = "ALTER TABLE maintenance_schedules ADD COLUMN deleted_at TEXT"
+ALTER_DOCUMENTS_ADD_DELETED_AT = "ALTER TABLE documents ADD COLUMN deleted_at TEXT"
 
 # ── Schema migration version bump ───────────────────────────────────────
 
@@ -1169,6 +1273,38 @@ INSERT_SCHEMA_MIGRATION_V2 = (
 INSERT_SCHEMA_MIGRATION_V3 = (
     "INSERT OR IGNORE INTO schema_migrations (version, name) "
     "VALUES (3, 'add_gps_telemetry_company_id');"
+)
+
+# ── Schema migration version bump for P0.6-P0.8 ───────────────────────
+INSERT_SCHEMA_MIGRATION_V4 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (4, 'add_missing_company_id_and_soft_delete');"
+)
+
+# ── Schema migration version bump for Freight Exchange (P0.9) ─────────
+INSERT_SCHEMA_MIGRATION_V5 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (5, 'create_freight_exchange_connections');"
+)
+
+INSERT_SCHEMA_MIGRATION_V6 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (6, 'create_saved_searches');"
+)
+
+INSERT_SCHEMA_MIGRATION_V7 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (7, 'add_trips_source_columns');"
+)
+
+INSERT_SCHEMA_MIGRATION_V8 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (8, 'add_sent_emails_dedup_table');"
+)
+
+INSERT_SCHEMA_MIGRATION_V9 = (
+    "INSERT OR IGNORE INTO schema_migrations (version, name) "
+    "VALUES (9, 'add_trips_promised_date');"
 )
 
 # ── Multi-tenant company_id indexes ────────────────────────────────────
@@ -1195,12 +1331,37 @@ INDEX_PROFORMA_COMPANY    = "CREATE INDEX IF NOT EXISTS idx_proforma_company ON 
 INDEX_CONTRACTS_COMPANY   = "CREATE INDEX IF NOT EXISTS idx_contracts_company ON contracts(company_id);"
 INDEX_TACHO_IMPORTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_tacho_imports_company ON tacho_imports(company_id);"
 
+# ── Multi-tenant company_id indexes for newly-scoped tables (P0.6) ────
+INDEX_DOCUMENTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_documents_company ON documents(company_id);"
+INDEX_CLIENT_CONTACTS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_client_contacts_company ON client_contacts(company_id);"
+INDEX_CLIENT_TAGS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_client_tags_company ON client_tags(company_id);"
+INDEX_DOCUMENT_LINKS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_doc_links_company ON document_links(company_id);"
+INDEX_DOCUMENT_VERSIONS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_doc_versions_company ON document_versions(company_id);"
+
+# ── Composite indexes for common multi-tenant filtered queries ────────
+INDEX_TRIPS_COMPANY_STATUS   = "CREATE INDEX IF NOT EXISTS idx_trips_company_status ON trips(company_id, status);"
+INDEX_TRIPS_COMPANY_CREATED  = "CREATE INDEX IF NOT EXISTS idx_trips_company_created ON trips(company_id, created_at);"
+INDEX_TRIPS_COMPANY_START_DATE = "CREATE INDEX IF NOT EXISTS idx_trips_company_start_date ON trips(company_id, start_date);"
+INDEX_TRUCKS_COMPANY_STATUS  = "CREATE INDEX IF NOT EXISTS idx_trucks_company_status ON trucks(company_id, status);"
+INDEX_INVOICES_COMPANY_STATUS = "CREATE INDEX IF NOT EXISTS idx_invoices_company_status ON invoices(company_id, status);"
+
+# ── Soft delete indexes (P0.7) ─────────────────────────────────────────
+INDEX_TRIPS_DELETED = "CREATE INDEX IF NOT EXISTS idx_trips_deleted ON trips(deleted_at);"
+INDEX_INVOICES_DELETED = "CREATE INDEX IF NOT EXISTS idx_invoices_deleted ON invoices(deleted_at);"
+INDEX_CLIENTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_clients_deleted ON clients(deleted_at);"
+INDEX_DRIVERS_DELETED = "CREATE INDEX IF NOT EXISTS idx_drivers_deleted ON drivers(deleted_at);"
+INDEX_TRUCKS_DELETED = "CREATE INDEX IF NOT EXISTS idx_trucks_deleted ON trucks(deleted_at);"
+INDEX_DOCUMENTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_documents_deleted ON documents(deleted_at);"
+INDEX_RECEIPTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_receipts_deleted ON receipts(deleted_at);"
+INDEX_CONTRACTS_DELETED = "CREATE INDEX IF NOT EXISTS idx_contracts_deleted ON contracts(deleted_at);"
+
 # ── Additional performance indexes for commonly filtered columns ───────
 
 INDEX_INVOICES_STATUS   = "CREATE INDEX IF NOT EXISTS idx_invoices_status ON invoices(status);"
 INDEX_GPS_TRUCK_TIME    = "CREATE INDEX IF NOT EXISTS idx_gps_truck_time ON gps_telemetry(truck_id, recorded_at);"
 INDEX_CMR_AUDIT_EVENT_TYPE = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_event_type ON cmr_audit_log(event_type);"
-INDEX_CMR_AUDIT_CREATED = "CREATE INDEX IF NOT EXISTS idx_cmr_audit_created ON cmr_audit_log(created_at);"
+# NOTE: no `idx_cmr_audit_created` — cmr_audit_log has a `timestamp`
+# column, NOT `created_at`; the old statement failed at every init.
 INDEX_EMAIL_LOGS_TRIP   = "CREATE INDEX IF NOT EXISTS idx_email_logs_trip ON email_logs(trip_id);"
 INDEX_EMAIL_LOGS_STATUS = "CREATE INDEX IF NOT EXISTS idx_email_logs_status ON email_logs(status);"
 
@@ -1212,7 +1373,6 @@ CREATE TABLE IF NOT EXISTS webhook_events (
     partner TEXT NOT NULL,
     event_type TEXT NOT NULL,
     payload TEXT,
-    event_id TEXT,
     signature_valid INTEGER DEFAULT 1,
     processing_status TEXT DEFAULT 'received',
     received_at TEXT,
@@ -1232,17 +1392,6 @@ INDEX_WEBHOOK_EVENTS_RECEIVED = (
 INDEX_WEBHOOK_EVENTS_COMPANY = (
     "CREATE INDEX IF NOT EXISTS idx_webhook_events_company "
     "ON webhook_events(company_id)"
-)
-# Exact idempotency lookup (F3): the upstream (Stripe) event id lives in a
-# dedicated column so duplicate detection is a single indexed equality query
-# instead of scanning recent payloads. NULL on legacy rows written before
-# migration v6.
-ALTER_WEBHOOK_EVENTS_ADD_EVENT_ID = (
-    "ALTER TABLE webhook_events ADD COLUMN event_id TEXT"
-)
-INDEX_WEBHOOK_EVENTS_EVENT = (
-    "CREATE INDEX IF NOT EXISTS idx_webhook_events_event "
-    "ON webhook_events(partner, event_id)"
 )
 
 TABLE_API_KEYS = """
@@ -1317,197 +1466,164 @@ INDEX_WAITLIST_JOINED = "CREATE INDEX IF NOT EXISTS idx_waitlist_joined ON waitl
 INDEX_WAITLIST_SOURCE = "CREATE INDEX IF NOT EXISTS idx_waitlist_source ON waitlist_entries(source);"
 INDEX_WAITLIST_REFERRAL = "CREATE UNIQUE INDEX IF NOT EXISTS idx_waitlist_referral ON waitlist_entries(referral_code);"
 
-# Contact form — public contact messages (own module, NOT multi-tenant scoped)
-TABLE_CONTACT_MESSAGES = """
-CREATE TABLE IF NOT EXISTS contact_messages (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    name TEXT NOT NULL,
-    email TEXT NOT NULL,
-    subject TEXT NOT NULL,
-    message TEXT NOT NULL,
-    source_ip TEXT,
-    created_at TEXT NOT NULL DEFAULT (datetime('now'))
-);
-"""
 
-# Support tickets — website support center (multi-tenant scoped)
-TABLE_SUPPORT_TICKETS = """
-CREATE TABLE IF NOT EXISTS support_tickets (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    company_id INTEGER REFERENCES companies(id),
-    user_id INTEGER REFERENCES users(id),
-    subject TEXT NOT NULL,
-    description TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'open',
-    priority TEXT NOT NULL DEFAULT 'medium',
+# ── Freight Exchange: Connections ─────────────────────────────────────────
+TABLE_FREIGHT_EXCHANGE_CONNECTIONS = """
+CREATE TABLE IF NOT EXISTS freight_exchange_connections (
+    id TEXT PRIMARY KEY,                      -- UUID, generated by Python for SQLite
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    provider_id TEXT NOT NULL,
+    credentials_encrypted TEXT NOT NULL,
+    session_state TEXT,                       -- JSON blob stored as TEXT in SQLite
+    status TEXT NOT NULL DEFAULT 'disconnected',
+    last_health_check_at TEXT,
+    last_health_check_status TEXT,
+    connected_at TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT
+    UNIQUE (company_id, provider_id)
 );
 """
 
-INDEX_SUPPORT_TICKETS_COMPANY = (
-    "CREATE INDEX IF NOT EXISTS idx_support_tickets_company ON support_tickets(company_id)"
-)
-INDEX_SUPPORT_TICKETS_STATUS = (
-    "CREATE INDEX IF NOT EXISTS idx_support_tickets_status ON support_tickets(status)"
+INDEX_FREIGHT_CONNECTIONS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_connections_company "
+    "ON freight_exchange_connections(company_id);"
 )
 
-# ── Billing / Subscriptions (per-truck model, website + desktop ERP) ──────
-# Owned by the billing lane. Prices are stored as data (not hardcoded) so
-# future pricing changes don't require a code deploy. One row per company;
-# enforced by a UNIQUE index on company_id (the lazy-seed helper relies on
-# single-row-per-company semantics). Column names / status enums follow the
-# website blueprint §4.3 adapted to this repo's INTEGER-PK / TEXT-timestamp
-# conventions.
+INDEX_FREIGHT_CONNECTIONS_PROVIDER = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_connections_provider "
+    "ON freight_exchange_connections(company_id, provider_id);"
+)
 
-TABLE_SUBSCRIPTIONS = """
-CREATE TABLE IF NOT EXISTS subscriptions (
+INDEX_FREIGHT_CONNECTIONS_STATUS = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_connections_status "
+    "ON freight_exchange_connections(company_id, status);"
+)
+
+
+# ── Auth Sessions (desktop & web login tracking) ─────────────────────────
+TABLE_AUTH_SESSIONS = """
+CREATE TABLE IF NOT EXISTS auth_sessions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL DEFAULT 0,
+    user_email TEXT NOT NULL,
+    token_hash TEXT NOT NULL UNIQUE,
+    device_name TEXT DEFAULT '',
+    device_platform TEXT DEFAULT '',
+    ip_address TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    last_active_at TEXT DEFAULT (datetime('now'))
+);
+"""
+
+INDEX_AUTH_SESSIONS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_company "
+    "ON auth_sessions(company_id)"
+)
+INDEX_AUTH_SESSIONS_EMAIL = (
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_email "
+    "ON auth_sessions(user_email)"
+)
+INDEX_AUTH_SESSIONS_TOKEN = (
+    "CREATE INDEX IF NOT EXISTS idx_auth_sessions_token "
+    "ON auth_sessions(token_hash)"
+)
+
+# ── Freight Exchange: Saved Searches ──────────────────────────────────────
+TABLE_SAVED_SEARCHES = """
+CREATE TABLE IF NOT EXISTS saved_searches (
+    id TEXT PRIMARY KEY,                      -- UUID, generated by Python for SQLite
+    company_id INTEGER NOT NULL REFERENCES companies(id),
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    label TEXT NOT NULL,
+    filters TEXT NOT NULL,                    -- JSON blob stored as TEXT in SQLite
+    provider_ids TEXT,                        -- JSON blob (nullable array)
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_refreshed_at TEXT
+);
+"""
+
+INDEX_SAVED_SEARCHES_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_saved_searches_company "
+    "ON saved_searches(company_id);"
+)
+
+INDEX_SAVED_SEARCHES_USER = (
+    "CREATE INDEX IF NOT EXISTS idx_saved_searches_user "
+    "ON saved_searches(user_id);"
+)
+
+
+# ── Freight Exchange: Negotiations ─────────────────────────────────────────
+# Local, provider-agnostic negotiation thread for a freight load.  There is NO
+# external TransEu/TIMOCOM push — the thread is a LOCAL record of the
+# accept/counter/reject dialogue (the adapter push can come later).  The first
+# record for a (provider_id, provider_load_id) is the provider's offer
+# (direction 'inbound'); every subsequent record is our reply ('outbound')
+# linked to the previous one via parent_negotiation_id (a linear chain).
+TABLE_FREIGHT_NEGOTIATIONS = """
+CREATE TABLE IF NOT EXISTS freight_negotiations (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     company_id INTEGER NOT NULL REFERENCES companies(id),
-    billing_term TEXT NOT NULL DEFAULT 'monthly'
-        CHECK (billing_term IN ('monthly', 'annual')),
-    status TEXT NOT NULL DEFAULT 'trialing'
-        CHECK (status IN ('trialing', 'active', 'past_due', 'payment_deferred',
-                          'canceled', 'locked')),
-    licensed_truck_count INTEGER NOT NULL DEFAULT 0,
-    pending_truck_count INTEGER,
-    ai_copilot_enabled BOOLEAN NOT NULL DEFAULT 0,
-    priority_support_enabled BOOLEAN NOT NULL DEFAULT 0,
-    api_access_enabled BOOLEAN NOT NULL DEFAULT 0,
-    price_per_truck_erp_cents INTEGER NOT NULL DEFAULT 1000,
-    price_per_truck_ai_cents INTEGER NOT NULL DEFAULT 1000,
-    priority_support_price_cents INTEGER NOT NULL DEFAULT 5000,
-    api_access_price_cents INTEGER NOT NULL DEFAULT 10000,
-    annual_discount_pct NUMERIC NOT NULL DEFAULT 15.00,
-    current_period_start TEXT,
-    current_period_end TEXT,
-    trial_ends_at TEXT,
-    payment_deferred_until TEXT,
-    service_credit_cents INTEGER NOT NULL DEFAULT 0,
-    stripe_customer_id TEXT,
-    stripe_subscription_id TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL
-);
-"""
-
-INDEX_SUBSCRIPTIONS_COMPANY = (
-    "CREATE UNIQUE INDEX IF NOT EXISTS idx_subscriptions_company "
-    "ON subscriptions(company_id)"
-)
-
-# Every truck add/remove is logged as an event row — this is what makes
-# proration, service-credit accounting, and the audit trail reconstructable.
-TABLE_SUBSCRIPTION_TRUCK_EVENTS = """
-CREATE TABLE IF NOT EXISTS subscription_truck_events (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    subscription_id INTEGER NOT NULL REFERENCES subscriptions(id),
-    truck_id INTEGER NOT NULL,
-    event_type TEXT NOT NULL CHECK (event_type IN ('added', 'removed')),
-    billed_immediately BOOLEAN NOT NULL DEFAULT 0,
-    amount_cents INTEGER,
-    source TEXT NOT NULL DEFAULT 'website'
-        CHECK (source IN ('desktop_erp', 'website')),
-    created_by_user_id INTEGER,
-    created_at TEXT NOT NULL
-);
-"""
-
-INDEX_SUBSCRIPTION_TRUCK_EVENTS_SUB = (
-    "CREATE INDEX IF NOT EXISTS idx_sub_truck_events_sub "
-    "ON subscription_truck_events(subscription_id)"
-)
-INDEX_SUBSCRIPTION_TRUCK_EVENTS_TRUCK = (
-    "CREATE INDEX IF NOT EXISTS idx_sub_truck_events_truck "
-    "ON subscription_truck_events(truck_id)"
-)
-
-# Billing invoices. Named `billing_invoices` (not `invoices`) because this
-# repo's `invoices` table is already used for trip invoices (trip_id /
-# invoice_number / total_amount). Rows are created by the Stripe webhook
-# (invoice.paid) and by annual proration events; never by the mock path.
-TABLE_BILLING_INVOICES = """
-CREATE TABLE IF NOT EXISTS billing_invoices (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    company_id INTEGER NOT NULL REFERENCES companies(id),
-    subscription_id INTEGER REFERENCES subscriptions(id),
-    stripe_invoice_id TEXT,
-    fiscal_invoice_provider TEXT,
-    fiscal_invoice_id TEXT,
-    fiscal_invoice_pdf_url TEXT,
-    amount_cents INTEGER NOT NULL DEFAULT 0,
+    provider_id TEXT NOT NULL,
+    provider_load_id TEXT NOT NULL,
+    direction TEXT NOT NULL DEFAULT 'inbound',  -- 'inbound' (provider offer) | 'outbound' (our reply)
+    status TEXT NOT NULL DEFAULT 'offered',     -- offered | countered | accepted | rejected | expired
+    amount_eur REAL,
     currency TEXT NOT NULL DEFAULT 'EUR',
-    status TEXT NOT NULL DEFAULT 'draft'
-        CHECK (status IN ('draft', 'open', 'paid', 'void', 'uncollectible',
-                          'deferred')),
-    issued_at TEXT,
-    paid_at TEXT,
-    created_at TEXT NOT NULL
+    counterparty_name TEXT DEFAULT '',
+    counterparty_id TEXT DEFAULT '',
+    parent_negotiation_id INTEGER REFERENCES freight_negotiations(id),  -- self-FK thread chain
+    created_by INTEGER,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
 
-INDEX_BILLING_INVOICES_COMPANY = (
-    "CREATE INDEX IF NOT EXISTS idx_billing_invoices_company "
-    "ON billing_invoices(company_id)"
-)
-INDEX_BILLING_INVOICES_SUBSCRIPTION = (
-    "CREATE INDEX IF NOT EXISTS idx_billing_invoices_subscription "
-    "ON billing_invoices(subscription_id)"
-)
-INDEX_BILLING_INVOICES_STATUS = (
-    "CREATE INDEX IF NOT EXISTS idx_billing_invoices_status "
-    "ON billing_invoices(status)"
+INDEX_FREIGHT_NEGOTIATIONS_COMPANY = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_negotiations_company "
+    "ON freight_negotiations(company_id);"
 )
 
-TABLE_BILLING_PAYMENT_METHODS = """
-CREATE TABLE IF NOT EXISTS billing_payment_methods (
+INDEX_FREIGHT_NEGOTIATIONS_THREAD = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_negotiations_thread "
+    "ON freight_negotiations(company_id, provider_id, provider_load_id);"
+)
+
+INDEX_FREIGHT_NEGOTIATIONS_STATUS = (
+    "CREATE INDEX IF NOT EXISTS idx_freight_negotiations_status "
+    "ON freight_negotiations(company_id, status);"
+)
+
+
+# ── Mobile Phase 2: async export jobs ─────────────────────────────────────
+TABLE_EXPORT_JOBS = """
+CREATE TABLE IF NOT EXISTS export_jobs (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    company_id INTEGER NOT NULL REFERENCES companies(id),
-    stripe_payment_method_id TEXT NOT NULL,
-    brand TEXT,
-    last4 TEXT,
-    exp_month INTEGER,
-    exp_year INTEGER,
-    is_default BOOLEAN NOT NULL DEFAULT 0,
-    created_at TEXT NOT NULL
+    kind TEXT NOT NULL,                         -- 'trips_export' | 'analytics_export'
+    params_json TEXT,                           -- JSON: {format, filters}
+    status TEXT NOT NULL DEFAULT 'processing',  -- processing | success | error
+    result_path TEXT,                           -- absolute path to the generated file
+    error TEXT,
+    company_id INTEGER REFERENCES companies(id),
+    created_at TEXT NOT NULL,
+    completed_at TEXT
 );
 """
 
-INDEX_BILLING_PAYMENT_METHODS_COMPANY = (
-    "CREATE INDEX IF NOT EXISTS idx_billing_payment_methods_company "
-    "ON billing_payment_methods(company_id)"
+INDEX_EXPORT_JOBS_COMPANY = "CREATE INDEX IF NOT EXISTS idx_export_jobs_company ON export_jobs(company_id);"
+INDEX_EXPORT_JOBS_STATUS = "CREATE INDEX IF NOT EXISTS idx_export_jobs_status ON export_jobs(status);"
+
+
+# ── Freight Exchange: trips source columns ────────────────────────────────
+ALTER_TRIPS_ADD_SOURCE = (
+    "ALTER TABLE trips ADD COLUMN source TEXT DEFAULT 'manual';"
 )
 
-INSERT_SCHEMA_MIGRATION_BILLING = (
-    "INSERT OR IGNORE INTO schema_migrations (version, name) "
-    "VALUES (5, 'add_subscription_billing_tables');"
+ALTER_TRIPS_ADD_SOURCE_PROVIDER = (
+    "ALTER TABLE trips ADD COLUMN source_provider_id TEXT;"
 )
 
-# v6 — webhook idempotency exact event-id lookup (F3): dedicated column +
-# (partner, event_id) index so duplicate detection is one equality query.
-INSERT_SCHEMA_MIGRATION_V6_WEBHOOK_EVENT_ID = (
-    "INSERT OR IGNORE INTO schema_migrations (version, name) "
-    "VALUES (6, 'add_webhook_events_event_id');"
-)
-
-# v7 — billing reconciliation (F4/F5): addon→Stripe-price mapping table plus
-# a reconciled_at marker on truck events so the admin reconcile run is
-# idempotent (an event is only charged once).
-# ⚠ Live Stripe addon sync needs these mappings populated — the toggle-addon
-# path defers with a warning when a row is missing. Seed rows with:
-#     INSERT INTO addon_price_mappings (addon, stripe_price_id)
-#     VALUES ('ai_copilot', 'price_...'), ('priority_support', 'price_...');
-TABLE_ADDON_PRICE_MAPPINGS = """
-CREATE TABLE IF NOT EXISTS addon_price_mappings (
-    addon TEXT PRIMARY KEY,
-    stripe_price_id TEXT NOT NULL,
-    created_at TEXT DEFAULT (datetime('now'))
-);
-"""
-ALTER_SUBSCRIPTION_TRUCK_EVENTS_ADD_RECONCILED_AT = (
-    "ALTER TABLE subscription_truck_events ADD COLUMN reconciled_at TEXT"
-)
-INSERT_SCHEMA_MIGRATION_V7_ADDON_PRICE_MAPPINGS = (
-    "INSERT OR IGNORE INTO schema_migrations (version, name) "
-    "VALUES (7, 'add_addon_price_mappings_and_reconciled_at');"
+ALTER_TRIPS_ADD_SOURCE_REFERENCE = (
+    "ALTER TABLE trips ADD COLUMN source_reference_id TEXT;"
 )

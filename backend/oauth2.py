@@ -44,15 +44,15 @@ class OAuth2Service:
         client_secret = secrets.token_hex(32)  # 64 chars
         secret_hash = hashlib.sha256(client_secret.encode()).hexdigest()
 
-        self.db.conn.execute(
+        self.db.execute(
             """INSERT INTO oauth2_clients
                (client_id, client_name, partner, scopes, secret_hash,
                 is_active, created_by, company_id)
                VALUES (?, ?, ?, ?, ?, 1, ?, ?)""",
-            (client_id, name, partner, str(scopes), secret_hash, user_id,
+             (client_id, name, partner, json.dumps(scopes), secret_hash, user_id,
              self._get_company_id()),
         )
-        self.db.conn.commit()
+        self.db.commit()
         logger.info(
             "Registered OAuth2 client '%s' for partner '%s' (id=%s)",
             name, partner, client_id,
@@ -65,7 +65,7 @@ class OAuth2Service:
         """Validate client credentials. Returns client info if valid."""
         secret_hash = hashlib.sha256(client_secret.encode()).hexdigest()
 
-        row = self.db.conn.execute(
+        row = self.db.execute(
             """SELECT * FROM oauth2_clients
                WHERE client_id = ? AND secret_hash = ? AND is_active = 1""",
             (client_id, secret_hash),
@@ -75,11 +75,11 @@ class OAuth2Service:
             return None
 
         # Update last_used_at
-        self.db.conn.execute(
+        self.db.execute(
             "UPDATE oauth2_clients SET last_used_at = ? WHERE client_id = ?",
             (datetime.now().isoformat(), client_id),
         )
-        self.db.conn.commit()
+        self.db.commit()
 
         return OAuth2Client(
             client_id=row["client_id"],
@@ -130,18 +130,18 @@ class OAuth2Service:
 
     def revoke_client(self, client_id: str) -> None:
         """Revoke an OAuth2 client."""
-        self.db.conn.execute(
+        self.db.execute(
             "UPDATE oauth2_clients SET is_active = 0 WHERE client_id = ?",
             (client_id,),
         )
-        self.db.conn.commit()
+        self.db.commit()
         logger.info("Revoked OAuth2 client: %s", client_id)
 
     def list_clients(self, partner: Optional[str] = None) -> List[Dict[str, Any]]:
         """List all registered OAuth2 clients scoped to the current company."""
         company_id = self._get_company_id()
         if partner:
-            rows = self.db.conn.execute(
+            rows = self.db.execute(
                 """SELECT client_id, client_name, partner, scopes,
                           is_active, created_at, last_used_at
                    FROM oauth2_clients
@@ -150,7 +150,7 @@ class OAuth2Service:
                 (partner, company_id),
             ).fetchall()
         else:
-            rows = self.db.conn.execute(
+            rows = self.db.execute(
                 """SELECT client_id, client_name, partner, scopes,
                           is_active, created_at, last_used_at
                    FROM oauth2_clients

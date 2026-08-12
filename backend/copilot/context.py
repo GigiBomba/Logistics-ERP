@@ -152,7 +152,14 @@ async def resolve_available_tools(
     Blueprint: §15 — Permission System.
     """
     # Deferred import to avoid circular dependency
+    from backend.copilot.planner import _ensure_tools_loaded
     from backend.copilot.tools.registry import available_tools
+
+    # The tool registry is populated lazily — each tool module self-registers
+    # via ``@register_tool`` at import time, and nothing imports them at app
+    # startup.  Load them BEFORE resolving the permitted set, otherwise the
+    # registry would be empty and every intent would be (incorrectly) denied.
+    _ensure_tools_loaded()
 
     all_available = available_tools()
     permitted_names: List[str] = []

@@ -6,31 +6,22 @@ from fastapi.responses import FileResponse
 
 from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
-from backend.schemas.invoice import InvoiceSendEmailRequest
-from database.db_manager import DatabaseManager
+from backend.schemas.invoice import InvoiceGenerateRequest, InvoiceSendEmailRequest
+from backend.db import DatabaseManager
 
 router = APIRouter(prefix="/invoices", tags=["invoices"])
 
 
 @router.post("/generate")
 def generate_invoice(
-    data: Dict[str, Any],
+    data: InvoiceGenerateRequest,
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
     from services.invoicing.service import InvoiceService
+    company_id = current_user.get("company_id", 0)
     svc = InvoiceService(db)
-    # Multi-tenant: the company_id is derived from the authenticated user —
-    # never from the request body — so an invoice is always created inside
-    # the caller's own tenant.
-    company_id = current_user.get("company_id", 0) or 0
-    # Accept either a nested ``trip_data`` payload (desktop client) or the
-    # flat trip dict (legacy / load-test callers).  ``generate_and_record``
-    # persists the invoice record and registers the PDF in the Document
-    # Center server-side.
-    trip_data = data.get("trip_data") or data
-    mode = data.get("mode", "client")
-    path = svc.generate_and_record(trip_data, mode=mode, company_id=company_id)
+    path = svc.generate_and_record(data.model_dump(), mode=data.mode, company_id=company_id)
     if not os.path.isfile(path):
         raise HTTPException(status_code=500, detail="Invoice generation failed")
     return FileResponse(path, filename=os.path.basename(path), media_type="application/pdf")
@@ -44,19 +35,20 @@ def send_invoice_email(
     db: DatabaseManager = Depends(get_db),
 ):
     from services.invoicing.service import InvoiceService
+    company_id = current_user.get("company_id", 0)
     svc = InvoiceService(db)
-    if not data.recipient:
+    if not data.recipient_email:
         raise HTTPException(status_code=400, detail="Recipient email is required")
     try:
         ok = svc.send_invoice_email(
             trip_id=data.trip_id or invoice_id,
-            recipient=data.recipient,
+            recipient=data.recipient_email,
             trip_data=data.trip_data or {},
             mode=data.mode,
-            company_id=current_user.get("company_id", 0) or 0,
+            company_id=company_id,
         )
         if ok:
-            return {"status": "sent", "recipient": data.recipient}
+            return {"status": "sent", "recipient": data.recipient_email}
         return {"status": "failed", "detail": "Email sending failed"}
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

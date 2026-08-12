@@ -6,7 +6,7 @@ from backend.dependencies import get_db
 from backend.dependencies_security import require_dispatcher
 from backend.schemas.common import PaginatedResponse
 from backend.schemas.route import RouteCalculateRequest, RouteResponse
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
 
 router = APIRouter(prefix="/routes", tags=["routes"])
 
@@ -24,7 +24,7 @@ def list_route_history(
 ):
     """Return paginated list of route history."""
     try:
-        from repositories.route_repository import RouteRepository
+        from backend.repositories.route_repository import RouteRepository
         repo = RouteRepository(db)
         rows = repo.get_all(limit=page_size)
         return PaginatedResponse.from_items(
@@ -43,7 +43,7 @@ def get_route_statistics(
     db: DatabaseManager = Depends(get_db),
 ):
     """Return route statistics."""
-    from services.route_history_service import RouteHistoryService
+    from backend.services.route_history_service import RouteHistoryService
     svc = RouteHistoryService(db)
     return svc.get_statistics()
 
@@ -54,52 +54,12 @@ def get_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:
         raise HTTPException(status_code=404, detail="Route not found")
     return RouteResponse(**route)
-
-
-@router.get("/history/{route_id}/stops")
-def get_route_stops(
-    route_id: int,
-    current_user: Dict[str, Any] = Depends(require_dispatcher),
-    db: DatabaseManager = Depends(get_db),
-):
-    """Return the raw ``stops_json`` string for a saved route.
-
-    Used by the invoice/receipt editors to auto-fill loading/unloading
-    cities from the route's origin/destination stops.
-    """
-    from repositories.route_repository import RouteRepository
-    repo = RouteRepository(db)
-    route = repo.get_by_id(route_id)
-    if not route:
-        raise HTTPException(status_code=404, detail="Route not found")
-    stops_json = repo.get_stops_json(route_id)
-    return {"route_id": route_id, "stops_json": stops_json or "[]"}
-
-
-@router.get("/raw/{route_id}")
-def get_raw_route(
-    route_id: int,
-    current_user: Dict[str, Any] = Depends(require_dispatcher),
-    db: DatabaseManager = Depends(get_db),
-):
-    """Return the full route row (incl. ``route_summary_json`` / ``stops_json``).
-
-    ``GET /history/{route_id}`` strips extra fields via ``RouteResponse``;
-    the dispatch board needs the raw repository row to resolve a trip's
-    origin/destination, so expose it here without a response model.
-    """
-    from repositories.route_repository import RouteRepository
-    repo = RouteRepository(db)
-    route = repo.get_by_id(route_id)
-    if not route:
-        raise HTTPException(status_code=404, detail="Route not found")
-    return route
 
 
 @router.post("/calculate")
@@ -108,7 +68,7 @@ def calculate_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from services.route_service import RouteService
+    from backend.services.route_service import RouteService
 
     points = data.points
     if not points or len(points) < 2:
@@ -133,7 +93,10 @@ def calculate_route(
             else:
                 raise HTTPException(status_code=400, detail=f"Invalid point format: {pt}")
 
-        result = route_svc.calculate_route(stops=geocoded, profile=profile, stops_are_coordinates=True)
+        result = route_svc.calculate_route(
+            stops=geocoded, profile=profile, stops_are_coordinates=True,
+            avoid_countries=data.excluded_countries,
+        )
         return {"status": "ok", "route": result}
     except HTTPException:
         raise
@@ -147,7 +110,7 @@ def duplicate_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from services.route_history_service import RouteHistoryService
+    from backend.services.route_history_service import RouteHistoryService
     svc = RouteHistoryService(db)
     status = svc.duplicate_route(route_id)
     return {"status": "duplicated", "new_route_id": status}
@@ -159,7 +122,7 @@ def archive_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:
@@ -174,7 +137,7 @@ def delete_route(
     current_user: Dict[str, Any] = Depends(require_dispatcher),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:
@@ -190,7 +153,7 @@ def export_route(
     fmt: str = Query("json", pattern="^(json|csv)$"),
     db: DatabaseManager = Depends(get_db),
 ):
-    from repositories.route_repository import RouteRepository
+    from backend.repositories.route_repository import RouteRepository
     repo = RouteRepository(db)
     route = repo.get_by_id(route_id)
     if not route:

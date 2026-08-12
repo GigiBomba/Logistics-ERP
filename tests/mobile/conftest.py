@@ -518,7 +518,7 @@ def seed_finance(db, company_id: int = 1) -> dict:
     finalized_items = [InvoiceLineItem(**_vector_input(1))]                  # 950.00 / 180.50 / 1130.50
     paid_items = [InvoiceLineItem(**_vector_input(2))]                       # 319.69 / 0.00 / 319.69
     cancelled_items = [InvoiceLineItem(**_vector_input(3))]                  # 199.98 / 18.00 / 217.98
-    accepted_items = [InvoiceLineItem(**_vector_input(4))]                   # 79.96 / 4.00 / 83.96
+    xml2_items = [InvoiceLineItem(**_vector_input(4))]                       # 79.96 / 4.00 / 83.96
     xml_items = [InvoiceLineItem(**_vector_input(5))]                        # 100% discount → 0.00
 
     prefix = f"INV{company_id}"
@@ -530,8 +530,10 @@ def seed_finance(db, company_id: int = 1) -> dict:
         db, company_id, client_b["id"], client_trips[2]["id"], f"{prefix}-SEED-PAID", "paid", paid_items)
     ids["invoice_cancelled"] = _insert_invoice(
         db, company_id, client_b["id"], client_trips[3]["id"], f"{prefix}-SEED-CANCELLED", "cancelled", cancelled_items)
-    ids["invoice_accepted"] = _insert_invoice(
-        db, company_id, client_b["id"], extra_trip_a, f"{prefix}-SEED-ACCEPTED", "accepted", accepted_items)
+    # A second xml_generated invoice (the removed ANAF 'accepted' seed now maps
+    # onto the legal machine — xml_generated is the pre-paid legal state).
+    ids["invoice_xml2"] = _insert_invoice(
+        db, company_id, client_b["id"], extra_trip_a, f"{prefix}-SEED-XML2", "xml_generated", xml2_items)
     ids["invoice_xml"] = _insert_invoice(
         db, company_id, client_a["id"], extra_trip_b, f"{prefix}-SEED-XML", "xml_generated", xml_items)
     ids["invoice_empty"] = _insert_invoice(

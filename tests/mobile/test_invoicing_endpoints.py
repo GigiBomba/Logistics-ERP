@@ -260,20 +260,58 @@ class TestInvoiceTransitions:
         cbc_id = root.find("cbc:ID", ns)
         assert cbc_id is not None and cbc_id.text == "INV1-SEED-FINALIZED"
 
-    def test_submit_after_generate_xml(self, mobile_app, real_db, finance_seed, manager_client):
-        invoice_id = finance_seed["invoice_xml"]
-        resp = self._transition(manager_client, invoice_id, "submit")
-        assert resp.status_code == 200, resp.text
-        body = resp.json()
-        assert body["status"] == "submitted_externally"
-        assert body["efactura_submission_id"] and body["efactura_submission_id"].startswith("EFAC-")
+    def test_submit_action_not_supported_422(self, mobile_app, real_db, finance_seed, manager_client):
+        """The ANAF submit action is gone — a machine-readable 422 for every caller.
 
-    def test_submit_after_generate_xml_from_finalized(self, mobile_app, real_db, finance_seed, manager_client):
-        invoice_id = finance_seed["invoice_finalized"]
-        assert self._transition(manager_client, invoice_id, "generate_xml").status_code == 200
+        The invoice generator never submits to ANAF; ``submit`` is not in the
+        action set and must not change the invoice status.
+        """
+        invoice_id = finance_seed["invoice_xml"]  # already xml_generated
         resp = self._transition(manager_client, invoice_id, "submit")
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["error_code"] == "action_not_supported"
+        # The transition must NOT have been applied.
+        row = real_db.execute(
+            "SELECT status FROM invoices WHERE id = ?", (invoice_id,)
+        ).fetchone()
+        assert dict(row)["status"] == "xml_generated"
+
+    def test_submit_before_generate_xml_422(self, mobile_app, real_db, finance_seed, manager_client):
+        """submit on a draft is also 422 action_not_supported (not invalid_transition)."""
+        resp = self._transition(manager_client, finance_seed["invoice_draft"], "submit")
+        assert resp.status_code == 422
+        assert resp.json()["detail"]["error_code"] == "action_not_supported"
+
+    def test_mark_paid_after_xml_generated(self, mobile_app, real_db, finance_seed, manager_client):
+        """xml_generated → mark_paid → paid — the new legal end-to-end path."""
+        invoice_id = finance_seed["invoice_xml"]
+        resp = self._transition(manager_client, invoice_id, "mark_paid")
         assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "submitted_externally"
+        assert resp.json()["status"] == "paid"
+
+    def test_finalize_generate_xml_mark_paid_full_walk(self, mobile_app, real_db, finance_seed, manager_client):
+        """finalize → generate_xml → mark_paid — the full legal lifecycle."""
+        from datetime import date
+
+        cur = real_db.execute(
+            "INSERT INTO trips (company_id, client_id, client_name, driver_id, driver_name, "
+            "truck_number, status, start_date, place_of_loading, delivery_country, "
+            "distance_km, total_price_eur, net_profit, created_at) "
+            "VALUES (1, NULL, 'Walk Carrier', NULL, NULL, 'WALK-01', 'Delivered', ?, "
+            "'Cluj', 'Vienna', 700, 100, 10, ?)",
+            (date.today().isoformat(), date.today().isoformat()),
+        )
+        real_db.conn.commit()
+
+        fresh = _create(manager_client, finance_seed["client_a"], [_vector_input(0)], trip_id=cur.lastrowid)
+        assert fresh.status_code == 201, fresh.text
+        invoice_id = fresh.json()["id"]
+
+        assert self._transition(manager_client, invoice_id, "finalize").status_code == 200
+        assert self._transition(manager_client, invoice_id, "generate_xml").status_code == 200
+        body = self._transition(manager_client, invoice_id, "mark_paid")
+        assert body.status_code == 200, body.text
+        assert body.json()["status"] == "paid"
 
     def test_mark_paid_after_finalize(self, mobile_app, real_db, finance_seed, manager_client):
         invoice_id = finance_seed["invoice_finalized"]
@@ -289,11 +327,6 @@ class TestInvoiceTransitions:
         assert resp.status_code == 422
         assert resp.json()["detail"]["error_code"] == "invalid_transition"
 
-    def test_mark_paid_after_accepted(self, mobile_app, real_db, finance_seed, manager_client):
-        resp = self._transition(manager_client, finance_seed["invoice_accepted"], "mark_paid")
-        assert resp.status_code == 200, resp.text
-        assert resp.json()["status"] == "paid"
-
     def test_cancel_draft(self, mobile_app, real_db, finance_seed, manager_client):
         resp = self._transition(manager_client, finance_seed["invoice_draft"], "cancel")
         assert resp.status_code == 200, resp.text
@@ -307,11 +340,6 @@ class TestInvoiceTransitions:
     # ── Illegal transitions (must 422 with machine-readable error_code) ──
     def test_generate_xml_from_draft_422(self, mobile_app, real_db, finance_seed, manager_client):
         resp = self._transition(manager_client, finance_seed["invoice_draft"], "generate_xml")
-        assert resp.status_code == 422
-        assert resp.json()["detail"]["error_code"] == "invalid_transition"
-
-    def test_submit_before_generate_xml_422(self, mobile_app, real_db, finance_seed, manager_client):
-        resp = self._transition(manager_client, finance_seed["invoice_draft"], "submit")
         assert resp.status_code == 422
         assert resp.json()["detail"]["error_code"] == "invalid_transition"
 
@@ -346,14 +374,14 @@ class TestInvoiceTransitions:
 
 
 class TestInvoicePermissions:
-    @pytest.mark.parametrize("action", ["finalize", "generate_xml", "submit", "mark_paid", "cancel"])
+    @pytest.mark.parametrize("action", ["finalize", "generate_xml", "mark_paid", "cancel"])
     def test_dispatcher_403_on_transitions(self, mobile_app, real_db, finance_seed, dispatcher_client, action):
         resp = dispatcher_client.post(
             f"{BASE}/{finance_seed['invoice_draft']}/transition", json={"action": action},
         )
         assert resp.status_code == 403, f"action={action}"
 
-    @pytest.mark.parametrize("action", ["finalize", "generate_xml", "submit", "mark_paid", "cancel"])
+    @pytest.mark.parametrize("action", ["finalize", "generate_xml", "mark_paid", "cancel"])
     def test_manager_transitions_allowed(self, mobile_app, real_db, finance_seed, manager_client, action):
         # Each action must at least reach the state machine (200 or 422), never 403.
         resp = manager_client.post(
@@ -481,12 +509,14 @@ class TestInvoiceCmr:
 
 class TestInvoiceMachineContract:
     def test_real_transition_table_used(self):
-        """The endpoints enforce the REAL desktop machine table."""
+        """The endpoints enforce the REAL desktop machine table (no ANAF chain)."""
         from models.invoice_models import INVOICE_STATUS_TRANSITIONS
 
         assert INVOICE_STATUS_TRANSITIONS["draft"] == ["finalized", "cancelled"]
         assert INVOICE_STATUS_TRANSITIONS["finalized"] == ["xml_generated", "cancelled", "paid"]
-        assert INVOICE_STATUS_TRANSITIONS["xml_generated"] == ["submitted_externally", "draft"]
-        assert INVOICE_STATUS_TRANSITIONS["accepted"] == ["paid"]
+        assert INVOICE_STATUS_TRANSITIONS["xml_generated"] == ["paid", "draft"]
         assert INVOICE_STATUS_TRANSITIONS["cancelled"] == []
         assert INVOICE_STATUS_TRANSITIONS["paid"] == []
+        # The ANAF submission-chain states are gone from the machine entirely.
+        assert "submitted_externally" not in INVOICE_STATUS_TRANSITIONS
+        assert "accepted" not in INVOICE_STATUS_TRANSITIONS

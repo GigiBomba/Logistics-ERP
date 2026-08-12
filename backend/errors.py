@@ -18,11 +18,6 @@ class ErrorCode(str, Enum):
     NOT_IMPLEMENTED = "not-implemented"
     SERVICE_UNAVAILABLE = "service-unavailable"
     IDEMPOTENCY_CONFLICT = "idempotency-conflict"
-    UNSUPPORTED_MEDIA_TYPE = "unsupported-media-type"
-
-    # Referral program
-    REFERRAL_SELF_REFERRAL = "referral/self-referral"
-    REFERRAL_INVALID = "referral/invalid-code"
 
     # Auth
     INVALID_CREDENTIALS = "auth/invalid-credentials"
@@ -33,12 +28,6 @@ class ErrorCode(str, Enum):
     INVALID_API_KEY = "auth/invalid-api-key"
     API_KEY_EXPIRED = "auth/api-key-expired"
     API_KEY_REVOKED = "auth/api-key-revoked"
-
-    # MFA
-    MFA_REQUIRED = "auth/mfa-required"
-    MFA_INVALID_CODE = "auth/mfa-invalid-code"
-    MFA_SESSION_INVALID = "auth/mfa-session-invalid"
-    MFA_ALREADY_ENABLED = "auth/mfa-already-enabled"
 
     # Resources
     CLIENT_NOT_FOUND = "resource/client-not-found"
@@ -60,14 +49,6 @@ class ErrorCode(str, Enum):
     ROUTE_INVALID = "business/route-invalid"
     OCR_CONFIDENCE_LOW = "business/ocr-confidence-low"
     DUPLICATE_RESOURCE = "business/duplicate-resource"
-
-    # Billing
-    SUBSCRIPTION_EXPIRED = "billing/subscription-expired"
-
-    # Invitations
-    INVITATION_INVALID = "invitation/invalid"
-    INVITATION_EXPIRED = "invitation/expired"
-    INVITATION_ALREADY_ACCEPTED = "invitation/already-accepted"
 
     # External integration
     EXTERNAL_API_ERROR = "integration/external-api-error"
@@ -134,7 +115,6 @@ HTTP_STATUS_TO_ERROR = {
     404: ErrorCode.NOT_FOUND,
     405: ErrorCode.METHOD_NOT_ALLOWED,
     409: ErrorCode.DUPLICATE_RESOURCE,
-    415: ErrorCode.UNSUPPORTED_MEDIA_TYPE,
     422: ErrorCode.VALIDATION_ERROR,
     429: ErrorCode.RATE_LIMITED,
     500: ErrorCode.INTERNAL_ERROR,

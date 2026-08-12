@@ -1,25 +1,23 @@
 import contextvars
-import logging
+import os
 import threading
 from typing import Any, AsyncGenerator, Optional
 
 from fastapi import Depends
 
-from config import Config
+from backend.db import DatabaseManager
+from backend.desktop_config import Config
 from backend.middleware.correlation_middleware import get_correlation_id, correlation_id_var
-from database.db_manager import DatabaseManager
-from repositories.document_repository import DocumentRepository
-from repositories.driver_repository import DriverRepository
-from repositories.trip_repository import TripRepository
-
-logger = logging.getLogger(__name__)
-from services.analytics_service import AnalyticsService
-from services.client_service import ClientService
-from services.document_service import DocumentService
-from services.fleet_service import FleetService
-from services.payment_batch_service import PaymentBatchService
-from services.payment_profile_service import PaymentProfileService
-from services.trip_service import TripService
+from backend.repositories.document_repository import DocumentRepository
+from backend.repositories.driver_repository import DriverRepository
+from backend.repositories.trip_repository import TripRepository
+from backend.services.analytics_service import AnalyticsService
+from backend.services.client_service import ClientService
+from backend.services.document_service import DocumentService
+from backend.services.fleet_service import FleetService
+from backend.services.payment_batch_service import PaymentBatchService
+from backend.services.payment_profile_service import PaymentProfileService
+from backend.services.trip_service import TripService
 
 # Request-scoped context for multi-tenant isolation.
 _current_company_id: contextvars.ContextVar[Optional[int]] = contextvars.ContextVar("company_id", default=None)
@@ -67,20 +65,19 @@ def init_db(app: Optional[Any] = None) -> DatabaseManager:
     if _db_instance is None:
         with _db_lock:
             if _db_instance is None:  # double-checked locking
+                # When using PostgreSQL, use the DSN from env var instead of
+                # Config.DB_PATH (which is a SQLite file path by default).
+                engine = os.environ.get("OPERION_DB_ENGINE", "sqlite")
+                if engine == "postgresql":
+                    db_path = os.environ.get("OPERION_POSTGRES_DSN", Config.DB_PATH)
+                else:
+                    db_path = Config.DB_PATH
                 _db_instance = DatabaseManager(
-                    Config.DB_PATH,
+                    db_path,
+                    engine=engine,
                     pool_min=getattr(Config, "DB_POOL_MIN", 2),
                     pool_max=getattr(Config, "DB_POOL_MAX", 20),
                 )
-                # Create the mobile tables (mobile_messages / mobile_devices /
-                # sync_cursors) once, when the singleton DB is first built.
-                # The mobile write + sync endpoints depend on them and
-                # otherwise fail with "no such table" at runtime.
-                try:
-                    from backend.api.v1.mobile import ensure_mobile_tables
-                    ensure_mobile_tables(_db_instance)
-                except Exception:
-                    logger.exception("Mobile table initialisation failed")
 
     if app is not None:
         @app.on_event("shutdown")

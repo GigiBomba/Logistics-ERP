@@ -5,7 +5,6 @@ POST /api/v1/registration/register — Create a new company + manager account.
 
 import logging
 import time
-from datetime import datetime, timedelta
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
@@ -13,28 +12,37 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from backend.dependencies import get_db
 from backend.schemas.registration import RegistrationRequest
 from backend.security import hash_password
-from backend.services.turnstile import require_turnstile
-from backend.utils.rate_limit import check_rate_limit
 from backend.api.v1.auth import _issue_tokens
-from database.db_manager import DatabaseManager
+from backend.db import DatabaseManager
+from repositories.user_repository import UserRepository
+from repositories.company_repository import CompanyRepository
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/registration", tags=["registration"])
 
-# Rate limit: max 3 registration attempts per IP per 15 minutes.
-# Redis-backed across workers (backend/utils/rate_limit.py); in-memory
-# fallback when Redis is unavailable.
+# Rate limit: max 3 registration attempts per IP per 15 minutes
+_register_rate_limit: Dict[str, list] = {}
 _REGISTER_RATE_LIMIT = 3
 _REGISTER_RATE_WINDOW = 900  # 15 minutes
 
 
+def _clear_register_rate_limit() -> None:
+    """Clear all registration rate-limit tracking (for testing)."""
+    _register_rate_limit.clear()
+
+
 def _check_register_rate_limit(ip: str) -> None:
-    if not check_rate_limit("registration", ip, _REGISTER_RATE_LIMIT, _REGISTER_RATE_WINDOW):
+    now = time.time()
+    attempts = _register_rate_limit.get(ip, [])
+    attempts = [t for t in attempts if now - t < _REGISTER_RATE_WINDOW]
+    if len(attempts) >= _REGISTER_RATE_LIMIT:
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many registration attempts. Please try again later.",
         )
+    attempts.append(now)
+    _register_rate_limit[ip] = attempts
 
 
 @router.post("/register", status_code=201)
@@ -51,22 +59,12 @@ def register(
     """
     email = data.email.strip().lower()
 
-    # ── Turnstile validation (bot protection) ─────────────────────────────
-    # Validated when a token is present; pass-through when absent unless
-    # REQUIRE_TURNSTILE=1 is set (see backend.services.turnstile).
-    require_turnstile(
-        data.turnstile_token,
-        request.client.host if request.client else None,
-    )
-
     # ── Rate limit check (per IP) ──────────────────────────────────────
     client_ip = request.client.host if request.client else "unknown"
     _check_register_rate_limit(client_ip)
 
     # ── Check email uniqueness (global — one email = one account) ──────
-    existing = db.conn.execute(
-        "SELECT id FROM users WHERE email = ?", (email,)
-    ).fetchone()
+    existing = UserRepository(db).get_by_email(email)
     if existing:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -75,25 +73,23 @@ def register(
 
     # ── Create company ────────────────────────────────────────────────
     try:
-        trial_ends_at = (datetime.utcnow() + timedelta(days=14)).isoformat()
-        cursor = db.conn.execute(
-            "INSERT INTO companies (company_name, subscription_tier, is_active, trial_ends_at) "
-            "VALUES (?, 'starter', 1, ?)",
-            (data.company_name, trial_ends_at),
-        )
-        company_id = cursor.lastrowid
+        company_id = CompanyRepository(db).create({
+            "company_name": data.company_name,
+            "subscription_tier": "starter",
+            "is_active": 1,
+        })
 
         # ── Hash password ─────────────────────────────────────────────
         hashed_pw = hash_password(data.password)
 
         # ── Create manager user ───────────────────────────────────────
-        cursor = db.conn.execute(
-            "INSERT INTO users (email, password_hash, role, company_id, "
-            "display_name, is_active) "
-            "VALUES (?, ?, 'manager', ?, ?, 1)",
-            (email, hashed_pw, company_id, data.display_name),
+        user_id = UserRepository(db).create_user(
+            email=email,
+            password_hash=hashed_pw,
+            role="manager",
+            display_name=data.display_name,
+            company_id=company_id,
         )
-        db.conn.commit()
 
         logger.info(
             "Registration: company='%s' (id=%d), manager='%s'",
@@ -103,7 +99,7 @@ def register(
         # ── Issue tokens ──────────────────────────────────────────────
         tokens = _issue_tokens(email, "manager", response)
         tokens["user"] = {
-            "id": cursor.lastrowid,
+            "id": user_id,
             "email": email,
             "role": "manager",
             "company_id": company_id,
@@ -113,7 +109,7 @@ def register(
         return tokens
 
     except Exception:
-        db.conn.rollback()
+        db.rollback()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Registration failed. Please try again.",

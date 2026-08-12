@@ -1,0 +1,168 @@
+name: Constitutional Gate
+
+on:
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - "tests/workflow_integrity/**"
+      - "services/**"
+      - "repositories/**"
+      - "models/**"
+      - "backend/**"
+      - "scripts/constitutional_gate.py"
+      - "tests/workflow_integrity/telemetry/report_generator.py"
+  push:
+    branches: [staging, release/*]
+
+# Only one gate runs per event — the highest tier whose trigger matches.
+# A PR always runs BRONZE; staging merge runs SILVER; release branch
+# runs GOLD; a manual workflow_dispatch can trigger PLATINUM.
+
+jobs:
+  # ──────────────────────────────────────────────────────────────────
+  # BRONZE — PR gate (structural integrity + basic pass-rate)
+  # ──────────────────────────────────────────────────────────────────
+  bronze:
+    name: Bronze Gate — PR
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPERION_ENCRYPTION_KEY: "ci-bronze-key"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Bronze Constitutional Gate
+        id: gate
+        run: |
+          python scripts/constitutional_gate.py --tier bronze --markdown | tee bronze-scorecard.md
+        continue-on-error: false
+
+      - name: Upload Bronze Scorecard
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bronze-scorecard
+          path: bronze-scorecard.md
+          retention-days: 7
+
+  # ──────────────────────────────────────────────────────────────────
+  # SILVER — Staging merge gate
+  # ──────────────────────────────────────────────────────────────────
+  silver:
+    name: Silver Gate — Staging
+    if: github.event_name == 'push' && github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPERION_ENCRYPTION_KEY: "ci-silver-key"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Silver Constitutional Gate
+        id: gate
+        run: |
+          python scripts/constitutional_gate.py --tier silver --json --output silver-report.json
+        continue-on-error: false
+
+      - name: Upload Silver Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: silver-report
+          path: silver-report.json
+          retention-days: 30
+
+  # ──────────────────────────────────────────────────────────────────
+  # GOLD — Release branch gate
+  # ──────────────────────────────────────────────────────────────────
+  gold:
+    name: Gold Gate — Release
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release/')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPERION_ENCRYPTION_KEY: "ci-gold-key"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Gold Constitutional Gate
+        id: gate
+        run: |
+          python scripts/constitutional_gate.py --tier gold --json --output gold-report.json
+        continue-on-error: false
+
+      - name: Upload Gold Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gold-report
+          path: gold-report.json
+          retention-days: 90
+
+  # ──────────────────────────────────────────────────────────────────
+  # PLATINUM — Pre-production deployment gate (manual trigger)
+  # ──────────────────────────────────────────────────────────────────
+  platinum:
+    name: Platinum Gate — Pre-Production
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      OPERION_ENCRYPTION_KEY: "ci-platinum-key"
+      PYTHONUNBUFFERED: "1"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Platinum Constitutional Gate
+        id: gate
+        run: |
+          python scripts/constitutional_gate.py --tier platinum --require-all --json --output platinum-report.json
+        continue-on-error: false
+
+      - name: Upload Platinum Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: platinum-report
+          path: platinum-report.json
+          retention-days: 365

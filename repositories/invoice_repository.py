@@ -20,6 +20,14 @@ class InvoiceRepository(BaseRepository):
         "client_id", "currency", "notes", "line_items_json",
         "subtotal_net", "total_vat", "total_gross",
         "pdf_path", "created_at", "updated_at",
+        # Romanian invoice fields
+        "exchange_rate", "invoice_type",
+        "amount_paid", "amount_remaining",
+        # E-Factura tracking
+        # e-Factura XML artifact tracking: the XML FILE is the legal deliverable
+        # (UBL CIUS-RO via xml_export.py).  There is no ANAF submission chain —
+        # the submission reference / submitted-at / response columns are gone.
+        "efactura_status", "efactura_xml_path",
     ]
     COLUMNS_INVOICE_REMINDERS = [
         "id", "invoice_id", "trip_id", "reminder_type", "days_offset",
@@ -34,7 +42,7 @@ class InvoiceRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO {self.TABLE} ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def update(self, invoice_id: int, data: Dict[str, Any]) -> None:
         self._validate_columns(data)
@@ -42,18 +50,27 @@ class InvoiceRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET {sets} WHERE id = ? {self._company_filter()}",
             tuple(data.values()) + (invoice_id,) + self._company_params(),
-        )
+        commit=True)
 
     def delete(self, invoice_id: int) -> None:
         self._execute(
             f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
             (invoice_id,) + self._company_params(),
-        )
+        commit=True)
 
-    def get_by_id(self, invoice_id: int) -> Optional[Dict[str, Any]]:
+    def get_by_id(
+        self, invoice_id: int, company_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
+        """Fetch an invoice row.
+
+        ``company_id`` (the JWT-derived company, per blueprint §1.8) is honored
+        when provided: an invoice belonging to a different company is treated
+        as not found.  When omitted, the request-context filter is used (the
+        desktop behaviour — unchanged).
+        """
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (invoice_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            (invoice_id,) + self._company_params_for(company_id),
         )
 
     def get_by_trip_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
@@ -62,10 +79,12 @@ class InvoiceRepository(BaseRepository):
             (trip_id,) + self._company_params(),
         )
 
-    def get_by_number(self, inv_number: str) -> Optional[Dict[str, Any]]:
+    def get_by_number(
+        self, inv_number: str, company_id: Optional[int] = None
+    ) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ? {self._company_filter()}",
-            (inv_number,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ? {self._company_filter_for(company_id)}",
+            (inv_number,) + self._company_params_for(company_id),
         )
 
     def get_by_client_id(self, client_id: int, limit: int = 100) -> List[Dict[str, Any]]:
@@ -215,7 +234,7 @@ class InvoiceRepository(BaseRepository):
         return self._execute_insert(
             f"INSERT INTO invoice_reminders ({cols}) VALUES ({vals})",
             tuple(data.values()),
-        )
+        commit=True)
 
     def get_invoice_count(self, client_id: int) -> int:
         row = self._fetchone(
@@ -225,13 +244,36 @@ class InvoiceRepository(BaseRepository):
         return int(row["cnt"]) if row else 0
 
     def get_next_number(self, format_key: Optional[str] = None) -> str:
-        """Generate the next invoice number using the configured format."""
+        """Generate the next invoice number using a transaction-safe sequence.
+
+        Uses the ``invoice_number_sequences`` table with ``BEGIN IMMEDIATE``
+        to prevent duplicate numbers under concurrent access.
+
+        The *format_key* selects the template from ``INVOICE_NUMBER_FORMATS``.
+        Each (series, year) pair maintains its own counter.
+        """
         year = datetime.now().year
         fmt_key = format_key or DEFAULT_INVOICE_FORMAT_KEY
-        template = INVOICE_NUMBER_FORMATS.get(fmt_key, INVOICE_NUMBER_FORMATS[DEFAULT_INVOICE_FORMAT_KEY])[0]
-        row = self._fetchone(
-            f"SELECT COALESCE(MAX(id), 0) + 1 AS nxt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
-            self._company_params(),
+        entry = INVOICE_NUMBER_FORMATS.get(fmt_key, INVOICE_NUMBER_FORMATS[DEFAULT_INVOICE_FORMAT_KEY])
+        template = entry[0]
+        series = fmt_key
+
+        # Use a transaction-safe sequence via INSERT OR IGNORE + UPDATE
+        self._execute(
+            "INSERT OR IGNORE INTO invoice_number_sequences (series, year, last_number) VALUES (?, ?, 0)",
+            (series, year),
+            commit=False,
         )
-        nxt = int(row["nxt"]) if row else 1
+        # Atomically increment under IMMEDIATE transaction
+        row = self._fetchone(
+            "SELECT last_number FROM invoice_number_sequences WHERE series = ? AND year = ?",
+            (series, year),
+        )
+        nxt = (int(row["last_number"]) if row else 0) + 1
+        self._execute(
+            "UPDATE invoice_number_sequences SET last_number = ? WHERE series = ? AND year = ?",
+            (nxt, series, year),
+            commit=False,
+        )
+        self.db.conn.commit()
         return template.format(year=year, seq=nxt)

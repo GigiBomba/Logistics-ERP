@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -26,3 +26,7 @@ class RouteCalculateRequest(BaseModel):
         description="At least 2 points: each can be a dict with 'lat'/'lng' or a place name string"
     )
     profile: str = Field(default="truck", max_length=50)
+    excluded_countries: Optional[List[str]] = Field(
+        default=None,
+        description="ISO-3166-1 alpha-2 country codes to exclude from the route",
+    )

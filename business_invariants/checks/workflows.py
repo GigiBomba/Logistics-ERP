@@ -178,8 +178,7 @@ def check_full_workflow_chain(ctx: InvariantContext) -> InvariantResult:
     title="Invoice state machine enforced",
     description=(
         "Invoice status transitions follow: "
-        "draft→finalized→xml_generated→submitted_externally→"
-        "queued→submitting→accepted→paid."
+        "draft→finalized→xml_generated→paid (no ANAF submission chain)."
     ),
     category=InvariantCategory.WORKFLOWS,
     modules=["invoicing"],
@@ -200,13 +199,9 @@ def check_invoice_state_machine(ctx: InvariantContext) -> InvariantResult:
         )
 
     allowed_transitions = {
-        "draft": {"finalized"},
-        "finalized": {"xml_generated"},
-        "xml_generated": {"submitted_externally"},
-        "submitted_externally": {"queued"},
-        "queued": {"submitting"},
-        "submitting": {"accepted", "paid"},
-        "accepted": {"paid"},
+        "draft": {"finalized", "cancelled"},
+        "finalized": {"xml_generated", "cancelled", "paid"},
+        "xml_generated": {"paid", "draft"},
         "paid": set(),
         "cancelled": set(),
     }

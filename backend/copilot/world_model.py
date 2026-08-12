@@ -182,10 +182,14 @@ class WorldModelService:
             result = svc.list_all()
             vehicles = result.data if hasattr(result, "success") and result.success else []
             total = len(vehicles) if isinstance(vehicles, list) else 0
-            available = sum(
-                1 for v in (vehicles or [])
-                if isinstance(v, dict) and v.get("status") == "active"
-            )
+            available = 0
+            for v in (vehicles or []):
+                if isinstance(v, dict):
+                    status = v.get("status", "")
+                else:
+                    status = getattr(v, "status", "")
+                if status == "active":
+                    available += 1
             return FleetSummary(total_vehicles=total, available_count=available)
         except Exception:
             pass
@@ -198,10 +202,14 @@ class WorldModelService:
             result = svc.list_drivers()
             drivers = result.data if hasattr(result, "success") and result.success else []
             total = len(drivers) if isinstance(drivers, list) else 0
-            available = sum(
-                1 for d in (drivers or [])
-                if isinstance(d, dict) and d.get("is_active")
-            )
+            available = 0
+            for d in (drivers or []):
+                if isinstance(d, dict):
+                    is_active = d.get("is_active", False)
+                else:
+                    is_active = getattr(d, "is_active", False)
+                if is_active:
+                    available += 1
             return DriverSummary(total_drivers=total, available_count=available)
         except Exception:
             pass
@@ -215,15 +223,21 @@ class WorldModelService:
             trips = result.data if hasattr(result, "success") and result.success else []
             if isinstance(trips, list):
                 now_str = datetime.now().strftime("%Y-%m-%d")
-                active = sum(
-                    1 for t in trips
-                    if isinstance(t, dict) and t.get("status") in ("loading", "in_transit", "delivering")
-                )
-                completed_today = sum(
-                    1 for t in trips
-                    if isinstance(t, dict) and t.get("status") == "delivered"
-                    and str(t.get("updated_at", ""))[:10] == now_str
-                )
+                active = 0
+                completed_today = 0
+                for t in trips:
+                    if isinstance(t, dict):
+                        status = t.get("status", "")
+                        updated = t.get("updated_at", "")
+                    else:
+                        status = getattr(t, "status", "")
+                        updated = getattr(t, "updated_at", None)
+                    if status.lower() in ("loading", "in_transit", "delivering"):
+                        active += 1
+                    if status.lower() == "delivered" and updated is not None:
+                        updated_str = str(updated)[:10] if not isinstance(updated, str) else updated[:10]
+                        if updated_str == now_str:
+                            completed_today += 1
                 return TripSummary(active_trips=active, completed_today=completed_today)
         except Exception:
             pass
