@@ -26,6 +26,9 @@ import bcrypt
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 
+# ⚠️ DEPENDENCY GAP (Gate-34 A1): `_consume_mfa_session` does NOT exist in auth.py yet —
+# this module MUST NOT be included in router.py until that helper is implemented,
+# otherwise create_app() raises ImportError at startup (concurrent-agent work-in-progress).
 from backend.api.v1.auth import _consume_mfa_session, _issue_tokens
 from backend.config import BackendSettings
 from backend.dependencies import get_db
