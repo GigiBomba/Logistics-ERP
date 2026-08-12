@@ -155,7 +155,7 @@ pyjwt[crypto]==2.13.0
     # via
     #   -r requirements.api.txt
     #   pyjwt
-pypdf==6.14.2
+pypdf==6.15.0
     # via -r requirements.api.txt
 python-dateutil==2.9.0.post0
     # via
