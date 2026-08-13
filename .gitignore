@@ -93,3 +93,6 @@ data/avoid_countries.json
 invoices/*.pdf
 reports/
 .slim/deepwork/
+
+data/efactura/
+tests/workflow_integrity/financial/test_probe_tmp.py

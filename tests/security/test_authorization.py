@@ -24,6 +24,7 @@ PUBLIC_PATHS = {
     "/api/v1/registration/register",
     "/api/v1/route-demo/calculate",
     "/api/v1/waitlist/join",
+    "/api/v1/waitlist/count",
     "/api/v1/status",
     "/docs",
     "/docs/oauth2-redirect",

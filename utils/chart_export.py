@@ -214,14 +214,32 @@ class _RenderEngine:
                     # back-off capped at 30 s and 10 attempts; then signal
                     # permanent failure to any pending request.
                     self._startup_failures += 1
+                    if self._startup_failures >= 10:
+                        # Permanent failure: stop retrying.  Drain the queue
+                        # so callers blocked in submit() fail fast instead of
+                        # hanging forever, then exit the engine thread.
+                        self._permanent_failure.set()
+                        while not self._queue.empty():
+                            try:
+                                req, fut = self._queue.get_nowait()
+                            except asyncio.QueueEmpty:
+                                break
+                            if req is None:
+                                fut.set_result(None)  # shutdown sentinel
+                            else:
+                                fut.set_exception(RuntimeError(
+                                    "Render engine permanently failed — Chrome "
+                                    "cannot start. Check that a Chromium-based "
+                                    "browser is installed and not blocked by "
+                                    "antivirus."
+                                ))
+                        return
                     delay = min(30.0, 1.0 * (2 ** min(self._startup_failures, 5)))
                     _log.warning(
                         "Browser start failed (attempt %d) — retrying in %.0fs",
                         self._startup_failures, delay,
                     )
                     await asyncio.sleep(delay)
-                    if self._startup_failures >= 10:
-                        self._permanent_failure.set()
                     continue
 
             try:

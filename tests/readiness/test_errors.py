@@ -44,7 +44,7 @@ class TestErrorCode:
 
     def test_error_codes_are_categorized(self):
         """Codes follow naming convention with recognised category prefixes."""
-        known_categories = ("auth/", "resource/", "business/", "integration/")
+        known_categories = ("auth/", "resource/", "business/", "integration/", "invitation/")
         for code in ErrorCode:
             val = code.value
             if "/" not in val:
