@@ -91,6 +91,7 @@ jobs:
         env:
           OPERION_DB_ENGINE: sqlite
           OPERION_DB_PATH: data/test_ci_linux.db
+          QT_QPA_PLATFORM: offscreen
           OPERION_TEST_POSTGRES_DSN: postgresql://operion:operion_test_ci@localhost:5432/operion_test
           OPERION_JWT_SECRET_KEY: test-key-ci-32-chars-required-here!!
           OPERION_ADMIN_EMAIL: admin@test.com

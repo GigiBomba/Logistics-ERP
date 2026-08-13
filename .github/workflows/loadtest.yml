@@ -59,6 +59,7 @@ jobs:
           export OPERION_ADMIN_PASSWORD_HASH=$(python -c "import bcrypt; print(bcrypt.hashpw(b'test-pw', bcrypt.gensalt(rounds=4)).decode())")
           export OPERION_ENV=test
           export OPERION_RATE_LIMIT=100000
+          export QT_QPA_PLATFORM=offscreen
           uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
           for i in $(seq 1 30); do
             if curl -fs http://localhost:8000/api/v1/health; then
@@ -116,6 +117,7 @@ jobs:
           export OPERION_ADMIN_PASSWORD_HASH=$(python -c "import bcrypt; print(bcrypt.hashpw(b'chaos-pw', bcrypt.gensalt(rounds=4)).decode())")
           export OPERION_ENV=test
           export OPERION_RATE_LIMIT=100000
+          export QT_QPA_PLATFORM=offscreen
           uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
           for i in $(seq 1 30); do
             if curl -fs http://localhost:8000/api/v1/health; then
