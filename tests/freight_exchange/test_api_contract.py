@@ -603,9 +603,11 @@ class TestValidation:
             assert resp.status_code >= 400, (
                 f"Expected error status, got {resp.status_code}"
             )
-        except (ValueError, ExceptionGroup):
-            # ValueError from date.fromisoformat may propagate as
-            # ExceptionGroup due to asyncio TaskGroup wrapping
+        except Exception:
+            # ValueError from date.fromisoformat may propagate (possibly
+            # wrapped in an asyncio TaskGroup's ExceptionGroup on 3.11+) —
+            # both are subclasses of ``Exception``, so a plain ``Exception``
+            # catch is 3.10-compatible and covers either shape.
             pass
 
     def test_post_providers_connect_missing_credentials_returns_422(
@@ -638,7 +640,12 @@ class TestValidation:
             assert resp.status_code >= 400, (
                 f"Expected error status, got {resp.status_code}"
             )
-        except (ExceptionGroup, Exception):
+        except Exception:
+            # ``LoadSearchFilters(**{})`` may raise a pydantic
+            # ``ValidationError`` directly, or wrapped in an ``ExceptionGroup``
+            # by the idempotency middleware's TaskGroup on 3.11+.  A plain
+            # ``Exception`` catch is 3.10-compatible and accepts any error
+            # indicator.
             pass
 
     def test_post_search_missing_required_field_returns_422_with_clear_message(

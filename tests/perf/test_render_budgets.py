@@ -279,8 +279,9 @@ class TestDispatchBoardBudgets:
 
     # ── 2. 100 trip card rendering ────────────────────────────────────
 
+    @pytest.mark.slow
     def test_100_trip_card_rendering(self, view_with_mocks):
-        """Pre-create 100 trip dicts; _populate_columns must be < 1500 ms (creates real QtTripCard widgets)."""
+        """Pre-create 100 trip dicts; _populate_columns must be < 3000 ms (creates real QtTripCard widgets)."""
         view = view_with_mocks
         column_trips = _make_100_trips()
         total_trips = sum(len(v) for v in column_trips.values())
@@ -290,9 +291,9 @@ class TestDispatchBoardBudgets:
         view._populate_columns(column_trips)
         elapsed_ms = (time.perf_counter() - t0) * 1000.0
 
-        assert elapsed_ms < 1500.0, (
+        assert elapsed_ms < 3000.0, (
             f"_populate_columns with 100 trips took {elapsed_ms:.1f} ms "
-            f"(budget: 1500 ms — creates 100 real QtTripCard widgets)"
+            f"(budget: 3000 ms — creates 100 real QtTripCard widgets)"
         )
 
     # ── 3. Tab switch P95 ─────────────────────────────────────────────

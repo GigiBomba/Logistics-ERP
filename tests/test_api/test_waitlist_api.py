@@ -50,11 +50,31 @@ def _set_env():
     from config import Config
     previous_db_path = Config.DB_PATH
     Config.DB_PATH = tmp.name
+    # The app DB is a process-global singleton (backend.dependencies.init_db).
+    # Under `-n auto` another test module in the same xdist worker may have
+    # already bound it to the shared CI DB, which would make the waitlist
+    # endpoints read/write the wrong database (cross-test pollution such as
+    # ``assert 11 == 0`` or ``assert 201 == 409``).  Drop the singleton so
+    # init_db() rebuilds it against this module's per-test temp file.
+    from backend import dependencies as _deps
+    if _deps._db_instance is not None:
+        try:
+            _deps._db_instance.close()
+        except Exception:
+            pass
+        _deps._db_instance = None
     yield
     for k in ("OPERION_DB_PATH", "OPERION_JWT_SECRET_KEY", "OPERION_ENV", "OPERION_API_KEY"):
         os.environ.pop(k, None)
     # Restore Config.DB_PATH so the module leaves no global state behind.
     Config.DB_PATH = previous_db_path
+    # Release the singleton so later modules re-init against their own DB.
+    if _deps._db_instance is not None:
+        try:
+            _deps._db_instance.close()
+        except Exception:
+            pass
+        _deps._db_instance = None
     try:
         os.unlink(tmp.name)
     except Exception:
@@ -82,22 +102,21 @@ def client(app):
 def _clean_db():
     """Ensure a clean waitlist_entries table before each test.
 
-    We need to init the DB once and then clean between tests.
-    The create_test_app triggers init_db() on first access.
-    We clean by deleting all rows.
-    Also reset the in-memory rate-limit state.
+    The truncation goes through the app's ACTIVE singleton connection
+    (``backend.dependencies.init_db``) — never a fresh connection to a
+    different file — so it always targets the same database the endpoints
+    read.  This gives true per-test isolation even when the worker process
+    has previously bound the singleton to the shared CI DB.
     """
     # Reset rate-limit state (Redis-backed limiter with in-memory fallback)
     from backend.utils.rate_limit import _fallback
     _fallback.clear()
 
-    from backend.db import DatabaseManager
-    from backend.desktop_config import Config
+    from backend.dependencies import init_db
     try:
-        db = DatabaseManager(Config.DB_PATH, pool_min=1, pool_max=2)
+        db = init_db()
         db.conn.execute("DELETE FROM waitlist_entries")
         db.conn.commit()
-        db.close()
     except Exception:
         pass
     yield

@@ -505,7 +505,10 @@ class TestRetryTokenRefresh:
         row = conn_mgr.repo.get_connection(1, "refresh_track")
         assert row is not None
         stored = json.loads(row["session_state"])
-        stored_expiry = datetime.fromisoformat(stored["expires_at"])
+        # pydantic serializes UTC datetimes with a trailing ``Z`` (RFC 3339);
+        # ``datetime.fromisoformat`` only accepts that suffix on 3.11+, so
+        # normalize to an explicit UTC offset for 3.10 compatibility.
+        stored_expiry = datetime.fromisoformat(stored["expires_at"].replace("Z", "+00:00"))
         assert stored_expiry > datetime.now(timezone.utc)
 
     def test_refresh_failure_returns_none(self, db):
