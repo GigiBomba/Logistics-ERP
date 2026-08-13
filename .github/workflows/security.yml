@@ -20,7 +20,7 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        run: pip install -r requirements.txt PyJWT bcrypt httpx
+        run: pip install -r requirements.txt PyJWT bcrypt httpx pytest pytest-xdist pytest-asyncio freezegun sqlalchemy
 
       - name: Secret scan (fast)
         run: |
