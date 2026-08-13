@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
     QRadioButton,
 )
 
-from ui.components import Btn, Card, EmptyState, Label
+from ui.components import Card, EmptyState, Label
 from ui.views.migration_center.emigrate_tab import (
     EmigrateTab,
     FORMATS,
