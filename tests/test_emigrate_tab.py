@@ -17,6 +17,7 @@ from PySide6.QtWidgets import (
     QComboBox,
     QDateEdit,
     QProgressBar,
+    QPushButton,
     QRadioButton,
 )
 
@@ -51,6 +52,11 @@ def emigrate_tab_with_svc(qt_widget, qtbot):
         mock_svc_cls.return_value = mock_svc
         tab = EmigrateTab(parent=qt_widget, db=db)
     qtbot.addWidget(tab)
+    # Show the parent and the tab so ``isVisible()`` reflects the true
+    # state — Qt only reports a widget as visible when every ancestor
+    # is shown too.
+    qt_widget.show()
+    tab.show()
     yield tab, mock_svc
     tab.deleteLater()
 
@@ -280,8 +286,9 @@ class TestEmigrateTabExport:
     def test_on_export_complete_shows_open_button(self, emigrate_tab_with_svc):
         tab, mock_svc = emigrate_tab_with_svc
         tab._on_export_complete("C:\\test.csv")
-        # Should have added an "Open file" button
-        buttons = tab.findChildren(Btn)
+        # Should have added an "Open file" button. ``Btn`` is a factory
+        # function, so search for the concrete widget type it produces.
+        buttons = tab.findChildren(QPushButton)
         open_buttons = [b for b in buttons if "Open" in b.text()]
         assert len(open_buttons) >= 1
 

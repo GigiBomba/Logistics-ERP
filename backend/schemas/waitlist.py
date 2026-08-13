@@ -16,6 +16,7 @@ class WaitlistJoinRequest(BaseModel):
     country: Optional[str] = Field(None, max_length=2, description="ISO 3166-1 alpha-2 country code")
     source: str = Field("landing_page", description="Signup source / campaign")
     hp_field: Optional[str] = Field(None, description="Honeypot — leave empty")
+    referred_by: Optional[str] = Field(None, description="Referral code of the referring entry")
 
 
 class WaitlistJoinResponse(BaseModel):
@@ -89,3 +90,11 @@ class WaitlistStatsResponse(BaseModel):
     by_source: dict[str, int]
     growth_daily: list[dict[str, Any]]
     conversion_rate: float
+
+
+class WaitlistCampaignRequest(BaseModel):
+    """Admin campaign email payload (Phase 2)."""
+
+    subject: str = Field(..., min_length=1, description="Email subject")
+    body: str = Field(..., min_length=1, description="Email body")
+    segment: str = Field(..., description="Recipient segment (all|joined|invited|activated|converted)")

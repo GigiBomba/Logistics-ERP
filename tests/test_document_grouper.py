@@ -130,7 +130,8 @@ def test_group_and_link_register_fails(grouper):
 
         result = grouper.group_and_link(1, 42)
         assert result is None
-        grouper.db.conn.execute.assert_called_with("ROLLBACK")
+        # rollback_transaction() now calls db.conn.rollback() (PG-safe API)
+        grouper.db.conn.rollback.assert_called_once()
     finally:
         os.unlink(tmp_path)
 

@@ -73,6 +73,10 @@ def _ensure_database(dsn: str) -> None:
 
     Connects to the ``postgres`` maintenance database so we can issue
     ``CREATE DATABASE``.
+
+    Concurrency-safe: multiple xdist workers call this at the same time;
+    the ``SELECT`` + ``CREATE DATABASE`` pair is a TOCTOU race, so a
+    ``DuplicateDatabase`` from a concurrent worker is treated as success.
     """
     db_name = _parse_db_name(dsn)
     admin = _admin_dsn(dsn)
@@ -84,8 +88,13 @@ def _ensure_database(dsn: str) -> None:
             "SELECT 1 FROM pg_database WHERE datname = %s", (db_name,)
         )
         if not cur.fetchone():
-            cur.execute(pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(db_name)))
-            logger.info("Created test database '%s'", db_name)
+            try:
+                cur.execute(pgsql.SQL("CREATE DATABASE {}").format(pgsql.Identifier(db_name)))
+                logger.info("Created test database '%s'", db_name)
+            except (psycopg2.errors.DuplicateDatabase, psycopg2.errors.UniqueViolation):
+                # A concurrent worker created it between our SELECT and
+                # CREATE (TOCTOU race across xdist workers).
+                logger.info("Test database '%s' created by another worker", db_name)
         cur.close()
         conn.close()
     except psycopg2.OperationalError as exc:
@@ -93,22 +102,38 @@ def _ensure_database(dsn: str) -> None:
 
 
 def _drop_database(dsn: str) -> None:
-    """Drop the test database after the session finishes."""
+    """Drop the test database after the session finishes.
+
+    Safe under concurrent xdist workers: only the *last* lane (the one
+    with no other sessions still connected to the database) actually
+    drops it.  Earlier lanes skip the drop instead of force-terminating
+    other workers' connections — killing a sibling lane mid-test would
+    make it fail with "database does not exist".
+    """
     db_name = _parse_db_name(dsn)
     admin = _admin_dsn(dsn)
     try:
         conn = psycopg2.connect(admin)
         conn.autocommit = True
         cur = conn.cursor()
-        # Terminate other connections so DROP DATABASE succeeds
+        # If another worker still holds connections to the test database,
+        # do NOT terminate them or drop the DB — leave it for the last
+        # lane to clean up.  A drop failure here is expected noise.
         cur.execute(
-            pgsql.SQL(
-                "SELECT pg_terminate_backend(pg_stat_activity.pid) "
-                "FROM pg_stat_activity "
-                "WHERE pg_stat_activity.datname = %s AND pid <> pg_backend_pid()"
-            ),
+            "SELECT COUNT(*) FROM pg_stat_activity "
+            "WHERE datname = %s AND pid <> pg_backend_pid()",
             (db_name,),
         )
+        row = cur.fetchone()
+        other_sessions = (row[0] if row else 0) or 0
+        if other_sessions:
+            logger.info(
+                "Not dropping test database '%s': %d other session(s) still connected",
+                db_name, other_sessions,
+            )
+            cur.close()
+            conn.close()
+            return
         cur.execute(pgsql.SQL("DROP DATABASE IF EXISTS {}").format(pgsql.Identifier(db_name)))
         logger.info("Dropped test database '%s'", db_name)
         cur.close()

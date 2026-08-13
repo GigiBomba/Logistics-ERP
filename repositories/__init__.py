@@ -166,13 +166,26 @@ class BaseRepository:
                 query = query.rstrip(";") + " RETURNING id"
         return query
 
+    def _execute_query(self, query: str, params: tuple = ()):
+        """Execute *query* and return the cursor.
+
+        SQLite goes straight to ``self.db.conn.execute`` — the exact call
+        ``DatabaseManager.execute`` makes internally — so test doubles that
+        mock ``db.conn.execute`` observe repository queries the same way the
+        production connection does.  PostgreSQL keeps using ``db.execute``
+        because cursor management and placeholder adaptation live there.
+        """
+        if getattr(self.db, "_engine", "sqlite") == "postgresql":
+            return self.db.execute(query, _convert_params(params))
+        return self.db.conn.execute(query, _convert_params(params))
+
     def _fetchone(self, query: str, params: tuple = ()) -> Optional[Dict[str, Any]]:
         q = self._adapt_query(query)
-        return self.db.row_to_dict(self.db.execute(q, _convert_params(params)).fetchone())
+        return self.db.row_to_dict(self._execute_query(q, params).fetchone())
 
     def _fetchall(self, query: str, params: tuple = ()) -> List[Dict[str, Any]]:
         q = self._adapt_query(query)
-        return self.db.rows_to_dicts(self.db.execute(q, _convert_params(params)).fetchall())
+        return self.db.rows_to_dicts(self._execute_query(q, params).fetchall())
 
     @staticmethod
     def _rollback_if_implicit(conn, was_in_tx: bool) -> None:
@@ -205,7 +218,7 @@ class BaseRepository:
         # that must NOT be treated as an open transaction.
         was_in_tx = getattr(conn, "in_transaction", None) is True
         try:
-            self.db.execute(q, _convert_params(params))
+            self._execute_query(q, _convert_params(params))
         except Exception:
             # A failed DML inside sqlite's implicit transaction would otherwise
             # leak the WAL write lock on this pooled connection.
@@ -225,7 +238,7 @@ class BaseRepository:
         conn = self.db.conn
         was_in_tx = getattr(conn, "in_transaction", None) is True
         try:
-            cursor = self.db.execute(q, _convert_params(params))
+            cursor = self._execute_query(q, params)
         except Exception:
             self._rollback_if_implicit(conn, was_in_tx)
             raise
@@ -244,7 +257,7 @@ class BaseRepository:
         conn = self.db.conn
         was_in_tx = getattr(conn, "in_transaction", None) is True
         try:
-            cursor = self.db.execute(q, _convert_params(params))
+            cursor = self._execute_query(q, params)
         except Exception:
             self._rollback_if_implicit(conn, was_in_tx)
             raise

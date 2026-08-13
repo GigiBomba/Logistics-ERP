@@ -53,7 +53,12 @@ class _StructuredLogger:
             **fields,
         }
         level_num = self._LEVEL_MAP.get(level, logging.INFO)
-        if self._logger.isEnabledFor(level_num):
+        # Guard against the logger that will actually receive the record.
+        # Resolve it by name so the check stays correct even if
+        # ``self._logger`` holds a stale/patched reference (e.g. the level
+        # was configured on ``logging.getLogger(name)`` directly).
+        target = logging.getLogger(self._logger.name)
+        if target.isEnabledFor(level_num):
             self._logger.log(level_num, json.dumps(record, ensure_ascii=False, default=str))
 
     def info(self, message: str, **fields) -> None:
@@ -126,7 +131,7 @@ class _Metrics:
 
 
 @contextmanager
-def perf_timer(name: str, log_result: bool = True):
+def perf_timer(name: str, log_result: bool = True, logger: Optional[_StructuredLogger] = None):
     """Context manager that times execution and logs + records latency metric.
 
     Usage:
@@ -134,6 +139,9 @@ def perf_timer(name: str, log_result: bool = True):
             result = calculate_route(...)
 
     Only counts successful completions (no exception propagated out).
+
+    ``logger`` may be supplied to override the module-level ``log`` singleton
+    (useful for injecting/patching the instance that receives the timing log).
     """
     start = time.perf_counter()
     success = True
@@ -148,7 +156,7 @@ def perf_timer(name: str, log_result: bool = True):
             metrics.increment(f"perf.{name}.count")
             metrics.gauge(f"perf.{name}.last_ms", elapsed_ms)
             if log_result:
-                log.debug(f"perf_timer", operation=name, elapsed_ms=round(elapsed_ms, 2))
+                (logger or log).debug(f"perf_timer", operation=name, elapsed_ms=round(elapsed_ms, 2))
 
 
 def timed(func: Callable) -> Callable:

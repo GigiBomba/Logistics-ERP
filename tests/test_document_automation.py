@@ -215,6 +215,14 @@ class _StubDb:
     def rows_to_dicts(self, rows):
         return [dict(r) for r in rows]
 
+    def execute(self, query, params=()):
+        """Mirror DatabaseManager.execute: delegate to the connection."""
+        return self.conn.execute(query, params)
+
+    def executemany(self, query, seq_of_params):
+        """Mirror DatabaseManager.executemany: delegate to the connection."""
+        return self.conn.executemany(query, seq_of_params)
+
     def close(self) -> None:
         self.conn.close()
 

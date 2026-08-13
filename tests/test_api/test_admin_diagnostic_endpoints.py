@@ -33,6 +33,11 @@ def mock_get_db():
     mock_db = MagicMock()
     mock_db.row_to_dict = lambda row: dict(row) if isinstance(row, (tuple, list)) else (row if row else None)
     mock_db.rows_to_dicts = lambda rows: [dict(r) for r in rows] if rows else []
+    # Repositories now route every query through ``db.execute(...)`` (engine-
+    # aware DatabaseManager API).  Delegate to ``conn.execute`` so the
+    # existing ``mock_get_db.conn.execute`` configurations and assertions
+    # remain meaningful, mirroring production behaviour.
+    mock_db.execute = lambda query, params=(): mock_db.conn.execute(query, params)
 
     async def _gen():
         yield mock_db

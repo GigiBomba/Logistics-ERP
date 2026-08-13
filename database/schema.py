@@ -155,10 +155,15 @@ CREATE TABLE IF NOT EXISTS sent_emails (
     status TEXT NOT NULL DEFAULT 'pending',
     sent_at TEXT,
     created_at TEXT NOT NULL,
+    company_id INTEGER,
     UNIQUE(document_id, recipient),
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
 );
 """
+
+ALTER_SENT_EMAILS_ADD_COMPANY_ID = (
+    "ALTER TABLE sent_emails ADD COLUMN company_id INTEGER"
+)
 
 INDEX_SENT_EMAILS_STATUS = (
     "CREATE INDEX IF NOT EXISTS idx_sent_emails_status "

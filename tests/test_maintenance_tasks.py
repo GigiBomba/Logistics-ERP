@@ -64,6 +64,14 @@ def _mock_db():
         mock_instance = MagicMock()
         mock_instance.conn = MagicMock()
         mock_instance.conn.execute.return_value.rowcount = 10
+        # Cursor attribute for insert paths (_execute_insert uses lastrowid).
+        mock_instance.conn.execute.return_value.lastrowid = 1
+        # Wire db.execute() → db.conn.execute() so repository calls made via
+        # either path record on the same mock. Mirrors DatabaseManager.execute()
+        # and the pattern used in tests/test_api/test_gdpr.py.
+        mock_instance.execute = MagicMock(
+            side_effect=lambda q, params=(): mock_instance.conn.execute(q, params)
+        )
         mock_cls.return_value = mock_instance
         try:
             yield mock_cls, mock_instance

@@ -168,6 +168,14 @@ ALL_REVISIONS: list[dict] = [
         "adds_columns": {},
         "indexes": [],
     },
+    {
+        "id": "h0a1b2c3d4e1",
+        "down": "g8c9d0e1f2f0",
+        "doc": "create invoice_number_sequences",
+        "creates_tables": ["invoice_number_sequences"],
+        "adds_columns": {},
+        "indexes": [],
+    },
 ]
 
 # Base tables that must exist before running migrations (referenced by FK / ADD COLUMN)
@@ -264,6 +272,9 @@ EXPECTED_COLUMNS: dict[str, set[str]] = {
         "id", "company_id", "trans_eu_event_id", "event_name",
         "payload", "error_message", "error_type", "attempt_count",
         "max_attempts", "next_retry_at", "status", "created_at",
+    },
+    "invoice_number_sequences": {
+        "series", "year", "last_number",
     },
 }
 
@@ -456,8 +467,8 @@ class TestUpgradeAll:
             version = result.scalar()
         engine.dispose()
         assert version is not None, "alembic_version is empty"
-        # The sole head is g8c9d0e1f2f0
-        assert version == "g8c9d0e1f2f0", (
+        # The sole head is h0a1b2c3d4e1
+        assert version == "h0a1b2c3d4e1", (
             f"Unexpected alembic_version: {version}"
         )
 
@@ -888,7 +899,7 @@ class TestRevisionChain:
 
         script = ScriptDirectory(ALEMBIC_DIR)
         heads = set(script.get_heads())
-        expected_heads = {"g8c9d0e1f2f0"}
+        expected_heads = {"h0a1b2c3d4e1"}
         assert heads == expected_heads, (
             f"Expected heads {expected_heads}, got {heads}"
         )

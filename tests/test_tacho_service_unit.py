@@ -9,6 +9,7 @@ Tests cover three groups of static/pure methods:
 from __future__ import annotations
 
 from datetime import date
+from typing import Iterator
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -200,6 +201,20 @@ class TestResolveParserPath:
     a subprocess failure must all yield ``None`` so the existing graceful
     "no parser found" error path fires.
     """
+
+    @pytest.fixture(autouse=True)
+    def _reset_parser_cache(self) -> Iterator[None]:
+        """Clear the module-level ``_parser_verified_path`` cache.
+
+        ``_resolve_parser_path`` caches a successfully probed binary path at
+        module level; without a reset here a successful probe test would leak
+        ``'C:/tools/tachograph.exe'`` into the probe-failure tests below (they
+        would hit the cache and return the path instead of ``None``).
+        """
+        import services.tacho_service as tacho_service
+        tacho_service._parser_verified_path = None
+        yield
+        tacho_service._parser_verified_path = None
 
     def test_missing_binary_returns_none(self, service: TachoService) -> None:
         with patch("services.tacho_service.os.path.exists", return_value=False):

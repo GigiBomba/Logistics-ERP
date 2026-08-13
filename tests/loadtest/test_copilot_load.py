@@ -17,7 +17,7 @@ from backend.copilot.schemas import (
     ConfirmationLevel, ExecutionPlan, ExecutionStep, GlobalContext,
     Intent,
 )
-from backend.copilot.tools.registry import all_tools, get_tool, run_startup_validation
+from backend.copilot.tools.registry import _registry, all_tools, get_tool, run_startup_validation
 
 
 pytestmark = pytest.mark.loadtest
@@ -25,9 +25,23 @@ pytestmark = pytest.mark.loadtest
 
 @pytest.fixture(autouse=True, scope="module")
 def ensure_tools_once():
-    _ensure_tools_loaded()
-    errors = run_startup_validation()
-    assert len(errors) == 0
+    # Cross-file isolation guard: tests/copilot/test_tool_registry.py registers
+    # intentionally-invalid "test.*" tools into the global tool registry at
+    # import time.  Under pytest-xdist every worker inherits those registrations
+    # (even workers that never run that module, where its module-scoped cleanup
+    # never fires), so run_startup_validation() would see the malformed fixtures
+    # and fail.  Hide "test.*" tools for the duration of the validation, then
+    # restore them so test_tool_registry.py still sees them if it runs later in
+    # this process.  This keeps the fixture order- and worker-independent.
+    test_tools = {name: tool for name, tool in _registry.items() if name.startswith("test.")}
+    for name in test_tools:
+        del _registry[name]
+    try:
+        _ensure_tools_loaded()
+        errors = run_startup_validation()
+        assert len(errors) == 0
+    finally:
+        _registry.update(test_tools)
 
 
 class TestPlannerThroughput:

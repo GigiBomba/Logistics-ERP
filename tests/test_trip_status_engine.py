@@ -488,6 +488,27 @@ class TestLifecycle:
 class TestRulesIntegration:
     """Tests verifying interaction with the Rules singleton."""
 
+    @pytest.fixture(autouse=True)
+    def _isolate_rules_persistence(self, tmp_path, monkeypatch):
+        """Keep ``Rules.set()`` writes out of the shared rules config file.
+
+        ``Rules.set()`` persists the full rules dict to
+        ``data/operations_rules.json`` on every call; ``trip_delay_hours``
+        is a git-tracked production default (2).  Redirecting the file to a
+        throwaway copy for these tests prevents a test mutation (0.1) from
+        permanently polluting the tracked config — which otherwise breaks
+        later runs because the singleton re-loads the file on creation.
+        """
+        import json as _json
+
+        import services.operations.rules as _rules_mod
+
+        temp_rules = tmp_path / "operations_rules.json"
+        temp_rules.write_text(_json.dumps(_rules_mod._DEFAULT_RULES))
+        monkeypatch.setattr(_rules_mod, "_RULES_FILE", str(temp_rules))
+        yield
+        _rules_mod.Rules.reset_instance()
+
     def test_rules_affects_delay_threshold(self, engine):
         """Changing trip_delay_hours in Rules should affect alert creation."""
         from services.operations.rules import Rules

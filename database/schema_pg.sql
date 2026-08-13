@@ -972,13 +972,14 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_gps_telemetry_unique ON gps_telemetry(truc
 -- Unique (company_id, insight_type, payload) — makes insight-job retries
 -- idempotent: a replayed INSERT OR IGNORE (translated to ON CONFLICT DO
 -- NOTHING) is a no-op instead of a duplicate row.  copilot_insights is
--- created by the Alembic migration a7b8c9d0e1f7 (payload JSON column); the
--- index is also ensured in db_manager._pg_extra_ddl (which runs after Alembic)
--- so fresh databases get it on first boot.
+-- created by the Alembic migration a7b8c9d0e1f7 (payload JSON column).
+-- NOTE: the dedup index is intentionally NOT created here — this schema
+-- file runs BEFORE Alembic migrations, so the copilot_insights table does
+-- not exist yet.  The index is created in db_manager._pg_extra_ddl, which
+-- runs AFTER Alembic, so fresh databases get it on first boot.
 -- payload is json on PG: btree cannot index it directly, so the dedup key
 -- uses a (payload::text) expression index. A bare ON CONFLICT DO NOTHING
 -- honors expression unique indexes, so dedup still works.
-CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup ON copilot_insights(company_id, insight_type, (payload::text));
 
 -- ── API Keys / OAuth2 ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS api_keys (

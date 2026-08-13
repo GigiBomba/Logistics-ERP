@@ -49,6 +49,7 @@ class TripCreateRequest(BaseModel):
     distance_km: Optional[float] = None
     notes: str = ""
     truck_plate: str = ""
+    truck_number: Optional[str] = None
     driver_name: str = ""
     client_name: str = ""
     status: str = "Planned"

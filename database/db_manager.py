@@ -11,6 +11,13 @@ logger = logging.getLogger(__name__)
 
 _emitted_warnings: set = set()
 
+# Fixed session-level advisory-lock key used to serialize the PostgreSQL
+# schema build across processes/workers (uvicorn workers, Celery workers,
+# pytest-xdist workers) that all boot the same database concurrently.
+# Session-level advisory locks are released when the session ends, so a
+# crashed worker can never leave the schema permanently locked.
+_PG_SCHEMA_ADVISORY_LOCK_KEY = 0x0F1207A1
+
 
 def _deprecated(msg: str) -> None:
     if msg not in _emitted_warnings:
@@ -370,130 +377,191 @@ class DatabaseManager:
         avoid nested transaction errors (SQLite does not support them).
 
         For PostgreSQL: executes schema_pg.sql which contains all DDL
-        in PostgreSQL-compatible syntax.
+        in PostgreSQL-compatible syntax, followed by Alembic migrations
+        and the parity ``_pg_extra_ddl`` list.  The whole build is
+        serialized per-database with a session-level advisory lock and
+        runs in per-statement autocommit mode, so concurrent booters
+        (uvicorn/Celery/pytest-xdist workers) cannot deadlock each
+        other's DDL or leave a half-built schema behind.
         """
         if self._engine == "postgresql":
-            self._init_pg_schema()
-            # Commit DDL — the pool sets autocommit=False, so CREATE TABLE
-            # statements must be committed explicitly to persist the schema.
-            self.conn.commit()
+            self._init_pg_schema_locked()
         else:
             self._create_tables_and_indices()
             self._run_column_migrations()
             self._ensure_documents_fts()
             self._migrate_legacy_data()
 
-        # Run Alembic migrations for Freight Exchange tables (PostgreSQL only)
-        if self._engine == "postgresql":
-            try:
-                from alembic.config import Config
-                from alembic import command
-                import os
-
-                alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
-                # Override the script_location to be absolute
-                script_location = os.path.join(os.path.dirname(__file__), "..", "alembic")
-                alembic_cfg.set_main_option("script_location", script_location)
-                command.upgrade(alembic_cfg, "head")
-                logger.info("Alembic migrations applied successfully")
-            except Exception as e:
-                logger.warning("Alembic migrations skipped (non-fatal): %s", e)
-
-            # Apply additional PostgreSQL-compatible DDL that is part of
-            # the SQLite _run_column_migrations path but not in schema_pg.sql
-            # or Alembic migrations.  These are all safe to run repeatedly.
-            _pg_extra_ddl: list[str] = [
-                # invoice_number_sequences table (used by InvoiceRepository)
-                "CREATE TABLE IF NOT EXISTS invoice_number_sequences ("
-                "  series TEXT NOT NULL,"
-                "  year INTEGER NOT NULL,"
-                "  last_number INTEGER NOT NULL DEFAULT 0,"
-                "  PRIMARY KEY (series, year)"
-                ")",
-                # invoice_status_history table
-                "CREATE TABLE IF NOT EXISTS invoice_status_history ("
-                "  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
-                "  invoice_id INTEGER NOT NULL,"
-                "  from_status TEXT NOT NULL DEFAULT '',"
-                "  to_status TEXT NOT NULL,"
-                "  changed_by INTEGER DEFAULT 0,"
-                "  changed_at TEXT NOT NULL,"
-                "  reason TEXT DEFAULT ''"
-                ")",
-                # Invoices columns added by SQLite _run_column_migrations
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_id INTEGER",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'EUR'",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items_json TEXT DEFAULT '[]'",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal_net NUMERIC(12,2) DEFAULT 0",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_vat NUMERIC(12,2) DEFAULT 0",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_gross NUMERIC(12,2) DEFAULT 0",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS pdf_path TEXT DEFAULT ''",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_at TEXT",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TEXT",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12,6) DEFAULT 1.0",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_type TEXT DEFAULT 'invoice'",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) DEFAULT 0",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_remaining NUMERIC(12,2) DEFAULT 0",
-                # e-Factura XML artifact tracking (the XML FILE is the legal
-                # deliverable; no ANAF submission chain exists).
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_status TEXT DEFAULT ''",
-                "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_xml_path TEXT DEFAULT ''",
-                # Trips source columns (Alembic migration c3d4e5f6a7b3)
-                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'",
-                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_provider_id TEXT",
-                "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_reference_id TEXT",
-                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)",
-                "CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id)",
-                # SQLite-schema parity columns (drill-verified: the app reads
-                # these on PG — mfa.py, subscriptions.py, fleet/driver forms).
-                "ALTER TABLE companies ADD COLUMN IF NOT EXISTS trial_ends_at TEXT",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0",
-                "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT",
-                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_account TEXT DEFAULT ''",
-                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_code TEXT DEFAULT ''",
-                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_bic TEXT DEFAULT ''",
-                "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS iban TEXT DEFAULT ''",
-                "ALTER TABLE driver_truck_assignments ADD COLUMN IF NOT EXISTS active INTEGER NOT NULL DEFAULT 1",
-                # Copilot insights dedup — runs AFTER Alembic migrations so the
-                # copilot_insights table (a7b8c9d0e1f7) already exists on fresh DBs.
-                # payload is a json column on PG: btree cannot index it directly,
-                # so the dedup key uses a (payload::text) expression index. A bare
-                # ON CONFLICT DO NOTHING honors expression unique indexes, so the
-                # INSERT OR IGNORE translation still dedups correctly.
-                "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
-                "ON copilot_insights(company_id, insight_type, (payload::text))",
-            ]
-            for ddl in _pg_extra_ddl:
-                try:
-                    cur = self.conn.cursor()
-                    cur.execute(ddl)
-                    cur.close()
-                except Exception:
-                    # ADD COLUMN IF NOT EXISTS is PostgreSQL 9.6+;
-                    # older versions raise, which is harmless.
-                    pass
-            self.conn.commit()
-
-        # Ensure mobile tables exist (best-effort, non-critical)
-        # PostgreSQL does not support AUTOINCREMENT — the SQL in
-        # ensure_mobile_tables is SQLite-specific.  Mobile tables are
-        # not part of schema_pg.sql, so skip entirely for PostgreSQL.
-        if self._engine != "postgresql":
+            # Ensure mobile tables exist (best-effort, non-critical)
+            # PostgreSQL does not support AUTOINCREMENT — the SQL in
+            # ensure_mobile_tables is SQLite-specific.  Mobile tables are
+            # not part of schema_pg.sql, so skip entirely for PostgreSQL.
             try:
                 from backend.api.v1.mobile import ensure_mobile_tables
                 ensure_mobile_tables(self)
             except Exception:
                 pass  # mobile tables are non-critical
 
+    def _init_pg_schema_locked(self) -> None:
+        """Build the PostgreSQL schema serially per database.
+
+        Multiple app/test processes (uvicorn workers, Celery workers,
+        pytest-xdist workers) all run ``DatabaseManager.__init__`` →
+        ``_init_db()`` on the SAME database at startup.  Without
+        serialization, their DDL statements (``ALTER TABLE ... ADD
+        COLUMN IF NOT EXISTS``, ``CREATE INDEX``) deadlock each other;
+        PostgreSQL then aborts the deadlock victim's entire transaction,
+        and every later statement in that worker fails with "current
+        transaction is aborted" and is silently skipped — leaving the
+        schema half-built (missing ``trips.source``, missing
+        ``invoice_number_sequences``, ...).
+
+        Fix:
+        * a session-level advisory lock serializes the whole build
+          (schema_pg.sql + Alembic + ``_pg_extra_ddl``) per database;
+        * autocommit mode makes every DDL statement its own transaction,
+          so each statement commits (releasing its locks) before the next
+          runs, and a single failed statement cannot abort the rest.
+        """
+        conn = self.conn
+        prev_autocommit = conn.autocommit
+        conn.autocommit = True
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT pg_advisory_lock(%s)", (_PG_SCHEMA_ADVISORY_LOCK_KEY,))
+            cur.close()
+        except Exception as e:
+            logger.warning("Could not acquire schema advisory lock (continuing anyway): %s", e)
+
+        try:
+            self._init_pg_schema()
+            self._run_alembic_upgrade()
+            self._apply_pg_extra_ddl()
+        finally:
+            try:
+                cur = conn.cursor()
+                cur.execute("SELECT pg_advisory_unlock(%s)", (_PG_SCHEMA_ADVISORY_LOCK_KEY,))
+                cur.close()
+            except Exception as e:
+                logger.warning("Could not release schema advisory lock: %s", e)
+            conn.autocommit = prev_autocommit
+
+    def _run_alembic_upgrade(self) -> None:
+        """Run Alembic migrations (PostgreSQL only).
+
+        Failures are logged at ERROR with the real exception instead of
+        being silently swallowed, so an incomplete migration can never
+        pass unnoticed.
+        """
+        try:
+            from alembic.config import Config
+            from alembic import command
+            import os
+
+            alembic_cfg = Config(os.path.join(os.path.dirname(__file__), "..", "alembic.ini"))
+            # Override the script_location to be absolute
+            script_location = os.path.join(os.path.dirname(__file__), "..", "alembic")
+            alembic_cfg.set_main_option("script_location", script_location)
+            command.upgrade(alembic_cfg, "head")
+            logger.info("Alembic migrations applied successfully")
+        except Exception as e:
+            logger.error("Alembic migrations failed: %s", e, exc_info=True)
+
+    def _apply_pg_extra_ddl(self) -> None:
+        """Apply additional PostgreSQL-compatible DDL.
+
+        This is the part of the SQLite ``_run_column_migrations`` path
+        that is not in schema_pg.sql or Alembic migrations.  These
+        statements are all safe to run repeatedly (IF NOT EXISTS), and
+        they run AFTER Alembic — so tables created by migrations (e.g.
+        ``copilot_insights``) exist before indexes on them are built.
+        """
+        # Apply additional PostgreSQL-compatible DDL that is part of
+        # the SQLite _run_column_migrations path but not in schema_pg.sql
+        # or Alembic migrations.  These are all safe to run repeatedly.
+        _pg_extra_ddl: list[str] = [
+            # invoice_number_sequences table (used by InvoiceRepository)
+            "CREATE TABLE IF NOT EXISTS invoice_number_sequences ("
+            "  series TEXT NOT NULL,"
+            "  year INTEGER NOT NULL,"
+            "  last_number INTEGER NOT NULL DEFAULT 0,"
+            "  PRIMARY KEY (series, year)"
+            ")",
+            # invoice_status_history table
+            "CREATE TABLE IF NOT EXISTS invoice_status_history ("
+            "  id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,"
+            "  invoice_id INTEGER NOT NULL,"
+            "  from_status TEXT NOT NULL DEFAULT '',"
+            "  to_status TEXT NOT NULL,"
+            "  changed_by INTEGER DEFAULT 0,"
+            "  changed_at TEXT NOT NULL,"
+            "  reason TEXT DEFAULT ''"
+            ")",
+            # Invoices columns added by SQLite _run_column_migrations
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS client_id INTEGER",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS currency TEXT DEFAULT 'EUR'",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT DEFAULT ''",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items_json TEXT DEFAULT '[]'",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal_net NUMERIC(12,2) DEFAULT 0",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_vat NUMERIC(12,2) DEFAULT 0",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_gross NUMERIC(12,2) DEFAULT 0",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS pdf_path TEXT DEFAULT ''",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_at TEXT",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TEXT",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12,6) DEFAULT 1.0",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_type TEXT DEFAULT 'invoice'",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) DEFAULT 0",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_remaining NUMERIC(12,2) DEFAULT 0",
+            # e-Factura XML artifact tracking (the XML FILE is the legal
+            # deliverable; no ANAF submission chain exists).
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_status TEXT DEFAULT ''",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS efactura_xml_path TEXT DEFAULT ''",
+            # Trips source columns (Alembic migration c3d4e5f6a7b3)
+            "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source TEXT DEFAULT 'manual'",
+            "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_provider_id TEXT",
+            "ALTER TABLE trips ADD COLUMN IF NOT EXISTS source_reference_id TEXT",
+            "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id)",
+            "CREATE INDEX IF NOT EXISTS idx_drivers_user ON drivers(user_id)",
+            # SQLite-schema parity columns (drill-verified: the app reads
+            # these on PG — mfa.py, subscriptions.py, fleet/driver forms).
+            "ALTER TABLE companies ADD COLUMN IF NOT EXISTS trial_ends_at TEXT",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_enabled INTEGER NOT NULL DEFAULT 0",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS mfa_secret TEXT",
+            "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_account TEXT DEFAULT ''",
+            "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_code TEXT DEFAULT ''",
+            "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS bank_bic TEXT DEFAULT ''",
+            "ALTER TABLE drivers ADD COLUMN IF NOT EXISTS iban TEXT DEFAULT ''",
+            "ALTER TABLE driver_truck_assignments ADD COLUMN IF NOT EXISTS active INTEGER NOT NULL DEFAULT 1",
+            # Sent-email dedup table: tenant-scoped reads/writes
+            "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS company_id INTEGER",
+            # Copilot insights dedup — runs AFTER Alembic migrations so the
+            # copilot_insights table (a7b8c9d0e1f7) already exists on fresh DBs.
+            # payload is a json column on PG: btree cannot index it directly,
+            # so the dedup key uses a (payload::text) expression index. A bare
+            # ON CONFLICT DO NOTHING honors expression unique indexes, so the
+            # INSERT OR IGNORE translation still dedups correctly.
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
+            "ON copilot_insights(company_id, insight_type, (payload::text))",
+        ]
+        for ddl in _pg_extra_ddl:
+            try:
+                cur = self.conn.cursor()
+                cur.execute(ddl)
+                cur.close()
+            except Exception as e:
+                # ADD COLUMN IF NOT EXISTS is PostgreSQL 9.6+;
+                # older versions raise, which is harmless.
+                logger.debug("PG extra DDL skipped (may be pre-existing): %s — %s", str(e)[:120], ddl[:80])
+
     def _init_pg_schema(self):
         """Execute PostgreSQL schema from schema_pg.sql.
 
-        Temporarily disables FK trigger checks (``session_replication_role
-        = replica``) so that tables can be created in any order regardless
-        of inter-table foreign-key dependencies (the .sql file is ordered
-        alphabetically/functionally, not by dependency).  FK enforcement
-        is restored after all DDL completes.
+        Runs in per-statement autocommit mode (enabled by
+        :meth:`_init_pg_schema_locked`): every DDL statement is its own
+        transaction, so each statement commits — releasing its table
+        locks — before the next one runs, and a failed statement cannot
+        abort the rest of the build.  This is what makes the schema build
+        reliable when multiple processes boot the same database at once.
         """
         import os
         schema_path = os.path.join(
@@ -530,25 +598,19 @@ class DatabaseManager:
         for stmt in statements:
             if not stmt:
                 continue
-            # Wrap each statement in a SAVEPOINT so that a single failure
-            # (e.g. an index on a non-existing column) does NOT abort the
-            # entire transaction and cascade to all subsequent statements.
-            cur = self.conn.cursor()
+            # Autocommit mode is on, so each statement is already its own
+            # transaction — a single failure (e.g. an index on a table a
+            # later migration creates) rolls back only that statement and
+            # cannot cascade to the remaining ones.
             try:
-                cur.execute("SAVEPOINT sp")
+                cur = self.conn.cursor()
                 cur.execute(stmt)
-                cur.execute("RELEASE SAVEPOINT sp")
+                cur.close()
             except Exception as e:
-                try:
-                    cur.execute("ROLLBACK TO SAVEPOINT sp")
-                except Exception:
-                    pass
                 if "already exists" in str(e).lower():
                     logger.debug("Skipping existing object: %s", str(e)[:80])
                 else:
                     logger.warning("PG schema statement failed: %s — %s", str(e)[:120], stmt[:80])
-            finally:
-                cur.close()
 
     def _create_tables_and_indices(self):
         """Execute all CREATE TABLE and CREATE INDEX statements."""
@@ -997,6 +1059,9 @@ class DatabaseManager:
             ("consignee_contact_name", "ALTER TABLE clients ADD COLUMN consignee_contact_name TEXT DEFAULT ''"),
             ("consignee_contact_phone", "ALTER TABLE clients ADD COLUMN consignee_contact_phone TEXT DEFAULT ''"),
         ])
+
+        # ── Sent-email dedup table: tenant-scoped reads/writes ──
+        self._ensure_column("sent_emails", "company_id", S.ALTER_SENT_EMAILS_ADD_COMPANY_ID)
 
         # ── Invoice table: add all columns required by InvoiceRepository ──
         self._ensure_columns("invoices", [

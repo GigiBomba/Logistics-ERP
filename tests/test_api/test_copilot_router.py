@@ -123,14 +123,27 @@ def _cleanup_copilot_state():
 
 @pytest.fixture
 def mock_db():
-    """A mock database with ``conn.execute`` returning empty results by default."""
-    db = MagicMock(spec_set=["conn", "row_to_dict", "rows_to_dicts"])
+    """A mock database behaving like the real DatabaseManager API.
+
+    Repository helpers (``BaseRepository._fetchone``/``_fetchall``/``_execute``)
+    call ``db.execute(query, params)`` and expect a cursor-like object with
+    ``fetchone()``/``fetchall()`` (plus ``lastrowid``/``rowcount`` for DML).
+    ``db.execute`` is aliased to ``db.conn.execute`` so existing test setups
+    that configure ``conn.execute`` (``fetchone``/``fetchall``/``side_effect``)
+    also drive the repository path.
+    """
+    db = MagicMock(spec_set=["conn", "execute", "row_to_dict", "rows_to_dicts"])
     db.conn = MagicMock()
     db.row_to_dict = lambda row: row
     db.rows_to_dicts = lambda rows: rows
-    # Default: fetchall returns empty list
-    db.conn.execute.return_value.fetchall.return_value = []
-    db.conn.execute.return_value.fetchone.return_value = None
+    # Repositories call db.execute(...) — alias it to conn.execute so both
+    # spellings share the same cursor mock and call history.
+    db.execute = db.conn.execute
+    # Default cursor: fetchall returns empty list, fetchone returns None
+    db.execute.return_value.fetchall.return_value = []
+    db.execute.return_value.fetchone.return_value = None
+    db.execute.return_value.lastrowid = 1
+    db.execute.return_value.rowcount = 0
     return db
 
 

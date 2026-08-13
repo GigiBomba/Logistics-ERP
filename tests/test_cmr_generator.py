@@ -14,8 +14,9 @@ from services.invoicing.cmr_generator import CMRGenerator
 class TestCMRGenerator(unittest.TestCase):
     def setUp(self):
         self.gen = CMRGenerator()
-        self.output_dir = os.path.abspath("data/documents/trips/test_cmr")
-        os.makedirs(self.output_dir, exist_ok=True)
+        # Unique temp dir per test so parallel xdist workers never share
+        # (and tearDown-remove) the same output directory mid-write.
+        self.output_dir = tempfile.mkdtemp(prefix="cmr_test_")
 
     def tearDown(self):
         shutil.rmtree(self.output_dir, ignore_errors=True)
@@ -135,8 +136,9 @@ class TestCMRGeneratorExtended(unittest.TestCase):
 
     def setUp(self):
         self.gen = CMRGenerator()
-        self.output_dir = os.path.abspath("data/documents/trips/test_cmr_ext")
-        os.makedirs(self.output_dir, exist_ok=True)
+        # Unique temp dir per test so parallel xdist workers never share
+        # (and tearDown-remove) the same output directory mid-write.
+        self.output_dir = tempfile.mkdtemp(prefix="cmr_test_ext_")
 
     def tearDown(self):
         shutil.rmtree(self.output_dir, ignore_errors=True)

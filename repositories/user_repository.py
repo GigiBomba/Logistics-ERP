@@ -14,10 +14,19 @@ class UserRepository(BaseRepository):
     ]
 
     def get_by_id(self, user_id: int) -> Optional[Dict[str, Any]]:
-        """Fetch a user by primary key."""
+        """Fetch a user by primary key.
+
+        The system user (``id=0``) is tenant-global: it is seeded with a
+        ``NULL`` ``company_id`` and used by internal service calls
+        (``PermissionService`` checks with ``user_id=0``), so the tenant
+        company filter is skipped for it.  All real users remain scoped to
+        the current company.
+        """
+        company_filter = "" if user_id == 0 else self._company_filter()
+        company_params = () if user_id == 0 else self._company_params()
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (user_id,) + self._company_params(),
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {company_filter}",
+            (user_id,) + company_params,
         )
 
     def get_by_email(self, email: str) -> Optional[Dict[str, Any]]:

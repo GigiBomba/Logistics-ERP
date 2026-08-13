@@ -50,6 +50,11 @@ class ErrorCode(str, Enum):
     OCR_CONFIDENCE_LOW = "business/ocr-confidence-low"
     DUPLICATE_RESOURCE = "business/duplicate-resource"
 
+    # Invitations
+    INVITATION_INVALID = "invitation/invalid"
+    INVITATION_EXPIRED = "invitation/expired"
+    INVITATION_ALREADY_ACCEPTED = "invitation/already-accepted"
+
     # External integration
     EXTERNAL_API_ERROR = "integration/external-api-error"
     EXTERNAL_API_TIMEOUT = "integration/external-api-timeout"

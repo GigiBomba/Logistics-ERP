@@ -22,6 +22,7 @@ from backend.api.v1 import (
     mobile,
     oauth2,
     ocr,
+    organizations,
     payments,
     receipts,
     registration,
@@ -44,6 +45,7 @@ api_v1_router.include_router(admin.router)
 api_v1_router.include_router(api_keys.router)
 api_v1_router.include_router(documents.router)
 api_v1_router.include_router(ocr.router)
+api_v1_router.include_router(organizations.router)
 api_v1_router.include_router(trips.router)
 api_v1_router.include_router(clients.router)
 api_v1_router.include_router(drivers.router)

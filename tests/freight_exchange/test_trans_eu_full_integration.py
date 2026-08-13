@@ -51,6 +51,10 @@ class _MinimalDB:
     def rows_to_dicts(rows):
         return [dict(r) for r in rows] if rows else []
 
+    def execute(self, query, params=()):
+        """Mirror DatabaseManager.execute: delegate to the connection."""
+        return self.conn.execute(query, params)
+
 
 def _create_webhook_tables(db) -> None:
     """Create the two webhook event tables if they don't exist."""
