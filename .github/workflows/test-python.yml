@@ -89,7 +89,8 @@ jobs:
           fi
           coverage run --parallel-mode -m pytest -v --tb=short -n auto $SHARD_ARGS
         env:
-          OPERION_DB_ENGINE: postgresql
+          OPERION_DB_ENGINE: sqlite
+          OPERION_DB_PATH: data/test_ci_linux.db
           OPERION_TEST_POSTGRES_DSN: postgresql://operion:operion_test_ci@localhost:5432/operion_test
           OPERION_JWT_SECRET_KEY: test-key-ci-32-chars-required-here!!
           OPERION_ADMIN_EMAIL: admin@test.com
