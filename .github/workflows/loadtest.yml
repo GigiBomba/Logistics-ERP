@@ -60,7 +60,14 @@ jobs:
           export OPERION_ENV=test
           export OPERION_RATE_LIMIT=100000
           uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:8000/api/v1/health; then
+              echo "API server ready (attempt $i)"
+              break
+            fi
+            echo "waiting for API server... ($i/30)"
+            sleep 2
+          done
           curl -f http://localhost:8000/api/v1/health || exit 1
 
       - name: Run load test (lightweight)
@@ -110,7 +117,14 @@ jobs:
           export OPERION_ENV=test
           export OPERION_RATE_LIMIT=100000
           uvicorn backend.main:app --host 0.0.0.0 --port 8000 &
-          sleep 5
+          for i in $(seq 1 30); do
+            if curl -fs http://localhost:8000/api/v1/health; then
+              echo "API server ready (attempt $i)"
+              break
+            fi
+            echo "waiting for API server... ($i/30)"
+            sleep 2
+          done
           curl -f http://localhost:8000/api/v1/health || exit 1
 
       - name: Run chaos tests
