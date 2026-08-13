@@ -618,7 +618,6 @@
     <Folder Include="data\documents\trips\test_9999_all\" />
     <Folder Include="data\documents\vehicles\" />
     <Folder Include="data\exports\" />
-    <Folder Include="data\invoice_drafts\" />
     <Folder Include="data\temp\" />
     <Folder Include="data\temp\signatures\" />
     <Folder Include="data\translations\" />
@@ -1197,7 +1196,6 @@
     <Content Include="data\exchange_rates_cache.json" />
     <Content Include="data\fallback_fuel_prices.json" />
     <Content Include="data\fuel_prices_cache.json" />
-    <Content Include="data\invoice_drafts\Wildenhofe 19-6-2026.json" />
     <Content Include="data\lang.txt" />
     <Content Include="data\srgb.icc" />
     <Content Include="data\temp\signatures\sig_0b86abbdc75b.png" />
