@@ -273,6 +273,18 @@ class ChartLoadingOverlay(QFrame):
         if self._received >= self._expected:
             self.stop()
 
+    def set_progress(self, progress: int, total: int) -> None:
+        """Set the progress counters directly and refresh the label.
+
+        Lets callers push progress updates without wiring render
+        deliveries (mirrors ``LoadingOverlay.set_progress``).  The
+        overlay auto-hides via ``on_render_delivered``/``stop``; this
+        method only records state and updates the ``n / total`` label.
+        """
+        self._received = int(progress)
+        self._expected = int(total)
+        self._refresh_progress()
+
     # ── Qt overrides ──────────────────────────────────────────────
 
     def hideEvent(self, event) -> None:

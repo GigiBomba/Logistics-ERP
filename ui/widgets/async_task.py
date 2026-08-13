@@ -54,6 +54,14 @@ class AsyncTask(QObject):
         super().__init__(parent)
         self._thread: QThread | None = None
         self._worker: _Worker | None = None
+        # Strong self-reference taken while a task is running and released
+        # once the worker thread has fully finished.  The worker QThread is
+        # a child of this object; if the AsyncTask is garbage-collected while
+        # the native thread is still finishing, PySide6 aborts the whole
+        # process ("QThread: Destroyed while thread is still running").  The
+        # self-reference guarantees the task — and therefore its QThread
+        # child — stays alive until ``_cleanup`` runs.
+        self._keep_alive: "AsyncTask | None" = None
 
     def run(
         self,
@@ -85,6 +93,8 @@ class AsyncTask(QObject):
         self._worker.error.connect(self._thread.quit)
         self._thread.finished.connect(self._cleanup)
 
+        # Hold a self-reference until the thread finishes (see __init__).
+        self._keep_alive = self
         self._thread.start()
 
     def cancel(self) -> None:
@@ -98,3 +108,7 @@ class AsyncTask(QObject):
     def _cleanup(self) -> None:
         self._worker = None
         self._thread = None
+        # Release the self-reference: the worker thread has finished, so the
+        # QThread child can now be destroyed safely even if the caller has
+        # already dropped the AsyncTask.
+        self._keep_alive = None

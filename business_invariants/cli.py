@@ -12,6 +12,7 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from typing import Optional, TextIO
 
@@ -49,10 +50,16 @@ def cmd_run(args: argparse.Namespace) -> int:
     _load_checks(registry)
     engine = InvariantEngine(registry)
 
+    # Expose the process environment to invariant checks (JWT_*, BF_*,
+    # OPERION_* etc.) so CI workflows can configure policy via env vars.
+    env = dict(os.environ)
+    if args.env:
+        env["env"] = args.env
+
     ctx = InvariantContext(
         db_type=args.db_type or "sqlite",
         config=default_invariant_config(),
-        env={"env": args.env} if args.env else {},
+        env=env,
         company_id=args.company_id,
     )
 

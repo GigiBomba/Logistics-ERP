@@ -70,7 +70,7 @@ jobs:
       - name: Check for committed secrets
         run: |
           # Check if any .env files are tracked
-          TRACKED_ENV=$(git ls-files '*.env' '*.env.*' | grep -v '.example' | grep -v '.gitignore')
+          TRACKED_ENV=$(git ls-files '*.env' '*.env.*' | grep -v '.example' | grep -v '.gitignore' || true)
           if [ -n "$TRACKED_ENV" ]; then
             echo "❌ WARNING: Tracked .env files found:"
             echo "$TRACKED_ENV"

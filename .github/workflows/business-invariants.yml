@@ -37,8 +37,8 @@ jobs:
       OPERION_ENV: test
       BF_ENABLED: "true"
       BF_MAX_ATTEMPTS: "5"
-      BF_WINDOW_MINUTES: "15"
-      BF_LOCKOUT_MINUTES: "30"
+      BF_WINDOW_MINUTES: "5"
+      BF_LOCKOUT_MINUTES: "15"
 
     steps:
       - uses: actions/checkout@v4
