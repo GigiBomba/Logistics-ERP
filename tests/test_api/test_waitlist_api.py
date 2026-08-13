@@ -49,6 +49,15 @@ def _set_env():
     os.environ["OPERION_API_KEY"] = "test-api-key"
     from config import Config
     previous_db_path = Config.DB_PATH
+    previous_db_engine = Config.DB_ENGINE
+    previous_db_engine_env = os.environ.get("OPERION_DB_ENGINE")
+    # Force SQLite even on the CI PostgreSQL shard: the module temp-SQLite
+    # rebind (Config.DB_PATH) alone does not override OPERION_DB_ENGINE
+    # = postgresql, so the app would connect through the PG DSN instead of
+    # this per-test temp file.  init_db() reads the env var at call time, so
+    # this must be set before the first create_test_app() in the module.
+    os.environ["OPERION_DB_ENGINE"] = "sqlite"
+    Config.DB_ENGINE = "sqlite"
     Config.DB_PATH = tmp.name
     # The app DB is a process-global singleton (backend.dependencies.init_db).
     # Under `-n auto` another test module in the same xdist worker may have
@@ -66,6 +75,13 @@ def _set_env():
     yield
     for k in ("OPERION_DB_PATH", "OPERION_JWT_SECRET_KEY", "OPERION_ENV", "OPERION_API_KEY"):
         os.environ.pop(k, None)
+    # Restore the engine env var (only if it was previously set) and the
+    # Config.DB_ENGINE rebind so the module leaves no global state behind.
+    if previous_db_engine_env is None:
+        os.environ.pop("OPERION_DB_ENGINE", None)
+    else:
+        os.environ["OPERION_DB_ENGINE"] = previous_db_engine_env
+    Config.DB_ENGINE = previous_db_engine
     # Restore Config.DB_PATH so the module leaves no global state behind.
     Config.DB_PATH = previous_db_path
     # Release the singleton so later modules re-init against their own DB.
