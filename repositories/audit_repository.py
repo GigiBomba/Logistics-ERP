@@ -33,6 +33,7 @@ class AuditRepository(BaseRepository):
             user_id:     ID of the user who performed the action.
             company_id:  Company scope override (0 = use context).
         """
+        was_in_tx = False
         try:
             now = datetime.now().isoformat()
             ev_id = uuid.uuid4().hex[:12]
@@ -55,7 +56,13 @@ class AuditRepository(BaseRepository):
             self._validate_columns(row_data)
             cols = ", ".join(row_data.keys())
             vals = ", ".join("?" for _ in row_data)
-            self.begin_transaction()
+            # Only manage the transaction when we start it ourselves.  If the
+            # caller already has a transaction open (batch operations,
+            # transaction() context managers), a failed audit write must never
+            # roll back the caller's uncommitted work.
+            was_in_tx = getattr(self.db.conn, "in_transaction", None) is True
+            if not was_in_tx:
+                self.begin_transaction()
             try:
                 self._execute(
                     f"INSERT INTO operation_events ({cols}) VALUES ({vals})",
@@ -69,14 +76,17 @@ class AuditRepository(BaseRepository):
                     (self.MAX_EVENTS,) + self._company_params(),
                     commit=False,
                 )
-                self.commit_transaction()
+                if not was_in_tx:
+                    self.commit_transaction()
             except Exception:
-                self.rollback_transaction()
+                if not was_in_tx:
+                    self.rollback_transaction()
                 raise
         except Exception as e:
             import logging
             try:
-                self.rollback_transaction()
+                if not was_in_tx:
+                    self.rollback_transaction()
             except Exception:
                 pass
             logging.getLogger("audit_repo").warning("Audit log write failed: %s", e)
