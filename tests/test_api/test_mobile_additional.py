@@ -211,7 +211,6 @@ def _create_real_app_and_client():
         except Exception:
             pass
         deps._db_instance = None
-    _cleanup_stale_db_files(_TEST_DB)
     deps.init_db()
     from backend.main import create_app
     return TestClient(create_app())

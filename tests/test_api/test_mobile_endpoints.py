@@ -297,7 +297,6 @@ def _create_real_app_and_client():
         except Exception:
             pass
         deps._db_instance = None  # type: ignore[attr-defined]
-    _cleanup_stale_db_files(_TEST_DB_PATH)
     deps.init_db()
     from backend.main import create_app
     app = create_app()
@@ -320,7 +319,6 @@ def _create_app_and_client():
         except Exception:
             pass
         deps._db_instance = None  # type: ignore[attr-defined]
-    _cleanup_stale_db_files(_TEST_DB_PATH)
     deps.init_db()
     from backend.main import create_app
     app = create_test_app()

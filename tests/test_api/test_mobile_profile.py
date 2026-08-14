@@ -5,6 +5,8 @@ Verifies that:
 2. Regular users get their profile from the database
 3. Unauthenticated requests return 401
 """
+from __future__ import annotations
+
 
 import os
 import pytest
@@ -134,7 +136,9 @@ class TestMobileProfileAPI:
     def test_admin_profile_with_admin_auth(self, app, client, mock_admin_user):
         """Admin user gets synthetic profile (no DB query needed)."""
         from backend.dependencies_security import get_current_user
+        from backend.dependencies import get_db
         app.dependency_overrides[get_current_user] = lambda: mock_admin_user
+        app.dependency_overrides[get_db] = _mock_db_dependency
 
         resp = client.get("/mobile/user/profile")
 
@@ -154,7 +158,9 @@ class TestMobileProfileAPI:
     def test_admin_profile_response_structure(self, app, client, mock_admin_user):
         """The admin profile response has the expected fields."""
         from backend.dependencies_security import get_current_user
+        from backend.dependencies import get_db
         app.dependency_overrides[get_current_user] = lambda: mock_admin_user
+        app.dependency_overrides[get_db] = _mock_db_dependency
 
         resp = client.get("/mobile/user/profile")
 
@@ -165,6 +171,15 @@ class TestMobileProfileAPI:
             expected_keys = {"id", "email", "role", "display_name", "driver_id", "is_active", "created_at", "driver"}
             assert expected_keys.issubset(data.keys()), f"Missing keys: {expected_keys - data.keys()}"
             assert data["driver"] is None
+
+
+def _mock_db_dependency():
+    """Yield a mock DB so unit tests never touch the real SQLite file."""
+    db = MagicMock()
+    cursor = MagicMock()
+    cursor.fetchone.return_value = None
+    db.execute.return_value = cursor
+    yield db
 
     def test_regular_user_profile_no_db_fallback(self, app, client, mock_regular_user):
         """Regular user without DB access would get an error (expected)."""
