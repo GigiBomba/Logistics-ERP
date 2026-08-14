@@ -7,7 +7,7 @@ import tempfile
 import uuid
 from typing import Dict
 
-_TEST_DB_DIR = os.path.join(tempfile.gettempdir(), "operion_test_mobile")
+_TEST_DB_DIR = tempfile.gettempdir()
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
 _TEST_DB = os.path.join(
     _TEST_DB_DIR, f"test_mobile_additional_{uuid.uuid4().hex[:12]}.db",

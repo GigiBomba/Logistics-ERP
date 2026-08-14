@@ -35,7 +35,7 @@ from typing import Any, Dict, List
 # Environment setup — MUST happen before any backend imports that read Config
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_TEST_DB_DIR = os.path.join(tempfile.gettempdir(), "operion_test_mobile")
+_TEST_DB_DIR = tempfile.gettempdir()
 os.makedirs(_TEST_DB_DIR, exist_ok=True)
 _TEST_DB_PATH = os.path.join(
     _TEST_DB_DIR, f"test_mobile_endpoints_{uuid.uuid4().hex[:12]}.db",

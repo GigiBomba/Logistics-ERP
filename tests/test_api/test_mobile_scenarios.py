@@ -35,7 +35,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 # ── Env setup before project imports ──────────────────────────────────
-_TEST_DB_DIR = os.path.join(tempfile.gettempdir(), "operion_test_mobile")
+_TEST_DB_DIR = tempfile.gettempdir()
 _TEST_DB_PATH = os.path.join(
     _TEST_DB_DIR, f"test_mobile_scenarios_{uuid.uuid4().hex[:12]}.db"
 )
