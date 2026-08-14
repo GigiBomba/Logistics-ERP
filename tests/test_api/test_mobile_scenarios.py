@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
@@ -34,7 +35,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 # ── Env setup before project imports ──────────────────────────────────
-_TEST_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+_TEST_DB_DIR = os.path.join(tempfile.gettempdir(), "operion_test_mobile")
 _TEST_DB_PATH = os.path.join(
     _TEST_DB_DIR, f"test_mobile_scenarios_{uuid.uuid4().hex[:12]}.db"
 )

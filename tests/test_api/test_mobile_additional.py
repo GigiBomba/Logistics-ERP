@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import os
+import tempfile
 import uuid
 from typing import Dict
 
-_TEST_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+_TEST_DB_DIR = os.path.join(tempfile.gettempdir(), "operion_test_mobile")
 _TEST_DB = os.path.join(
     _TEST_DB_DIR, f"test_mobile_additional_{uuid.uuid4().hex[:12]}.db",
 )
@@ -25,6 +26,17 @@ if not os.environ.get("OPERION_ADMIN_PASSWORD_HASH"):
     os.environ["OPERION_ADMIN_PASSWORD_HASH"] = _ADMIN_HASH
 
 from config import Config
+@pytest.fixture(autouse=True)
+def _mobile_env_guard():
+    """Re-assert test env before each test (worker env clobbering guard)."""
+    os.environ["OPERION_DB_PATH"] = _TEST_DB
+    os.environ["OPERION_JWT_SECRET_KEY"] = "test-mobile-jwt-secret-key-for-testing-only!"
+    os.environ["OPERION_ENV"] = "test"
+    os.environ["OPERION_RATE_LIMIT"] = "10000"
+    from config import Config as _Cfg
+    _Cfg.DB_PATH = _TEST_DB
+    yield
+
 from tests.test_api.helpers import create_test_app, create_real_app
 Config.DB_PATH = _TEST_DB
 

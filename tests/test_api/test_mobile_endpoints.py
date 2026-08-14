@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import glob
 import os
+import tempfile
 import uuid
 from datetime import datetime, timezone
 
@@ -34,7 +35,7 @@ from typing import Any, Dict, List
 # Environment setup — MUST happen before any backend imports that read Config
 # ═══════════════════════════════════════════════════════════════════════════════
 
-_TEST_DB_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "data")
+_TEST_DB_DIR = os.path.join(tempfile.gettempdir(), "operion_test_mobile")
 _TEST_DB_PATH = os.path.join(
     _TEST_DB_DIR, f"test_mobile_endpoints_{uuid.uuid4().hex[:12]}.db",
 )
@@ -60,6 +61,23 @@ os.environ["OPERION_ADMIN_PASSWORD_HASH"] = _ADMIN_HASH
 
 # ── Override Config.DB_PATH AFTER conftest may have already imported Config ─
 from config import Config  # noqa: E402
+@pytest.fixture(autouse=True)
+def _mobile_env_guard():
+    """Re-assert test env before each test.
+
+    With --dist=loadscope, multiple test modules share one xdist worker;
+    some modules pop/override OPERION_JWT_SECRET_KEY / OPERION_DB_PATH at
+    runtime, which would leave mobile tests with an empty HMAC key or the
+    wrong database.  Re-assert the suite's env so each test is hermetic.
+    """
+    os.environ["OPERION_DB_PATH"] = _TEST_DB_PATH
+    os.environ["OPERION_JWT_SECRET_KEY"] = "test-mobile-jwt-secret-key-for-testing-only!"
+    os.environ["OPERION_ENV"] = "test"
+    os.environ["OPERION_RATE_LIMIT"] = "10000"
+    from config import Config as _Cfg
+    _Cfg.DB_PATH = _TEST_DB_PATH
+    yield
+
 from tests.test_api.helpers import create_test_app, create_real_app
 
 Config.DB_PATH = _TEST_DB_PATH
