@@ -1,0 +1,45 @@
+name: Regenerate Visual Baselines (Windows)
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "Type 'yes' to regenerate tests/baselines on the Windows Server runner"
+        required: true
+        type: string
+
+jobs:
+  regenerate:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-qt pytest-timeout pytest-xdist pytest-asyncio freezegun sqlalchemy alembic coverage psycopg2-binary
+
+      - name: Regenerate visual-regression baselines
+        if: github.event.inputs.confirm == 'yes'
+        shell: bash
+        env:
+          OPERION_UPDATE_BASELINES: "1"
+          OPERION_SUPPORT_INTERNAL_AUTH: test-key-support-32-chars-min!!
+          OPERION_JWT_SECRET_KEY: test-key-ci-32-chars-required-here!!
+          OPERION_ENV: test
+          OPERION_DB_ENGINE: sqlite
+        run: |
+          python -m pytest tests/test_visual_regression_views.py tests/test_visual_regression_widgets.py tests/test_visual_regression_dialogs.py tests/test_visual_regression_alert_panel.py -q
+
+      - name: Upload regenerated baselines
+        if: github.event.inputs.confirm == 'yes'
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-visual-baselines
+          path: tests/baselines/**/*.png
+          if-no-files-found: error
