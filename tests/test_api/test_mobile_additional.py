@@ -212,6 +212,7 @@ def _create_real_app_and_client():
             pass
         deps._db_instance = None
     deps.init_db()
+    _seed_test_db()
     from backend.main import create_app
     return TestClient(create_app())
 

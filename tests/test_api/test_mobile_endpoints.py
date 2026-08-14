@@ -298,6 +298,7 @@ def _create_real_app_and_client():
             pass
         deps._db_instance = None  # type: ignore[attr-defined]
     deps.init_db()
+    _seed_test_db()
     from backend.main import create_app
     app = create_app()
     client = TestClient(app)
@@ -320,6 +321,7 @@ def _create_app_and_client():
             pass
         deps._db_instance = None  # type: ignore[attr-defined]
     deps.init_db()
+    _seed_test_db()
     from backend.main import create_app
     app = create_test_app()
     client = TestClient(app)
