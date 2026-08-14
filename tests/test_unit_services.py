@@ -23,8 +23,12 @@ class TestGeocodeCache(unittest.TestCase):
 
     def setUp(self) -> None:
         from services.route_service import GeocodeCache
-        # Use a very short TTL so we don't wait
-        self.cache = GeocodeCache(max_size=3, ttl_seconds=0)
+        # A positive TTL larger than any fast test body so entries persist for
+        # set/get/eviction/update tests.  (ttl_seconds=0 must NOT be used: the
+        # cache expires anything older than 0s, so on a nanosecond-resolution
+        # clock — e.g. Linux CI — the microsecond gap between set() and get()
+        # already expires the entry and get() returns None.)
+        self.cache = GeocodeCache(max_size=3, ttl_seconds=5)
 
     def test_set_and_get(self) -> None:
         self.cache.set("Berlin", (52.52, 13.405))
@@ -34,9 +38,11 @@ class TestGeocodeCache(unittest.TestCase):
         self.assertIsNone(self.cache.get("nowhere"))
 
     def test_expiry_returns_none(self) -> None:
-        self.cache.set("Berlin", (52.52, 13.405))
-        time.sleep(0.02)
-        self.assertIsNone(self.cache.get("Berlin"))
+        from services.route_service import GeocodeCache
+        short = GeocodeCache(max_size=3, ttl_seconds=0.02)
+        short.set("Berlin", (52.52, 13.405))
+        time.sleep(0.05)
+        self.assertIsNone(short.get("Berlin"))
 
     def test_max_size_eviction(self) -> None:
         self.cache.set("A", (1.0, 1.0))

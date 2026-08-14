@@ -1,4 +1,6 @@
 """Tests for ExportService."""
+from __future__ import annotations
+
 import csv
 import io
 import json
@@ -17,11 +19,15 @@ from services.export_service import ExportService
 
 @pytest.fixture
 def export_service():
+    # Keep os.path.exists/os.makedirs patched for the WHOLE test (yield inside
+    # the with), not just during construction: tests that reach
+    # _ensure_reports_dir() would otherwise try to create /fake/reports on the
+    # real filesystem (PermissionError on Linux CI where /fake doesn't exist).
     with patch("os.path.exists", return_value=True), \
          patch("os.makedirs") as mock_makedirs:
         svc = ExportService(prefs=None)
         svc.reports_dir = "/fake/reports"
-        return svc
+        yield svc
 
 
 @pytest.fixture
@@ -46,9 +52,18 @@ class TestSafeFilename:
         assert name == "passwd.pdf"
 
     def test_path_traversal_blocked_dots(self, export_service):
-        # os.path.basename("..\\report.pdf") on Windows is "report.pdf"
-        name = export_service._safe_filename("..\\report.pdf")
-        assert name == "report.pdf"
+        # ``os.path.basename("..\\report.pdf")`` strips the ``..\\`` on
+        # Windows (backslash is a path separator), but on POSIX ``\\`` is a
+        # regular character so the literal ``..`` remains and the app REJECTS
+        # the filename outright.  Both outcomes neutralise the traversal —
+        # assert the security property, not the platform-specific detail.
+        try:
+            name = export_service._safe_filename("..\\report.pdf")
+        except ValueError as exc:
+            assert "Invalid filename" in str(exc)
+        else:
+            assert name == "report.pdf"
+            assert ".." not in name and "\\" not in name and "/" not in name
 
     def test_invalid_extension(self, export_service):
         with pytest.raises(ValueError, match="extension"):

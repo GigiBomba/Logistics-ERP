@@ -87,9 +87,19 @@ class TestConnectionAcquisition:
 
     def test_different_threads_get_different_connections(self, pool):
         connections: dict[int, sqlite3.Connection] = {}
+        errors: list[BaseException] = []
+        # Barrier makes all four threads start touching the pool at the same
+        # time.  Worker exceptions are collected and reported instead of being
+        # silently swallowed by the thread (which made this flaky on loaded
+        # CI runners — assert 2 == 4 because threads died before capturing).
+        ready = threading.Barrier(4)
 
         def capture() -> None:
-            connections[threading.get_ident()] = pool.conn
+            try:
+                ready.wait(timeout=10)
+                connections[threading.get_ident()] = pool.conn
+            except BaseException as exc:  # noqa: BLE001 — surface, don't swallow
+                errors.append(exc)
 
         threads = [threading.Thread(target=capture) for _ in range(4)]
         for t in threads:
@@ -97,6 +107,7 @@ class TestConnectionAcquisition:
         for t in threads:
             t.join()
 
+        assert not errors, f"worker thread(s) failed: {errors}"
         assert len(connections) == 4
         # All returned objects are distinct
         assert len({id(c) for c in connections.values()}) == 4
@@ -663,12 +674,20 @@ class TestPostgresConnectionManagement:
             pool_inst.getconn.side_effect = lambda: MagicMock()
 
             connections: dict[int, object] = {}
+            errors: list[BaseException] = []
+            # Barrier + error collection: worker exceptions were silently
+            # swallowed before, making this flaky on loaded CI runners.
+            ready = threading.Barrier(3)
             lock = threading.Lock()
 
             def worker() -> None:
-                c = pool.get_cached_connection()
-                with lock:
-                    connections[threading.get_ident()] = c
+                try:
+                    ready.wait(timeout=10)
+                    c = pool.get_cached_connection()
+                    with lock:
+                        connections[threading.get_ident()] = c
+                except BaseException as exc:  # noqa: BLE001 — surface, don't swallow
+                    errors.append(exc)
 
             threads = [threading.Thread(target=worker) for _ in range(3)]
             for t in threads:
@@ -677,6 +696,7 @@ class TestPostgresConnectionManagement:
                 t.join()
 
             pool.close_all()
+            assert not errors, f"worker thread(s) failed: {errors}"
             assert len({id(c) for c in connections.values()}) == 3, (
                 "Each thread should get a distinct cached connection"
             )

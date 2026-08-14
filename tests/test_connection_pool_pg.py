@@ -169,3 +169,13 @@ if not pg_reachable():
         f"skipping all tests in {__name__}",
         allow_module_level=True,
     )
+
+# psycopg2.pool may be unavailable in some installs — the pool wraps
+# ThreadedConnectionPool, so skip the module rather than fail at import.
+try:
+    import psycopg2.pool  # noqa: F401
+except Exception:
+    pytest.skip(
+        "psycopg2.pool is unavailable — skipping PostgreSQL pool tests",
+        allow_module_level=True,
+    )

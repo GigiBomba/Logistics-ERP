@@ -15,6 +15,8 @@ User-facing behaviour:
        ``ocr_engine`` columns (for both fresh installs and
        migrations).
 """
+from __future__ import annotations
+
 
 import json
 import os
@@ -184,7 +186,13 @@ class ReRunOcrWorkerTest(unittest.TestCase):
                     _, rename_fields = update_calls[1]
                     self.assertIn("file_path", rename_fields,
                                   "Second update should be a rename (file_path present)")
-        os.unlink(tmp.name)
+        # The pipeline may have renamed (moved) the file during persistence
+        # (e.g. to "CMR-1-Unknown-nodate.pdf"), so the original temp path may
+        # no longer exist — only unlink what is actually still there.
+        try:
+            os.unlink(tmp.name)
+        except FileNotFoundError:
+            pass
 
 
 # ── 3. Document Center detail panel wiring ──────────────────────────

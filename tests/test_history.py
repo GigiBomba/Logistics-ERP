@@ -30,6 +30,11 @@ def history_view(qt_widget, qtbot):
     view.invoice_service = MagicMock()
     view.export_service = MagicMock()
     view.refresh()
+    # refresh() loads through WorkerPool (QThreadPool + queued Qt signal), so
+    # the table is only populated once the event loop delivers the result.
+    # Wait for it — otherwise assertions race the background load and are
+    # flaky on slow/loaded CI runners (table.rowCount()==0 → item is None).
+    qtbot.waitUntil(lambda: view.table.rowCount() == 2, timeout=3000)
     yield view
     try:
         view.shutdown()

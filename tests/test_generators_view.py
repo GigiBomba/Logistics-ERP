@@ -422,7 +422,9 @@ class TestQtGeneratorsView:
 
     def test_open_path_missing_file_does_not_crash(self, generators_view):
         """_open_path with a non-existent file does not crash and does not call os.startfile."""
-        with patch("ui.views.generators_view.os.startfile") as mock_startfile:
+        # create=True: ``os.startfile`` only exists on Windows — the mock must
+        # be creatable on POSIX too (Linux CI), where _open_path must not call it.
+        with patch("ui.views.generators_view.os.startfile", create=True) as mock_startfile:
             generators_view._open_path("/nonexistent/file.pdf")
             mock_startfile.assert_not_called()
 
