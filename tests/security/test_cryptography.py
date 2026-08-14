@@ -1,4 +1,6 @@
 """Tests for cryptographic properties: bcrypt salt uniqueness, JWT algorithm pinning, signature tamper detection."""
+from __future__ import annotations
+
 
 import os
 import re
@@ -7,6 +9,21 @@ import bcrypt
 import jwt as pyjwt
 import pytest
 from jwt.exceptions import PyJWTError
+
+
+
+@pytest.fixture(autouse=True)
+def _jwt_env_guard():
+    """Re-assert the JWT secret before each test.
+
+    With --dist=loadscope, other test modules sharing the xdist worker pop
+    OPERION_JWT_SECRET_KEY at runtime (e.g. test_middleware_integration),
+    which leaves BackendSettings with an empty HMAC key.  This guard makes
+    the crypto tests hermetic regardless of worker state.
+    """
+    os.environ.setdefault("OPERION_JWT_SECRET_KEY", _JWT_TEST_SECRET)
+    os.environ.setdefault("OPERION_ENV", "test")
+    yield
 
 from backend.config import BackendSettings
 from backend.security import decode_access_token, hash_password
