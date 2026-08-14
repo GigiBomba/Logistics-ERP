@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from typing import Optional
 from unittest.mock import AsyncMock, patch
 
@@ -69,20 +69,31 @@ def _build_load(
     adr: bool = False,
     pickup_delay: int = 0,
     delivery_delay: int = 48,
+    pickup_window: Optional[tuple[datetime, datetime]] = None,
+    delivery_window: Optional[tuple[datetime, datetime]] = None,
 ) -> LoadSearchResult:
-    """Build a controlled LoadSearchResult for deterministic testing."""
+    """Build a controlled LoadSearchResult for deterministic testing.
+
+    ``pickup_window`` / ``delivery_window`` may be supplied explicitly —
+    callers that need bit-identical loads across providers (e.g. the import
+    parity test) must pass fixed windows, because ``datetime.now()`` would
+    otherwise differ by microseconds between two calls and make the mapped
+    ``TripCreate.stops`` comparison flaky.
+    """
     now = datetime.now(timezone.utc)
+    pickup = pickup_window or (now, now)
+    delivery = delivery_window or (
+        datetime.fromtimestamp(now.timestamp() + delivery_delay * 3600, tz=timezone.utc),
+        datetime.fromtimestamp(now.timestamp() + delivery_delay * 3600, tz=timezone.utc),
+    )
     return LoadSearchResult(
         result_id=provider_load_id,
         provider_id=provider_id,
         provider_load_id=provider_load_id,
         origin=origin,
         destination=destination,
-        pickup_window=(now, now),
-        delivery_window=(
-            datetime.fromtimestamp(now.timestamp() + delivery_delay * 3600, tz=timezone.utc),
-            datetime.fromtimestamp(now.timestamp() + delivery_delay * 3600, tz=timezone.utc),
-        ),
+        pickup_window=pickup,
+        delivery_window=delivery,
         price=Money(amount=amount, currency=currency),
         distance_km=distance_km,
         trailer_type=trailer_type,
@@ -250,9 +261,18 @@ class TestMapToTripCreate:
     def test_different_providers_produce_identical_fields_except_source(self, pipeline):
         """Core architectural claim: same load data, different providers,
         identical TripCreate — only source_provider_id differs."""
+        # Fixed windows: datetime.now() inside _build_load would make the two
+        # loads differ by microseconds, so the mapped stops (which copy the
+        # window timestamps verbatim) would differ too — flaky on CI.
+        fixed_now = datetime(2026, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
         data = dict(
             origin="Bucuresti", destination="Berlin",
             amount=1500.0, currency="EUR", distance_km=1800.0,
+            pickup_window=(fixed_now, fixed_now),
+            delivery_window=(
+                fixed_now + timedelta(hours=48),
+                fixed_now + timedelta(hours=48),
+            ),
         )
 
         load_timocom = _build_load(provider_id="timocom", **data)  # type: ignore[arg-type]

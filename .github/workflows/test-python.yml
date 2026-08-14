@@ -4,6 +4,12 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+    inputs:
+      update_visual_baselines:
+        description: 'When true (Windows jobs only): regenerate the visual-regression baselines (OPERION_UPDATE_BASELINES=1) and upload tests/baselines/**/*.png as the "regenerated-visual-baselines" artifact. Download and commit them afterwards.'
+        type: boolean
+        default: false
+        required: false
 
 jobs:
   test:
@@ -116,7 +122,22 @@ jobs:
           OPERION_ADMIN_PASSWORD_HASH: ${{ secrets.OPERION_ADMIN_PASSWORD_HASH || '' }}
           OPERION_ENV: test
           OPERION_RATE_LIMIT: "100000"
+          # Manual dispatch only: regenerate baselines on the WINDOWS runner
+          # (the assert_snapshot helper in tests/test_conftest.py saves the
+          # current render when OPERION_UPDATE_BASELINES=1 and skips).  macOS
+          # must NOT get this — its rendering would clobber the windows
+          # baselines.  Note: QT_QPA_PLATFORM stays UNSET here on purpose so
+          # the baselines match the Windows platform plugin (as in CI).
+          OPERION_UPDATE_BASELINES: ${{ runner.os == 'Windows' && github.event.inputs.update_visual_baselines == 'true' && '1' || '' }}
           CI: true
+
+      - name: Upload regenerated visual baselines (Windows, manual dispatch)
+        if: runner.os == 'Windows' && github.event.inputs.update_visual_baselines == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: regenerated-visual-baselines
+          path: tests/baselines/**/*.png
+          if-no-files-found: error
 
       - name: Generate coverage report
         run: |
