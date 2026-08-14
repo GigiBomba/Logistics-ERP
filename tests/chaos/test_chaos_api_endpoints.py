@@ -421,6 +421,23 @@ class TestChaosConcurrentWrites:
 
     CONCURRENT_REQUESTS = 10
 
+    @pytest.fixture(autouse=True)
+    def _reset_rate_limits(self):
+        """Clear the registration rate limiter before each test.
+
+        The registration endpoint keeps per-IP attempts in module-level
+        state with a 15-minute window; concurrent tests in this module
+        (and earlier chaos tests) can exhaust the budget so every request
+        returns 429.  Reset it so each test starts with a clean window.
+        """
+        from backend.api.v1.registration import _clear_register_rate_limit
+        from backend.utils.rate_limit import _fallback
+        _clear_register_rate_limit()
+        _fallback.clear()
+        yield
+        _clear_register_rate_limit()
+        _fallback.clear()
+
     @pytest.fixture
     def trip_id(self, client, auth_admin):
         """Create a test trip for concurrent update tests and return its id."""
