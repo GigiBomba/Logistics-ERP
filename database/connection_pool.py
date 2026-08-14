@@ -107,21 +107,22 @@ class ConnectionPool:
                             # Some filesystems (e.g. GitHub Actions overlayfs)
                             # reject WAL — and even the default DELETE journal
                             # (sidecar -journal file) — with "disk I/O error".
-                            # For these filesystems, disable journaling
-                            # entirely: no sidecar files are created, so no
-                            # journal I/O can fail.  This trades crash
-                            # atomicity for availability, acceptable for the
-                            # in-memory/test SQLite files that hit this path.
+                            # Use an in-memory rollback journal instead: it is
+                            # atomic per-connection (transactions still roll
+                            # back correctly) but writes no sidecar files, so
+                            # it cannot fail on journal-hostile filesystems.
+                            # (Test/local SQLite files hit this path; crash
+                            # durability across processes is not preserved.)
                             logger.warning(
                                 "SQLite WAL unavailable on this filesystem; "
-                                "disabling journal mode (%s)",
+                                "using MEMORY journal mode (%s)",
                                 self._db_path,
                             )
                             try:
-                                c.execute("PRAGMA journal_mode=OFF")
+                                c.execute("PRAGMA journal_mode=MEMORY")
                             except sqlite3.OperationalError:
                                 logger.warning(
-                                    "journal_mode=OFF also failed (%s) — "
+                                    "journal_mode=MEMORY also failed (%s) — "
                                     "continuing with default mode",
                                     self._db_path,
                                 )
