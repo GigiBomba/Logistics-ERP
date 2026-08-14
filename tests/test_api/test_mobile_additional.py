@@ -34,6 +34,7 @@ def _mobile_env_guard():
     os.environ["OPERION_JWT_SECRET_KEY"] = "test-mobile-jwt-secret-key-for-testing-only!"
     os.environ["OPERION_ENV"] = "test"
     os.environ["OPERION_RATE_LIMIT"] = "10000"
+    os.environ.pop("OPERION_API_KEY", None)  # other modules (e.g. security_verification) may set it
     from config import Config as _Cfg
     _Cfg.DB_PATH = _TEST_DB
     yield
