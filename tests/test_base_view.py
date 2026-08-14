@@ -96,14 +96,15 @@ class TestInit:
 class TestWakeup:
     def test_calls_load_data(self, view, qtbot):
         view.wakeup()
-        qtbot.wait(50)  # Let async _load_data_async -> _load_data timers fire
-        assert view._load_called
+        # _load_data_async -> _load_data runs via queued timers; wait until it
+        # fires instead of a fixed 50 ms sleep (races loaded CI runners).
+        qtbot.waitUntil(lambda: view._load_called, timeout=10000)
 
     def test_noop_after_shutdown(self, view, qtbot):
         view.shutdown()
         view._load_called = False
         view.wakeup()
-        qtbot.wait(50)
+        qtbot.wait(100)
         assert not view._load_called
 
 

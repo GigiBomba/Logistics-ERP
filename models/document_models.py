@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 from datetime import datetime
@@ -18,7 +20,12 @@ class DocumentUpload(BaseModel):
     def title_defaults_to_filename(cls, v: str, info) -> str:
         if not v and "source_path" in info.data:
             import os
-            return os.path.splitext(os.path.basename(info.data["source_path"]))[0]
+            # Normalise separators so the basename is extracted on every
+            # platform (a Windows-style ``C:\\Users\\x\\doc.pdf`` path must
+            # yield ``doc`` even on POSIX, where ``\\`` is not a separator).
+            return os.path.splitext(
+                os.path.basename(info.data["source_path"].replace("\\", "/"))
+            )[0]
         return v
 
 

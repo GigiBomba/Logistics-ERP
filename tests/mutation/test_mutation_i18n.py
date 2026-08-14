@@ -310,9 +310,15 @@ class TestMutationI18nConcurrency:
             "es": {"greeting": "Hola"},
         }
         i18n._current_lang = "en"
+        # Clear listeners registered by Qt views from earlier modules — a stale
+        # listener on a deleted widget (e.g. QtAnalyticsView) raises
+        # "Internal C++ object already deleted" when set_language() notifies it
+        # from the worker threads.
+        i18n._listeners = []
         yield
         i18n._translations = {}
         i18n._current_lang = "en"
+        i18n._listeners = []
 
     def test_concurrent_switches_during_translate(self):
         """Concurrent set_language and t() calls do not crash."""

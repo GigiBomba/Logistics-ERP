@@ -632,12 +632,19 @@ class TestEnterpriseVoiceMode:
         enterprise_panel._voice_mode_combo.currentTextChanged.emit("Wake Word")
         assert enterprise_panel._wake_word_notice.isVisible()
 
-        # Fast-forward the 3-second QTimer
-        qtbot.wait(3100)
-
         ptt_label = "Push to Talk"
         idx = enterprise_panel._voice_mode_combo.findText(ptt_label)
         assert idx >= 0
+
+        # Wait for the 3-second QTimer's _reset_voice_mode callback to hide the
+        # notice (event-loop wait with a generous timeout — a single-shot
+        # 3.1 s sleep races the timer on loaded CI).  Note: the combo's
+        # currentIndex was never changed by the test (it emits the signal
+        # directly), so wait on the notice visibility, not the index.
+        qtbot.waitUntil(
+            lambda: not enterprise_panel._wake_word_notice.isVisible(),
+            timeout=10000,
+        )
         assert enterprise_panel._voice_mode_combo.currentIndex() == idx
         assert not enterprise_panel._wake_word_notice.isVisible()
 

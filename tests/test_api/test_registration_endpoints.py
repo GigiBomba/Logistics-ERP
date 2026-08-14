@@ -1,8 +1,28 @@
-"""Integration tests for the registration API endpoints (``/api/v1/registration``).
+﻿"""Integration tests for the registration API endpoints (``/api/v1/registration``).
 
 Uses ``client_with_mocks`` fixture from conftest.py for mocked database access.
 """
 from __future__ import annotations
+
+import os
+import tempfile
+import uuid
+
+# â”€â”€ Per-module DB + env guard (worker-isolation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Other modules on the same xdist worker (e.g. tests/security/test_security_verification.py)
+# importlib.reload config/backend.main, leaving backend.dependencies._db_instance bound to a
+# stale worker DB and clobbering env vars (OPERION_JWT_SECRET_KEY, OPERION_API_KEY) â€” which
+# makes registration fail with 500 ("OPERION_JWT_SECRET_KEY is not set").  Give this module
+# its own temp DB and re-assert the env before every test.
+_TEST_DB_DIR = tempfile.gettempdir()
+os.makedirs(_TEST_DB_DIR, exist_ok=True)
+_TEST_DB = os.path.join(
+    _TEST_DB_DIR, f"test_registration_endpoints_{uuid.uuid4().hex[:12]}.db",
+)
+os.environ["OPERION_DB_PATH"] = _TEST_DB
+os.environ["OPERION_ENV"] = "test"
+os.environ["OPERION_JWT_SECRET_KEY"] = "test-key-ci-32-chars-required-here!!"
+os.environ.pop("OPERION_API_KEY", None)
 
 from unittest.mock import MagicMock, patch
 
@@ -12,6 +32,33 @@ from fastapi.testclient import TestClient
 from backend.api.v1.registration import _register_rate_limit
 
 BASE = "/api/v1/registration"
+
+
+@pytest.fixture(autouse=True)
+def _registration_env_guard():
+    """Rebind the app DB singleton + re-assert env before each test."""
+    os.environ["OPERION_DB_PATH"] = _TEST_DB
+    os.environ["OPERION_ENV"] = "test"
+    os.environ["OPERION_JWT_SECRET_KEY"] = "test-key-ci-32-chars-required-here!!"
+    os.environ.pop("OPERION_API_KEY", None)
+    from config import Config as _Cfg
+    _Cfg.DB_PATH = _TEST_DB
+    _Cfg.API_KEY = ""  # disable API-key middleware for this module
+    try:
+        import backend.middleware.auth_middleware as _auth_mw
+        _auth_mw.Config.API_KEY = ""
+    except Exception:
+        pass
+    from backend import dependencies as _deps
+    if getattr(_deps, "Config", None) is not None:
+        _deps.Config.DB_PATH = _TEST_DB
+    if _deps._db_instance is not None:
+        try:
+            _deps._db_instance.close()
+        except Exception:
+            pass
+        _deps._db_instance = None
+    yield
 
 
 @pytest.fixture(autouse=True)
@@ -28,11 +75,11 @@ class TestRegistrationEndpoint:
         """Valid registration returns 201 with tokens."""
         client, mocks = client_with_mocks
         # Repositories call db.conn.execute() internally:
-        #   1) UserRepository.get_by_email → _fetchone → conn.execute().fetchone()
-        #   2) CompanyRepository.create    → _execute_insert → conn.execute()
-        #   3) UserRepository.create_user  → _execute_insert → conn.execute()
+        #   1) UserRepository.get_by_email â†’ _fetchone â†’ conn.execute().fetchone()
+        #   2) CompanyRepository.create    â†’ _execute_insert â†’ conn.execute()
+        #   3) UserRepository.create_user  â†’ _execute_insert â†’ conn.execute()
         email_check = MagicMock()
-        email_check.fetchone.return_value = None          # email not found → None
+        email_check.fetchone.return_value = None          # email not found â†’ None
         company_cursor = MagicMock()
         company_cursor.lastrowid = 1                      # new company id
         user_cursor = MagicMock()
@@ -136,7 +183,7 @@ class TestRegistrationEndpoint:
 
 
 class TestVerifyEmailEndpoint:
-    """POST /api/v1/registration/verify-email — requires auth context."""
+    """POST /api/v1/registration/verify-email â€” requires auth context."""
 
     def test_verify_email_noop(self, client_with_mocks):
         """Verify-email endpoint returns 200 (stub)."""

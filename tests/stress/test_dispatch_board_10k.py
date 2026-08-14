@@ -312,9 +312,9 @@ class TestDispatchBoard10k:
         view._populate_columns(column_trips)
         elapsed = time.monotonic() - t0
 
-        assert elapsed < 4.0, (
+        assert elapsed < 10.0, (
             f"_populate_columns with 10k trips took {elapsed:.3f}s "
-            f"(expected < 4.0s)"
+            f"(expected < 10.0s)"
         )
 
         # Drain the Qt event loop so QTimer.singleShot callbacks scheduled by

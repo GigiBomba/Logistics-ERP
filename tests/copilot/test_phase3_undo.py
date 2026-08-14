@@ -284,8 +284,14 @@ class TestUndoWindow:
         assert not is_undo_expired(started), "10-min-old action should be undoable"
 
     def test_is_undo_expired_at_window_boundary(self):
-        """An action started exactly 30 minutes ago is NOT expired (uses >, not >=)."""
-        started = datetime.utcnow() - timedelta(minutes=30)
+        """An action started at the window boundary is NOT expired (uses >, not >=)."""
+        # ``now - timedelta(minutes=30)`` races the clock: by the time
+        # ``is_undo_expired()`` calls ``datetime.utcnow()`` again, the elapsed
+        # time has already crept past 30 minutes on a nanosecond-resolution
+        # clock (Linux CI), so the action would be (correctly) expired.  Build
+        # ``started`` just UNDER the window to test the strict-greater-than
+        # comparison deterministically.
+        started = datetime.utcnow() - timedelta(minutes=30) + timedelta(seconds=1)
         assert not is_undo_expired(started), "30-min-old action should NOT be expired (strict >)"
 
     def test_is_undo_expired_past_window(self):

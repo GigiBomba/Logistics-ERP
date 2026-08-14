@@ -7,11 +7,30 @@ Tests cover:
 4. JWT token and password utilities — create/decode/verify
 5. Registration rate limiting — per-IP registration throttle
 """
+from __future__ import annotations
+
 
 import os
+import tempfile
+import uuid
 from datetime import timedelta
 from typing import Any, Dict
 from unittest.mock import MagicMock
+
+# ── Per-module DB + env guard (worker-isolation) ──────────────────────────
+# AuthMiddleware._get_db() -> init_db() binds the app DB singleton; on a shared
+# worker another module (e.g. tests/security/test_security_verification.py)
+# can leave it pointing at a stale DB without the api_keys table.  Give this
+# module its own temp DB and reset the singleton before every test.
+_TEST_DB_DIR = tempfile.gettempdir()
+os.makedirs(_TEST_DB_DIR, exist_ok=True)
+_TEST_DB = os.path.join(
+    _TEST_DB_DIR, f"test_middleware_integration_{uuid.uuid4().hex[:12]}.db",
+)
+os.environ["OPERION_DB_PATH"] = _TEST_DB
+os.environ["OPERION_ENV"] = "test"
+os.environ["OPERION_JWT_SECRET_KEY"] = "test-key-ci-32-chars-required-here!!"
+os.environ.pop("OPERION_API_KEY", None)
 
 import jwt as pyjwt
 import pytest
@@ -41,6 +60,33 @@ from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
 
 # ── Test constants ──────────────────────────────────────────────────
 _TEST_API_KEY = "integration-test-api-key-98765"
+
+
+@pytest.fixture(autouse=True)
+def _db_guard():
+    """Reset the app DB singleton + re-assert env before each test."""
+    os.environ["OPERION_DB_PATH"] = _TEST_DB
+    os.environ["OPERION_ENV"] = "test"
+    os.environ["OPERION_JWT_SECRET_KEY"] = "test-key-ci-32-chars-required-here!!"
+    os.environ.pop("OPERION_API_KEY", None)
+    from config import Config as _Cfg
+    _Cfg.DB_PATH = _TEST_DB
+    _Cfg.API_KEY = ""
+    try:
+        import backend.middleware.auth_middleware as _auth_mw
+        _auth_mw.Config.API_KEY = ""
+    except Exception:
+        pass
+    from backend import dependencies as _deps
+    if getattr(_deps, "Config", None) is not None:
+        _deps.Config.DB_PATH = _TEST_DB
+    if _deps._db_instance is not None:
+        try:
+            _deps._db_instance.close()
+        except Exception:
+            pass
+        _deps._db_instance = None
+    yield
 
 # Reusable mock user builders
 def _admin_user(**overrides: Any) -> Dict[str, Any]:

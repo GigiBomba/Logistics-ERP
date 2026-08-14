@@ -1,10 +1,28 @@
-"""Integration tests for the public registration endpoint.
+﻿"""Integration tests for the public registration endpoint.
 
-POST /api/v1/registration/register — self-service company + manager creation.
+POST /api/v1/registration/register â€” self-service company + manager creation.
 """
+from __future__ import annotations
+
 
 import os
+import tempfile
 import time
+import uuid
+
+# â”€â”€ Per-module DB + env guard (worker-isolation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Other modules on the same xdist worker reload config/backend.main and can
+# leave backend.dependencies._db_instance bound to a stale/removed worker DB
+# (sqlite3.OperationalError: cannot rollback).  Give this module its own temp
+# DB and reset the singleton before every test so create_app() rebuilds here.
+_TEST_DB_DIR = tempfile.gettempdir()
+os.makedirs(_TEST_DB_DIR, exist_ok=True)
+_TEST_DB = os.path.join(
+    _TEST_DB_DIR, f"test_api_registration_{uuid.uuid4().hex[:12]}.db",
+)
+os.environ["OPERION_DB_PATH"] = _TEST_DB
+os.environ["OPERION_ENV"] = "test"
+os.environ.pop("OPERION_API_KEY", None)
 
 import pytest
 from fastapi.testclient import TestClient
@@ -14,7 +32,7 @@ from backend.main import create_app
 from backend.security import decode_access_token
 from tests.conftest import OPERION_TEST_JWT_SECRET as _TEST_JWT_SECRET
 
-# ── Test secrets ──────────────────────────────────────────────────
+# â”€â”€ Test secrets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -22,6 +40,33 @@ def _set_env():
     """Set test environment variables."""
     os.environ.setdefault("OPERION_JWT_SECRET_KEY", _TEST_JWT_SECRET)
     os.environ.setdefault("OPERION_ENV", "test")
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _db_guard():
+    """Reset the app DB singleton + re-assert env before each test."""
+    os.environ["OPERION_DB_PATH"] = _TEST_DB
+    os.environ["OPERION_ENV"] = "test"
+    os.environ["OPERION_JWT_SECRET_KEY"] = _TEST_JWT_SECRET
+    os.environ.pop("OPERION_API_KEY", None)
+    from config import Config as _Cfg
+    _Cfg.DB_PATH = _TEST_DB
+    _Cfg.API_KEY = ""  # disable API-key middleware for this module
+    try:
+        import backend.middleware.auth_middleware as _auth_mw
+        _auth_mw.Config.API_KEY = ""
+    except Exception:
+        pass
+    from backend import dependencies as _deps
+    if getattr(_deps, "Config", None) is not None:
+        _deps.Config.DB_PATH = _TEST_DB
+    if _deps._db_instance is not None:
+        try:
+            _deps._db_instance.close()
+        except Exception:
+            pass
+        _deps._db_instance = None
     yield
 
 
@@ -252,10 +297,10 @@ class TestRegistrationEndpoint:
         resp = client.post("/api/v1/registration/register", json={
             "email": f"displayname_{int(time.time())}@test.com",
             "password": "securepass123",
-            "display_name": "José María García-López",
+            "display_name": "JosÃ© MarÃ­a GarcÃ­a-LÃ³pez",
             "company_name": "Display Corp",
         })
-        assert resp.json()["user"]["display_name"] == "José María García-López"
+        assert resp.json()["user"]["display_name"] == "JosÃ© MarÃ­a GarcÃ­a-LÃ³pez"
 
 
 class TestRegistrationAndListUsers:
@@ -280,7 +325,7 @@ class TestRegistrationEdgeCases:
     """Edge cases for registration."""
 
     def test_register_email_case_insensitive(self, client):
-        """Email is normalized to lowercase — UPPERCASE@test.com conflicts with uppercase@test.com."""
+        """Email is normalized to lowercase â€” UPPERCASE@test.com conflicts with uppercase@test.com."""
         email = f"CaseTest_{int(time.time())}@TEST.com"
         resp = client.post("/api/v1/registration/register", json={
             "email": email,

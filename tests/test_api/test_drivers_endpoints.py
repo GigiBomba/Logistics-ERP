@@ -186,7 +186,7 @@ class TestDriversTachoActivity:
     def test_get_tacho_activity(self, client_with_mocks):
         client, mocks = client_with_mocks
         with patch(
-            "repositories.tacho_driver_activity_repository.TachoDriverActivityRepository"
+            "backend.repositories.tacho_driver_activity_repository.TachoDriverActivityRepository"
         ) as mock_cls:
             mock_repo = mock_cls.return_value
             fake = [{"date": "2024-01-15", "activity": "driving"}]

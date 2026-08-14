@@ -11,6 +11,8 @@ Fixtures provided:
 - company_b_token / auth_b: Company B dispatcher
 - sample_data: dict of {trip_id, client_id, driver_id, truck_id} for each company
 """
+from __future__ import annotations
+
 
 import os
 import uuid
@@ -263,9 +265,29 @@ def app(request):
         if _bd._db_instance is not None:
             _bd._db_instance.close()
             _bd._db_instance = None
-    # Force Config.DB_PATH to our unique DB file
+    # Force Config.DB_PATH to our unique DB file.  tests/test_security_verification.py
+    # (and tests/chaos/test_chaos_celery.py) importlib.reload the config chain,
+    # which REPLACES ``config.Config`` with a NEW class object.  ``backend.dependencies``
+    # still references the ORIGINAL class, and ``init_db()`` reads THAT reference —
+    # so update it too, otherwise the app queries a stale worker DB (e.g. trips with
+    # NULL created_at → 422 in TripResponse) instead of this module's seeded file.
     from config import Config
     Config.DB_PATH = _db_path
+    if "backend.dependencies" in sys.modules:
+        _bd = sys.modules["backend.dependencies"]
+        if getattr(_bd, "Config", None) is not None:
+            _bd.Config.DB_PATH = _db_path
+    # Disable the API-key middleware for this module (another module may have
+    # left OPERION_API_KEY set, which enables it and 401s every request without
+    # an X-API-Key header).  Reset BOTH the env var and the frozen class attr
+    # the middleware reads at construction.
+    os.environ.pop("OPERION_API_KEY", None)
+    Config.API_KEY = ""
+    try:
+        import backend.middleware.auth_middleware as _auth_mw
+        _auth_mw.Config.API_KEY = ""
+    except Exception:
+        pass
 
 
 

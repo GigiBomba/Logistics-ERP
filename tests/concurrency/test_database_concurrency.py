@@ -269,7 +269,12 @@ class TestConcurrentWrites:
         pool = ThreadPoolExecutor(max_workers=5)
         futs = [pool.submit(generate_invoice_number, w) for w in range(5)]
         try:
-            for fut in as_completed(futs, timeout=8):
+            # 25 iterations are fully serialized by serial_lock (each does a
+            # BEGIN IMMEDIATE + SELECT + UPDATE + COMMIT against a /tmp file).
+            # On a loaded Linux CI runner these commits can take well over 8s
+            # total, so give the harness a generous ceiling — a REAL deadlock
+            # still fails the test, but a slow-but-progressing run passes.
+            for fut in as_completed(futs, timeout=60):
                 try:
                     fut.result()
                 except Exception as e:

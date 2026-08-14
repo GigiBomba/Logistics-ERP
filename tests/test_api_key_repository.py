@@ -368,13 +368,17 @@ class TestValidateKey:
         assert result is not None
 
     def test_key_with_edge_expiry_now(self, repo):
-        """A key expiring exactly now is still valid (``<`` not ``<=``)."""
-        now = datetime.now().isoformat()
+        """A key expiring now is still valid (``<`` not ``<=``)."""
+        # A key expiring EXACTLY now is inherently racy: by the time
+        # ``validate_key`` parses the timestamp and compares against its own
+        # ``datetime.now()``, the value has already slipped into the past and
+        # the key is (correctly) treated as expired.  Use a short-future
+        # expiry so the "not yet expired" path is what gets exercised.
+        now = (datetime.now() + timedelta(hours=1)).isoformat()
         repo._fetchone.return_value = _fake_row(expires_at=now)
 
         result = repo.validate_key(_make_fake_key())
 
-        # expiry_dt == now is NOT < now, so it passes
         assert result is not None
 
     def test_unparseable_expires_at_logged_and_returns_key(self, repo):

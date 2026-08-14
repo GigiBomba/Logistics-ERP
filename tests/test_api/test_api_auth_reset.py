@@ -1,4 +1,4 @@
-"""Integration tests for password reset endpoints.
+﻿"""Integration tests for password reset endpoints.
 
 POST /api/v1/auth/forgot-password
 POST /api/v1/auth/reset-password
@@ -6,9 +6,27 @@ POST /api/v1/auth/refresh
 POST /api/v1/auth/logout
 POST /api/v1/auth/token  (DB-user login)
 """
+from __future__ import annotations
+
 
 import os
+import tempfile
 import time
+import uuid
+
+# â”€â”€ Per-module DB + env guard (worker-isolation) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+# Other modules on the same xdist worker reload config/backend.main and can
+# leave backend.dependencies._db_instance bound to a stale/removed worker DB
+# (sqlite3.OperationalError: cannot rollback).  Give this module its own temp
+# DB and reset the singleton before every test so create_app() rebuilds here.
+_TEST_DB_DIR = tempfile.gettempdir()
+os.makedirs(_TEST_DB_DIR, exist_ok=True)
+_TEST_DB = os.path.join(
+    _TEST_DB_DIR, f"test_api_auth_reset_{uuid.uuid4().hex[:12]}.db",
+)
+os.environ["OPERION_DB_PATH"] = _TEST_DB
+os.environ["OPERION_ENV"] = "test"
+os.environ.pop("OPERION_API_KEY", None)
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,6 +45,33 @@ def _set_env():
     yield
     for k in ("OPERION_JWT_SECRET_KEY", "OPERION_ENV"):
         os.environ.pop(k, None)
+
+
+@pytest.fixture(autouse=True)
+def _db_guard():
+    """Reset the app DB singleton + re-assert env before each test."""
+    os.environ["OPERION_DB_PATH"] = _TEST_DB
+    os.environ["OPERION_ENV"] = "test"
+    os.environ["OPERION_JWT_SECRET_KEY"] = _TEST_JWT_SECRET
+    os.environ.pop("OPERION_API_KEY", None)
+    from config import Config as _Cfg
+    _Cfg.DB_PATH = _TEST_DB
+    _Cfg.API_KEY = ""  # disable API-key middleware for this module
+    try:
+        import backend.middleware.auth_middleware as _auth_mw
+        _auth_mw.Config.API_KEY = ""
+    except Exception:
+        pass
+    from backend import dependencies as _deps
+    if getattr(_deps, "Config", None) is not None:
+        _deps.Config.DB_PATH = _TEST_DB
+    if _deps._db_instance is not None:
+        try:
+            _deps._db_instance.close()
+        except Exception:
+            pass
+        _deps._db_instance = None
+    yield
 
 
 @pytest.fixture
@@ -91,7 +136,7 @@ class TestResetPassword:
     """POST /api/v1/auth/reset-password"""
 
     def test_reset_password_full_flow(self, client, monkeypatch):
-        """Full flow: register → forgot → get token → reset → login with new password."""
+        """Full flow: register â†’ forgot â†’ get token â†’ reset â†’ login with new password."""
         # Make hash identity so stored key = raw token
         monkeypatch.setattr("backend.api.v1.auth._hash_reset_token", lambda t: t)
         email = f"fullflow_{int(time.time())}@test.com"
@@ -214,7 +259,7 @@ class TestResetPassword:
 
 
 class TestRefreshTokenFlow:
-    """POST /api/v1/auth/refresh — token rotation."""
+    """POST /api/v1/auth/refresh â€” token rotation."""
 
     def test_refresh_token_returns_new_pair(self, client):
         """A valid refresh token returns a new access + refresh token pair."""
@@ -250,7 +295,7 @@ class TestRefreshTokenFlow:
         # Refresh once
         client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
 
-        # Try using the old token again — backend may still accept it
+        # Try using the old token again â€” backend may still accept it
         resp2 = client.post("/api/v1/auth/refresh", json={"refresh_token": old_refresh})
         # Accept either revoked (401) or still valid (200)
         assert resp2.status_code in (200, 401)
@@ -285,7 +330,7 @@ class TestLogout:
         r1 = client.post("/api/v1/auth/logout", json={"refresh_token": refresh_token})
         assert r1.status_code == 200
 
-        # Try to refresh — should fail
+        # Try to refresh â€” should fail
         r2 = client.post("/api/v1/auth/refresh", json={"refresh_token": refresh_token})
         assert r2.status_code == 401
 
