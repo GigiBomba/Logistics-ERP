@@ -15,6 +15,8 @@ Usage in route definitions::
     ):
         ...
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Any, Dict
@@ -105,7 +107,10 @@ async def get_current_user(
             )
             row = cursor.fetchone()
         except Exception as exc:
-            logger.debug("Users table query failed for %s: %s", email, exc)
+            logger.error(
+                "Users table query FAILED for %s: %r (db_path=%s)",
+                email, exc, getattr(db, "_db_path", "?"),
+            )
             row = None
 
         if row is None:

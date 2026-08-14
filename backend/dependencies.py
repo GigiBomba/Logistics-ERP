@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import contextvars
 import os
 import threading
@@ -65,18 +67,35 @@ def init_db(app: Optional[Any] = None) -> DatabaseManager:
     if _db_instance is None:
         with _db_lock:
             if _db_instance is None:  # double-checked locking
+                # Resolve the DB path from the *current* config module rather
+                # than the module-level ``Config`` name bound at import time.
+                # Some suites reconfigure the database at runtime (they set
+                # ``OPERION_DB_PATH`` and ``importlib.reload`` the ``config``
+                # module so a fresh ``Config`` class is created); the name
+                # bound here would then still point at the OLD class and send
+                # schema migration / writes to an old (possibly locked)
+                # database file.
+                import config as _config_module
+                _current_config = getattr(_config_module, "Config", Config)
                 # When using PostgreSQL, use the DSN from env var instead of
                 # Config.DB_PATH (which is a SQLite file path by default).
                 engine = os.environ.get("OPERION_DB_ENGINE", "sqlite")
                 if engine == "postgresql":
-                    db_path = os.environ.get("OPERION_POSTGRES_DSN", Config.DB_PATH)
+                    db_path = os.environ.get(
+                        "OPERION_POSTGRES_DSN",
+                        getattr(_current_config, "DB_PATH", Config.DB_PATH),
+                    )
                 else:
-                    db_path = Config.DB_PATH
+                    db_path = getattr(_current_config, "DB_PATH", Config.DB_PATH)
+                import logging as _logging
+                _logging.getLogger(__name__).info(
+                    "init_db creating singleton on db_path=%s engine=%s", db_path, engine,
+                )
                 _db_instance = DatabaseManager(
                     db_path,
                     engine=engine,
-                    pool_min=getattr(Config, "DB_POOL_MIN", 2),
-                    pool_max=getattr(Config, "DB_POOL_MAX", 20),
+                    pool_min=getattr(_current_config, "DB_POOL_MIN", 2),
+                    pool_max=getattr(_current_config, "DB_POOL_MAX", 20),
                 )
 
     if app is not None:
