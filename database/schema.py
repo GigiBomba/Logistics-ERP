@@ -1632,3 +1632,53 @@ ALTER_TRIPS_ADD_SOURCE_PROVIDER = (
 ALTER_TRIPS_ADD_SOURCE_REFERENCE = (
     "ALTER TABLE trips ADD COLUMN source_reference_id TEXT;"
 )
+
+
+# ── Mobile: devices / messages / sync cursors (Gate-31) ─────────────────────
+# Mirrors the SQLite DDL in backend/api/v1/mobile.py (_MOBILE_TABLES_SQL) so
+# the base schema has the same table set as schema_pg.sql.  Idempotent
+# (IF NOT EXISTS) — safe alongside the runtime ensure_mobile_tables().
+TABLE_MOBILE_DEVICES = """
+CREATE TABLE IF NOT EXISTS mobile_devices (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id     INTEGER NOT NULL,
+    company_id  INTEGER NOT NULL,
+    device_id   TEXT    NOT NULL DEFAULT '',
+    device_name TEXT    NOT NULL DEFAULT '',
+    token       TEXT    NOT NULL,
+    platform    TEXT    NOT NULL DEFAULT 'android',
+    is_active   INTEGER NOT NULL DEFAULT 1,
+    last_seen   TEXT,
+    ip_address  TEXT    NOT NULL DEFAULT '',
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now')),
+    UNIQUE(company_id, device_id)
+);
+"""
+
+INDEX_MOBILE_DEVICES_USER = "CREATE INDEX IF NOT EXISTS idx_mobile_devices_user ON mobile_devices(user_id);"
+INDEX_MOBILE_DEVICES_COMPANY = "CREATE INDEX IF NOT EXISTS idx_mobile_devices_company ON mobile_devices(company_id);"
+INDEX_MOBILE_DEVICES_TOKEN = "CREATE INDEX IF NOT EXISTS idx_mobile_devices_token ON mobile_devices(token);"
+
+TABLE_MOBILE_MESSAGES = """
+CREATE TABLE IF NOT EXISTS mobile_messages (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id    INTEGER NOT NULL,
+    sender_id     INTEGER NOT NULL,
+    receiver_id   INTEGER NOT NULL,
+    text          TEXT    NOT NULL,
+    transport_id  INTEGER,
+    is_read       INTEGER NOT NULL DEFAULT 0,
+    created_at    TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
+TABLE_SYNC_CURSORS = """
+CREATE TABLE IF NOT EXISTS sync_cursors (
+    user_id      INTEGER NOT NULL,
+    company_id   INTEGER NOT NULL,
+    entity_type  TEXT    NOT NULL,
+    cursor       TEXT    NOT NULL,
+    updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (user_id, entity_type)
+);
+"""

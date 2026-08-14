@@ -74,11 +74,24 @@ def ctx():
         path = "live"
     else:
         os.environ.setdefault("OPERION_DB_ENGINE", "sqlite")
-        os.environ.setdefault("OPERION_DB_PATH", "data/staging.db")
+        # Unconditional (not setdefault): the root conftest pins a per-worker
+        # temp OPERION_DB_PATH; this suite must own its staging DB so the
+        # in-process app reads the same data/staging.db that
+        # scripts/seed_staging_users.py seeds.
+        os.environ["OPERION_DB_PATH"] = "data/staging.db"
         os.environ.setdefault(
             "OPERION_JWT_SECRET_KEY",
             "staging-dev-only-secret-0000000000000000000000000000",
         )
+        # The backend DB singleton (backend.dependencies.init_db) resolves the
+        # SQLite path from Config.DB_PATH, not the OPERION_DB_PATH env var —
+        # rebind it so the in-process app queries the seeded staging DB.
+        from config import Config
+        Config.DB_PATH = "data/staging.db"
+        # The API-key middleware freezes Config.API_KEY at app creation (from
+        # the real .env key) — rebind it to the staging key the harness sends,
+        # so protected endpoints validate instead of 403-ing.
+        Config.API_KEY = STAGING_API_KEY
         _seed_db()
         from backend.main import create_app
         from fastapi.testclient import TestClient

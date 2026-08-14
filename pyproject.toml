@@ -94,7 +94,7 @@ line-ending = "auto"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
-addopts = ["--strict-markers", "--tb=short", "-q", "-n", "auto"]
+addopts = ["--strict-markers", "--tb=short", "-q", "-n", "auto", "--dist=loadscope"]
 filterwarnings = [
     "ignore::DeprecationWarning:pytestqt.*",
 ]

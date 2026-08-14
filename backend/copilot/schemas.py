@@ -148,7 +148,11 @@ class GlobalContext(BaseModel):
     role: str
     language: str                    # validated against SUPPORTED_LANGUAGES
     timezone: str
-    subscription_tier: Literal["pro", "business", "enterprise"]
+    # Canonical DB tiers are 'starter' | 'professional' | 'enterprise'
+    # (see the companies CHECK constraints in database/schema.py and
+    # schema_pg.sql).  The legacy 'pro' / 'business' values are accepted too
+    # so existing callers/tests keep working — the tier gate normalises later.
+    subscription_tier: Literal["starter", "pro", "professional", "business", "enterprise"]
     feature_flags: Dict[str, bool] = {}
 
 

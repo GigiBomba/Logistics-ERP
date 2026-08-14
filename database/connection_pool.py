@@ -94,9 +94,15 @@ class ConnectionPool:
             )
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA foreign_keys=ON")
+            # Switching a database to WAL mode needs an exclusive lock — two
+            # threads creating their first connection concurrently would both
+            # run the PRAGMA and one would die with "database is locked".
+            # Serialise it; later connections inherit WAL from the file.
             if not self._wal_configured:
-                c.execute("PRAGMA journal_mode=WAL")
-                self._wal_configured = True
+                with self._lock:
+                    if not self._wal_configured:
+                        c.execute("PRAGMA journal_mode=WAL")
+                        self._wal_configured = True
             self._local.conn = c
             self._local._pool_gen = self._generation
             with self._lock:

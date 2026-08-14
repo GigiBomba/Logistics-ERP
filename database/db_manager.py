@@ -758,6 +758,13 @@ class DatabaseManager:
             S.TABLE_EXPORT_JOBS,
             S.INDEX_EXPORT_JOBS_COMPANY,
             S.INDEX_EXPORT_JOBS_STATUS,
+            # Mobile Phase 2: devices / messages / sync cursors (Gate-31)
+            S.TABLE_MOBILE_DEVICES,
+            S.INDEX_MOBILE_DEVICES_USER,
+            S.INDEX_MOBILE_DEVICES_COMPANY,
+            S.INDEX_MOBILE_DEVICES_TOKEN,
+            S.TABLE_MOBILE_MESSAGES,
+            S.TABLE_SYNC_CURSORS,
         ]
         for stmt in exec_stmts:
             try:

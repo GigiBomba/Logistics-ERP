@@ -5,7 +5,9 @@ Blueprint: §9 — Registry enforcement.
 
 from __future__ import annotations
 
+import importlib
 import logging
+import threading
 from typing import Dict, List, Optional, Type
 
 from pydantic import BaseModel
@@ -18,6 +20,62 @@ logger = logging.getLogger(__name__)
 
 _registry: Dict[str, BaseTool] = {}
 _pending_registrations: List[Type[BaseTool]] = []
+
+# ── Lazy module loading ────────────────────────────────────────────────────
+# Tools register themselves via @register_tool when their module is imported.
+# To keep the registry self-sufficient (lookups must work regardless of what
+# the caller imported first), the first registry access imports every tool
+# module — idempotent and thread-safe.
+_IMPORT_LOCK = threading.Lock()
+_IMPORTED = False
+
+_TOOL_MODULES = (
+    "backend.copilot.tools.vehicle_tools",
+    "backend.copilot.tools.vehicle_crud_tools",
+    "backend.copilot.tools.driver_tools",
+    "backend.copilot.tools.driver_crud_tools",
+    "backend.copilot.tools.route_tools",
+    "backend.copilot.tools.trip_tools",
+    "backend.copilot.tools.trip_crud_tools",
+    "backend.copilot.tools.client_tools",
+    "backend.copilot.tools.client_crud_tools",
+    "backend.copilot.tools.document_tools",
+    "backend.copilot.tools.currency_tools",
+    "backend.copilot.tools.tracking_tools",
+    "backend.copilot.tools.analytics_tools",
+    "backend.copilot.tools.invoice_tools",
+    "backend.copilot.tools.receipt_tools",
+    "backend.copilot.tools.proforma_tools",
+    "backend.copilot.tools.dispatch_tools",
+    "backend.copilot.tools.maintenance_tools",
+    "backend.copilot.tools.route_sharing_tools",
+    "backend.copilot.tools.cmr_tools",
+    "backend.copilot.tools.tacho_tools",
+    "backend.copilot.tools.export_tools",
+    "backend.copilot.tools.ocr_tools",
+    "backend.copilot.tools.automail_tools",
+    "backend.copilot.tools.delete_tools",
+    "backend.copilot.tools.undo_tools",
+    "backend.copilot.tools.freight_tools",
+    "backend.copilot.tools.payment_tools",
+    "backend.copilot.tools.help_tools",
+)
+
+
+def _ensure_tools_loaded() -> None:
+    """Import every tool module once so @register_tool runs for all tools."""
+    global _IMPORTED
+    if _IMPORTED:
+        return
+    with _IMPORT_LOCK:
+        if _IMPORTED:
+            return
+        for mod_name in _TOOL_MODULES:
+            try:
+                importlib.import_module(mod_name)
+            except ImportError as e:
+                logger.error("Failed to import tool module %s: %s", mod_name, e)
+        _IMPORTED = True
 
 
 def register_tool(cls: Type[BaseTool]) -> Type[BaseTool]:
@@ -41,16 +99,19 @@ def register_tool(cls: Type[BaseTool]) -> Type[BaseTool]:
 
 def all_tools() -> List[BaseTool]:
     """Return all registered tools (including deprecated)."""
+    _ensure_tools_loaded()
     return list(_registry.values())
 
 
 def get_tool(name: str) -> Optional[BaseTool]:
     """Look up a single tool by name."""
+    _ensure_tools_loaded()
     return _registry.get(name)
 
 
 def available_tools(deprecated: bool = False) -> List[BaseTool]:
     """Return tools available for new plans (excludes deprecated unless requested)."""
+    _ensure_tools_loaded()
     return [t for t in _registry.values() if not t.deprecated or deprecated]
 
 
@@ -98,38 +159,5 @@ def run_startup_validation() -> List[str]:
 
     Should be called during application startup (before any requests).
     """
-    # Import tool modules to trigger @register_tool
-    try:
-        import backend.copilot.tools.vehicle_tools        # noqa: F401
-        import backend.copilot.tools.vehicle_crud_tools   # noqa: F401
-        import backend.copilot.tools.driver_tools         # noqa: F401
-        import backend.copilot.tools.driver_crud_tools    # noqa: F401
-        import backend.copilot.tools.route_tools          # noqa: F401
-        import backend.copilot.tools.trip_tools           # noqa: F401
-        import backend.copilot.tools.trip_crud_tools      # noqa: F401
-        import backend.copilot.tools.client_tools         # noqa: F401
-        import backend.copilot.tools.client_crud_tools    # noqa: F401
-        import backend.copilot.tools.document_tools       # noqa: F401
-        import backend.copilot.tools.currency_tools       # noqa: F401
-        import backend.copilot.tools.tracking_tools       # noqa: F401
-        import backend.copilot.tools.analytics_tools      # noqa: F401
-        import backend.copilot.tools.invoice_tools       # noqa: F401
-        import backend.copilot.tools.receipt_tools       # noqa: F401
-        import backend.copilot.tools.proforma_tools      # noqa: F401
-        import backend.copilot.tools.dispatch_tools      # noqa: F401
-        import backend.copilot.tools.maintenance_tools   # noqa: F401
-        import backend.copilot.tools.route_sharing_tools  # noqa: F401
-        import backend.copilot.tools.cmr_tools            # noqa: F401
-        import backend.copilot.tools.tacho_tools          # noqa: F401
-        import backend.copilot.tools.export_tools         # noqa: F401
-        import backend.copilot.tools.ocr_tools           # noqa: F401
-        import backend.copilot.tools.automail_tools       # noqa: F401
-        import backend.copilot.tools.delete_tools        # noqa: F401
-        import backend.copilot.tools.undo_tools          # noqa: F401
-        import backend.copilot.tools.freight_tools       # noqa: F401
-        import backend.copilot.tools.payment_tools       # noqa: F401
-        import backend.copilot.tools.help_tools          # noqa: F401
-    except ImportError as e:
-        return [f"Failed to import tool modules: {e}"]
-
+    _ensure_tools_loaded()
     return validate_registry()

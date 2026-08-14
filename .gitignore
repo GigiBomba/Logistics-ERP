@@ -96,3 +96,5 @@ reports/
 
 data/efactura/
 tests/workflow_integrity/financial/test_probe_tmp.py
+
+data/staging.db

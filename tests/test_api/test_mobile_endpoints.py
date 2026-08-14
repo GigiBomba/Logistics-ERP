@@ -40,7 +40,9 @@ _TEST_DB_PATH = os.path.join(
 )
 
 # Set env vars BEFORE any backend imports so BackendSettings picks them up.
-os.environ.setdefault("OPERION_DB_PATH", _TEST_DB_PATH)
+# Unconditional (not setdefault): this suite must own its DB path even when
+# an earlier-imported conftest on the same xdist worker already set it.
+os.environ["OPERION_DB_PATH"] = _TEST_DB_PATH
 os.environ["OPERION_JWT_SECRET_KEY"] = "test-mobile-jwt-secret-key-for-testing-only!"
 os.environ["OPERION_ENV"] = "test"
 os.environ["OPERION_RATE_LIMIT"] = "10000"
