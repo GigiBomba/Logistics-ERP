@@ -142,12 +142,19 @@ class TestMiddlewareWiring:
     """Verify all middlewares are registered in the expected order."""
 
     def test_all_expected_middleware_present(self, app: FastAPI):
-        """Every expected middleware class appears in app.user_middleware."""
+        """Every expected middleware class appears in app.user_middleware.
+
+        Comparison is by class NAME: ``test_security_verification.py`` /
+        ``tests/chaos/test_chaos_celery.py`` ``importlib.reload`` the
+        middleware modules, which creates NEW class objects with the same
+        names — an identity check (``cls in registered``) then spuriously
+        fails even though the app wires the correct middleware.
+        """
         expected = _expected_outer_to_inner()
-        registered = [m.cls for m in app.user_middleware]
+        registered_names = [m.cls.__name__ for m in app.user_middleware]
 
         for cls in expected:
-            assert cls in registered, (
+            assert cls.__name__ in registered_names, (
                 f"Expected middleware {cls.__name__} not found in user_middleware"
             )
 
@@ -162,14 +169,19 @@ class TestMiddlewareWiring:
 
     def test_middleware_outermost_order(self, app: FastAPI):
         """The user_middleware list (outermost-first) matches the
-        expected execution order: InputSanitization outermost, CORS innermost."""
+        expected execution order: InputSanitization outermost, CORS innermost.
+
+        Compared by class NAME (see ``test_all_expected_middleware_present`` —
+        ``importlib.reload`` of the middleware modules changes class identity
+        but not the wiring order).
+        """
         expected = _expected_outer_to_inner()
-        registered = [m.cls for m in app.user_middleware]
+        registered = [m.cls.__name__ for m in app.user_middleware]
 
         for i, cls in enumerate(expected):
-            assert registered[i] is cls, (
+            assert registered[i] == cls.__name__, (
                 f"Position {i}: expected {cls.__name__}, "
-                f"got {registered[i].__name__}"
+                f"got {registered[i]}"
             )
 
     def test_input_sanitization_is_outermost(self, app: FastAPI):

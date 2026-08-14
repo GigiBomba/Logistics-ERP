@@ -25,6 +25,21 @@ def _reset_metrics():
     yield
 
 
+@pytest.fixture(autouse=True)
+def _enable_all_logging():
+    """Undo any module-level ``logging.disable(...)`` left by other suites.
+
+    Some e2e modules call ``logging.disable(logging.CRITICAL)`` at import
+    time; without a reset, ``_StructuredLogger._emit``'s ``isEnabledFor``
+    check returns False and the underlying ``log`` call never fires — which
+    makes these assertions see ``call_args is None``.  The root conftest also
+    resets this per test, but being self-sufficient keeps this module green
+    regardless of conftest state.
+    """
+    logging.disable(logging.NOTSET)
+    yield
+
+
 class TestStructuredLogger:
     """_StructuredLogger emits JSON lines with correct level, message, and fields."""
 

@@ -17,7 +17,22 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from config import Config
+
+def _middleware_config():
+    """Return the ``Config`` class ``AuthMiddleware`` actually reads, resolved
+    at call time.
+
+    ``tests/test_security_verification.py`` and ``tests/chaos/test_chaos_celery.py``
+    ``importlib.reload`` the config chain, which REPLACES ``config.Config`` with
+    a NEW class object.  A module-top ``from config import Config`` reference
+    goes stale after that reload, so ``monkeypatch.setattr`` on it would not
+    affect the middleware (which reads the reloaded class) — producing the CI
+    failures where a valid key returns 403.  Resolving through the middleware
+    module at runtime always patches the class the middleware reads.
+    """
+    import backend.middleware.auth_middleware as _auth_mw_mod
+
+    return _auth_mw_mod.Config
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
@@ -55,7 +70,7 @@ def _build_app() -> FastAPI:
 
 class TestValidApiKey:
     def test_valid_key_returns_200(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(Config, "API_KEY", "my-secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "my-secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "my-secret"})
@@ -64,7 +79,7 @@ class TestValidApiKey:
 
     def test_valid_key_can_include_special_chars(self, monkeypatch: pytest.MonkeyPatch):
         key = "a1b2c3-d4e5_f6g7-h8i9_j0k1"
-        monkeypatch.setattr(Config, "API_KEY", key)
+        monkeypatch.setattr(_middleware_config(), "API_KEY", key)
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": key})
@@ -76,7 +91,7 @@ class TestValidApiKey:
 
 class TestMissingOrInvalidKey:
     def test_missing_header_returns_401(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/")
@@ -84,14 +99,14 @@ class TestMissingOrInvalidKey:
         assert resp.json() == {"detail": "API key required", "error_code": "auth/invalid-api-key"}
 
     def test_empty_header_returns_401(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": ""})
         assert resp.status_code == 401
 
     def test_wrong_key_returns_403(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(Config, "API_KEY", "correct-key")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "correct-key")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "wrong-key"})
@@ -99,7 +114,7 @@ class TestMissingOrInvalidKey:
 
     def test_partial_match_returns_403(self, monkeypatch: pytest.MonkeyPatch):
         """A key that starts the same as the real key must still be rejected."""
-        monkeypatch.setattr(Config, "API_KEY", "super-secret-key")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "super-secret-key")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "super-secret"})
@@ -114,7 +129,7 @@ class TestTimingSafeComparison:
 
     def test_different_length_keys_are_rejected(self, monkeypatch: pytest.MonkeyPatch):
         """A key with different length than the real key must still get 403."""
-        monkeypatch.setattr(Config, "API_KEY", "short")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "short")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "a" * 100})
@@ -122,7 +137,7 @@ class TestTimingSafeComparison:
 
     def test_longer_real_key_with_short_input(self, monkeypatch: pytest.MonkeyPatch):
         """Real key is long, provided key is short — must still fail."""
-        monkeypatch.setattr(Config, "API_KEY", "a" * 100)
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "a" * 100)
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "short"})
@@ -130,7 +145,7 @@ class TestTimingSafeComparison:
 
     def test_empty_key_vs_non_empty_config(self, monkeypatch: pytest.MonkeyPatch):
         """Empty header against a configured key returns 401."""
-        monkeypatch.setattr(Config, "API_KEY", "non-empty")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "non-empty")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": ""})
@@ -142,14 +157,14 @@ class TestTimingSafeComparison:
 
 class TestNoKeyConfigured:
     def test_no_key_allows_all_requests(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(Config, "API_KEY", "")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/")
         assert resp.status_code == 200
 
     def test_no_key_no_header_still_passes(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(Config, "API_KEY", "")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": ""})
@@ -157,7 +172,7 @@ class TestNoKeyConfigured:
 
     def test_no_key_sends_wrong_header_gets_403(self, monkeypatch: pytest.MonkeyPatch):
         """When auth is disabled but a wrong key is sent, middleware rejects it."""
-        monkeypatch.setattr(Config, "API_KEY", "")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "any-old-thing"})
@@ -172,7 +187,7 @@ class TestWhitelistPaths:
 
     @pytest.mark.parametrize("path", ["/docs", "/redoc", "/openapi.json"])
     def test_swagger_paths_skip_auth(self, monkeypatch: pytest.MonkeyPatch, path: str):
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get(path)
@@ -182,7 +197,7 @@ class TestWhitelistPaths:
         )
 
     def test_health_endpoint_skips_auth(self, monkeypatch: pytest.MonkeyPatch):
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/api/v1/health")
@@ -191,7 +206,7 @@ class TestWhitelistPaths:
 
     def test_health_endpoint_no_key(self, monkeypatch: pytest.MonkeyPatch):
         """Health endpoint works even without any API key header."""
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/api/v1/health", headers={"X-API-Key": ""})
@@ -202,7 +217,7 @@ class TestWhitelistPaths:
         self, monkeypatch: pytest.MonkeyPatch, path: str
     ):
         """Paths starting with whitelist prefixes should also bypass auth."""
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get(path)
@@ -210,7 +225,7 @@ class TestWhitelistPaths:
 
     def test_non_whitelist_path_needs_key(self, monkeypatch: pytest.MonkeyPatch):
         """A path not in the whitelist must still require auth."""
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/api/v1/trips")
@@ -225,7 +240,7 @@ class TestProductionGuard:
         self, monkeypatch: pytest.MonkeyPatch
     ):
         """In production mode with no API key set, AuthMiddleware must raise."""
-        monkeypatch.setattr(Config, "API_KEY", "")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "")
         monkeypatch.setenv("OPERION_ENV", "production")
 
         from backend.middleware.auth_middleware import AuthMiddleware
@@ -239,7 +254,7 @@ class TestProductionGuard:
 
     def test_production_with_key_starts_ok(self, monkeypatch: pytest.MonkeyPatch):
         """In production mode with a valid key, the middleware must start."""
-        monkeypatch.setattr(Config, "API_KEY", "prod-key-999")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "prod-key-999")
         monkeypatch.setenv("OPERION_ENV", "production")
 
         from backend.middleware.auth_middleware import AuthMiddleware
@@ -257,7 +272,7 @@ class TestProductionGuard:
         self, monkeypatch: pytest.MonkeyPatch
     ):
         """In development mode, missing API key is allowed (with a warning)."""
-        monkeypatch.setattr(Config, "API_KEY", "")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "")
         monkeypatch.setenv("OPERION_ENV", "development")
 
         from backend.middleware.auth_middleware import AuthMiddleware
@@ -272,7 +287,7 @@ class TestProductionGuard:
 
     def test_production_guard_message(self, monkeypatch: pytest.MonkeyPatch):
         """Verify the RuntimeError message is descriptive."""
-        monkeypatch.setattr(Config, "API_KEY", "")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "")
         monkeypatch.setenv("OPERION_ENV", "production")
 
         from backend.middleware.auth_middleware import AuthMiddleware
@@ -292,7 +307,7 @@ class TestEdgeCases:
     def test_key_with_whitespace(self, monkeypatch: pytest.MonkeyPatch):
         """Keys with leading/trailing whitespace are compared as-is."""
         key = "my-key"
-        monkeypatch.setattr(Config, "API_KEY", key)
+        monkeypatch.setattr(_middleware_config(), "API_KEY", key)
         app = _build_app()
         client = TestClient(app)
         # Exact match must pass
@@ -301,7 +316,7 @@ class TestEdgeCases:
 
     def test_key_without_prefix_is_rejected(self, monkeypatch: pytest.MonkeyPatch):
         """A key without some expected prefix is still rejected."""
-        monkeypatch.setattr(Config, "API_KEY", "sk-abcdef123456")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "sk-abcdef123456")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "abcdef123456"})
@@ -309,7 +324,7 @@ class TestEdgeCases:
 
     def test_multiple_headers_handled(self, monkeypatch: pytest.MonkeyPatch):
         """X-API-Key header is read correctly when multiple headers exist."""
-        monkeypatch.setattr(Config, "API_KEY", "secret")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "secret")
         app = _build_app()
         client = TestClient(app)
         resp = client.get(
@@ -324,7 +339,7 @@ class TestEdgeCases:
 
     def test_key_is_digits_only(self, monkeypatch: pytest.MonkeyPatch):
         """Numeric-only keys work correctly."""
-        monkeypatch.setattr(Config, "API_KEY", "1234567890")
+        monkeypatch.setattr(_middleware_config(), "API_KEY", "1234567890")
         app = _build_app()
         client = TestClient(app)
         resp = client.get("/", headers={"X-API-Key": "1234567890"})

@@ -27,15 +27,23 @@ def _samples_in_bounds(geometry, iso2: str) -> int:
 
 class TestCountryExclusionEngine(unittest.TestCase):
     def test_prepare_builds_custom_model(self):
-        engine = CountryExclusionEngine()
-        stops = [(44.436, 26.103), (50.110, 8.682)]
-        plan = engine.prepare(["HU", "RS"], stops)
-        self.assertIn("HU", plan.applied)
-        self.assertIn("RS", plan.applied)
-        self.assertTrue(plan.active)
-        self.assertIn("areas", plan.custom_model)
-        self.assertIn("priority", plan.custom_model)
-        self.assertEqual(plan.strategy, "custom_model_areas_post")
+        # data/country_borders.json is gitignored, so CI checkouts don't have
+        # it and get_polygons returns [] — the plan would be inactive.  Patch
+        # the polygon source with the deterministic FAKE_POLYGONS so this unit
+        # test exercises the engine logic without depending on runtime data.
+        with patch(
+            "services.country_exclusion.get_polygons",
+            side_effect=lambda c: FAKE_POLYGONS.get(c, []),
+        ):
+            engine = CountryExclusionEngine()
+            stops = [(44.436, 26.103), (50.110, 8.682)]
+            plan = engine.prepare(["HU", "RS"], stops)
+            self.assertIn("HU", plan.applied)
+            self.assertIn("RS", plan.applied)
+            self.assertTrue(plan.active)
+            self.assertIn("areas", plan.custom_model)
+            self.assertIn("priority", plan.custom_model)
+            self.assertEqual(plan.strategy, "custom_model_areas_post")
 
     def test_skips_exclusion_when_stop_inside_country(self):
         engine = CountryExclusionEngine()
@@ -47,11 +55,17 @@ class TestCountryExclusionEngine(unittest.TestCase):
         self.assertFalse(plan.active)
 
     def test_merge_sets_internal_keys(self):
-        engine = CountryExclusionEngine()
-        plan = engine.prepare(["HU"], [(44.436, 26.103), (50.110, 8.682)])
-        params = engine.merge_into_params({"weight": "40000"}, plan)
-        self.assertIn("_custom_model", params)
-        self.assertTrue(params.get("ch.disable"))
+        # Patch get_polygons like test_prepare_builds_custom_model — the real
+        # data/country_borders.json is gitignored and absent on CI checkouts.
+        with patch(
+            "services.country_exclusion.get_polygons",
+            side_effect=lambda c: FAKE_POLYGONS.get(c, []),
+        ):
+            engine = CountryExclusionEngine()
+            plan = engine.prepare(["HU"], [(44.436, 26.103), (50.110, 8.682)])
+            params = engine.merge_into_params({"weight": "40000"}, plan)
+            self.assertIn("_custom_model", params)
+            self.assertTrue(params.get("ch.disable"))
 
 
 @unittest.skipUnless(

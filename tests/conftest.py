@@ -15,6 +15,24 @@ import os
 os.environ.setdefault("OPERION_ENV", "testing")
 os.environ.setdefault("OPERION_JWT_SECRET_KEY", "test-jwt-secret-key-for-testing!!")
 
+# Per-worker isolated test database: each pytest-xdist worker gets its own
+# temp SQLite file so suites that rely on the default DB path never inherit
+# a stale OPERION_DB_PATH left by another suite that ran earlier on the same
+# worker.  Suites that explicitly isolate themselves (mobile, waitlist,
+# security) override this at their own module import.
+import tempfile as _tempfile
+import uuid as _uuid
+_WORKER_DB_PATH = os.path.join(
+    _tempfile.gettempdir(), f"operion_test_worker_{_uuid.uuid4().hex[:8]}.db",
+)
+os.environ.setdefault("OPERION_DB_PATH", _WORKER_DB_PATH)
+os.environ.setdefault("OPERION_DB_ENGINE", "sqlite")
+try:
+    from config import Config as _Config
+    _Config.DB_PATH = _WORKER_DB_PATH
+except Exception:
+    pass
+
 # Business invariant environment — satisfy AUTH invariants
 os.environ.setdefault("JWT_SECRET", "a" * 64)
 os.environ.setdefault("JWT_ALGORITHM", "HS256")
@@ -66,6 +84,10 @@ def reset_singletons():
     logging.root.handlers.clear()
     logging.root.propagate = True
     logging.root.setLevel(logging.NOTSET)
+    # Undo any module-level `logging.disable(...)` (e.g. some e2e suites
+    # call logging.disable(logging.CRITICAL) at import time) so later
+    # tests that assert on log emission are not silently suppressed.
+    logging.disable(logging.NOTSET)
     for name in list(logging.root.manager.loggerDict.keys()):
         log = logging.getLogger(name)
         log.handlers.clear()
