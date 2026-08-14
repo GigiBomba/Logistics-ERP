@@ -101,7 +101,19 @@ class ConnectionPool:
             if not self._wal_configured:
                 with self._lock:
                     if not self._wal_configured:
-                        c.execute("PRAGMA journal_mode=WAL")
+                        try:
+                            c.execute("PRAGMA journal_mode=WAL")
+                        except sqlite3.OperationalError:
+                            # Some filesystems (e.g. GitHub Actions overlayfs)
+                            # reject WAL with "disk I/O error" / "unable to
+                            # open database file".  Fall back to the default
+                            # DELETE journal so tests and CI keep working.
+                            logger.warning(
+                                "SQLite WAL unavailable on this filesystem; "
+                                "falling back to DELETE journal mode (%s)",
+                                self._db_path,
+                            )
+                            c.execute("PRAGMA journal_mode=DELETE")
                         self._wal_configured = True
             self._local.conn = c
             self._local._pool_gen = self._generation
