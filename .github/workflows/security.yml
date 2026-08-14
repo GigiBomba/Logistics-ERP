@@ -33,6 +33,12 @@ jobs:
 
       - name: Run security tests
         run: python -m pytest tests/security/ -v --tb=short
+        env:
+          OPERION_JWT_SECRET_KEY: test-key-ci-32-chars-required-here!!
+          OPERION_ENV: test
+          OPERION_SUPPORT_INTERNAL_AUTH: test-key-support-32-chars-min!!
+          OPERION_RATE_LIMIT: "100000"
+          CI: true
 
       - name: pip-audit
         run: pip install pip-audit && pip-audit
