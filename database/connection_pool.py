@@ -105,16 +105,26 @@ class ConnectionPool:
                             c.execute("PRAGMA journal_mode=WAL")
                         except sqlite3.OperationalError:
                             # Some filesystems (e.g. GitHub Actions overlayfs)
-                            # reject WAL with "disk I/O error" / "unable to
-                            # open database file".  The connection is still
-                            # usable with SQLite's default DELETE journal,
-                            # which needs no PRAGMA — so just skip journal
-                            # configuration entirely and continue.
+                            # reject WAL — and even the default DELETE journal
+                            # (sidecar -journal file) — with "disk I/O error".
+                            # For these filesystems, disable journaling
+                            # entirely: no sidecar files are created, so no
+                            # journal I/O can fail.  This trades crash
+                            # atomicity for availability, acceptable for the
+                            # in-memory/test SQLite files that hit this path.
                             logger.warning(
                                 "SQLite WAL unavailable on this filesystem; "
-                                "using default journal mode (%s)",
+                                "disabling journal mode (%s)",
                                 self._db_path,
                             )
+                            try:
+                                c.execute("PRAGMA journal_mode=OFF")
+                            except sqlite3.OperationalError:
+                                logger.warning(
+                                    "journal_mode=OFF also failed (%s) — "
+                                    "continuing with default mode",
+                                    self._db_path,
+                                )
                         self._wal_configured = True
             self._local.conn = c
             self._local._pool_gen = self._generation
