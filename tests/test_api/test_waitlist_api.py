@@ -168,6 +168,20 @@ def _seed_entry(db, **overrides):
     return row["id"] if row else None
 
 
+def _current_db_path() -> str:
+    """Return the CURRENT config class DB_PATH (reload-safe).
+
+    ``backend.desktop_config.Config`` is a re-export bound at ITS import
+    time; if ``config`` is reloaded by another module in the same xdist
+    worker (test_security_verification / test_chaos_celery reload it),
+    the re-export is stale and points at a different DB_PATH than the one
+    the app's init_db() reads — seeds would land in one file while the
+    endpoints read another.  Read the module attribute fresh instead.
+    """
+    import config as _config_module
+    return getattr(_config_module, "Config").DB_PATH
+
+
 @pytest.fixture
 def db():
     """Return a DatabaseManager instance for test seeding."""
@@ -376,8 +390,7 @@ class TestAdminListEntries:
 
         # Manually update second to invited
         from backend.db import DatabaseManager
-        from backend.desktop_config import Config
-        d = DatabaseManager(Config.DB_PATH, pool_min=1, pool_max=2)
+        d = DatabaseManager(_current_db_path(), pool_min=1, pool_max=2)
         d.conn.execute("UPDATE waitlist_entries SET status = 'invited', invited_at = datetime('now') WHERE referral_code = 'INV002'")
         d.conn.commit()
         d.close()
@@ -579,8 +592,7 @@ class TestAdminStats:
         _seed_entry(db, company_name="C3", email="c3@test.com", referral_code="CON003")
 
         from backend.db import DatabaseManager
-        from backend.desktop_config import Config
-        d = DatabaseManager(Config.DB_PATH, pool_min=1, pool_max=2)
+        d = DatabaseManager(_current_db_path(), pool_min=1, pool_max=2)
         d.conn.execute("UPDATE waitlist_entries SET status = 'converted', converted_at = datetime('now') WHERE referral_code = 'CON001'")
         d.conn.commit()
         d.close()
@@ -647,8 +659,7 @@ class TestAdminCampaign:
         _seed_entry(db, company_name="Two", email="two@test.com", referral_code="SEG002")
 
         from backend.db import DatabaseManager
-        from backend.desktop_config import Config
-        d = DatabaseManager(Config.DB_PATH, pool_min=1, pool_max=2)
+        d = DatabaseManager(_current_db_path(), pool_min=1, pool_max=2)
         d.conn.execute("UPDATE waitlist_entries SET status = 'invited', invited_at = datetime('now') WHERE referral_code = 'SEG002'")
         d.conn.commit()
         d.close()
@@ -668,8 +679,7 @@ class TestAdminCampaign:
         _seed_entry(db, company_name="Unsub", email="unsub@test.com", referral_code="USB002")
 
         from backend.db import DatabaseManager
-        from backend.desktop_config import Config
-        d = DatabaseManager(Config.DB_PATH, pool_min=1, pool_max=2)
+        d = DatabaseManager(_current_db_path(), pool_min=1, pool_max=2)
         d.conn.execute("UPDATE waitlist_entries SET status = 'unsubscribed', unsubscribed_at = datetime('now') WHERE referral_code = 'USB002'")
         d.conn.commit()
         d.close()
