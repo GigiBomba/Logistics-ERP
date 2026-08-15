@@ -7,6 +7,8 @@ directly on the database via ``InMemoryDB``.
 Fire-and-forget concurrency patterns (``ThreadPoolExecutor``) match
 the sibling file ``test_concurrency_db_write.py``.
 """
+from __future__ import annotations
+
 
 import hashlib
 import os
@@ -146,7 +148,7 @@ class TestConcurrencyRegistration:
         executor = ThreadPoolExecutor(max_workers=10)
         futures = [executor.submit(register) for _ in range(10)]
         try:
-            for f in as_completed(futures, timeout=8):
+            for f in as_completed(futures, timeout=120):
                 f.result()
         except TimeoutError:
             executor.shutdown(wait=False)

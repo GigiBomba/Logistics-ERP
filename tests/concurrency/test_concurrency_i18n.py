@@ -319,9 +319,18 @@ class TestConcurrencyI18nSetLanguage:
         # Listener should have been called for each distinct language switch
         assert len(notified_languages) > 0, "Listener was never notified"
 
-        # Final language should be the last one set
-        final_lang = notified_languages[-1] if notified_languages else "en"
-        assert i18n.get_language() == final_lang
+        # The final language must be one of the valid languages.  Under
+        # concurrent set_language calls the last *notified* language need
+        # not equal the final *set* language: set_language assigns the
+        # internal state before notifying listeners, so two threads can
+        # interleave as set(A), set(B), notify(B), notify(A) — leaving the
+        # final state B while the last notification was A.
+        assert i18n.get_language() in {"en", "ro", "fr", "de"}, (
+            f"Final language {i18n.get_language()!r} is not a valid language"
+        )
+        assert set(notified_languages) <= {"en", "ro", "fr", "de"}, (
+            f"Listener was notified with an unexpected language: {notified_languages}"
+        )
 
     def test_set_language_listener_exception_does_not_affect_others(self, multi_lang_translations):
         """A failing listener does not prevent other listeners from being called."""

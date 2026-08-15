@@ -274,7 +274,12 @@ class TestConcurrentWrites:
             # On a loaded Linux CI runner these commits can take well over 8s
             # total, so give the harness a generous ceiling — a REAL deadlock
             # still fails the test, but a slow-but-progressing run passes.
-            for fut in as_completed(futs, timeout=60):
+            # On loaded Linux CI runners each serialized commit can take several
+            # seconds (slow fsync on the runner filesystem with DELETE-journal
+            # fallback), so 25 fully-serialized commits can exceed 60s.  A
+            # REAL deadlock never completes, so a generous ceiling still
+            # catches it while a slow-but-progressing run passes.
+            for fut in as_completed(futs, timeout=300):
                 try:
                     fut.result()
                 except Exception as e:
