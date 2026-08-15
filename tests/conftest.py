@@ -7,6 +7,8 @@ Singleton reset: the ``reset_singletons`` fixture is automatically applied to
 every test (via ``pytestmark`` or auto-use) to clear the cross-test state
 that the singleton pattern introduces.
 """
+from __future__ import annotations
+
 
 import os
 # Set test environment BEFORE any backend imports can happen.
@@ -93,6 +95,12 @@ def reset_singletons():
         log.handlers.clear()
         log.propagate = True
         log.setLevel(logging.NOTSET)
+
+    # Tenant context (contextvars) — a test that set a company/role scope and
+    # didn't reset it would leak scoped SQL (`AND company_id = ?`) into later
+    # tests in the same process and break unscoped repository fixtures.
+    from database.tenant_context import clear_context
+    clear_context()
 
     # EventBus
     from services.operations.event_bus import EventBus
