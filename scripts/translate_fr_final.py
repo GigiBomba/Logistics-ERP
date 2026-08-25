@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Translate all remaining untranslated keys in fr.json to French."""
+from __future__ import annotations
+
 import json, os
 
 BASE = os.path.join(os.path.dirname(__file__), os.pardir, "data", "translations")

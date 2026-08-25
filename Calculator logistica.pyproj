@@ -4,7 +4,7 @@
     <SchemaVersion>2.0</SchemaVersion>
     <ProjectGuid>aa93aa51-08b8-4676-9cd8-c17ef635f47e</ProjectGuid>
     <ProjectHome>.</ProjectHome>
-    <StartupFile>main_remote.py</StartupFile>
+    <StartupFile>main.py</StartupFile>
     <SearchPath>
     </SearchPath>
     <WorkingDirectory>.</WorkingDirectory>

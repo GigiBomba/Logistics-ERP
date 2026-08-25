@@ -3,6 +3,8 @@
 Manages two UUID-keyed tables (``freight_exchange_connections``,
 ``saved_searches``) with dual SQLite / PostgreSQL support.
 """
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from database.uuid_helpers import is_postgresql, new_uuid

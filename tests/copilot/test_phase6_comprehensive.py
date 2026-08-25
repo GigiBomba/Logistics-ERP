@@ -2,6 +2,8 @@
 
 Covers: kill switch, guardrails, telemetry, CancelledError, memory leak fixes.
 """
+from __future__ import annotations
+
 
 import asyncio
 from unittest.mock import MagicMock, patch

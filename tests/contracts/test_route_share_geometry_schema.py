@@ -13,6 +13,8 @@ Validates the existing ``RouteShareResponse`` schema against the mobile
 All JSON keys are snake_case, matching the Dart ``toJson``/``fromJson``
 contract exactly.
 """
+from __future__ import annotations
+
 
 from datetime import datetime
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import warnings
 from datetime import date as _date
 from typing import Any, Dict

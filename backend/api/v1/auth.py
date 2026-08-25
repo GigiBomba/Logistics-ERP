@@ -5,6 +5,8 @@ POST /api/v1/auth/refresh — Exchange a refresh token for a new JWT.
 POST /api/v1/auth/logout  — Revoke a refresh token.
 GET  /api/v1/auth/me      — Return the current authenticated user's profile.
 """
+from __future__ import annotations
+
 
 import asyncio
 import hashlib

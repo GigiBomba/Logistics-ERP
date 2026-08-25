@@ -1,4 +1,6 @@
 """Tests for cost_models.py — Cost breakdown, per-km calculations, currency conversion fields."""
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 from models.cost_models import (

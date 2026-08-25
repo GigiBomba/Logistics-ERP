@@ -9,6 +9,8 @@ AI Co-Pilot Integration Notes:
 - Use the ``get_cached_*`` methods for deterministic replay
 - All non-deterministic methods are explicitly marked
 """
+from __future__ import annotations
+
 import logging
 from dataclasses import dataclass
 from datetime import datetime

@@ -331,7 +331,13 @@ class CoPilotPanel(QFrame):
         """Send utterance to controller and handle the response."""
         if self._controller is None:
             logger.warning("CoPilotPanel: no controller, cannot process utterance")
-            self._handle_error(t("copilot.chat.no_controller", default="Co-Pilot is not available"))
+            self._handle_error(
+                t(
+                    "copilot.chat.no_controller",
+                    default="Co-Pilot is not available in this connection mode. "
+                    "Connect to a server or restart with a local database.",
+                )
+            )
             return
 
         language = get_language()
@@ -390,8 +396,10 @@ class CoPilotPanel(QFrame):
     def _format_response(self, response_dict: dict) -> str:
         """Format a CoPilotResponse dict into a display string.
 
-        Uses summary_key -> t() if present, then clarification_question_key.
-        Falls back to raw dict representation.
+        Uses summary_key -> t() if present (falling back to the executed
+        timeline when the key has no translation — local mode), then the
+        clarification question, then ``message``, then the timeline, then a
+        status fallback.
         """
         parts: list[str] = []
 
@@ -400,7 +408,16 @@ class CoPilotPanel(QFrame):
         if summary_key:
             summary_params = response_dict.get("summary_params", {})
             summary_text = t(summary_key, **summary_params)
-            parts.append(summary_text)
+            timeline = response_dict.get("timeline") or []
+            timeline_text = self._render_timeline(timeline)
+            if summary_text and summary_text != summary_key:
+                parts.append(summary_text)
+            elif timeline_text:
+                # Untranslated summary key — render the executed steps instead
+                # of showing a raw i18n key (common for local in-process runs).
+                parts.append(timeline_text)
+            else:
+                parts.append(summary_text)
 
         # Clarification question
         clarification_key = response_dict.get("clarification_question_key")
@@ -417,9 +434,74 @@ class CoPilotPanel(QFrame):
         if message:
             return str(message)
 
+        # Fallback: render the executed timeline when available
+        timeline = response_dict.get("timeline") or []
+        timeline_text = self._render_timeline(timeline)
+        if timeline_text:
+            return timeline_text
+
         # Last resort: show status
         status = response_dict.get("status", "ok")
         return t(f"copilot.step_status.{status}", default=status)
+
+    @staticmethod
+    def _render_timeline(timeline) -> str:
+        """Render executed execution steps as readable text.
+
+        Handles both ``ExecutionStep`` dataclasses (local/parsed responses)
+        and plain dicts (API responses).  Returns ``""`` when nothing
+        renderable is found.
+        """
+        if not timeline:
+            return ""
+        lines: list[str] = []
+        for step in timeline:
+            if isinstance(step, dict):
+                tool_name = step.get("tool_name") or ""
+                status = step.get("status") or "succeeded"
+                error = step.get("error")
+                result = step.get("result")
+            else:
+                tool_name = getattr(step, "tool_name", "") or ""
+                status = getattr(step, "status", "") or "succeeded"
+                error = getattr(step, "error", None)
+                result = getattr(step, "result", None)
+            if not tool_name:
+                continue
+            human = tool_name.replace(".", " ").replace("_", " ").title()
+            status_text = t(f"copilot.step_status.{status}", default=status.capitalize())
+            line = f"{human}: {status_text}"
+            if status in ("failed", "skipped") and error:
+                line += f" — {error}"
+            elif isinstance(result, dict):
+                detail_parts: list[str] = []
+                msg_key = result.get("message_key")
+                if msg_key:
+                    msg_params = result.get("message_params") or {}
+                    msg_text = t(msg_key, **msg_params)
+                    if msg_text and msg_text != msg_key:
+                        detail_parts.append(msg_text)
+                data = result.get("data")
+                if isinstance(data, dict):
+                    answer = data.get("answer")
+                    if isinstance(answer, dict):
+                        a_key = answer.get("answer_key")
+                        if a_key:
+                            a_text = t(a_key, **answer.get("answer_params", {}))
+                            if a_text and a_text != a_key:
+                                detail_parts.append(a_text)
+                    else:
+                        summary = ", ".join(
+                            f"{k}: {v}"
+                            for k, v in list(data.items())[:6]
+                            if not isinstance(v, (list, dict))
+                        )
+                        if summary:
+                            detail_parts.append(summary)
+                if detail_parts:
+                    line += " — " + " ".join(detail_parts)
+            lines.append(line)
+        return "\n".join(lines)
 
     # -- Voice mode selector -----------------------------------------------
 

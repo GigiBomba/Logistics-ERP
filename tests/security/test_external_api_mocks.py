@@ -3,6 +3,8 @@
 All external API calls (GraphHopper, Nominatim, exchange rates, SMTP,
 OCR) are patched so tests remain fast, hermetic, and network-independent.
 """
+from __future__ import annotations
+
 import pytest
 from unittest.mock import patch, MagicMock
 from fastapi.testclient import TestClient

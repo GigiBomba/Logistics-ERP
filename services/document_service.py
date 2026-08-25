@@ -5,6 +5,8 @@ to focused services under ``services/document/``.
 
 New code should use the focused services directly.
 """
+from __future__ import annotations
+
 import contextlib
 import json
 import logging

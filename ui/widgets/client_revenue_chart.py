@@ -41,7 +41,7 @@ class QtClientRevenueChart(QWidget):
     def cleanup(self) -> None:
         self._clear_content()
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         self.cleanup()
         super().deleteLater()
 
@@ -53,21 +53,28 @@ class QtClientRevenueChart(QWidget):
         if self.layout() is None:
             QVBoxLayout(self).setContentsMargins(0, 0, 0, 0)
 
+        if self.service is None:
+            self._show_empty_state()
+            return
+
         history = self.service.get_client_revenue_history(
             self.client_id, months=12
         )
 
         if not history:
-            self._empty_label = QLabel(t("analytics.no_data", default="No revenue data yet"), self)
-            self._empty_label.setProperty("fontRole", "muted")
-            self._empty_label.setAlignment(Qt.AlignCenter)
-            self.layout().addWidget(self._empty_label)
+            self._show_empty_state()
             return
 
         history.reverse()
-        months = [r["month"] for r in history]
-        revenues = [r["revenue"] or 0 for r in history]
-        profits = [r["profit"] or 0 for r in history]
+        # Skip rows that cannot be placed on the time axis (missing 'month')
+        rows = [r for r in history if "month" in r]
+        if not rows:
+            self._show_empty_state()
+            return
+
+        months = [r["month"] for r in rows]
+        revenues = [r["revenue"] or 0 for r in rows]
+        profits = [r["profit"] or 0 for r in rows]
 
         short_months = [m[-2:] for m in months]
         profit_color = CHART_SUCCESS if sum(profits) >= 0 else CHART_DANGER
@@ -89,6 +96,12 @@ class QtClientRevenueChart(QWidget):
 
     # ── Internal cleanup helpers ────────────────────────────────────────
 
+    def _show_empty_state(self) -> None:
+        self._empty_label = QLabel(t("analytics.no_data", default="No revenue data yet"), self)
+        self._empty_label.setProperty("fontRole", "muted")
+        self._empty_label.setAlignment(Qt.AlignCenter)
+        self.layout().addWidget(self._empty_label)
+
     def _clear_content(self) -> None:
         layout = self.layout()
         if layout is None:
@@ -102,8 +115,8 @@ class QtClientRevenueChart(QWidget):
                     widget.stop()
                 if hasattr(widget, "cleanup"):
                     widget.cleanup()
-                if hasattr(widget, "destroy"):
-                    widget.destroy()
+                if hasattr(widget, "_destroy"):
+                    widget._destroy()
                 widget.setParent(None)
                 widget.deleteLater()
         self._empty_label = None

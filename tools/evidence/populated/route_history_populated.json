@@ -1,0 +1,1391 @@
+[
+ {
+  "class": "QtRouteHistoryView",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   1392,
+   856
+  ],
+  "sizeHint": [
+   1520,
+   587
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     40,
+     0,
+     40,
+     40
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QWidget",
+  "objectName": "",
+  "geometry": [
+   40,
+   0,
+   1312,
+   72
+  ],
+  "sizeHint": [
+   352,
+   34
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 4,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   1312,
+   34
+  ],
+  "sizeHint": [
+   111,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   38,
+   1312,
+   34
+  ],
+  "sizeHint": [
+   352,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "",
+  "geometry": [
+   40,
+   84,
+   1312,
+   72
+  ],
+  "sizeHint": [
+   898,
+   72
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     0,
+     8,
+     0,
+     8
+    ]
+   }
+  ]
+ },
+ {
+  "class": "DebouncedLineEdit",
+  "objectName": "",
+  "geometry": [
+   0,
+   21,
+   196,
+   30
+  ],
+  "sizeHint": [
+   196,
+   30
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QComboBox",
+  "objectName": "",
+  "geometry": [
+   204,
+   10,
+   160,
+   52
+  ],
+  "sizeHint": [
+   160,
+   52
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   100,
+   30
+  ],
+  "sizeHint": [
+   0,
+   12
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QListView",
+  "objectName": "",
+  "geometry": [
+   0,
+   6,
+   100,
+   18
+  ],
+  "sizeHint": [
+   256,
+   192
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_viewport",
+  "geometry": [
+   1,
+   1,
+   98,
+   16
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_hcontainer",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_vcontainer",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   100,
+   30
+  ],
+  "sizeHint": [
+   20,
+   10
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   100,
+   30
+  ],
+  "sizeHint": [
+   20,
+   10
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLineEdit",
+  "objectName": "",
+  "geometry": [
+   372,
+   21,
+   196,
+   30
+  ],
+  "sizeHint": [
+   196,
+   30
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "StyledCheckBox",
+  "objectName": "",
+  "geometry": [
+   576,
+   26,
+   95,
+   20
+  ],
+  "sizeHint": [
+   95,
+   20
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   679,
+   8,
+   98,
+   56
+  ],
+  "sizeHint": [
+   98,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   785,
+   8,
+   113,
+   56
+  ],
+  "sizeHint": [
+   113,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QSplitter",
+  "objectName": "",
+  "geometry": [
+   40,
+   168,
+   1312,
+   580
+  ],
+  "sizeHint": [
+   563,
+   311
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "card",
+  "geometry": [
+   788,
+   0,
+   524,
+   580
+  ],
+  "sizeHint": [
+   241,
+   311
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     20,
+     16,
+     20
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   21,
+   490,
+   200
+  ],
+  "sizeHint": [
+   193,
+   200
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   233,
+   490,
+   14
+  ],
+  "sizeHint": [
+   13,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   259,
+   490,
+   15
+  ],
+  "sizeHint": [
+   207,
+   31
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "card",
+  "geometry": [
+   0,
+   0,
+   787,
+   580
+  ],
+  "sizeHint": [
+   322,
+   140
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "StyledTableWidget",
+  "objectName": "",
+  "geometry": [
+   1,
+   1,
+   785,
+   578
+  ],
+  "sizeHint": [
+   256,
+   192
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_viewport",
+  "geometry": [
+   0,
+   36,
+   785,
+   542
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_vcontainer",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QHeaderView",
+  "objectName": "",
+  "geometry": [
+   0,
+   36,
+   0,
+   542
+  ],
+  "sizeHint": [
+   0,
+   0
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_viewport",
+  "geometry": [
+   0,
+   0,
+   0,
+   542
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_hcontainer",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_vcontainer",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QHeaderView",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   785,
+   36
+  ],
+  "sizeHint": [
+   157,
+   36
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_viewport",
+  "geometry": [
+   0,
+   0,
+   785,
+   36
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_hcontainer",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_vcontainer",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   6,
+   30
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QAbstractButton",
+  "objectName": "qt_tableview_cornerbutton",
+  "geometry": [
+   0,
+   0,
+   100,
+   30
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_hcontainer",
+  "geometry": [
+   0,
+   572,
+   785,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   785,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "EmptyState",
+  "objectName": "card",
+  "geometry": [
+   1,
+   1,
+   320,
+   578
+  ],
+  "sizeHint": [
+   357,
+   138
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     20,
+     20,
+     20,
+     20
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   21,
+   241,
+   278,
+   48
+  ],
+  "sizeHint": [
+   48,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   21,
+   297,
+   278,
+   17
+  ],
+  "sizeHint": [
+   175,
+   17
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 15
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   21,
+   322,
+   278,
+   15
+  ],
+  "sizeHint": [
+   315,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QSplitterHandle",
+  "objectName": "qt_splithandle_card",
+  "geometry": [
+   0,
+   0,
+   100,
+   30
+  ],
+  "sizeHint": [
+   1,
+   1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QSplitterHandle",
+  "objectName": "qt_splithandle_card",
+  "geometry": [
+   785,
+   0,
+   5,
+   580
+  ],
+  "sizeHint": [
+   1,
+   1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "",
+  "geometry": [
+   40,
+   760,
+   1312,
+   56
+  ],
+  "sizeHint": [
+   1440,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   173,
+   56
+  ],
+  "sizeHint": [
+   188,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   181,
+   0,
+   173,
+   56
+  ],
+  "sizeHint": [
+   268,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "divider",
+  "geometry": [
+   362,
+   28,
+   0,
+   0
+  ],
+  "sizeHint": [
+   3,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   370,
+   0,
+   161,
+   56
+  ],
+  "sizeHint": [
+   161,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   539,
+   0,
+   118,
+   56
+  ],
+  "sizeHint": [
+   118,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   665,
+   0,
+   172,
+   56
+  ],
+  "sizeHint": [
+   184,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   845,
+   0,
+   171,
+   56
+  ],
+  "sizeHint": [
+   171,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "divider",
+  "geometry": [
+   1024,
+   28,
+   0,
+   0
+  ],
+  "sizeHint": [
+   3,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   1032,
+   0,
+   131,
+   56
+  ],
+  "sizeHint": [
+   131,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QPushButton",
+  "objectName": "",
+  "geometry": [
+   1171,
+   0,
+   101,
+   56
+  ],
+  "sizeHint": [
+   101,
+   56
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "_IconButton",
+  "objectName": "",
+  "geometry": [
+   1280,
+   12,
+   32,
+   54
+  ],
+  "sizeHint": [
+   60,
+   54
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ }
+]

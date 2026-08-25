@@ -59,13 +59,28 @@ class TestModuleConstants:
         assert str(root / "main.py") in scripts.build_client.CLIENT_ASSETS
 
     def test_exclude_modules_excludes_backend(self):
+        """Server-only + test tooling stay excluded from the desktop binary."""
         import scripts.build_client
 
         assert "backend" in scripts.build_client.EXCLUDE_MODULES
-        assert "database" in scripts.build_client.EXCLUDE_MODULES
-        assert "repositories" in scripts.build_client.EXCLUDE_MODULES
-        assert "services" in scripts.build_client.EXCLUDE_MODULES
+        assert "backend.api.v1" in scripts.build_client.EXCLUDE_MODULES
         assert "tests" in scripts.build_client.EXCLUDE_MODULES
+        assert "celery" in scripts.build_client.EXCLUDE_MODULES
+
+    def test_exclude_modules_keeps_local_first_stack(self):
+        """Phase F: the local-first build must NOT exclude the sync stack —
+        the old remote-only build excluded these; the new one includes them."""
+        import scripts.build_client
+
+        excluded = set(scripts.build_client.EXCLUDE_MODULES)
+        assert "database" not in excluded
+        assert "database.db_manager" not in excluded
+        assert "database.schema" not in excluded
+        assert "repositories" not in excluded
+        assert "services" not in excluded
+        assert "services.sync_engine" not in excluded
+        assert "services.operations" not in excluded
+        assert "services.document" not in excluded
 
     def test_exclude_modules_excludes_test_frameworks(self):
         import scripts.build_client
@@ -197,9 +212,11 @@ class TestMain:
 
             assert rc == 0
             mock_clean.assert_called_once()
-            # Production mode → entry is main_remote.py
+            # Phase F: production mode → entry is main.py (local-first),
+            # NOT the deprecated main_remote.py.
             entry_arg = mock_run.call_args[0][0]
-            assert "main_remote.py" in entry_arg
+            assert "main.py" in entry_arg
+            assert "main_remote.py" not in entry_arg
 
     def test_main_dev_build(self):
         with (
@@ -227,6 +244,8 @@ class TestMain:
             assert rc == 1
 
     def test_main_production_extra_excludes(self):
+        """Phase F: the production build no longer passes any extra excludes —
+        the local-first app needs services.document / services.invoicing / etc."""
         with (
             patch("scripts.build_client.sys.argv", ["build_client.py"]),
             patch("scripts.build_client._clean_dist"),
@@ -237,9 +256,7 @@ class TestMain:
 
             _args, kwargs = mock_run.call_args
             extra = kwargs.get("extra_excludes")
-            assert extra is not None
-            assert "services.document" in extra
-            assert "services.invoicing" in extra
+            assert extra is None, f"local-first build passed stale excludes: {extra}"
 
     def test_main_dev_no_extra_excludes(self):
         with (

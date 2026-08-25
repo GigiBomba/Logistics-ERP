@@ -1,4 +1,6 @@
 """Fleet (truck + maintenance) repository — all truck & maintenance DB access."""
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
@@ -58,6 +60,7 @@ class FleetRepository(BaseRepository):
     TABLE_MAINT_RECORDS = "maintenance_records"
     TABLE_MAINT_SCHEDULES = "maintenance_schedules"
     TABLE_HEALTH_SCORES = "truck_health_scores"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "plate_number", "model", "manufacturer", "year", "vin",
         "fuel_consumption", "mileage", "monthly_rate", "status",
@@ -84,7 +87,7 @@ class FleetRepository(BaseRepository):
 
     def get_by_id(self, truck_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             (truck_id,) + self._company_params_for(company_id),
         )
 
@@ -99,13 +102,13 @@ class FleetRepository(BaseRepository):
         placeholders = ", ".join("?" for _ in truck_ids)
         return self._fetchall(
             f"SELECT id FROM {self.TABLE} WHERE id IN ({placeholders}) "
-            f"{self._company_filter_for(company_id)}",
+            f"{self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             tuple(truck_ids) + self._company_params_for(company_id),
         )
 
     def get_all(self, limit: int = 200, offset: int = 0, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} ORDER BY plate_number ASC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} {self._soft_delete_filter()} ORDER BY plate_number ASC LIMIT ? OFFSET ?",
             self._company_params_for(company_id) + (limit, offset),
         )
 
@@ -131,16 +134,18 @@ class FleetRepository(BaseRepository):
         commit=True)
 
     def delete(self, truck_id: int, company_id=None) -> None:
+        """Soft-delete a truck by stamping ``deleted_at`` (row kept for sync)."""
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
-            (truck_id,) + self._company_params_for(company_id),
+            f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id = ? {self._company_filter_for(company_id)}",
+            (utc_now_iso(), truck_id) + self._company_params_for(company_id),
         commit=True)
 
     # ── Truck domain queries ─────────────────────────────────────────
 
     def get_by_status(self, status: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} ORDER BY plate_number ASC",
+            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY plate_number ASC",
             (status,) + self._company_params(),
         )
 
@@ -148,31 +153,31 @@ class FleetRepository(BaseRepository):
         return self._fetchall(
             f"SELECT id, truck_id, maintenance_type, date, attachment_path "
             f"FROM {self.TABLE_MAINT_RECORDS} "
-            f"WHERE attachment_path IS NOT NULL AND attachment_path != '' {self._company_filter()}",
+            f"WHERE attachment_path IS NOT NULL AND attachment_path != '' {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
 
     def get_active_trucks(self) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()} ORDER BY plate_number ASC",
+            f"SELECT * FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY plate_number ASC",
             self._company_params(),
         )
 
     def get_by_plate(self, plate: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE plate_number = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE plate_number = ? {self._company_filter()} {self._soft_delete_filter()}",
             (plate,) + self._company_params(),
         )
 
     def get_by_vin(self, vin: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE vin = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE vin = ? {self._company_filter()} {self._soft_delete_filter()}",
             (vin,) + self._company_params(),
         )
 
     def get_by_tracking_device_id(self, device_id: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE tracking_device_id = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE tracking_device_id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (device_id,) + self._company_params(),
         )
 
@@ -188,28 +193,28 @@ class FleetRepository(BaseRepository):
         return self._fetchall(
             f"""SELECT DISTINCT t.* FROM {self.TABLE} t
                 JOIN trips tr ON tr.truck_id = t.id
-                WHERE tr.driver_id = ? {self._company_filter("t")}
+                WHERE tr.driver_id = ? {self._company_filter("t")} {self._soft_delete_filter("t")}
                 ORDER BY t.plate_number ASC""",
             (driver_id,) + self._company_params(),
         )
 
     def count_active(self) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return row["cnt"] if row else 0
 
     def get_truck_mileage(self, truck_id: int) -> Optional[float]:
         row = self._fetchone(
-            f"SELECT mileage FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            f"SELECT mileage FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (truck_id,) + self._company_params(),
         )
         return float(row["mileage"]) if row and row.get("mileage") is not None else None
 
     def get_active_truck_ids(self) -> List[int]:
         rows = self._fetchall(
-            f"SELECT id FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()}",
+            f"SELECT id FROM {self.TABLE} WHERE active_status = 1 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return [r["id"] for r in rows]
@@ -220,7 +225,7 @@ class FleetRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE insurance_expiry IS NOT NULL AND insurance_expiry != ''"
             " AND insurance_expiry <= ?"
-            f" {self._company_filter()}",
+            f" {self._company_filter()} {self._soft_delete_filter()}",
             (target_date,) + self._company_params(),
         )
 
@@ -268,7 +273,7 @@ class FleetRepository(BaseRepository):
             params.append(maint_type)
         where = f"WHERE {' AND '.join(conditions)} " if conditions else "WHERE 1=1 "
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE_MAINT_RECORDS} {where}{self._company_filter()} ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE_MAINT_RECORDS} {where}{self._company_filter()} {self._soft_delete_filter()} ORDER BY date DESC, id DESC LIMIT ? OFFSET ?",
             tuple(params) + self._company_params() + (limit, offset),
         )
 
@@ -289,14 +294,14 @@ class FleetRepository(BaseRepository):
             params.append(since_date)
         where = f"WHERE {' AND '.join(conditions)} " if conditions else "WHERE 1=1 "
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_RECORDS} {where}{self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_RECORDS} {where}{self._company_filter()} {self._soft_delete_filter()}",
             tuple(params) + self._company_params(),
         )
         return row["cnt"] if row else 0
 
     def get_maintenance_record_truck_id(self, record_id: int) -> Optional[int]:
         row = self._fetchone(
-            f"SELECT truck_id FROM {self.TABLE_MAINT_RECORDS} WHERE id = ? {self._company_filter()}",
+            f"SELECT truck_id FROM {self.TABLE_MAINT_RECORDS} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (record_id,) + self._company_params(),
         )
         return row["truck_id"] if row else None
@@ -321,27 +326,29 @@ class FleetRepository(BaseRepository):
         commit=True)
 
     def delete_maintenance_record(self, record_id: int) -> None:
+        """Soft-delete a maintenance record by stamping ``deleted_at``."""
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"DELETE FROM {self.TABLE_MAINT_RECORDS} WHERE id = ? {self._company_filter()}",
-            (record_id,) + self._company_params(),
+            f"UPDATE {self.TABLE_MAINT_RECORDS} SET deleted_at = ? WHERE id = ? {self._company_filter()}",
+            (utc_now_iso(), record_id) + self._company_params(),
         commit=True)
 
     def get_maintenance_type_counts(self, truck_id: int) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT maintenance_type, COUNT(*) as cnt FROM {self.TABLE_MAINT_RECORDS} "
-            f"WHERE truck_id = ? {self._company_filter()} GROUP BY maintenance_type HAVING cnt >= 3",
+            f"WHERE truck_id = ? {self._company_filter()} {self._soft_delete_filter()} GROUP BY maintenance_type HAVING cnt >= 3",
             (truck_id,) + self._company_params(),
         )
 
     def get_maintenance_last_date(self, truck_id: int) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT date FROM {self.TABLE_MAINT_RECORDS} WHERE truck_id = ? {self._company_filter()} ORDER BY date DESC LIMIT 1",
+            f"SELECT date FROM {self.TABLE_MAINT_RECORDS} WHERE truck_id = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY date DESC LIMIT 1",
             (truck_id,) + self._company_params(),
         )
         return row["date"] if row else None
 
     def sum_maintenance_cost(self, since_date: Optional[str] = None) -> float:
-        query = f"SELECT COALESCE(SUM(cost), 0) AS total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()}"
+        query = f"SELECT COALESCE(SUM(cost), 0) AS total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()}"
         params = list(self._company_params())
         if since_date:
             query += " AND date >= ?"
@@ -351,19 +358,19 @@ class FleetRepository(BaseRepository):
 
     def get_maintenance_cost_by_type(self) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT maintenance_type, SUM(cost) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY maintenance_type ORDER BY total DESC",
+            f"SELECT maintenance_type, SUM(cost) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()} GROUP BY maintenance_type ORDER BY total DESC",
             self._company_params(),
         )
 
     def get_maintenance_count_by_type(self) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT maintenance_type, COUNT(*) as cnt FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY maintenance_type ORDER BY cnt DESC",
+            f"SELECT maintenance_type, COUNT(*) as cnt FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()} GROUP BY maintenance_type ORDER BY cnt DESC",
             self._company_params(),
         )
 
     def get_top_maintained_trucks(self, limit: int = 5) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT truck_id, COALESCE(SUM(cost), 0) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} GROUP BY truck_id ORDER BY total DESC LIMIT ?",
+            f"SELECT truck_id, COALESCE(SUM(cost), 0) as total FROM {self.TABLE_MAINT_RECORDS} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()} GROUP BY truck_id ORDER BY total DESC LIMIT ?",
             self._company_params() + (limit,),
         )
 
@@ -411,7 +418,7 @@ class FleetRepository(BaseRepository):
             f"""SELECT s.*, t.plate_number, t.mileage AS current_km
                 FROM {self.TABLE_MAINT_SCHEDULES} s
                 LEFT JOIN trucks t ON t.id = s.truck_id
-                WHERE s.active = 1 {self._company_filter_for(company_id, "s")}
+                WHERE s.active = 1 {self._company_filter_for(company_id, "s")} {self._soft_delete_filter("s")}
                 ORDER BY s.truck_id, s.maintenance_type""",
             self._company_params_for(company_id),
         )
@@ -422,23 +429,23 @@ class FleetRepository(BaseRepository):
     def get_maintenance_schedules(self, truck_id: Optional[int] = None) -> List[Dict[str, Any]]:
         if truck_id is not None:
             return self._fetchall(
-                f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND active = 1 {self._company_filter()} ORDER BY id",
+                f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND active = 1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY id",
                 (truck_id,) + self._company_params(),
             )
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1 {self._company_filter()} ORDER BY truck_id, id",
+            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY truck_id, id",
             self._company_params(),
         )
 
     def get_maintenance_schedule(self, truck_id: int, maint_type: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND maintenance_type = ? AND active = 1 {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE_MAINT_SCHEDULES} WHERE truck_id = ? AND maintenance_type = ? AND active = 1 {self._company_filter()} {self._soft_delete_filter()}",
             (truck_id, maint_type) + self._company_params(),
         )
 
     def get_schedule_truck_id(self, schedule_id: int) -> Optional[int]:
         row = self._fetchone(
-            f"SELECT truck_id FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ? {self._company_filter()}",
+            f"SELECT truck_id FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (schedule_id,) + self._company_params(),
         )
         return row["truck_id"] if row else None
@@ -452,14 +459,16 @@ class FleetRepository(BaseRepository):
         commit=True)
 
     def delete_maintenance_schedule(self, schedule_id: int) -> None:
+        """Soft-delete a maintenance schedule by stamping ``deleted_at``."""
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"DELETE FROM {self.TABLE_MAINT_SCHEDULES} WHERE id = ? {self._company_filter()}",
-            (schedule_id,) + self._company_params(),
+            f"UPDATE {self.TABLE_MAINT_SCHEDULES} SET deleted_at = ? WHERE id = ? {self._company_filter()}",
+            (utc_now_iso(), schedule_id) + self._company_params(),
         commit=True)
 
     def count_active_maintenance_schedules(self) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1 {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE_MAINT_SCHEDULES} WHERE active = 1 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return row["cnt"] if row else 0
@@ -470,7 +479,7 @@ class FleetRepository(BaseRepository):
             f"""SELECT s.*, t.plate_number, t.mileage AS current_km
                 FROM {self.TABLE_MAINT_SCHEDULES} s
                 LEFT JOIN trucks t ON t.id = s.truck_id
-                WHERE s.active = 1 {self._company_filter("s")}
+                WHERE s.active = 1 {self._company_filter("s")} {self._soft_delete_filter("s")}
                 ORDER BY s.truck_id, s.maintenance_type""",
             self._company_params(),
         )
@@ -485,7 +494,7 @@ class FleetRepository(BaseRepository):
             f"""SELECT s.*, t.mileage AS current_km
                 FROM {self.TABLE_MAINT_SCHEDULES} s
                 LEFT JOIN trucks t ON t.id = s.truck_id
-                WHERE s.active = 1 {self._company_filter("s")}""",
+                WHERE s.active = 1 {self._company_filter("s")} {self._soft_delete_filter("s")}""",
             self._company_params(),
         )
         return sum(1 for r in rows if schedule_is_overdue(r))
@@ -498,7 +507,7 @@ class FleetRepository(BaseRepository):
                        substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()} {self._soft_delete_filter()}
                 GROUP BY truck_id, ym
                 ORDER BY ym, truck_id""",
             (date_from,) + self._company_params(),
@@ -509,7 +518,7 @@ class FleetRepository(BaseRepository):
             f"""SELECT substr(date, 1, 7) AS ym,
                        COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()} {self._soft_delete_filter()}
                 GROUP BY ym
                 ORDER BY ym""",
             (date_from,) + self._company_params(),
@@ -522,7 +531,7 @@ class FleetRepository(BaseRepository):
                        COALESCE(AVG(cost), 0) AS avg_cost,
                        COUNT(*) AS service_count
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()} {self._soft_delete_filter()}
                 GROUP BY truck_id
                 ORDER BY total_ytd DESC""",
             (date_from,) + self._company_params(),
@@ -532,7 +541,7 @@ class FleetRepository(BaseRepository):
         rows = self._fetchall(
             f"""SELECT truck_id, maintenance_type, COALESCE(SUM(cost), 0) AS total
                 FROM {self.TABLE_MAINT_RECORDS}
-                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()}
+                WHERE date >= ? AND cost IS NOT NULL {self._company_filter()} {self._soft_delete_filter()}
                 GROUP BY truck_id, maintenance_type
                 ORDER BY truck_id, total DESC""",
             (date_from,) + self._company_params(),
@@ -571,12 +580,14 @@ class FleetRepository(BaseRepository):
         commit=True)
 
     def get_truck_health(self, truck_id: int) -> Optional[Dict[str, Any]]:
+        # NOTE: truck_health_scores has no deleted_at column — no soft-delete filter.
         return self._fetchone(
             f"SELECT * FROM {self.TABLE_HEALTH_SCORES} WHERE truck_id = ? {self._company_filter()}",
             (truck_id,) + self._company_params(),
         )
 
     def get_all_truck_health(self) -> List[Dict[str, Any]]:
+        # NOTE: truck_health_scores has no deleted_at column — no soft-delete filter.
         return self._fetchall(
             f"SELECT * FROM {self.TABLE_HEALTH_SCORES} WHERE 1=1 {self._company_filter()}",
             self._company_params(),

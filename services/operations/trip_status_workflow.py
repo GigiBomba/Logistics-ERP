@@ -3,6 +3,8 @@
 Extracted from OperationsEngine to reduce responsibilities.
 Handles force_trip_status, get_valid_transitions, and truck odometer updates.
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Any

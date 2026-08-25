@@ -24,6 +24,7 @@ from ui.design_tokens import (
     COLOR_WARNING_DEFAULT,
     COLOR_WARNING_TEXT,
     FONT_FAMILY,
+    RADIUS_SM,
     SP,
     TEXT_MUTED,
     TEXT_PRIMARY,
@@ -308,13 +309,13 @@ class DriverAnalyticsTab(BaseTab):
                 if w in active_weeks:
                     cell.setStyleSheet(
                         f"QFrame {{ background: {COLOR_ACCENT_PRIMARY};"
-                        f" border-radius: 3px; }}"
+                        f" border-radius: {RADIUS_SM}px; }}"
                     )
                     active_count += 1
                 else:
                     cell.setStyleSheet(
                         f"QFrame {{ background: {COLOR_BG_OVERLAY};"
-                        f" border-radius: 3px; }}"
+                        f" border-radius: {RADIUS_SM}px; }}"
                     )
                 driver_row_layout.addWidget(cell)
 

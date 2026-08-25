@@ -11,6 +11,8 @@ Polish (pl) → Polish
 
 Usage: python scripts/translate_batch3.py
 """
+from __future__ import annotations
+
 
 import json
 import os

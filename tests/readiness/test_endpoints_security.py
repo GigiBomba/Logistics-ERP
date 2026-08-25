@@ -5,6 +5,8 @@ happy-path execution.
 Uses FastAPI ``TestClient`` with dependency overrides to simulate
 authentication and database access without a real backend.
 """
+from __future__ import annotations
+
 
 import hashlib
 import hmac

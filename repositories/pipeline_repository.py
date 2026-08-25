@@ -5,6 +5,8 @@ membership rows.  All state transitions (status / stage / matched trip)
 are written through this class so the rest of the system only sees
 fully-formed dicts.
 """
+from __future__ import annotations
+
 
 import json
 import logging

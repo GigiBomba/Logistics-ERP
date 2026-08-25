@@ -1,0 +1,71 @@
+[
+ {
+  "class": "UnavailableModuleView",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   1392,
+   856
+  ],
+  "sizeHint": [
+   536,
+   86
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     9,
+     9,
+     9,
+     9
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   437,
+   394,
+   518,
+   15
+  ],
+  "sizeHint": [
+   52,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   437,
+   415,
+   518,
+   47
+  ],
+  "sizeHint": [
+   518,
+   47
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ }
+]

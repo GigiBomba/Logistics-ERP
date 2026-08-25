@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # services/route_runner.py
 # Production-grade route orchestrator with long-distance optimizations
 

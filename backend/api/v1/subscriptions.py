@@ -36,6 +36,8 @@ Stripe is strictly env-gated: nothing here requires live keys. Tests always
 monkeypatch the ``stripe`` module — no live calls are ever made by the test
 suite.
 """
+from __future__ import annotations
+
 
 import logging
 import math

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Test flatten/unflatten with lists."""
+from __future__ import annotations
+
 import json, os, sys
 sys.path.insert(0, os.path.dirname(__file__))
 from translate_batch2 import flatten, unflatten

@@ -5,6 +5,8 @@ GET    /api/v1/licenses/:id             — Get a single license.
 GET    /api/v1/licenses/:id/devices     — Devices activated under a license.
 DELETE /api/v1/licenses/:id/devices/:deviceId — Remove a device from a license.
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Any, Dict

@@ -10,6 +10,8 @@ Test matrix:
   4. Wrong Content-Type for a JSON endpoint is rejected
   5. Header-like injection in JSON fields is stored safely
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

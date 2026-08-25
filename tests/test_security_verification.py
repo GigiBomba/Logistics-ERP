@@ -6,6 +6,8 @@ call real endpoints.
 
 To run:  pytest tests/test_security_verification.py -v
 """
+from __future__ import annotations
+
 
 import json
 import os

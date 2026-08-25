@@ -3,6 +3,8 @@
 Round-trip serialization, construction-time validity,
 and the constraint that QUERY nodes can't reference Level 2+ tools.
 """
+from __future__ import annotations
+
 
 import pytest
 from datetime import datetime

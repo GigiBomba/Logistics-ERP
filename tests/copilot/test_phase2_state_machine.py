@@ -3,6 +3,8 @@
 Prove the execution pipeline can't reach an invalid state,
 not just that it usually doesn't.
 """
+from __future__ import annotations
+
 
 import pytest
 from backend.copilot.schemas import (

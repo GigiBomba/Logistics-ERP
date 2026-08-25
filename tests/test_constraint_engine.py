@@ -3,6 +3,8 @@
 Covers initialization, truck validation (dimensions, clearance, hazmat),
 parameter building for GraphHopper, and edge cases.
 """
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest

@@ -60,9 +60,18 @@ logger = logging.getLogger(__name__)
 class FreightSearchView(QWidget):
     """Search freight loads across connected providers."""
 
-    def __init__(self, db, parent: Optional[QWidget] = None):
+    def __init__(
+        self,
+        db,
+        parent: Optional[QWidget] = None,
+        freight_service=None,
+    ):
         super().__init__(parent)
         self.db = db
+        # ``freight_service`` is the RemoteFreightExchangeService injected in
+        # remote mode; when set it takes precedence over the raw ``_api``
+        # client configured by the host (see ``_on_search``).
+        self._freight_service = freight_service
         self.setObjectName("freight_search_view")
         self._build_ui()
 
@@ -643,11 +652,15 @@ class FreightSearchView(QWidget):
             if sort_order:
                 kwargs["sort_order"] = sort_order
 
-            # Call the API
-            if not hasattr(self, '_api') or self._api is None:
+            # Call the API — prefer the injected freight service (remote mode,
+            # e.g. ``RemoteFreightExchangeService``), falling back to the raw
+            # ``_api`` client configured by the host.
+            if getattr(self, "_freight_service", None) is not None:
+                response = self._freight_service.search_loads(**kwargs)
+            elif not hasattr(self, '_api') or self._api is None:
                 raise RuntimeError("API client not configured")
-
-            response = self._api.search_loads(**kwargs)
+            else:
+                response = self._api.search_loads(**kwargs)
             results = response.get("results", [])
             provider_statuses = response.get("provider_statuses", [])
             providers_queried = response.get("providers_queried", 0)

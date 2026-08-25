@@ -72,7 +72,7 @@ class TestSettingsRouter:
         resp = client.get(f"{BASE}/my_key")
         assert resp.status_code == 200
         assert resp.json() == {"key": "my_key", "value": "some_value"}
-        mocks["db"].get_setting.assert_called_once_with("my_key")
+        mocks["db"].get_setting.assert_called_once_with("my_key", company_id=1)
 
     def test_get_setting_returns_404_when_missing(self, client_with_mocks):
         client, mocks = client_with_mocks
@@ -90,7 +90,7 @@ class TestSettingsRouter:
         resp = client.put(f"{BASE}/my_key", json={"value": "new_value"})
         assert resp.status_code == 200
         assert resp.json() == {"status": "saved", "key": "my_key", "value": "new_value"}
-        mocks["db"].save_setting.assert_called_once_with("my_key", "new_value")
+        mocks["db"].save_setting.assert_called_once_with("my_key", "new_value", company_id=1)
 
     # ── sensitive-key encryption via API ──────────────────────────────────
 
@@ -104,7 +104,7 @@ class TestSettingsRouter:
         assert resp.status_code == 200
         mock_enc.assert_called_once_with("secret123")
         # Stored value must NOT be the plaintext.
-        mocks["db"].save_setting.assert_called_once_with("smtp_password", "enc:secret123")
+        mocks["db"].save_setting.assert_called_once_with("smtp_password", "enc:secret123", company_id=1)
 
     @patch("backend.api.v1.settings.encrypt_value", side_effect=lambda v: f"enc:{v}")
     def test_put_tracking_password_encrypts_before_save(
@@ -115,7 +115,7 @@ class TestSettingsRouter:
         resp = client.put(f"{BASE}/tracking.password", json={"value": "track-secret"})
         assert resp.status_code == 200
         # Stored value must NOT be the plaintext.
-        mocks["db"].save_setting.assert_called_once_with("tracking.password", "enc:track-secret")
+        mocks["db"].save_setting.assert_called_once_with("tracking.password", "enc:track-secret", company_id=1)
 
     def test_patch_non_sensitive_key_not_encrypted(self, client_with_mocks):
         client, mocks = client_with_mocks
@@ -123,7 +123,7 @@ class TestSettingsRouter:
             resp = client.patch(f"{BASE}/pref_language", json={"value": "ro"})
             assert resp.status_code == 200
             mock_enc.assert_not_called()
-            mocks["db"].save_setting.assert_called_once_with("pref_language", "ro")
+            mocks["db"].save_setting.assert_called_once_with("pref_language", "ro", company_id=1)
 
     @patch("backend.api.v1.settings.decrypt_value", side_effect=lambda v: v.replace("enc:", ""))
     def test_get_sensitive_key_returns_decrypted_value(

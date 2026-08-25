@@ -3,6 +3,8 @@
 All admin endpoints are protected by ``require_admin`` — they must
 return 403 Forbidden when called without a valid admin JWT.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

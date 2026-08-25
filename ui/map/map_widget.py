@@ -22,6 +22,8 @@ from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import QSizePolicy
 
+from ui.design_tokens import COLOR_ACCENT_PRIMARY
+
 logger = logging.getLogger(__name__)
 
 _QWC_JS: str | None = None
@@ -67,6 +69,7 @@ class MapWidget(QWebEngineView):
         self.setAccessibleName("Map")
         self.setAccessibleDescription("Interactive map for route planning and fleet tracking")
         self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
+        # Map overlay colors are intentionally exempt from design_tokens.py (web surface, not app chrome).
         self.page().setBackgroundColor(QColor("#09090b"))
         self.setStyleSheet("QWebEngineView { background-color: #09090b; border: none; margin: 0; padding: 0; }")
         self._center = center
@@ -245,7 +248,7 @@ class MapWidget(QWebEngineView):
         js = f"_opAddMarker({lat}, {lng}, {js_label}, '{js_color}');"
         self._run_js(js)
 
-    def add_polyline(self, coords: list[tuple[float, float]], color: str = "#6366f1", weight: int = 3) -> None:
+    def add_polyline(self, coords: list[tuple[float, float]], color: str = COLOR_ACCENT_PRIMARY, weight: int = 3) -> None:
         coords_json = json.dumps([[lat, lng] for lat, lng in coords])
         js_color = self._js_color(color)
         js = f"_opAddPolyline({coords_json}, '{js_color}', {weight});"
@@ -290,7 +293,7 @@ class MapWidget(QWebEngineView):
         except Exception:
             logger.exception("runJavaScript failed")
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         with contextlib.suppress(Exception):
             self._bridge.deleteLater()
         super().deleteLater()

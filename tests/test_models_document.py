@@ -1,4 +1,6 @@
 """Tests for document_models.py — Document upload spec, extension whitelist, MIME type, file size limits."""
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 from models.document_models import DocumentUpload, DocumentResult

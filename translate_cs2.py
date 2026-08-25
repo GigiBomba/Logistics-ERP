@@ -2,6 +2,8 @@
 """
 Comprehensive translation of cs.json - translate ALL remaining English values to Czech.
 """
+from __future__ import annotations
+
 import json
 import os
 import re

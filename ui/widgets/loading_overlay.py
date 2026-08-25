@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
 
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY, COLOR_BG_BASE, COLOR_TEXT_PRIMARY, COLOR_TEXT_TERTIARY,
-    SPACE_4,
+    FONT_SIZE_LG, SPACE_4,
 )
 
 _log = logging.getLogger(__name__)
@@ -61,9 +61,9 @@ class LoadingOverlay(QFrame):
 
         # Main text
         self._text_label = QLabel(text, self)
-        tf = QFont("IBM Plex Sans", 18)
+        tf = QFont("IBM Plex Sans", FONT_SIZE_LG)
         if tf.pointSize() <= 0:
-            tf.setPointSize(18)
+            tf.setPointSize(FONT_SIZE_LG)
         self._text_label.setFont(tf)
         self._text_label.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; background: transparent;")
         self._text_label.setAlignment(Qt.AlignCenter)

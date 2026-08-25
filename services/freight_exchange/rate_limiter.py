@@ -7,13 +7,13 @@ Trans.eu limits:
 Per-(company_id, provider_id) sliding-window buckets stored in Redis.
 Keys auto-expire after 2 seconds for automatic cleanup.
 """
+from __future__ import annotations
+
 import logging
 import asyncio
 import random
 import time
 from typing import Optional
-
-from backend.cache import get_cache
 
 logger = logging.getLogger(__name__)
 
@@ -52,8 +52,17 @@ class FreightRateLimiter:
         If not passed, uses the global RedisCache singleton.
         Explicitly passing None means degraded mode."""
         if redis_client is _UNSET:
-            cache = get_cache()
-            self._redis = cache._redis if hasattr(cache, '_redis') and cache._enabled else None
+            # Lazy + guarded: backend.cache only exists on the server; the
+            # packaged desktop build ships no backend package.  Missing
+            # backend == no Redis == degraded mode (unlimited).
+            try:
+                from backend.cache import get_cache
+                cache = get_cache()
+            except ImportError:
+                cache = None
+            self._redis = (
+                cache._redis if cache is not None and hasattr(cache, "_redis") and cache._enabled else None
+            )
         else:
             self._redis = redis_client
 

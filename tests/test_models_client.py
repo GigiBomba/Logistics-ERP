@@ -1,4 +1,6 @@
 """Tests for client_models.py — ClientContact, ClientCreate, ClientUpdate, ClientResult."""
+from __future__ import annotations
+
 import pytest
 from datetime import datetime
 from pydantic import ValidationError

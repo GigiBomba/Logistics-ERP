@@ -3,6 +3,8 @@
 Uses the shared security fixtures (client, admin_token, auth_admin)
 defined in ``tests/security/conftest.py``.
 """
+from __future__ import annotations
+
 
 import time
 import jwt as pyjwt

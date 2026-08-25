@@ -21,14 +21,14 @@ from PySide6.QtWidgets import (
 from client.api_client import ApiClient
 from services.i18n import t
 from ui.components import Btn
-from ui.design_tokens import SP
+from ui.design_tokens import COLOR_SUCCESS_DEFAULT, SP
 from ui.widgets import SectionHeader
 
 logger = logging.getLogger(__name__)
 
 
 _STATUS_STYLES = {
-    "online": "color: #22c55e; font-weight: bold;",
+    "online": f"color: {COLOR_SUCCESS_DEFAULT}; font-weight: bold;",
     "offline": "color: #ef4444; font-weight: bold;",
     "unknown": "color: #6b7280; font-style: italic;",
 }

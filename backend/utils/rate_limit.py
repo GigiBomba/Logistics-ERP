@@ -9,6 +9,8 @@ allowed, False when over the limit. Redis is preferred; when unavailable the
 limiter degrades to a per-process in-memory window (single-worker behaviour,
 same as the previous implementation — never crashes).
 """
+from __future__ import annotations
+
 
 import logging
 import os

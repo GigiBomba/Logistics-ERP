@@ -1,4 +1,6 @@
 """Client service — business logic for client management."""
+from __future__ import annotations
+
 import logging
 import warnings
 from typing import Any, Optional
@@ -192,7 +194,11 @@ class ClientService:
         )
 
     def delete(self, client_id: int, user_id: int) -> ClientCreateResult:
-        """Deactivate a client (soft-delete). Admin only."""
+        """Deactivate a client (soft-delete). Admin only.
+
+        Sets ``is_active = 0`` (the UI reads it) AND stamps ``deleted_at`` so
+        the sync layer treats the client as deleted (unified delete semantics).
+        """
         self._check_permission("can_delete_client", user_id)
 
         client_dict = self._repo.get_by_id(client_id)
@@ -201,7 +207,7 @@ class ClientService:
                 success=False,
                 errors=[ErrorDetail(message="Client not found", code="NOT_FOUND")],
             )
-        self._repo.deactivate(client_id)
+        self._repo.soft_delete(client_id)
         client_dict["is_active"] = 0
         return ClientCreateResult(
             success=True,

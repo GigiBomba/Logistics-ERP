@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Boost HU and TR coverage by adding remaining translations."""
+from __future__ import annotations
+
 import json, os, re
 
 TRANS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "translations")

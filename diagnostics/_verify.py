@@ -1,6 +1,8 @@
 """Final verification script for the Runtime Diagnostics Framework.
 Run: python diagnostics/_verify.py
 """
+from __future__ import annotations
+
 import sys
 import os
 

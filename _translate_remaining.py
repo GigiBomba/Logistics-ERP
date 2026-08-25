@@ -2,6 +2,8 @@
 Second-pass translator: handles the remaining ~400 untranslated values.
 Reads the already-partially-translated hr.json and applies the missing translations.
 """
+from __future__ import annotations
+
 import json, re, sys
 
 with open('data/translations/en.json', 'r', encoding='utf-8') as f:

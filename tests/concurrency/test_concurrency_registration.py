@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor, TimeoutError, as_completed
 
@@ -105,11 +104,6 @@ class TestConcurrencyRegistration:
                 f"User {email} was not created"
             )
 
-    @pytest.mark.xfail(
-        condition=sys.platform == "win32",
-        strict=False,
-        reason="SQLite concurrent writes deadlock on Windows",
-    )
     def test_concurrent_same_email_registration(self, db):
         """Multiple threads trying to register the same email — only one
         succeeds due to the UNIQUE constraint on ``users.email``."""

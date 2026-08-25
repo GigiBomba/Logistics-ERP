@@ -4,6 +4,8 @@ Revision ID: h0a1b2c3d4e1
 Revises: g8c9d0e1f2f0
 Create Date: 2026-08-13
 """
+from __future__ import annotations
+
 from typing import Sequence, Union
 
 from alembic import op

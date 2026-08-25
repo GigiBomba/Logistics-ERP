@@ -843,3 +843,44 @@ class TestUploadExtended:
         )
         assert not result.success
         mock_ocr.enqueue_ocr.assert_not_called()
+
+
+class TestDeleteBatchSoftDelete:
+    """R3: delete_batch must soft-delete (rows preserved with deleted_at)."""
+
+    def _make_doc(self, db, doc_number="DOC-1"):
+        db.conn.execute(
+            "INSERT INTO documents (doc_number, title, category, entity_type, "
+            "entity_id, file_path, file_name, file_size, mime_type, file_hash, "
+            "tags, description, uploaded_by, uploaded_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (doc_number, "Test Doc", "general", "", None, "/tmp/test.pdf",
+             "test.pdf", 100, "application/pdf", "hash1", "[]", "", "1",
+             "2026-01-01", "2026-01-01"),
+        )
+        db.conn.commit()
+        return db.conn.execute(
+            "SELECT id FROM documents WHERE doc_number = ?", (doc_number,)
+        ).fetchone()["id"]
+
+    def test_delete_batch_soft_deletes(self):
+        from tests.test_helpers import make_db, seed_admin_user
+        db = make_db()
+        seed_admin_user(db, user_id=1, company_id=1)
+        doc1 = self._make_doc(db, "DOC-B1")
+        doc2 = self._make_doc(db, "DOC-B2")
+        svc = DocumentService(db)
+
+        count = svc.delete_batch([doc1, doc2])
+        assert count == 2
+
+        # Rows preserved with deleted_at stamped (NOT hard-deleted)
+        rows = db.conn.execute(
+            "SELECT id, deleted_at FROM documents WHERE id IN (?, ?)", (doc1, doc2)
+        ).fetchall()
+        assert len(rows) == 2
+        assert all(r["deleted_at"] is not None for r in rows)
+
+        # Filtered from reads
+        assert svc._repo.get_by_id(doc1) is None
+        assert svc._repo.get_by_id(doc2) is None

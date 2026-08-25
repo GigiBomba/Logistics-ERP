@@ -3,6 +3,8 @@
 Covers all 9 freight tools: parameter validation, service unavailable handling,
 and tool registration correctness.
 """
+from __future__ import annotations
+
 
 import asyncio
 from typing import Any, Dict

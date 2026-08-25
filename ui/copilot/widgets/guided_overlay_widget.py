@@ -228,6 +228,7 @@ class GuidedOverlayWidget(QWidget):
 
     def skip_step(self) -> None:
         """Skip the current step (advance without interaction)."""
+        self.skipped.emit()
         if self._current_step_index < len(self._steps) - 1:
             self._current_step_index += 1
             self._show_step(self._current_step_index)

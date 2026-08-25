@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.components import EmptyState
-from ui.design_tokens import COLOR_TEXT_PRIMARY, SP
+from ui.design_tokens import COLOR_ACCENT_SUBTLE, COLOR_TEXT_PRIMARY, COLOR_WARNING_SUBTLE, SP
 from ui.widgets import ActionButton
 from utils.dates import parse_date
 
@@ -33,9 +33,9 @@ _DONE_STATUSES = frozenset({
 
 # Map trip status to chip colour token.
 _STATUS_COLORS: dict[str, str] = {
-    "Planned":   "#1c1917",
-    "Loading":   "#341a00",
-    "In Transit": "#0f1f4a",
+    "Planned":   COLOR_ACCENT_SUBTLE,
+    "Loading":   COLOR_WARNING_SUBTLE,
+    "In Transit": COLOR_WARNING_SUBTLE,
 }
 
 
@@ -206,7 +206,7 @@ class QtDispatchTimeline(QWidget):
 
         self._layout.addWidget(row)
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         """Clear all widgets and schedule deletion."""
         self._clear()
         super().deleteLater()
@@ -219,7 +219,7 @@ class QtDispatchTimeline(QWidget):
         status = trip.get("status", "Planned")
 
         # Resolve colour.
-        bar_color = _STATUS_COLORS.get(status, "#1c1917")
+        bar_color = _STATUS_COLORS.get(status, COLOR_ACCENT_SUBTLE)
 
         # Format the date range label.
         dep_dt = parse_date(dep_raw, "%d/%m/%Y")

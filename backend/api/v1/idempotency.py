@@ -4,6 +4,8 @@ Provides insight into both the Redis-backed and in-memory idempotency
 stores so administrators can observe and clear cached responses across
 all gunicorn workers.
 """
+from __future__ import annotations
+
 import time
 
 from fastapi import APIRouter, Depends

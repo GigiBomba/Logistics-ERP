@@ -3,6 +3,8 @@
 Covers ErrorCode enum, ProblemDetail dataclass, the exception-to-error mapping,
 the custom exception hierarchy, and the global FastAPI exception handler.
 """
+from __future__ import annotations
+
 import pytest
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse

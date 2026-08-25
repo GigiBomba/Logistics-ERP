@@ -11,6 +11,8 @@ Admin (require_admin):
   PATCH  /api/v1/blog/admin/posts/:slug    — Update post
   DELETE /api/v1/blog/admin/posts/:slug    — Delete post
 """
+from __future__ import annotations
+
 
 import json
 import logging

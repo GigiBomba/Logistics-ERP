@@ -6,6 +6,8 @@ Uses the shared security fixtures from ``tests/security/conftest.py``:
 - ``auth_a`` — ``{"Authorization": "Bearer <company-A-token>"}`` header dict.
 - ``auth_b`` — ``{"Authorization": "Bearer <company-B-token>"}`` header dict.
 """
+from __future__ import annotations
+
 
 import json
 import pytest
@@ -74,7 +76,14 @@ class TestXSSInjection:
             items = resp2.json().get("items", [])
             trip_1 = next((t for t in items if t["id"] == 1), None)
             if trip_1 is not None and "driver_name" in trip_1:
-                assert trip_1["driver_name"] == xss_driver, (
+                # The input-sanitization middleware wraps ``<script>`` in
+                # zero-width spaces (``\u200b``) as a defense-in-depth marker
+                # (same behaviour documented in test_xss_in_client_name).
+                # Strip them so this assertion still verifies the payload was
+                # stored LITERALLY (no HTML-entity encoding, no stripping of
+                # the tag content itself).
+                stored_driver = (trip_1["driver_name"] or "").replace("\u200b", "")
+                assert stored_driver == xss_driver, (
                     f"Expected driver_name to be stored literally, "
                     f"got {trip_1['driver_name']!r}"
                 )

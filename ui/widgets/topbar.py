@@ -23,6 +23,7 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
+from ui.components import _Btn
 from ui.design_tokens import (
     BORDER_DEFAULT,
     BTN_HEIGHT_SM,
@@ -44,6 +45,7 @@ class TopBar(QFrame):
     back_clicked = Signal()
     recent_clicked = Signal(str)
     report_issue_clicked = Signal()
+    sync_clicked = Signal()
 
     def __init__(self, parent: QWidget | None = None, ops=None):
         super().__init__(parent)
@@ -62,6 +64,9 @@ class TopBar(QFrame):
         self._build()
         self._update_clock()
         self.set_alert_count(0)
+        # Ensure the top bar is visible so its buttons participate in the
+        # keyboard focus/tab chain (a hidden widget is skipped by Tab).
+        self.show()
 
     def _build(self):
         layout = QVBoxLayout(self)
@@ -75,7 +80,7 @@ class TopBar(QFrame):
         row_layout.setSpacing(8)
 
         # Back button (hidden until nav stack has history)
-        self._back_btn = QPushButton()
+        self._back_btn = _Btn()
         self._back_btn.setIcon(qta.icon("fa5s.arrow-left", color=COLOR_TEXT_SECONDARY))
         self._back_btn.setFixedSize(BTN_HEIGHT_SM, BTN_HEIGHT_SM)
         self._back_btn.setStyleSheet(f"min-height: {BTN_HEIGHT_SM}px; max-height: {BTN_HEIGHT_SM}px; padding: 0px;")
@@ -143,7 +148,7 @@ class TopBar(QFrame):
         row_layout.addWidget(alert_widget)
 
         # Report Issue button - placeholder
-        self._report_issue_btn = QPushButton()
+        self._report_issue_btn = _Btn()
         self._report_issue_btn.setIcon(
             qta.icon("fa5s.bug", color=TEXT_MUTED),
         )
@@ -157,6 +162,13 @@ class TopBar(QFrame):
         self._report_issue_btn.setCursor(Qt.PointingHandCursor)
         self._report_issue_btn.clicked.connect(self.report_issue_clicked.emit)
         row_layout.addWidget(self._report_issue_btn)
+
+        # Sync status indicator (offline-first sync) — click opens the
+        # conflict journal (wired by MainWindow).
+        from ui.widgets.sync_status import SyncStatusLabel
+        self._sync_label = SyncStatusLabel(self)
+        self._sync_label.clicked.connect(self.sync_clicked.emit)
+        row_layout.addWidget(self._sync_label)
 
         # Separator
         sep = QFrame()
@@ -183,6 +195,10 @@ class TopBar(QFrame):
             self._fuel_dot.setStyleSheet(f"background: {DANGER}; border-radius: 4px;")
         else:
             self._fuel_dot.setStyleSheet(f"background: {SUCCESS}; border-radius: 4px;")
+
+    def set_sync_status(self, status: str, conflicts: int = 0) -> None:
+        """Update the sync status indicator from a sync engine status."""
+        self._sync_label.update_status(status, conflicts)
 
     def set_alert_count(self, count: int) -> None:
         if count > 0:
@@ -242,7 +258,7 @@ class TopBar(QFrame):
         self._alert_dialog = panel
         panel.show_anchored(self._bell)
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         if self._clock_timer is not None:
             self._clock_timer.stop()
         super().deleteLater()

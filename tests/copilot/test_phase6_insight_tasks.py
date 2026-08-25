@@ -2,6 +2,8 @@
 
 Verifies each job runs without crashing and produces expected insight types.
 """
+from __future__ import annotations
+
 
 import json
 from datetime import datetime, timedelta

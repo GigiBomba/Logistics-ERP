@@ -1,4 +1,6 @@
 """Proforma repository — all proforma invoice DB access consolidated here."""
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime
@@ -17,6 +19,7 @@ DEFAULT_PROFORMA_FORMAT_KEY = "prof_year_seq"
 
 class ProformaRepository(BaseRepository):
     TABLE = "proforma_invoices"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "proforma_number", "issue_date", "valid_until",
         "client_name", "client_address", "client_vat", "client_phone", "client_email",
@@ -89,7 +92,7 @@ class ProformaRepository(BaseRepository):
 
     def get_by_id(self, proforma_id: int) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (proforma_id,) + self._company_params(),
         )
         if row and row.get("line_items_json"):
@@ -101,7 +104,7 @@ class ProformaRepository(BaseRepository):
 
     def get_by_number(self, proforma_number: str) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE proforma_number = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE proforma_number = ? {self._company_filter()} {self._soft_delete_filter()}",
             (proforma_number,) + self._company_params(),
         )
         if row and row.get("line_items_json"):
@@ -113,13 +116,13 @@ class ProformaRepository(BaseRepository):
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             self._company_params() + (limit, offset),
         )
 
     def get_by_status(self, status: str, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ?",
             (status,) + self._company_params() + (limit,),
         )
 
@@ -173,7 +176,7 @@ class ProformaRepository(BaseRepository):
 
     def count_by_status(self, status: str) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ? {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ? {self._company_filter()} {self._soft_delete_filter()}",
             (status,) + self._company_params(),
         )
         return int(row["cnt"]) if row else 0

@@ -71,11 +71,11 @@ class TestAppShell:
 
         db = MagicMock()
         app_shell = AppShell(qt_main_window, db)
-        app_shell.top_bar.destroy = MagicMock()
-        app_shell.nav.destroy = MagicMock()
+        app_shell.top_bar._destroy = MagicMock()
+        app_shell.nav._destroy = MagicMock()
         app_shell.destroy()
-        app_shell.top_bar.destroy.assert_called_once()
-        app_shell.nav.destroy.assert_called_once()
+        app_shell.top_bar._destroy.assert_called_once()
+        app_shell.nav._destroy.assert_called_once()
 
     # ── New tests ─────────────────────────────────────────────────────────
 
@@ -98,8 +98,8 @@ class TestAppShell:
         app_shell._on_alert_navigate("any_view", {})
 
     def test_destroy_suppresses_errors(self, app_shell):
-        app_shell.top_bar.destroy = MagicMock(side_effect=RuntimeError("boom"))
-        app_shell.nav.destroy = MagicMock(side_effect=RuntimeError("bang"))
+        app_shell.top_bar._destroy = MagicMock(side_effect=RuntimeError("boom"))
+        app_shell.nav._destroy = MagicMock(side_effect=RuntimeError("bang"))
         # Must not raise
         app_shell.destroy()
 

@@ -2,6 +2,8 @@
 
 Deprecated tools disappear from new plans but don't break in-flight ones.
 """
+from __future__ import annotations
+
 
 import pytest
 from pydantic import BaseModel, ConfigDict

@@ -3,6 +3,8 @@
 GET  /api/v1/company  — Return the current user's company profile.
 PATCH /api/v1/company — Partially update company profile fields.
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Any, Dict, Optional

@@ -3,6 +3,8 @@
 Translate ALL remaining English values in cs.json to Czech.
 Compares cs.json against en.json - if a value is still English, translate it.
 """
+from __future__ import annotations
+
 import json
 import os
 import re

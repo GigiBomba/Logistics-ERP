@@ -6,6 +6,8 @@ network issues occur, or the system is under abnormal conditions.
 Pattern follows ``test_chaos_database.py`` — patches ``DatabaseManager.conn``
 at the class level so existing singleton instances are affected.
 """
+from __future__ import annotations
+
 
 import contextlib
 import sqlite3

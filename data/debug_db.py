@@ -1,4 +1,6 @@
 """Debug script to check database state."""
+from __future__ import annotations
+
 import os
 import bcrypt
 import sqlite3

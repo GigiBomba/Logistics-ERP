@@ -85,7 +85,7 @@ class QtMaintenanceView(QDialog):
         # Header
         header = QWidget()
         hl = QHBoxLayout(header)
-        hl.setContentsMargins(20, 10, 20, 10)
+        hl.setContentsMargins(20, 12, 20, 12)
         self._title_lbl = QLabel(iconed("maint.header", self.truck_plate))
         self._title_lbl.setProperty("fontRole", "h2")
         hl.addWidget(self._title_lbl)

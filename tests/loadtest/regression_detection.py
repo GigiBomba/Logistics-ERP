@@ -3,6 +3,8 @@
 Usage:
     python tests/loadtest/regression_detection.py <new_results.csv>
 """
+from __future__ import annotations
+
 
 import csv
 import json

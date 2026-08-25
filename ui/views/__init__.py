@@ -1,4 +1,6 @@
 """PySide6 view modules for the Operion ERP Qt branch."""
+from __future__ import annotations
+
 
 from ui.views.analytics import QtAnalyticsView
 from ui.views.automation_view import QtAutomationView

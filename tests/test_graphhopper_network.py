@@ -1,4 +1,6 @@
 """Unit tests for GraphHopper network helpers."""
+from __future__ import annotations
+
 import unittest
 from unittest import mock
 

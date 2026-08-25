@@ -1,4 +1,6 @@
 """Shared layout utility functions."""
+from __future__ import annotations
+
 from PySide6.QtWidgets import QLayout
 
 def clear_layout(layout: QLayout) -> None:

@@ -5,6 +5,8 @@ GET /api/v1/roadmap         — Roadmap items
 GET /api/v1/status          — Service status  
 GET /api/v1/announcements   — Announcements
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Any, Dict, List, Optional

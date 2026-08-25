@@ -1,4 +1,6 @@
 """Feature flags management API (admin only)."""
+from __future__ import annotations
+
 import logging
 from fastapi import APIRouter, Depends, HTTPException
 from backend.dependencies import get_db

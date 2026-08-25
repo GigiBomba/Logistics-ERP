@@ -4,6 +4,8 @@ Covers the data-layer, image processor (graceful fallback), OCR
 field extractors, trip matcher, customer detector and email
 template renderer.  No Qt widgets, no real SMTP.
 """
+from __future__ import annotations
+
 
 import json
 import os
@@ -59,7 +61,8 @@ class _StubDb:
                 notes TEXT DEFAULT '',
                 is_active INTEGER DEFAULT 1,
                 created_at TEXT NOT NULL,
-                updated_at TEXT
+                updated_at TEXT,
+                deleted_at TEXT
             );
             CREATE TABLE IF NOT EXISTS client_contacts (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -96,7 +99,8 @@ class _StubDb:
                 cmr_number TEXT DEFAULT '',
                 cmr_status TEXT DEFAULT 'draft',
                 documents_attached TEXT DEFAULT '',
-                client_id INTEGER
+                client_id INTEGER,
+                deleted_at TEXT
             );
             CREATE TABLE IF NOT EXISTS invoices (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -105,7 +109,8 @@ class _StubDb:
                 issue_date TEXT,
                 due_date TEXT,
                 total_amount REAL,
-                status TEXT
+                status TEXT,
+                deleted_at TEXT
             );
             CREATE TABLE IF NOT EXISTS trucks (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -151,7 +156,8 @@ class _StubDb:
                 copy_type TEXT DEFAULT '',
                 cmr_number TEXT DEFAULT '',
                 cmr_metadata_json TEXT DEFAULT '{}',
-                is_signed INTEGER DEFAULT 0
+                is_signed INTEGER DEFAULT 0,
+                deleted_at TEXT
             );
             CREATE TABLE IF NOT EXISTS document_links (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,

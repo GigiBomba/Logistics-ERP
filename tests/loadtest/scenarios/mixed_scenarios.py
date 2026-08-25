@@ -1,4 +1,6 @@
 """Realistic multi-step workflows."""
+from __future__ import annotations
+
 from locust import task, tag
 from tests.loadtest.factories import TokenManager
 

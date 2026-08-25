@@ -263,7 +263,12 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         # Canvas / preview section headers
         self._from_header.setText(t("invoice_editor.from").upper())
         self._bill_to_header.setText(t("invoice_editor.bill_to").upper())
-        self._trip_header.setText(t("invoice_editor.trip_details").upper())
+        # Guarded: the section header is created lazily in
+        # _build_trip_details_section() — the i18n listener can fire before
+        # the widget exists (registration happens in __init__ before _build_ui).
+        trip_header = getattr(self, "_trip_header", None)
+        if trip_header is not None:
+            trip_header.setText(t("invoice_editor.trip_details").upper())
         self._inv_meta_header.setText(t("invoice_editor.invoice_metadata").upper())
         self._desc_label.setText(t("invoice_editor.description"))
         self._notes_label.setText(t("invoice_editor.notes"))
@@ -762,6 +767,7 @@ class QtInvoiceEditor(BaseView, LineItemsMixin):
         layout.setSpacing(SP["3"])
 
         header = SectionTitle(container, t("invoice_editor.trip_details"))
+        self._trip_header = header  # re-translated by _retranslate_ui()
         layout.addWidget(header)
 
         card = self._make_card()

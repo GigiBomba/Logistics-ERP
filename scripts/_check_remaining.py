@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Check remaining untranslated values - writes to file."""
+from __future__ import annotations
+
 import json, os, re, sys
 
 TRANS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "translations")

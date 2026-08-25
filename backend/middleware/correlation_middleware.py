@@ -1,4 +1,6 @@
 """Correlation ID middleware — injects X-Request-ID into every request context."""
+from __future__ import annotations
+
 import uuid
 import logging
 from contextvars import ContextVar

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import os
 os.environ["OPERION_API_KEY"] = "test"
 os.environ["OPERION_ENCRYPTION_KEY"] = "test-key-32-chars-long-for-test!!"

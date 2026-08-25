@@ -240,3 +240,56 @@ class TestGetNextNumber:
         seq1 = int(nxt1.split("-")[-1])
         seq2 = int(nxt2.split("-")[-1])
         assert seq2 == seq1 + 1
+
+
+# ── Soft-delete filtering (R1) ───────────────────────────────────────
+
+
+class TestSoftDeleteFiltering:
+    """Soft-deleted invoices must be excluded from every read path (R1)."""
+
+    def test_get_by_client_id_excludes_soft_deleted(self, db, repo):
+        cid = _client(db, name="Client A")
+        tid1 = _trip(db, client_id=cid, client_name="Client A")
+        tid2 = _trip(db, client_id=cid, client_name="Client A")
+        keep_id = _invoice(db, trip_id=tid1, invoice_number="INV-2026-0001")
+        gone_id = _invoice(db, trip_id=tid2, invoice_number="INV-2026-0002")
+        repo.delete(gone_id)
+        ids = {r["id"] for r in repo.get_by_client_id(cid)}
+        assert keep_id in ids
+        assert gone_id not in ids
+
+    def test_get_outstanding_by_client_excludes_soft_deleted(self, db, repo):
+        cid = _client(db, name="Client B")
+        tid1 = _trip(db, client_id=cid, client_name="Client B")
+        tid2 = _trip(db, client_id=cid, client_name="Client B")
+        keep_id = _invoice(db, trip_id=tid1, invoice_number="INV-2026-0001", status="Unpaid")
+        gone_id = _invoice(db, trip_id=tid2, invoice_number="INV-2026-0002", status="Unpaid")
+        repo.delete(gone_id)
+        ids = {r["id"] for r in repo.get_outstanding_by_client(cid)}
+        assert keep_id in ids
+        assert gone_id not in ids
+
+    def test_get_dunner_due_invoices_excludes_soft_deleted(self, db, repo):
+        cid = _client(db, name="Dunner Client", email="dunner@test.com")
+        tid1 = _trip(db, client_id=cid, client_name="Dunner Client")
+        tid2 = _trip(db, client_id=cid, client_name="Dunner Client")
+        keep_id = _invoice(db, trip_id=tid1, invoice_number="INV-2026-0001", status="Unpaid")
+        gone_id = _invoice(db, trip_id=tid2, invoice_number="INV-2026-0002", status="Unpaid")
+        repo.delete(gone_id)
+        ids = {r["invoice_id"] for r in repo.get_dunner_due_invoices()}
+        assert keep_id in ids
+        assert gone_id not in ids
+
+    def test_get_payment_summary_excludes_soft_deleted(self, db, repo):
+        cid = _client(db, name="Payment Client")
+        tid1 = _trip(db, client_id=cid, client_name="Payment Client")
+        tid2 = _trip(db, client_id=cid, client_name="Payment Client")
+        _invoice(db, trip_id=tid1, invoice_number="INV-2026-0001",
+                 total_amount=1000.00, status="Unpaid")
+        gone_id = _invoice(db, trip_id=tid2, invoice_number="INV-2026-0002",
+                           total_amount=5000.00, status="Unpaid")
+        repo.delete(gone_id)
+        summary = repo.get_payment_summary(cid)
+        assert summary is not None
+        assert summary["unpaid"] == 1000.0

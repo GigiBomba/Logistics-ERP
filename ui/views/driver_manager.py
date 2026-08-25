@@ -192,17 +192,27 @@ class QtDriverFormDialog(QDialog):
             self._truck_names = [""]
             self._truck_ids = [""]
             try:
-                from repositories.fleet_repository import FleetRepository
+                # Prefer the injected driver/truck service's own truck list in
+                # remote mode; fall back to the local FleetRepository when a DB
+                # is available.  The guard only blocks the remote + no-DB case
+                # where no truck-list source exists.
+                repo_db = getattr(self._repo, "db", None)
+                if repo_db is not None:
+                    from repositories.fleet_repository import FleetRepository
 
-                # Guard: local-only operation (FleetRepository instantiation)
-                if self._repo is not None:
-                    mode = detect_mode(self._repo.db, None)
-                    guard_local_access(mode, "Driver form — truck assignment dropdown")
+                    # Guard: local-only operation (FleetRepository instantiation)
+                    mode = detect_mode(repo_db, None)
+                    if mode == ConnectionMode.REMOTE:
+                        guard_local_access(mode, "Driver form — truck assignment dropdown")
 
-                fleet_repo = FleetRepository(self._repo.db)
-                for tr in fleet_repo.get_active_trucks():
-                    self._truck_ids.append(str(tr["id"]))
-                    self._truck_names.append(tr["plate_number"])
+                    fleet_repo = FleetRepository(repo_db)
+                    for tr in fleet_repo.get_active_trucks():
+                        self._truck_ids.append(str(tr["id"]))
+                        self._truck_names.append(tr["plate_number"])
+                elif hasattr(self._repo, "get_active_trucks"):
+                    for tr in self._repo.get_active_trucks():
+                        self._truck_ids.append(str(tr["id"]))
+                        self._truck_names.append(tr["plate_number"])
             except Exception:
                 pass
 
@@ -359,9 +369,17 @@ class QtDriverManager(BaseView):
         self._dta_service = dta_svc
         self._tacho_activity_repo = tacho_repo
 
-        # Mode guard — local-only view (no api_client param)
-        self._mode = detect_mode(db, None)  # no api_client — always local
-        guard_local_access(self._mode, "Driver manager")
+        # Mode guard — conditional: remote mode is only blocked when no driver
+        # service was injected.  With a ``RemoteDriverService`` the view is
+        # remote-capable.  When a remote-capable service is injected the mode
+        # is REMOTE outright — skip ``detect_mode(db, None)`` so it cannot log
+        # the spurious "degraded mode" warning (db is None in remote mode).
+        if db is None and self._driver_repo is not None:
+            self._mode = ConnectionMode.REMOTE
+        else:
+            self._mode = detect_mode(db, None)
+        if self._mode == ConnectionMode.REMOTE and self._driver_repo is None:
+            guard_local_access(self._mode, "Driver manager")
 
         self._kpi_value_labels: dict[str, MonoLabel] = {}
         self._kpi_strip_layout: QHBoxLayout | None = None
@@ -725,7 +743,7 @@ class QtDriverManager(BaseView):
                     container = QWidget()
                     container.setContentsMargins(0, 0, 0, 0)
                     row_layout = QHBoxLayout(container)
-                    row_layout.setContentsMargins(2, 0, 2, 0)
+                    row_layout.setContentsMargins(4, 0, 4, 0)
                     row_layout.setSpacing(2)
 
                     edit_btn = QPushButton("\u270E")  # pencil
@@ -963,9 +981,23 @@ class QtDriverManager(BaseView):
             )
             return
         try:
-            from repositories.fleet_repository import FleetRepository
-            fleet_repo = FleetRepository(self.db)
-            trucks = fleet_repo.get_active_trucks()
+            trucks = []
+            # Prefer the injected driver service's own truck list in remote
+            # mode (a ``RemoteDriverService`` may expose ``get_active_trucks``);
+            # fall back to the local ``FleetRepository`` when a DB is present.
+            if getattr(self._driver_repo, "get_active_trucks", None) is not None:
+                trucks = self._driver_repo.get_active_trucks()
+            elif self.db is not None:
+                from repositories.fleet_repository import FleetRepository
+                fleet_repo = FleetRepository(self.db)
+                trucks = fleet_repo.get_active_trucks()
+            else:
+                QMessageBox.information(
+                    self,
+                    t("driver_manager.assign_truck", default="Assign Truck"),
+                    t("driver_manager.no_trucks_available", default="No active trucks available."),
+                )
+                return
         except Exception as ex:
             logger.exception("Failed to load trucks")
             QMessageBox.critical(

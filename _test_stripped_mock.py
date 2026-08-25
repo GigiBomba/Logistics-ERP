@@ -1,4 +1,6 @@
 """Test if a custom MagicMock subclass can strip company_id from recorded calls."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 class StrippedMock(MagicMock):

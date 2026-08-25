@@ -16,6 +16,8 @@ This file adds deeper coverage of:
 
 Blueprint: §9 — BaseTool.undo() support, §22 item 4.
 """
+from __future__ import annotations
+
 
 import asyncio
 from typing import Any

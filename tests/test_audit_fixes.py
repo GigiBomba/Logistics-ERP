@@ -1,4 +1,6 @@
 """Audit-driven test coverage for edge cases across utils and services."""
+from __future__ import annotations
+
 import math
 import unittest
 from datetime import datetime, timedelta

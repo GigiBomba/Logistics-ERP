@@ -1,4 +1,6 @@
 """Tests for invoice_models.py — Invoice create (line items, VAT), required fields, status transitions."""
+from __future__ import annotations
+
 import pytest
 from datetime import date
 from pydantic import ValidationError

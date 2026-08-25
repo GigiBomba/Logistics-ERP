@@ -283,7 +283,7 @@ class QtServiceTimelineWidget(QWidget):
         else:
             self._show_detail_popup(rec)
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         """Close any open dialog and schedule deletion."""
         self._clear_scroll()
         if self._detail_dialog is not None:

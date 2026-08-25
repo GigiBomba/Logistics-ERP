@@ -1,4 +1,6 @@
 """Scheduled maintenance tasks including data retention cleanup."""
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta
 

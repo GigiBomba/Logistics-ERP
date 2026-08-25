@@ -5,6 +5,8 @@ They are not scoped to a single company, so ``_company_filter``
 is intentionally omitted.
 # read-only
 """
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 from repositories import BaseRepository
 

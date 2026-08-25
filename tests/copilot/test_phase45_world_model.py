@@ -2,6 +2,8 @@
 
 Blueprint: §6 — World Model.
 """
+from __future__ import annotations
+
 
 import pytest
 from unittest.mock import MagicMock, patch

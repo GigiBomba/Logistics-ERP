@@ -614,7 +614,7 @@ class TestAdaptersNon200StatusGuard:
                 result = adapter.get_positions()
         assert result == []
         assert any(
-            "Wialon get_positions: HTTP 503" in r.message for r in caplog.records
+            "Wialon get_positions: HTTP 503" in r.getMessage() for r in caplog.records
         )
 
     def test_frotcom_non_200_returns_empty_and_logs(self, caplog):
@@ -625,7 +625,7 @@ class TestAdaptersNon200StatusGuard:
                 result = adapter.get_positions()
         assert result == []
         assert any(
-            "Frotcom get_positions: HTTP 503" in r.message for r in caplog.records
+            "Frotcom get_positions: HTTP 503" in r.getMessage() for r in caplog.records
         )
 
     def test_traccar_non_200_returns_empty_and_logs(self, caplog):
@@ -636,7 +636,7 @@ class TestAdaptersNon200StatusGuard:
                 result = adapter.get_positions()
         assert result == []
         assert any(
-            "Traccar get_positions: HTTP 503" in r.message for r in caplog.records
+            "Traccar get_positions: HTTP 503" in r.getMessage() for r in caplog.records
         )
 
     def test_navixy_non_200_returns_empty_and_logs(self, caplog):
@@ -647,7 +647,7 @@ class TestAdaptersNon200StatusGuard:
                 result = adapter.get_positions()
         assert result == []
         assert any(
-            "Navixy get_positions: HTTP 503" in r.message for r in caplog.records
+            "Navixy get_positions: HTTP 503" in r.getMessage() for r in caplog.records
         )
 
     def test_generic_rest_non_200_returns_empty_and_logs(self, caplog):
@@ -658,7 +658,7 @@ class TestAdaptersNon200StatusGuard:
                 result = adapter.get_positions()
         assert result == []
         assert any(
-            "Generic REST get_positions: HTTP 503" in r.message for r in caplog.records
+            "Generic REST get_positions: HTTP 503" in r.getMessage() for r in caplog.records
         )
 
     def test_non_200_body_is_never_json_parsed(self, caplog):

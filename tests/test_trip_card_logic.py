@@ -13,7 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from services.i18n import t
-from ui.theme import COLORS
+from ui.design_tokens import COLOR_NEUTRAL_SUBTLE
 from ui.widgets.trip_card import QtTripCard
 
 
@@ -31,12 +31,12 @@ class TestTripCardConstants:
                 f"Missing colour mapping for status {status!r}"
             )
 
-    def test_default_to_planned_color(self) -> None:
-        """An unknown status key must fall back to the planned chip colour."""
+    def test_default_fallback_color(self) -> None:
+        """An unknown status key must fall back to the neutral chip colour."""
         fallback = QtTripCard.STATUS_COLORS.get(
-            "__unknown__", COLORS["chip_planned"]
+            "__unknown__", COLOR_NEUTRAL_SUBTLE
         )
-        assert fallback == COLORS["chip_planned"]
+        assert fallback == COLOR_NEUTRAL_SUBTLE
 
     def test_all_statuses_have_translation(self) -> None:
         """STATUS_TRANSLATION_KEYS must have an entry for every status that

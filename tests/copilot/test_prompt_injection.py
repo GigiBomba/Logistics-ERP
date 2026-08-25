@@ -3,6 +3,8 @@
 Assert that instruction-like content embedded in free-text ERP data
 never produces an unrequested destructive step.
 """
+from __future__ import annotations
+
 
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from ui.views.settings_view.settings_view import QtSettingsView
 
 __all__ = ["QtSettingsView"]

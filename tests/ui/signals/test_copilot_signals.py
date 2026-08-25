@@ -193,9 +193,6 @@ class TestGuidedOverlayWidgetSignals:
 
     # ── Test 7 ────────────────────────────────────────────────────────
 
-    @pytest.mark.xfail(
-        reason="Source code defines `skipped` signal but `skip_step()` never emits it"
-    )
     def test_skipped_emits_on_skip_step(self, overlay):
         """skip_step() emits the skipped signal."""
         steps = [

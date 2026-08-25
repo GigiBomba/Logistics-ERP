@@ -1,4 +1,6 @@
 """Custom exception hierarchy for Operion services."""
+from __future__ import annotations
+
 
 
 class OperionError(Exception):

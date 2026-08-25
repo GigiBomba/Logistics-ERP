@@ -197,8 +197,12 @@ class QtHistoryView(BaseView):
             columns=columns,
             formatters={
                 "distance_km": fmt_distance,
-                "gross_per_km": lambda v: fmt_rate(float(v) if v else 0),
-                "net_profit": lambda v: fmt_currency(float(v) if v else 0),
+                "gross_per_km": lambda v: fmt_rate(
+                    float(v) if v not in (None, "", "None") else 0
+                ),
+                "net_profit": lambda v: fmt_currency(
+                    float(v) if v not in (None, "", "None") else 0
+                ),
             },
             prefs_key="trip_history",
         )

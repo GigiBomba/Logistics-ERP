@@ -1,4 +1,6 @@
 """Check translation coverage across ALL 21 non-en files."""
+from __future__ import annotations
+
 import json, os
 
 DIR = "data/translations"

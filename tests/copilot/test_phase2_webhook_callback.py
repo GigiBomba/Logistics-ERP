@@ -2,6 +2,8 @@
 
 Blueprint: §12.1 — WebSocket step update protocol.
 """
+from __future__ import annotations
+
 
 import asyncio
 from typing import List

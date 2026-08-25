@@ -2,6 +2,8 @@
 This is needed because route handlers now pass company_id=... to service methods
 for multi-tenant isolation.
 """
+from __future__ import annotations
+
 import os, glob, re
 
 test_api_dir = "tests/test_api"

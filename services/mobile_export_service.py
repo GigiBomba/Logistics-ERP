@@ -20,16 +20,26 @@ import logging
 import os
 from typing import Any, Dict, Optional
 
-from backend.config import BackendSettings
-
 logger = logging.getLogger(__name__)
 
 EXPORT_FILE_EXTENSIONS = {"csv": ".csv", "xlsx": ".xlsx", "pdf": ".pdf"}
 
 
 def get_export_dir() -> str:
-    """Return the export directory, creating it if necessary."""
-    export_dir = BackendSettings().export_dir or "data/exports"
+    """Return the export directory, creating it if necessary.
+
+    ``BackendSettings`` is server-only — the packaged desktop build ships no
+    ``backend`` package — so the import is lazy + guarded with an env-var
+    fallback (``OPERION_EXPORT_DIR``, default ``data/exports``).
+    """
+    export_dir = os.environ.get("OPERION_EXPORT_DIR")
+    if not export_dir:
+        try:
+            from backend.config import BackendSettings
+            export_dir = BackendSettings().export_dir
+        except ImportError:
+            export_dir = None
+    export_dir = export_dir or "data/exports"
     os.makedirs(export_dir, exist_ok=True)
     return export_dir
 

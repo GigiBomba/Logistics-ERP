@@ -1,4 +1,6 @@
 """Tests for calculator_models.py — CalculationRequest, TripCalculationResult."""
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 from models.calculator_models import CalculationRequest, TripCalculationResult

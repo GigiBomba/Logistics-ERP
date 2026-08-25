@@ -4,6 +4,8 @@ Revision ID: g8c9d0e1f2f0
 Revises: f7b8c9d0e1f8
 Create Date: 2026-07-21
 """
+from __future__ import annotations
+
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa
@@ -161,22 +163,6 @@ def upgrade() -> None:
     if _column_exists("documents", "expiry_date"):
         op.execute(sa.text('ALTER TABLE "documents" ALTER COLUMN "expiry_date" DROP DEFAULT'))
 
-    # Create the updated_at trigger function.
-    # NOTE: NOW() returns TIMESTAMPTZ; assigning directly preserves
-    # the timezone.  DO NOT use NOW() AT TIME ZONE 'UTC' — that
-    # strips the timezone offset and produces a bare timestamp that
-    # PostgreSQL re-interprets through the session timezone, storing
-    # the wrong absolute instant.
-    op.execute("""
-        CREATE OR REPLACE FUNCTION update_updated_at_column()
-        RETURNS TRIGGER AS $$
-        BEGIN
-            NEW.updated_at = NOW();
-            RETURN NEW;
-        END;
-        $$ LANGUAGE plpgsql;
-    """)
-
     # Convert each column
     for table, column in TIMESTAMP_COLUMNS:
         if _column_exists(table, column):
@@ -190,19 +176,12 @@ def upgrade() -> None:
                 END
             """)
 
-    # Add updated_at triggers to tables that have updated_at
-    for table, column in TIMESTAMP_COLUMNS:
-        if column == "updated_at" and _column_exists(table, column):
-            trigger_name = f"trg_{table}_updated_at"
-            op.execute(f"""
-                DROP TRIGGER IF EXISTS {trigger_name} ON "{table}"
-            """)
-            op.execute(f"""
-                CREATE TRIGGER {trigger_name}
-                BEFORE UPDATE ON "{table}"
-                FOR EACH ROW
-                EXECUTE FUNCTION update_updated_at_column()
-            """)
+    # NOTE: updated_at stamping triggers are NOT created here.  Trigger
+    # ownership lives entirely in database/schema_pg.sql (stamp_updated_at()
+    # + trg_*_updated_at / trg_*_insert_updated_at), which runs BEFORE this
+    # migration on every boot.  Creating a second set of trg_*_updated_at
+    # triggers here (with a different function) would collide with the
+    # canonical second-precision triggers.
 
     # Recreate the ``trips.month`` generated column now that created_at is
     # TIMESTAMPTZ (dropped at the top of upgrade()).

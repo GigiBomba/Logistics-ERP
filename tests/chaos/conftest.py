@@ -8,6 +8,8 @@ The security conftest sets up a temporary SQLite database, seeds test data
 All chaos tests below reuse those fixtures so they don't repeat the
 expensive setup.
 """
+from __future__ import annotations
+
 
 import os
 

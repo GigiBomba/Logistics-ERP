@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Generate the final translate_batch4.py script."""
+from __future__ import annotations
+
 import os
 
 # This script generates translate_batch4.py which loads dictionaries from batch4_dicts.json

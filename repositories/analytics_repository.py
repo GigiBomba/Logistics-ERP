@@ -3,6 +3,8 @@
 Extracted from DatabaseManager to reduce the God class. All 33 analytics
 methods preserved with identical signatures and SQL.
 """
+from __future__ import annotations
+
 
 import logging
 from datetime import datetime, timedelta

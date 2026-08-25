@@ -50,10 +50,6 @@ class TestQtClientRevenueChart:
         # _build() was called from __init__; chart rendering should have happened
         mock_make_chart.assert_called_once()
 
-    @pytest.mark.xfail(
-        reason="Source code _build() does not guard against service=None yet",
-        strict=False,
-    )
     @patch("ui.widgets.client_revenue_chart.PlotlyChartWidget")
     @patch("ui.widgets.client_revenue_chart.make_grouped_bar_chart")
     def test_creation_without_service(
@@ -251,10 +247,6 @@ class TestQtClientRevenueChart:
 class TestQtClientRevenueChartEdgeCases:
     """Edge cases and defensive behaviour."""
 
-    @pytest.mark.xfail(
-        reason="Source code _build() does not guard against missing 'month' key yet",
-        strict=False,
-    )
     @patch("ui.widgets.client_revenue_chart.PlotlyChartWidget")
     @patch("ui.widgets.client_revenue_chart.make_grouped_bar_chart")
     def test_revenue_history_with_missing_month_key(

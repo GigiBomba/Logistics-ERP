@@ -16,6 +16,8 @@ Test matrix:
   4. Chained vulnerability — upload → OCR → injection in OCR output
   5. Privilege escalation — anonymous → endpoint enumeration → admin action
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

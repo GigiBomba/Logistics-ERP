@@ -3,6 +3,8 @@
 Tests the full HTTP request/response cycle using FastAPI TestClient.
 Mocks external services (DB, Redis) but tests actual route handling.
 """
+from __future__ import annotations
+
 
 import json
 import pytest

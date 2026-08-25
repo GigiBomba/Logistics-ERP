@@ -4,6 +4,8 @@ Icons are stored separately from translated text to avoid font/encoding issues.
 Use iconed(key, *args, **kwargs) to get icon-prefixed localized text.
 Use t(key, *args, **kwargs) for text-only (no icon).
 """
+from __future__ import annotations
+
 from services.i18n import t
 
 # ── Icon glyphs (from Unicode BMP — safe across all fonts) ──

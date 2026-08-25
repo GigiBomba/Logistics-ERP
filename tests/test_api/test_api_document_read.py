@@ -1,4 +1,6 @@
 """Test the enhanced document read endpoint."""
+from __future__ import annotations
+
 import json
 
 import pytest

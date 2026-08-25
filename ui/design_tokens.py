@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ── ui/design_tokens.py ──────────────────────────────────────────
 # Design tokens for Operion ERP visual identity.
 # Canonical tokens follow the Linear / Stripe Dashboard / JetBrains
@@ -97,6 +99,9 @@ FONT_WEIGHT_SEMIBOLD = 600
 FONT_WEIGHT_BOLD     = 700
 
 # === SPACING ===
+# The 4px+ scale governs structural spacing. Micro-gaps (1–2px) between
+# tightly-coupled inline elements — chip internals, icon-to-text pairs in
+# dense rows — are an accepted exception and not scale violations.
 SPACE_1  = 4
 SPACE_2  = 8
 SPACE_3  = 12
@@ -154,6 +159,30 @@ STATUS_COLORS = {
     "paid":       COLOR_SUCCESS_DEFAULT,
 }
 
+# === DOCUMENT / EXPORT STATUS COLORS ===
+# Status background colors for exported documents (PDF/print).
+# Deliberately darker than COLOR_*_SUBTLE chip tokens — this is the
+# established printed-document aesthetic, not a UI chip equivalent.
+STATUS_DOC_COLORS = {
+    "planned":     "#1c1917",
+    "loading":     "#341a00",
+    "in_transit":  "#0f1f4a",
+    "delivered":   "#052e16",
+    "cancelled":   COLOR_NEUTRAL_SUBTLE,  # near-duplicate of #1A1A20 — reuse existing token
+}
+
+# === CMR COPY-TYPE LEGEND ACCENTS ===
+# Accent colors for the CMR copy-type legend (generators_view.py).
+# Kept separate from STATUS_DOC_COLORS even where values coincide today
+# (CMR_ACCENT_CARRIER currently equals STATUS_DOC_COLORS["delivered"] —
+# this is coincidental, not a shared semantic; do not alias).
+CMR_ACCENT_COLORS = {
+    "sender":         COLOR_ACCENT_PRIMARY,   # was #6366f1 — exact token duplicate, now a real reference
+    "consignee":      "#1e1b4b",               # novel — dark indigo, no existing token
+    "carrier":        "#052e16",               # novel — dark green, coincidentally == STATUS_DOC_COLORS["delivered"]
+    "administrative": COLOR_BG_SELECTED,        # was #27272a — near-duplicate of #27272C, now a real reference
+}
+
 # === ELEVATION / SHADOW (opacity overlays for hover elevation) ===
 # QSS border-brightness for "raised" state — we use border color shifts
 # instead of real shadows since Qt shadow performance is poor.
@@ -208,17 +237,6 @@ DANGER_TEXT = COLOR_ERROR_TEXT
 INFO        = COLOR_INFO_DEFAULT
 INFO_DIM    = COLOR_INFO_SUBTLE
 INFO_TEXT   = COLOR_INFO_TEXT
-
-# Status chips (legacy tuple order: background, text)
-STATUS = {
-    "planned":    (COLOR_NEUTRAL_SUBTLE, COLOR_NEUTRAL_TEXT),
-    "loading":    (COLOR_WARNING_SUBTLE, COLOR_WARNING_TEXT),
-    "in_transit": (COLOR_INFO_SUBTLE, COLOR_INFO_TEXT),
-    "delivered":  (COLOR_SUCCESS_SUBTLE, COLOR_SUCCESS_TEXT),
-    "cancelled":  (COLOR_NEUTRAL_SUBTLE, COLOR_NEUTRAL_TEXT),
-    "invoiced":   (COLOR_ACCENT_SUBTLE, ACCENT_TEXT),
-    "paid":       (COLOR_SUCCESS_SUBTLE, COLOR_SUCCESS_TEXT),
-}
 
 # Typography (legacy)
 FONT_FAMILY = "Inter"

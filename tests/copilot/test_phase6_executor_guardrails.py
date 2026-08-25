@@ -2,6 +2,8 @@
 
 Blueprint: §23.3 — Cost & Runaway-Loop Guardrails.
 """
+from __future__ import annotations
+
 
 import pytest
 

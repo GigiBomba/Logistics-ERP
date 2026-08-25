@@ -5,6 +5,8 @@ Usage:
     py scripts/backfill_truck_id.py --migrate      # apply
     py scripts/backfill_truck_id.py --validate     # verify
 """
+from __future__ import annotations
+
 
 import argparse
 import os

@@ -7,6 +7,8 @@ human-readable UI labels (e.g. ``"Recommended"``, ``"Fastest"``).
 Placed here rather than in ``services/`` or ``ui/`` because both
 layers need access to the mapping.
 """
+from __future__ import annotations
+
 
 from config import Config
 

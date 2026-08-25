@@ -1,10 +1,13 @@
 """Route repository — all route history DB access consolidated here."""
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
 class RouteRepository(BaseRepository):
     TABLE = "route_history_v2"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "route_fingerprint", "metadata_version", "created_at",
         "last_calculated_at", "calculation_count", "stops_json",
@@ -45,7 +48,7 @@ class RouteRepository(BaseRepository):
 
     def get_by_id(self, route_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (route_id,) + self._company_params(),
         )
 
@@ -60,18 +63,18 @@ class RouteRepository(BaseRepository):
             return []
         placeholders = ", ".join("?" for _ in route_ids)
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()} {self._soft_delete_filter()}",
             tuple(route_ids) + self._company_params(),
         )
 
     def get_all(self, limit: int = 100, offset: int = 0, include_archived: bool = False) -> List[Dict[str, Any]]:
         if include_archived:
             return self._fetchall(
-                f"SELECT * FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+                f"SELECT * FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
                 self._company_params() + (limit, offset),
             )
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL AND is_committed >= 0 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE archived_at IS NULL AND is_committed >= 0 {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             self._company_params() + (limit, offset),
         )
 
@@ -104,7 +107,7 @@ class RouteRepository(BaseRepository):
 
     def get_stops_json(self, route_id: int) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT stops_json FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            f"SELECT stops_json FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (route_id,) + self._company_params(),
         )
         return row["stops_json"] if row else None
@@ -120,19 +123,19 @@ class RouteRepository(BaseRepository):
 
     def get_by_truck(self, truck_id: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} ORDER BY created_at DESC",
+            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC",
             (truck_id,) + self._company_params(),
         )
 
     def get_by_profile(self, profile: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE profile = ? {self._company_filter()} ORDER BY created_at DESC",
+            f"SELECT * FROM {self.TABLE} WHERE profile = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC",
             (profile,) + self._company_params(),
         )
 
     def get_by_fingerprint(self, fingerprint: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE route_fingerprint = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE route_fingerprint = ? {self._company_filter()} {self._soft_delete_filter()}",
             (fingerprint,) + self._company_params(),
         )
 
@@ -158,7 +161,7 @@ class RouteRepository(BaseRepository):
 
     def count(self) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE 1=1 {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return row["cnt"] if row else 0
@@ -188,7 +191,7 @@ class RouteRepository(BaseRepository):
 
     def get_id_by_fingerprint(self, fingerprint: str) -> Optional[int]:
         row = self._fetchone(
-            f"SELECT id FROM {self.TABLE} WHERE route_fingerprint = ? {self._company_filter()}",
+            f"SELECT id FROM {self.TABLE} WHERE route_fingerprint = ? {self._company_filter()} {self._soft_delete_filter()}",
             (fingerprint,) + self._company_params(),
         )
         return int(row["id"]) if row else None
@@ -218,7 +221,7 @@ class RouteRepository(BaseRepository):
                            truck_label, profile, excluded_countries_json,
                            countries_traversed_json, metadata_version, stops_json,
                            archived_at, is_committed
-                    FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()}"""
+                    FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()} {self._soft_delete_filter()}"""
         params: List[Any] = list(self._company_params())
         if not include_archived:
             query += " AND archived_at IS NULL"
@@ -243,7 +246,7 @@ class RouteRepository(BaseRepository):
         profile: str = "",
         include_archived: bool = False,
     ) -> int:
-        query = f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()}"
+        query = f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_committed >= 0 {self._company_filter()} {self._soft_delete_filter()}"
         params: List[Any] = list(self._company_params())
         if not include_archived:
             query += " AND archived_at IS NULL"
@@ -269,7 +272,7 @@ class RouteRepository(BaseRepository):
             f"""SELECT COUNT(*) AS route_count,
                        COALESCE(SUM(total_distance_km), 0) AS total_distance
                 FROM {self.TABLE}
-                WHERE is_committed >= 0 {archive_clause} {self._company_filter()}""",
+                WHERE is_committed >= 0 {archive_clause} {self._company_filter()} {self._soft_delete_filter()}""",
             self._company_params(),
         )
         return row if row else {"route_count": 0, "total_distance": 0}
@@ -280,7 +283,7 @@ class RouteRepository(BaseRepository):
         return self._fetchall(
             f"""SELECT stops_json
                 FROM {self.TABLE}
-                WHERE is_committed >= 0 {archive_clause} {self._company_filter()}
+                WHERE is_committed >= 0 {archive_clause} {self._company_filter()} {self._soft_delete_filter()}
                 LIMIT ?""",
             self._company_params() + (limit,),
         )
@@ -291,7 +294,7 @@ class RouteRepository(BaseRepository):
         return self._fetchall(
             f"""SELECT countries_traversed_json, duration_min
                 FROM {self.TABLE}
-                WHERE is_committed >= 0 {archive_clause} {self._company_filter()}
+                WHERE is_committed >= 0 {archive_clause} {self._company_filter()} {self._soft_delete_filter()}
                 LIMIT ?""",
             self._company_params() + (limit,),
         )

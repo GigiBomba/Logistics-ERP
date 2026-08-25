@@ -6,6 +6,8 @@ unregistered ``provider_id``, or if a registered adapter is missing a
 required method — same discipline as every other registry pattern already
 established in this codebase.
 """
+from __future__ import annotations
+
 import logging
 from typing import Optional
 

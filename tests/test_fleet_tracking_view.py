@@ -16,7 +16,13 @@ if not hasattr(_ui_widgets, "SP"):
 
 # Inject COLORS into the view module (used in _build_vehicle_row_widget
 # but not imported — pre‑existing source issue).
-from ui.theme import COLORS as _COLORS
+from ui import design_tokens as _dt
+_COLORS = {
+    "success": _dt.COLOR_SUCCESS_DEFAULT,
+    "text_muted": _dt.COLOR_TEXT_TERTIARY,
+    "warning": _dt.COLOR_WARNING_DEFAULT,
+    "danger": _dt.COLOR_ERROR_DEFAULT,
+}
 import ui.views.fleet_tracking_view as _fleet_view
 _fleet_view.COLORS = _COLORS
 
@@ -290,12 +296,11 @@ class TestQtFleetTrackingView:
         assert view._STATUS_MARKER_COLORS == expected
 
     def test_status_dot_colors(self, view):
-        from ui.theme import COLORS
         expected = {
-            "moving": COLORS["success"],
-            "stopped": COLORS["text_muted"],
-            "idle": COLORS["warning"],
-            "offline": COLORS["danger"],
+            "moving": _COLORS["success"],
+            "stopped": _COLORS["text_muted"],
+            "idle": _COLORS["warning"],
+            "offline": _COLORS["danger"],
         }
         assert view._STATUS_DOT_COLORS == expected
 

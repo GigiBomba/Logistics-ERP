@@ -20,6 +20,7 @@ from reportlab.platypus import HRFlowable, Paragraph, SimpleDocTemplate, Spacer,
 from config import Config
 from models.common import ErrorDetail, ServiceResult
 from models.export_models import ExportOperationResult, ExportRequest, ExportResult
+from ui.design_tokens import STATUS_DOC_COLORS
 from utils.helpers import remove_accents
 
 logger = logging.getLogger(__name__)
@@ -684,11 +685,11 @@ class ExportService:
         }
 
         status_colors: dict[str, Any] = {
-            "Planned": colors.HexColor("#1c1917"),
-            "Loading": colors.HexColor("#341a00"),
-            "In Transit": colors.HexColor("#0f1f4a"),
-            "Delivered": colors.HexColor("#052e16"),
-            "Cancelled": colors.HexColor("#1A1A20"),
+            "Planned": colors.HexColor(STATUS_DOC_COLORS["planned"]),
+            "Loading": colors.HexColor(STATUS_DOC_COLORS["loading"]),
+            "In Transit": colors.HexColor(STATUS_DOC_COLORS["in_transit"]),
+            "Delivered": colors.HexColor(STATUS_DOC_COLORS["delivered"]),
+            "Cancelled": colors.HexColor(STATUS_DOC_COLORS["cancelled"]),
         }
 
         header_style = ParagraphStyle(

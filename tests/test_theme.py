@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from PySide6.QtWidgets import QApplication
 
-from ui.theme import COLORS, FONTS, S
+from ui import design_tokens as dt
 from ui.theme_engine import QtTheme
 from ui.styles import Theme
 
@@ -14,29 +14,29 @@ class TestThemeTokens:
 
     def test_color_tokens_exist(self):
         required = [
-            "bg_base", "bg_surface", "bg_elevated", "bg_input",
-            "border", "border_hover", "border_focus",
-            "accent", "accent_hover", "accent_dim", "accent_text",
-            "success", "warning", "danger", "info",
-            "text_primary", "text_secondary", "text_muted",
+            dt.COLOR_BG_BASE, dt.COLOR_BG_ELEVATED, dt.COLOR_BG_OVERLAY,
+            dt.COLOR_BORDER_MEDIUM, dt.COLOR_BORDER_STRONG, dt.COLOR_ACCENT_PRIMARY,
+            dt.COLOR_ACCENT_HOVER, dt.COLOR_ACCENT_SUBTLE, dt.ACCENT_TEXT,
+            dt.COLOR_SUCCESS_DEFAULT, dt.COLOR_WARNING_DEFAULT, dt.COLOR_ERROR_DEFAULT,
+            dt.COLOR_INFO_DEFAULT,
+            dt.COLOR_TEXT_PRIMARY, dt.COLOR_TEXT_SECONDARY, dt.COLOR_TEXT_TERTIARY,
         ]
-        for key in required:
-            assert key in COLORS, f"Missing color token: {key}"
-            assert COLORS[key].startswith("#"), f"Color {key} is not a hex value"
+        for color in required:
+            assert color.startswith("#"), f"Color {color} is not a hex value"
 
     def test_font_tokens_exist(self):
         required = [
-            "display", "h1", "h2", "h3", "body", "body_bold",
+            "display", "h1", "h2", "h3", "body",
             "small", "label", "mono", "mono_lg", "mono_xl",
         ]
         for key in required:
-            assert key in FONTS, f"Missing font token: {key}"
-            assert isinstance(FONTS[key], tuple), f"Font {key} is not a tuple"
+            assert key in dt.FONT_SIZES, f"Missing font token: {key}"
+            assert isinstance(dt.FONT_SIZES[key], int), f"Font {key} is not an integer"
 
     def test_spacing_tokens_exist(self):
         for key in ("1", "2", "3", "4", "5", "6", "8", "10", "12"):
-            assert key in S, f"Missing spacing token: {key}"
-            assert isinstance(S[key], int), f"Spacing {key} is not an integer"
+            assert key in dt.SP, f"Missing spacing token: {key}"
+            assert isinstance(dt.SP[key], int), f"Spacing {key} is not an integer"
 
 
 class TestQssGeneration:
@@ -49,11 +49,11 @@ class TestQssGeneration:
 
     def test_qss_contains_base_colors(self, qapp):
         qss = QtTheme.qss()
-        assert COLORS["bg_base"] in qss
-        assert COLORS["bg_surface"] in qss
-        assert COLORS["accent"] in qss
-        assert COLORS["text_primary"] in qss
-        assert COLORS["border"] in qss
+        assert dt.COLOR_BG_BASE in qss
+        assert dt.COLOR_BG_ELEVATED in qss
+        assert dt.COLOR_ACCENT_PRIMARY in qss
+        assert dt.COLOR_TEXT_PRIMARY in qss
+        assert dt.COLOR_BORDER_MEDIUM in qss
 
     def test_qss_contains_font_families(self, qapp):
         qss = QtTheme.qss()
@@ -101,26 +101,26 @@ class TestQtStylesCompatibility:
     """Verify the compatibility shim matches the old Theme API."""
 
     def test_constants_match_colors(self):
-        assert Theme.BG == COLORS["bg_base"]
-        assert Theme.SURFACE == COLORS["bg_surface"]
-        assert Theme.SURFACE2 == COLORS["bg_elevated"]
-        assert Theme.INPUT_BG == COLORS["bg_input"]
-        assert Theme.TEXT == COLORS["text_primary"]
-        assert Theme.MUTED == COLORS["text_secondary"]
-        assert Theme.ACCENT == COLORS["accent"]
+        assert Theme.BG == dt.COLOR_BG_BASE
+        assert Theme.SURFACE == dt.COLOR_BG_ELEVATED
+        assert Theme.SURFACE2 == dt.COLOR_BG_OVERLAY
+        assert Theme.INPUT_BG == dt.COLOR_BG_OVERLAY
+        assert Theme.TEXT == dt.COLOR_TEXT_PRIMARY
+        assert Theme.MUTED == dt.COLOR_TEXT_SECONDARY
+        assert Theme.ACCENT == dt.COLOR_ACCENT_PRIMARY
         # ACCENT_HOVER may differ between Theme constant and COLORS dict
         # depending on how they're derived; just verify both are non-empty
         assert Theme.ACCENT_HOVER is not None
-        assert COLORS["accent_hover"] is not None
-        assert Theme.ACCENT_SUCCESS == COLORS["success"]
+        assert dt.COLOR_ACCENT_HOVER is not None
+        assert Theme.ACCENT_SUCCESS == dt.COLOR_SUCCESS_DEFAULT
         # BORDER constant may differ from COLORS dict depending on how they're derived
         assert Theme.BORDER is not None
-        assert COLORS["border"] is not None
-        assert Theme.BORDER_FOCUS == COLORS["border_focus"]
-        assert Theme.DANGER == COLORS["danger"]
-        assert Theme.WARNING == COLORS["warning"]
-        assert Theme.SUCCESS == COLORS["success"]
-        assert Theme.CARD_BG == COLORS["bg_surface"]
+        assert dt.COLOR_BORDER_MEDIUM is not None
+        assert Theme.BORDER_FOCUS == dt.COLOR_ACCENT_PRIMARY
+        assert Theme.DANGER == dt.COLOR_ERROR_DEFAULT
+        assert Theme.WARNING == dt.COLOR_WARNING_DEFAULT
+        assert Theme.SUCCESS == dt.COLOR_SUCCESS_DEFAULT
+        assert Theme.CARD_BG == dt.COLOR_BG_ELEVATED
 
     def test_font_strings(self):
         assert "IBM Plex Sans" in Theme.FONT_MAIN

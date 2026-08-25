@@ -7,6 +7,8 @@ Uses the shared security fixtures from ``tests/security/conftest.py``:
 - ``upload_test_document`` — helper to POST /api/v1/documents/upload.
 - ``get_db`` — helper returning a DatabaseManager for direct DB verification.
 """
+from __future__ import annotations
+
 
 import time
 

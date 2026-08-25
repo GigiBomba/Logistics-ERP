@@ -1,4 +1,6 @@
 """Tests for pipeline rename functions (_rename_document_after_ocr, _sanitize_filename_part)."""
+from __future__ import annotations
+
 import os.path
 from unittest.mock import MagicMock, call, patch
 

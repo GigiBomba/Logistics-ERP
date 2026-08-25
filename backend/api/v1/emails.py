@@ -5,6 +5,8 @@ through the server-side SMTP configuration.  Attachment files are
 resolved server-side from ``document_ids`` so the client never needs the
 underlying file paths.
 """
+from __future__ import annotations
+
 
 import logging
 import os

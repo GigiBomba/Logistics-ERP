@@ -126,10 +126,30 @@ def MonoLabel(parent, text="", size="body") -> QLabel:
     return lbl
 
 
+class _Btn(QPushButton):
+    """QPushButton that also activates on Enter/Return when focused.
+
+    QPushButton only activates on Enter when ``autoDefault`` is True (or it
+    is the dialog's default button).  This subclass makes a *focused* button
+    respond to Enter/Return too, without the dialog default-button side
+    effects of enabling ``autoDefault`` globally.
+    """
+
+    def keyPressEvent(self, event):
+        if (
+            event.key() in (Qt.Key_Return, Qt.Key_Enter)
+            and not event.isAutoRepeat()
+        ):
+            self.click()
+            event.accept()
+            return
+        super().keyPressEvent(event)
+
+
 def Btn(parent, text="", variant="secondary",
         icon_name=None, size="md", command=None) -> QPushButton:
     """Create a styled button."""
-    btn = QPushButton(text, parent)
+    btn = _Btn(text, parent)
     btn.setAccessibleName(text)
     btn.setProperty("variant", variant)
     if size == "sm":
@@ -900,8 +920,8 @@ class Badge(QLabel):
         super().__init__(parent)
         self._max_count = max_count
         self.setAlignment(Qt.AlignCenter)
-        self.setFixedHeight(18)
-        self.setMinimumWidth(18)
+        self.setFixedHeight(20)
+        self.setMinimumWidth(20)
         self.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
         self.setStyleSheet(f"""
             background: {COLOR_ERROR_DEFAULT};
@@ -1019,3 +1039,13 @@ class Toggle(QFrame):
     def mousePressEvent(self, event):
         self.set_checked(not self._checked)
         super().mousePressEvent(event)
+
+    def keyPressEvent(self, event):
+        if (
+            event.key() in (Qt.Key_Space, Qt.Key_Return, Qt.Key_Enter)
+            and not event.isAutoRepeat()
+        ):
+            self.set_checked(not self._checked)
+            event.accept()
+            return
+        super().keyPressEvent(event)

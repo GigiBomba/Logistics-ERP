@@ -15,6 +15,7 @@ Usage::
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Optional
 
@@ -85,6 +86,46 @@ class RemoteTripService:
     def get_top_trucks_by_revenue(self, month_start: str, month_end: str, limit: int = 4) -> list:
         resp = self._api.get_top_trucks_by_revenue(month_start, month_end, limit)
         return resp.get("items", []) if resp else []
+
+    def delete(self, trip_id: int) -> bool:
+        """Delete a trip via ``DELETE /trips/{trip_id}`` (backend-supported).
+
+        Returns ``True`` on success, ``False`` if the API raised (mirrors
+        the boolean contract the local ``TripService.delete`` exposes through
+        ``ServiceResult.success``).
+        """
+        try:
+            self._api.delete_trip(trip_id)
+            return True
+        except Exception:
+            logger.debug("delete_trip(%s) failed", trip_id, exc_info=True)
+            return False
+
+    def get_route_stops_json(self, trip_id: int) -> Optional[str]:
+        """Return the route stops for *trip_id* as a JSON **string**.
+
+        Route data lives in ``route_history_v2.stops_json`` (linked via
+        ``trips.route_history_v2_id``), so the stops are resolved through
+        ``GET /dispatch/trips/{trip_id}/detail``, whose ``stops`` field
+        carries the parsed stop objects.  Returns ``None`` when the trip has
+        no route / stops, or on any API/HTTP error.
+
+        NOTE: mirrors the local ``TripService.get_route_stops_json``
+        contract, which returns a JSON string that callers ``json.loads()``.
+        """
+        try:
+            resp = self._api._get(f"/api/v1/dispatch/trips/{trip_id}/detail")
+        except Exception:
+            return None
+        if not isinstance(resp, dict):
+            return None
+        stops = resp.get("stops")
+        if isinstance(stops, list):
+            try:
+                return json.dumps(stops)
+            except Exception:
+                return None
+        return None
 
 
 class RemoteClientService:

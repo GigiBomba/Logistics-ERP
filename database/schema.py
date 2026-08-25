@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # ── Schema version tracking ────────────────────────────────────────────
 TABLE_SCHEMA_MIGRATIONS = """
 CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -15,6 +17,7 @@ TABLE_TRIPS = """
 CREATE TABLE IF NOT EXISTS trips (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     created_at TEXT,
+    updated_at TEXT,
     truck_number TEXT,
     driver_name TEXT,
     client_name TEXT,
@@ -70,6 +73,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     due_date TEXT,
     total_amount REAL,
     status TEXT, -- 'Unpaid', 'Paid'
+    updated_at TEXT,
     FOREIGN KEY (trip_id) REFERENCES trips (id) ON DELETE CASCADE
 );
 """
@@ -139,6 +143,8 @@ CREATE TABLE IF NOT EXISTS email_logs (
     timestamp TEXT,
     status TEXT,
     error_msg TEXT,
+    updated_at TEXT,
+    company_id INTEGER,
     FOREIGN KEY (trip_id) REFERENCES trips (id)
 );
 """
@@ -155,6 +161,7 @@ CREATE TABLE IF NOT EXISTS sent_emails (
     status TEXT NOT NULL DEFAULT 'pending',
     sent_at TEXT,
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     company_id INTEGER,
     UNIQUE(document_id, recipient),
     FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
@@ -180,6 +187,8 @@ CREATE TABLE IF NOT EXISTS invoice_reminders (
     sent_at TEXT NOT NULL,
     recipient_email TEXT NOT NULL,
     status TEXT DEFAULT 'sent',
+    updated_at TEXT,
+    company_id INTEGER,
     FOREIGN KEY (invoice_id) REFERENCES invoices(id)
 );
 """
@@ -206,7 +215,16 @@ CREATE TABLE IF NOT EXISTS trucks (
     insurance_expiry TEXT,
     inspection_expiry TEXT,
     maintenance_due REAL, -- KM la care trebuie service
-    active_status INTEGER DEFAULT 1
+    active_status INTEGER DEFAULT 1,
+    tachograph_expiry TEXT,
+    tracking_device_id TEXT,
+    trailer_plate TEXT DEFAULT '',
+    max_payload_kg REAL DEFAULT 0,
+    cmr_insurance_number TEXT DEFAULT '',
+    cmr_insurance_expiry TEXT DEFAULT '',
+    company_id INTEGER,
+    deleted_at TEXT,
+    updated_at TEXT
 );
 """
 
@@ -359,6 +377,7 @@ CREATE TABLE IF NOT EXISTS trip_status_history (
     new_status TEXT NOT NULL,
     trigger TEXT,
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
 );
 """
@@ -376,6 +395,7 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     service_provider TEXT,
     attachment_path TEXT,
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
 """
@@ -392,6 +412,7 @@ CREATE TABLE IF NOT EXISTS maintenance_schedules (
     last_done_date TEXT,
     active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
 """
@@ -456,6 +477,8 @@ CREATE TABLE IF NOT EXISTS driver_truck_assignments (
     truck_id INTEGER NOT NULL,
     assigned_at TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT,
+    company_id INTEGER,
     FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
 );
@@ -485,7 +508,8 @@ CREATE TABLE IF NOT EXISTS tacho_imports (
     driver_id       INTEGER REFERENCES drivers(id),
     parse_status    TEXT DEFAULT 'ok',
     raw_json        TEXT,
-    notes           TEXT
+    notes           TEXT,
+    updated_at      TEXT
 );
 """
 
@@ -501,7 +525,9 @@ CREATE TABLE IF NOT EXISTS tacho_driver_activity (
     avail_minutes   INTEGER DEFAULT 0,
     distance_km     REAL DEFAULT 0,
     violations      TEXT,
-    country_codes   TEXT
+    country_codes   TEXT,
+    updated_at      TEXT,
+    company_id      INTEGER
 );
 """
 
@@ -518,7 +544,9 @@ CREATE TABLE IF NOT EXISTS tacho_vehicle_data (
     w_factor            INTEGER,
     speed_violations    INTEGER DEFAULT 0,
     recorded_from       DATE,
-    recorded_to         DATE
+    recorded_to         DATE,
+    updated_at          TEXT,
+    company_id          INTEGER
 );
 """
 
@@ -558,7 +586,8 @@ CREATE TABLE IF NOT EXISTS client_contacts (
     email TEXT,
     is_primary INTEGER DEFAULT 0,
     notes TEXT,
-    created_at TEXT NOT NULL
+    created_at TEXT NOT NULL,
+    updated_at TEXT
 );
 """
 
@@ -569,6 +598,7 @@ CREATE TABLE IF NOT EXISTS client_tags (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     tag TEXT NOT NULL,
+    updated_at TEXT,
     UNIQUE(client_id, tag)
 );
 """
@@ -616,6 +646,7 @@ CREATE TABLE IF NOT EXISTS document_links (
     linked_entity_id INTEGER NOT NULL,
     relation_type TEXT DEFAULT 'attached',
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     UNIQUE(document_id, linked_entity_type, linked_entity_id, relation_type)
 );
 """
@@ -689,6 +720,7 @@ CREATE TABLE IF NOT EXISTS document_versions (
     comment TEXT DEFAULT '',
     uploaded_by TEXT DEFAULT '',
     created_at TEXT NOT NULL,
+    updated_at TEXT,
     UNIQUE(document_id, version_number)
 );
 """
@@ -756,6 +788,7 @@ CREATE TABLE IF NOT EXISTS successive_carriers (
     driver_name TEXT,
     from_location TEXT,
     to_location TEXT,
+    updated_at TEXT,
     UNIQUE(trip_id, sequence_order)
 );
 """
@@ -1013,6 +1046,25 @@ INDEX_RECEIPT_TYPE      = "CREATE INDEX IF NOT EXISTS idx_receipt_type   ON rece
 INDEX_RECEIPT_STATUS    = "CREATE INDEX IF NOT EXISTS idx_receipt_status ON receipts(status);"
 INDEX_RECEIPT_TRIP      = "CREATE INDEX IF NOT EXISTS idx_receipt_trip   ON receipts(related_trip_id);"
 INDEX_RECEIPT_DRIVER    = "CREATE INDEX IF NOT EXISTS idx_receipt_driver ON receipts(driver_id);"
+
+# ── Expenses ─────────────────────────────────────────────────────────────
+# Syncable table (offline-first sync Phase 0).  Previously created lazily by
+# DatabaseManager.ensure_expenses_table; now part of the base schema so the
+# updated_at stamping triggers and the sync layer can rely on it existing.
+TABLE_EXPENSES = """
+CREATE TABLE IF NOT EXISTS expenses (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    truck_id INTEGER,
+    date TEXT,
+    category TEXT,
+    description TEXT,
+    amount REAL,
+    company_id INTEGER,
+    created_at TEXT,
+    updated_at TEXT,
+    deleted_at TEXT
+);
+"""
 
 # ── AutoMail / Dunner ────────────────────────────────────────────────────
 
@@ -1678,7 +1730,234 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
     company_id   INTEGER NOT NULL,
     entity_type  TEXT    NOT NULL,
     cursor       TEXT    NOT NULL,
+    -- R1 (Phase E): id tiebreak for the cursor second.  Timestamps are
+    -- seconds-precision, so a row stamped at EXACTLY the cursor second is
+    -- excluded by a strict ``updated_at > since`` — ``last_id`` is the id
+    -- watermark for that second (the delta resends ``since`` + ``after_id``
+    -- and the server matches ``updated_at = since AND id > last_id``).
+    last_id      INTEGER NOT NULL DEFAULT 0,
     updated_at   TEXT    NOT NULL DEFAULT (datetime('now')),
     PRIMARY KEY (user_id, entity_type)
+);
+"""
+
+# ── Offline-first sync (Phase 2): server-side exactly-once id map ────────
+# Maps a desktop (company_id, device_id, entity_type, local_id) to the server
+# row id so a replayed push INSERT (retry after network drop) updates the
+# mapped row instead of creating a duplicate.  NOT part of SYNCABLE_TABLES —
+# it is server-side bookkeeping, not a client-synced entity.
+#
+# Phase A (multi-device): the key includes ``device_id`` so each desktop has
+# its own id-map namespace — two desktops with colliding local ids map to
+# distinct server rows instead of overwriting each other.
+TABLE_SYNC_SERVER_MAP = """
+CREATE TABLE IF NOT EXISTS sync_server_map (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    local_id INTEGER NOT NULL,
+    server_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(company_id, device_id, entity_type, local_id)
+);
+"""
+
+# ── Offline-first sync (Phase 0): trigger-stamped updated_at ─────────────
+# The sync layer (outbox ordering, last-write-wins conflict resolution,
+# delta pull) depends on reliable ``updated_at`` timestamps.  Every
+# syncable table gets an AFTER UPDATE trigger that stamps the canonical
+# UTC timestamp (seconds precision + Z suffix) into ``updated_at``.
+#
+# INSERT is stamped too (AFTER INSERT trigger) so ``updated_at`` is never
+# NULL — the sync layer's LWW and delta-pull depend on the invariant.
+# ``CREATE TRIGGER IF NOT EXISTS`` makes this idempotent so existing
+# installs pick the triggers up on boot.
+#
+# Tables deliberately excluded from sync (no trigger): saved_searches,
+# alerts, operation_events, cmr_counter, audit tables, sync_cursors,
+# route_history_v2, settings, mobile_*, copilot_*, document_pipeline_runs,
+# document_package*, automail_*, freight_*, webhook_*, oauth2_*, api_keys,
+# auth_sessions, waitlist_entries, export_jobs, gps_telemetry,
+# truck_health_scores.
+SYNCABLE_TABLES = (
+    "trips", "clients", "drivers", "trucks",
+    "maintenance_records", "maintenance_schedules",
+    "documents", "receipts", "invoices", "proforma_invoices",
+    "contracts", "client_contacts", "client_tags",
+    "driver_truck_assignments", "tacho_imports",
+    "tacho_driver_activity", "tacho_vehicle_data", "expenses",
+    "successive_carriers", "trip_status_history", "document_links",
+    "document_versions", "sent_emails", "email_logs",
+    "invoice_reminders",
+    # Phase D (sync completeness): route history is now synced with
+    # fingerprint-based natural-key dedup (best-effort convergence for
+    # derived data).  Adding it here gives it the updated_at stamping
+    # triggers + the outbox capture triggers (DROP+CREATE per boot).
+    "route_history_v2",
+)
+
+# ── Canonical table → entity-type mapping ────────────────────────────────
+# The outbox capture triggers store the SINGULAR entity type in
+# ``sync_outbox.entity_type`` (not the table name) so the value matches the
+# push API contract (``backend/api/v1/sync.py`` ``SUPPORTED_ENTITY_TYPES`` /
+# ``_ENTITY_CONFIG`` keys).  ``SYNCABLE_TABLES`` above stays the Phase 0
+# updated_at stamping scope (all 25 tables); this mapping is the Phase 1
+# capture/push contract.
+SYNCABLE_ENTITIES: dict[str, str] = {
+    "trips": "trip",
+    "clients": "client",
+    "drivers": "driver",
+    "trucks": "truck",
+    "maintenance_records": "maintenance_record",
+    "maintenance_schedules": "maintenance_schedule",
+    "documents": "document",
+    "invoices": "invoice",
+    "receipts": "receipt",
+    "expenses": "expense",
+    # v2 (captured but not pushed in v1 — see below)
+    "proforma_invoices": "proforma_invoice",
+    "contracts": "contract",
+    "client_contacts": "client_contact",
+    "client_tags": "client_tag",
+    "driver_truck_assignments": "driver_truck_assignment",
+    "tacho_imports": "tacho_import",
+    "tacho_driver_activity": "tacho_driver_activity",
+    "tacho_vehicle_data": "tacho_vehicle_data",
+    "successive_carriers": "successive_carrier",
+    "trip_status_history": "trip_status_history",
+    "document_links": "document_link",
+    "document_versions": "document_version",
+    "sent_emails": "sent_email",
+    "email_logs": "email_log",
+    "invoice_reminders": "invoice_reminder",
+    # Phase D (sync completeness): route history — fingerprint-deduped.
+    "route_history_v2": "route_history",
+}
+
+# Canonical UTC expression — equivalent to database.time_utils.utc_now_iso()
+# (``YYYY-MM-DDTHH:MM:SSZ``, UTC, seconds precision).
+_SQLITE_UTC_NOW_SQL = "strftime('%Y-%m-%dT%H:%M:%SZ','now')"
+
+# Echo suppression: both stamping triggers skip when
+# ``sync_meta.sync_in_progress = '1'`` (the same guard the outbox triggers
+# use) so the pull-apply path (Phase 4) does NOT overwrite the server's
+# ``updated_at`` with the local clock — that would fabricate false conflicts
+# and lose the server version.  The triggers are DROP + CREATE on every boot
+# (see ``DatabaseManager._ensure_updated_at_triggers``) so existing installs
+# pick up the guard.
+TRIGGERS_UPDATED_AT = [
+    (
+        f"CREATE TRIGGER IF NOT EXISTS trg_{table}_updated_at "
+        f"AFTER UPDATE ON {table} FOR EACH ROW "
+        f"WHEN NOT EXISTS (SELECT 1 FROM sync_meta WHERE key='sync_in_progress' AND value='1') "
+        f"BEGIN "
+        f"UPDATE {table} SET updated_at = {_SQLITE_UTC_NOW_SQL} "
+        f"WHERE id = NEW.id; END;"
+    )
+    for table in SYNCABLE_TABLES
+]
+
+# AFTER INSERT triggers: stamp updated_at on row creation so the invariant
+# "updated_at is never NULL" holds.  The nested UPDATE is safe — SQLite
+# recursive triggers are OFF by default, so it does not re-fire the AFTER
+# UPDATE trigger above.
+TRIGGERS_UPDATED_AT_INSERT = [
+    (
+        f"CREATE TRIGGER IF NOT EXISTS trg_{table}_insert_updated_at "
+        f"AFTER INSERT ON {table} FOR EACH ROW "
+        f"WHEN NOT EXISTS (SELECT 1 FROM sync_meta WHERE key='sync_in_progress' AND value='1') "
+        f"BEGIN "
+        f"UPDATE {table} SET updated_at = {_SQLITE_UTC_NOW_SQL} "
+        f"WHERE id = NEW.id; END;"
+    )
+    for table in SYNCABLE_TABLES
+]
+
+# ── Offline-first sync (Phase 1): outbox + meta tables ─────────────────
+# The sync_outbox table is the CAPTURE layer: every write to a syncable
+# table records an entry here via AFTER INSERT/UPDATE/DELETE triggers
+# (created programmatically in DatabaseManager._ensure_outbox_triggers,
+# since the DELETE payload needs the table's live column list).  A later
+# sync engine (Phase 2+) drains pending rows FIFO and pushes them to the
+# cloud API.  sync_meta is a key/value store for sync-layer coordination
+# flags — 'sync_in_progress' = '1' suppresses outbox capture during the
+# pull-apply path (Phase 4) so applied rows are not re-captured.
+TABLE_SYNC_OUTBOX = """
+CREATE TABLE IF NOT EXISTS sync_outbox (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    op TEXT NOT NULL,              -- 'INSERT' | 'UPDATE' | 'DELETE'
+    local_id INTEGER NOT NULL,
+    payload_json TEXT,             -- ONLY for DELETE (serialized OLD row); NULL for INSERT/UPDATE (resolved at push time)
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    synced_at TEXT,                -- NULL until confirmed by server
+    retry_count INTEGER NOT NULL DEFAULT 0
+);
+"""
+INDEX_SYNC_OUTBOX_PENDING = (
+    "CREATE INDEX IF NOT EXISTS idx_sync_outbox_pending "
+    "ON sync_outbox(synced_at, id)"
+)
+
+TABLE_SYNC_META = """
+CREATE TABLE IF NOT EXISTS sync_meta (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+"""
+
+# ── Offline-first sync (Phase 3b): desktop bidirectional id map ─────────
+# Maps local AUTOINCREMENT ids ↔ server ids in BOTH directions:
+#   (entity_type, local_id) → server_id  (push lane: translate local FK refs)
+#   (entity_type, server_id) → local_id  (pull lane: resolve server FKs)
+# NOT part of SYNCABLE_TABLES — it is desktop-side bookkeeping, not a
+# client-synced entity.
+TABLE_SYNC_ID_MAP = """
+CREATE TABLE IF NOT EXISTS sync_id_map (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,      -- singular: 'trip', 'client', ...
+    local_id INTEGER NOT NULL,
+    server_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE(entity_type, local_id),
+    UNIQUE(entity_type, server_id)
+);
+"""
+
+# ── Offline-first sync (Phase 4a): conflict journal ───────────────────────
+# Records push items the server rejected with status 'conflict' (the server
+# row changed after the client's ``base_updated_at``).  The UI (Phase 4b)
+# reads this journal to surface conflicts and lets the user resolve each one
+# (keep-local / take-server).  NOT part of SYNCABLE_TABLES — desktop-side
+# bookkeeping, not a client-synced entity.
+TABLE_SYNC_CONFLICTS = """
+CREATE TABLE IF NOT EXISTS sync_conflicts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    entity_type TEXT NOT NULL,
+    local_id INTEGER NOT NULL,
+    server_id INTEGER,
+    local_payload TEXT,      -- JSON of what the client tried to push
+    server_payload TEXT,     -- JSON of the server's current row (server_row)
+    created_at TEXT NOT NULL,
+    resolved INTEGER NOT NULL DEFAULT 0
+);
+"""
+
+# ── Offline-first sync (Phase D): hard-delete tombstones ─────────────────
+# Server-side bookkeeping (NOT a client-synced entity).  A tombstone records
+# that a server row was HARD-deleted (or soft-deleted via a sync-push DELETE)
+# so other devices that never pulled the row (no sync_id_map entry) learn to
+# drop their local copy.  The desktop pulls ``entity=tombstone`` and applies
+# each one; the server deletes them after returning (one-shot — if a desktop
+# misses them, the next hard-delete op re-records).
+TABLE_SYNC_TOMBSTONES = """
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    company_id INTEGER NOT NULL,
+    entity_type TEXT NOT NULL,
+    server_id INTEGER NOT NULL,
+    purged_at TEXT NOT NULL,
+    UNIQUE(company_id, entity_type, server_id)
 );
 """

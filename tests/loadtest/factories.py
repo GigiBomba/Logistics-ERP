@@ -1,4 +1,6 @@
 """Token management and test data factories for Locust tests."""
+from __future__ import annotations
+
 import time
 
 

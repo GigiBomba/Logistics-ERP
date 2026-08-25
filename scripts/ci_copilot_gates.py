@@ -11,6 +11,8 @@ Exits 0 on success, 1 on any violation.
 
 Blueprint references: §19, §23.2, §20, §3.1, §25
 """
+from __future__ import annotations
+
 
 import json
 import os

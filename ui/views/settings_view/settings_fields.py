@@ -193,9 +193,9 @@ class SettingsFieldsMixin:
         search.setObjectName("settingsSearch")
         self._search_input = search
         # Insert at position 0 (before any section cards)
-        self._scroll.layout.insertWidget(0, search)
+        self._scroll._content_layout.insertWidget(0, search)
         # Add some spacing after the search bar
-        self._scroll.layout.insertSpacing(1, SP["3"])
+        self._scroll._content_layout.insertSpacing(1, SP["3"])
 
     # ──────────────────────────────────────────────────────────────────────────
     #  Search filtering
@@ -1133,8 +1133,10 @@ class SettingsFieldsMixin:
         """Handle replay tour button click."""
         from ui.copilot import tour_tracker
         tour_tracker.clear_tour_completed("app_overview")
-        # Publish event so MainWindow picks it up
-        EventBus.publish(TOUR_REPLAY_REQUESTED, {"workflow_id": "app_overview"})
+        # Publish event so MainWindow picks it up — always via the shared
+        # EventBus instance (class-level ``EventBus.publish`` binds the event
+        # string as ``self`` and crashes inside ``publish``).
+        EventBus().publish(TOUR_REPLAY_REQUESTED, {"workflow_id": "app_overview"})
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.information(
             self,
@@ -1146,7 +1148,7 @@ class SettingsFieldsMixin:
         """Handle reset all tours button."""
         from ui.copilot import tour_tracker
         tour_tracker.clear_all_tours()
-        EventBus.publish(TOUR_REPLAY_REQUESTED, {"workflow_id": "all"})
+        EventBus().publish(TOUR_REPLAY_REQUESTED, {"workflow_id": "all"})
         from PySide6.QtWidgets import QMessageBox
         QMessageBox.information(
             self,

@@ -7,6 +7,8 @@ Tests cover:
 - Rapid succession of chat requests
 - Repeating identical operations many times
 """
+from __future__ import annotations
+
 
 import asyncio
 import time

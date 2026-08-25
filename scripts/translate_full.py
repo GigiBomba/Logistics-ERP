@@ -1,5 +1,7 @@
 ﻿#!/usr/bin/env python3
 """Comprehensive translation of all untranslated keys in es.json."""
+from __future__ import annotations
+
 import json, os
 
 BASE = os.path.join(os.path.dirname(__file__), os.pardir, "data", "translations")

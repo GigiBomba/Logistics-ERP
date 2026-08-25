@@ -11,6 +11,8 @@ Tests cover:
 - Empty registry → planner returns clarification, not crash
 - Corrupted parameters → tool returns validation errors
 """
+from __future__ import annotations
+
 
 import asyncio
 from typing import Any, Dict

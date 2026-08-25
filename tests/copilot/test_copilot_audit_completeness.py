@@ -3,6 +3,8 @@
 A mid-execution crash must still produce a complete audit row via
 reconciliation. Audit rows are immutable — only INSERT allowed.
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

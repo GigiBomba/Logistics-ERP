@@ -5,6 +5,8 @@ Uses fixtures from ``tests/security/conftest.py``:
 - ``admin_token`` — a valid JWT for the admin user.
 - ``auth_admin`` — ``{"Authorization": "Bearer <token>"}`` header dict.
 """
+from __future__ import annotations
+
 
 import io
 import os

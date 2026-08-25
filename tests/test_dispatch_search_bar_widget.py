@@ -224,11 +224,11 @@ class TestQtDispatchSearchBarNoCallback:
 
 
 class TestQtDispatchSearchBarDestroy:
-    """destroy() should clear references and schedule deletion."""
+    """_destroy() should clear references and schedule deletion."""
 
     def test_destroy_clears_references(self, search_bar):
         bar, callback = search_bar
-        bar.destroy()
+        bar._destroy()
         assert bar._on_search is None
         assert bar._checkboxes == {}
         assert bar._result_lbl is None

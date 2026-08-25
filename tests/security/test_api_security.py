@@ -14,6 +14,8 @@ Test matrix:
   8. Null values in required fields — 400 or 422
   9. Very long query parameter (100 KB) — 400 or 414
 """
+from __future__ import annotations
+
 
 import json
 import pytest

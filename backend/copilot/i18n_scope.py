@@ -6,6 +6,8 @@ This is a re-export for convenience. The canonical definition lives in
 backend.copilot.schemas.SUPPORTED_LANGUAGES to avoid circular imports.
 Every module that needs the language list imports from here.
 """
+from __future__ import annotations
+
 
 from backend.copilot.schemas import SUPPORTED_LANGUAGES  # noqa: F401 — re-export
 

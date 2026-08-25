@@ -265,7 +265,9 @@ class TestForeignKeyIntegrity:
         trip_repo: TripRepository,
         invoice_repo: InvoiceRepository,
     ) -> None:
-        """Create trip + invoice, delete trip (cascade), verify invoice also deleted."""
+        """Create trip + invoice, soft-delete trip — invoice survives (soft-delete
+        semantics: the trip row is preserved with deleted_at set so the delete can
+        propagate through sync; no cascade)."""
         # Arrange
         trip_id = trip_repo.create(_sample_trip(client_name="Cascade Test"))
         db.conn.execute(
@@ -278,12 +280,17 @@ class TestForeignKeyIntegrity:
         assert invoice is not None
         inv_id = invoice["id"]
 
-        # Act — delete the trip
+        # Act — soft-delete the trip
         trip_repo.delete(trip_id)
 
-        # Assert — trip is gone and invoice cascade-deleted
+        # Assert — trip soft-deleted (row preserved, filtered from reads) and
+        # invoice survives (no cascade under soft-delete)
         assert trip_repo.get_by_id(trip_id) is None
-        assert invoice_repo.get_by_id(inv_id) is None
+        row = db.conn.execute(
+            "SELECT deleted_at FROM trips WHERE id = ?", (trip_id,)
+        ).fetchone()
+        assert row is not None and row["deleted_at"] is not None
+        assert invoice_repo.get_by_id(inv_id) is not None
 
     def test_cascade_delete_multiple_levels(
         self,

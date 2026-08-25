@@ -3,6 +3,8 @@
 Uses ``folium`` + ``QWebEngineView`` to replace the legacy ``TkinterMapView``.
 Provides a two-way JavaScript bridge via ``QWebChannel`` for map interaction.
 """
+from __future__ import annotations
+
 
 from ui.map.map_helpers import clear_map_overlays, create_path_on_map
 from ui.map.map_widget import MapWidget

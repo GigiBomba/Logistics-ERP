@@ -5,6 +5,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from ui.design_tokens import COLOR_NEUTRAL_DEFAULT
 from ui.map.route_renderer import QtRouteMapRenderer
 
 
@@ -45,7 +46,7 @@ class TestInit:
         assert renderer.MARKER_COLOR_START == "green"
         assert renderer.MARKER_COLOR_STOP == "blue"
         assert renderer.MARKER_COLOR_DEST == "red"
-        assert renderer.ALT_ROUTE_COLOR == "gray"
+        assert renderer.ALT_ROUTE_COLOR == COLOR_NEUTRAL_DEFAULT
         assert renderer.AVOID_COLOR == "#cc0000"
         assert renderer.AVOID_FILL_OPACITY == 0.15
 

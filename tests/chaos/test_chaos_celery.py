@@ -6,6 +6,8 @@ scheduled separately.  These tests verify that when the Celery broker is
 unreachable or a task fails, the API endpoints that *might* interact with task
 queues don't crash.
 """
+from __future__ import annotations
+
 
 """Chaos tests: Celery worker outage, task failures.
 

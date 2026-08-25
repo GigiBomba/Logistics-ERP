@@ -7,6 +7,8 @@ Tests the real JWT auth flow:
 4. Use the returned JWT to call /api/v1/mobile/driver/my-day (protected)
 5. Verify wrong credentials return 401 with proper error_code
 """
+from __future__ import annotations
+
 
 import os
 

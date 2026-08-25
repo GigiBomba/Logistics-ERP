@@ -6,6 +6,8 @@ Falls back to word-by-word translation for any remaining untranslated values.
 
 Usage: python scripts/translate_batch1.py
 """
+from __future__ import annotations
+
 
 import json
 import os

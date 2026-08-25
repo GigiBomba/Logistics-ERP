@@ -6,6 +6,8 @@ Mirrors the operations performed locally by ``AutoMailRepository``,
 (``client.remote_automail.RemoteAutoMailService``) can drive the AutoMail
 panels against the backend.
 """
+from __future__ import annotations
+
 
 import logging
 import os

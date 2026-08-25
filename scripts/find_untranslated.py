@@ -1,5 +1,7 @@
 ﻿#!/usr/bin/env python3
 """Step 1: Find all untranslated keys and generate translation map."""
+from __future__ import annotations
+
 import json, os
 
 TRANS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "translations")

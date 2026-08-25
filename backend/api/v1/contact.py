@@ -3,6 +3,8 @@
 POST /api/v1/contact  — Public contact form (Phase 1)
 Admin/read endpoints come in Phase 2.
 """
+from __future__ import annotations
+
 
 import hashlib
 import logging

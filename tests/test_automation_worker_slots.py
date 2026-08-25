@@ -10,6 +10,8 @@ nothing.
 These tests confirm the methods exist, are callable, and behave
 sanely on inputs from the worker.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

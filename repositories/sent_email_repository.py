@@ -6,6 +6,8 @@ same recipient.  ``claim()`` atomically inserts a ``pending`` row (``INSERT OR
 IGNORE`` → ``ON CONFLICT DO NOTHING`` on PostgreSQL); only the call that
 actually inserted the row owns the send.
 """
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository

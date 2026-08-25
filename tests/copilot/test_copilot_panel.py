@@ -932,7 +932,6 @@ class TestThreadedSendIntegration:
         # No crash, no lingering state
         assert panel._chat_input._input.isEnabled() or True
 
-    @pytest.mark.xfail(reason="Known production bug: free-variable exc in lambda inside except block")
     def test_error_path_creates_error_bubble(self, panel, qtbot, controller):
         """When controller raises, the error path through send_utterance creates an error bubble.
 

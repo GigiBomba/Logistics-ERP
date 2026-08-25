@@ -26,7 +26,13 @@ from services.fleet_maintenance_service import MAINT_DISPLAY, MaintType
 from services.i18n import register_listener, t, unregister_listener
 from ui.components import Btn, Card, EmptyState, IconButton, Label, PageTitle
 from ui.mode_guard import ConnectionMode, detect_mode, guard_local_access
-from ui.design_tokens import SP
+from ui.design_tokens import (
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
+    COLOR_WARNING_DEFAULT,
+    SP,
+)
 from ui.icons import iconed
 from ui.models.maintenance_view_model import MaintenanceViewModel
 from ui.plotly_charts import CHART_ACCENT, make_grouped_bar_chart, make_trend_chart
@@ -35,8 +41,8 @@ from ui.widgets import StyledTableWidget
 from ui.widgets.layout_utils import clear_layout
 
 _TRUCK_PALETTE = (
-    "#6366f1", "#22c55e", "#f59e0b", "#ef4444",
-    "#3b82f6", "#a855f7", "#06b6d4", "#ec4899",
+    "#6366f1", COLOR_SUCCESS_DEFAULT, COLOR_WARNING_DEFAULT, COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT, "#a855f7", "#06b6d4", "#ec4899",
 )
 
 logger = logging.getLogger(__name__)
@@ -74,8 +80,17 @@ class QtMaintenanceAnalyticsView(QWidget):
             logger.warning("MaintenanceAnalyticsView: no local database - repository operations disabled in remote mode")
 
         # ── Mode guard ───────────────────────────────────────────────────────
-        self._mode = detect_mode(db, None)  # no api_client — local-only view
-        guard_local_access(self._mode, "Maintenance analytics")
+        # Conditional guard: remote mode is only blocked when no repository was
+        # injected.  With a ``RemoteMaintenanceService`` the view is remote-
+        # capable.  When a remote-capable service is injected the mode is
+        # REMOTE outright — skip ``detect_mode(db, None)`` so it cannot log the
+        # spurious "degraded mode" warning (db is None in remote mode).
+        if db is None and self.repo is not None:
+            self._mode = ConnectionMode.REMOTE
+        else:
+            self._mode = detect_mode(db, None)
+        if self._mode == ConnectionMode.REMOTE and self.repo is None:
+            guard_local_access(self._mode, "Maintenance analytics")
 
         # ── Grid toggle state ────────────────────────────────────────────────
         self._grid_visible = True

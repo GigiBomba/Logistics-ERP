@@ -239,7 +239,7 @@ class TestQtDispatchTabsDestroy:
 
     def test_destroy_clears_state(self, tabs_with_panels):
         tabs_with_panels.on_switch(lambda tid: None)
-        tabs_with_panels.destroy()
+        tabs_with_panels._destroy()
         assert tabs_with_panels._on_switch_callback is None
         assert tabs_with_panels._tabs == {}
         assert tabs_with_panels._buttons == {}

@@ -74,8 +74,8 @@ FONT_FAMILIES = {
 }
 
 FONT_SIZES = {
-    "display": 28,
-    "h1": 20,
+    "display": 32,
+    "h1": 22,
     "h2": 16,
     "h3": 13,
     "body": 13,
@@ -83,7 +83,7 @@ FONT_SIZES = {
     "small": 12,
     "label": 11,
     "mono": 13,
-    "mono_lg": 20,
+    "mono_lg": 22,
     "mono_xl": 32,
 }
 
@@ -1049,8 +1049,12 @@ class QtTheme:
         }}
 
         QMenu::item {{
-            padding: 6px 20px;
+            padding: 8px 20px;
             border-radius: {RADIUS_CHIP}px;
+        }}
+
+        QMenu::item:hover {{
+            background-color: {COLOR_BG_HOVER};
         }}
 
         QMenu::item:selected {{

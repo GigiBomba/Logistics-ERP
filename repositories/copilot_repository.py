@@ -5,6 +5,8 @@ Multi-tenant filtering is applied manually via ``company_id = ?`` or
 jobs) intentionally operate across all tenants via ``# read-only``.
 # read-only
 """
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 

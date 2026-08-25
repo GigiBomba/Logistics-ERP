@@ -8,6 +8,8 @@ The Search Engine (§5) checks this before firing a live search —
 a degraded TIMOCOM connection should never block a Trans.eu search
 from returning results.
 """
+from __future__ import annotations
+
 import asyncio
 import logging
 from datetime import datetime, timezone

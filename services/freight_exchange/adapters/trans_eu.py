@@ -3,6 +3,8 @@
 Implements FreightProviderAdapter for Trans.eu Platform API.
 Maps Trans.eu's REST API into the normalized interface.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional

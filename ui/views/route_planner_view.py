@@ -10,11 +10,12 @@ import contextlib
 import logging
 import os
 import uuid
-from typing import Any
+from typing import Any, cast
 
 from PySide6.QtCore import QPoint, QRect, QSize, Qt, QTimer, QUrl, Signal
 from PySide6.QtGui import QColor, QDesktopServices, QPainter
 from PySide6.QtWidgets import (
+    QBoxLayout,
     QCheckBox,
     QFileDialog,
     QFrame,
@@ -163,7 +164,7 @@ def make_result_pill(value: str, label: str) -> QFrame:
         }}
     """)
     pl = QVBoxLayout(pill)
-    pl.setContentsMargins(10, 6, 10, 6)
+    pl.setContentsMargins(12, 8, 12, 8)
     pl.setSpacing(2)
 
     val_lbl = QLabel(value)
@@ -266,7 +267,7 @@ def make_country_chip(country_code: str) -> QWidget:
         border-radius: {RADIUS_PILL}px;
     """)
     row = QHBoxLayout(chip)
-    row.setContentsMargins(8, 0, 6, 0)
+    row.setContentsMargins(8, 0, 8, 0)
     row.setSpacing(4)
 
     lbl = QLabel(country_code)
@@ -444,7 +445,18 @@ class QtRoutePlannerView(QWidget):
         # Initialize to None so method guards don't crash before lazy init runs.
         self.map_widget = None
         self._map_renderer = None
-        QTimer.singleShot(0, self._lazy_init_map)
+        # Parented single-shot timer (NOT ``QTimer.singleShot``): a static
+        # singleShot cannot be cancelled and keeps its bound callback alive,
+        # so if this view is destroyed before it fires the deferred
+        # ``_lazy_init_map`` runs against a dead C++ object at process exit
+        # (native access violation).  Parenting to ``self`` guarantees Qt
+        # tears the timer down together with the view, and ``shutdown()``
+        # stops it explicitly.
+        self._map_init_timer = QTimer(self)
+        self._map_init_timer.setSingleShot(True)
+        self._map_init_timer.setInterval(0)
+        self._map_init_timer.timeout.connect(self._lazy_init_map)
+        self._map_init_timer.start()
 
     def _on_truck_event(self, _event_data: Any) -> None:
         """Refresh the truck dropdown when a truck is created,
@@ -591,7 +603,7 @@ class QtRoutePlannerView(QWidget):
         self.map_widget.set_click_callback(self._on_map_click)
         self.map_widget.setMinimumWidth(1)
         if content_layout is not None:
-            content_layout.addWidget(self.map_widget, 1)
+            cast(QBoxLayout, content_layout).addWidget(self.map_widget, 1)
         self.map_widget.loadFinished.connect(self._inject_map_styles)
 
     def _make_collapsible_card(
@@ -1924,6 +1936,12 @@ class QtRoutePlannerView(QWidget):
             except Exception:
                 pass
             self._event_subscribed = False
+        # Cancel any pending deferred map-init timer so a shutdown view
+        # never runs ``_lazy_init_map`` against destroyed C++ state.
+        with contextlib.suppress(Exception):
+            timer = getattr(self, "_map_init_timer", None)
+            if timer is not None:
+                timer.stop()
         # Cancel any in-flight route calculation and wait for completion
         with contextlib.suppress(Exception):
             if self._core is not None:
@@ -1934,5 +1952,5 @@ class QtRoutePlannerView(QWidget):
                     if thread is not None and thread.is_alive():
                         thread.join(timeout=2.0)
         with contextlib.suppress(Exception):
-            self.map_widget.destroy()
+            self.map_widget._destroy()
         self._map_renderer = None

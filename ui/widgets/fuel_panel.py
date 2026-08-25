@@ -191,7 +191,7 @@ class QtFuelPricePanel(QFrame):
 
     # ── Public API ────────────────────────────────────────────────────────────
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         """Release the fuel service reference."""
         self._fuel_service = None
         super().deleteLater()

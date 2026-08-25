@@ -4,6 +4,8 @@ Remote-mode counterpart of ``PipelineRepository``'s package methods
 (``create_package`` / ``update_package`` / ``get_package_by_id``) used by
 the email composer modal.
 """
+from __future__ import annotations
+
 
 from typing import Any, Dict, Optional
 

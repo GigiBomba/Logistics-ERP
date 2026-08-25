@@ -15,6 +15,8 @@ Test matrix:
   9. Logout invalidates refresh token
  10. Admin env-var auth path also triggers lockout
 """
+from __future__ import annotations
+
 
 import base64
 import json

@@ -477,19 +477,59 @@ class FleetTrackingService:
         self._stop_event = threading.Event()
         self._db = None
         self._fleet_repo = None
+        self._config: dict = {}
 
-    def initialize(self, db=None):
-        """Call on app startup — loads adapter from settings."""
+    def initialize(self, db=None, api_client=None, config=None):
+        """Call on app startup — loads adapter from settings.
+
+        Local mode (``db`` provided): reads the ``tracking.*`` settings from
+        the settings table exactly as before (unchanged behaviour).
+
+        Remote mode (``db is None``): when ``api_client`` (or an explicit
+        ``config`` dict) is provided, reads the tracking config from the API
+        and configures the adapter without touching a local database.  If no
+        platform/tokens are present, ``is_configured()`` stays ``False`` so
+        callers see the graceful "not configured" state.
+        """
         self._db = db
-        if not db:
-            logger.warning("FleetTrackingService initialized without DB")
+        if db:
+            platform = db.get_setting("tracking.platform") or ""
+            self._adapter = self._create_adapter(platform)
+            if self._adapter:
+                logger.info("Fleet tracking initialized: %s", platform)
+            else:
+                logger.debug("Fleet tracking not configured")
             return
-        platform = db.get_setting("tracking.platform") or ""
-        self._adapter = self._create_adapter(platform)
+        if api_client is None and config is None:
+            logger.warning("FleetTrackingService initialized without DB or API client")
+            return
+        if config is None:
+            config = self._fetch_remote_config(api_client)
+        self._config = config if isinstance(config, dict) else {}
+        try:
+            interval = int(self._config.get("interval_seconds", 30) or 30)
+            if interval >= 5:
+                self._poll_interval = interval
+        except (TypeError, ValueError):
+            pass
+        self._adapter = self._create_adapter_from_config(self._config)
         if self._adapter:
-            logger.info("Fleet tracking initialized: %s", platform)
+            logger.info(
+                "Fleet tracking initialized (remote): %s",
+                self._config.get("platform", ""),
+            )
         else:
             logger.debug("Fleet tracking not configured")
+
+    def _fetch_remote_config(self, api_client) -> dict:
+        """Read the tracking config dict from the API client (remote mode)."""
+        try:
+            from client.remote_tracking_config import RemoteTrackingConfig
+            config = RemoteTrackingConfig(api_client).get_config()
+        except Exception as e:
+            logger.warning("Failed to load remote tracking config: %s", e)
+            return {}
+        return config if isinstance(config, dict) else {}
 
     # ------------------------------------------------------------------
     # Background polling
@@ -603,6 +643,61 @@ class FleetTrackingService:
                 lat_field=db.get_setting("tracking.lat_field") or "lat",
                 lng_field=db.get_setting("tracking.lng_field") or "lng",
                 id_field=db.get_setting("tracking.id_field") or "id",
+            )
+        return None
+
+    def _create_adapter_from_config(self, config) -> Optional[BaseTrackingAdapter]:
+        """Build the tracking adapter from an API tracking-config dict.
+
+        Mirrors :meth:`_create_adapter` but reads from a config dict (remote
+        mode) instead of the local DB settings table.  Credentials returned by
+        the API are already decrypted; ``_decrypt_tracking_credential`` is
+        still applied defensively so legacy/encrypted values pass through
+        unchanged either way.
+        """
+        if not isinstance(config, dict):
+            return None
+        platform = (config.get("platform") or "").strip()
+        if not platform or platform.lower() == "not configured":
+            return None
+        tokens = config.get("tokens") or {}
+        if not isinstance(tokens, dict):
+            tokens = {}
+        p = platform.lower()
+
+        def tok(key: str, default: str = "") -> str:
+            return _decrypt_tracking_credential(tokens.get(key) or default)
+
+        if "wialon" in p or "gps-trace" in p or "gurtam" in p:
+            return WialonAdapter(
+                token=tok("token"),
+                host=tokens.get("host") or "https://hst-api.wialon.com",
+            )
+        elif "frotcom" in p:
+            return FrotcomAdapter(
+                username=tok("username"),
+                password=tok("password"),
+                account=tok("account"),
+            )
+        elif "traccar" in p:
+            return TraccarAdapter(
+                url=tokens.get("host") or "",
+                email=tok("username"),
+                password=tok("password"),
+            )
+        elif "navixy" in p:
+            return NavixyAdapter(
+                api_key=tok("token"),
+                host=tokens.get("host") or "https://api.eu.navixy.com/v2",
+            )
+        elif "generic" in p or "rest" in p:
+            return GenericRestAdapter(
+                url=tokens.get("host") or "",
+                auth_header=tok("token"),
+                positions_path=tokens.get("positions_path") or "data.vehicles",
+                lat_field=tokens.get("lat_field") or "lat",
+                lng_field=tokens.get("lng_field") or "lng",
+                id_field=tokens.get("id_field") or "id",
             )
         return None
 

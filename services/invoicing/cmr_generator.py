@@ -4,6 +4,8 @@ Produces 2-page A4 CMR documents per the UN Convention on the Contract for the
 International Carriage of Goods by Road (Geneva, 1956), with bilingual labels,
 four-copy support, eFTI XML embedding, PDF/A-3 compliance, and signature pads.
 """
+from __future__ import annotations
+
 import json
 import logging
 import os
@@ -99,6 +101,8 @@ class CMRGenerator:
 
     def _init_styles(self):
         """Initialize shared Paragraph styles with modern, professional typography."""
+        # CMR print-document styles are intentionally exempt from app-chrome
+        # tokens (simulated paper document, not screen UI).
         self.text_color = colors.HexColor("#1f2937")
         self.muted_color = colors.HexColor("#6b7280")
 

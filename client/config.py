@@ -11,6 +11,8 @@ Usage::
     cfg = ClientConfig()
     api = ApiClient(cfg.base_url, verify_ssl=cfg.verify_ssl)
 """
+from __future__ import annotations
+
 
 import os
 from typing import Optional

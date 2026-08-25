@@ -2,6 +2,8 @@
 
 POST /api/v1/registration/register — Create a new company + manager account.
 """
+from __future__ import annotations
+
 
 import logging
 import time

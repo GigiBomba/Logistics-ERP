@@ -1,4 +1,6 @@
 """Document Center repository — CRUD and search for documents + links."""
+from __future__ import annotations
+
 import datetime
 import logging
 from typing import Any, Dict, List, Optional
@@ -11,6 +13,7 @@ logger = logging.getLogger(__name__)
 class DocumentRepository(BaseRepository):
     TABLE = "documents"
     TABLE_LINKS = "document_links"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "doc_number", "title", "category", "entity_type", "entity_id",
         "file_path", "file_name", "file_size", "mime_type", "file_hash",
@@ -76,19 +79,19 @@ class DocumentRepository(BaseRepository):
 
     def get_by_id(self, doc_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (doc_id,) + self._company_params(),
         )
 
     def get_by_doc_number(self, doc_number: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE doc_number = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE doc_number = ? {self._company_filter()} {self._soft_delete_filter()}",
             (doc_number,) + self._company_params(),
         )
 
     def get_by_hash(self, file_hash: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE file_hash = ? AND is_archived = 0 {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE file_hash = ? AND is_archived = 0 {self._company_filter()} {self._soft_delete_filter()}",
             (file_hash,) + self._company_params(),
         )
 
@@ -104,20 +107,28 @@ class DocumentRepository(BaseRepository):
         )
 
     def archive(self, doc_id: int) -> None:
+        """Archive a document: ``is_archived = 1`` AND stamp ``deleted_at``.
+
+        ``deleted_at`` unifies archive with the sync layer's delete semantics
+        (the desktop pull treats ``deleted_at IS NOT NULL`` as deleted).
+        """
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"UPDATE {self.TABLE} SET is_archived = 1, updated_at = ? WHERE id = ? {self._company_filter()}",
-            (datetime.datetime.now().isoformat(), doc_id) + self._company_params(),
+            f"UPDATE {self.TABLE} SET is_archived = 1, deleted_at = ?, updated_at = ? WHERE id = ? {self._company_filter()}",
+            (utc_now_iso(), datetime.datetime.now().isoformat(), doc_id) + self._company_params(),
         commit=True)
 
     def delete(self, doc_id: int) -> None:
+        """Soft-delete a document by stamping ``deleted_at`` (row kept for sync)."""
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (doc_id,) + self._company_params(),
+            f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id = ? {self._company_filter()}",
+            (utc_now_iso(), doc_id) + self._company_params(),
         commit=True)
 
     def count(self) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_archived = 0 {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_archived = 0 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return row["cnt"] if row else 0
@@ -125,7 +136,7 @@ class DocumentRepository(BaseRepository):
     def count_by_category(self) -> List[Dict[str, Any]]:
         return self._fetchall(
             f"SELECT category, COUNT(*) AS cnt FROM {self.TABLE} "
-            f"WHERE is_archived = 0 {self._company_filter()} GROUP BY category ORDER BY cnt DESC",
+            f"WHERE is_archived = 0 {self._company_filter()} {self._soft_delete_filter()} GROUP BY category ORDER BY cnt DESC",
             self._company_params(),
         )
 
@@ -137,7 +148,7 @@ class DocumentRepository(BaseRepository):
         try:
             row = self._fetchone(
                 f"SELECT MAX(doc_number) AS last_num FROM {self.TABLE} "
-                f"WHERE doc_number LIKE ? {self._company_filter()}",
+                f"WHERE doc_number LIKE ? {self._company_filter()} {self._soft_delete_filter()}",
                 (f"DOC-{year}-%",) + self._company_params(),
             )
             if row and row.get("last_num"):
@@ -167,7 +178,7 @@ class DocumentRepository(BaseRepository):
             return []
         placeholders = ",".join("?" for _ in doc_ids)
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()} {self._soft_delete_filter()}",
             tuple(doc_ids) + self._company_params(),
         )
 
@@ -183,7 +194,7 @@ class DocumentRepository(BaseRepository):
                         mime_type: str = "", tag: str = "",
                         order: str = "uploaded_at DESC",
                         limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
-        conditions = [f"is_archived = 0 {self._company_filter('d')}".strip()]
+        conditions = [f"is_archived = 0 {self._company_filter('d')} {self._soft_delete_filter('d')}".strip()]
         params: list = list(self._company_params())
 
         if query:
@@ -244,7 +255,7 @@ class DocumentRepository(BaseRepository):
                               date_from: str = "", date_to: str = "",
                               mime_type: str = "",
                               tag: str = "") -> int:
-        conditions = [f"is_archived = 0 {self._company_filter('d')}".strip()]
+        conditions = [f"is_archived = 0 {self._company_filter('d')} {self._soft_delete_filter('d')}".strip()]
         params: list = list(self._company_params())
 
         if query:
@@ -294,7 +305,7 @@ class DocumentRepository(BaseRepository):
     def get_distinct_entity_types(self) -> List[str]:
         rows = self._fetchall(
             f"SELECT DISTINCT entity_type FROM {self.TABLE} "
-            f"WHERE entity_type != '' AND is_archived = 0 {self._company_filter()}",
+            f"WHERE entity_type != '' AND is_archived = 0 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return sorted({r["entity_type"] for r in rows})
@@ -302,7 +313,7 @@ class DocumentRepository(BaseRepository):
     def get_distinct_mime_types(self) -> List[str]:
         rows = self._fetchall(
             f"SELECT DISTINCT mime_type FROM {self.TABLE} "
-            f"WHERE mime_type != '' AND is_archived = 0 {self._company_filter()}",
+            f"WHERE mime_type != '' AND is_archived = 0 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return sorted({r["mime_type"] for r in rows})
@@ -375,18 +386,28 @@ class DocumentRepository(BaseRepository):
     # ── Batch operations ──────────────────────────────────────────────
 
     def delete_batch(self, doc_ids: list) -> int:
+        """Soft-delete documents in batch by stamping ``deleted_at``.
+
+        The document rows are PRESERVED (the sync outbox needs them to
+        propagate the delete); only the ``document_links`` rows are removed
+        (the document is gone from the UI).  File/thumbnail cleanup happens
+        in the service layer (``DocumentService.delete_batch``).
+        """
         if not doc_ids:
             return 0
+        from database.time_utils import utc_now_iso
         placeholders = ",".join("?" for _ in doc_ids)
         company_filter = self._company_filter()
         company_params = self._company_params()
         try:
             self.begin_transaction()
-            affected = self._execute_with_count(
-                f"DELETE FROM {self.TABLE} WHERE id IN ({placeholders}) {company_filter}",
-                tuple(doc_ids) + company_params,
-                commit=False,
-            )
+            affected = 0
+            for doc_id in doc_ids:
+                affected += self._execute_with_count(
+                    f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id = ? {company_filter}",
+                    (utc_now_iso(), doc_id) + company_params,
+                    commit=False,
+                )
             self._execute(
                 f"DELETE FROM {self.TABLE_LINKS} WHERE document_id IN ({placeholders}) {company_filter}",
                 tuple(doc_ids) + company_params,
@@ -425,7 +446,7 @@ class DocumentRepository(BaseRepository):
     def get_all_tags(self) -> List[str]:
         rows = self._fetchall(
             f"SELECT DISTINCT tags FROM {self.TABLE} WHERE is_archived = 0 "
-            f"AND tags IS NOT NULL AND tags != '' AND tags != '[]' {self._company_filter()}",
+            f"AND tags IS NOT NULL AND tags != '' AND tags != '[]' {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         tag_set = set()
@@ -507,7 +528,7 @@ class DocumentRepository(BaseRepository):
             f"SELECT d.* FROM {self.TABLE} d "
             f"JOIN {self.TABLE_LINKS} dl ON dl.document_id = d.id "
             f"WHERE dl.linked_entity_type = ? AND dl.linked_entity_id = ? "
-            f"AND d.is_archived = 0 {self._company_filter('d')} "
+            f"AND d.is_archived = 0 {self._company_filter('d')} {self._soft_delete_filter('d')} "
             f"ORDER BY d.uploaded_at DESC",
             (entity_type, entity_id) + self._company_params(),
         )
@@ -542,7 +563,7 @@ class DocumentRepository(BaseRepository):
     def fts_search(self, query: str, category: str = "",
                    entity_type: str = "", order: str = "uploaded_at DESC",
                    limit: int = 20, offset: int = 0) -> List[Dict[str, Any]]:
-        conditions = [f"d.is_archived = 0 {self._company_filter('d')}".strip()]
+        conditions = [f"d.is_archived = 0 {self._company_filter('d')} {self._soft_delete_filter('d')}".strip()]
         params: list = list(self._company_params())
 
         if query:
@@ -584,7 +605,7 @@ class DocumentRepository(BaseRepository):
 
     def fts_search_count(self, query: str, category: str = "",
                           entity_type: str = "") -> int:
-        conditions = [f"d.is_archived = 0 {self._company_filter('d')}".strip()]
+        conditions = [f"d.is_archived = 0 {self._company_filter('d')} {self._soft_delete_filter('d')}".strip()]
         params: list = list(self._company_params())
 
         if query:
@@ -621,7 +642,7 @@ class DocumentRepository(BaseRepository):
         cutoff = (datetime.datetime.now() + datetime.timedelta(days=days_ahead)).strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE expiry_date != '' "
-            f"AND expiry_date <= ? AND is_archived = 0 {self._company_filter()} "
+            f"AND expiry_date <= ? AND is_archived = 0 {self._company_filter()} {self._soft_delete_filter()} "
             f"ORDER BY expiry_date ASC",
             (cutoff,) + self._company_params(),
         )
@@ -630,7 +651,7 @@ class DocumentRepository(BaseRepository):
         today = datetime.datetime.now().strftime("%Y-%m-%d")
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE expiry_date != '' "
-            f"AND expiry_date < ? AND is_archived = 0 {self._company_filter()} "
+            f"AND expiry_date < ? AND is_archived = 0 {self._company_filter()} {self._soft_delete_filter()} "
             f"ORDER BY expiry_date ASC",
             (today,) + self._company_params(),
         )
@@ -710,7 +731,7 @@ class DocumentRepository(BaseRepository):
 
     def get_contracts(self, client_id: Optional[int] = None,
                       status: str = "") -> List[Dict[str, Any]]:
-        conditions = []
+        conditions = ["deleted_at IS NULL"]
         params: list = list(self._company_params())
         if self._company_filter():
             conditions.append("company_id = ?")
@@ -728,13 +749,13 @@ class DocumentRepository(BaseRepository):
 
     def get_contract_by_id(self, contract_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM contracts WHERE id = ? " + self._company_filter(),
+            "SELECT * FROM contracts WHERE id = ? " + self._company_filter() + " " + self._soft_delete_filter(),
             (contract_id,) + self._company_params(),
         )
 
     def get_contract_by_document(self, document_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            "SELECT * FROM contracts WHERE document_id = ? " + self._company_filter(),
+            "SELECT * FROM contracts WHERE document_id = ? " + self._company_filter() + " " + self._soft_delete_filter(),
             (document_id,) + self._company_params(),
         )
 
@@ -753,7 +774,7 @@ class DocumentRepository(BaseRepository):
         return self._fetchall(
             "SELECT * FROM contracts WHERE end_date != '' "
             "AND end_date <= ? AND status = 'active' "
-            + self._company_filter() + " "
+            + self._company_filter() + " " + self._soft_delete_filter() + " "
             "ORDER BY end_date ASC",
             (cutoff,) + self._company_params(),
         )

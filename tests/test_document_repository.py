@@ -161,13 +161,20 @@ class TestArchive:
     def test_sets_archived_flag(self, db, repo):
         did = _doc(db, is_archived=0)
         repo.archive(did)
-        row = repo.get_by_id(did)
+        # archive() soft-deletes (stamps deleted_at) so get_by_id filters the
+        # row — read directly to verify the flags (soft-delete sweep, Phase 3a).
+        row = db.conn.execute(
+            "SELECT is_archived, deleted_at FROM documents WHERE id = ?", (did,)
+        ).fetchone()
         assert row["is_archived"] == 1
+        assert row["deleted_at"] is not None
 
     def test_sets_updated_at(self, db, repo):
         did = _doc(db)
         repo.archive(did)
-        row = repo.get_by_id(did)
+        row = db.conn.execute(
+            "SELECT updated_at FROM documents WHERE id = ?", (did,)
+        ).fetchone()
         assert row["updated_at"] != ""
 
 

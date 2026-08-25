@@ -1,4 +1,6 @@
 """SLO/SLA tracking service for enterprise readiness."""
+from __future__ import annotations
+
 import time
 import logging
 from datetime import datetime, timedelta

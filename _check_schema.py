@@ -1,4 +1,6 @@
 """Check what tables and columns the test DB has."""
+from __future__ import annotations
+
 import sys
 sys.path.insert(0, '.')
 from tests.test_helpers import make_db

@@ -1,4 +1,6 @@
 """Health check endpoints — liveness, readiness, and detailed health."""
+from __future__ import annotations
+
 import logging
 import time
 from typing import Any, Dict

@@ -2,6 +2,8 @@
 
 These test functions directly, not through the API.
 """
+from __future__ import annotations
+
 
 import os
 import time

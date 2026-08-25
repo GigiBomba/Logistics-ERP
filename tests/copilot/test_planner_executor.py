@@ -3,6 +3,8 @@
 Covers: intent extraction (14+ patterns), pipeline flow, executor state machine,
 context loading/saving, and LLM provider abstraction.
 """
+from __future__ import annotations
+
 
 import asyncio
 from datetime import datetime

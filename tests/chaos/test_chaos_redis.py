@@ -10,6 +10,8 @@ Covers two separate Redis usage patterns in the codebase:
    endpoints.  Methods already catch exceptions and degrade silently, but the
    tests below confirm the *callers* handle the degraded state gracefully.
 """
+from __future__ import annotations
+
 
 from unittest.mock import patch, MagicMock
 

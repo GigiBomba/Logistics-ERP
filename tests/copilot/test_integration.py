@@ -7,6 +7,8 @@ Tests cover:
 - Confidence + planner (confidence gates plan execution)
 - Executor + WebSocket callback (step status callbacks fire correctly)
 """
+from __future__ import annotations
+
 
 import asyncio
 from typing import Any, Dict, List

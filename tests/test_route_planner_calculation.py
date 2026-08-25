@@ -7,6 +7,8 @@ ran, the slot was never invoked, and the "Calculating…" state hung
 forever.  The fix uses a ``Signal`` (which Qt marshals across
 threads) connected to ``_on_route_result``.
 """
+from __future__ import annotations
+
 
 import contextlib
 import os

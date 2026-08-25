@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import warnings
+from datetime import datetime
 from typing import Any, Optional, Union
 
 from models.trip_models import TripCreate, TripUpdate, TripResult, TripCreateResult, TripListResult
@@ -112,6 +113,16 @@ def _db_to_trip_result(row: dict) -> TripResult:
         else:
             mapped.setdefault(_key, _default)
 
+    # Normalize date-only columns: the DB (and legacy writes) may store full
+    # ISO timestamps (e.g. ``2026-08-16T16:08:56Z``) in ``start_date``/
+    # ``end_date``.  ``TripResult`` declares these as ``date``, and Pydantic v2
+    # rejects a datetime-with-time value (``date_from_datetime_inexact``), which
+    # would surface as a spurious 500/422 on read-after-write paths.
+    for _dfield in ("start_date", "end_date"):
+        _v = mapped.get(_dfield)
+        if isinstance(_v, str) and len(_v) > 10 and _v[10:11] in ("T", " "):
+            mapped[_dfield] = _v[:10]
+
     return TripResult(**mapped)
 
 
@@ -163,6 +174,13 @@ class TripService:
             data = _model_to_db(request.model_dump(exclude_none=True))
             if company_id:
                 data["company_id"] = company_id
+            # Stamp created_at so the row is readable by TripResponse
+            # (which requires a non-NULL created_at string).  Without this,
+            # GET /trips/{id} and trip listing 422 on newly created trips.
+            data.setdefault(
+                "created_at",
+                datetime.utcnow().isoformat(timespec="seconds") + "Z",
+            )
             new_id = self._trip_repo.create(data)
             self._event_bus.publish(TRIP_CREATED, {"trip_id": new_id, "data": data})
             AuditService(self.db).log(

@@ -40,13 +40,27 @@ def mock_ops():
 @pytest.fixture
 def fleet_tab(qtbot, mock_ops, mock_fleet_service, mock_dta_service, mock_fleet_repo):
     """Create a QtFleetTab with all services mocked."""
+    wp_patcher = patch("ui.views.fleet_tab.fleet_tab.WorkerPool")
     patchers = [
         patch("ui.views.fleet_tab.fleet_tab.FleetService", return_value=mock_fleet_service),
         patch("ui.views.fleet_tab.fleet_tab.DriverTruckService", return_value=mock_dta_service),
         patch("ui.views.fleet_tab.fleet_tab.FleetRepository", return_value=mock_fleet_repo),
+        wp_patcher,
     ]
     for p in patchers:
         p.start()
+    mock_wp = wp_patcher.start()
+
+    def _sync_run(fn, on_result=None, on_error=None, **kw):
+        try:
+            result = fn()
+            if on_result:
+                on_result(result)
+        except Exception as e:
+            if on_error:
+                on_error(str(e))
+
+    mock_wp.run = _sync_run
 
     from ui.views.fleet_tab.fleet_tab import QtFleetTab
 
@@ -80,11 +94,15 @@ class TestQtFleetTab:
         assert fleet_tab.service is not None
         assert hasattr(fleet_tab, "_rows")
 
-    @pytest.mark.xfail(reason="Pre-existing: PageTitle is a function not a class — findChildren fails")
     def test_header_renders_title(self, fleet_tab):
         """Header contains a PageTitle with 'Fleet Manager'."""
-        from ui.components import PageTitle
-        titles = fleet_tab.findChildren(PageTitle)
+        from PySide6.QtWidgets import QLabel
+        # PageTitle is a factory function that returns a QLabel with the
+        # "page-title" role property — locate it by that property.
+        titles = [
+            l for l in fleet_tab.findChildren(QLabel)
+            if l.property("role") == "page-title"
+        ]
         assert len(titles) >= 1
         # The PageTitle stores text; ensure at least one exists
         assert any(t.text() for t in titles)
@@ -111,11 +129,11 @@ class TestQtFleetTab:
         expected_count = len(QtFleetTab.TABLE_COLUMNS)
         assert table.columnCount() == expected_count
 
-    @pytest.mark.xfail(reason="Pre-existing: Btn is a function not a class — findChildren fails")
     def test_action_buttons_render(self, fleet_tab):
         """Add, edit, delete buttons exist on the widget."""
-        from ui.components import Btn
-        buttons = fleet_tab.findChildren(Btn)
+        from PySide6.QtWidgets import QPushButton
+        # Btn is a factory function that returns a QPushButton — find those.
+        buttons = fleet_tab.findChildren(QPushButton)
         btn_texts = [b.text() for b in buttons]
         # Look for at least some action button text (translations at runtime)
         assert len(buttons) >= 3
@@ -131,7 +149,6 @@ class TestQtFleetTab:
         assert hasattr(fleet_tab, "_q_model")
         assert hasattr(fleet_tab, "_q_rate")
 
-    @pytest.mark.xfail(reason="Pre-existing: WorkerPool not mocked — async refresh race")
     def test_refresh_populates_table(self, fleet_tab, mock_fleet_service):
         """refresh() calls service and populates table rows."""
         mock_fleet_service.get_trucks.return_value = [
@@ -188,7 +205,6 @@ class TestQtFleetTab:
         assert hasattr(fleet_tab, "_chart_area")
         assert fleet_tab._chart_area is not None
 
-    @pytest.mark.xfail(reason="Pre-existing: WorkerPool not mocked — async refresh race")
     def test_filter_table_by_text(self, fleet_tab, mock_fleet_service):
         """Typing in search filter hides non-matching rows."""
         mock_fleet_service.get_trucks.return_value = [

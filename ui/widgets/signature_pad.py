@@ -217,7 +217,7 @@ class QtSignaturePad(QWidget):
             command=self._switch_to_draw,
             variant="primary",
         )
-        self._draw_btn.setFixedHeight(22)
+        self._draw_btn.setFixedHeight(24)
         toggle_layout.addWidget(self._draw_btn)
 
         self._upload_btn = ActionButton(
@@ -225,7 +225,7 @@ class QtSignaturePad(QWidget):
             command=self._switch_to_upload,
             variant="ghost",
         )
-        self._upload_btn.setFixedHeight(22)
+        self._upload_btn.setFixedHeight(24)
         toggle_layout.addWidget(self._upload_btn)
 
         self._clear_btn = ActionButton(
@@ -233,7 +233,7 @@ class QtSignaturePad(QWidget):
             command=self._clear,
             variant="ghost",
         )
-        self._clear_btn.setFixedHeight(22)
+        self._clear_btn.setFixedHeight(24)
         toggle_layout.addWidget(self._clear_btn)
 
         toggle_layout.addStretch(1)
@@ -274,7 +274,7 @@ class QtSignaturePad(QWidget):
             command=self._browse_image,
             variant="ghost",
         )
-        self._browse_btn.setFixedHeight(22)
+        self._browse_btn.setFixedHeight(24)
         upload_layout.addWidget(self._browse_btn)
 
         self._upload_path_edit = StyledLineEdit(
@@ -294,7 +294,7 @@ class QtSignaturePad(QWidget):
             command=self._accept,
             variant="success",
         )
-        self._accept_btn.setFixedHeight(26)
+        self._accept_btn.setFixedHeight(24)
         layout.addWidget(self._accept_btn)
 
         # Start in "none" mode — canvas hidden, upload hidden

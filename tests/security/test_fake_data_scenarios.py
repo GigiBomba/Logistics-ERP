@@ -9,6 +9,8 @@ Tests cover:
 Fixtures from conftest:
   client, auth_admin, auth_a, auth_b, admin_token, company_a_token
 """
+from __future__ import annotations
+
 
 import time
 import json

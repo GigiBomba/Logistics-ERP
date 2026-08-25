@@ -5,6 +5,8 @@ Severity levels:
     "error"   — blocks generation (mandatory missing, invalid numeric)
     "warning" — advisory (suboptimal but acceptable)
 """
+from __future__ import annotations
+
 
 import re
 from typing import Any, Optional

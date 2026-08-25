@@ -1,5 +1,7 @@
 ﻿#!/usr/bin/env python3
 """Translate ALL untranslated English values in es.json to Spanish."""
+from __future__ import annotations
+
 import json, os, re
 
 BASE = os.path.join(os.path.dirname(__file__), os.pardir, "data", "translations")

@@ -1,4 +1,6 @@
 """Request schemas for the AutoMail API router."""
+from __future__ import annotations
+
 
 from typing import List, Optional
 

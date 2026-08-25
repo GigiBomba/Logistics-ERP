@@ -2,6 +2,8 @@
 
 Every route in this module requires manager or admin privileges.
 """
+from __future__ import annotations
+
 
 from typing import Any, Dict
 

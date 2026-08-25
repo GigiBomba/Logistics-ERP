@@ -18,6 +18,8 @@ VERIFICATION POLICY (deliberate decision — audit F15):
   recommends enabling that enforcement post-launch once all web flows
   ship the widget.
 """
+from __future__ import annotations
+
 
 import logging
 import os

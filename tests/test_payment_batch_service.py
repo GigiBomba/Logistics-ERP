@@ -36,14 +36,15 @@ def _ensure_tables(db: InMemoryDB):
             bank_name TEXT DEFAULT '', bank_account TEXT DEFAULT '',
             bank_code TEXT DEFAULT '', bank_bic TEXT DEFAULT '', iban TEXT DEFAULT '',
             payment_reference TEXT DEFAULT '',
-            created_at TEXT NOT NULL, updated_at TEXT
+            created_at TEXT NOT NULL, updated_at TEXT, deleted_at TEXT
         );
         CREATE TABLE drivers (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL, phone TEXT, email TEXT, is_active INTEGER DEFAULT 1,
             bank_account TEXT DEFAULT '', bank_code TEXT DEFAULT '',
             bank_bic TEXT DEFAULT '', iban TEXT DEFAULT '',
-            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, license_number TEXT
+            created_at TEXT NOT NULL, updated_at TEXT NOT NULL, license_number TEXT,
+            deleted_at TEXT
         );
         CREATE TABLE IF NOT EXISTS payment_profiles (
             id INTEGER PRIMARY KEY AUTOINCREMENT,

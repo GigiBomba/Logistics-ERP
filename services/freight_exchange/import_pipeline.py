@@ -10,6 +10,8 @@ The only schema change needed anywhere else in Operion: nullable ``source``,
 ``source_provider_id``, and ``source_reference_id`` columns on the ``trips``
 table (already added by Alembic migration).
 """
+from __future__ import annotations
+
 import asyncio
 import logging
 from datetime import datetime, timezone

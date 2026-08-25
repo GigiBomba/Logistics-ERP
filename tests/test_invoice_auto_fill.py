@@ -7,6 +7,8 @@ empty text boxes even though the PDF generation worked correctly.
 
 These tests pin down the corrected behaviour.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

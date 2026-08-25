@@ -4,6 +4,8 @@ PermissionService — centralized authorization layer.
 All write operations across every service MUST check permissions through
 this service. No permission checks in widgets, views, or repositories.
 """
+from __future__ import annotations
+
 import logging
 from typing import Optional, Any
 from dataclasses import dataclass

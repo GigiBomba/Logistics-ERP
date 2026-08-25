@@ -38,3 +38,24 @@ class RemoteMaintenanceService:
             return resp.get("items", []) if resp else []
         except Exception:
             return []
+
+    # ── View-facing aliases (maintenance analytics view) ─────────────────
+    # The maintenance analytics view calls the local ``FleetRepository``
+    # method names; the backend endpoints wrap the rows in ``{"data": [...]}``
+    # so these aliases unwrap them into plain lists.
+
+    def get_maintenance_cost_truck_monthly(self, date_from: str = "") -> list:
+        resp = self._api.get_maintenance_cost_by_truck_monthly(date_from=date_from)
+        return resp.get("data", []) if resp else []
+
+    def get_maintenance_cost_monthly(self, date_from: str = "") -> list:
+        resp = self._api.get_maintenance_cost_monthly(date_from=date_from)
+        return resp.get("data", []) if resp else []
+
+    def get_maintenance_truck_summary(self, date_from: str = "") -> list:
+        resp = self._api.get_maintenance_truck_summary(date_from=date_from)
+        return resp.get("data", []) if resp else []
+
+    def get_maintenance_most_expensive_category(self, date_from: str = "") -> list:
+        resp = self._api.get_maintenance_top_categories(date_from=date_from)
+        return resp.get("data", []) if resp else []

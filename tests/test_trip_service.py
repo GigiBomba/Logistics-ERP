@@ -1,4 +1,6 @@
 """Unit + integration tests for TripService: creation, status transitions, edge cases."""
+from __future__ import annotations
+
 import unittest
 from datetime import datetime
 

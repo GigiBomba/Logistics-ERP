@@ -39,3 +39,5 @@ The following additions are needed in `tests/conftest.py` to support Phase 6 tes
        loop.close()
    ```
 """
+from __future__ import annotations
+

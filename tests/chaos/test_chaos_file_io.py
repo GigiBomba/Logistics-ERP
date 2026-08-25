@@ -46,19 +46,22 @@ class TestChaosImportFileDeleted:
 
     def test_import_file_deleted_mid_import_returns_error(self, client, auth_admin):
         """If the import file is deleted during processing, the endpoint returns 500."""
+        # The migration import endpoint uses a multipart file upload contract
+        # (file + kind form fields).  It drives ImportService.preview →
+        # validate_all → commit; `import_data` is not invoked over HTTP.  When
+        # the uploaded temp file is missing at read time, preview raises
+        # FileNotFoundError and the endpoint must surface a clean 5xx/4xx.
         with patch("services.migration.import_service.ImportService") as mock_svc_cls:
             mock_svc = MagicMock()
             mock_svc_cls.return_value = mock_svc
-            mock_svc.import_data.side_effect = FileNotFoundError(
+            mock_svc.preview.side_effect = FileNotFoundError(
                 "The system cannot find the file specified"
             )
             resp = _accept_any(
                 client.post,
                 "/api/v1/migration/import",
-                json={
-                    "file_path": "/tmp/import/trips_mid_import.csv",
-                    "import_type": "trips",
-                },
+                files={"file": ("trips_mid_import.csv", b"a,b,c\n1,2,3")},
+                data={"kind": "trips"},
                 headers=auth_admin,
             )
             assert resp.status_code in (400, 404, 500), (

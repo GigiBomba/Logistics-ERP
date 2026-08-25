@@ -11,6 +11,8 @@ To add a new invariant:
     4. Import the module in business_invariants/cli.py:_load_checks()
     5. Done — the invariant is auto-registered on import
 """
+from __future__ import annotations
+
 
 from business_invariants.checks import (
     financial,

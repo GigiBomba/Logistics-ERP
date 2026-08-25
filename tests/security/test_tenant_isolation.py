@@ -3,6 +3,8 @@
 Uses fixtures from ``tests/security/conftest.py`` where available, plus
 standalone unit tests for repository-level validations.
 """
+from __future__ import annotations
+
 
 import os
 import pytest

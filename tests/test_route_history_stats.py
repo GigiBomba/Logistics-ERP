@@ -1,4 +1,6 @@
 """Unit tests for route history statistics labels and totals."""
+from __future__ import annotations
+
 import unittest
 
 from services.route_history_service import RouteHistoryService

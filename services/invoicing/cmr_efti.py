@@ -34,6 +34,8 @@ CMR boxes mapped to UN/CEFACT elements:
   Box 23  → rsm:ExchangedDocument / ram:SignatoryDocumentAuthentication (carrier)
   Box 24  → ram:DeliveryNote / ram:SignatoryAuthentication (consignee)
 """
+from __future__ import annotations
+
 import json
 import logging
 import os

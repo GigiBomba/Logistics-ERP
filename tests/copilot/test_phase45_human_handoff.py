@@ -6,6 +6,8 @@ Extends the existing test_phase4_human_handoff.py with:
 - Empty intent name edge cases
 - Accumulation of multiple counter types
 """
+from __future__ import annotations
+
 
 import threading
 import time

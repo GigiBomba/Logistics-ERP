@@ -11,6 +11,8 @@ After successful execution the script can be kept for future use
 (re-run for additional tenants).  No credentials are hardcoded or
 logged.
 """
+from __future__ import annotations
+
 
 import os
 import sys

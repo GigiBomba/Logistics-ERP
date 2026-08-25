@@ -1,4 +1,6 @@
 """Audit repository — all operation_events (audit log) DB access."""
+from __future__ import annotations
+
 import json
 import uuid
 from datetime import datetime

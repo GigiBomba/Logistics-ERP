@@ -8,6 +8,8 @@ The route-calculation endpoint (``POST /api/v1/routes/calculate``) calls
 and may optionally geocode addresses via ``geocode_nominatim`` (also
 ``requests``).
 """
+from __future__ import annotations
+
 
 import time
 from unittest.mock import patch, MagicMock, PropertyMock

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import json
 
 with open('data/translations/en.json', 'r', encoding='utf-8') as f:

@@ -36,6 +36,7 @@ from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_BG_OVERLAY,
     COLOR_BORDER_SUBTLE,
+    COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_TERTIARY,
     SP,
@@ -49,7 +50,7 @@ logger = logging.getLogger(__name__)
 # ──────────────────────────────────────────────────────────────────────────────
 
 _STATUS_COLORS = {
-    "ok": "#22c55e",
+    "ok": COLOR_SUCCESS_DEFAULT,
     "error": "#ef4444",
     "unavailable": "#6b7280",
     "warning": "#f59e0b",

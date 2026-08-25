@@ -1,4 +1,6 @@
 """Tests for analytics_models.py — Analytics query params, aggregate types, time period bounds."""
+from __future__ import annotations
+
 import pytest
 from datetime import date
 from pydantic import ValidationError

@@ -267,6 +267,25 @@ def create_app(settings: Optional[BackendSettings] = None) -> FastAPI:
         except Exception:
             logger.warning("FCM push sender startup skipped", exc_info=True)
 
+    # ── Server-side OperationsEngine (remote-mode parity) ────────────────
+    # Runs the same background workers the desktop starts locally
+    # (OperationsEngine(db, prefs).start()) so remote-mode clients surface
+    # alerts via the API instead of an empty stub.  OPT-IN via
+    # OPERION_RUN_OPS_ENGINE=1 (set in docker-compose / manage.bat where the
+    # server runs) and NEVER under pytest — TestClient triggers lifespan
+    # events in every API suite, so the guard must keep tests untouched.
+    @app.on_event("startup")
+    async def _start_server_ops_engine() -> None:
+        from backend.ops_engine import start_ops_engine
+
+        app.state.ops_engine = start_ops_engine(app)
+
+    @app.on_event("shutdown")
+    async def _stop_server_ops_engine() -> None:
+        from backend.ops_engine import stop_ops_engine
+
+        stop_ops_engine(getattr(app.state, "ops_engine", None))
+
     return app
 
 

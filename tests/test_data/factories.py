@@ -10,6 +10,8 @@ Usage::
     trip = make_trip(client_id=42, status="Delivered")
     client = make_client(name="Acme Corp")
 """
+from __future__ import annotations
+
 
 import copy
 from datetime import date, datetime, timedelta

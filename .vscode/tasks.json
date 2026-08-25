@@ -19,7 +19,7 @@
 				"docker-build"
 			],
 			"python": {
-				"file": "main_remote.py"
+				"file": "main.py"
 			}
 		}
 	]

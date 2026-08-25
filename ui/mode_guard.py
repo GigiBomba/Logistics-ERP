@@ -1,4 +1,6 @@
 """Mode guard utility to prevent accidental local DB access in remote mode."""
+from __future__ import annotations
+
 import logging
 from enum import Enum
 

@@ -1,4 +1,6 @@
 """Tests for DatabaseManager schema creation and column migration logic."""
+from __future__ import annotations
+
 import os
 import tempfile
 import unittest

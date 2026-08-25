@@ -6,6 +6,8 @@ Usage:
 
 Requires the JSON dump produced by scripts/export_to_pg.py.
 """
+from __future__ import annotations
+
 
 import base64
 import json

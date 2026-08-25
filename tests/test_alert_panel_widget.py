@@ -14,7 +14,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication, QLabel, QScrollArea, QWidget
 
 from ui.design_tokens import TEXT_WHITE
-from ui.theme import COLORS
 from ui.widgets.alert_panel import QtAlertPanel
 
 

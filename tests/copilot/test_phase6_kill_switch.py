@@ -5,6 +5,8 @@ Flip the per-company kill switch mid-conversation and assert:
 (b) subsequent requests return unavailable,
 (c) other companies are unaffected.
 """
+from __future__ import annotations
+
 
 import json
 from unittest.mock import MagicMock, patch

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Dict
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -28,10 +30,28 @@ def list_trucks(
     company_id = current_user.get("company_id", 0)
     trucks = service.get_trucks(company_id=company_id)
     return PaginatedResponse.from_items(
-        items=[TruckResponse(**t) for t in trucks],
+        items=[_truck_to_response(t) for t in trucks],
         total=len(trucks),
         page=page,
         page_size=page_size,
+    )
+
+
+def _truck_to_response(t: dict) -> TruckResponse:
+    """Map a trucks-table row to ``TruckResponse``.
+
+    DB columns differ from the schema names (``plate_number`` -> ``plate``,
+    ``manufacturer`` -> ``brand``, ``active_status`` -> ``is_active``), and a
+    NULL ``year`` must coerce to 0 so one incomplete row can't 422 the whole
+    list (``TruckResponse(**row)`` would reject it).  Both naming conventions
+    are accepted so mocks and callers using schema-shaped rows keep working.
+    """
+    return TruckResponse(
+        id=t["id"],
+        plate=t.get("plate_number") or t.get("plate") or "",
+        brand=t.get("manufacturer") or t.get("brand") or "",
+        year=t.get("year") or 0,
+        is_active=bool(t.get("active_status", t.get("is_active", 1))),
     )
 
 
@@ -45,7 +65,7 @@ def get_truck(
     truck = service.get_truck(truck_id, company_id=company_id)
     if not truck:
         raise HTTPException(status_code=404, detail="Truck not found")
-    return TruckResponse(**truck)
+    return _truck_to_response(truck)
 
 
 @router.post("/trucks", response_model=Dict[str, int])

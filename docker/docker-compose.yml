@@ -61,6 +61,10 @@ services:
       OPERION_API_HOST: 0.0.0.0
       OPERION_API_PORT: 8000
       OPERION_ENV: production
+      # Run the OperationsEngine workers server-side (remote-mode parity):
+      # the desktop starts no ops engine in remote mode, so the API process
+      # runs OperationsEngine(db, prefs).start() against its own database.
+      OPERION_RUN_OPS_ENGINE: "1"
     depends_on:
       db:
         condition: service_healthy

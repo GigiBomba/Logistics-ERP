@@ -1,5 +1,9 @@
 """PySide6 remote-only entry point for Operion ERP.
 
+DEPRECATED — the app is now local-first with automatic sync (see main.py).
+This entry point is retained for compatibility; new installs should use
+main.py.
+
 Running ``python main_remote.py`` launches the Qt application as a
 pure API client — no local SQLite database, no repositories, no
 backend services.  All data operations flow through ``ApiClient``
@@ -16,6 +20,8 @@ Or for local development::
     set OPERION_ENV=development
     python main_remote.py      # defaults to http://127.0.0.1:8000
 """
+from __future__ import annotations
+
 
 import contextlib
 import logging

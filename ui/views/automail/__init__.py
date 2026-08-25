@@ -5,3 +5,5 @@ Panels:
     - timeline_panel:  Center — invoice timeline with search/filter
     - editor_panel:    Right — HTML email editor + live preview
 """
+from __future__ import annotations
+

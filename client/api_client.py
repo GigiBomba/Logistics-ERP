@@ -15,6 +15,21 @@ logger = logging.getLogger(__name__)
 _default_config: Optional[ClientConfig] = None
 
 
+class PdfWithRecord(bytes):
+    """PDF bytes that also carry the server-assigned record.
+
+    Subclasses ``bytes`` so existing callers (which treat the result as raw
+    PDF data) keep working unchanged, while the assigned record is surfaced
+    as ``result.record`` (e.g. ``{"invoice_number": "INV-2026-0042",
+    "id": 12}``) when the server included it in the response headers.
+    """
+
+    def __new__(cls, content: bytes, record: Optional[Dict[str, Any]] = None):
+        obj = super().__new__(cls, content)
+        obj.record = record or {}
+        return obj
+
+
 class ApiClient:
     def __init__(self, base_url: Optional[str] = None,
                  verify_ssl: Optional[bool] = None,
@@ -49,11 +64,16 @@ class ApiClient:
         """Update or set the auth token after construction.
 
         Called after a fresh login or token refresh so the http client's
-        ``Authorization`` header reflects the new credentials.
+        ``Authorization`` header reflects the new credentials.  Passing
+        ``None`` (or an auth without a token — logout / cleared session)
+        REMOVES any stale ``Authorization`` header: a client that keeps
+        sending a dead token would 401 on every request forever.
         """
         self._auth = auth
         if auth is not None and auth.token is not None:
             self._client.headers.update(auth.headers)
+        else:
+            self._client.headers.pop("Authorization", None)
 
     def is_online(self) -> bool:
         if self._online is None:
@@ -63,6 +83,18 @@ class ApiClient:
             except Exception:
                 self._online = False
         return self._online
+
+    def get(self, path: str, params: Optional[Dict] = None) -> Dict[str, Any]:
+        """Public GET returning parsed JSON (used by the sync pull lane)."""
+        return self._get(path, params=params)
+
+    def post(self, path: str, json: Optional[Dict] = None) -> Dict[str, Any]:
+        """Public POST returning parsed JSON (used by the sync push lane).
+
+        Wraps the private ``_post`` so the sync engine (and other callers)
+        can POST without reaching into the underscore-prefixed API.
+        """
+        return self._post(path, json_data=json)
 
     # ── Infrastructure helpers ─────────────────────────────────────────
 
@@ -90,6 +122,9 @@ class ApiClient:
             # No refresh token or refresh failed — clear auth
             logger.info("Token refresh failed — clearing auth state.")
             self._auth.clear_token()
+            # Drop the stale Bearer header too — otherwise the client keeps
+            # sending the dead token and 401s on every subsequent request.
+            self._client.headers.pop("Authorization", None)
             from client.auth_manager import clear_auth
             clear_auth()
         return False
@@ -275,19 +310,56 @@ class ApiClient:
         entity_type: str = "", entity_id: Optional[int] = None,
         uploaded_by: str = "user",
     ) -> Dict[str, Any]:
+        # R4: read the bytes up front — passing an open handle means a retry
+        # (transient 5xx / 401-refresh) re-sends an exhausted file → the
+        # server stores an empty file.
         with open(file_path, "rb") as f:
-            files = {"file": (os.path.basename(file_path), f)}
-            data = {
-                "category": category, "entity_type": entity_type,
-                "entity_id": str(entity_id or ""), "uploaded_by": uploaded_by,
-            }
-            return self._post("/api/v1/documents/upload", files=files, data=data)
+            content = f.read()
+        files = {"file": (os.path.basename(file_path), content)}
+        data = {
+            "category": category, "entity_type": entity_type,
+            "entity_id": str(entity_id or ""), "uploaded_by": uploaded_by,
+        }
+        return self._post("/api/v1/documents/upload", files=files, data=data)
 
     def update_document(self, doc_id: int, **fields: Any) -> Dict[str, Any]:
         return self._put(f"/api/v1/documents/{doc_id}", json_data=fields)
 
     def delete_document(self, doc_id: int) -> Dict[str, Any]:
         return self._delete(f"/api/v1/documents/{doc_id}")
+
+    def upload_document_file(
+        self, doc_id: int, file_path: str, skip_ocr: bool = False,
+    ) -> Dict[str, Any]:
+        """Upload a document's binary file to an existing server document (Phase C).
+
+        ``skip_ocr`` suppresses server-side OCR (the sync lane sets it — the
+        desktop's OCR text is already carried by the row sync).
+        """
+        # R4: read the bytes up front so a retry (transient 5xx / 401-refresh)
+        # does NOT re-send an exhausted file handle (empty upload).  Size-capped
+        # to the server's 50 MB limit; the server is the authoritative check.
+        with open(file_path, "rb") as f:
+            content = f.read()
+        if len(content) > 50 * 1024 * 1024:
+            raise ValueError(
+                f"File too large to upload: {len(content)} bytes (max 50 MB)"
+            )
+        data = {"skip_ocr": "true" if skip_ocr else "false"}
+        return self._post(
+            f"/api/v1/documents/{doc_id}/file",
+            files={"file": (os.path.basename(file_path), content)},
+            data=data,
+        )
+
+    def download_document_file(self, doc_id: int, dest_path: str) -> str:
+        """Download a document's binary file to *dest_path* (Phase C)."""
+        content = self._download(f"/api/v1/documents/{doc_id}/file")
+        parent = os.path.dirname(os.path.abspath(dest_path))
+        os.makedirs(parent, exist_ok=True)
+        with open(dest_path, "wb") as f:
+            f.write(content)
+        return dest_path
 
     def link_document(
         self, doc_id: int, entity_type: str, entity_id: int,
@@ -435,8 +507,17 @@ class ApiClient:
 
     # ── Fleet endpoints ───────────────────────────────────────────────
 
-    def list_trucks(self) -> Dict[str, Any]:
-        return self._get("/api/v1/fleet/trucks")
+    def list_trucks(self, page: int = 1, page_size: int = 200) -> Dict[str, Any]:
+        """Return a paginated list of trucks.
+
+        ``GET /fleet/trucks`` exposes ``page``/``page_size`` query params
+        (``page_size`` is capped at 200 by the backend); sending them
+        explicitly keeps the request well-formed and matches how
+        ``list_clients`` forwards pagination params.
+        """
+        return self._get("/api/v1/fleet/trucks", params=self._clean_params(
+            page=page, page_size=page_size,
+        ))
 
     def get_truck(self, truck_id: int) -> Dict[str, Any]:
         return self._get(f"/api/v1/fleet/trucks/{truck_id}")
@@ -660,21 +741,21 @@ class ApiClient:
     def get_maintenance_summary(self) -> Dict[str, Any]:
         return self._get("/api/v1/maintenance/summary")
 
-    def get_maintenance_cost_monthly(self, since: str = "") -> Dict[str, Any]:
+    def get_maintenance_cost_monthly(self, date_from: str = "", since: str = "") -> Dict[str, Any]:
         return self._get("/api/v1/maintenance/cost-monthly",
-                         params=self._clean_params(since=since))
+                         params=self._clean_params(date_from=date_from, since=since))
 
-    def get_maintenance_cost_by_truck_monthly(self, since: str = "") -> Dict[str, Any]:
+    def get_maintenance_cost_by_truck_monthly(self, date_from: str = "", since: str = "") -> Dict[str, Any]:
         return self._get("/api/v1/maintenance/cost-by-truck-monthly",
-                         params=self._clean_params(since=since))
+                         params=self._clean_params(date_from=date_from, since=since))
 
-    def get_maintenance_truck_summary(self, since: str = "") -> Dict[str, Any]:
+    def get_maintenance_truck_summary(self, date_from: str = "", since: str = "") -> Dict[str, Any]:
         return self._get("/api/v1/maintenance/truck-summary",
-                         params=self._clean_params(since=since))
+                         params=self._clean_params(date_from=date_from, since=since))
 
-    def get_maintenance_top_categories(self, since: str = "") -> Dict[str, Any]:
+    def get_maintenance_top_categories(self, date_from: str = "", since: str = "") -> Dict[str, Any]:
         return self._get("/api/v1/maintenance/top-categories",
-                         params=self._clean_params(since=since))
+                         params=self._clean_params(date_from=date_from, since=since))
 
     # ── Alerts endpoints ──────────────────────────────────────────────
 
@@ -700,6 +781,30 @@ class ApiClient:
 
     def save_setting(self, key: str, value: str) -> Dict[str, Any]:
         return self._put(f"/api/v1/settings/{key}", json_data={"value": value})
+
+    def get_settings_bulk(self, keys) -> Dict[str, Any]:
+        """Fetch multiple settings in one request (Phase D — settings sync).
+
+        ``keys`` is an iterable of setting keys.  Returns the server response
+        ``{"values": {key: value_or_None}}`` (missing keys are ``None``, not
+        a 404 — a multi-key pull must not need N round-trips).
+        """
+        return self._get(
+            "/api/v1/settings/bulk",
+            params={"keys": ",".join(keys)},
+        )
+
+    def reconcile_sequences(self, entity: str, year: int, value: int) -> Dict[str, Any]:
+        """Reconcile a document sequence counter (Phase D).
+
+        Tells the server to bump its counter for ``entity`` (``"invoice"`` or
+        ``"cmr"``) to ``max(existing, value)`` — a lower value is a no-op, so
+        a stale desktop can never decrease the shared counter.
+        """
+        return self._post(
+            "/api/v1/sync/sequences",
+            json_data={"entity": entity, "year": year, "value": value},
+        )
 
     # ── Support endpoints ─────────────────────────────────────────────
 
@@ -745,8 +850,46 @@ class ApiClient:
     # ── Invoice endpoints ─────────────────────────────────────────────
 
     def generate_invoice(self, trip_data: Dict[str, Any], mode: str = "client") -> bytes:
-        return self._post_binary("/api/v1/invoices/generate",
-                                 json_data={"trip_data": trip_data, "mode": mode})
+        """Generate an invoice PDF via ``POST /api/v1/invoices/generate``.
+
+        Returns PDF bytes (a :class:`PdfWithRecord`).  When the server
+        assigns or confirms the invoice number it is surfaced on the returned
+        object as ``result.record`` — e.g. ``{"invoice_number":
+        "INV-2026-0042", "id": 12}``.
+
+        The request body is the flat schema payload (``trip_id``, ``mode``,
+        optional ``invoice_number``/``client_name``/``total_price_eur``/…)
+        expected by ``InvoiceGenerateRequest``; the ``trip_data`` dict is
+        translated so the trip row's ``id`` becomes ``trip_id``.
+        """
+        payload: Dict[str, Any] = {
+            "trip_id": trip_data.get("trip_id") or trip_data.get("id") or 0,
+            "mode": mode,
+        }
+        for field in ("invoice_number", "client_name", "total_price_eur",
+                      "client_id", "language", "additional_notes", "created_at"):
+            value = trip_data.get(field)
+            if value is not None:
+                payload[field] = value
+        resp = self._request_with_retry(
+            "POST", f"{self._base_url}/api/v1/invoices/generate", json=payload,
+        )
+        resp.raise_for_status()
+        record: Dict[str, Any] = {}
+        try:
+            headers = getattr(resp, "headers", None) or {}
+            num = headers.get("X-Invoice-Number")
+            if num:
+                record["invoice_number"] = str(num)
+            inv_id = headers.get("X-Invoice-Id")
+            if inv_id:
+                try:
+                    record["id"] = int(str(inv_id))
+                except (TypeError, ValueError):
+                    record["id"] = str(inv_id)
+        except Exception:
+            pass
+        return PdfWithRecord(resp.content, record=record)
 
     def send_invoice_email(self, invoice_id: int, recipient: str,
                            trip_data: Optional[Dict[str, Any]] = None,

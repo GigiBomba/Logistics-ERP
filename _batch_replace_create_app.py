@@ -1,4 +1,6 @@
 """Batch replace create_app() with create_test_app() and add import in test_api files."""
+from __future__ import annotations
+
 import os, re, glob
 
 test_api_dir = "tests/test_api"

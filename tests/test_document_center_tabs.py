@@ -7,6 +7,8 @@ sub-tabs — *Documents* (the original three-panel layout),
 verify the wiring without depending on a live database or a real
 automation pipeline.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

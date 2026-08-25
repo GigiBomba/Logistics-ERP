@@ -3,6 +3,8 @@ support-service over an internal-only path.
 
 See Operion_Ops_Blueprint.md §41.2 for the full contract.
 """
+from __future__ import annotations
+
 import logging
 import json
 from typing import Any, Dict, Literal, Optional

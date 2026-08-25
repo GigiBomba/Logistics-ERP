@@ -40,6 +40,7 @@ from ui.design_tokens import (
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
     COLOR_WARNING_SUBTLE,
+    RADIUS_SM,
     SPACE_2,
     SPACE_3,
     SPACE_4,
@@ -186,7 +187,7 @@ class QtDispatchDetailPanel(QFrame):
             f" color: {COLOR_TEXT_PRIMARY};"
             f" padding: 2px 8px; border-radius: 4px;"
         )
-        chip.setFixedHeight(22)
+        chip.setFixedHeight(24)
         chip.setSizePolicy(
             getattr(QSizePolicy, "Maximum", QSizePolicy.Preferred),
             getattr(QSizePolicy, "Fixed", QSizePolicy.Fixed),
@@ -395,7 +396,7 @@ class QtDispatchDetailPanel(QFrame):
                         sev_lbl.setStyleSheet(
                             f"background-color: {sev_color};"
                             f" color: {TEXT_WHITE};"
-                            f" border-radius: 3px; padding: 1px 4px;"
+                            f" border-radius: {RADIUS_SM}px; padding: 1px 4px;"
                         )
                         arow_layout.addWidget(sev_lbl)
 
@@ -426,7 +427,7 @@ class QtDispatchDetailPanel(QFrame):
 
     def _build_button_row(self, parent_layout: QVBoxLayout) -> None:
         self._btn_widget = QWidget()
-        self._btn_widget.setFixedHeight(52)
+        self._btn_widget.setFixedHeight(48)
         self._btn_widget.setStyleSheet(
             f"background-color: {COLOR_BG_OVERLAY};"
         )

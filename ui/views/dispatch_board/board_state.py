@@ -160,6 +160,12 @@ class BoardStateMixin:
             try:
                 self._preload_alerts()
 
+                # Remote mode: no local TripService — board data comes from
+                # the injected remote dispatch service instead.
+                if self._trip_service is None and self._dispatch_service is not None:
+                    self._load_remote_board_data()
+                    return
+
                 all_statuses = list(STATUS_TO_COLUMN.keys())
                 all_trips = []
                 if self._trip_service is not None:
@@ -224,6 +230,72 @@ class BoardStateMixin:
             except Exception as e:
                 logger.warning("Dispatch board data load failed: %s", e)
                 self._dispatch(lambda err=str(e): self._show_error_all(err))
+
+    def _load_remote_board_data(self) -> None:
+        """Fetch board cards from the injected remote dispatch service.
+
+        Runs on the background load thread; cards are marshalled back to the
+        GUI thread via ``_dispatch`` -> ``_populate_columns`` exactly like the
+        local path.  Any failure degrades to an empty board.
+        """
+        column_trips: dict[str, list[dict[str, Any]]] = {
+            col: [] for col, _, _ in COLUMN_DEFS
+        }
+        svc = self._dispatch_service
+        try:
+            fn = getattr(svc, "get_board_data", None)
+            if fn is None:
+                fn = svc.get_dispatch_board_data
+            try:
+                data = fn(delivered_window_days=self._delivered_days)
+            except TypeError:
+                data = fn()
+        except Exception as e:
+            logger.warning("Remote dispatch board load failed: %s", e)
+            self._dispatch(lambda ct=column_trips: self._populate_columns(ct))
+            return
+
+        trips = []
+        if isinstance(data, dict):
+            trips = data.get("trips") or []
+        elif hasattr(data, "trips"):
+            trips = list(data.trips or [])
+
+        for trip in trips:
+            if not isinstance(trip, dict):
+                continue
+            column = trip.get("column") or STATUS_TO_COLUMN.get(trip.get("status", ""))
+            if not column or column not in column_trips:
+                continue
+            card = self._normalise_remote_card(trip)
+            column_trips[column].append(card)
+
+        self._dispatch(lambda ct=column_trips: self._populate_columns(ct))
+
+    @staticmethod
+    def _normalise_remote_card(trip: dict[str, Any]) -> dict[str, Any]:
+        """Normalise a backend card dict to the local card shape.
+
+        The backend already builds the board-card shape; this fills any
+        missing local keys so ``QtTripCard`` never sees ``None`` lookups.
+        """
+        trip_id = trip.get("id", 0)
+        card = {
+            "trip_id": trip.get("trip_id") or f"#{trip_id}",
+            "trip_id_num": trip.get("trip_id_num", trip_id),
+            "status": trip.get("status", "Planned"),
+            "truck_plate": trip.get("truck_plate", trip.get("truck_number", "")) or "",
+            "truck_id": trip.get("truck_id"),
+            "driver_name": trip.get("driver_name", "") or "",
+            "driver_id": trip.get("driver_id"),
+            "origin": trip.get("origin", "") or "",
+            "destination": trip.get("destination", "") or "",
+            "departure_date": trip.get("departure_date", trip.get("start_date", "")) or "",
+            "eta": trip.get("eta", trip.get("end_date", "")) or "",
+            "promised_date": trip.get("promised_date", "") or "",
+            "alerts_count": trip.get("alerts_count", 0),
+        }
+        return card
 
     def _preload_alerts(self) -> None:
         if not self.ops:

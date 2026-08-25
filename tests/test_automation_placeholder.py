@@ -7,6 +7,8 @@ Issue 4: the placeholder was being added twice on the second
 down the corrected behaviour: the placeholder appears exactly once
 on repeated refreshes, and disappears when a real run is created.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

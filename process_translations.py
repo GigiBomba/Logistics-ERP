@@ -3,6 +3,8 @@
 Universal translation processor.
 Loads translation map from _tr_{lang}.json and applies to {lang}.json.
 """
+from __future__ import annotations
+
 import json, os, sys
 
 BASE = r"C:\Users\Bonjo\source\repos\Calculator logistica\data\translations"

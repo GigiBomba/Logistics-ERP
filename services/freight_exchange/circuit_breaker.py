@@ -6,11 +6,11 @@ so they are shared across all gunicorn/Celery workers.
 Auth errors (401) do NOT count toward the trip threshold — auth failure
 is a user problem, not a provider outage.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
-
-from backend.cache import get_cache
 
 logger = logging.getLogger(__name__)
 
@@ -62,8 +62,17 @@ class FreightCircuitBreaker:
         If not passed, uses the global RedisCache singleton.
         Explicitly passing None means degraded mode."""
         if redis_client is _UNSET:
-            cache = get_cache()
-            self._redis = cache._redis if hasattr(cache, '_redis') and cache._enabled else None
+            # Lazy + guarded: backend.cache only exists on the server; the
+            # packaged desktop build ships no backend package.  Missing
+            # backend == no Redis == degraded mode (allow all).
+            try:
+                from backend.cache import get_cache
+                cache = get_cache()
+            except ImportError:
+                cache = None
+            self._redis = (
+                cache._redis if cache is not None and hasattr(cache, "_redis") and cache._enabled else None
+            )
         else:
             self._redis = redis_client
 

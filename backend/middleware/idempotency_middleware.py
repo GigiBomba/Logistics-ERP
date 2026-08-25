@@ -3,6 +3,8 @@
 Uses Redis as the primary backend (for multi-worker deployments) with an
 in-memory dict fallback.
 """
+from __future__ import annotations
+
 import hashlib
 import json
 import logging

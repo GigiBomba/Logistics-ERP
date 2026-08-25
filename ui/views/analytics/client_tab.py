@@ -29,6 +29,7 @@ from ui.design_tokens import (
     COLOR_WARNING_SUBTLE,
     COLOR_WARNING_TEXT,
     FONT_FAMILY,
+    RADIUS_SM,
     SP,
     SUCCESS,
     TEXT_MUTED,
@@ -364,7 +365,7 @@ class ClientAnalyticsTab(BaseTab):
             bar = QFrame()
             bar.setFixedSize(bar_width, 16)
             bar.setStyleSheet(
-                f"QFrame {{ background: {bar_color}; border-radius: 3px; }}"
+                f"QFrame {{ background: {bar_color}; border-radius: {RADIUS_SM}px; }}"
             )
             row_layout.addWidget(bar)
 

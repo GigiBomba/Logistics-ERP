@@ -3,6 +3,8 @@
 Extracted from OperationsEngine to reduce its responsibilities.
 Triggered via EventBus subscription to TRIP_STATUS_CHANGED.
 """
+from __future__ import annotations
+
 
 import json
 import logging

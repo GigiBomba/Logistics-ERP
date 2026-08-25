@@ -51,6 +51,7 @@ from ui.components import (
     SectionTitle,
 )
 from ui.design_tokens import (
+    CMR_ACCENT_COLORS,
     COLOR_ACCENT_PRIMARY,
     COLOR_BG_ELEVATED,
     COLOR_BG_OVERLAY,
@@ -88,10 +89,10 @@ _COPY_META = {
 }
 
 _COPY_ACCENT_COLORS = {
-    "Sender":        "#6366f1",
-    "Consignee":     "#1e1b4b",
-    "Carrier":       "#052e16",
-    "Administrative": "#27272a",
+    "Sender":        CMR_ACCENT_COLORS["sender"],
+    "Consignee":     CMR_ACCENT_COLORS["consignee"],
+    "Carrier":       CMR_ACCENT_COLORS["carrier"],
+    "Administrative": CMR_ACCENT_COLORS["administrative"],
 }
 
 _COPY_SUFFIX_KEYS = {
@@ -167,30 +168,33 @@ class QtGeneratorsView(QWidget):
     # ──────────────────────────────────────────────────────────────────────────
 
     @property
-    def _trip_svc(self) -> TripService:
-        """Lazily-initialised TripService singleton — @property for consistency."""
-        if self._trip_svc_instance is None:
+    def _trip_svc(self):
+        """Lazily-initialised TripService singleton — honours an injected
+        (possibly remote) service; never builds a local service without a DB."""
+        if self._trip_svc_instance is None and self.db is not None:
             self._trip_svc_instance = TripService(self.db)
         return self._trip_svc_instance
 
     @property
-    def _client_svc(self) -> ClientService:
-        """Lazily-initialised ClientService singleton — @property for consistency."""
-        if self._client_svc_instance is None:
+    def _client_svc(self):
+        """Lazily-initialised ClientService singleton — honours an injected
+        (possibly remote) service; never builds a local service without a DB."""
+        if self._client_svc_instance is None and self.db is not None:
             self._client_svc_instance = ClientService(self.db)
         return self._client_svc_instance
 
     @property
-    def _fleet_svc(self) -> FleetService:
-        """Lazily-initialised FleetService singleton — @property for consistency."""
-        if self._fleet_svc_instance is None:
+    def _fleet_svc(self):
+        """Lazily-initialised FleetService singleton — honours an injected
+        (possibly remote) service; never builds a local service without a DB."""
+        if self._fleet_svc_instance is None and self.db is not None:
             self._fleet_svc_instance = FleetService(self.db)
         return self._fleet_svc_instance
 
     @property
-    def _cmr_doc_svc(self) -> "DocumentService":
+    def _cmr_doc_svc(self):
         """Lazily-initialised DocumentService singleton (lazy import)."""
-        if self._cmr_doc_service is None:
+        if self._cmr_doc_service is None and self.db is not None:
             from services.document_service import DocumentService  # noqa: late import
             self._cmr_doc_service = DocumentService(self.db)
         return self._cmr_doc_service
@@ -652,6 +656,11 @@ class QtGeneratorsView(QWidget):
     def _refresh_trip_lists(self) -> None:
         """Fetch trips from the database and populate the trip combo in-place."""
         with PerfTimer("generators.refresh_trip_lists"):
+            if self._trip_svc is None:
+                # No trip source available (remote mode without an injected
+                # trip service) — leave the selector empty rather than crash.
+                self._on_trips_loaded([])
+                return
             WorkerPool.run(
                 fn=self._trip_svc.get_all,
                 on_result=self._on_trips_loaded,

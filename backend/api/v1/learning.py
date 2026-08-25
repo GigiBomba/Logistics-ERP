@@ -5,6 +5,8 @@ GET /tutorials/:slug           — Single tutorial
 GET /developers/resources      — Developer resources
 GET /developers/toolkit/versions — Toolkit download versions
 """
+from __future__ import annotations
+
 
 from typing import Optional
 

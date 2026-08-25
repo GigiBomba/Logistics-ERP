@@ -10,6 +10,8 @@ The fix routes drops through each column's own drop event (the
 column knows its own ``status_key``) and emits a per-column
 ``tripDropped`` signal that the board consumes.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

@@ -6,6 +6,8 @@ fixture and assert:
 (b) the user-facing response contains only an i18n message_key, never raw exception text,
 (c) the retry behavior matches the policy column exactly.
 """
+from __future__ import annotations
+
 
 import asyncio
 from unittest.mock import MagicMock, patch

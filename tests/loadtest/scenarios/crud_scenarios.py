@@ -1,4 +1,6 @@
 """CRUD scenarios for trips, clients, drivers, trucks."""
+from __future__ import annotations
+
 from locust import task, tag
 from tests.loadtest.factories import TokenManager
 

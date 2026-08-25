@@ -1,4 +1,6 @@
 """Tests for ReminderService."""
+from __future__ import annotations
+
 from datetime import date, datetime, timedelta
 from unittest.mock import MagicMock, call, patch
 

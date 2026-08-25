@@ -68,7 +68,7 @@ class QtClientActivityTimeline(QWidget):
     def _show_empty_state(self):
         label = QLabel(t("common.no_activity"))
         label.setProperty("fontRole", "muted")
-        label.setContentsMargins(0, 10, 0, 10)
+        label.setContentsMargins(0, 12, 0, 12)
         self._layout.addWidget(label)
 
     def _add_event_row(self, ev: dict):
@@ -91,7 +91,7 @@ class QtClientActivityTimeline(QWidget):
         label.setAlignment(
             Qt.AlignLeft | Qt.AlignVCenter
         )
-        label.setContentsMargins(0, 2, 0, 2)
+        label.setContentsMargins(0, 4, 0, 4)
         row_layout.addWidget(label, 1)
 
         # Timestamp
@@ -109,7 +109,7 @@ class QtClientActivityTimeline(QWidget):
         """Release the service reference."""
         self.service = None
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         """Clean up and schedule deletion."""
         self.cleanup()
         super().deleteLater()

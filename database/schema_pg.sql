@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS schema_migrations (
 CREATE TABLE IF NOT EXISTS trips (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     created_at TEXT,
+    updated_at TIMESTAMPTZ,
     truck_number TEXT,
     driver_name TEXT,
     client_name TEXT,
@@ -102,6 +103,7 @@ CREATE TABLE IF NOT EXISTS invoices (
     due_date TEXT,
     total_amount NUMERIC(12,2),
     status TEXT,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER,
     deleted_at TEXT,
     FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
@@ -141,7 +143,7 @@ CREATE TABLE IF NOT EXISTS proforma_invoices (
     stamp_path TEXT DEFAULT '',
     company_color TEXT DEFAULT '#6366f1',
     created_at TEXT,
-    updated_at TEXT,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER,
     deleted_at TEXT
 );
@@ -159,6 +161,8 @@ CREATE TABLE IF NOT EXISTS email_logs (
     timestamp TEXT,
     status TEXT,
     error_msg TEXT,
+    updated_at TIMESTAMPTZ,
+    company_id INTEGER,
     FOREIGN KEY (trip_id) REFERENCES trips(id)
 );
 CREATE INDEX IF NOT EXISTS idx_email_logs_trip ON email_logs(trip_id);
@@ -175,6 +179,8 @@ CREATE TABLE IF NOT EXISTS sent_emails (
     status TEXT NOT NULL DEFAULT 'pending',
     sent_at TEXT,
     created_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
+    company_id INTEGER,
     UNIQUE (document_id, recipient)
 );
 CREATE INDEX IF NOT EXISTS idx_sent_emails_status ON sent_emails(status);
@@ -191,19 +197,21 @@ CREATE TABLE IF NOT EXISTS invoice_reminders (
     sent_at TEXT NOT NULL,
     recipient_email TEXT NOT NULL,
     status TEXT DEFAULT 'sent',
+    updated_at TIMESTAMPTZ,
+    company_id INTEGER,
     FOREIGN KEY (invoice_id) REFERENCES invoices(id)
 );
 CREATE INDEX IF NOT EXISTS idx_invoice_reminders_lookup ON invoice_reminders(invoice_id, reminder_type, status);
 
 -- ── Settings ────────────────────────────────────────────────────────────
--- SQLite settings are global key→value rows with NO company_id column; the
--- import path therefore feeds NULL company_id.  A composite PK would force
--- NOT NULL on company_id and reject those rows, so the key is the PK and
--- company_id is a nullable tenant-scoping extension.
+-- Composite PK (key, company_id) so each tenant's settings are isolated
+-- (B4).  Existing PG deployments are migrated to this PK by
+-- ``_apply_pg_extra_ddl`` (drop key-only PK + backfill NULL company_id).
 CREATE TABLE IF NOT EXISTS settings (
-    key TEXT NOT NULL PRIMARY KEY,
+    key TEXT NOT NULL,
     value TEXT,
-    company_id INTEGER REFERENCES companies(id)
+    company_id INTEGER REFERENCES companies(id),
+    PRIMARY KEY (key, company_id)
 );
 CREATE INDEX IF NOT EXISTS idx_settings_company ON settings(company_id);
 
@@ -230,7 +238,8 @@ CREATE TABLE IF NOT EXISTS trucks (
     cmr_insurance_number TEXT DEFAULT '',
     cmr_insurance_expiry TEXT DEFAULT '',
     company_id INTEGER,
-    deleted_at TEXT
+    deleted_at TEXT,
+    updated_at TIMESTAMPTZ
 );
 CREATE INDEX IF NOT EXISTS idx_trucks_company ON trucks(company_id);
 CREATE INDEX IF NOT EXISTS idx_trucks_deleted ON trucks(deleted_at);
@@ -367,6 +376,7 @@ CREATE TABLE IF NOT EXISTS trip_status_history (
     new_status TEXT NOT NULL,
     trigger TEXT,
     created_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER,
     FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE
 );
@@ -385,6 +395,7 @@ CREATE TABLE IF NOT EXISTS maintenance_records (
     service_provider TEXT,
     attachment_path TEXT,
     created_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER,
     deleted_at TEXT,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
@@ -405,6 +416,7 @@ CREATE TABLE IF NOT EXISTS maintenance_schedules (
     last_done_date TEXT,
     active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER,
     deleted_at TEXT,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
@@ -441,7 +453,7 @@ CREATE TABLE IF NOT EXISTS drivers (
     notes TEXT,
     is_active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
     passport_number TEXT DEFAULT '',
     passport_expiry TEXT DEFAULT '',
     adr_certificate TEXT DEFAULT '',
@@ -464,11 +476,14 @@ CREATE TABLE IF NOT EXISTS driver_truck_assignments (
     truck_id INTEGER NOT NULL,
     assigned_at TEXT NOT NULL,
     active INTEGER NOT NULL DEFAULT 1,
+    updated_at TIMESTAMPTZ,
+    company_id INTEGER,
     FOREIGN KEY (driver_id) REFERENCES drivers(id) ON DELETE CASCADE,
     FOREIGN KEY (truck_id) REFERENCES trucks(id) ON DELETE CASCADE
     );
 CREATE INDEX IF NOT EXISTS idx_dta_driver ON driver_truck_assignments(driver_id);
 CREATE INDEX IF NOT EXISTS idx_dta_truck ON driver_truck_assignments(truck_id);
+CREATE INDEX IF NOT EXISTS idx_dta_company ON driver_truck_assignments(company_id);
 
 -- ── Tachograph ──────────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS tacho_imports (
@@ -482,6 +497,7 @@ CREATE TABLE IF NOT EXISTS tacho_imports (
     parse_status TEXT DEFAULT 'ok',
     raw_json TEXT,
     notes TEXT,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_tacho_imports_hash ON tacho_imports(file_hash);
@@ -498,8 +514,11 @@ CREATE TABLE IF NOT EXISTS tacho_driver_activity (
     avail_minutes INTEGER DEFAULT 0,
     distance_km DOUBLE PRECISION DEFAULT 0,
     violations TEXT,
-    country_codes TEXT
+    country_codes TEXT,
+    updated_at TIMESTAMPTZ,
+    company_id INTEGER
 );
+CREATE INDEX IF NOT EXISTS idx_tacho_driver_activity_company ON tacho_driver_activity(company_id);
 CREATE INDEX IF NOT EXISTS idx_tacho_driver_date ON tacho_driver_activity(driver_id, activity_date);
 
 CREATE TABLE IF NOT EXISTS tacho_vehicle_data (
@@ -514,7 +533,9 @@ CREATE TABLE IF NOT EXISTS tacho_vehicle_data (
     w_factor INTEGER,
     speed_violations INTEGER DEFAULT 0,
     recorded_from DATE,
-    recorded_to DATE
+    recorded_to DATE,
+    updated_at TIMESTAMPTZ,
+    company_id INTEGER
 );
 CREATE INDEX IF NOT EXISTS idx_tacho_vehicle_truck ON tacho_vehicle_data(truck_id);
 
@@ -531,7 +552,7 @@ CREATE TABLE IF NOT EXISTS clients (
     notes TEXT,
     is_active INTEGER DEFAULT 1,
     created_at TEXT NOT NULL,
-    updated_at TEXT,
+    updated_at TIMESTAMPTZ,
     client_type TEXT DEFAULT '',
     payment_terms_days INTEGER DEFAULT 30,
     credit_limit_eur NUMERIC(12,2) DEFAULT 0,
@@ -560,6 +581,7 @@ CREATE TABLE IF NOT EXISTS client_contacts (
     is_primary INTEGER DEFAULT 0,
     notes TEXT,
     created_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS idx_client_contacts_client ON client_contacts(client_id);
@@ -569,6 +591,7 @@ CREATE TABLE IF NOT EXISTS client_tags (
     id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     client_id INTEGER NOT NULL REFERENCES clients(id) ON DELETE CASCADE,
     tag TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER DEFAULT 0,
     UNIQUE (client_id, tag)
 );
@@ -593,7 +616,7 @@ CREATE TABLE IF NOT EXISTS documents (
     is_archived INTEGER DEFAULT 0,
     uploaded_by TEXT DEFAULT '',
     uploaded_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
     ocr_text TEXT DEFAULT '',
     ocr_run_at TEXT DEFAULT '',
     ocr_engine TEXT DEFAULT '',
@@ -639,6 +662,7 @@ CREATE TABLE IF NOT EXISTS document_links (
     linked_entity_id INTEGER NOT NULL,
     relation_type TEXT DEFAULT 'attached',
     created_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER DEFAULT 0,
     UNIQUE (document_id, linked_entity_type, linked_entity_id, relation_type)
 );
@@ -656,6 +680,7 @@ CREATE TABLE IF NOT EXISTS document_versions (
     comment TEXT DEFAULT '',
     uploaded_by TEXT DEFAULT '',
     created_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ,
     company_id INTEGER DEFAULT 0,
     UNIQUE (document_id, version_number)
 );
@@ -676,7 +701,7 @@ CREATE TABLE IF NOT EXISTS contracts (
     status TEXT DEFAULT 'active',
     notes TEXT DEFAULT '',
     created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL,
     company_id INTEGER,
     deleted_at TEXT
 );
@@ -733,6 +758,7 @@ CREATE TABLE IF NOT EXISTS successive_carriers (
     driver_name TEXT,
     from_location TEXT,
     to_location TEXT,
+    updated_at TIMESTAMPTZ,
     UNIQUE (trip_id, sequence_order)
 );
 CREATE INDEX IF NOT EXISTS idx_successive_carriers_trip ON successive_carriers(trip_id);
@@ -853,7 +879,7 @@ CREATE TABLE IF NOT EXISTS receipts (
     pickup_location TEXT, delivery_location TEXT,
     route TEXT, dispatcher TEXT,
     language TEXT DEFAULT 'en',
-    created_at TEXT, updated_at TEXT,
+    created_at TEXT, updated_at TIMESTAMPTZ,
     company_id INTEGER,
     deleted_at TEXT
 );
@@ -864,6 +890,24 @@ CREATE INDEX IF NOT EXISTS idx_receipt_trip ON receipts(related_trip_id);
 CREATE INDEX IF NOT EXISTS idx_receipt_driver ON receipts(driver_id);
 CREATE INDEX IF NOT EXISTS idx_receipts_company ON receipts(company_id);
 CREATE INDEX IF NOT EXISTS idx_receipts_deleted ON receipts(deleted_at);
+
+-- ── Expenses ────────────────────────────────────────────────────────────
+-- Syncable table (offline-first sync Phase 0).  Mirrors database/schema.py
+-- TABLE_EXPENSES; created_at/updated_at are TIMESTAMPTZ on PG.
+CREATE TABLE IF NOT EXISTS expenses (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    truck_id INTEGER,
+    date TEXT,
+    category TEXT,
+    description TEXT,
+    amount DOUBLE PRECISION,
+    company_id INTEGER,
+    created_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ,
+    deleted_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_expenses_truck ON expenses(truck_id);
+CREATE INDEX IF NOT EXISTS idx_expenses_company ON expenses(company_id);
 
 -- ── AutoMail / Dunner ───────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS automail_templates (
@@ -1143,6 +1187,278 @@ CREATE TRIGGER trg_pipeline_runs_status_check_upd
     FOR EACH ROW EXECUTE FUNCTION validate_pipeline_status();
 
 -- =============================================================================
+-- §TRIGGERS: updated_at stamping for the offline-first sync layer (Phase 0)
+-- Mirrors the SQLite triggers in database/schema.py.  Every syncable table
+-- gets a BEFORE UPDATE trigger that stamps the canonical UTC timestamp
+-- (seconds precision + Z suffix) into updated_at, plus a BEFORE INSERT
+-- trigger so ``updated_at`` is never NULL (LWW + delta-pull invariant).
+--
+-- The shared function emits the canonical string ``YYYY-MM-DDTHH:MM:SSZ``
+-- (to_char) so it works uniformly for both the legacy TEXT updated_at
+-- columns and the new TIMESTAMPTZ ones.  clock_timestamp() is statement
+-- time — semantic parity with SQLite's strftime('now').
+-- =============================================================================
+
+CREATE OR REPLACE FUNCTION stamp_updated_at() RETURNS TRIGGER AS $$
+BEGIN
+    NEW.updated_at := to_char(clock_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"');
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+DROP TRIGGER IF EXISTS trg_trips_updated_at ON trips;
+CREATE TRIGGER trg_trips_updated_at
+    BEFORE UPDATE ON trips
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_clients_updated_at ON clients;
+CREATE TRIGGER trg_clients_updated_at
+    BEFORE UPDATE ON clients
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_drivers_updated_at ON drivers;
+CREATE TRIGGER trg_drivers_updated_at
+    BEFORE UPDATE ON drivers
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_trucks_updated_at ON trucks;
+CREATE TRIGGER trg_trucks_updated_at
+    BEFORE UPDATE ON trucks
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_maintenance_records_updated_at ON maintenance_records;
+CREATE TRIGGER trg_maintenance_records_updated_at
+    BEFORE UPDATE ON maintenance_records
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_maintenance_schedules_updated_at ON maintenance_schedules;
+CREATE TRIGGER trg_maintenance_schedules_updated_at
+    BEFORE UPDATE ON maintenance_schedules
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_documents_updated_at ON documents;
+CREATE TRIGGER trg_documents_updated_at
+    BEFORE UPDATE ON documents
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_receipts_updated_at ON receipts;
+CREATE TRIGGER trg_receipts_updated_at
+    BEFORE UPDATE ON receipts
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_invoices_updated_at ON invoices;
+CREATE TRIGGER trg_invoices_updated_at
+    BEFORE UPDATE ON invoices
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_proforma_invoices_updated_at ON proforma_invoices;
+CREATE TRIGGER trg_proforma_invoices_updated_at
+    BEFORE UPDATE ON proforma_invoices
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_contracts_updated_at ON contracts;
+CREATE TRIGGER trg_contracts_updated_at
+    BEFORE UPDATE ON contracts
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_client_contacts_updated_at ON client_contacts;
+CREATE TRIGGER trg_client_contacts_updated_at
+    BEFORE UPDATE ON client_contacts
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_client_tags_updated_at ON client_tags;
+CREATE TRIGGER trg_client_tags_updated_at
+    BEFORE UPDATE ON client_tags
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_driver_truck_assignments_updated_at ON driver_truck_assignments;
+CREATE TRIGGER trg_driver_truck_assignments_updated_at
+    BEFORE UPDATE ON driver_truck_assignments
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tacho_imports_updated_at ON tacho_imports;
+CREATE TRIGGER trg_tacho_imports_updated_at
+    BEFORE UPDATE ON tacho_imports
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tacho_driver_activity_updated_at ON tacho_driver_activity;
+CREATE TRIGGER trg_tacho_driver_activity_updated_at
+    BEFORE UPDATE ON tacho_driver_activity
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tacho_vehicle_data_updated_at ON tacho_vehicle_data;
+CREATE TRIGGER trg_tacho_vehicle_data_updated_at
+    BEFORE UPDATE ON tacho_vehicle_data
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_successive_carriers_updated_at ON successive_carriers;
+CREATE TRIGGER trg_successive_carriers_updated_at
+    BEFORE UPDATE ON successive_carriers
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_trip_status_history_updated_at ON trip_status_history;
+CREATE TRIGGER trg_trip_status_history_updated_at
+    BEFORE UPDATE ON trip_status_history
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_document_links_updated_at ON document_links;
+CREATE TRIGGER trg_document_links_updated_at
+    BEFORE UPDATE ON document_links
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_document_versions_updated_at ON document_versions;
+CREATE TRIGGER trg_document_versions_updated_at
+    BEFORE UPDATE ON document_versions
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_sent_emails_updated_at ON sent_emails;
+CREATE TRIGGER trg_sent_emails_updated_at
+    BEFORE UPDATE ON sent_emails
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_email_logs_updated_at ON email_logs;
+CREATE TRIGGER trg_email_logs_updated_at
+    BEFORE UPDATE ON email_logs
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_invoice_reminders_updated_at ON invoice_reminders;
+CREATE TRIGGER trg_invoice_reminders_updated_at
+    BEFORE UPDATE ON invoice_reminders
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_expenses_updated_at ON expenses;
+CREATE TRIGGER trg_expenses_updated_at
+    BEFORE UPDATE ON expenses
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+-- BEFORE INSERT triggers: stamp updated_at on row creation so the invariant
+-- "updated_at is never NULL" holds (LWW + delta-pull depend on it).
+DROP TRIGGER IF EXISTS trg_trips_insert_updated_at ON trips;
+CREATE TRIGGER trg_trips_insert_updated_at
+    BEFORE INSERT ON trips
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_clients_insert_updated_at ON clients;
+CREATE TRIGGER trg_clients_insert_updated_at
+    BEFORE INSERT ON clients
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_drivers_insert_updated_at ON drivers;
+CREATE TRIGGER trg_drivers_insert_updated_at
+    BEFORE INSERT ON drivers
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_trucks_insert_updated_at ON trucks;
+CREATE TRIGGER trg_trucks_insert_updated_at
+    BEFORE INSERT ON trucks
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_maintenance_records_insert_updated_at ON maintenance_records;
+CREATE TRIGGER trg_maintenance_records_insert_updated_at
+    BEFORE INSERT ON maintenance_records
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_maintenance_schedules_insert_updated_at ON maintenance_schedules;
+CREATE TRIGGER trg_maintenance_schedules_insert_updated_at
+    BEFORE INSERT ON maintenance_schedules
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_documents_insert_updated_at ON documents;
+CREATE TRIGGER trg_documents_insert_updated_at
+    BEFORE INSERT ON documents
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_receipts_insert_updated_at ON receipts;
+CREATE TRIGGER trg_receipts_insert_updated_at
+    BEFORE INSERT ON receipts
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_invoices_insert_updated_at ON invoices;
+CREATE TRIGGER trg_invoices_insert_updated_at
+    BEFORE INSERT ON invoices
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_proforma_invoices_insert_updated_at ON proforma_invoices;
+CREATE TRIGGER trg_proforma_invoices_insert_updated_at
+    BEFORE INSERT ON proforma_invoices
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_contracts_insert_updated_at ON contracts;
+CREATE TRIGGER trg_contracts_insert_updated_at
+    BEFORE INSERT ON contracts
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_client_contacts_insert_updated_at ON client_contacts;
+CREATE TRIGGER trg_client_contacts_insert_updated_at
+    BEFORE INSERT ON client_contacts
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_client_tags_insert_updated_at ON client_tags;
+CREATE TRIGGER trg_client_tags_insert_updated_at
+    BEFORE INSERT ON client_tags
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_driver_truck_assignments_insert_updated_at ON driver_truck_assignments;
+CREATE TRIGGER trg_driver_truck_assignments_insert_updated_at
+    BEFORE INSERT ON driver_truck_assignments
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tacho_imports_insert_updated_at ON tacho_imports;
+CREATE TRIGGER trg_tacho_imports_insert_updated_at
+    BEFORE INSERT ON tacho_imports
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tacho_driver_activity_insert_updated_at ON tacho_driver_activity;
+CREATE TRIGGER trg_tacho_driver_activity_insert_updated_at
+    BEFORE INSERT ON tacho_driver_activity
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_tacho_vehicle_data_insert_updated_at ON tacho_vehicle_data;
+CREATE TRIGGER trg_tacho_vehicle_data_insert_updated_at
+    BEFORE INSERT ON tacho_vehicle_data
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_expenses_insert_updated_at ON expenses;
+CREATE TRIGGER trg_expenses_insert_updated_at
+    BEFORE INSERT ON expenses
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_successive_carriers_insert_updated_at ON successive_carriers;
+CREATE TRIGGER trg_successive_carriers_insert_updated_at
+    BEFORE INSERT ON successive_carriers
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_trip_status_history_insert_updated_at ON trip_status_history;
+CREATE TRIGGER trg_trip_status_history_insert_updated_at
+    BEFORE INSERT ON trip_status_history
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_document_links_insert_updated_at ON document_links;
+CREATE TRIGGER trg_document_links_insert_updated_at
+    BEFORE INSERT ON document_links
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_document_versions_insert_updated_at ON document_versions;
+CREATE TRIGGER trg_document_versions_insert_updated_at
+    BEFORE INSERT ON document_versions
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_sent_emails_insert_updated_at ON sent_emails;
+CREATE TRIGGER trg_sent_emails_insert_updated_at
+    BEFORE INSERT ON sent_emails
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_email_logs_insert_updated_at ON email_logs;
+CREATE TRIGGER trg_email_logs_insert_updated_at
+    BEFORE INSERT ON email_logs
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+DROP TRIGGER IF EXISTS trg_invoice_reminders_insert_updated_at ON invoice_reminders;
+CREATE TRIGGER trg_invoice_reminders_insert_updated_at
+    BEFORE INSERT ON invoice_reminders
+    FOR EACH ROW EXECUTE FUNCTION stamp_updated_at();
+
+-- =============================================================================
 -- §MIGRATIONS: Schema version seeds
 -- =============================================================================
 
@@ -1254,7 +1570,44 @@ CREATE TABLE IF NOT EXISTS sync_cursors (
     company_id   INTEGER NOT NULL,
     entity_type  TEXT    NOT NULL,
     cursor       TEXT,
+    -- R1 (Phase E): id tiebreak for the cursor second (see schema.py).
+    last_id      BIGINT  NOT NULL DEFAULT 0,
     updated_at   TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     PRIMARY KEY (user_id, company_id, entity_type)
+);
+
+-- =============================================================================
+-- §OFFLINE-FIRST SYNC (Phase 2): server-side exactly-once id map.
+-- Maps a desktop (company_id, device_id, entity_type, local_id) to the server
+-- row id so a replayed push INSERT (retry after network drop) updates the
+-- mapped row instead of creating a duplicate.  NOT a client-synced entity —
+-- it is server-side bookkeeping.  Idempotent (IF NOT EXISTS).
+-- Phase A (multi-device): the key includes device_id so each desktop has its
+-- own id-map namespace.
+-- =============================================================================
+CREATE TABLE IF NOT EXISTS sync_server_map (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    company_id INTEGER NOT NULL,
+    device_id TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    local_id INTEGER NOT NULL,
+    server_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    UNIQUE (company_id, device_id, entity_type, local_id)
+);
+
+-- ── Hard-delete tombstones (Phase D) ───────────────────────────────────
+-- Server-side bookkeeping (NOT a client-synced entity).  A tombstone records
+-- that a server row was HARD-deleted (or soft-deleted via a sync-push DELETE)
+-- so other devices that never pulled the row learn to drop their local copy.
+-- The desktop pulls ``entity=tombstone`` and applies each one; the server
+-- deletes them after returning (one-shot).
+CREATE TABLE IF NOT EXISTS sync_tombstones (
+    id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    company_id INTEGER NOT NULL,
+    entity_type TEXT NOT NULL,
+    server_id INTEGER NOT NULL,
+    purged_at TEXT NOT NULL,
+    UNIQUE (company_id, entity_type, server_id)
 );
 

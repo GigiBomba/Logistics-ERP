@@ -12,6 +12,8 @@ Happy-path chain: login(driver) -> trip-overview -> route-share ->
 login(dispatcher) -> manifest -> ocr/process (Idempotency-Key) -> copilot/chat.
 Each step asserts the contract shape from ``tests/contracts/``.
 """
+from __future__ import annotations
+
 
 import os
 import subprocess

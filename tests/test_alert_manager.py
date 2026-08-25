@@ -1,4 +1,6 @@
 """Unit + integration tests for AlertManager: creation, persistence after restart."""
+from __future__ import annotations
+
 import unittest
 from unittest import mock
 

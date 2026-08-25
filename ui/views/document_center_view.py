@@ -3,6 +3,8 @@
 Re-exports ``QtDocumentCenterView`` and ``open_entity_documents`` from
 ``ui/views/document_center/``.
 """
+from __future__ import annotations
+
 
 from ui.views.document_center.document_center import (  # noqa: F401
     QtDocumentCenterView,

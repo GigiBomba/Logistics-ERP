@@ -607,5 +607,5 @@ class QtRouteHistoryView(QWidget):
             unregister_listener(self._language_callback)
         if self._map_widget:
             with contextlib.suppress(Exception):
-                self._map_widget.destroy()
+                self._map_widget._destroy()
             self._map_widget = None

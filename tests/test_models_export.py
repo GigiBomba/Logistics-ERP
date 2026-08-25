@@ -1,4 +1,6 @@
 """Tests for export_models.py — Export format enum, filter params, date range bounds."""
+from __future__ import annotations
+
 import pytest
 from datetime import datetime
 from pydantic import ValidationError

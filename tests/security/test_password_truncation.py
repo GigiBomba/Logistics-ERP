@@ -7,6 +7,8 @@ Verifies that:
 4. Multi-byte UTF-8 characters at the 72-byte boundary don't break matching
 5. Non-ASCII passwords are handled
 """
+from __future__ import annotations
+
 
 import os
 import bcrypt

@@ -1,4 +1,6 @@
 """Integration test: Trip create → calculate profit → dispatch flow."""
+from __future__ import annotations
+
 import pytest
 from models.trip_models import TripCreate, TripStop
 from models.calculator_models import CalculationRequest

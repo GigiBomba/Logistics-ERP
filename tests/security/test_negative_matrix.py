@@ -8,6 +8,8 @@ Fixtures from conftest:
     auth_admin — Authorization header dict for admin user.
     auth_a     — Authorization header dict for Company A dispatcher.
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient
@@ -155,7 +157,15 @@ class TestSpecialChars:
                         (t for t in items if t.get("id") == trip_id), None
                     )
                     if found is not None:
-                        assert found.get("client_name") == sql_payload, (
+                        # The input-sanitization middleware inserts a
+                        # zero-width space (``\u200b``) before matched
+                        # injection patterns as a defense-in-depth marker
+                        # (same behaviour documented in
+                        # test_data_injection.py / test_xss_in_client_name).
+                        # Strip it so the assertion still verifies the payload
+                        # was stored LITERALLY (not executed, not encoded).
+                        stored_client = (found.get("client_name") or "").replace("\u200b", "")
+                        assert stored_client == sql_payload, (
                             f"Expected client_name to be stored literally, "
                             f"got {found['client_name']!r}"
                         )

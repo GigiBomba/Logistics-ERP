@@ -388,6 +388,18 @@ class TestCountActiveMaintenanceSchedules:
         assert all_schedules >= 2  # other tests may add more
 
 
+class TestGetMaintenanceSchedulesWithOverdue:
+    def test_excludes_soft_deleted_schedules(self, db, repo):
+        """R2: the mobile overdue list must not show soft-deleted schedules."""
+        tid = _truck(db)
+        keep_id = repo.add_maintenance_schedule(tid, "Oil Change", interval_km=30000)
+        gone_id = repo.add_maintenance_schedule(tid, "Tires", interval_km=50000)
+        repo.delete_maintenance_schedule(gone_id)
+        ids = {s["id"] for s in repo.get_maintenance_schedules_with_overdue()}
+        assert keep_id in ids
+        assert gone_id not in ids
+
+
 # ── Truck Health Scores ──────────────────────────────────────────────
 
 

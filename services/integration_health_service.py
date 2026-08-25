@@ -1,4 +1,6 @@
 """Integration health check service — monitors external API connectivity."""
+from __future__ import annotations
+
 import time
 import logging
 from datetime import datetime, timedelta

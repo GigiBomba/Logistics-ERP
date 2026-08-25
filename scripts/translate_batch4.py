@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """Translate ALL remaining English-matching values in uk.json, ru.json, es.json, de.json to 90%+ coverage."""
+from __future__ import annotations
+
 import json, os, re
 
 DIR = "data/translations"

@@ -3,6 +3,8 @@
 These DTOs are purpose-built for mobile: bandwidth-optimised, flattened
 where possible, and containing only the fields a mobile screen needs.
 """
+from __future__ import annotations
+
 
 from datetime import date, datetime
 from enum import Enum

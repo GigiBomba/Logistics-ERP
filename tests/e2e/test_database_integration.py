@@ -245,7 +245,8 @@ class TestTripCRUDIntegration:
     def test_delete_trip_cascades_to_invoice(
         self, trip_repo: TripRepository, db: DatabaseManager
     ) -> None:
-        """Deleting a trip cascades to its linked invoice (ON DELETE CASCADE)."""
+        """Soft-deleting a trip preserves the row (deleted_at set) and does NOT
+        cascade to its linked invoice (soft-delete semantics for sync)."""
         trip_id = trip_repo.create(_sample_trip())
         db.conn.execute(
             "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, total_amount, status) "
@@ -261,11 +262,15 @@ class TestTripCRUDIntegration:
         # Verify both exist
         assert db.conn.execute("SELECT id FROM invoices WHERE id = ?", (inv_id,)).fetchone() is not None
 
-        # Delete the trip — invoice should cascade-delete
+        # Soft-delete the trip — row preserved with deleted_at, invoice survives
         trip_repo.delete(trip_id)
 
-        assert trip_repo.get_by_id(trip_id) is None, "Trip should be deleted"
-        assert db.conn.execute("SELECT id FROM invoices WHERE id = ?", (inv_id,)).fetchone() is None, "Invoice should cascade-delete"
+        assert trip_repo.get_by_id(trip_id) is None, "Trip should be filtered from reads"
+        row = db.conn.execute(
+            "SELECT deleted_at FROM trips WHERE id = ?", (trip_id,)
+        ).fetchone()
+        assert row is not None and row["deleted_at"] is not None, "Trip should be soft-deleted"
+        assert db.conn.execute("SELECT id FROM invoices WHERE id = ?", (inv_id,)).fetchone() is not None, "Invoice survives soft-delete"
 
     def test_bulk_create_100_trips(self, trip_repo: TripRepository) -> None:
         """Bulk-insert 100 trips and verify the count."""
@@ -811,7 +816,7 @@ class TestDataConsistency:
         db: DatabaseManager,
         trip_repo: TripRepository,
     ) -> None:
-        """Verify ON DELETE CASCADE removes invoice when trip is deleted."""
+        """Soft-delete does NOT cascade: invoice survives trip soft-delete."""
         trip_id = trip_repo.create(_sample_trip())
         db.conn.execute(
             "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, total_amount, status) "
@@ -826,7 +831,7 @@ class TestDataConsistency:
 
         trip_repo.delete(trip_id)
         inv_repo = InvoiceRepository(db)
-        assert inv_repo.get_by_id(inv_id) is None
+        assert inv_repo.get_by_id(inv_id) is not None, "Invoice survives soft-delete"
         assert trip_repo.get_by_id(trip_id) is None
 
     def test_duplicate_invoice_number_rejected(

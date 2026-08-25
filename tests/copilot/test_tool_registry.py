@@ -8,6 +8,8 @@ IMPORTANT: This module registers fixture tools (with names starting with
 don't leak into subsequent test files that run ``validate_registry()`` or
 ``run_startup_validation()`` (e.g. ``test_copilot_load.py``).
 """
+from __future__ import annotations
+
 
 import pytest
 from pydantic import BaseModel, ConfigDict

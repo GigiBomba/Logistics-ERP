@@ -17,18 +17,24 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.design_tokens import SP
+from ui.design_tokens import (
+    COLOR_ACCENT_SUBTLE,
+    COLOR_NEUTRAL_SUBTLE,
+    COLOR_SUCCESS_SUBTLE,
+    COLOR_WARNING_SUBTLE,
+    SP,
+)
 from ui.widgets import ActionButton, StyledCheckBox
 from ui.widgets.debounced_line_edit import DebouncedLineEdit
 
 STATUS_OPTIONS = ["Planned", "Loading", "In Transit", "Delivered", "Cancelled"]
 
 _STATUS_COLORS: dict[str, str] = {
-    "Planned": "#1c1917",
-    "Loading": "#341a00",
-    "In Transit": "#0f1f4a",
-    "Delivered": "#052e16",
-    "Cancelled": "#1A1A20",
+    "Planned": COLOR_ACCENT_SUBTLE,
+    "Loading": COLOR_WARNING_SUBTLE,
+    "In Transit": COLOR_WARNING_SUBTLE,
+    "Delivered": COLOR_SUCCESS_SUBTLE,
+    "Cancelled": COLOR_NEUTRAL_SUBTLE,
 }
 
 
@@ -157,7 +163,7 @@ class QtDispatchSearchBar(QFrame):
         statuses = [s for s, cb in self._checkboxes.items() if cb.isChecked()]
         self._on_search(query, statuses)
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         """Clear callback and checkbox references, then schedule deletion."""
         self._on_search = None
         self._checkboxes.clear()

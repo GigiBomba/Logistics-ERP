@@ -7,6 +7,7 @@ and local STT transcription via Whisper (conditional import).
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from datetime import datetime
@@ -29,6 +30,19 @@ from ui.copilot.models import (
 logger = logging.getLogger(__name__)
 
 # ── Helpers ──────────────────────────────────────────────────────────────
+
+async def _await_if_needed(result: Any) -> Any:
+    """Await *result* when it is a coroutine, otherwise return it unchanged.
+
+    ``RemoteCopilotService`` methods are synchronous; the local in-process
+    service (:class:`client.local_copilot.LocalCopilotService`) exposes the
+    same surface with async methods.  The controller stays mode-agnostic by
+    awaiting transparently.
+    """
+    if asyncio.iscoroutine(result):
+        return await result
+    return result
+
 
 def _parse_step(raw: dict) -> ExecutionStep:
     """Deserialize a raw step dict into an ExecutionStep dataclass."""
@@ -128,14 +142,20 @@ class CoPilotController(QObject):
 
     def __init__(
         self,
-        remote: RemoteCopilotService,
+        remote: Optional[RemoteCopilotService] = None,
         event_bus: Any = None,
         parent: Optional[QObject] = None,
     ) -> None:
         """Initialise the controller.
 
         Args:
-            remote: Fully configured ``RemoteCopilotService`` instance.
+            remote: Service implementing the ``RemoteCopilotService`` surface
+                (``chat``, ``voice_input``, plan/conversation/insight methods).
+                In LOCAL mode this is a :class:`client.local_copilot.LocalCopilotService`
+                which executes the pipeline in-process; in REMOTE mode it is the
+                HTTP-backed ``RemoteCopilotService``.  May be ``None`` when no
+                backend or database is available — every call then surfaces a
+                clear user-facing error instead of crashing.
             event_bus: Optional ``EventBus`` singleton for publishing copilot events.
             parent: Optional ``QObject`` parent.
         """
@@ -210,7 +230,8 @@ class CoPilotController(QObject):
             }
             if self._conversation_id is not None:
                 chat_kwargs["conversation_id"] = self._conversation_id
-            raw = self._remote.chat(**chat_kwargs)
+            self._require_remote("chat")
+            raw = await _await_if_needed(self._remote.chat(**chat_kwargs))
             response = _parse_response(raw)
             self._conversation_id = response.conversation_id
             if response.plan:
@@ -222,7 +243,7 @@ class CoPilotController(QObject):
             return response
         except Exception as exc:
             logger.exception("send_utterance failed")
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     async def send_voice(
@@ -261,7 +282,8 @@ class CoPilotController(QObject):
             }
             if self._conversation_id is not None:
                 voice_kwargs["conversation_id"] = self._conversation_id
-            raw = self._remote.voice_input(**voice_kwargs)
+            self._require_remote("voice_input")
+            raw = await _await_if_needed(self._remote.voice_input(**voice_kwargs))
             response = _parse_response(raw)
             self._conversation_id = response.conversation_id
             if response.plan:
@@ -272,7 +294,7 @@ class CoPilotController(QObject):
             return response
         except Exception as exc:
             logger.exception("send_voice failed")
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     # ── Plans ────────────────────────────────────────────────────────
@@ -284,14 +306,15 @@ class CoPilotController(QObject):
         ``error_occurred`` on failure.
         """
         try:
-            result = self._remote.confirm_plan(plan_id)
+            self._require_remote("confirm_plan")
+            result = await _await_if_needed(self._remote.confirm_plan(plan_id))
             self._active_plan_id = None
             self.plan_changed.emit(plan_id)
             self._publish_event("copilot.plan.confirmed", {"plan_id": plan_id})
             return result
         except Exception as exc:
             logger.exception("confirm_plan failed: %s", plan_id)
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     async def cancel_plan(self, plan_id: str) -> dict:
@@ -301,7 +324,8 @@ class CoPilotController(QObject):
         ``error_occurred`` on failure.
         """
         try:
-            result = self._remote.cancel_plan(plan_id)
+            self._require_remote("cancel_plan")
+            result = await _await_if_needed(self._remote.cancel_plan(plan_id))
             if self._active_plan_id == plan_id:
                 self._active_plan_id = None
             self.plan_changed.emit(plan_id)
@@ -309,7 +333,7 @@ class CoPilotController(QObject):
             return result
         except Exception as exc:
             logger.exception("cancel_plan failed: %s", plan_id)
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     async def undo_step(self, plan_id: str) -> dict:
@@ -319,13 +343,14 @@ class CoPilotController(QObject):
         ``error_occurred`` on failure.
         """
         try:
-            result = self._remote.undo_plan(plan_id)
+            self._require_remote("undo_plan")
+            result = await _await_if_needed(self._remote.undo_plan(plan_id))
             self.plan_changed.emit(plan_id)
             self._publish_event("copilot.plan.undone", {"plan_id": plan_id})
             return result
         except Exception as exc:
             logger.exception("undo_step failed: %s", plan_id)
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     # ── Conversations ────────────────────────────────────────────────
@@ -350,11 +375,12 @@ class CoPilotController(QObject):
             conv_kwargs: dict[str, Any] = {"limit": limit}
             if cursor is not None:
                 conv_kwargs["cursor"] = cursor
-            items = self._remote.list_conversations(**conv_kwargs)
+            self._require_remote("list_conversations")
+            items = await _await_if_needed(self._remote.list_conversations(**conv_kwargs))
             return [_parse_response(item) for item in items]
         except Exception as exc:
             logger.exception("list_conversations failed")
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     async def get_conversation(self, conversation_id: str) -> dict:
@@ -364,12 +390,13 @@ class CoPilotController(QObject):
         ``error_occurred`` on failure.
         """
         try:
-            result = self._remote.get_conversation(conversation_id)
+            self._require_remote("get_conversation")
+            result = await _await_if_needed(self._remote.get_conversation(conversation_id))
             self.conversation_loaded.emit(result)
             return result
         except Exception as exc:
             logger.exception("get_conversation failed: %s", conversation_id)
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     # ── Plan status ──────────────────────────────────────────────────
@@ -380,10 +407,11 @@ class CoPilotController(QObject):
         Emits ``error_occurred`` on failure.
         """
         try:
-            return self._remote.get_plan(plan_id)
+            self._require_remote("get_plan")
+            return await _await_if_needed(self._remote.get_plan(plan_id))
         except Exception as exc:
             logger.exception("get_plan failed: %s", plan_id)
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     # ── WebSocket ────────────────────────────────────────────────────
@@ -413,12 +441,21 @@ class CoPilotController(QObject):
         if self._ws_conversation_id is None:
             return
 
+        if self._remote is None:
+            logger.warning("CoPilot WS: no remote service — skipping WebSocket connection")
+            return
+
+        url_str = self._remote.ws_url(self._ws_conversation_id)
+        if not url_str:
+            # Local mode / backends without a WS endpoint — no live updates.
+            logger.info("CoPilot WS: remote provides no WebSocket URL — skipping")
+            return
+
         self._ws = QWebSocket()
         self._ws.textMessageReceived.connect(self._on_ws_message)
         self._ws.connected.connect(self._on_ws_connected)
         self._ws.disconnected.connect(self._on_ws_disconnected)
 
-        url_str = self._remote.ws_url(self._ws_conversation_id)
         self._ws.open(QUrl(url_str))
 
     def disconnect_ws(self) -> None:
@@ -553,13 +590,14 @@ class CoPilotController(QObject):
             insight_kwargs: dict[str, Any] = {"limit": limit}
             if status_filter is not None:
                 insight_kwargs["status_filter"] = status_filter
-            items = self._remote.list_insights(**insight_kwargs)
+            self._require_remote("list_insights")
+            items = await _await_if_needed(self._remote.list_insights(**insight_kwargs))
             insights = [_parse_insight(item) for item in items]
             # Client-side dismiss filtering
             return [i for i in insights if i.id not in self._dismissed_insights]
         except Exception as exc:
             logger.exception("list_insights failed")
-            self.error_occurred.emit(str(exc))
+            self.error_occurred.emit(self._describe_error(exc))
             raise
 
     async def dismiss_insight(self, insight_id: str) -> None:
@@ -575,6 +613,36 @@ class CoPilotController(QObject):
         logger.info("Insight dismissed (client-side): %s", insight_id)
 
     # ── Internal helpers ─────────────────────────────────────────────
+
+    def _require_remote(self, method: str) -> None:
+        """Raise a clear error when no backing Co-Pilot service is configured."""
+        if self._remote is None:
+            logger.warning(
+                "CoPilotController: no remote service configured — cannot call %s", method,
+            )
+            raise RuntimeError("copilot.error.not_configured")
+
+    @staticmethod
+    def _describe_error(exc: Exception) -> str:
+        """Return a user-facing message for a remote/API failure.
+
+        FastAPI error bodies are ``{"detail": {"message_key": ..., "detail": …}}``;
+        extracting the inner ``detail`` gives the user something actionable
+        instead of the raw ``requests.HTTPError`` repr.
+        """
+        response = getattr(exc, "response", None)
+        if response is not None:
+            try:
+                payload = response.json()
+            except Exception:
+                payload = None
+            if isinstance(payload, dict):
+                detail = payload.get("detail")
+                if isinstance(detail, dict):
+                    return detail.get("detail") or detail.get("message_key") or str(exc)
+                if detail:
+                    return str(detail)
+        return str(exc)
 
     def _transcribe_audio(
         self, audio_data: bytes, language: str

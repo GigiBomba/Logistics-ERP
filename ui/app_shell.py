@@ -85,6 +85,6 @@ class AppShell:
 
     def destroy(self) -> None:
         with contextlib.suppress(Exception):
-            self.top_bar.destroy()
+            self.top_bar._destroy()
         with contextlib.suppress(Exception):
-            self.nav.destroy()
+            self.nav._destroy()

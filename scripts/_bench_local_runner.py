@@ -1,4 +1,6 @@
 """Internal: run main.py and output JSON timing."""
+from __future__ import annotations
+
 import sys, os, time, json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 os.environ["OPERION_DIAGNOSTICS"] = "0"

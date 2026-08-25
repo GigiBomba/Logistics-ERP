@@ -3,6 +3,8 @@
 All write operations across every service MUST check permissions through
 this service. These tests verify the role-based access control rules.
 """
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 import pytest

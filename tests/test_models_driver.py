@@ -1,4 +1,6 @@
 """Tests for driver_models.py — DriverCreate, DriverUpdate, DriverResult, etc."""
+from __future__ import annotations
+
 import pytest
 from datetime import date, datetime
 from pydantic import ValidationError

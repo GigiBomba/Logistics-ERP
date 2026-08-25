@@ -31,6 +31,7 @@ from services.operations.event_bus import (
     ALERT_CREATED,
     ALERT_RESOLVED,
     SETTINGS_UPDATED,
+    SYNC_COMPLETED,
     TOUR_REPLAY_REQUESTED,
     EventBus,
 )
@@ -74,37 +75,14 @@ from ui.views import (
 logger = logging.getLogger(__name__)
 
 # ── Connection-mode aware module availability ─────────────────────────────
-# Modules that require direct local database access.  Each of these either
-# calls ``guard_local_access`` / ``detect_mode(db, None)`` in its constructor
-# (``dispatch_board``, ``fleet``, ``driver_manager``, ``maintenance``) or has
-# no API path and relies on local repositories / a non-None ``db`` for its
-# core function (``analytics``, ``history``, ``tracking``,
-# ``documents``, ``maintenance_control``, ``invoices``,
-# ``migration_center``, ``freight_exchange``).  These modules are hidden from
-# the navigation, excluded from warmup, and never constructed when the app
-# runs in remote (API-only) mode.
+# Every module in ``_ALL_MODULE_KEYS`` is now remote-capable: each view
+# either receives a remote service through its view factory (Tier-1: analytics,
+# history, fleet, driver_manager, maintenance, invoices, freight_exchange,
+# clients; Tier-2: dispatch_board, tracking, documents, maintenance_control)
+# or degrades gracefully when no local database is available.
 #
-# ``clients`` used to be local-DB-only, but is remote-capable via
-# ``RemoteClientService`` (wired through ``client_service``), so it is no
-# longer listed here.
-_LOCAL_ONLY_MODULES: frozenset[str] = frozenset({
-    "analytics",
-    "history",
-    "dispatch_board",
-    "tracking",
-    "fleet",
-    "driver_manager",
-    "documents",
-    "maintenance",
-    "maintenance_control",
-    "invoices",
-    "migration_center",
-    "freight_exchange",
-})
-
-# Every module registered in ``MainWindow._VIEW_FACTORIES``.  The class-level
-# factory dict stays unchanged (LOCAL mode keeps all modules); availability is
-# decided per instance based on the connection mode.
+# ``_modules_available_in`` is kept as the single per-instance availability
+# decision point; all modules are available in every mode.
 _ALL_MODULE_KEYS: frozenset[str] = frozenset({
     "calculator", "overview", "route_planner", "analytics", "history",
     "route_history", "dispatch_board", "tracking", "fleet", "driver_manager",
@@ -117,12 +95,10 @@ _ALL_MODULE_KEYS: frozenset[str] = frozenset({
 def _modules_available_in(mode: ConnectionMode) -> set[str]:
     """Factory keys that may be created in *mode*.
 
-    Shared modules (those with an ``api_client`` path) are always available;
-    local-DB-only modules are only available in LOCAL mode.
+    All modules are remote-capable now; this hook is kept so availability
+    policy stays centralised if a future module needs LOCAL-only gating.
     """
-    if mode == ConnectionMode.LOCAL:
-        return set(_ALL_MODULE_KEYS)
-    return set(_ALL_MODULE_KEYS) - _LOCAL_ONLY_MODULES
+    return set(_ALL_MODULE_KEYS)
 
 
 class MainWindow(QMainWindow):
@@ -222,6 +198,18 @@ class MainWindow(QMainWindow):
             self.trip_service = TripService(self.db)
             self.client_service = ClientService(self.db)
 
+            from repositories.driver_repository import DriverRepository
+            from repositories.fleet_repository import FleetRepository
+            from services.analytics_service import AnalyticsService
+            from services.driver_truck_service import DriverTruckService
+            from services.invoicing.service import InvoiceService
+
+            self.analytics_service = AnalyticsService(self.db)
+            self.driver_service = DriverRepository(self.db)
+            self.dta_service = DriverTruckService(self.db)
+            self.maintenance_service = FleetRepository(self.db)
+            self.invoice_service = InvoiceService(self.db, prefs=self.prefs)
+
             if self.ops is None:
                 from services.operations.operations_engine import OperationsEngine
                 self.ops = OperationsEngine(self.db, prefs=self.prefs)
@@ -229,6 +217,13 @@ class MainWindow(QMainWindow):
 
             from services.fleet_tracking_service import fleet_tracking_service
             fleet_tracking_service.initialize(self.db)
+
+            # Remote-only service slots — unused in LOCAL mode (views build
+            # their own local services from the DB handle).
+            self.dispatch_service = None
+            self.control_panel_service = None
+            self.document_service = None
+            self.migration_service = None
 
             # API-backed services — no local equivalents exist
             self.freight_service = None
@@ -246,24 +241,55 @@ class MainWindow(QMainWindow):
                     RemoteFleetService,
                     RemoteTripService,
                 )
+                from client.remote_dispatch_service import RemoteDispatchService
+                from client.remote_control_panel_service import RemoteControlPanelService
+                from client.remote_document_service import RemoteDocumentService
+
                 self.fleet_service = RemoteFleetService(self._api_client)
                 self.trip_service = RemoteTripService(self._api_client)
                 self.client_service = RemoteClientService(self._api_client)
+                self.dispatch_service = RemoteDispatchService(self._api_client)
+                self.control_panel_service = RemoteControlPanelService(self._api_client)
+                self.document_service = RemoteDocumentService(self._api_client)
 
                 from client.remote_freight_exchange import RemoteFreightExchangeService
                 from client.remote_copilot import RemoteCopilotService
                 from client.remote_feature_flags import RemoteFeatureFlagService
+                from client.remote_analytics import RemoteAnalyticsService
+                from client.remote_driver_service import RemoteDriverService
+                from client.remote_maintenance import RemoteMaintenanceService
+                from client.remote_invoice_service import RemoteInvoiceService
+                from client.remote_migration_service import RemoteMigrationService
+
+                self.analytics_service = RemoteAnalyticsService(self._api_client)
+                self.driver_service = RemoteDriverService(self._api_client)
+                self.dta_service = self.driver_service
+                self.maintenance_service = RemoteMaintenanceService(self._api_client)
+                self.invoice_service = RemoteInvoiceService(self._api_client)
 
                 self.freight_service = RemoteFreightExchangeService(self._api_client)
                 self.copilot_service = RemoteCopilotService(self._api_client)
                 self.feature_flags = RemoteFeatureFlagService(self._api_client)
+                self.migration_service = RemoteMigrationService(self._api_client)
+
+                # NOTE: fleet_tracking_service stays LOCAL-only — it is never
+                # initialized in remote mode (no API equivalent).
             else:
                 self.fleet_service = None
                 self.trip_service = None
                 self.client_service = None
+                self.dispatch_service = None
+                self.control_panel_service = None
+                self.document_service = None
+                self.analytics_service = None
+                self.driver_service = None
+                self.dta_service = None
+                self.maintenance_service = None
+                self.invoice_service = None
                 self.freight_service = None
                 self.copilot_service = None
                 self.feature_flags = None
+                self.migration_service = None
 
             if self.ops is None:
                 from client.remote_ops_stub import RemoteOpsStub
@@ -565,6 +591,65 @@ class MainWindow(QMainWindow):
         )
         dlg.exec()
 
+    # ── Offline-first sync (Phase 4b) ────────────────────────────────────
+
+    def setup_sync_ui(self, engine, outbox=None, pull=None, conflict_service=None):
+        """Wire the sync engine's signals to the status indicator + journal.
+
+        Called by ``main.setup_sync`` after the window is shown.  Connects
+        the engine's signals to the top-bar status label and stores the
+        services the conflict journal dialog needs.
+        """
+        self._sync_engine = engine
+        self._sync_outbox = outbox
+        self._sync_pull = pull
+        self._sync_conflict_count = 0
+        if conflict_service is None and self.db is not None:
+            from services.sync_conflict_service import SyncConflictService
+            conflict_service = SyncConflictService(self.db)
+        self._sync_conflict_service = conflict_service
+
+        engine.sync_status_changed.connect(self._on_sync_status_changed)
+        engine.sync_finished.connect(self._on_sync_finished)
+        engine.sync_error.connect(self._on_sync_error)
+        self.app_shell.top_bar.sync_clicked.connect(self._open_sync_conflicts)
+        self.app_shell.top_bar.set_sync_status("idle", 0)
+
+    def _on_sync_status_changed(self, status: str) -> None:
+        """Update the status label from ``sync_status_changed``."""
+        from ui.widgets.sync_status import resolve_status
+
+        self.app_shell.top_bar.set_sync_status(
+            resolve_status(status, self._sync_conflict_count), self._sync_conflict_count
+        )
+
+    def _on_sync_finished(self, summary: dict) -> None:
+        """Update the status label from ``sync_finished`` and notify views."""
+        from ui.widgets.sync_status import resolve_status
+
+        self._sync_conflict_count = int(summary.get("conflicts", 0) or 0)
+        status = resolve_status(summary.get("status", "idle"), self._sync_conflict_count)
+        self.app_shell.top_bar.set_sync_status(status, self._sync_conflict_count)
+        # Views listening for data-change events refresh after a sync cycle.
+        self._event_bus.publish(SYNC_COMPLETED, {"summary": summary})
+
+    def _on_sync_error(self, message: str) -> None:
+        """Log sync errors (the engine already surfaced them via the status)."""
+        logger.warning("Sync error: %s", message)
+
+    def _open_sync_conflicts(self) -> None:
+        """Open the sync conflict journal dialog."""
+        from ui.dialogs.sync_conflict_dialog import SyncConflictDialog
+
+        dlg = SyncConflictDialog(
+            parent=self,
+            conflict_service=self._sync_conflict_service,
+            pull_service=self._sync_pull,
+            outbox_service=self._sync_outbox,
+            engine=self._sync_engine,
+        )
+        dlg.exec()
+
     # ── Startup warmup: pre-create all pages ──────────────────────────
 
     _WARMUP_KEYS = [
@@ -618,6 +703,32 @@ class MainWindow(QMainWindow):
 
     _VIEW_FACTORIES = None
 
+    def _build_copilot_controller(self):
+        """Build the Co-Pilot controller for the current connection mode.
+
+        REMOTE mode: wraps the HTTP-backed ``RemoteCopilotService``.
+        LOCAL mode: wraps :class:`client.local_copilot.LocalCopilotService`,
+        which runs the Co-Pilot pipeline in-process against the local database
+        — so the AI Co-Pilot works without a backend server or an LLM API key
+        (Phase-1 keyword intents execute Level-0 tools locally).  The panel is
+        therefore never left without a controller in a mode that can support it.
+
+        Returns ``None`` only when neither a remote service nor a local
+        database is available (degraded/unknown mode) — the panel then shows a
+        clear setup message instead of failing silently.
+        """
+        if self.copilot_service is not None:
+            return CoPilotController(remote=self.copilot_service, event_bus=self._event_bus)
+        if self.db is not None:
+            from client.local_copilot import LocalCopilotService
+
+            local = LocalCopilotService(db=self.db, prefs=self.prefs)
+            return CoPilotController(remote=local, event_bus=self._event_bus)
+        logger.warning(
+            "Co-Pilot controller unavailable: no remote service and no local DB"
+        )
+        return None
+
     def _create_module(self, key: str):
         """Factory for view modules — registry pattern."""
         parent = self.app_shell.view_container
@@ -652,49 +763,62 @@ class MainWindow(QMainWindow):
                 ),
                 # MODE: {self._mode.value}
                 "route_planner": lambda: QtRoutePlannerView(parent, db=self.db, controller=self, api_client=ac),
-                # MODE: {self._mode.value}  — local DB only (analytics queries)
+                # MODE: {self._mode.value}  — remote-capable via analytics_service
                 "analytics": lambda: QtAnalyticsView(
                     parent, db=self.db, prefs=self.prefs,
+                    analytics_service=self.analytics_service,
                 ),
-                # MODE: {self._mode.value}  — local DB only
+                # MODE: {self._mode.value}  — remote-capable via trip/invoice services
                 "history": lambda: QtHistoryView(
                     parent, db=self.db, controller=self,
                     prefs=self.prefs, ops=self.ops,
                     trip_service=self.trip_service,
+                    invoice_service=self.invoice_service,
                 ),
                 # MODE: {self._mode.value}
                 "route_history": lambda: QtRouteHistoryView(parent, db=self.db, controller=self, api_client=ac),
-                # MODE: {self._mode.value}
-                "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac, on_navigate=self._switch_module),
-                # MODE: {self._mode.value}  — local DB only (tracking uses local fleet_tracking_service)
-                "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, on_navigate=self._switch_module),
-                # MODE: {self._mode.value}
+                # MODE: {self._mode.value}  — remote-capable via dispatch_service
+                "dispatch_board": lambda: QtDispatchBoardView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac, dispatch_service=self.dispatch_service, on_navigate=self._switch_module),
+                # MODE: {self._mode.value}  — remote-capable via fleet_service (truck matching)
+                "tracking": lambda: QtFleetTrackingView(parent, db=self.db, prefs=self.prefs, ops=self.ops, fleet_service=self.fleet_service, api_client=ac, on_navigate=self._switch_module),
+                # MODE: {self._mode.value}  — remote-capable via fleet_service
                 "fleet": lambda: QtFleetTab(
                     parent, db=self.db, ops=self.ops,
                     fleet_service=self.fleet_service,
                     api_client=ac,
                 ),
-                # MODE: {self._mode.value}  — local DB only
+                # MODE: {self._mode.value}  — remote-capable via driver/trip services
                 "driver_manager": lambda: QtDriverManager(
                     parent, db=self.db, prefs=self.prefs,
+                    driver_svc=self.driver_service,
                     trip_svc=self.trip_service,
+                    dta_svc=self.dta_service,
+                    tacho_repo=None,
                 ),
                 # MODE: {self._mode.value}  — remote-capable via client_service
                 "clients": lambda: QtClientWorkspace(
                     parent, db=self.db, prefs=self.prefs, ops=self.ops,
                     client_service=self.client_service,
                 ),
-                # MODE: {self._mode.value}  — local DB only
+                # MODE: {self._mode.value}  — remote-capable via document_service
                 "documents": lambda: QtDocumentCenterView(
                     parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                    document_service=self.document_service, api_client=ac,
                 ),
-                # MODE: {self._mode.value}  — local DB only (FleetRepository)
-                "maintenance": lambda: QtMaintenanceAnalyticsView(parent, db=self.db),
-                # MODE: {self._mode.value}  — local DB only
-                "maintenance_control": lambda: QtMaintenanceControlPanel(parent, db=self.db, prefs=self.prefs, ops=self.ops),
+                # MODE: {self._mode.value}  — remote-capable via maintenance_service
+                "maintenance": lambda: QtMaintenanceAnalyticsView(
+                    parent, db=self.db, repo=self.maintenance_service,
+                ),
+                # MODE: {self._mode.value}  — remote-capable via control/maintenance services
+                "maintenance_control": lambda: QtMaintenanceControlPanel(
+                    parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                    control_service=self.control_panel_service,
+                    maintenance_service=self.maintenance_service,
+                    api_client=ac,
+                ),
                 # MODE: {self._mode.value}
                 "tachograph": lambda: QtTachoImportView(parent, db=self.db, api_client=ac),
-                # MODE: {self._mode.value}  — local DB only
+                # MODE: {self._mode.value}  — remote-capable via client/fleet/trip services
                 "invoices": lambda: QtGeneratorsView(
                     parent, db=self.db, prefs=self.prefs,
                     client_service=self.client_service,
@@ -707,16 +831,20 @@ class MainWindow(QMainWindow):
                 ),
                 # MODE: {self._mode.value}
                 "settings": lambda: QtSettingsView(parent, db=self.db, prefs=self.prefs, ops=self.ops, api_client=ac),
-                # MODE: {self._mode.value}  — local DB only
+                # MODE: {self._mode.value}  — remote-capable via migration_service
                 "migration_center": lambda: QtMigrationCenterView(
                     parent, db=self.db, prefs=self.prefs, ops=self.ops,
+                    migration_service=self.migration_service,
                 ),
-                # MODE: {self._mode.value}  — local DB only (freight exchange)
-                "freight_exchange": lambda: FreightSearchView(self.db, parent=parent),
-                # MODE: {self._mode.value}
+                # MODE: {self._mode.value}  — remote-capable via freight_service
+                "freight_exchange": lambda: FreightSearchView(
+                    self.db, parent=parent,
+                    freight_service=self.freight_service,
+                ),
+                # MODE: {self._mode.value}  — controller always wired (local mode runs the pipeline in-process)
                 "copilot": lambda: QtCopilotView(
                     parent,
-                    controller=CoPilotController(remote=self.copilot_service) if self.copilot_service else None
+                    controller=self._build_copilot_controller(),
                 ),
             }
 

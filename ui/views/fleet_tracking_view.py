@@ -93,12 +93,16 @@ class QtFleetTrackingView(QWidget):
         db=None,
         prefs=None,
         ops=None,
+        fleet_service=None,
+        api_client=None,
         on_navigate: Callable[[str, dict | None], None] | None = None,
     ):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
         self.ops = ops
+        self._fleet_service = fleet_service
+        self._api_client = api_client
         self._on_navigate = on_navigate
 
         # ── State ──────────────────────────────────────────────────────
@@ -142,7 +146,7 @@ class QtFleetTrackingView(QWidget):
             self._fetching = False
         if hasattr(self, "_map") and self._map:
             with contextlib.suppress(Exception):
-                self._map.destroy()
+                self._map._destroy()
             self._map = None
 
     # ── Build ─────────────────────────────────────────────────────────
@@ -153,6 +157,11 @@ class QtFleetTrackingView(QWidget):
         layout = QHBoxLayout(self)
         layout.setContentsMargins(0, 0, 0, 0)
         layout.setSpacing(0)
+
+        # Remote mode (db=None + api_client): pull the tracking config from
+        # the server so the panel reflects the server-side credentials
+        # instead of always showing the not-configured state.
+        self._maybe_init_remote_config()
 
         if not fleet_tracking_service.is_configured():
             self._build_not_configured_state(layout)
@@ -219,12 +228,20 @@ class QtFleetTrackingView(QWidget):
         cl.addWidget(hint_lbl)
 
         # Settings button
-        settings_btn = Btn(
-            container,
-            t("tracking.go_to_settings"),
-            variant="primary",
-            command=lambda: self._navigate_settings(),
-        )
+        if self.db is None and self._api_client is not None:
+            settings_btn = Btn(
+                container,
+                t("tracking.configure", default="Configure Tracking"),
+                variant="primary",
+                command=lambda: self._open_remote_settings(),
+            )
+        else:
+            settings_btn = Btn(
+                container,
+                t("tracking.go_to_settings"),
+                variant="primary",
+                command=lambda: self._navigate_settings(),
+            )
         btn_wrapper = QFrame()
         btn_wrapper_layout = QHBoxLayout(btn_wrapper)
         btn_wrapper_layout.setContentsMargins(0, 0, 0, 0)
@@ -238,6 +255,133 @@ class QtFleetTrackingView(QWidget):
         logger.debug("Navigate to settings from fleet tracking not-configured state")
         if self._on_navigate:
             self._on_navigate("settings", {"scroll_to": "tracking"})
+
+    # ── Remote-mode tracking config ──────────────────────────────────
+
+    def _maybe_init_remote_config(self) -> None:
+        """Load the server-side tracking config into the service (remote mode).
+
+        Local mode (``db`` present) is untouched — the service is initialized
+        from the settings table at app startup.  In remote mode the config is
+        pulled from ``GET /settings/tracking``; when no platform is configured
+        the service stays in the graceful "not configured" state.
+        """
+        if self.db is not None or self._api_client is None:
+            return
+        try:
+            fleet_tracking_service.initialize(db=None, api_client=self._api_client)
+        except Exception:
+            logger.exception("Failed to initialize remote tracking config")
+
+    def get_remote_tracking_config(self) -> dict:
+        """Return the server-side tracking config dict (remote mode).
+
+        Shape: ``{"platform", "tokens", "interval_seconds", "enabled"}``.
+        Returns ``{}`` when no API client is available or on error.
+        """
+        if self._api_client is None:
+            return {}
+        try:
+            from client.remote_tracking_config import RemoteTrackingConfig
+            return RemoteTrackingConfig(self._api_client).get_config()
+        except Exception:
+            logger.exception("Failed to load remote tracking config")
+            return {}
+
+    def save_remote_tracking_config(self, config: dict) -> bool:
+        """Persist a tracking config via the API and re-initialize the service.
+
+        Returns ``True`` when the server accepted the config.
+        """
+        if self._api_client is None:
+            return False
+        try:
+            from client.remote_tracking_config import RemoteTrackingConfig
+            RemoteTrackingConfig(self._api_client).save_config(config)
+        except Exception:
+            logger.exception("Failed to save remote tracking config")
+            return False
+        try:
+            fleet_tracking_service.initialize(db=None, api_client=self._api_client)
+        except Exception:
+            logger.exception("Failed to re-initialize tracking service after save")
+        return True
+
+    def _open_remote_settings(self) -> None:
+        """Remote mode: edit tracking credentials through the API.
+
+        A minimal functional dialog (platform + credential fields) — no
+        styling/design work.  Saving persists via ``PUT /settings/tracking``
+        and rebuilds the panel.
+        """
+        from PySide6.QtWidgets import (
+            QComboBox,
+            QDialog,
+            QDialogButtonBox,
+            QFormLayout,
+            QLineEdit,
+        )
+
+        config = self.get_remote_tracking_config()
+        tokens = config.get("tokens") or {}
+        if not isinstance(tokens, dict):
+            tokens = {}
+
+        dlg = QDialog(self)
+        dlg.setWindowTitle(
+            t("tracking.remote_settings_title", default="Fleet Tracking Settings")
+        )
+        form = QFormLayout(dlg)
+
+        platform_edit = QComboBox(dlg)
+        platform_edit.setEditable(True)
+        platforms = ["", "wialon", "frotcom", "navixy", "traccar", "generic rest"]
+        for p in platforms:
+            platform_edit.addItem(p)
+        current = str(config.get("platform") or "").lower()
+        platform_edit.setCurrentIndex(
+            platforms.index(current) if current in platforms else 0
+        )
+        form.addRow(t("tracking.platform", default="Platform"), platform_edit)
+
+        entries: dict[str, QLineEdit] = {}
+        for key in ("token", "host", "username", "password", "account"):
+            edit = QLineEdit(str(tokens.get(key) or ""), dlg)
+            if key == "password":
+                edit.setEchoMode(QLineEdit.EchoMode.Password)
+            entries[key] = edit
+            form.addRow(t(f"tracking.{key}", default=key.title()), edit)
+
+        buttons = QDialogButtonBox(
+            QDialogButtonBox.Save | QDialogButtonBox.Cancel, parent=dlg,
+        )
+        buttons.accepted.connect(dlg.accept)
+        buttons.rejected.connect(dlg.reject)
+        form.addRow(buttons)
+
+        if dlg.exec_() != QDialog.Accepted:
+            return
+
+        config["platform"] = platform_edit.currentText().strip()
+        tokens["token"] = entries["token"].text().strip()
+        tokens["host"] = entries["host"].text().strip()
+        tokens["username"] = entries["username"].text().strip()
+        tokens["password"] = entries["password"].text().strip()
+        tokens["account"] = entries["account"].text().strip()
+        config["tokens"] = tokens
+        if self.save_remote_tracking_config(config):
+            self._rebuild()
+
+    def _rebuild(self) -> None:
+        """Rebuild the panel after the tracking config changes."""
+        layout = self.layout()
+        if layout is not None:
+            while layout.count():
+                item = layout.takeAt(0)
+                widget = item.widget()
+                if widget is not None:
+                    widget.deleteLater()
+        self._build_ui()
 
     def _build_map(self, parent: QFrame) -> None:
         map_layout = QVBoxLayout(parent)
@@ -337,7 +481,7 @@ class QtFleetTrackingView(QWidget):
         matched_truck_id: int | None,
     ) -> UniversalCard:
         dot_color = self._STATUS_DOT_COLORS.get(
-            position.status, COLORS["text_muted"]
+            position.status, COLOR_TEXT_TERTIARY
         )
         detail_str = self._vehicle_detail_text(position)
 
@@ -446,7 +590,7 @@ class QtFleetTrackingView(QWidget):
         if truck_id:
             def on_fleet_detail():
                 if self._on_navigate:
-                    self._on_navigate("fleet")
+                    self._on_navigate("fleet", None)
 
             fleet_btn = Btn(
                 self._detail_panel,
@@ -568,24 +712,42 @@ class QtFleetTrackingView(QWidget):
         phone = None
         if position.driver_id:
             try:
-                from repositories.driver_repository import DriverRepository
-                repo = DriverRepository(self.db)
-                driver = repo.get_by_id(position.driver_id)
-                if driver:
-                    phone = driver.get("phone", "") or driver.get("phone_number", "")
+                if self.db is not None:
+                    from repositories.driver_repository import DriverRepository
+                    repo = DriverRepository(self.db)
+                    driver = repo.get_by_id(position.driver_id)
+                    if driver:
+                        phone = driver.get("phone", "") or driver.get("phone_number", "")
+                else:
+                    # Remote mode — no local driver lookup; degrade gracefully.
+                    logger.debug(
+                        "Driver phone lookup unavailable in remote mode for id %s",
+                        position.driver_id,
+                    )
             except Exception:
                 logger.warning("Could not look up driver phone for id %s", position.driver_id)
         elif truck_id:
             try:
-                from repositories.driver_repository import DriverRepository
-                from repositories.fleet_repository import FleetRepository
-                fleet_repo = FleetRepository(self.db)
-                truck = fleet_repo.get_by_id(truck_id)
-                if truck and truck.get("driver_id"):
-                    repo = DriverRepository(self.db)
-                    driver = repo.get_by_id(truck["driver_id"])
-                    if driver:
-                        phone = driver.get("phone", "") or driver.get("phone_number", "")
+                if self.db is not None:
+                    from repositories.driver_repository import DriverRepository
+                    from repositories.fleet_repository import FleetRepository
+                    fleet_repo = FleetRepository(self.db)
+                    truck = fleet_repo.get_by_id(truck_id)
+                    if truck and truck.get("driver_id"):
+                        repo = DriverRepository(self.db)
+                        driver = repo.get_by_id(truck["driver_id"])
+                        if driver:
+                            phone = driver.get("phone", "") or driver.get("phone_number", "")
+                elif self._fleet_service is not None:
+                    # Remote mode: resolve the truck via the injected fleet
+                    # service; there is no remote driver-phone endpoint, so
+                    # the phone stays None and the caller shows the info toast.
+                    truck = self._fleet_service.get_truck(truck_id)
+                    if truck and truck.get("driver_id"):
+                        logger.debug(
+                            "Driver phone lookup unavailable in remote mode "
+                            "(truck %s)", truck_id,
+                        )
             except Exception:
                 logger.warning("Could not look up driver phone via truck %s", truck_id)
 

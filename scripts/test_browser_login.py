@@ -1,4 +1,6 @@
 """Simulate the EXACT request the browser sends during login."""
+from __future__ import annotations
+
 import os
 import urllib.parse
 import json

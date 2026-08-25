@@ -94,6 +94,12 @@ class ConnectionPool:
             )
             c.row_factory = sqlite3.Row
             c.execute("PRAGMA foreign_keys=ON")
+            # Explicit busy timeout — the sqlite3.connect timeout argument
+            # already sets this, but make it explicit so the offline-first
+            # sync layer's concurrent writers never fail fast with
+            # "database is locked" under load.  Derived from the configured
+            # timeout (default 30s → 30000ms) so custom timeouts are honored.
+            c.execute(f"PRAGMA busy_timeout={self._timeout * 1000}")
             # Switching a database to WAL mode needs an exclusive lock — two
             # threads creating their first connection concurrently would both
             # run the PRAGMA and one would die with "database is locked".

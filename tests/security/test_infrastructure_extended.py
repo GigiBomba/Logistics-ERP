@@ -7,6 +7,8 @@ Fixtures consumed (from ``tests/security/conftest.py``):
     - ``admin_token`` / ``auth_admin``: admin user token and auth header
     - ``auth_a``: Company A dispatcher auth header (not admin)
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

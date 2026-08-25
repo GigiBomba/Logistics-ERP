@@ -1,4 +1,6 @@
 """Test StrippedMock v2: override _increment_mock_call to strip company_id."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 
 class StrippedMock(MagicMock):

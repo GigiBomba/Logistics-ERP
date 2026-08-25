@@ -7,6 +7,8 @@ Covers:
 - Ownership validation: _validate_plan_ownership rejects cross-company access
 - Kill switch isolation: one company's switch doesn't affect others
 """
+from __future__ import annotations
+
 
 from datetime import datetime
 from typing import Any, Dict

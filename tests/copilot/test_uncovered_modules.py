@@ -2,6 +2,8 @@
 
 Covers: reasoning.py, tier_gate.py, audit.py, voice/*.py, i18n_scope.py, context.py
 """
+from __future__ import annotations
+
 
 import asyncio
 from unittest.mock import MagicMock, patch

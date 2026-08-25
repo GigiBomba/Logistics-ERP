@@ -5,6 +5,8 @@ Usage:
     py scripts/backfill_clients.py --migrate      # apply
     py scripts/backfill_clients.py --validate     # verify
 """
+from __future__ import annotations
+
 
 import argparse
 import os

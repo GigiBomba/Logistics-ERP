@@ -1,4 +1,6 @@
 """Debug: check how MagicMock creates child mocks and what method to override."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 import inspect
 

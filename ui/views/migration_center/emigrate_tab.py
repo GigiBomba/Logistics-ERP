@@ -110,12 +110,17 @@ class EmigrateTab(QWidget):
 
     export_completed = Signal(str)
 
-    def __init__(self, parent, db=None):
+    def __init__(self, parent, db=None, migration_service=None):
         super().__init__(parent)
         self.db = db
-        self._emigrate_svc = (
-            EmigrateService(db) if (db and EmigrateService) else None
-        )
+        # Remote mode injects an API-backed service; local mode builds the
+        # DB-backed EmigrateService (unchanged behaviour).
+        if migration_service is not None:
+            self._emigrate_svc = migration_service
+        else:
+            self._emigrate_svc = (
+                EmigrateService(db) if (db and EmigrateService) else None
+            )
 
         # State
         self._output_path: str | None = None

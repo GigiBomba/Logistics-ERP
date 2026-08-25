@@ -383,7 +383,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
             return
         try:
             result = self._invoice_service.list_all(limit=200)
-            invoices = result.data if result and result.success else []
+            invoices = (result.data if result and result.success else None) or []
         except Exception:
             invoices = []
         self._invoice_map = {}
@@ -1508,6 +1508,7 @@ class QtReceiptEditor(BaseView, LineItemsMixin):
 <head>
 <meta charset="utf-8">
 <style>
+  /* Print-document styles are intentionally exempt from app-chrome tokens (simulated paper, not screen UI). */
   body {{
     font-family: 'Segoe UI', -apple-system, sans-serif;
     font-size: 12px;

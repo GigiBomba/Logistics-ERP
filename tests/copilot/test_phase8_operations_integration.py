@@ -5,6 +5,8 @@ Tests cover:
 - Kill switch: Redis integration, plan cancellation, endpoint blocking
 - Executor: circuit breaker feedback, guardrail enforcement, execute_with_fallback
 """
+from __future__ import annotations
+
 
 import asyncio
 import time

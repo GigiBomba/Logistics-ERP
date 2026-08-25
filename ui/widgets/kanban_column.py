@@ -25,10 +25,14 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import (
+    COLOR_ACCENT_SUBTLE,
     COLOR_BG_BASE,
     COLOR_BG_ELEVATED,
     COLOR_ERROR_DEFAULT,
+    COLOR_NEUTRAL_SUBTLE,
     COLOR_SUCCESS_DEFAULT,
+    COLOR_SUCCESS_SUBTLE,
+    COLOR_WARNING_SUBTLE,
     SP,
 )
 from ui.widgets import ActionButton
@@ -62,11 +66,11 @@ class QtKanbanColumn(QFrame):
     ACCENT_HEIGHT = 4
 
     STATUS_COLORS: dict[str, str] = {
-        "Planned": "#1c1917",
-        "Loading": "#341a00",
-        "In Transit": "#0f1f4a",
-        "Delivered": "#052e16",
-        "Cancelled": "#1A1A20",
+        "Planned": COLOR_ACCENT_SUBTLE,
+        "Loading": COLOR_WARNING_SUBTLE,
+        "In Transit": COLOR_WARNING_SUBTLE,
+        "Delivered": COLOR_SUCCESS_SUBTLE,
+        "Cancelled": COLOR_NEUTRAL_SUBTLE,
     }
 
     # Drag-and-drop: a trip card drag started on this column (or any
@@ -109,7 +113,7 @@ class QtKanbanColumn(QFrame):
         self.title_key: str = title_key
         self.accent_color: str = (
             accent_color
-            or self.STATUS_COLORS.get(status_key, "#1c1917")
+            or self.STATUS_COLORS.get(status_key, COLOR_ACCENT_SUBTLE)
         )
         self._on_card_click = on_card_click
         self._on_drag_start = on_drag_start
@@ -396,7 +400,7 @@ class QtKanbanColumn(QFrame):
 
     # ── Cleanup ──────────────────────────────────────────────────────────
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         """Clear callbacks and schedule the widget for deletion."""
         self._clear_cards()
         self._on_card_click = None

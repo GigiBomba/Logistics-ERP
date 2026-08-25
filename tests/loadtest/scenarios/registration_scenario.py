@@ -4,6 +4,8 @@ Usage:
     cd tests/loadtest
     locust -f locustfile.py --headless -u 100 -r 10 -t 60s
 """
+from __future__ import annotations
+
 
 import time
 import random

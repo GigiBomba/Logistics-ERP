@@ -1,4 +1,6 @@
 """Receipt repository — all receipt DB access consolidated here."""
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime
@@ -18,6 +20,7 @@ DEFAULT_FORMAT_KEY = "rct_year_seq"
 
 class ReceiptRepository(BaseRepository):
     TABLE = "receipts"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "receipt_number", "receipt_type", "issue_date", "payment_date",
         "currency", "company_name", "company_address", "company_vat", "company_reg",
@@ -180,7 +183,7 @@ class ReceiptRepository(BaseRepository):
 
     def get_by_id(self, receipt_id: int) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (receipt_id,) + self._company_params(),
         )
         if row and row.get("attachments_json"):
@@ -192,7 +195,7 @@ class ReceiptRepository(BaseRepository):
 
     def get_by_number(self, receipt_number: str) -> Optional[Dict[str, Any]]:
         row = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE receipt_number = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE receipt_number = ? {self._company_filter()} {self._soft_delete_filter()}",
             (receipt_number,) + self._company_params(),
         )
         if row and row.get("attachments_json"):
@@ -204,13 +207,13 @@ class ReceiptRepository(BaseRepository):
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             self._company_params() + (limit, offset),
         )
 
     def get_by_status(self, status: str, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} WHERE status = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ?",
             (status,) + self._company_params() + (limit,),
         )
 
@@ -275,20 +278,20 @@ class ReceiptRepository(BaseRepository):
 
     def count_by_status(self, status: str) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ? {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE status = ? {self._company_filter()} {self._soft_delete_filter()}",
             (status,) + self._company_params(),
         )
         return int(row["cnt"]) if row else 0
 
     def search_by_trip(self, trip_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE related_trip_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} WHERE related_trip_id = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ?",
             (trip_id,) + self._company_params() + (limit,),
         )
 
     def search_by_driver(self, driver_id: int, limit: int = 50) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ?",
             (driver_id,) + self._company_params() + (limit,),
         )
 

@@ -15,6 +15,8 @@ PATCH  /notifications/preferences   — Update prefs
 GET    /onboarding/checklist       — Onboarding checklist
 POST   /onboarding/steps/:stepId/complete — Complete step
 """
+from __future__ import annotations
+
 
 import json
 import logging

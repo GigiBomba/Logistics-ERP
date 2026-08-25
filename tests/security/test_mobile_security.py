@@ -26,6 +26,8 @@ Test matrix:
         - Sync data respects company isolation
         - Sync endpoint returns paginated / structured results
 """
+from __future__ import annotations
+
 
 import io
 import os

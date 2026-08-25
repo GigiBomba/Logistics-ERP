@@ -42,12 +42,16 @@ VALID_TRANSITIONS: dict[str, list[str]] = {
 }
 
 # ── Column display definitions ────────────────────────────────────
+# NOTE: the `color` field was removed — it was dead data carrying the OLD
+# (pre-audit) dispatch-board palette (Planned=dark gray, In Transit=blue).
+# Nothing consumed it; the live dispatch board renders from
+# board_state.COLUMN_DEFS (tokenized). Only `key` is used here (ordering).
 COLUMN_DEFS: list[dict[str, Any]] = [
-    {"key": "Planned",    "i18n_key": "dispatch_board.col_planned",    "color": "#27272a"},
-    {"key": "Loading",    "i18n_key": "dispatch_board.col_loading",    "color": "#F59E0B"},
-    {"key": "In Transit", "i18n_key": "dispatch_board.col_in_transit", "color": "#3B82F6"},
-    {"key": "Delivered",  "i18n_key": "dispatch_board.col_delivered",  "color": "#10B981"},
-    {"key": "Cancelled",  "i18n_key": "dispatch_board.col_cancelled",  "color": "#6B7280"},
+    {"key": "Planned",    "i18n_key": "dispatch_board.col_planned"},
+    {"key": "Loading",    "i18n_key": "dispatch_board.col_loading"},
+    {"key": "In Transit", "i18n_key": "dispatch_board.col_in_transit"},
+    {"key": "Delivered",  "i18n_key": "dispatch_board.col_delivered"},
+    {"key": "Cancelled",  "i18n_key": "dispatch_board.col_cancelled"},
 ]
 
 

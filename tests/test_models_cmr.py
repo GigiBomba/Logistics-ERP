@@ -1,4 +1,6 @@
 """Tests for cmr_models.py — CMR create, mandatory fields, successive carrier chain."""
+from __future__ import annotations
+
 import pytest
 from datetime import datetime
 from pydantic import ValidationError

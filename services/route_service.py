@@ -7,6 +7,8 @@ This module provides:
 
 The implementation focuses on clarity, type annotations and maintainability.
 """
+from __future__ import annotations
+
 
 import contextlib
 import hashlib

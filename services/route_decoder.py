@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # services/route_decoder.py
 # Polyline decoder for GraphHopper route geometry
 

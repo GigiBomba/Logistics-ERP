@@ -1,4 +1,6 @@
 """Unit tests for InvoiceService: generation, recording, email workflow edge cases."""
+from __future__ import annotations
+
 import os
 import unittest
 from unittest import mock

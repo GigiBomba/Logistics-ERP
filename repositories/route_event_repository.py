@@ -1,4 +1,6 @@
 """Route event repository — persists route lifecycle events."""
+from __future__ import annotations
+
 from typing import Optional
 
 from repositories import BaseRepository

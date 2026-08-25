@@ -3,6 +3,8 @@
 set_correlation_context should be called at the request entry point
 and PhaseTimer should be used around pipeline stages.
 """
+from __future__ import annotations
+
 
 import pytest
 

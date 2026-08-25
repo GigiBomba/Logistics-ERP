@@ -9,6 +9,8 @@ when logging has already been configured (e.g. by gunicorn): it only swaps
 the formatter on the already-installed root handlers, or installs a default
 stderr handler when none exist.
 """
+from __future__ import annotations
+
 import json
 import logging
 import sys

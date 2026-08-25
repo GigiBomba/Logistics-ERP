@@ -5,6 +5,8 @@ Blueprint: §25 — Module Boundaries & Dependency Rules.
 This test runs the same checks as the CI script but as a pytest test,
 so boundary violations fail the test suite directly.
 """
+from __future__ import annotations
+
 
 import subprocess
 import sys

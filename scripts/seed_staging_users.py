@@ -7,6 +7,8 @@ Creates ``data/staging.db`` (schema via DatabaseManager), seeds company 1 and
 two bcrypt-hashed users (password ``staging-pass``), plus a driver record for
 the driver user so driver-facing mobile endpoints resolve cleanly.
 """
+from __future__ import annotations
+
 
 import os
 import sys

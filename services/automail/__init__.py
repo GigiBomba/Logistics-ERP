@@ -5,3 +5,5 @@ This package provides:
 - ReminderService: schedule matching, next-reminder calculation
 - HistoryService: email history queries and statistics
 """
+from __future__ import annotations
+

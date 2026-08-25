@@ -9,6 +9,8 @@ Phase 5: Core scenarios that test planner intent extraction and
 tool routing. Will be expanded as real conversations surface
 interesting cases.
 """
+from __future__ import annotations
+
 
 import asyncio
 import json

@@ -1,4 +1,6 @@
 """Tests for RedisCache (graceful degradation when Redis is unavailable)."""
+from __future__ import annotations
+
 
 
 from backend.cache import RedisCache, get_cache

@@ -71,3 +71,42 @@ class RemoteDriverService:
         resp = self._api.get_driver_tacho_activity(
             driver_id, from_date=from_date, limit=limit)
         return resp.get("items", []) if resp else []
+
+    def get_plates_by_driver_ids(self, driver_ids: list) -> dict:
+        """Return ``{driver_id: plate}`` for the given driver ids.
+
+        Mirrors ``DriverTruckAssignmentRepository.get_plates_by_driver_ids``.
+        No bulk endpoint exists on the backend, so this composes one
+        ``GET /drivers/{id}/truck-plate`` call per driver id; drivers that
+        have no truck / fail to resolve map to ``""``.
+        """
+        result: dict = {}
+        for did in driver_ids or []:
+            try:
+                resp = self._api.get_driver_truck_plate(did)
+                plate = resp.get("plate", "") if isinstance(resp, dict) else ""
+            except Exception:
+                plate = ""
+            result[did] = plate
+        return result
+
+    def get_active_trucks(self) -> list:
+        """Return the active truck list.
+
+        The backend exposes only ``GET /fleet/trucks`` (no active-only
+        filter), so trucks are filtered client-side on ``is_active``
+        (``active_status`` is honoured as a fallback key for local-shaped
+        rows).
+        """
+        try:
+            resp = self._api.list_trucks()
+        except Exception:
+            return []
+        items = resp.get("items", []) if isinstance(resp, dict) else (resp or [])
+        result = []
+        for truck in items:
+            if not isinstance(truck, dict):
+                continue
+            if truck.get("is_active", truck.get("active_status", 0)):
+                result.append(truck)
+        return result

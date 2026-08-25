@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """List all untranslated keys and their values from es.json vs en.json."""
+from __future__ import annotations
+
 import json, os
 
 BASE = os.path.join(os.path.dirname(__file__), os.pardir, "data", "translations")

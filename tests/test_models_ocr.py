@@ -1,4 +1,6 @@
 """Tests for ocr_models.py — OCR result with confidence score, extracted fields, engine enum."""
+from __future__ import annotations
+
 import pytest
 from datetime import datetime
 from pydantic import ValidationError

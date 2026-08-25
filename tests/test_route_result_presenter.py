@@ -1,4 +1,6 @@
 """Tests for route_result_presenter module."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest

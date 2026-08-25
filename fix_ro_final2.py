@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Final comprehensive Romanian translation pass."""
+from __future__ import annotations
+
 import json
 
 EN_PATH = r'data/translations/en.json'

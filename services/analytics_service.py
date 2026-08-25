@@ -364,8 +364,15 @@ class AnalyticsService:
     # ── Analytics 2.0: Additional methods ─────────────────────────
 
     def get_monthly_financial(self, company_id=None, months: int = 24, date_from=None, date_to=None, from_date=None, to_date=None, source_provider=None):
-        from_date = date_from if date_from is not None else from_date
-        to_date = date_to if date_to is not None else to_date
+        if isinstance(company_id, int) and not isinstance(months, int):
+            # Views call this positionally as (months, from_date, to_date), which
+            # shifts the int into company_id and the date strings into months /
+            # date_from.  Realign so months stays an int (``LIMIT ?`` would
+            # otherwise raise "datatype mismatch") and the dates filter correctly.
+            months, from_date, to_date = company_id, months, date_from
+        else:
+            from_date = date_from if date_from is not None else from_date
+            to_date = date_to if date_to is not None else to_date
         logger.info("Analytics get_monthly_financial: months=%s, from_date=%s, to_date=%s, source_provider=%s", months, from_date, to_date, source_provider)
 
         # Build conditions with source provider filter
@@ -395,8 +402,12 @@ class AnalyticsService:
             raise
 
     def get_client_growth(self, company_id=None, months: int = 12, date_from=None, date_to=None, from_date=None, to_date=None, source_provider=None):
-        from_date = date_from if date_from is not None else from_date
-        to_date = date_to if date_to is not None else to_date
+        if isinstance(company_id, int) and not isinstance(months, int):
+            # Positional (months, from_date, to_date) callers — realign args.
+            months, from_date, to_date = company_id, months, date_from
+        else:
+            from_date = date_from if date_from is not None else from_date
+            to_date = date_to if date_to is not None else to_date
         logger.info("Analytics get_client_growth: months=%s, from_date=%s, to_date=%s, source_provider=%s", months, from_date, to_date, source_provider)
 
         # Build conditions with source provider filter
@@ -531,8 +542,12 @@ class AnalyticsService:
             raise
 
     def get_cost_breakdown(self, company_id=None, months: int = 12, date_from=None, date_to=None, from_date=None, to_date=None, source_provider=None):
-        from_date = date_from if date_from is not None else from_date
-        to_date = date_to if date_to is not None else to_date
+        if isinstance(company_id, int) and not isinstance(months, int):
+            # Positional (months, from_date, to_date) callers — realign args.
+            months, from_date, to_date = company_id, months, date_from
+        else:
+            from_date = date_from if date_from is not None else from_date
+            to_date = date_to if date_to is not None else to_date
         logger.info("Analytics get_cost_breakdown: months=%s, from_date=%s, to_date=%s, source_provider=%s", months, from_date, to_date, source_provider)
 
         # Build conditions with source provider filter
@@ -562,8 +577,12 @@ class AnalyticsService:
             raise
 
     def get_monthly_trip_volume(self, company_id=None, months: int = 12, date_from=None, date_to=None, from_date=None, to_date=None, source_provider=None):
-        from_date = date_from if date_from is not None else from_date
-        to_date = date_to if date_to is not None else to_date
+        if isinstance(company_id, int) and not isinstance(months, int):
+            # Positional (months, from_date, to_date) callers — realign args.
+            months, from_date, to_date = company_id, months, date_from
+        else:
+            from_date = date_from if date_from is not None else from_date
+            to_date = date_to if date_to is not None else to_date
         logger.info("Analytics get_monthly_trip_volume: months=%s, from_date=%s, to_date=%s, source_provider=%s", months, from_date, to_date, source_provider)
 
         # Build conditions with source provider filter
@@ -715,8 +734,12 @@ class AnalyticsService:
             raise
 
     def get_driver_monthly_activity(self, company_id=None, months: int = 12, date_from=None, date_to=None, from_date=None, to_date=None, source_provider=None):
-        from_date = date_from if date_from is not None else from_date
-        to_date = date_to if date_to is not None else to_date
+        if isinstance(company_id, int) and not isinstance(months, int):
+            # Positional (months, from_date, to_date) callers — realign args.
+            months, from_date, to_date = company_id, months, date_from
+        else:
+            from_date = date_from if date_from is not None else from_date
+            to_date = date_to if date_to is not None else to_date
         logger.info("Analytics get_driver_monthly_activity: months=%s, from_date=%s, to_date=%s, source_provider=%s", months, from_date, to_date, source_provider)
 
         # Build conditions with source provider filter

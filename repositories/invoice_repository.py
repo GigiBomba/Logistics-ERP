@@ -1,4 +1,6 @@
 """Invoice repository — all invoice DB access consolidated here."""
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -14,6 +16,7 @@ DEFAULT_INVOICE_FORMAT_KEY = "inv_year_seq"
 
 class InvoiceRepository(BaseRepository):
     TABLE = "invoices"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "trip_id", "invoice_number", "issue_date", "due_date",
         "total_amount", "status", "company_id",
@@ -53,9 +56,11 @@ class InvoiceRepository(BaseRepository):
         commit=True)
 
     def delete(self, invoice_id: int) -> None:
+        """Soft-delete an invoice by stamping ``deleted_at`` (row kept for sync)."""
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
-            (invoice_id,) + self._company_params(),
+            f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id = ? {self._company_filter()}",
+            (utc_now_iso(), invoice_id) + self._company_params(),
         commit=True)
 
     def get_by_id(
@@ -69,13 +74,13 @@ class InvoiceRepository(BaseRepository):
         desktop behaviour — unchanged).
         """
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             (invoice_id,) + self._company_params_for(company_id),
         )
 
     def get_by_trip_id(self, trip_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE trip_id = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE trip_id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (trip_id,) + self._company_params(),
         )
 
@@ -83,7 +88,7 @@ class InvoiceRepository(BaseRepository):
         self, inv_number: str, company_id: Optional[int] = None
     ) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ? {self._company_filter_for(company_id)}",
+            f"SELECT * FROM {self.TABLE} WHERE invoice_number = ? {self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             (inv_number,) + self._company_params_for(company_id),
         )
 
@@ -92,7 +97,7 @@ class InvoiceRepository(BaseRepository):
             f"""SELECT i.*, t.client_name, t.truck_number, t.start_date, t.status AS trip_status
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? {self._company_filter('i')}
+               WHERE t.client_id = ? {self._company_filter('i')} {self._soft_delete_filter('i')}
                ORDER BY i.issue_date DESC
                LIMIT ?""",
             (client_id,) + self._company_params() + (limit,),
@@ -103,7 +108,7 @@ class InvoiceRepository(BaseRepository):
             f"""SELECT i.*, t.client_name, t.truck_number, t.start_date
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? AND i.status = 'Unpaid' {self._company_filter('i')}
+               WHERE t.client_id = ? AND i.status = 'Unpaid' {self._company_filter('i')} {self._soft_delete_filter('i')}
                ORDER BY i.due_date ASC""",
             (client_id,) + self._company_params(),
         )
@@ -113,7 +118,7 @@ class InvoiceRepository(BaseRepository):
             f"""SELECT COALESCE(SUM(i.total_amount), 0) AS balance
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? AND i.status = 'Unpaid' {self._company_filter('i')}""",
+               WHERE t.client_id = ? AND i.status = 'Unpaid' {self._company_filter('i')} {self._soft_delete_filter('i')}""",
             (client_id,) + self._company_params(),
         )
         return round(float(row["balance"]), 2) if row else 0.0
@@ -125,20 +130,20 @@ class InvoiceRepository(BaseRepository):
             f"""SELECT i.*, t.client_name, t.truck_number, t.start_date
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? AND i.status = 'Unpaid' AND i.due_date < ? {self._company_filter('i')}
+               WHERE t.client_id = ? AND i.status = 'Unpaid' AND i.due_date < ? {self._company_filter('i')} {self._soft_delete_filter('i')}
                ORDER BY i.due_date ASC""",
             (client_id, today) + self._company_params(),
         )
 
     def get_all(self, limit: int = 500) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY issue_date DESC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY issue_date DESC LIMIT ?",
             self._company_params() + (limit,),
         )
 
     def get_by_status(self, status: str, limit: int = 200) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT i.*, t.client_name FROM {self.TABLE} i JOIN trips t ON t.id = i.trip_id WHERE i.status = ? {self._company_filter('i')} ORDER BY i.due_date ASC LIMIT ?",
+            f"SELECT i.*, t.client_name FROM {self.TABLE} i JOIN trips t ON t.id = i.trip_id WHERE i.status = ? {self._company_filter('i')} {self._soft_delete_filter('i')} ORDER BY i.due_date ASC LIMIT ?",
             (status,) + self._company_params() + (limit,),
         )
 
@@ -153,7 +158,7 @@ class InvoiceRepository(BaseRepository):
                  COALESCE(SUM(CASE WHEN i.status = 'Unpaid' AND i.due_date < ? THEN i.total_amount ELSE 0 END), 0) AS overdue
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE t.client_id = ? {self._company_filter('i')}""",
+               WHERE t.client_id = ? {self._company_filter('i')} {self._soft_delete_filter('i')}""",
             (today, client_id) + self._company_params(),
         )
 
@@ -181,6 +186,7 @@ class InvoiceRepository(BaseRepository):
               AND i.due_date IS NOT NULL
               AND i.due_date != ''
               {self._company_filter('i')}
+              {self._soft_delete_filter('i')}
             ORDER BY i.due_date ASC""",
             self._company_params(),
         )
@@ -190,7 +196,7 @@ class InvoiceRepository(BaseRepository):
             f"""SELECT i.*, t.client_name, t.truck_number, t.start_date, t.status AS trip_status
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
-               WHERE i.status = ? {self._company_filter('i')}
+               WHERE i.status = ? {self._company_filter('i')} {self._soft_delete_filter('i')} {self._soft_delete_filter('t')}
                ORDER BY i.due_date ASC""",
             (status,) + self._company_params(),
         )
@@ -200,6 +206,7 @@ class InvoiceRepository(BaseRepository):
         return ClientRepository(self.db).get_client_email_by_name(client_name)
 
     def has_reminder_been_sent(self, invoice_id: int, reminder_type: str) -> bool:
+        # NOTE: invoice_reminders has no deleted_at column — no soft-delete filter.
         row = self._fetchone(
             f"SELECT 1 FROM invoice_reminders "
             f"WHERE invoice_id = ? AND reminder_type = ? AND status = 'sent' {self._company_filter()} LIMIT 1",
@@ -208,6 +215,7 @@ class InvoiceRepository(BaseRepository):
         return row is not None
 
     def get_reminder_count(self, invoice_id: int) -> int:
+        # NOTE: invoice_reminders has no deleted_at column — no soft-delete filter.
         row = self._fetchone(
             f"SELECT COUNT(*) AS cnt FROM invoice_reminders "
             f"WHERE invoice_id = ? AND status = 'sent' {self._company_filter()}",
@@ -238,7 +246,7 @@ class InvoiceRepository(BaseRepository):
 
     def get_invoice_count(self, client_id: int) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM invoices i JOIN trips t ON t.id = i.trip_id WHERE t.client_id = ? {self._company_filter('i')}",
+            f"SELECT COUNT(*) AS cnt FROM invoices i JOIN trips t ON t.id = i.trip_id WHERE t.client_id = ? {self._company_filter('i')} {self._soft_delete_filter('i')}",
             (client_id,) + self._company_params(),
         )
         return int(row["cnt"]) if row else 0

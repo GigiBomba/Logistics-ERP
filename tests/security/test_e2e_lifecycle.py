@@ -16,6 +16,8 @@ Uses helpers from ``tests/security/conftest.py``:
   to the relevant endpoints and return response JSON.
 - ``verify_db_company_id(table, record_id, expected)`` — direct DB check.
 """
+from __future__ import annotations
+
 
 import time
 

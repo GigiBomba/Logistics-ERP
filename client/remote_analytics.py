@@ -24,6 +24,28 @@ class RemoteAnalyticsService:
     def __init__(self, api_client) -> None:
         self._api = api_client
 
+    @staticmethod
+    def _as_rows(resp):
+        """Unwrap list-shaped analytics payloads.
+
+        Several endpoints wrap their rows in ``{"data": [...]}`` (e.g.
+        ``/analytics/financial/monthly``, ``/analytics/revenue-by-client``,
+        ``/analytics/client``) or ``{"items": [...]}``.  The views consume
+        the raw row list, so unwrap those keys.  Anything else (a plain
+        dict, a raw list, ``None``) is passed through unchanged so callers
+        and tests relying on dict passthrough keep working.
+        """
+        if isinstance(resp, list):
+            return resp
+        if isinstance(resp, dict):
+            data = resp.get("data")
+            if isinstance(data, list):
+                return data
+            items = resp.get("items")
+            if isinstance(items, list):
+                return items
+        return resp
+
     def get_data(self, from_date: Optional[str] = None,
                  to_date: Optional[str] = None) -> dict:
         return self._api.get_analytics_overview()
@@ -35,8 +57,8 @@ class RemoteAnalyticsService:
 
     def get_revenue_by_client(self, from_date: Optional[str] = None,
                               to_date: Optional[str] = None):
-        return self._api.get_analytics_revenue_by_client(
-            from_date=from_date or "", to_date=to_date or "")
+        return self._as_rows(self._api.get_analytics_revenue_by_client(
+            from_date=from_date or "", to_date=to_date or ""))
 
     def get_revenue_by_country(self, from_date: Optional[str] = None,
                                to_date: Optional[str] = None):
@@ -50,8 +72,8 @@ class RemoteAnalyticsService:
 
     def get_client_analytics(self, from_date: Optional[str] = None,
                              to_date: Optional[str] = None):
-        return self._api.get_analytics_client(
-            from_date=from_date or "", to_date=to_date or "")
+        return self._as_rows(self._api.get_analytics_client(
+            from_date=from_date or "", to_date=to_date or ""))
 
     def get_fleet(self, from_date: Optional[str] = None,
                   to_date: Optional[str] = None):
@@ -72,8 +94,8 @@ class RemoteAnalyticsService:
     def get_monthly_financial(self, months: int = 24,
                               from_date: Optional[str] = None,
                               to_date: Optional[str] = None):
-        return self._api.get_analytics_financial_monthly(
-            months=months, from_date=from_date or "", to_date=to_date or "")
+        return self._as_rows(self._api.get_analytics_financial_monthly(
+            months=months, from_date=from_date or "", to_date=to_date or ""))
 
     def get_client_growth(self, months: int = 12,
                           from_date: Optional[str] = None,
@@ -107,14 +129,19 @@ class RemoteAnalyticsService:
     def get_cost_breakdown(self, months: int = 12,
                            from_date: Optional[str] = None,
                            to_date: Optional[str] = None):
-        return self._api.get_analytics_financial_cost_breakdown(
-            months=months, from_date=from_date or "", to_date=to_date or "")
+        rows = self._as_rows(self._api.get_analytics_financial_cost_breakdown(
+            months=months, from_date=from_date or "", to_date=to_date or ""))
+        if isinstance(rows, dict):
+            # The backend collapses cost-breakdown to a single summary
+            # dict; views expect a list of rows, so wrap it.
+            return [rows]
+        return rows
 
     def get_monthly_trip_volume(self, months: int = 12,
                                 from_date: Optional[str] = None,
                                 to_date: Optional[str] = None):
-        return self._api.get_analytics_financial_trip_volume(
-            months=months, from_date=from_date or "", to_date=to_date or "")
+        return self._as_rows(self._api.get_analytics_financial_trip_volume(
+            months=months, from_date=from_date or "", to_date=to_date or ""))
 
     def get_profit_vs_distance(self, limit: int = 100):
         return self._api.get_analytics_route_profit_vs_distance(limit=limit)
@@ -131,16 +158,16 @@ class RemoteAnalyticsService:
     def get_revenue_quarterly(self, quarters: int = 8,
                               from_date: Optional[str] = None,
                               to_date: Optional[str] = None):
-        return self._api.get_analytics_financial_quarterly(
-            quarters=quarters, from_date=from_date or "", to_date=to_date or "")
+        return self._as_rows(self._api.get_analytics_financial_quarterly(
+            quarters=quarters, from_date=from_date or "", to_date=to_date or ""))
 
     def get_invoice_aging(self):
         return self._api.get_analytics_financial_invoice_aging()
 
     def get_client_payment_timeline(self, from_date: Optional[str] = None,
                                     to_date: Optional[str] = None):
-        return self._api.get_analytics_revenue_by_client(
-            from_date=from_date or "", to_date=to_date or "")
+        return self._as_rows(self._api.get_analytics_revenue_by_client(
+            from_date=from_date or "", to_date=to_date or ""))
 
     def get_driver_monthly_activity(self, months: int = 12,
                                     from_date: Optional[str] = None,
@@ -152,6 +179,15 @@ class RemoteAnalyticsService:
                               to_date: Optional[str] = None):
         return self._api.get_analytics_driver_comparison(
             from_date=from_date or "", to_date=to_date or "")
+
+    def get_otd_percentage(self, from_date: Optional[str] = None,
+                           to_date: Optional[str] = None):
+        """On-time-delivery percentage for the fleet analytics tab.
+
+        There is no dedicated OTD endpoint yet, so this degrades gracefully
+        to ``0.0`` instead of crashing the tab in remote mode.
+        """
+        return 0.0
 
     def invalidate(self):
         self._api.invalidate_analytics_cache()

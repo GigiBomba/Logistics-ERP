@@ -3,7 +3,10 @@
 The ``Auth`` class stores access tokens in memory and provides
 convenience properties for role gating in the UI layer.
 """
+from __future__ import annotations
 
+
+import hashlib
 import json
 import logging
 import platform
@@ -116,6 +119,28 @@ class Auth:
     def is_manager(self) -> bool:
         """True if the JWT role is 'admin' or 'manager'."""
         return self.is_admin or self.role == "manager"
+
+    @property
+    def user_id(self) -> int:
+        """Stable per-user integer derived from the JWT ``sub`` (email) claim.
+
+        Phase E (multi-user desktop): per-user pull cursors are keyed by this
+        id.  The access token does not carry a numeric user id — the email
+        is the stable identity — so we derive a deterministic integer from
+        it (consistent across logins and devices for the same account).
+        Returns 0 when not authenticated (single-user fallback namespace).
+
+        NOTE: this is a CLIENT-side convenience for cursor namespacing, not a
+        server credential — the server always resolves the real user id from
+        the token/email lookup.
+        """
+        if not self._token:
+            return 0
+        claims: Dict[str, Any] = _decode_jwt_payload(self._token)
+        email = claims.get("sub", "")
+        if not email:
+            return 0
+        return int(hashlib.sha256(email.lower().encode("utf-8")).hexdigest()[:8], 16)
 
     @property
     def token_expired(self) -> bool:

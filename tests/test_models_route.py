@@ -1,4 +1,6 @@
 """Tests for route_models.py — Route stops, lat/lon bounds, profile enum, required fields."""
+from __future__ import annotations
+
 import pytest
 from pydantic import ValidationError
 from models.route_models import RouteStop, RouteCalculateRequest, RouteResult

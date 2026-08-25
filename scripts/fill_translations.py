@@ -7,6 +7,8 @@ For each language:
   3. Keep existing translated values
   4. Write back preserving structure
 """
+from __future__ import annotations
+
 
 import json
 import os

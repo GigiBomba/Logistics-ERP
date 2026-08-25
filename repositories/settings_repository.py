@@ -1,4 +1,6 @@
 """Settings repository — all app settings DB access."""
+from __future__ import annotations
+
 from typing import Dict, List, Optional
 
 from repositories import BaseRepository

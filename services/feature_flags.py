@@ -1,4 +1,6 @@
 """Feature flags system for gradual rollout and A/B testing."""
+from __future__ import annotations
+
 import logging
 from typing import Optional, Any
 from dataclasses import dataclass, field

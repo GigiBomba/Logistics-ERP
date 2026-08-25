@@ -11,6 +11,8 @@ Test matrix:
   5. No secret values hardcoded in config files
   6. Rate limit default is reasonable (not too high, not too low)
 """
+from __future__ import annotations
+
 
 import os
 import pytest

@@ -13,6 +13,8 @@ Tests cover:
 
 Blueprint: §9.1 — Tracking, Level 0.
 """
+from __future__ import annotations
+
 
 import asyncio
 from datetime import datetime

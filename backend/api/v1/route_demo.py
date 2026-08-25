@@ -1,4 +1,6 @@
 """Public route demo endpoint — no auth required."""
+from __future__ import annotations
+
 import math
 from typing import Any, Dict
 

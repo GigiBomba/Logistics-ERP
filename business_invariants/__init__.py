@@ -7,6 +7,8 @@ and autonomous bug fixes can never silently break the business logic of Operion 
 This is NOT a test suite. It defines the fundamental truths of the business
 that must always remain valid, regardless of implementation details.
 """
+from __future__ import annotations
+
 
 from business_invariants.models import (
     ExecutionFrequency,

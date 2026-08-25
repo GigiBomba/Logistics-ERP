@@ -1,4 +1,6 @@
 """Integration tests for RouteRepository: CRUD, upsert, search, edge cases."""
+from __future__ import annotations
+
 import unittest
 from datetime import datetime
 

@@ -18,6 +18,8 @@ Test matrix:
  11.  JWT missing sub and role claims rejected
  12.  Token passed via query string instead of header rejected
 """
+from __future__ import annotations
+
 
 import base64
 import json

@@ -1,4 +1,6 @@
 """Tests for FleetService — covers both typed (Pydantic) and deprecated dict-returning methods."""
+from __future__ import annotations
+
 
 from datetime import date, datetime
 from unittest.mock import ANY, MagicMock, patch

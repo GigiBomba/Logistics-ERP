@@ -4,6 +4,8 @@ These tables are scoped to ``user_id``, not ``company_id``, so the
 ``_company_filter`` pattern does not apply.
 # read-only
 """
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -76,32 +78,5 @@ class MobileMessageRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET is_read = 1 WHERE id = ?",
             (message_id,),
-            commit=True,
-        )
-
-
-class SyncCursorRepository(BaseRepository):
-    TABLE = "sync_cursors"
-    COLUMNS = ["user_id", "entity_type", "last_sync_at"]
-
-    def get_or_create(self, user_id: int, entity_type: str) -> str:
-        row = self._fetchone(
-            f"SELECT last_sync_at FROM {self.TABLE} WHERE user_id = ? AND entity_type = ?",
-            (user_id, entity_type),
-        )
-        if row:
-            return row["last_sync_at"]
-        now = datetime.utcnow().isoformat()
-        self._execute(
-            f"INSERT INTO {self.TABLE} (user_id, entity_type, last_sync_at) VALUES (?, ?, ?)",
-            (user_id, entity_type, now),
-            commit=True,
-        )
-        return now
-
-    def update(self, user_id: int, entity_type: str, last_sync_at: str) -> None:
-        self._execute(
-            "INSERT OR REPLACE INTO sync_cursors (user_id, entity_type, last_sync_at) VALUES (?, ?, ?)",
-            (user_id, entity_type, last_sync_at),
             commit=True,
         )

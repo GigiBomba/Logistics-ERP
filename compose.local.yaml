@@ -22,4 +22,8 @@ services:
       - ./.env:/app/.env:ro
     environment:
       - OPERION_ENV=development
+      # Run the OperationsEngine workers server-side (remote-mode parity):
+      # the desktop starts no ops engine in remote mode, so the API process
+      # runs OperationsEngine(db, prefs).start() against its own database.
+      - OPERION_RUN_OPS_ENGINE=1
     restart: unless-stopped

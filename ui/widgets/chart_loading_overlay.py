@@ -37,7 +37,9 @@ from PySide6.QtWidgets import (
 from services.i18n import t as _t
 from ui.design_tokens import (
     BORDER_DEFAULT,
+    COLOR_ACCENT_PRIMARY,
     FONT_FAMILY,
+    FONT_SIZE_3XL,
     TEXT_PRIMARY,
     TEXT_SECONDARY,
 )
@@ -96,13 +98,13 @@ class ChartLoadingOverlay(QFrame):
         self._spinner = QLabel("\u21bb")
         self._spinner.setObjectName("chart-loading-spinner")
         self._spinner.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        spinner_font = QFont(FONT_FAMILY, 28)
+        spinner_font = QFont(FONT_FAMILY, FONT_SIZE_3XL)
         if spinner_font.pointSize() <= 0:
-            spinner_font.setPointSize(28)
+            spinner_font.setPointSize(FONT_SIZE_3XL)
         spinner_font.setBold(True)
         self._spinner.setFont(spinner_font)
         self._spinner.setStyleSheet(
-            "color: #6366f1; background: transparent;"
+            f"color: {COLOR_ACCENT_PRIMARY}; background: transparent;"
             " border: none;"
         )
         outer.addWidget(self._spinner, 0, Qt.AlignmentFlag.AlignCenter)

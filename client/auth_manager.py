@@ -14,6 +14,8 @@ Usage::
         # admin tab can be injected
         ...
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Optional
@@ -25,6 +27,29 @@ logger = logging.getLogger(__name__)
 
 _auth_instance: Optional[Auth] = None
 
+# Phase F: callbacks invoked whenever the auth state changes (login / logout /
+# boot hydration).  The desktop app is local-first with a per-user sync
+# engine; the engine's user must track the logged-in user (see main.setup_sync).
+_auth_changed_callbacks: list = []
+
+
+def on_auth_changed(callback) -> None:
+    """Register a callback invoked after every auth state change.
+
+    The callback receives the current ``Auth`` instance (or ``None`` after a
+    logout / cleared session).  Used by the sync wiring in ``main.setup_sync``
+    to keep the engine's per-user cursor namespace in lockstep with login.
+    """
+    _auth_changed_callbacks.append(callback)
+
+
+def _notify_auth_changed() -> None:
+    for cb in list(_auth_changed_callbacks):
+        try:
+            cb(_auth_instance)
+        except Exception:
+            logger.exception("auth-changed callback %r failed", cb)
+
 
 def get_auth() -> Optional[Auth]:
     """Return the global ``Auth`` singleton (or ``None`` if not logged in)."""
@@ -33,17 +58,19 @@ def get_auth() -> Optional[Auth]:
 
 
 def set_auth(auth: Auth) -> None:
-    """Set the global ``Auth`` singleton."""
+    """Set the global ``Auth`` singleton (login)."""
     global _auth_instance
     _auth_instance = auth
+    _notify_auth_changed()
 
 
 def clear_auth() -> None:
-    """Clear the global ``Auth`` singleton and any stored token."""
+    """Clear the global ``Auth`` singleton and any stored token (logout)."""
     global _auth_instance
     if _auth_instance is not None:
         _auth_instance.clear_token()
     _auth_instance = None
+    _notify_auth_changed()
 
 
 def get_role() -> str:
@@ -96,11 +123,13 @@ def hydrate_from_storage() -> bool:
             auth.clear_token()
             auth._clear_stored_tokens()
             _auth_instance = None
+            _notify_auth_changed()
             return False
         _auth_instance = auth
         logger.info(
             "Auto-login: restored session from persistent storage."
         )
+        _notify_auth_changed()
         return True
     if auth.is_authenticated:
         logger.info(
@@ -108,6 +137,7 @@ def hydrate_from_storage() -> bool:
         )
         auth._clear_stored_tokens()
         _auth_instance = None
+        _notify_auth_changed()
     return False
 
 

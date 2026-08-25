@@ -11,6 +11,8 @@ Database tables required (created by ``_ensure_mobile_tables``):
   - mobile_messages — driver ↔ dispatcher chat messages
   - sync_cursors    — per-user, per-entity sync cursors
 """
+from __future__ import annotations
+
 
 import logging
 import os

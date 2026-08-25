@@ -70,7 +70,7 @@ class QtMaintenanceControlPanel(QWidget):
 
     REFRESH_INTERVAL_MS = 60_000
 
-    def __init__(self, parent=None, db=None, prefs=None, ops=None, dialog_mode=False, api_client=None):
+    def __init__(self, parent=None, db=None, prefs=None, ops=None, dialog_mode=False, api_client=None, control_service=None, maintenance_service=None):
         super().__init__(parent)
         self._dialog_mode = dialog_mode
         self.db = db
@@ -84,7 +84,17 @@ class QtMaintenanceControlPanel(QWidget):
         self._i18n_tags: list = []
 
         # ViewModel (shared data source)
-        self._vm = MaintenanceViewModel(self, db=db, ops=self.ops) if db is not None else None
+        if db is not None:
+            self._vm = MaintenanceViewModel(self, db=db, ops=self.ops)
+        elif control_service is not None or maintenance_service is not None:
+            # Remote mode — VM degrades gracefully via the injected services.
+            self._vm = MaintenanceViewModel(
+                self, db=None, ops=self.ops,
+                control_service=control_service,
+                maintenance_service=maintenance_service,
+            )
+        else:
+            self._vm = None
 
         # ── KPI widgets ────────────────────────────────────────────
         self._kpi_widgets: dict[str, QFrame] = {}
@@ -95,6 +105,10 @@ class QtMaintenanceControlPanel(QWidget):
         self._shimmer_timer = QTimer(self)
         self._shimmer_timer.setInterval(800)
         self._shimmer_on = False
+        # Tracks whether _tick_shimmer is connected so _stop_shimmer can
+        # disconnect idempotently (PySide6 emits RuntimeWarning when
+        # disconnecting a signal that is not connected).
+        self._shimmer_connected = False
 
         # ── Filter state ───────────────────────────────────────────
         self._cb_critical: QCheckBox | None = None
@@ -352,13 +366,16 @@ class QtMaintenanceControlPanel(QWidget):
 
     def _start_shimmer(self) -> None:
         self._shimmer_on = False
-        self._shimmer_timer.timeout.connect(self._tick_shimmer)
+        if not self._shimmer_connected:
+            self._shimmer_timer.timeout.connect(self._tick_shimmer)
+            self._shimmer_connected = True
         self._shimmer_timer.start()
 
     def _stop_shimmer(self) -> None:
         self._shimmer_timer.stop()
-        with contextlib.suppress(Exception):
+        if self._shimmer_connected:
             self._shimmer_timer.timeout.disconnect(self._tick_shimmer)
+            self._shimmer_connected = False
         for lbl in self._kpi_value_labels.values():
             lbl.setStyleSheet("")
 

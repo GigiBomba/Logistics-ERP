@@ -229,5 +229,5 @@ class TestQtClientActivityTimelineLifecycle:
     def test_destroy_calls_cleanup_and_delete(self, qt_widget, qtbot, mock_service):
         widget = QtClientActivityTimeline(qt_widget, service=mock_service, client_id=1)
         qtbot.addWidget(widget)
-        widget.destroy()
+        widget._destroy()
         assert widget.service is None

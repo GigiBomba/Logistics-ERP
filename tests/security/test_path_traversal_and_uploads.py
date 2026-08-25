@@ -18,6 +18,8 @@ Fixtures from conftest:
     client      — FastAPI TestClient bound to the test app.
     auth_admin  — Authorization header dict for admin user.
 """
+from __future__ import annotations
+
 
 import io
 import os

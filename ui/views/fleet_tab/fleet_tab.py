@@ -147,8 +147,11 @@ class QtFleetTab(BaseView):
 
         # ── Mode guard ───────────────────────────────────────────────────────
         self._mode = detect_mode(db, api_client)
-        guard_local_access(self._mode, "Fleet tab")
-        if self._mode == ConnectionMode.REMOTE:
+        # Conditional guard: remote mode is only blocked when no fleet service
+        # was injected.  With a ``RemoteFleetService`` the view is remote-
+        # capable; without one it falls back to the "not available" placeholder.
+        if self._mode == ConnectionMode.REMOTE and self.service is None:
+            guard_local_access(self._mode, "Fleet tab")
             layout = QVBoxLayout(self)
             layout.setAlignment(Qt.AlignCenter)
             msg = QLabel(
@@ -562,12 +565,25 @@ class QtFleetTab(BaseView):
             )
 
     def _fetch_data(self) -> dict:
-        """Background: fetch trucks + batch driver names."""
-        rows = self.service.get_trucks()
+        """Background: fetch trucks + batch driver names.
+
+        API errors (e.g. the remote backend returning 422/500) must not
+        propagate into the ``WorkerPool`` — log a warning and fall back to
+        the empty state instead.
+        """
+        try:
+            rows = self.service.get_trucks()
+        except Exception as exc:
+            logger.warning("FleetTab: failed to load trucks — showing empty state: %s", exc)
+            return {"rows": [], "driver_map": {}}
         truck_ids = [r["id"] for r in rows]
         driver_map = {}
         if self._dta_service and truck_ids:
-            driver_map = self._dta_service.get_driver_names_for_trucks(truck_ids)
+            try:
+                driver_map = self._dta_service.get_driver_names_for_trucks(truck_ids)
+            except Exception as exc:
+                logger.warning("FleetTab: failed to load driver names — continuing with empty map: %s", exc)
+                driver_map = {}
         return {"rows": rows, "driver_map": driver_map}
 
     def _on_data_loaded(self, data: dict) -> None:
@@ -1655,7 +1671,23 @@ class QtFleetTab(BaseView):
 
         from ui.views.document_center_view import open_entity_documents
 
-        truck = self.service._fleet_repo.get_by_id(truck_id)
+        # Resolve the truck via the service's public API — the raw
+        # ``_fleet_repo`` is local-only and does not exist on
+        # RemoteFleetService (remote mode).
+        truck = None
+        getter = getattr(self.service, "get_truck", None) or getattr(self.service, "get_by_id", None)
+        if getter is not None:
+            try:
+                truck = getter(truck_id)
+            except Exception:
+                truck = None
+        else:
+            repo = getattr(self.service, "_fleet_repo", None)
+            if repo is not None:
+                try:
+                    truck = repo.get_by_id(truck_id)
+                except Exception:
+                    truck = None
         plate = (
             truck.get("plate_number", "Unknown") if truck else "Unknown"
         )

@@ -34,6 +34,7 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
+    COLOR_ACCENT_SUBTLE,
     COLOR_BG_ELEVATED,
     COLOR_BG_HOVER,
     COLOR_BG_OVERLAY,
@@ -49,6 +50,7 @@ from ui.design_tokens import (
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
     COLOR_WARNING_SUBTLE,
+    RADIUS_SM,
     SP,
 )
 
@@ -81,9 +83,9 @@ class QtTripCard(QFrame):
     LEFT_ACCENT_WIDTH = 4
 
     STATUS_COLORS = {
-        "Planned": COLOR_NEUTRAL_SUBTLE,
+        "Planned": COLOR_ACCENT_SUBTLE,
         "Loading": COLOR_WARNING_SUBTLE,
-        "In Transit": COLOR_INFO_DEFAULT,
+        "In Transit": COLOR_WARNING_SUBTLE,
         "Delivered": COLOR_SUCCESS_SUBTLE,
         "Cancelled": COLOR_NEUTRAL_SUBTLE,
     }
@@ -105,8 +107,8 @@ class QtTripCard(QFrame):
         trip_data: dict[str, Any] | None = None,
         on_click: Callable[[dict[str, Any]], None] | None = None,
         on_drag_start: Callable[[QWidget, QMouseEvent], None] | None = None,
-        on_assign_truck: Callable[[QWidget], None] | None = None,
-        on_assign_driver: Callable[[QWidget], None] | None = None,
+        on_assign_truck: Callable[..., None] | None = None,
+        on_assign_driver: Callable[..., None] | None = None,
         on_select_changed: Callable[[QWidget, bool], None] | None = None,
         on_assign_both: Callable[[QWidget], None] | None = None,
         on_status_change: Callable[[QWidget, str], None] | None = None,
@@ -215,7 +217,7 @@ class QtTripCard(QFrame):
         # Delayed chip (hidden by default)
         self._delayed_chip = QFrame()
         self._delayed_chip.setStyleSheet(
-            f"background-color: {self.DELAYED_COLOR}; border-radius: 3px;"
+            f"background-color: {self.DELAYED_COLOR}; border-radius: {RADIUS_SM}px;"
         )
         delayed_chip_layout = QHBoxLayout(self._delayed_chip)
         delayed_chip_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
@@ -232,7 +234,7 @@ class QtTripCard(QFrame):
         # Status chip
         self._chip_frame = QFrame()
         self._chip_frame.setStyleSheet(
-            f"background-color: {accent_color}; border-radius: 3px;"
+            f"background-color: {accent_color}; border-radius: {RADIUS_SM}px;"
         )
         chip_frame_layout = QHBoxLayout(self._chip_frame)
         chip_frame_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
@@ -263,7 +265,7 @@ class QtTripCard(QFrame):
             btn.setCursor(Qt.PointingHandCursor)
             btn.setStyleSheet(
                 "QPushButton {"
-                "  border: none; border-radius: 3px; font-size: 10px;"
+                f"  border: none; border-radius: {RADIUS_SM}px; font-size: 10px;"
                 f"  color: {COLOR_TEXT_TERTIARY}; background: transparent;"
                 "}"
                 "QPushButton:hover {"
@@ -303,7 +305,7 @@ class QtTripCard(QFrame):
         self._btn_docs.setCursor(Qt.PointingHandCursor)
         self._btn_docs.setStyleSheet(
             "QPushButton {"
-            "  border: none; border-radius: 3px;"
+            f"  border: none; border-radius: {RADIUS_SM}px;"
             f"  color: {COLOR_TEXT_TERTIARY}; background: transparent;"
             "}"
             "QPushButton:hover {"
@@ -447,7 +449,7 @@ class QtTripCard(QFrame):
         if alerts_count and alerts_count > 0:
             self._alert_frame = QFrame()
             self._alert_frame.setStyleSheet(
-                f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: 3px;"
+                f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: {RADIUS_SM}px;"
             )
             alert_layout = QHBoxLayout(self._alert_frame)
             alert_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
@@ -703,7 +705,7 @@ class QtTripCard(QFrame):
         if count > 0:
             self._alert_frame = QFrame()
             self._alert_frame.setStyleSheet(
-                f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: 3px;"
+                f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: {RADIUS_SM}px;"
             )
             alert_layout = QHBoxLayout(self._alert_frame)
             alert_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
@@ -745,7 +747,7 @@ class QtTripCard(QFrame):
             f"background-color: {COLOR_ERROR_DEFAULT};"
             f"color: {COLOR_TEXT_PRIMARY};"
             f"padding: 2px 6px;"
-            f"border-radius: 3px;"
+            f"border-radius: {RADIUS_SM}px;"
         )
         self._error_lbl.setWordWrap(True)
 
@@ -777,7 +779,7 @@ class QtTripCard(QFrame):
             f"background-color: {accent_color}; border: none; border-radius: 0px;"
         )
         self._chip_frame.setStyleSheet(
-            f"background-color: {accent_color}; border-radius: 3px;"
+            f"background-color: {accent_color}; border-radius: {RADIUS_SM}px;"
         )
         translation_key = self.STATUS_TRANSLATION_KEYS.get(status)
         self._chip_lbl.setText(
@@ -844,8 +846,8 @@ class QtTripCard(QFrame):
         menu.setStyleSheet(
             f"background-color: {COLOR_BG_ELEVATED};"
             f"color: {COLOR_TEXT_PRIMARY};"
-            "border: 1px solid " + COLOR_BORDER_SUBTLE + ";"
-            "border-radius: 4px;"
+            f"border: 1px solid {COLOR_BORDER_SUBTLE};"
+            f"border-radius: {RADIUS_SM}px;"
         )
 
         act_invoice = QAction(qta.icon("fa5s.file-invoice-dollar"), t("dispatch_board.generate_invoice", default="Generate Invoice"), self)

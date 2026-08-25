@@ -1186,7 +1186,7 @@ def make_heatmap_chart(
     y_labels: list[str],
     data: list[list[float]],
     title: str = "",
-    color_map: str = "YlOrRd",
+    color_map: str = "YlOrRd",  # named data-viz colorscale — chart-palette exemption (audit item 4)
     empty_message: str = "",
     show_title: bool = True,
 ) -> go.Figure:
@@ -1224,7 +1224,7 @@ def make_heatmap_chart(
                         xref="x",
                         yref="y",
                         showarrow=False,
-                        font={"color": TEXT_PRIMARY, "size": 7, "family": FONT_FAMILY},
+                        font={"color": TEXT_PRIMARY, "size": 7, "family": FONT_FAMILY},  # dense cell annotation — chart-context size exemption
                     )
                 )
 

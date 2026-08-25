@@ -5,6 +5,8 @@ orchestrating EXISTING engines.  Computes nothing itself that already
 has a home elsewhere in Operion.  Zero provider-specific logic — every
 adapter's load is evaluated identically.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 from typing import Optional

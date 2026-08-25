@@ -10,6 +10,8 @@ Strategy: Cross-language learning from high-coverage languages.
 
 Usage: python scripts/translate_remaining.py
 """
+from __future__ import annotations
+
 
 import json
 import os
@@ -111,7 +113,7 @@ def unflatten(flat_items):
 def is_untranslatable(val):
     if not isinstance(val, str) or not val:
         return True
-    if re.match(r'^[\\d\\.,\\s%\\u20ac\$\\u00a3\\u00b1\\-—=\\'\"\\u2032\\u2033]+\$', val):
+    if re.match(r'^[\\d\\.,\\s%\\u20ac\$\\u00a3\\u00b1\\-—=\\x27\x22\\u2032\\u2033]+\$', val):
         return True
     if val.startswith(('SELECT ', 'SELECT *', 'DROP ', 'INSERT ', 'UPDATE ', 'DELETE ')):
         return True
@@ -200,7 +202,7 @@ def word_level_fallback(english_text, word_dict):
                 words = part.split()
                 twords = []
                 for w in words:
-                    clean_w = w.strip('.,:;!?()[]\\'\"')
+                    clean_w = w.strip('.,:;!?()[]\'\"')
                     punct_before = w[:len(w)-len(clean_w)]
                     punct_after = w[len(clean_w):]
                     if clean_w in word_dict:

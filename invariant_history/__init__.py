@@ -7,6 +7,8 @@ stability scoring, regression detection, and release comparison.
 
 Requires the `business_invariants` package.
 """
+from __future__ import annotations
+
 
 from invariant_history.models import (
     ExecutionTrigger,

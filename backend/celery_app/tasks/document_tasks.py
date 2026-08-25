@@ -1,4 +1,6 @@
 """Celery tasks for document generation — PDF, email packages."""
+from __future__ import annotations
+
 import logging
 import os
 import tempfile

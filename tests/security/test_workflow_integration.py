@@ -4,6 +4,8 @@ Tests multi-step business processes that span several API endpoints
 (clients, trips, invoices, drivers, trucks, CMR, receipts, exports).
 Uses shared fixtures and helpers from ``tests/security/conftest.py``.
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

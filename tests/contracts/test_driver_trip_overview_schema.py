@@ -13,6 +13,8 @@ contract (``mobile/lib/features/driver/models/driver_trip_overview.dart``):
 Uses the repo's standard TestClient + ``create_app`` convention with
 dependency overrides (see ``tests/freight_exchange/test_api_contract.py``).
 """
+from __future__ import annotations
+
 
 from datetime import datetime, timezone
 from typing import Any, Dict

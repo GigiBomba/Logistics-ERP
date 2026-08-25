@@ -200,7 +200,14 @@ class RouteHistoryService:
         )
 
     def delete_route(self, route_id: int) -> bool:
-        """Delete one route history record by id."""
+        """Delete one route history record by id.
+
+        NOTE: this stays a HARD delete on purpose — ``route_history_v2`` is
+        EXCLUDED from the offline-first sync v1 scope (see
+        ``backend/api/v1/sync.py`` ``SUPPORTED_ENTITY_TYPES``), so there is no
+        server-side delete to propagate.  If route history is added to sync in
+        a later phase, this must become a soft-delete (``deleted_at``).
+        """
         self._route_repo.delete(route_id)
         return True
 
@@ -509,11 +516,22 @@ class RouteHistoryService:
         return {"pruned_routes": pruned, "orphan_events": orphan_events}
 
     def build_fingerprint(self, record: RouteHistoryRecord) -> str:
-        """Build a stable duplicate-prevention key for route identity."""
+        """Build a stable duplicate-prevention key for route identity.
+
+        S1 (multi-device): ``truck_id`` is a PER-DEVICE local identifier
+        (a local truck DB id or a device-specific assignment string) —
+        hashing it would give two devices DIFFERENT fingerprints for the same
+        truck-bound route and defeat natural-key sync convergence.  Use the
+        human-readable truck label when the record carries one, and drop the
+        truck component entirely otherwise (derived data — sync is best-effort
+        convergence; the truck association is carried by the row's own
+        truck_id / truck_label columns, not the fingerprint).
+        """
+        truck_label = (record.truck_label or "").strip().upper() or None
         key = {
             "stops": self._fingerprint_stops(record.stops),
             "profile": record.profile,
-            "truck_id": record.truck_id,
+            "truck_label": truck_label,
             "excluded_countries": sorted([c.upper() for c in record.excluded_countries]),
             "metadata_version": record.metadata_version,
         }

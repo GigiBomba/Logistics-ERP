@@ -7,6 +7,8 @@ Optimized for:
 - Proper error handling
 - Nominatim usage policy compliance
 """
+from __future__ import annotations
+
 
 import time
 from threading import Lock

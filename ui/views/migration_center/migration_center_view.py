@@ -23,11 +23,14 @@ logger = logging.getLogger(__name__)
 class QtMigrationCenterView(QWidget):
     """Migration Center — import/export hub with three tabs."""
 
-    def __init__(self, parent, db=None, prefs=None, ops=None):
+    def __init__(self, parent, db=None, prefs=None, ops=None, migration_service=None):
         super().__init__(parent)
         self.db = db
         self.prefs = prefs
         self.ops = ops
+        # In remote (API-only) mode an API-backed service is injected and the
+        # tabs use it instead of the DB-backed local services.
+        self.migration_service = migration_service
 
         self._build_ui()
         self._i18n_id = register_listener(self._on_language_changed)
@@ -40,7 +43,9 @@ class QtMigrationCenterView(QWidget):
             from ui.views.migration_center.immigrate_software_tab import (
                 ImmigrateSoftwareTab,
             )
-            self._tab_software_cache = ImmigrateSoftwareTab(self._tabs, db=self.db)
+            self._tab_software_cache = ImmigrateSoftwareTab(
+                self._tabs, db=self.db, migration_service=self.migration_service,
+            )
         return self._tab_software_cache
 
     @property
@@ -49,14 +54,18 @@ class QtMigrationCenterView(QWidget):
             from ui.views.migration_center.immigrate_physical_tab import (
                 ImmigratePhysicalTab,
             )
-            self._tab_physical_cache = ImmigratePhysicalTab(self._tabs, db=self.db)
+            self._tab_physical_cache = ImmigratePhysicalTab(
+                self._tabs, db=self.db, migration_service=self.migration_service,
+            )
         return self._tab_physical_cache
 
     @property
     def _tab_emigrate(self):
         if not hasattr(self, '_tab_emigrate_cache'):
             from ui.views.migration_center.emigrate_tab import EmigrateTab
-            self._tab_emigrate_cache = EmigrateTab(self._tabs, db=self.db)
+            self._tab_emigrate_cache = EmigrateTab(
+                self._tabs, db=self.db, migration_service=self.migration_service,
+            )
         return self._tab_emigrate_cache
 
     def _tab_with_desc(self, tab_widget: QWidget, desc_text: str) -> QWidget:

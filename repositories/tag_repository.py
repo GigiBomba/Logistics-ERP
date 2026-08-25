@@ -1,4 +1,6 @@
 """Tag repository — CRUD for client_tags table."""
+from __future__ import annotations
+
 import logging
 from typing import Any, Dict, List
 

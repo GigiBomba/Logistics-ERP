@@ -6,6 +6,8 @@ Verifies that:
 3. Email with different casing still resolves as admin
 4. Email with whitespace still resolves as admin
 """
+from __future__ import annotations
+
 
 import os
 import pytest

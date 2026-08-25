@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # Operion AI Co-Pilot — Natural-language interface to Operion ERP business logic.
 #
 # The Co-Pilot plans, validates, executes through existing services/repositories,

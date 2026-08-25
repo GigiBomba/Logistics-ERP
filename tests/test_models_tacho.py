@@ -1,5 +1,7 @@
 """Tests for tacho_models.py — TachoImportRequest, DriverActivity, VehicleActivity,
 TachoImportResult, DriverHoursAnalysis, FleetTachoSummary, and result alias types."""
+from __future__ import annotations
+
 import pytest
 from datetime import date, datetime
 from pydantic import ValidationError

@@ -5,6 +5,8 @@ individual queries rather than the generic ``_company_filter`` helper
 (because some methods are cross-tenant system operations).
 # read-only
 """
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from repositories import BaseRepository

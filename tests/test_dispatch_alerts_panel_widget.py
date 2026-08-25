@@ -691,7 +691,7 @@ class TestQtDispatchAlertsPanelDestroy:
     """destroy() should clear all references."""
 
     def test_destroy_clears_references(self, alerts_panel):
-        alerts_panel.destroy()
+        alerts_panel._destroy()
         assert alerts_panel._db is None
         assert alerts_panel._ops is None
         assert alerts_panel._on_assign_truck is None

@@ -56,7 +56,7 @@ class FakeMapWidget(QWidget):
     def _run_js(self, js: str) -> None:
         pass
 
-    def destroy(self):
+    def _destroy(self):
         self.deleteLater()
 
 
@@ -90,7 +90,7 @@ def real_map_widget(qt_widget, qtbot, monkeypatch):
         widget = MapWidget(qt_widget)
         qtbot.addWidget(widget)
         yield widget
-        widget.destroy()
+        widget._destroy()
     except Exception:
         pytest.skip("QWebEngineView not available (use software rendering flags)")
 

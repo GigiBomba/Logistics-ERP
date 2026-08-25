@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Add remaining missing translations to _el_translations.json"""
+from __future__ import annotations
+
 import json
 import os
 

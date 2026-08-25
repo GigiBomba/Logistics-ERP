@@ -6,6 +6,8 @@ Usage:
     py scripts/migrate_dates.py --rollback      # reverse migration
     py scripts/migrate_dates.py --validate      # check all dates are ISO
 """
+from __future__ import annotations
+
 
 import argparse
 import os

@@ -13,7 +13,7 @@ def sidebar(qt_main_window, qtbot):
     )
     qtbot.addWidget(sidebar)
     yield sidebar
-    sidebar.destroy()
+    sidebar._destroy()
 
 class TestSidebar:
     def test_creation(self, sidebar):
@@ -55,5 +55,5 @@ class TestSidebar:
 
     def test_destroy_cleans_up(self, sidebar):
         sidebar.add_item("test", "Test")
-        sidebar.destroy()
+        sidebar._destroy()
         assert len(sidebar._items) == 0

@@ -11,6 +11,8 @@ The test DB is seeded with:
     - Company A (id=1): clients 1-2, drivers 1-2, trucks 1-2, trips 1-2
     - Company B (id=2): clients 3-4, drivers 3-4, trucks 3-4, trips 3-4
 """
+from __future__ import annotations
+
 
 import time
 import json

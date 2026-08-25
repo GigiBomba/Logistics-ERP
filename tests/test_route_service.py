@@ -1,4 +1,6 @@
 """Unit tests for RouteService — cache, geocode, validation."""
+from __future__ import annotations
+
 import json
 import unittest
 from unittest import mock

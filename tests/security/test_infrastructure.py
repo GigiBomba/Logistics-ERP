@@ -3,6 +3,8 @@
 CORS, Server header leakage, disabled docs in production, exception
 handler registration, and rate-limiter middleware presence.
 """
+from __future__ import annotations
+
 
 import importlib
 import os

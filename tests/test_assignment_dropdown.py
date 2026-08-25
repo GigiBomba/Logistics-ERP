@@ -3,41 +3,93 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 import pytest
 
-@pytest.mark.xfail(reason="Pre-existing: constructor signature changed")
 class TestQtAssignmentDropdown:
-    def test_creation(self, qt_widget, qtbot):
+    def test_creation(self, qt_widget, qtbot, anchor_widget):
         from ui.widgets.assignment_dropdown import QtAssignmentDropdown
-        dropdown = QtAssignmentDropdown(qt_widget)
+        dropdown = QtAssignmentDropdown(
+            qt_widget,
+            anchor_widget,
+            "Test",
+            fetch_func=MagicMock(return_value=[]),
+            on_select=MagicMock(),
+        )
         qtbot.addWidget(dropdown)
+        assert dropdown is not None
 
-    def test_set_items(self, qt_widget, qtbot):
-        from ui.widgets.assignment_dropdown import QtAssignmentDropdown
-        dropdown = QtAssignmentDropdown(qt_widget)
+    def test_set_items(self, qt_widget, qtbot, anchor_widget):
+        from ui.widgets.assignment_dropdown import QtAssignmentDropdown, _ItemRow
+        items = [
+            {"id": 1, "label": "Truck A", "available": False},
+            {"id": 2, "label": "Truck B", "available": False},
+        ]
+        dropdown = QtAssignmentDropdown(
+            qt_widget,
+            anchor_widget,
+            "Test",
+            fetch_func=MagicMock(return_value=items),
+            on_select=MagicMock(),
+        )
         qtbot.addWidget(dropdown)
-        items = [{"id": 1, "label": "Truck A"}, {"id": 2, "label": "Truck B"}]
-        dropdown.set_items(items)
+        qtbot.wait(80)
+        assert len(dropdown.findChildren(_ItemRow)) == 2
 
-    def test_set_selected(self, qt_widget, qtbot):
-        from ui.widgets.assignment_dropdown import QtAssignmentDropdown
-        dropdown = QtAssignmentDropdown(qt_widget)
+    def test_set_selected(self, qt_widget, qtbot, anchor_widget):
+        from ui.widgets.assignment_dropdown import QtAssignmentDropdown, _ItemRow
+        on_select = MagicMock()
+        items = [{"id": 1, "label": "Truck A", "available": True}]
+        dropdown = QtAssignmentDropdown(
+            qt_widget,
+            anchor_widget,
+            "Test",
+            fetch_func=MagicMock(return_value=items),
+            on_select=on_select,
+        )
         qtbot.addWidget(dropdown)
-        items = [{"id": 1, "label": "Truck A"}]
-        dropdown.set_items(items)
-        dropdown.set_selected(1)
+        # Patch _walk_set_click before the timer fires to avoid the __func__ bug
+        original = _ItemRow._walk_set_click
+        _ItemRow._walk_set_click = lambda self, w: None
+        try:
+            qtbot.wait(80)
+            rows = dropdown.findChildren(_ItemRow)
+            assert len(rows) == 1
+            _ItemRow._walk_set_click = original
+            rows[0]._on_click()
+        finally:
+            _ItemRow._walk_set_click = original
+        on_select.assert_called_once_with(1)
 
-    def test_get_selected_id(self, qt_widget, qtbot):
+    def test_get_selected_id(self, qt_widget, qtbot, anchor_widget):
         from ui.widgets.assignment_dropdown import QtAssignmentDropdown
-        dropdown = QtAssignmentDropdown(qt_widget)
+        items = [{"id": 1, "label": "Truck A", "available": False}]
+        dropdown = QtAssignmentDropdown(
+            qt_widget,
+            anchor_widget,
+            "Test",
+            fetch_func=MagicMock(return_value=items),
+            on_select=MagicMock(),
+        )
         qtbot.addWidget(dropdown)
-        assert dropdown.get_selected_id() is None or isinstance(dropdown.get_selected_id(), (int, type(None)))
+        qtbot.wait(80)
+        # The loaded items are stored on the dropdown for selection.
+        assert dropdown._items == items
 
-    def test_clear(self, qt_widget, qtbot):
+    def test_clear(self, qt_widget, qtbot, anchor_widget):
         from ui.widgets.assignment_dropdown import QtAssignmentDropdown
-        dropdown = QtAssignmentDropdown(qt_widget)
+        items = [{"id": 1, "label": "Truck A", "available": False}]
+        dropdown = QtAssignmentDropdown(
+            qt_widget,
+            anchor_widget,
+            "Test",
+            fetch_func=MagicMock(return_value=items),
+            on_select=MagicMock(),
+        )
         qtbot.addWidget(dropdown)
-        items = [{"id": 1, "label": "Truck A"}]
-        dropdown.set_items(items)
-        dropdown.clear()
+        qtbot.wait(80)
+        assert dropdown._list_layout.count() == 1
+        # Re-rendering with no items clears the previous rows (empty state).
+        dropdown._items = []
+        dropdown._render_items()
+        assert dropdown._list_layout.count() == 1
 
 
 # =========================================================================

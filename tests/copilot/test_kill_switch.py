@@ -5,6 +5,8 @@ Blueprint: §26 — Emergency Kill Switch.
 Phase 0: Test the contract/schema, since the actual kill switch mechanism
 is a stub until Phase 1 router creation.
 """
+from __future__ import annotations
+
 
 import pytest
 

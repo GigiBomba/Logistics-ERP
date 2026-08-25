@@ -1,4 +1,6 @@
 """Integration health check endpoints."""
+from __future__ import annotations
+
 import logging
 from typing import Dict, Any
 from fastapi import APIRouter, Depends

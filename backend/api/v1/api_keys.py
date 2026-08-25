@@ -3,6 +3,8 @@
 All routes require the caller to be authenticated as an admin user.
 See ``backend.dependencies_security.require_admin``.
 """
+from __future__ import annotations
+
 
 import logging
 from typing import Optional

@@ -23,6 +23,8 @@ Usage::
     export OPERION_API_KEY=my-secret-key-123
     python -m uvicorn backend.main:app
 """
+from __future__ import annotations
+
 
 import hmac
 import json

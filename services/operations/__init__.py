@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from services.operations.alert_manager import AlertManager
 from services.operations.event_bus import EventBus
 from services.operations.maintenance_engine import MaintenanceEngine

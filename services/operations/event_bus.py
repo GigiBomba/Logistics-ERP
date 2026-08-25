@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 import threading
 import uuid
@@ -51,6 +53,8 @@ TOUR_REPLAY_REQUESTED = "tour.replay_requested"
 ALERT_CREATED = "alert.created"
 ALERT_RESOLVED = "alert.resolved"
 
+SYNC_COMPLETED = "sync.completed"
+
 DOCUMENT_UPLOADED = "document.uploaded"
 DOCUMENT_ARCHIVED = "document.archived"
 DOCUMENT_DELETED = "document.deleted"
@@ -94,6 +98,7 @@ ALL_EVENTS = [
     CLIENT_CREATED, CLIENT_UPDATED, CLIENT_DELETED,
     TRIP_CONFLICT, SETTINGS_UPDATED,
     ALERT_CREATED, ALERT_RESOLVED,
+    SYNC_COMPLETED,
     DAILY_CHECK, SYSTEM_STARTUP,
     DOCUMENT_UPLOADED, DOCUMENT_ARCHIVED, DOCUMENT_DELETED,
     DOCUMENT_LINKED, DOCUMENT_UNLINKED,

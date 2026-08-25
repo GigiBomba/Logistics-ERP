@@ -5,6 +5,8 @@ the body once and caches it on ``request.state.webhook_raw_body`` so that
 the webhook receiver can access it for signature verification without
 consuming the stream.
 """
+from __future__ import annotations
+
 import logging
 
 from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint

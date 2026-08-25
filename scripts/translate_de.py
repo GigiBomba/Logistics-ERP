@@ -1,5 +1,7 @@
 ﻿#!/usr/bin/env python3
 """Translate English placeholder values in de.json to German."""
+from __future__ import annotations
+
 import json, os, sys
 
 TRANS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "translations")

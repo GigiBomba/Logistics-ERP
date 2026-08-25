@@ -10,6 +10,8 @@ Strategy: Cross-language learning from high-coverage languages.
 
 Usage: python scripts/translate_remaining.py
 """
+from __future__ import annotations
+
 
 import json
 import os

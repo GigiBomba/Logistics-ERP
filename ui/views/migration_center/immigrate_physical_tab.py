@@ -69,12 +69,19 @@ class ImmigratePhysicalTab(QWidget):
 
     processing_complete = Signal(dict)
 
-    def __init__(self, parent, db=None):
+    def __init__(self, parent, db=None, migration_service=None):
         super().__init__(parent)
         self.db = db
-        self._archive_svc = (
-            PhysicalArchiveService(db) if (db and PhysicalArchiveService) else None
-        )
+        # Remote mode injects an API-backed service; local mode builds the
+        # DB-backed PhysicalArchiveService (unchanged behaviour).
+        if migration_service is not None:
+            self._archive_svc = migration_service
+        else:
+            self._archive_svc = (
+                PhysicalArchiveService(db)
+                if (db and PhysicalArchiveService)
+                else None
+            )
 
         # State
         self._selected_files: list[str] = []
@@ -562,10 +569,35 @@ class ImmigratePhysicalTab(QWidget):
             return
 
         try:
-            self._archive_svc.confirm_document(doc_id, corrections or {})
-            logger.info("Document %s confirmed and saved", doc_id)
+            result = self._archive_svc.confirm_document(doc_id, corrections or {})
+            # Local services return a bool; the remote service returns the
+            # updated per-document record.
+            confirmed = result is True or (
+                isinstance(result, dict) and bool(result.get("confirmed"))
+            )
+            if confirmed:
+                self._progress_status.setText(
+                    t("migration.physical_confirmed", "Document confirmed")
+                )
+                logger.info("Document %s confirmed and saved", doc_id)
+            else:
+                self._progress_status.setText(
+                    t(
+                        "migration.physical_confirm_failed",
+                        "Confirmation failed",
+                    )
+                )
+                logger.warning(
+                    "Document %s confirmation returned a failure", doc_id
+                )
         except Exception as exc:
             logger.exception("Failed to confirm document %s", doc_id)
+            self._progress_status.setText(
+                t(
+                    "migration.physical_confirm_error",
+                    "Confirmation failed: {error}",
+                ).format(error=str(exc))
+            )
 
         self._review_card.setVisible(False)
 

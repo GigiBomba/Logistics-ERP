@@ -37,7 +37,7 @@ def kanban_column(qt_widget, qtbot):
     column.show()
     qtbot.addWidget(column)
     yield column
-    column.destroy()
+    column._destroy()
 
 
 @pytest.fixture
@@ -106,7 +106,7 @@ class TestInit:
         column.show()
         qtbot.addWidget(column)
         assert column._load_older_widget is None
-        column.destroy()
+        column._destroy()
 
     def test_status_color_fallback(self, qt_widget, qtbot):
         from ui.widgets.kanban_column import QtKanbanColumn
@@ -119,7 +119,7 @@ class TestInit:
         column.show()
         qtbot.addWidget(column)
         assert column.accent_color is not None  # Falls back to chip_planned
-        column.destroy()
+        column._destroy()
 
 
 # =========================================================================
@@ -497,7 +497,7 @@ class TestDestroy:
     """Cleanup nullifies callbacks and schedules deletion."""
 
     def test_destroy_clears_callbacks(self, kanban_column):
-        kanban_column.destroy()
+        kanban_column._destroy()
         assert kanban_column._on_card_click is None
         assert kanban_column._on_drag_start is None
         assert kanban_column._on_assign_truck is None
@@ -509,7 +509,7 @@ class TestDestroy:
 
     def test_destroy_clears_cards(self, kanban_column):
         kanban_column.set_trips([{"trip_id_num": 1}])
-        kanban_column.destroy()
+        kanban_column._destroy()
         # After destroy, _cards should be empty
         assert len(kanban_column._cards) == 0
 
@@ -534,7 +534,7 @@ class TestCallbacksNone:
         column.show()
         qtbot.addWidget(column)
         column._handle_retry()  # must not crash
-        column.destroy()
+        column._destroy()
 
     def test_load_older_without_callback(self, qt_widget, qtbot):
         from ui.widgets.kanban_column import QtKanbanColumn
@@ -549,7 +549,7 @@ class TestCallbacksNone:
         column.show()
         qtbot.addWidget(column)
         column._handle_load_older()  # must not crash
-        column.destroy()
+        column._destroy()
 
     def test_set_trips_with_no_callbacks(self, qt_widget, qtbot):
         from ui.widgets.kanban_column import QtKanbanColumn
@@ -563,7 +563,7 @@ class TestCallbacksNone:
         qtbot.addWidget(column)
         column.set_trips([{"trip_id_num": 1, "client": "NoCB"}])
         assert len(column._cards) == 1
-        column.destroy()
+        column._destroy()
 
 
 # =========================================================================

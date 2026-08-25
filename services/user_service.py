@@ -1,7 +1,11 @@
 """User service — business logic for user management."""
+from __future__ import annotations
+
 from typing import Any, Dict, List
 
-from backend.security import hash_password
+# Phase F: the packaged desktop build ships no ``backend`` package — the
+# Team view (local-first) hashes passwords here via the shared module.
+from utils.security import hash_password
 from repositories.user_repository import UserRepository
 
 

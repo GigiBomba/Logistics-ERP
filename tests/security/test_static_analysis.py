@@ -4,6 +4,8 @@ These tests parse source files in ``backend/``, ``repositories/``, and
 ``services/`` looking for hardcoded secrets, unsafe calls, and weak
 cryptographic practices.
 """
+from __future__ import annotations
+
 
 import ast
 import os

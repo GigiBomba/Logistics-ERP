@@ -1,4 +1,6 @@
 """Driver/Truck service — business logic for driver management and truck assignment."""
+from __future__ import annotations
+
 import logging
 import warnings
 from datetime import timedelta

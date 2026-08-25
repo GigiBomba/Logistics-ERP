@@ -4,6 +4,8 @@ Verify that secret files are gitignored, not tracked, that
 constant-time comparison is used, and that the ``jose`` JWT
 library is not imported anywhere in source.
 """
+from __future__ import annotations
+
 
 import os
 import subprocess

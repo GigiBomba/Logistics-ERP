@@ -9,6 +9,8 @@ Test matrix:
   3. Multiple refresh cycles all succeed and return new tokens
   4. Manually expired access token is rejected
 """
+from __future__ import annotations
+
 
 import time
 import jwt as pyjwt

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from fastapi import APIRouter
 
 from backend.api.v1 import (
@@ -9,6 +11,7 @@ from backend.api.v1 import (
     clients,
     cmr,
     copilot_router,
+    dispatch,
     documents,
     drivers,
     feature_flags,
@@ -19,6 +22,7 @@ from backend.api.v1 import (
     invoices,
     maintenance,
     metrics,
+    migration,
     mobile,
     oauth2,
     ocr,
@@ -31,6 +35,7 @@ from backend.api.v1 import (
     settings,
     slo,
     support,
+    sync,
     tacho,
     trips,
     users,
@@ -47,6 +52,7 @@ api_v1_router.include_router(documents.router)
 api_v1_router.include_router(ocr.router)
 api_v1_router.include_router(organizations.router)
 api_v1_router.include_router(trips.router)
+api_v1_router.include_router(dispatch.router)
 api_v1_router.include_router(clients.router)
 api_v1_router.include_router(drivers.router)
 api_v1_router.include_router(fleet.router)
@@ -55,6 +61,7 @@ api_v1_router.include_router(routes.router)
 api_v1_router.include_router(analytics.router)
 api_v1_router.include_router(maintenance.router)
 api_v1_router.include_router(metrics.router)
+api_v1_router.include_router(migration.router)
 api_v1_router.include_router(alerts.router)
 api_v1_router.include_router(settings.router)
 api_v1_router.include_router(tacho.router)
@@ -71,6 +78,7 @@ api_v1_router.include_router(feature_flags.router)
 api_v1_router.include_router(gdpr.router)
 api_v1_router.include_router(slo.router)
 api_v1_router.include_router(support.router)
+api_v1_router.include_router(sync.router)
 api_v1_router.include_router(webhooks.router)
 api_v1_router.include_router(waitlist.router)
 api_v1_router.include_router(mobile.router)

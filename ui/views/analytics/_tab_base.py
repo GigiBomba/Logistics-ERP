@@ -227,6 +227,19 @@ class _SparklineLabel(QLabel):
         self._pending_tag = None
         if pixmap is None or pixmap.isNull():
             return
+        # The render manager delivers raw SVG bytes (QByteArray); rasterize to
+        # a QPixmap on the GUI thread before any pixmap-only method is called.
+        from PySide6.QtCore import QByteArray
+        from PySide6.QtGui import QPainter, QPixmap
+        from PySide6.QtSvg import QSvgRenderer
+        if isinstance(pixmap, QByteArray):
+            renderer = QSvgRenderer(pixmap)
+            pm = QPixmap(renderer.defaultSize())
+            pm.fill(Qt.GlobalColor.transparent)
+            painter = QPainter(pm)
+            renderer.render(painter)
+            painter.end()
+            pixmap = pm
         scaled = pixmap.scaled(
             self._target_w, self._target_h,
             Qt.AspectRatioMode.KeepAspectRatio,

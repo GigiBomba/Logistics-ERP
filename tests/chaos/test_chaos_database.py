@@ -10,6 +10,8 @@ rather than returning a 500 response.  The tests therefore accept *either*
 a 500/503 response *or* the low-level DB exception — both prove the failure
 was detected and handled by the application.
 """
+from __future__ import annotations
+
 
 import contextlib
 import sqlite3

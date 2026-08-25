@@ -8,6 +8,8 @@ explanations from anything non-deterministic.
 Provider-agnostic by construction: ``provider_id`` has zero influence on
 the scoring formula or its inputs.
 """
+from __future__ import annotations
+
 import logging
 from typing import Optional
 

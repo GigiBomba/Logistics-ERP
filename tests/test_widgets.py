@@ -50,8 +50,8 @@ class TestActionButton:
         assert btn.property("variant") == "success"
 
     def test_color_to_variant_mapping(self, qt_widget, qtbot):
-        from ui.theme import COLORS
-        btn = ActionButton(qt_widget, "Delete", color=COLORS["danger"])
+        from ui.design_tokens import COLOR_ERROR_DEFAULT
+        btn = ActionButton(qt_widget, "Delete", color=COLOR_ERROR_DEFAULT)
         qtbot.addWidget(btn)
         assert btn.property("variant") == "danger"
 

@@ -3,6 +3,8 @@
 Tests at the contract level: job existence, importability, correct signatures,
 and behavior with mocked dependencies.
 """
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest

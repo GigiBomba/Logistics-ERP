@@ -295,21 +295,21 @@ class ScrollableFormContainer(QScrollArea):
         self.content.setMaximumWidth(max_width)
         self.content.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Expanding)
 
-        self.layout = QVBoxLayout(self.content)
-        self.layout.setContentsMargins(SP["10"], SP["6"], SP["10"], SP["10"])
-        self.layout.setSpacing(SP["6"])
-        self.layout.setAlignment(Qt.AlignTop)
+        self._content_layout = QVBoxLayout(self.content)
+        self._content_layout.setContentsMargins(SP["10"], SP["6"], SP["10"], SP["10"])
+        self._content_layout.setSpacing(SP["6"])
+        self._content_layout.setAlignment(Qt.AlignTop)
 
         self.setWidget(self.content)
 
     def add_widget(self, widget: QWidget, stretch: int = 0) -> None:
-        self.layout.addWidget(widget, stretch)
+        self._content_layout.addWidget(widget, stretch)
 
     def add_layout(self, layout, stretch: int = 0) -> None:
-        self.layout.addLayout(layout, stretch)
+        self._content_layout.addLayout(layout, stretch)
 
     def add_stretch(self, stretch: int = 1) -> None:
-        self.layout.addStretch(stretch)
+        self._content_layout.addStretch(stretch)
 
 
 class TwoColRow(QWidget):

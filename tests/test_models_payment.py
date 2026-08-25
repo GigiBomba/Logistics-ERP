@@ -1,4 +1,6 @@
 """Tests for payment_models.py — Payment create, batch grouping, payment status transitions."""
+from __future__ import annotations
+
 import pytest
 from datetime import datetime
 from pydantic import ValidationError

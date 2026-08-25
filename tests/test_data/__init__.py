@@ -1,4 +1,6 @@
 """Test data factory helpers for creating model instances with sensible defaults."""
+from __future__ import annotations
+
 
 from .factories import (
     make_trip,

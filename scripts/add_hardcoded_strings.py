@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Add all hardcoded UI strings from the codebase to en.json as i18n keys."""
+from __future__ import annotations
+
 
 import json
 import os

@@ -501,6 +501,14 @@ async def compile_execution_plan(
     for entity in intent.entities:
         params[entity.type] = entity.value
 
+    # Seed free-text params (e.g. ``question`` on help.answer_question) from
+    # the raw utterance.  Entity-less text intents otherwise reach execution
+    # with an empty ``parameters`` dict and fail pydantic validation, dumping
+    # a raw validation error into the UI instead of answering.
+    model_fields = getattr(tool.parameters_schema, "model_fields", {})
+    if "question" in model_fields and "question" not in params:
+        params["question"] = intent.raw_utterance
+
     # For Phase 1: single-step plan
     step = ExecutionStep(
         step_id=f"{intent.name}-0",

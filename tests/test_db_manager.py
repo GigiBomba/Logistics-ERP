@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import sqlite3
 import tempfile
 import warnings
@@ -393,3 +394,61 @@ class TestUniqueLists:
         trucks, drivers = db.get_unique_lists()
         assert trucks == []
         assert drivers == []
+
+
+# ── Offline-first sync (Phase 0): updated_at stamping invariants ─────────────
+
+
+class TestUpdatedAtStamping:
+    """Boot-time assertions for the sync layer's updated_at invariants.
+
+    Every syncable table must have BOTH an AFTER UPDATE and an AFTER INSERT
+    trigger, and a fresh INSERT must stamp updated_at (non-NULL, canonical
+    ``YYYY-MM-DDTHH:MM:SSZ`` format) — LWW and delta-pull depend on it.
+    """
+
+    _CANONICAL = r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z"
+
+    def test_trigger_count_matches_syncable_tables(self, db):
+        from database.schema import SYNCABLE_TABLES
+
+        rows = db.conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='trigger' "
+            "AND (name LIKE 'trg_%_updated_at' OR name LIKE 'trg_%_insert_updated_at')"
+        ).fetchall()
+        assert len(rows) == 2 * len(SYNCABLE_TABLES), (
+            f"expected {2 * len(SYNCABLE_TABLES)} updated_at triggers, got {len(rows)}"
+        )
+
+    def test_insert_stamps_updated_at(self, db):
+        db.conn.execute(
+            "INSERT INTO trips (truck_number, created_at) "
+            "VALUES ('TRK-STAMP-1', '2026-08-17T00:00:00Z')"
+        )
+        db.conn.commit()
+        row = db.conn.execute(
+            "SELECT updated_at FROM trips WHERE truck_number = 'TRK-STAMP-1'"
+        ).fetchone()
+        assert row is not None and row[0] is not None, "updated_at must be stamped on INSERT"
+        assert re.fullmatch(self._CANONICAL, row[0]), f"non-canonical updated_at: {row[0]!r}"
+
+    def test_update_restamps_updated_at(self, db):
+        db.conn.execute(
+            "INSERT INTO trips (truck_number, created_at) "
+            "VALUES ('TRK-STAMP-2', '2026-08-17T00:00:00Z')"
+        )
+        db.conn.commit()
+        db.conn.execute(
+            "UPDATE trips SET status = 'Delivered' WHERE truck_number = 'TRK-STAMP-2'"
+        )
+        db.conn.commit()
+        row = db.conn.execute(
+            "SELECT updated_at FROM trips WHERE truck_number = 'TRK-STAMP-2'"
+        ).fetchone()
+        assert row is not None and row[0] is not None, "updated_at must be re-stamped on UPDATE"
+        assert re.fullmatch(self._CANONICAL, row[0]), f"non-canonical updated_at: {row[0]!r}"
+
+    def test_expenses_table_has_created_and_updated_at(self, db):
+        cols = {r[1] for r in db.conn.execute("PRAGMA table_info(expenses)").fetchall()}
+        assert "created_at" in cols
+        assert "updated_at" in cols

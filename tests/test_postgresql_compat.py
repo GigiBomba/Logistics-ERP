@@ -150,6 +150,10 @@ class TestSchemaCoverage:
         "copilot_audit_log",            # created via Alembic (d4e5f6a7b8c4), not in schema_pg.sql
         "copilot_insights",             # created via Alembic (a7b8c9d0e1f7), not in schema_pg.sql
         "copilot_reasoning_graphs",     # created via Alembic (f6a7b8c9d0e6), not in schema_pg.sql
+        "sync_outbox",                  # desktop-side sync capture layer, not in schema_pg.sql
+        "sync_meta",                    # desktop-side sync key/value store, not in schema_pg.sql
+        "sync_id_map",                  # desktop-side bidirectional id map, not in schema_pg.sql
+        "sync_conflicts",               # desktop-side conflict journal, not in schema_pg.sql
     })
 
     # Tables that exist in schema_pg.sql without a corresponding TABLE_*

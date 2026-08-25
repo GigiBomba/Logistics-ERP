@@ -1,10 +1,13 @@
 """Client repository — all client DB access consolidated here."""
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
 
 class ClientRepository(BaseRepository):
     TABLE = "clients"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "name", "contact_person", "phone", "email", "address", "vat_number",
         "currency_preference", "notes", "is_active", "created_at", "updated_at",
@@ -15,20 +18,20 @@ class ClientRepository(BaseRepository):
 
     def get_by_id(self, client_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             (client_id,) + self._company_params_for(company_id),
         )
 
     def get_client_email_by_name(self, name: str) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT email FROM {self.TABLE} WHERE name = ? AND email IS NOT NULL AND email != '' {self._company_filter()} LIMIT 1",
+            f"SELECT email FROM {self.TABLE} WHERE name = ? AND email IS NOT NULL AND email != '' {self._company_filter()} {self._soft_delete_filter()} LIMIT 1",
             (name,) + self._company_params(),
         )
         return row["email"] if row else None
 
     def get_by_name(self, name: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE name = ? {self._company_filter()}", (name,) + self._company_params()
+            f"SELECT * FROM {self.TABLE} WHERE name = ? {self._company_filter()} {self._soft_delete_filter()}", (name,) + self._company_params()
         )
 
     def search_by_name(self, name: str, fuzzy: bool = True, limit: int = 5) -> List[Dict[str, Any]]:
@@ -42,7 +45,7 @@ class ClientRepository(BaseRepository):
             return []
         # Exact match wins.
         exact = self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND LOWER(TRIM(name)) = LOWER(TRIM(?)) {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND LOWER(TRIM(name)) = LOWER(TRIM(?)) {self._company_filter()} {self._soft_delete_filter()}",
             (name,) + self._company_params(),
         )
         results: List[Dict[str, Any]] = []
@@ -52,7 +55,7 @@ class ClientRepository(BaseRepository):
             like_results = self._fetchall(
                 f"SELECT * FROM {self.TABLE} "
                 "WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' "
-                f"{self._company_filter()} "
+                f"{self._company_filter()} {self._soft_delete_filter()} "
                 "ORDER BY name ASC LIMIT ?",
                 (f"%{self._escape_like(name)}%",) + self._company_params() + (limit,),
             )
@@ -66,7 +69,7 @@ class ClientRepository(BaseRepository):
         if not where:
             where = "WHERE 1=1"
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} {where} {self._company_filter_for(company_id)} ORDER BY name ASC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} {where} {self._company_filter_for(company_id)} {self._soft_delete_filter()} ORDER BY name ASC LIMIT ?",
             self._company_params_for(company_id) + (limit,),
         )
 
@@ -76,7 +79,7 @@ class ClientRepository(BaseRepository):
 
     def search(self, query: str, limit: int = 20) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' {self._company_filter()} ORDER BY name ASC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 AND name LIKE ? ESCAPE '\\' {self._company_filter()} {self._soft_delete_filter()} ORDER BY name ASC LIMIT ?",
             (f"%{self._escape_like(query)}%",) + self._company_params() + (limit,),
         )
 
@@ -109,6 +112,20 @@ class ClientRepository(BaseRepository):
         self._execute(
             f"UPDATE {self.TABLE} SET is_active = 0 WHERE id = ? {self._company_filter()}",
             (client_id,) + self._company_params(),
+            commit=commit,
+        )
+
+    def soft_delete(self, client_id: int, commit: bool = True) -> None:
+        """Deactivate a client AND stamp ``deleted_at`` (unified delete semantics).
+
+        Keeps ``is_active = 0`` (the UI reads it) and adds ``deleted_at`` so
+        the sync layer treats the client as deleted.  ``deactivate()`` alone
+        (used by the UI's deactivate action) does NOT stamp ``deleted_at``.
+        """
+        from database.time_utils import utc_now_iso
+        self._execute(
+            f"UPDATE {self.TABLE} SET is_active = 0, deleted_at = ? WHERE id = ? {self._company_filter()}",
+            (utc_now_iso(), client_id) + self._company_params(),
             commit=commit,
         )
 
@@ -220,7 +237,7 @@ class ClientRepository(BaseRepository):
             # 2. Re-validate target + sources exist (inside the lock) ─────────
             rows = self._fetchall(
                 f"SELECT id FROM {self.TABLE} WHERE id IN ({all_placeholders}) "
-                f"{self._company_filter_for(company_id)}",
+                f"{self._company_filter_for(company_id)} {self._soft_delete_filter()}",
                 params_all,
             )
             found = {r["id"] for r in rows}
@@ -231,13 +248,13 @@ class ClientRepository(BaseRepository):
             # 3. Move trips (and count invoices linked to the moved trips) ────
             trip_rows = self._fetchall(
                 f"SELECT id FROM trips WHERE client_id IN ({src_placeholders}) "
-                f"{self._company_filter_for(company_id)}",
+                f"{self._company_filter_for(company_id)} {self._soft_delete_filter()}",
                 tuple(source_ids) + self._company_params_for(company_id),
             )
             moved_trip_ids = [r["id"] for r in trip_rows]
             moved_trips = self._execute_with_count(
                 f"UPDATE trips SET client_id = ? WHERE client_id IN ({src_placeholders}) "
-                f"{self._company_filter_for(company_id)}",
+                f"{self._company_filter_for(company_id)} {self._soft_delete_filter()}",
                 (target_id,) + tuple(source_ids) + self._company_params_for(company_id),
                 commit=False,
             )
@@ -252,6 +269,7 @@ class ClientRepository(BaseRepository):
                 moved_invoices = 0
 
             # 4. Move contacts ─────────────────────────────────────────────────
+            # NOTE: client_contacts has no deleted_at column — no soft-delete filter.
             moved_contacts = self._execute_with_count(
                 f"UPDATE client_contacts SET client_id = ? WHERE client_id IN ({src_placeholders}) "
                 f"{self._company_filter_for(company_id)}",
@@ -260,6 +278,7 @@ class ClientRepository(BaseRepository):
             )
 
             # 5. Merge tags (deduplicate against the target) ───────────────────
+            # NOTE: client_tags has no deleted_at column — no soft-delete filter.
             tag_rows = self._fetchall(
                 f"SELECT tag FROM client_tags WHERE client_id IN ({src_placeholders}) "
                 f"{self._company_filter_for(company_id)}",
@@ -286,7 +305,7 @@ class ClientRepository(BaseRepository):
             # 6. Delete source client rows ────────────────────────────────────
             self._execute(
                 f"DELETE FROM {self.TABLE} WHERE id IN ({src_placeholders}) "
-                f"{self._company_filter_for(company_id)}",
+                f"{self._company_filter_for(company_id)} {self._soft_delete_filter()}",
                 tuple(source_ids) + self._company_params_for(company_id),
                 commit=False,
             )
@@ -306,7 +325,7 @@ class ClientRepository(BaseRepository):
 
     def get_trip_count(self, client_id: int) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (client_id,) + self._company_params(),
         )
         return row["cnt"] if row else 0
@@ -317,7 +336,7 @@ class ClientRepository(BaseRepository):
                 FROM {self.TABLE} c
                 JOIN trips t ON t.client_id = c.id
                 WHERE t.status NOT IN ('Cancelled')
-                  {self._company_filter("c")}
+                  {self._company_filter("c")} {self._soft_delete_filter("c")}
                 GROUP BY c.id
                 ORDER BY total_revenue DESC
                 LIMIT ?""",
@@ -326,13 +345,13 @@ class ClientRepository(BaseRepository):
 
     def get_trips(self, client_id: int, limit: int = 100, offset: int = 0, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM trips WHERE client_id = ? {self._company_filter_for(company_id)} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM trips WHERE client_id = ? {self._company_filter_for(company_id)} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             (client_id,) + self._company_params_for(company_id) + (limit, offset),
         )
 
     def get_trips_status_counts(self, client_id: int) -> Dict[str, int]:
         rows = self._fetchall(
-            f"SELECT LOWER(status) AS status, COUNT(*) AS cnt FROM trips WHERE client_id = ? {self._company_filter()} GROUP BY LOWER(status)",
+            f"SELECT LOWER(status) AS status, COUNT(*) AS cnt FROM trips WHERE client_id = ? {self._company_filter()} {self._soft_delete_filter()} GROUP BY LOWER(status)",
             (client_id,) + self._company_params(),
         )
         return {r["status"]: r["cnt"] for r in rows}
@@ -346,7 +365,7 @@ class ClientRepository(BaseRepository):
                       COALESCE(SUM(distance_km), 0) AS total_km,
                       COALESCE(MAX(created_at), '') AS last_trip_date
                FROM trips WHERE client_id = ? AND status NOT IN ('Cancelled')
-               {self._company_filter()}""",
+               {self._company_filter()} {self._soft_delete_filter()}""",
             (client_id,) + self._company_params(),
         )
         return row or {}
@@ -360,7 +379,7 @@ class ClientRepository(BaseRepository):
                       COALESCE(SUM(distance_km), 0) AS km
                FROM trips
                WHERE client_id = ? AND status NOT IN ('Cancelled')
-               {self._company_filter()}
+               {self._company_filter()} {self._soft_delete_filter()}
                GROUP BY month
                ORDER BY month DESC
                LIMIT ?""",
@@ -374,7 +393,7 @@ class ClientRepository(BaseRepository):
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
                WHERE t.client_id = ?
-               {self._company_filter("t")}
+               {self._company_filter("t")} {self._soft_delete_filter("t")}
                ORDER BY i.due_date ASC
                LIMIT ?""",
             (client_id,) + self._company_params() + (limit,),
@@ -386,7 +405,7 @@ class ClientRepository(BaseRepository):
                FROM invoices i
                JOIN trips t ON t.id = i.trip_id
                WHERE t.client_id = ? AND i.status = 'Unpaid'
-               {self._company_filter("t")}""",
+               {self._company_filter("t")} {self._soft_delete_filter("t")}""",
             (client_id,) + self._company_params(),
         )
         return float(row["balance"]) if row else 0.0
@@ -399,6 +418,7 @@ class ClientRepository(BaseRepository):
                JOIN trips t ON t.id = i.trip_id
                WHERE t.client_id = ?
                {self._company_filter_for(company_id, "t")}
+               {self._soft_delete_filter("t")} {self._soft_delete_filter("i")}
                ORDER BY i.issue_date DESC
                LIMIT ?""",
             (client_id,) + self._company_params_for(company_id) + (limit,),
@@ -408,7 +428,7 @@ class ClientRepository(BaseRepository):
         from datetime import datetime, timedelta
         since = (datetime.utcnow() - timedelta(days=days)).strftime("%Y-%m-%d")
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? AND start_date >= ? {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM trips WHERE client_id = ? AND start_date >= ? {self._company_filter()} {self._soft_delete_filter()}",
             (client_id, since) + self._company_params(),
         )
         return row["cnt"] if row else 0
@@ -434,7 +454,7 @@ class ClientRepository(BaseRepository):
                   COALESCE(SUM(CASE WHEN LOWER(status) = 'invoiced' THEN 1 ELSE 0 END), 0) AS cnt_invoiced,
                   COALESCE(SUM(CASE WHEN LOWER(status) = 'paid' THEN 1 ELSE 0 END), 0) AS cnt_paid
                 FROM trips
-                WHERE client_id = ? {self._company_filter()}""",
+                WHERE client_id = ? {self._company_filter()} {self._soft_delete_filter()}""",
             (since, client_id) + self._company_params(),
         )
 
@@ -443,7 +463,7 @@ class ClientRepository(BaseRepository):
                 FROM invoices i
                 JOIN trips t ON t.id = i.trip_id
                 WHERE t.client_id = ? AND i.status = 'Unpaid'
-                {self._company_filter("t")}""",
+                {self._company_filter("t")} {self._soft_delete_filter("t")}""",
             (client_id,) + self._company_params(),
         )
 
@@ -477,6 +497,7 @@ class ClientRepository(BaseRepository):
                        OR c.email LIKE ? ESCAPE '\\' OR c.address LIKE ? ESCAPE '\\' OR c.notes LIKE ? ESCAPE '\\')
                       {active_clause}
                       {self._company_filter_for(company_id, "c")}
+                      {self._soft_delete_filter("c")}
                 ORDER BY c.name ASC
                 LIMIT ?""",
             (q, q, q, q, q, q) + self._company_params_for(company_id) + (limit,),
@@ -495,7 +516,7 @@ class ClientRepository(BaseRepository):
                LEFT JOIN trips t ON t.client_id = c.id
                LEFT JOIN invoices i ON i.trip_id = t.id
                {active_clause}
-               {self._company_filter("c")}
+               {self._company_filter("c")} {self._soft_delete_filter("c")}
                GROUP BY c.id
                ORDER BY c.name ASC
                LIMIT ?""",

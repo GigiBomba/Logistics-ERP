@@ -12,6 +12,8 @@ Test matrix:
   4.  Logout then use access token — access token remains valid until expiry
   5.  Logout then use refresh token — refresh token becomes invalid immediately
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

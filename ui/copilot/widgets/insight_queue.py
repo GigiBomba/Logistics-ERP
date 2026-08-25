@@ -219,19 +219,19 @@ class _InsightCard(QFrame):
 
         review_btn = QPushButton(t("insight.action.review", default="Review"), actions)
         review_btn.setProperty("variant", "primary")
-        review_btn.setFixedHeight(26)
+        review_btn.setFixedHeight(24)
         review_btn.clicked.connect(self._on_review)
         actions_layout.addWidget(review_btn)
 
         dismiss_btn = QPushButton(t("insight.action.dismiss", default="Dismiss"), actions)
         dismiss_btn.setProperty("variant", "ghost")
-        dismiss_btn.setFixedHeight(26)
+        dismiss_btn.setFixedHeight(24)
         dismiss_btn.clicked.connect(self._on_dismiss)
         actions_layout.addWidget(dismiss_btn)
 
         remind_btn = QPushButton("\u23F0", actions)
         remind_btn.setFixedWidth(28)
-        remind_btn.setFixedHeight(26)
+        remind_btn.setFixedHeight(24)
         remind_btn.setToolTip(t("insight.action.remind", default="Remind later"))
         remind_btn.clicked.connect(self._on_remind)
         actions_layout.addWidget(remind_btn)

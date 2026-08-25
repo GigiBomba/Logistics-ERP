@@ -6,7 +6,12 @@ from PySide6.QtGui import QEnterEvent
 from PySide6.QtWidgets import QFrame, QGridLayout, QLabel, QSizePolicy, QWidget
 
 from ui.design_tokens import (
+    COLOR_ERROR_DEFAULT,
+    COLOR_INFO_DEFAULT,
+    COLOR_NEUTRAL_DEFAULT,
+    COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_PRIMARY,
+    COLOR_WARNING_DEFAULT,
     FONT_SIZE_SM,
     FONT_SIZE_3XL,
     FONT_WEIGHT_BOLD,
@@ -20,12 +25,12 @@ class StatCard(QFrame):
     """Compact 88px KPI card with label, value, and optional status dot."""
 
     STATUS_COLORS = {
-        "good": "#22C55E",
-        "warning": "#F59E0B",
-        "critical": "#EF4444",
-        "neutral": "#6366F1",
-        "grey": "#6B7280",
-        "blue": "#3B82F6",
+        "good": COLOR_SUCCESS_DEFAULT,
+        "warning": COLOR_WARNING_DEFAULT,
+        "critical": COLOR_ERROR_DEFAULT,
+        "neutral": COLOR_NEUTRAL_DEFAULT,
+        "grey": COLOR_NEUTRAL_DEFAULT,
+        "blue": COLOR_INFO_DEFAULT,
     }
 
     def __init__(
@@ -48,6 +53,7 @@ class StatCard(QFrame):
 
     def _build_ui(self, label: str, value: str, dot_color: str | None) -> None:
         layout = QGridLayout(self)
+        self._grid = layout
         layout.setContentsMargins(SPACE_5, SPACE_4, SPACE_5, SPACE_4)
         layout.setVerticalSpacing(4)
         layout.setHorizontalSpacing(0)
@@ -101,7 +107,7 @@ class StatCard(QFrame):
             if dot is None:
                 dot = QLabel(self)
                 dot.setFixedSize(8, 8)
-                self.layout().addWidget(dot, 0, 1, Qt.AlignRight | Qt.AlignTop)
+                self._grid.addWidget(dot, 0, 1, Qt.AlignRight | Qt.AlignTop)
                 self._dot = dot
             dot.setStyleSheet(f"background: {color}; border-radius: 4px;")
             dot.show()

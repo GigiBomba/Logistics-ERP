@@ -4,6 +4,8 @@ All functions are synchronous and thread-safe.  CPU-bound operations such as
 ``verify_password`` should be wrapped in ``loop.run_in_executor()`` when
 called from async FastAPI handlers (see ``backend/api/v1/auth.py``).
 """
+from __future__ import annotations
+
 
 import logging
 import secrets
@@ -20,22 +22,10 @@ logger = logging.getLogger(__name__)
 
 # ── Password hashing (bcrypt) ─────────────────────────────────────────────────
 
-
-def hash_password(password: str, rounds: Optional[int] = None) -> str:
-    """Return a salted bcrypt hash of *password*.
-
-    This function is used by the **one-time** ``hash_admin_password.py``
-    script and should not be called at runtime from API handlers.
-
-    Note: bcrypt has a 72-byte input limit.  We truncate to 72 bytes to
-    match the behavior of verify_password.
-    """
-    if rounds is None:
-        rounds = BackendSettings().bcrypt_rounds
-    return bcrypt.hashpw(
-        password.encode("utf-8")[:72],
-        bcrypt.gensalt(rounds=rounds),
-    ).decode("utf-8")
+# Phase F: single implementation lives in utils/security.py (the packaged
+# desktop build ships no ``backend`` package but the local-first Team view
+# hashes passwords).  Re-exported here so all server callers stay unchanged.
+from utils.security import hash_password  # noqa: E402
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:

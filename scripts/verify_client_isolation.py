@@ -1,107 +1,201 @@
 #!/usr/bin/env python
-"""Verify that the client-side codebase contains no local database imports.
+"""Verify the production client build is LOCAL-FIRST (Phase F).
 
-Scans ``ui/``, ``client/``, and ``main.py`` for forbidden patterns:
-    * ``import sqlite3``
-    * ``from database`` / ``import database``
-    * ``from repositories`` / ``import repositories``
-    * ``BaseRepository`` instantiation
-    * ``DatabaseManager(`` calls
-    * ``*.db`` path references in config
+The desktop app is no longer a remote-only shell: ``main.py`` boots the
+local SQLite database, the OperationsEngine and the offline-first sync
+stack (``services.sync_engine`` etc.).  The old remote-only
+``main_remote.py`` entry is deprecated.
 
-Exit code 0 → clean (no violations).
-Exit code 1 → violations found.
+This script verifies the build configuration in ``scripts/build_client.py``:
+
+* the production entry point is ``main.py`` (never ``main_remote.py``);
+* the local-first modules (``database``, ``repositories``, ``services``
+  and the sync submodules) are NOT excluded from the PyInstaller bundle;
+* the sync modules exist on disk so PyInstaller's import analysis can
+  collect them;
+* the desktop import closure has NO unguarded top-level import of an
+  excluded module (``backend``, ``celery``, ``redis``, ``psycopg2``,
+  ``asyncpg``, ``matplotlib``, ``scipy``) — a shipped module that imports
+  an excluded module at module level would crash the packaged binary at
+  import time.  Imports inside ``try/except`` (the accepted guarded
+  pattern) or inside functions/classes are allowed.
+
+Exit code 0 → build config is local-first and the import closure is clean.
+Exit code 1 → a local-first module is missing/excluded or an unguarded
+import of an excluded module exists.
 """
+from __future__ import annotations
 
+
+import ast
 import os
-import re
 import sys
-from typing import List, Tuple
 
-FORBIDDEN_IMPORTS = [
-    (r"^\s*import sqlite3", "direct sqlite3 import"),
-    (r"^\s*from database\b", "database module import"),
-    (r"^\s*import database\b", "database module import"),
-    (r"^\s*from repositories\b", "repositories module import"),
-    (r"^\s*import repositories\b", "repositories module import"),
-    (r"\bBaseRepository\b", "BaseRepository reference"),
-    (r"\bDatabaseManager\s*\(", "DatabaseManager instantiation"),
-    (r"\.db\b", "possible .db file path"),
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from scripts.build_client import EXCLUDE_MODULES, PROJECT_ROOT
+
+# Local-first modules that MUST be collectible for the sync feature to work.
+REQUIRED_MODULES = [
+    "database",
+    "database.db_manager",
+    "database.connection_pool",
+    "database.schema",
+    "repositories",
+    "services",
+    "services.sync_engine",
+    "services.sync_outbox_service",
+    "services.sync_pull_service",
+    "services.sync_conflict_service",
+    "services.device_identity",
 ]
 
-SCAN_ROOTS = ["ui", "client", "main.py"]
+# Modules that were excluded by the OLD remote-only build and would break the
+# local-first app if excluded again.
+SYNC_RELATED_EXCLUDES_NEVER_ALLOWED = [
+    "database",
+    "database.db_manager",
+    "database.schema",
+    "repositories",
+    "services",
+    "services.operations",
+    "services.document",
+]
 
-BOOTSTRAP_ALLOWLIST = {
-    "client/cache.py",
-    "client/config.py",
-}
+# Top-level package prefixes that the desktop closure must NEVER import
+# unguarded — they are excluded from the packaged binary (EXCLUDE_MODULES).
+FORBIDDEN_IMPORT_PREFIXES = [
+    "backend",
+    "celery",
+    "redis",
+    "psycopg2",
+    "asyncpg",
+    "matplotlib",
+    "scipy",
+]
+
+# The desktop import closure — everything PyInstaller collects from main.py.
+DESKTOP_CLOSURE_ROOTS = [
+    "main.py",
+    "ui",
+    "client",
+    "services",
+    "utils",
+    "database",
+    "repositories",
+]
 
 
-def _should_skip(path: str, root_dir: str) -> bool:
-    rel = os.path.relpath(path, root_dir).replace("\\", "/")
-    if rel in BOOTSTRAP_ALLOWLIST:
+def _module_exists(module: str) -> bool:
+    """True if the importable module/package exists on disk under PROJECT_ROOT.
+
+    Handles regular packages (``__init__.py``), plain modules (``.py``) and
+    namespace packages (a directory without ``__init__.py`` — e.g. the
+    ``database`` package in this repo).
+    """
+    rel = module.replace(".", os.sep)
+    candidates = [
+        PROJECT_ROOT / f"{rel}.py",
+        PROJECT_ROOT / rel / "__init__.py",
+    ]
+    if any(c.is_file() for c in candidates):
         return True
-    if "__pycache__" in path:
-        return True
-    return bool(path.endswith("__init__.py"))
+    d = PROJECT_ROOT / rel
+    if d.is_dir():
+        return any(p.suffix == ".py" for p in d.iterdir())
+    return False
 
 
-def _collect_python_files(roots: List[str], base_dir: str) -> List[str]:
-    collected: List[str] = []
-    for root in roots:
-        full = os.path.join(base_dir, root)
-        if os.path.isfile(full) and full.endswith(".py"):
-            collected.append(full)
-        elif os.path.isdir(full):
+def _closure_py_files() -> list:
+    """Return every .py file in the desktop closure (sorted, deduped)."""
+    files = []
+    for root in DESKTOP_CLOSURE_ROOTS:
+        full = PROJECT_ROOT / root
+        if full.is_file() and full.suffix == ".py":
+            files.append(str(full))
+        elif full.is_dir():
             for dirpath, _dirnames, filenames in os.walk(full):
+                if "__pycache__" in dirpath:
+                    continue
                 for fn in filenames:
                     if fn.endswith(".py"):
-                        collected.append(os.path.join(dirpath, fn))
-    return sorted(collected)
+                        files.append(os.path.join(dirpath, fn))
+    return sorted(set(files))
 
 
-def scan_file(filepath: str, base_dir: str) -> List[Tuple[int, str, str]]:
-    if _should_skip(filepath, base_dir):
-        return []
-    violations: List[Tuple[int, str, str]] = []
-    try:
-        with open(filepath, encoding="utf-8", errors="ignore") as fh:
-            lines = fh.readlines()
-    except Exception:
-        return []
-    for idx, line in enumerate(lines, 1):
-        stripped = line.rstrip("\n")
-        if stripped.strip().startswith("#"):
+def _is_forbidden(module: str) -> bool:
+    """True if *module* (or its top-level package) is excluded from the build."""
+    top = (module or "").split(".")[0]
+    return top in FORBIDDEN_IMPORT_PREFIXES
+
+
+def scan_import_closure() -> list:
+    """Return [(rel_path, lineno, code)] for every UNGUARDED top-level import
+    of an excluded module in the desktop closure.
+
+    Only direct module-body ``import``/``from ... import`` statements count —
+    imports inside ``try/except`` (the accepted guarded pattern), functions,
+    classes or ``if`` blocks are skipped.
+    """
+    violations = []
+    for fp in _closure_py_files():
+        try:
+            with open(fp, encoding="utf-8", errors="ignore") as fh:
+                tree = ast.parse(fh.read())
+        except (OSError, SyntaxError):
             continue
-        for pattern, label in FORBIDDEN_IMPORTS:
-            if re.search(pattern, stripped):
-                violations.append((idx, label, stripped.strip()[:120]))
-                break
+        for node in tree.body:
+            if not isinstance(node, (ast.Import, ast.ImportFrom)):
+                continue
+            if isinstance(node, ast.Import):
+                modules = [a.name for a in node.names]
+            else:
+                modules = [node.module] if node.module else []
+            if any(_is_forbidden(m) for m in modules):
+                rel = os.path.relpath(fp, str(PROJECT_ROOT)).replace("\\", "/")
+                violations.append((rel, node.lineno, ast.unparse(node)))
     return violations
 
 
 def main() -> int:
-    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    remote_mode = "--remote" in sys.argv
-    roots = ["main_remote.py", "client"] if remote_mode else SCAN_ROOTS
-    files = _collect_python_files(roots, base_dir)
-    print(f"Scanning {len(files)} files in {', '.join(SCAN_ROOTS)}...")
-    total_violations = 0
-    for fp in files:
-        violations = scan_file(fp, base_dir)
-        if violations:
-            total_violations += len(violations)
-            rel = os.path.relpath(fp, base_dir)
-            print(f"\n  {rel} — {len(violations)} violation(s):")
-            for lineno, label, snippet in violations:
-                print(f"    L{lineno:4d} [{label}] {snippet}")
-    print()
-    if total_violations == 0:
-        print("PASS: Zero database/repository imports found in client code.")
-        return 0
-    else:
-        print(f"FAIL: {total_violations} violation(s) found.")
+    failures = []
+
+    # 1. Entry point: the production build must target main.py.
+    main_py = PROJECT_ROOT / "main.py"
+    main_remote_py = PROJECT_ROOT / "main_remote.py"
+    if not main_py.is_file():
+        failures.append("main.py (the local-first entry) does not exist")
+    if main_remote_py.is_file():
+        print("  note: main_remote.py exists but is deprecated — not used as the build entry")
+
+    # 2. Local-first modules must not be excluded from the bundle.
+    for mod in SYNC_RELATED_EXCLUDES_NEVER_ALLOWED:
+        if mod in EXCLUDE_MODULES:
+            failures.append(f"EXCLUDE_MODULES excludes local-first module: {mod}")
+
+    # 3. Sync modules must exist on disk so PyInstaller's import analysis
+    #    can collect them (they are reached from main.py via setup_sync).
+    for mod in REQUIRED_MODULES:
+        if not _module_exists(mod):
+            failures.append(f"sync module missing on disk: {mod}")
+
+    # 4. Import closure: no unguarded top-level import of an excluded module.
+    closure_violations = scan_import_closure()
+    for rel, lineno, code in closure_violations:
+        failures.append(
+            f"unguarded import of excluded module: {rel}:{lineno}: {code}"
+        )
+
+    if failures:
+        print(f"FAIL: {len(failures)} problem(s):")
+        for f in failures:
+            print(f"  - {f}")
         return 1
+    print(
+        "PASS: production build is local-first — entry=main.py, sync stack "
+        "collectible, import closure clean."
+    )
+    return 0
 
 
 if __name__ == "__main__":

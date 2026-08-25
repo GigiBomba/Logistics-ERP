@@ -5,6 +5,8 @@ returns one normalized, merged result set.  A provider that is down or
 lacks a required filter capability is skipped with a logged reason — never
 silently, and never causing a total failure of the search.
 """
+from __future__ import annotations
+
 import asyncio
 import hashlib
 import json

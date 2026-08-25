@@ -21,6 +21,7 @@ from ui.design_tokens import (
     COLOR_WARNING_DEFAULT,
     DANGER,
     FONT_FAMILY,
+    RADIUS_SM,
     SUCCESS,
     TEXT_MUTED,
     TEXT_PRIMARY,
@@ -161,11 +162,11 @@ class FinancialAnalyticsTab(BaseTab):
                 f"QProgressBar {{"
                 f" background: {TEXT_MUTED}22;"
                 f" border: none;"
-                f" border-radius: 3px;"
+                f" border-radius: {RADIUS_SM}px;"
                 f" }}"
                 f"QProgressBar::chunk {{"
                 f" background: {COLOR_ACCENT_PRIMARY};"
-                f" border-radius: 3px;"
+                f" border-radius: {RADIUS_SM}px;"
                 f" }}"
             )
             self._content_layout.addWidget(margin_bar)

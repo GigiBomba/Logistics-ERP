@@ -410,9 +410,16 @@ def auth_b(company_b_token):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def get_db():
-    """Return a DatabaseManager connected to the test DB for direct DB verification."""
+    """Return a DatabaseManager connected to the test DB for direct DB verification.
+
+    Reads the DB path from ``OPERION_DB_PATH`` at call time because the
+    ``app`` fixture overrides it with a unique per-module file.  Using the
+    module-level ``TEST_DB_PATH`` here made DB checks query a different
+    (empty/stale) file, so company_id verifications always skipped.
+    """
     from database.db_manager import DatabaseManager
-    return DatabaseManager(TEST_DB_PATH)
+    path = os.environ.get("OPERION_DB_PATH", TEST_DB_PATH)
+    return DatabaseManager(path)
 
 
 def create_test_trip(client, headers, overrides: dict = None, company_id: int = 1) -> Dict[str, Any]:
@@ -437,7 +444,12 @@ def create_test_trip(client, headers, overrides: dict = None, company_id: int = 
         data["client_id"] = 1  # First client in Company A
     if overrides:
         data.update(overrides)
-    # Remove legacy fields that TripCreateRequest forbids
+    # TripCreateRequest/TripCreate use ``truck_plate``; the DB column that
+    # stores it is still ``truck_number``.  Map the legacy name to the schema
+    # field so the value actually round-trips through create→GET (previously
+    # it was silently dropped and the lifecycle assertion could never pass).
+    if "truck_number" in data and "truck_plate" not in data:
+        data["truck_plate"] = data.pop("truck_number")
     data.pop("truck_number", None)
     try:
         resp = client.post("/api/v1/trips/", json=data, headers=headers)

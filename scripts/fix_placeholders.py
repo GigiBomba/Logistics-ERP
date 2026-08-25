@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Fix remaining placeholder mismatches by aligning en.json with translations."""
+from __future__ import annotations
+
 
 import json
 import os

@@ -10,6 +10,8 @@ GET /press/kit                 — Press kit
 GET /partners                  — List partners
 GET /partners/:id              — Single partner
 """
+from __future__ import annotations
+
 
 from fastapi import APIRouter, HTTPException
 

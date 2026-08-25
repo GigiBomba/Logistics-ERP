@@ -3,6 +3,8 @@
 A fixture conversation's logs and metrics share one conversation_id
 and per-phase timing is recorded and retrievable.
 """
+from __future__ import annotations
+
 
 import time
 from unittest.mock import MagicMock, patch

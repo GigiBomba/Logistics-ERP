@@ -215,9 +215,9 @@ class TestQtDispatchDetailPanelBuild:
 
     def test_button_row_exists(self, detail_panel):
         assert hasattr(detail_panel, "_btn_widget")
-        # setFixedHeight(52) sets both min & max height
-        assert detail_panel._btn_widget.minimumHeight() == 52
-        assert detail_panel._btn_widget.maximumHeight() == 52
+        # setFixedHeight(48) sets both min & max height
+        assert detail_panel._btn_widget.minimumHeight() == 48
+        assert detail_panel._btn_widget.maximumHeight() == 48
         btns = detail_panel._btn_widget.findChildren(QPushButton)
         assert len(btns) >= 2  # Edit + Close
 

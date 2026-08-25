@@ -6,6 +6,8 @@ passes all tests, that test coverage has a gap.
 
 Blueprint: §27 — Test Methodology Reference.
 """
+from __future__ import annotations
+
 
 import ast
 import inspect

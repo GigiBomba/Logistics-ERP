@@ -114,6 +114,7 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
         ops=None,
         tacho_repo=None,
         api_client=None,
+        dispatch_service=None,
         on_navigate: Callable[[str, dict | None], None] | None = None,
     ) -> None:
         super().__init__(parent)
@@ -168,26 +169,31 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
             self._client_service = None
             self._dta_service = None
             self._conflict_service = None
-            self._dispatch_service = None
+            # Remote mode: an injected remote dispatch service takes the
+            # place of the six local services for board data + transitions.
+            self._dispatch_service = dispatch_service
             self._trip_repo = None
             self._fleet_repo = None
             self._driver_repo = None
             self._route_repo = None
 
         # ── Mode guard ───────────────────────────────────────────────────────
+        # Remote mode is only blocked when no remote dispatch service was
+        # injected.  With one, the board is remote-capable.
         self._mode = detect_mode(db, api_client)
-        guard_local_access(self._mode, "Dispatch board")
-        if self._mode == ConnectionMode.REMOTE:
-            layout = QVBoxLayout(self)
-            layout.setAlignment(Qt.AlignCenter)
-            msg = QLabel(
-                "Dispatch board is not available in remote mode.\n"
-                "This feature requires local database access."
-            )
-            msg.setAlignment(Qt.AlignCenter)
-            msg.setWordWrap(True)
-            layout.addWidget(msg)
-            return
+        if not (self._mode == ConnectionMode.REMOTE and dispatch_service is not None):
+            guard_local_access(self._mode, "Dispatch board")
+            if self._mode == ConnectionMode.REMOTE:
+                layout = QVBoxLayout(self)
+                layout.setAlignment(Qt.AlignCenter)
+                msg = QLabel(
+                    "Dispatch board is not available in remote mode.\n"
+                    "This feature requires local database access."
+                )
+                msg.setAlignment(Qt.AlignCenter)
+                msg.setWordWrap(True)
+                layout.addWidget(msg)
+                return
 
         # Caches
         self._driver_cache: dict[int, dict | None] = {}
@@ -236,14 +242,6 @@ class QtDispatchBoardView(BoardStateMixin, BoardActionsMixin, BaseView):
     # ══════════════════════════════════════════════════════════════════════════
 
     def _build_ui(self) -> None:
-        _STATUS_DOT_COLORS = {
-            "Planned": "#6B7280",
-            "Loading": "#F59E0B",
-            "In Transit": "#3B82F6",
-            "Delivered": "#22C55E",
-            "Cancelled": "#6B7280",
-        }
-
         self.setAccessibleName("Dispatch board")
         self.setAccessibleDescription("Kanban dispatch board for trip management")
         layout = QVBoxLayout(self)

@@ -12,6 +12,8 @@ GET    /api/waitlist/admin/export.csv
 GET    /api/waitlist/admin/stats
 POST   /api/waitlist/admin/campaign
 """
+from __future__ import annotations
+
 
 import csv
 import hashlib

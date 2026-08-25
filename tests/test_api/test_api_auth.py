@@ -3,6 +3,8 @@
 Requires ``OPERION_ADMIN_EMAIL`` and ``OPERION_ADMIN_PASSWORD_HASH``
 to be set in the environment.
 """
+from __future__ import annotations
+
 
 import os
 import time

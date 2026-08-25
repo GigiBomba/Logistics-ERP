@@ -4,6 +4,8 @@ All provider-specific adapters (Timocom, Trans.eu, Teleroute, Wtransnet, …)
 inherit from ``FreightProviderAdapter`` and self-register via the
 ``@register_freight_provider`` decorator in ``registry.py``.
 """
+from __future__ import annotations
+
 from abc import ABC, abstractmethod
 from typing import Optional
 

@@ -6,6 +6,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import shutil
 from datetime import datetime
 from typing import Any
@@ -406,8 +407,23 @@ class UploadService:
         return safe
 
     @staticmethod
+    def _sanitize_category(category: str) -> str:
+        """Make a category safe to use as a directory name.
+
+        R2 (security): category arrives via the sync push payload raw (only
+        the /upload endpoint sanitizes it).  Strip path separators and ``..``
+        so a ``"../../.."`` category can never escape ``DOCUMENTS_ROOT``.
+        """
+        if not category:
+            return "other"
+        safe = re.sub(r"[\\/]", "_", str(category))
+        safe = safe.replace("..", "_")
+        safe = safe.strip(" .")
+        return safe or "other"
+
+    @staticmethod
     def _ensure_category_dir(category: str) -> str:
-        d = os.path.join(DOCUMENTS_ROOT, category)
+        d = os.path.join(DOCUMENTS_ROOT, UploadService._sanitize_category(category))
         os.makedirs(d, exist_ok=True)
         return d
 

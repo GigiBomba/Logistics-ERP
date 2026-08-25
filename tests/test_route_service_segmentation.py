@@ -1,4 +1,6 @@
 """Unit tests for route segmentation behavior."""
+from __future__ import annotations
+
 import types
 import unittest
 from unittest import mock

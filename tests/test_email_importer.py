@@ -1,4 +1,6 @@
 """Tests for EmailImporter service."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock, call, patch, PropertyMock
 
 import pytest

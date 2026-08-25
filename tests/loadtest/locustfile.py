@@ -4,6 +4,8 @@ Usage:
     locust --host=http://localhost:8000 --users=10 --spawn-rate=2 --run-time=60s
     locust --headless --host=http://localhost:8000 --users=10 --spawn-rate=2 --run-time=120s --csv=ci-load
 """
+from __future__ import annotations
+
 from locust import HttpUser, between
 
 from tests.loadtest.scenarios.auth_scenarios import AuthTasks

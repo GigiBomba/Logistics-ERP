@@ -5,6 +5,8 @@ Tests cover:
 2. CorrelationMiddleware — X-Request-ID injection and propagation
 3. AuthMiddleware — API key validation and public-path bypass
 """
+from __future__ import annotations
+
 
 import hashlib
 import uuid

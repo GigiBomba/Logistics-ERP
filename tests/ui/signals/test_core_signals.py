@@ -154,7 +154,7 @@ class TestKanbanColumnTripDropped:
         assert spy.count() == 0, "tripDropped should NOT emit for empty MIME data"
 
         # Cleanup to avoid callback references persisting across tests.
-        column.destroy()
+        column._destroy()
 
 
 # =============================================================================

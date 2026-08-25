@@ -2,6 +2,8 @@
 
 Blueprint: §23.7, §6, §18.
 """
+from __future__ import annotations
+
 
 import asyncio
 import time

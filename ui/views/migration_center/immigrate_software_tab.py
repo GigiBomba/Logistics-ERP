@@ -89,16 +89,48 @@ FILE_FILTERS = {
 }
 ALL_FILES_FILTER = "All files (*.*)"
 
+# Real target fields per entity (mirrors ``ImportValidator.FIELD_SCHEMA``) —
+# used to build the column-mapping dropdown so the collected ``columns_map``
+# carries actual database field names the import pipeline can validate/commit.
+ENTITY_TARGET_FIELDS = {
+    "client": [
+        "name", "phone", "email", "address", "vat_number", "country",
+        "currency_preference", "contact_person", "notes", "is_active",
+    ],
+    "driver": [
+        "name", "phone", "email", "license_number", "license_category",
+        "license_expiry", "medical_expiry", "hire_date", "notes", "is_active",
+    ],
+    "truck": [
+        "plate_number", "manufacturer", "model", "year", "vin",
+        "fuel_consumption", "mileage", "monthly_rate", "status",
+    ],
+    "trip": [
+        "truck_number", "driver_name", "client_name", "distance_km",
+        "total_price_eur", "rate_per_km", "start_date", "end_date",
+        "status", "cmr_number",
+    ],
+    "invoice": [
+        "invoice_number", "trip_id", "issue_date", "due_date",
+        "total_amount", "status",
+    ],
+}
+
 
 class ImmigrateSoftwareTab(QWidget):
     """Tab 1: Import data from external software (CSV / Excel / JSON / XML)."""
 
     import_completed = Signal(dict)
 
-    def __init__(self, parent, db=None):
+    def __init__(self, parent, db=None, migration_service=None):
         super().__init__(parent)
         self.db = db
-        self._import_svc = ImportService(db) if (db and ImportService) else None
+        # Remote mode injects an API-backed service; local mode builds the
+        # DB-backed ImportService (unchanged behaviour).
+        if migration_service is not None:
+            self._import_svc = migration_service
+        else:
+            self._import_svc = ImportService(db) if (db and ImportService) else None
 
         # State
         self._selected_file: str | None = None
@@ -391,18 +423,8 @@ class ImmigrateSoftwareTab(QWidget):
             # Target field dropdown
             field_combo = QComboBox()
             field_combo.addItem("")  # Empty = skip
-            # In a real implementation, populate from ImportService.get_target_fields(entity_type)
-            field_combo.addItems([
-                t("migration.field_id", "ID"),
-                t("migration.field_name", "Name"),
-                t("migration.field_plate", "Plate / Code"),
-                t("migration.field_date", "Date"),
-                t("migration.field_amount", "Amount"),
-                t("migration.field_address", "Address"),
-                t("migration.field_phone", "Phone"),
-                t("migration.field_email", "Email"),
-                t("migration.field_notes", "Notes"),
-            ])
+            entity_key = ENTITIES[self._entity_combo.currentIndex()][0]
+            field_combo.addItems(ENTITY_TARGET_FIELDS.get(entity_key, []))
             self._mapping_table.setCellWidget(row_idx, 1, field_combo)
 
             # Sample data (first non-empty preview row)
@@ -434,7 +456,14 @@ class ImmigrateSoftwareTab(QWidget):
 
         try:
             entity_key = ENTITIES[self._entity_combo.currentIndex()][0]
-            preview_result = self._import_svc.preview(self._selected_file, FORMATS[self._fmt_combo.currentIndex()][0], entity_key)
+            # Pass the collected column mapping so the backend validates the
+            # MAPPED rows (preview returns the raw columns on first pass).
+            preview_result = self._import_svc.preview(
+                self._selected_file,
+                FORMATS[self._fmt_combo.currentIndex()][0],
+                entity_key,
+                mapping=mapping,
+            )
             rows = preview_result.get("sample_rows", [])
             results = self._import_svc.validate_all(rows, entity_key)
             self._validation_results = results
@@ -528,6 +557,10 @@ class ImmigrateSoftwareTab(QWidget):
         def do_import():
             try:
                 tracker = MigrationProgressTracker() if MigrationProgressTracker else None
+                if tracker is not None:
+                    # Qt delivers the emission from the worker thread to the
+                    # GUI thread as a queued connection → safe widget access.
+                    tracker.stage_changed.connect(self._on_import_progress)
 
                 def progress_cb(stage, percent, message):
                     if tracker:
@@ -546,6 +579,17 @@ class ImmigrateSoftwareTab(QWidget):
 
         threading.Thread(target=do_import, daemon=True).start()
 
+    def _on_import_progress(self, stage: str, percent: int, message: str = "") -> None:
+        """Update the import progress bar from the service's stage callback.
+
+        Runs on the GUI thread: the ``MigrationProgressTracker`` emits
+        ``stage_changed`` from the worker thread and Qt marshals it here.
+        """
+        try:
+            self._progress_bar.setValue(percent)
+        except Exception:
+            logger.debug("Import progress update failed: stage=%s", stage, exc_info=True)
+
     def _on_import_complete(self, result: dict):
         """Handle the import result on the GUI thread."""
         self._progress_bar.setVisible(False)
@@ -553,11 +597,25 @@ class ImmigrateSoftwareTab(QWidget):
         if result.get("success"):
             stats = result.get("stats", {})
             committed = stats.get("committed", 0)
-            self._status_label.setText(
-                t("migration.import_success", "Successfully imported {count} records.").format(
-                    count=committed
+            # Surface the full result counts — skipped rows (duplicates +
+            # validation failures) and per-row errors — not just committed.
+            skipped = result.get("skipped", stats.get("duplicates_skipped", 0))
+            errors = result.get("errors", []) or []
+            if skipped or errors:
+                self._status_label.setText(
+                    t(
+                        "migration.import_success_detail",
+                        "Successfully imported {count} records "
+                        "({skipped} skipped, {errors} failed).",
+                    ).format(count=committed, skipped=skipped, errors=len(errors))
                 )
-            )
+            else:
+                self._status_label.setText(
+                    t(
+                        "migration.import_success",
+                        "Successfully imported {count} records.",
+                    ).format(count=committed)
+                )
             self._status_label.setStyleSheet(f"color: {SUCCESS_TEXT};")
             # Reset for next import
             self._selected_file = None

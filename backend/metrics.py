@@ -1,4 +1,6 @@
 """Prometheus metrics for the Operion backend."""
+from __future__ import annotations
+
 import time
 import logging
 from typing import Callable

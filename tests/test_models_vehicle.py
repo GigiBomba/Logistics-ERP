@@ -1,4 +1,6 @@
 """Tests for vehicle_models.py — Vehicle create/update, plate validation, fuel type, consumption rate."""
+from __future__ import annotations
+
 import pytest
 from datetime import date, datetime
 from pydantic import ValidationError

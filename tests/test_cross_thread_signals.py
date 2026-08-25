@@ -13,6 +13,8 @@ This file verifies, for each affected view, that:
 2. Emitting a Signal from a non-GUI thread delivers the slot on the
    GUI thread.
 """
+from __future__ import annotations
+
 
 import inspect
 import threading

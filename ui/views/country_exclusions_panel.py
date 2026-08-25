@@ -78,7 +78,7 @@ class CountryExclusionsPanel(QWidget):
         # Header row
         header = QFrame(section)
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(2, 2, 2, 2)
+        header_layout.setContentsMargins(4, 4, 4, 4)
         header_layout.setSpacing(6)
 
         self._toggle_btn = QPushButton("\u25be" if self._expanded else "\u25b8")

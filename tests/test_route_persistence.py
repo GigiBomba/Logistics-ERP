@@ -3,6 +3,8 @@
 Covers record building, truck data extraction via TruckConstraintEngine,
 save orchestration, geometry handling, cost delegation, and edge cases.
 """
+from __future__ import annotations
+
 from unittest.mock import MagicMock, patch
 
 import pytest

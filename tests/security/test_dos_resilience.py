@@ -5,6 +5,8 @@ Uses fixtures from ``tests/security/conftest.py``:
 - ``auth_admin`` — ``{"Authorization": "Bearer <token>"}`` header dict for admin.
 - ``auth_a`` — ``{"Authorization": "Bearer <token>"}`` header dict for Company A dispatcher.
 """
+from __future__ import annotations
+
 
 import pytest
 from concurrent.futures import ThreadPoolExecutor, as_completed

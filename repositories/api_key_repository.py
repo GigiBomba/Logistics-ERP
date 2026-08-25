@@ -4,6 +4,8 @@ Supports key generation (SHA-256 hashed storage), validation with
 usage tracking, revocation, and listing — all scoped to the current
 request's company context.
 """
+from __future__ import annotations
+
 
 import hashlib
 import json

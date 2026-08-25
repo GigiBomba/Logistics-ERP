@@ -13,6 +13,8 @@ Test matrix:
   3. Token claims are consistent — exp in the future = valid, exp in past = invalid
   4. Email normalization — login is case-insensitive
 """
+from __future__ import annotations
+
 
 import random
 import string

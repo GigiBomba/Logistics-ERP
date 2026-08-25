@@ -3,3 +3,5 @@
 Import from here instead of the root ``repositories/`` package so the
 backend can eventually diverge to its own data access implementations.
 """
+from __future__ import annotations
+

@@ -8,6 +8,8 @@ This file is meant to be imported by PySide6 view modules in place of
 ``ui.styles`` once migration begins. The CustomTkinter ``ui/styles.py`` file
 remains untouched so the legacy ``main.py`` continues to work.
 """
+from __future__ import annotations
+
 
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
@@ -79,9 +81,9 @@ class Theme:
     GLOW = COLOR_ACCENT_PRIMARY
 
     # ── Fonts (CSS string form for Qt) ─────────────────────────────────────────
-    # NOTE: These are hardcoded CSS strings because ui.theme.FONTS stores
-    # (family, size, weight) tuples. They should be migrated to derive from
-    # ui.theme.FONTS in a future refactor.
+    # NOTE: These are hardcoded CSS strings because ui.design_tokens.FONT_SIZES
+    # stores sizes (with FONT_WEIGHT_* constants for weights). They should be
+    # migrated to derive from ui.design_tokens in a future refactor.
     FONT_MAIN = "13px 'IBM Plex Sans', 'Segoe UI', sans-serif"
     FONT_BOLD = "bold 13px 'IBM Plex Sans', 'Segoe UI', sans-serif"
     FONT_TITLE = "bold 20px 'IBM Plex Sans', 'Segoe UI', sans-serif"

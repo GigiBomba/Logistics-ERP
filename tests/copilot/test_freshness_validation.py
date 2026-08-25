@@ -3,6 +3,8 @@
 A Level 2+ step re-validates its key facts immediately before executing
 and fails cleanly if they've changed.
 """
+from __future__ import annotations
+
 
 import pytest
 from unittest.mock import MagicMock

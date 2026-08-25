@@ -6,6 +6,8 @@ built from already-translated entries and domain knowledge.
 
 Usage: python scripts/translate_batch2.py
 """
+from __future__ import annotations
+
 
 import json
 import os

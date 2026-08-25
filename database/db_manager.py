@@ -1,10 +1,13 @@
+from __future__ import annotations
+
 import logging
 import os
+import re
 import sqlite3
 import threading
 import warnings
 from contextlib import contextmanager
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, Generator, List, Optional
 
 logger = logging.getLogger(__name__)
@@ -76,6 +79,67 @@ from database.connection_pool import (
     pool_max,
     pool_min,
 )
+
+# ── Phase A (multi-device): sync_server_map device_id migration (PG) ──────
+# The old unique key (company_id, entity_type, local_id) may exist as an
+# inline UNIQUE CONSTRAINT (constraint-named) or as a standalone
+# CREATE UNIQUE INDEX.  Both are discovered and dropped by the DO block
+# below; the standalone-index loop deliberately excludes the PRIMARY KEY
+# backing index (ix.indisprimary) and any constraint-backed index
+# (pg_constraint.conindid = indexrelid) so it never tries to DROP the PK.
+# Each EXECUTE is wrapped in a PL/pgSQL sub-block so one bad drop cannot
+# roll back the rest of the migration.
+_PG_SYNC_SERVER_MAP_DROP_OLD = """
+    DO $$
+    DECLARE obj text;
+    BEGIN
+        FOR obj IN
+            SELECT 'ALTER TABLE sync_server_map DROP CONSTRAINT ' || quote_ident(c.conname)
+            FROM pg_constraint c
+            WHERE c.conrelid = 'sync_server_map'::regclass AND c.contype = 'u'
+              AND NOT EXISTS (
+                  SELECT 1 FROM unnest(c.conkey) AS k(attnum)
+                  JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = k.attnum
+                  WHERE a.attname = 'device_id')
+        LOOP
+            BEGIN
+                EXECUTE obj;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END LOOP;
+        FOR obj IN
+            SELECT 'DROP INDEX ' || quote_ident(i.relname)
+            FROM pg_index ix
+            JOIN pg_class i ON i.oid = ix.indexrelid
+            JOIN pg_class t ON t.oid = ix.indrelid
+            WHERE t.relname = 'sync_server_map' AND ix.indisunique
+              AND ix.indisprimary = FALSE
+              AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid = ix.indexrelid)
+              AND NOT EXISTS (
+                  SELECT 1 FROM unnest(ix.indkey::int2[]) AS k(attnum)
+                  JOIN pg_attribute a ON a.attrelid = ix.indrelid AND a.attnum = k.attnum
+                  WHERE a.attname = 'device_id')
+        LOOP
+            BEGIN
+                EXECUTE obj;
+            EXCEPTION WHEN OTHERS THEN NULL;
+            END;
+        END LOOP;
+    END $$;
+"""
+
+_PG_SYNC_SERVER_MAP_ADD_NEW = """
+    DO $$
+    BEGIN
+        IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname =
+            'sync_server_map_company_id_device_id_entity_type_local_id_key') THEN
+            ALTER TABLE sync_server_map ADD CONSTRAINT
+            sync_server_map_company_id_device_id_entity_type_local_id_key
+            UNIQUE (company_id, device_id, entity_type, local_id);
+        END IF;
+    END $$;
+"""
+
 
 class DatabaseManager:
     def __init__(
@@ -386,9 +450,13 @@ class DatabaseManager:
         """
         if self._engine == "postgresql":
             self._init_pg_schema_locked()
+            self._seed_sentinel_company()
         else:
             self._create_tables_and_indices()
+            self._seed_sentinel_company()
             self._run_column_migrations()
+            self._ensure_updated_at_triggers()
+            self._ensure_outbox_triggers()
             self._ensure_documents_fts()
             self._migrate_legacy_data()
 
@@ -401,6 +469,34 @@ class DatabaseManager:
                 ensure_mobile_tables(self)
             except Exception:
                 pass  # mobile tables are non-critical
+
+    def _seed_sentinel_company(self) -> None:
+        """Ensure the sentinel company (``id=0``) exists.
+
+        Many production tables declare ``company_id ... DEFAULT 0
+        REFERENCES companies(id)`` (documents, gps_telemetry, client_tags,
+        ...) to mean "no company", and the environment-admin user resolves
+        to ``company_id=0``.  Without a ``companies`` row with ``id=0``,
+        every INSERT that relies on that DEFAULT fails with a FOREIGN KEY
+        violation on a freshly-bootstrapped database.
+        """
+        try:
+            if self._engine == "postgresql":
+                self.conn.execute(
+                    "INSERT INTO companies (id, company_name, subscription_tier, is_active) "
+                    "OVERRIDING SYSTEM VALUE "
+                    "VALUES (0, 'System', 'starter', 1) "
+                    "ON CONFLICT (id) DO NOTHING"
+                )
+            else:
+                self.conn.execute(
+                    "INSERT OR IGNORE INTO companies "
+                    "(id, company_name, subscription_tier, is_active) "
+                    "VALUES (0, 'System', 'starter', 1)"
+                )
+            self.conn.commit()
+        except Exception as e:
+            logger.warning("Sentinel company seed failed: %s", e)
 
     def _init_pg_schema_locked(self) -> None:
         """Build the PostgreSQL schema serially per database.
@@ -507,7 +603,7 @@ class DatabaseManager:
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS total_gross NUMERIC(12,2) DEFAULT 0",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS pdf_path TEXT DEFAULT ''",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS created_at TEXT",
-            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TEXT",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS exchange_rate NUMERIC(12,6) DEFAULT 1.0",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS invoice_type TEXT DEFAULT 'invoice'",
             "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS amount_paid NUMERIC(12,2) DEFAULT 0",
@@ -534,6 +630,40 @@ class DatabaseManager:
             "ALTER TABLE driver_truck_assignments ADD COLUMN IF NOT EXISTS active INTEGER NOT NULL DEFAULT 1",
             # Sent-email dedup table: tenant-scoped reads/writes
             "ALTER TABLE sent_emails ADD COLUMN IF NOT EXISTS company_id INTEGER",
+            # Phase B (sync): the 5 tables whose company_id is only added by
+            # migration on existing PG deployments (CREATE TABLE IF NOT
+            # EXISTS is a no-op on pre-existing tables).  driver_truck_assignments
+            # had NO company_id in schema_pg.sql at all (B1); the other four
+            # (email_logs, invoice_reminders, tacho_driver_activity,
+            # tacho_vehicle_data) gained it only in CREATE blocks (B2).
+            "ALTER TABLE driver_truck_assignments ADD COLUMN IF NOT EXISTS company_id INTEGER",
+            "CREATE INDEX IF NOT EXISTS idx_dta_company ON driver_truck_assignments(company_id)",
+            "ALTER TABLE email_logs ADD COLUMN IF NOT EXISTS company_id INTEGER",
+            "CREATE INDEX IF NOT EXISTS idx_email_logs_company ON email_logs(company_id)",
+            "ALTER TABLE invoice_reminders ADD COLUMN IF NOT EXISTS company_id INTEGER",
+            "CREATE INDEX IF NOT EXISTS idx_invoice_reminders_company ON invoice_reminders(company_id)",
+            "ALTER TABLE tacho_driver_activity ADD COLUMN IF NOT EXISTS company_id INTEGER",
+            "CREATE INDEX IF NOT EXISTS idx_tacho_driver_activity_company ON tacho_driver_activity(company_id)",
+            "ALTER TABLE tacho_vehicle_data ADD COLUMN IF NOT EXISTS company_id INTEGER",
+            "CREATE INDEX IF NOT EXISTS idx_tacho_vehicle_data_company ON tacho_vehicle_data(company_id)",
+            # Phase B backfill: legacy rows get the lowest real company
+            # (mirrors the SQLite _tenant_tables backfill).  Idempotent — a
+            # no-op once no NULL company_id rows remain.
+            "UPDATE driver_truck_assignments SET company_id = "
+            "COALESCE(company_id, (SELECT MIN(id) FROM companies WHERE id > 0)) "
+            "WHERE company_id IS NULL",
+            "UPDATE email_logs SET company_id = "
+            "COALESCE(company_id, (SELECT MIN(id) FROM companies WHERE id > 0)) "
+            "WHERE company_id IS NULL",
+            "UPDATE invoice_reminders SET company_id = "
+            "COALESCE(company_id, (SELECT MIN(id) FROM companies WHERE id > 0)) "
+            "WHERE company_id IS NULL",
+            "UPDATE tacho_driver_activity SET company_id = "
+            "COALESCE(company_id, (SELECT MIN(id) FROM companies WHERE id > 0)) "
+            "WHERE company_id IS NULL",
+            "UPDATE tacho_vehicle_data SET company_id = "
+            "COALESCE(company_id, (SELECT MIN(id) FROM companies WHERE id > 0)) "
+            "WHERE company_id IS NULL",
             # Copilot insights dedup — runs AFTER Alembic migrations so the
             # copilot_insights table (a7b8c9d0e1f7) already exists on fresh DBs.
             # payload is a json column on PG: btree cannot index it directly,
@@ -542,7 +672,39 @@ class DatabaseManager:
             # INSERT OR IGNORE translation still dedups correctly.
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_copilot_insights_dedup "
             "ON copilot_insights(company_id, insight_type, (payload::text))",
+            # R1 (Phase E): id tiebreak watermark column on sync_cursors.
+            "ALTER TABLE sync_cursors ADD COLUMN IF NOT EXISTS last_id BIGINT NOT NULL DEFAULT 0",
         ]
+        # B4 (settings scoping): migrate the PG settings PK from ``key`` to
+        # the composite ``(key, company_id)`` so per-company settings work on
+        # PostgreSQL (the SQLite settings table already has the composite PK).
+        # Existing NULL-company_id rows (written before this fix) are backfilled
+        # to the lowest real company, mirroring the Phase B tenant backfill.
+        _pg_extra_ddl.extend([
+            "DO $$ BEGIN "
+            "  IF EXISTS (SELECT 1 FROM information_schema.table_constraints "
+            "             WHERE table_name = 'settings' AND constraint_name = 'settings_pkey' "
+            "               AND constraint_type = 'PRIMARY KEY') THEN "
+            "    UPDATE settings SET company_id = "
+            "      COALESCE(company_id, (SELECT MIN(id) FROM companies WHERE id > 0)) "
+            "      WHERE company_id IS NULL; "
+            "    ALTER TABLE settings DROP CONSTRAINT settings_pkey; "
+            "    ALTER TABLE settings ADD CONSTRAINT settings_pkey PRIMARY KEY (key, company_id); "
+            "  END IF; "
+            "END $$",
+        ])
+        # Offline-first sync (Phase 0): ensure updated_at exists on every
+        # syncable table for legacy PG deployments.  schema_pg.sql declares
+        # updated_at inside CREATE TABLE IF NOT EXISTS blocks (no-op on
+        # existing tables), so existing databases need the additive ALTER
+        # here.  TIMESTAMPTZ matches the canonical trigger output
+        # (to_char → 'YYYY-MM-DDTHH:MM:SSZ').  invoices is handled above;
+        # expenses is created by schema_pg.sql with the column already.
+        _pg_extra_ddl.extend(
+            f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ"
+            for table in _schema.SYNCABLE_TABLES
+            if table not in ("invoices", "expenses")
+        )
         for ddl in _pg_extra_ddl:
             try:
                 cur = self.conn.cursor()
@@ -552,6 +714,10 @@ class DatabaseManager:
                 # ADD COLUMN IF NOT EXISTS is PostgreSQL 9.6+;
                 # older versions raise, which is harmless.
                 logger.debug("PG extra DDL skipped (may be pre-existing): %s — %s", str(e)[:120], ddl[:80])
+        # Phase A (multi-device): sync_server_map device_id migration.  Run
+        # separately so failures are logged at WARNING (a failed ADD would
+        # silently leave the table with no unique key).
+        self._migrate_sync_server_map_device_id_pg()
 
     def _init_pg_schema(self):
         """Execute PostgreSQL schema from schema_pg.sql.
@@ -610,7 +776,7 @@ class DatabaseManager:
                 if "already exists" in str(e).lower():
                     logger.debug("Skipping existing object: %s", str(e)[:80])
                 else:
-                    logger.warning("PG schema statement failed: %s — %s", str(e)[:120], stmt[:80])
+                    logger.error("PG schema statement failed: %s — %s", str(e)[:120], stmt[:80])
 
     def _create_tables_and_indices(self):
         """Execute all CREATE TABLE and CREATE INDEX statements."""
@@ -692,6 +858,8 @@ class DatabaseManager:
             S.TABLE_RECEIPTS,
             S.INDEX_RECEIPT_NUMBER, S.INDEX_RECEIPT_TYPE,
             S.INDEX_RECEIPT_STATUS, S.INDEX_RECEIPT_TRIP, S.INDEX_RECEIPT_DRIVER,
+            # Expenses (syncable table — base schema since Phase 0)
+            S.TABLE_EXPENSES,
             # AutoMail / Dunner
             S.TABLE_AUTOMAIL_TEMPLATES, S.TABLE_AUTOMAIL_SCHEDULES,
             S.TABLE_AUTOMAIL_CLIENT_OVERRIDES, S.TABLE_AUTOMAIL_SETTINGS,
@@ -765,6 +933,20 @@ class DatabaseManager:
             S.INDEX_MOBILE_DEVICES_TOKEN,
             S.TABLE_MOBILE_MESSAGES,
             S.TABLE_SYNC_CURSORS,
+            # Offline-first sync (Phase 2): server-side exactly-once id map
+            S.TABLE_SYNC_SERVER_MAP,
+            # Offline-first sync (Phase 1): outbox + meta tables.  The
+            # capture triggers are created later in _ensure_outbox_triggers
+            # (after column migrations) so the DELETE payload can reference
+            # every live column.
+            S.TABLE_SYNC_OUTBOX, S.INDEX_SYNC_OUTBOX_PENDING,
+            S.TABLE_SYNC_META,
+            # Offline-first sync (Phase 3b): desktop bidirectional id map
+            S.TABLE_SYNC_ID_MAP,
+            # Offline-first sync (Phase 4a): conflict journal
+            S.TABLE_SYNC_CONFLICTS,
+            # Offline-first sync (Phase D): hard-delete tombstones (server-side)
+            S.TABLE_SYNC_TOMBSTONES,
         ]
         for stmt in exec_stmts:
             try:
@@ -1269,14 +1451,23 @@ class DatabaseManager:
             ("document_links", "ALTER TABLE document_links ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("document_versions", "ALTER TABLE document_versions ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
             ("export_jobs", "ALTER TABLE export_jobs ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            # Phase B: remaining syncable tables scoped to company_id
+            ("driver_truck_assignments", "ALTER TABLE driver_truck_assignments ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("tacho_driver_activity", "ALTER TABLE tacho_driver_activity ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("tacho_vehicle_data", "ALTER TABLE tacho_vehicle_data ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("email_logs", "ALTER TABLE email_logs ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
+            ("invoice_reminders", "ALTER TABLE invoice_reminders ADD COLUMN company_id INTEGER REFERENCES companies(id)"),
         ]
-        # Resolve the lowest existing company id ONCE.  A hardcoded backfill of
-        # ``company_id = 1`` fails under PRAGMA foreign_keys=ON whenever
-        # companies(1) does not exist (old DBs whose lowest company id is > 1),
-        # leaving legacy documents NULL → invisible to tenant queries.
+        # Resolve the lowest existing *real* company id ONCE.  A hardcoded
+        # backfill of ``company_id = 1`` fails under PRAGMA foreign_keys=ON
+        # whenever companies(1) does not exist (old DBs whose lowest company
+        # id is > 1), leaving legacy documents NULL → invisible to tenant
+        # queries.  The sentinel company (id=0, seeded on bootstrap) is
+        # excluded so legacy rows are attributed to the first real company,
+        # not the "no company" sentinel.
         try:
             _min_cid_row = self.conn.execute(
-                "SELECT MIN(id) FROM companies"
+                "SELECT MIN(id) FROM companies WHERE id != 0"
             ).fetchone()
             _min_company_id = _min_cid_row[0] if _min_cid_row and _min_cid_row[0] is not None else 1
         except Exception:
@@ -1299,10 +1490,16 @@ class DatabaseManager:
                 logger.warning("Index creation failed for %s: %s", table, e)
 
         # ── P0.7: Soft delete columns ─────────────────────────────────────
+        # 13 business tables carry ``deleted_at`` — the desktop services
+        # soft-delete into it and the sync layer propagates it.  documents is
+        # included so archiving/delete_document can stamp the column.
         _soft_delete_tables = [
             "trips", "invoices", "clients", "drivers", "trucks",
             "routes", "route_history_v2", "receipts", "contracts",
             "proforma_invoices", "maintenance_records", "maintenance_schedules",
+            "documents",
+            # Phase B: expenses gained a deleted_at column so DELETE soft-deletes.
+            "expenses",
         ]
         for table in _soft_delete_tables:
             self._ensure_column(table, "deleted_at",
@@ -1314,19 +1511,54 @@ class DatabaseManager:
             except Exception as e:
                 logger.warning("Soft-delete index failed for %s: %s", table, e)
 
+        # ── Offline-first sync (Phase 0): updated_at on syncable tables ──
+        # The sync layer (outbox ordering, last-write-wins conflict
+        # resolution, delta pull) depends on reliable updated_at stamps.
+        # AFTER UPDATE triggers stamp the canonical UTC value; here we
+        # ensure the column exists on legacy databases.  Idempotent via
+        # _ensure_column (column-exists check).  invoices already gets
+        # updated_at from the InvoiceRepository migration block above.
+        _updated_at_tables = [
+            "trips", "trucks", "maintenance_records", "maintenance_schedules",
+            "client_contacts", "client_tags", "driver_truck_assignments",
+            "tacho_imports", "tacho_driver_activity", "tacho_vehicle_data",
+            "expenses", "successive_carriers", "trip_status_history",
+            "document_links", "document_versions", "sent_emails",
+            "email_logs", "invoice_reminders",
+            # Phase D: route_history_v2 gains updated_at for the sync layer's
+            # LWW + conflict checks (the base CREATE TABLE has no updated_at).
+            "route_history_v2",
+        ]
+        for table in _updated_at_tables:
+            if not self._table_exists(table):
+                # e.g. expenses is created lazily by ensure_expenses_table;
+                # its CREATE TABLE already carries updated_at.
+                continue
+            self._ensure_column(
+                table, "updated_at",
+                f"ALTER TABLE {table} ADD COLUMN updated_at TEXT",
+            )
+
+        # ── Expenses: legacy DBs created by ensure_expenses_table lack
+        # created_at (the base schema now declares it via TABLE_EXPENSES). ──
+        if self._table_exists("expenses"):
+            self._ensure_column(
+                "expenses", "created_at",
+                "ALTER TABLE expenses ADD COLUMN created_at TEXT",
+            )
+
         # ── Audit log: add entity tracking columns to operation_events ───
-        _audit_columns = [
+        # Column types/defaults mirror database/schema.py TABLE_OPERATION_EVENTS
+        # exactly (entity_type TEXT, entity_id TEXT, user_id INTEGER DEFAULT 0),
+        # so legacy DBs converge on the same schema as fresh inits.  The
+        # operation_events.company_id column is already ensured by the tenant
+        # table migration above (_tenant_tables).  _ensure_columns is
+        # idempotent (IF NOT EXISTS semantics) and runs on every init.
+        self._ensure_columns("operation_events", [
             ("entity_type", "ALTER TABLE operation_events ADD COLUMN entity_type TEXT"),
             ("entity_id", "ALTER TABLE operation_events ADD COLUMN entity_id TEXT"),
             ("user_id", "ALTER TABLE operation_events ADD COLUMN user_id INTEGER DEFAULT 0"),
-        ]
-        for col_name, alter_sql in _audit_columns:
-            try:
-                cols = [r[1] for r in self.conn.execute("PRAGMA table_info(operation_events)").fetchall()]
-                if col_name not in cols:
-                    self.conn.execute(alter_sql)
-            except Exception as e:
-                logger.warning("Migration step failed for operation_events.%s: %s", col_name, e)
+        ])
 
         # ── Dedupe before unique indexes ─────────────────────────────────
         # A legacy DB may contain duplicate gps_telemetry rows (same
@@ -1424,22 +1656,44 @@ class DatabaseManager:
             logger.warning("Schema migration V9 record failed: %s", e)
 
         # ── Migration: settings table → composite PK (key, company_id) ──
+        # This rebuilds settings with a composite PRIMARY KEY.  It must
+        # tolerate the surrounding transaction state: earlier steps in
+        # _run_column_migrations (tenant backfill UPDATEs) have already opened
+        # an implicit transaction, so issuing BEGIN IMMEDIATE here raised
+        # "cannot start a transaction within a transaction" and the old
+        # unconditional rollback in the except handler then discarded every
+        # migration applied so far in that ambient transaction (including the
+        # operation_events audit columns above).  We only BEGIN/COMMIT when no
+        # transaction is already open and never roll back an ambient
+        # transaction on failure.
         try:
-            cols = [r[1] for r in self.conn.execute(
+            conn = self.conn
+            settings_cols = [r[1] for r in conn.execute(
                 "PRAGMA table_info(settings)"
             ).fetchall()]
-            pk_cols = [r[1] for r in self.conn.execute(
+            pk_cols = [r[1] for r in conn.execute(
                 "PRAGMA table_info(settings)"
             ).fetchall() if r[5] > 0]  # r[5] = pk flag
             # Old schema: key TEXT PRIMARY KEY (pk_cols = ["key"])
             # New schema: composite PRIMARY KEY (key, company_id)
             if pk_cols == ["key"] and "company_id" not in pk_cols:
                 logger.info("Migrating settings table to composite PK (key, company_id)")
-                fk_was_on = self.conn.execute("PRAGMA foreign_keys").fetchone()[0]
-                if fk_was_on:
-                    self.conn.execute("PRAGMA foreign_keys=OFF")
-                self.conn.execute("BEGIN IMMEDIATE")
-                self.conn.execute("""
+                fk_was_on = conn.execute("PRAGMA foreign_keys").fetchone()[0]
+                was_in_tx = bool(getattr(conn, "in_transaction", False))
+                # Very old settings tables have no company_id column at all;
+                # add it (NULL default) so the INSERT ... SELECT below can
+                # backfill the tenant scope.  SQLite permits ADD COLUMN with a
+                # REFERENCES clause when the new column defaults to NULL.
+                if "company_id" not in settings_cols:
+                    conn.execute(
+                        "ALTER TABLE settings ADD COLUMN company_id "
+                        "INTEGER REFERENCES companies(id)"
+                    )
+                if fk_was_on and not was_in_tx:
+                    conn.execute("PRAGMA foreign_keys=OFF")
+                if not was_in_tx:
+                    conn.execute("BEGIN IMMEDIATE")
+                conn.execute("""
                     CREATE TABLE settings_new (
                         key TEXT NOT NULL,
                         value TEXT,
@@ -1447,22 +1701,40 @@ class DatabaseManager:
                         PRIMARY KEY (key, company_id)
                     )
                 """)
-                self.conn.execute("""
+                # Backfill legacy rows to the lowest real company (the sentinel
+                # id=0 is excluded) rather than a hardcoded 1 — companies(1)
+                # may not exist on migrated DBs and FK enforcement is on.
+                conn.execute("""
                     INSERT INTO settings_new (key, value, company_id)
-                    SELECT key, value, COALESCE(company_id, 1) FROM settings
+                    SELECT key, value,
+                           COALESCE(company_id,
+                                    (SELECT MIN(id) FROM companies WHERE id != 0))
+                    FROM settings
                 """)
-                self.conn.execute("DROP TABLE settings")
-                self.conn.execute("ALTER TABLE settings_new RENAME TO settings")
-                self.conn.commit()
-                if fk_was_on:
-                    self.conn.execute("PRAGMA foreign_keys=ON")
+                conn.execute("DROP TABLE settings")
+                conn.execute("ALTER TABLE settings_new RENAME TO settings")
+                if not was_in_tx:
+                    conn.commit()
+                if fk_was_on and not was_in_tx:
+                    conn.execute("PRAGMA foreign_keys=ON")
                 logger.info("Settings table migration to composite PK complete")
         except Exception as e:
             logger.warning("Settings table migration failed (may be already migrated): %s", e)
             try:
-                self.conn.rollback()
+                # Roll back only when we opened the transaction ourselves;
+                # inside an ambient transaction a rollback would silently
+                # discard every other migration applied so far in this init.
+                if not bool(getattr(self.conn, "in_transaction", False)):
+                    self.conn.rollback()
             except Exception:
                 pass
+
+        # ── R1 (Phase E): id tiebreak watermark column on the desktop's
+        # sync_cursors table (idempotent — existing tables lack it).
+        self._ensure_column(
+            "sync_cursors", "last_id",
+            "ALTER TABLE sync_cursors ADD COLUMN last_id INTEGER NOT NULL DEFAULT 0",
+        )
 
         # ── Ensure foreign key constraints (PostgreSQL ALTER, SQLite app-level) ──
         # Trips → core entities (SET NULL to preserve trip data when ref is deleted)
@@ -1482,12 +1754,135 @@ class DatabaseManager:
         self._ensure_foreign_key("alerts", "trip_id", "trips", on_delete="CASCADE")
         self._ensure_foreign_key("trip_status_history", "trip_id", "trips", on_delete="CASCADE")
 
+        # Phase A (multi-device): add device_id to sync_server_map and rebuild
+        # its UNIQUE key to (company_id, device_id, entity_type, local_id).
+        self._migrate_sync_server_map_device_id()
+
         try:
             self.conn.commit()
         except Exception as e:
             logger.warning("Migration step failed: %s", e)
 
         self._seed_automail_defaults()
+
+    def _migrate_sync_server_map_device_id(self) -> None:
+        """Phase A: add device_id to sync_server_map and rebuild its UNIQUE key.
+
+        Multi-device support keys the server id map by
+        ``(company_id, device_id, entity_type, local_id)``.  For existing
+        SQLite DBs the table must be rebuilt (SQLite cannot alter a UNIQUE
+        constraint in place); legacy rows get ``device_id = ''`` (the
+        single-device namespace).  Idempotent — skips when the table already
+        has the device_id-aware key.
+        """
+        if self._engine == "postgresql":
+            return
+        # Clean up any leftover state from a previously interrupted migration.
+        # This must run BEFORE the sync_server_map existence check below: a
+        # crash between RENAME and CREATE leaves only sync_server_map_old (and
+        # _create_tables_and_indices may have re-created an empty
+        # sync_server_map).  sync_server_map_old always holds the authoritative
+        # pre-migration data, so restore it and let the normal migration flow
+        # re-run (idempotent).  This handles both crash points: between RENAME
+        # and CREATE, and after CREATE before DROP.
+        if self._table_exists("sync_server_map_old"):
+            self.conn.execute("DROP TABLE IF EXISTS sync_server_map")
+            self.conn.execute("ALTER TABLE sync_server_map_old RENAME TO sync_server_map")
+            self.conn.commit()
+        if not self._table_exists("sync_server_map"):
+            return
+        # Add the column if missing (fresh DBs already have it from CREATE
+        # TABLE; legacy DBs get it via ALTER).
+        self._ensure_column(
+            "sync_server_map", "device_id",
+            "ALTER TABLE sync_server_map ADD COLUMN device_id TEXT DEFAULT ''",
+        )
+        # Rebuild only when the unique index does NOT yet include device_id.
+        # We cannot rely on the CREATE statement: SQLite's ALTER TABLE ADD
+        # COLUMN rewrites sqlite_master.sql to include the new column, so
+        # "device_id in sql" is true even when the UNIQUE key is still the
+        # old (company, entity, local_id).  Inspect the actual index columns.
+        indexes = self.conn.execute(
+            "PRAGMA index_list(sync_server_map)"
+        ).fetchall()
+        for idx in indexes:
+            if not idx["unique"]:
+                continue
+            cols = [r["name"] for r in self.conn.execute(
+                f"PRAGMA index_info({idx['name']})"
+            ).fetchall()]
+            if "device_id" in cols:
+                return  # already device_id-aware
+        # Rebuild the table atomically.  Python sqlite3 legacy mode autocommits
+        # DDL, so without an explicit transaction a crash between RENAME and
+        # the INSERT would leave the new (empty) table present and the next
+        # boot would skip the migration — silently losing the map.  SQLite DDL
+        # IS transactional inside an explicit BEGIN IMMEDIATE, so wrap the
+        # whole rebuild in one transaction and roll back on failure.
+        was_in_tx = bool(getattr(self.conn, "in_transaction", False))
+        try:
+            if not was_in_tx:
+                self.conn.execute("BEGIN IMMEDIATE")
+            self.conn.execute("ALTER TABLE sync_server_map RENAME TO sync_server_map_old")
+            self.conn.execute(_schema.TABLE_SYNC_SERVER_MAP)
+            self.conn.execute(
+                "INSERT INTO sync_server_map "
+                "(company_id, device_id, entity_type, local_id, server_id, created_at) "
+                "SELECT company_id, '', entity_type, local_id, server_id, created_at "
+                "FROM sync_server_map_old"
+            )
+            self.conn.execute("DROP TABLE sync_server_map_old")
+            if not was_in_tx:
+                self.conn.commit()
+            logger.info("sync_server_map rebuilt with device_id-aware unique key")
+        except Exception as e:
+            if not was_in_tx:
+                try:
+                    self.conn.rollback()
+                except Exception:
+                    pass
+            logger.warning("sync_server_map device_id migration failed: %s", e)
+
+    def _migrate_sync_server_map_device_id_pg(self) -> None:
+        """Phase A: add device_id to sync_server_map and rebuild its UNIQUE key (PG).
+
+        Name-independent: discovers and drops any old unique constraint OR
+        standalone unique index on the (company_id, entity_type, local_id)
+        key (via ``pg_constraint`` / ``pg_index``), then adds the new
+        (company_id, device_id, entity_type, local_id) key if missing.  The
+        DROP is gated on the old key actually existing, so it runs once (a
+        one-time migration, not a per-boot rebuild).  Failures are logged at
+        WARNING — a failed ADD would silently leave the table with no unique
+        key.
+        """
+        if self._engine != "postgresql":
+            return
+        try:
+            cur = self.conn.cursor()
+            cur.execute(
+                "ALTER TABLE sync_server_map ADD COLUMN IF NOT EXISTS device_id TEXT DEFAULT ''"
+            )
+            cur.close()
+        except Exception as e:
+            logger.warning("sync_server_map device_id column migration failed: %s", e)
+            return
+        # Drop any old unique constraint/index that does NOT include device_id.
+        # The standalone-index loop excludes the PRIMARY KEY backing index and
+        # any constraint-backed index (see _PG_SYNC_SERVER_MAP_DROP_OLD), and
+        # each EXECUTE is wrapped so one bad drop cannot roll back the rest.
+        try:
+            cur = self.conn.cursor()
+            cur.execute(_PG_SYNC_SERVER_MAP_DROP_OLD)
+            cur.close()
+        except Exception as e:
+            logger.warning("sync_server_map old-key drop failed: %s", e)
+        # Add the new unique key if missing.
+        try:
+            cur = self.conn.cursor()
+            cur.execute(_PG_SYNC_SERVER_MAP_ADD_NEW)
+            cur.close()
+        except Exception as e:
+            logger.warning("sync_server_map device_id unique key migration failed: %s", e)
 
     def _ensure_documents_fts(self) -> None:
         """Create the documents_fts external-content triggers and rebuild index.
@@ -1510,6 +1905,161 @@ class DatabaseManager:
             logger.info("documents_fts triggers recreated and index rebuilt")
         except Exception as e:
             logger.warning("FTS trigger creation failed: %s", e)
+
+    def _ensure_updated_at_triggers(self) -> None:
+        """Create the ``updated_at`` stamping triggers (AFTER INSERT + AFTER UPDATE).
+
+        Runs AFTER ``_run_column_migrations`` so the ``updated_at`` column
+        exists on every syncable table (legacy DBs get it via ALTER first).
+        The triggers are DROP + CREATE on every boot (NOT ``CREATE TRIGGER
+        IF NOT EXISTS``): the ``sync_in_progress`` echo-suppression guard
+        (added in the Phase 3 remediation pass) would otherwise never reach
+        existing installs — ``IF NOT EXISTS`` silently keeps the old
+        guard-less DDL.  The expenses table is created lazily by
+        ``ensure_expenses_table``; if it does not exist yet the trigger
+        creation is skipped and retried on the next boot.
+        """
+        if self._engine == "postgresql":
+            return
+        S = _schema
+        dropped: set = set()
+        for stmt in (*S.TRIGGERS_UPDATED_AT, *S.TRIGGERS_UPDATED_AT_INSERT):
+            # "CREATE TRIGGER IF NOT EXISTS trg_<table>_updated_at AFTER UPDATE ..."
+            m = re.search(r"\bON\s+(\w+)", stmt)
+            table = m.group(1) if m else None
+            if table is None or not self._table_exists(table):
+                # e.g. expenses is created lazily by ensure_expenses_table;
+                # the trigger is picked up on the next boot.
+                continue
+            try:
+                # DROP both triggers ONCE per table so the sync_in_progress
+                # guard is applied to existing installs (see docstring).
+                # Dropping per-statement would delete the sibling trigger
+                # created by the other statement in this loop.
+                if table not in dropped:
+                    dropped.add(table)
+                    self.conn.execute(f"DROP TRIGGER IF EXISTS trg_{table}_updated_at")
+                    self.conn.execute(f"DROP TRIGGER IF EXISTS trg_{table}_insert_updated_at")
+                self.conn.execute(stmt)
+            except Exception as e:
+                logger.error("updated_at trigger creation failed for %s: %s", table, e)
+        try:
+            self.conn.commit()
+        except Exception as e:
+            logger.error("updated_at trigger commit failed: %s", e)
+
+    def _ensure_outbox_triggers(self) -> None:
+        """Create the ``sync_outbox`` capture triggers (AFTER INSERT/UPDATE/DELETE).
+
+        Every write to a v1-push-scope table records an entry in
+        ``sync_outbox`` so the sync engine (Phase 2+) can push it to the
+        cloud API.  The DDL is generated programmatically per table because
+        the DELETE payload needs the table's live column list
+        (``PRAGMA table_info``) to build ``json_object('col', OLD."col",
+        ...)`` — the row is gone by push time, so it must be serialized at
+        delete time.
+
+        Capture scope = Phase B: ALL of ``SYNCABLE_ENTITIES`` (25 tables).
+        The Phase B push/pull lanes support every entity type, so every
+        syncable table gets outbox triggers.  The 15 non-V1 tables previously
+        got only the Phase 0 updated_at stamping triggers — the DROP+CREATE
+        per boot now adds their outbox triggers automatically.
+
+        ``entity_type`` is stored as the SINGULAR entity type from
+        ``SYNCABLE_ENTITIES`` (e.g. ``'trip'``, not ``'trips'``) so it
+        matches the push API contract (``backend/api/v1/sync.py``
+        ``SUPPORTED_ENTITY_TYPES``).
+
+        Echo suppression: all three triggers skip when
+        ``sync_meta.sync_in_progress = '1'`` so the pull-apply path
+        (Phase 4) does not re-capture rows it just wrote.
+
+        The UPDATE trigger uses ``AFTER UPDATE OF <cols except updated_at>``
+        so the nested ``updated_at`` stamp UPDATE fired by the Phase 0
+        stamping triggers (which only touches ``updated_at``) does NOT
+        produce a spurious outbox row — an INSERT yields exactly one
+        outbox row (op='INSERT') and an UPDATE exactly one (op='UPDATE').
+
+        The outbox triggers are DROP + CREATE on every boot (NOT
+        ``CREATE TRIGGER IF NOT EXISTS``): the DELETE payload embeds the
+        table's live column list, and ``IF NOT EXISTS`` would silently keep
+        a stale column list after an ``ALTER TABLE ADD COLUMN`` migration.
+        The updated_at stamping triggers stay ``CREATE TRIGGER IF NOT
+        EXISTS`` (they embed no column lists).  Runs AFTER
+        ``_run_column_migrations`` so every column (including ``updated_at``
+        on legacy DBs) exists when the DDL is generated.
+        """
+        if self._engine == "postgresql":
+            return
+        for table, entity_type in _schema.SYNCABLE_ENTITIES.items():
+            if not self._table_exists(table):
+                continue
+            try:
+                col_info = [
+                    r for r in self.conn.execute(
+                        f"PRAGMA table_info({table})"
+                    ).fetchall()
+                ]
+            except Exception as e:
+                logger.error("outbox trigger: could not introspect %s: %s", table, e)
+                continue
+            if not col_info:
+                continue
+            cols = [r[1] for r in col_info]
+            # Phase D: BLOB columns (e.g. route_history_v2.geometry_compressed)
+            # cannot be serialized into the DELETE payload's json_object — SQLite
+            # raises "JSON cannot hold BLOB values".  They are dropped from the
+            # frozen payload (binary columns are not syncable anyway).
+            blob_cols = {
+                r[1] for r in col_info if (r[2] or "").upper() == "BLOB"
+            }
+            json_cols = [c for c in cols if c not in blob_cols]
+            # Columns that can carry a business change — everything except
+            # the trigger-stamped updated_at column.
+            update_of_cols = [c for c in cols if c != "updated_at"]
+            if not update_of_cols:
+                logger.warning("outbox trigger: %s has no business columns, skipping", table)
+                continue
+            json_args = ", ".join(f"'{c}', OLD.\"{c}\"" for c in json_cols)
+            # DROP first so the embedded json_object column list is rebuilt
+            # fresh on every boot (see docstring).
+            drop_statements = [
+                f"DROP TRIGGER IF EXISTS trg_{table}_outbox_ai",
+                f"DROP TRIGGER IF EXISTS trg_{table}_outbox_au",
+                f"DROP TRIGGER IF EXISTS trg_{table}_outbox_ad",
+            ]
+            statements = [
+                (
+                    f"CREATE TRIGGER trg_{table}_outbox_ai "
+                    f"AFTER INSERT ON {table} FOR EACH ROW "
+                    f"WHEN NOT EXISTS (SELECT 1 FROM sync_meta WHERE key='sync_in_progress' AND value='1') "
+                    f"BEGIN INSERT INTO sync_outbox (entity_type, op, local_id) "
+                    f"VALUES ('{entity_type}', 'INSERT', NEW.id); END;"
+                ),
+                (
+                    f"CREATE TRIGGER trg_{table}_outbox_au "
+                    f"AFTER UPDATE OF {', '.join(update_of_cols)} ON {table} FOR EACH ROW "
+                    f"WHEN NOT EXISTS (SELECT 1 FROM sync_meta WHERE key='sync_in_progress' AND value='1') "
+                    f"BEGIN INSERT INTO sync_outbox (entity_type, op, local_id) "
+                    f"VALUES ('{entity_type}', 'UPDATE', NEW.id); END;"
+                ),
+                (
+                    f"CREATE TRIGGER trg_{table}_outbox_ad "
+                    f"AFTER DELETE ON {table} FOR EACH ROW "
+                    f"WHEN NOT EXISTS (SELECT 1 FROM sync_meta WHERE key='sync_in_progress' AND value='1') "
+                    f"BEGIN INSERT INTO sync_outbox (entity_type, op, local_id, payload_json) "
+                    f"VALUES ('{entity_type}', 'DELETE', OLD.id, json_object({json_args})); END;"
+                ),
+            ]
+            for stmt in drop_statements + statements:
+                try:
+                    self.conn.execute(stmt)
+                except Exception as e:
+                    logger.error("outbox trigger creation failed for %s: %s", table, e)
+        try:
+            self.conn.commit()
+        except Exception as e:
+            logger.error("outbox trigger commit failed: %s", e)
 
     def _migrate_legacy_data(self):
         """One-off data migrations (legacy maintenance table, etc.)."""
@@ -1542,7 +2092,7 @@ class DatabaseManager:
         immediately usable with sensible defaults mirroring the original
         hardcoded DunnerEngine behavior.
         """
-        now = datetime.utcnow().isoformat(timespec="seconds") + "Z"
+        now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         try:
             # Ensure tables exist before querying (handles DBs created
             # before automail tables were added to the schema).
@@ -1698,36 +2248,65 @@ class DatabaseManager:
 
     # ── SETTINGS (canonical API, not deprecated) ─────────────────────
 
-    def get_settings(self, keys: List[str]) -> Dict[str, str]:
+    def get_settings(self, keys: List[str], company_id: Optional[int] = None) -> Dict[str, str]:
+        """Return the values of *keys*, company-scoped.
+
+        ``company_id`` may be passed EXPLICITLY (B4: the HTTP path sets
+        ``backend.dependencies._current_company_id``, NOT the tenant_context
+        this method used to read — so endpoints MUST pass it or the query
+        would leak all companies' settings).  When omitted, falls back to the
+        tenant context (desktop / Celery paths).
+        """
         from database.tenant_context import get_company_id
-        cid = get_company_id()
+        cid = get_company_id() if company_id is None else company_id
         company_filter = ""
         params: List[Any] = list(keys)
         if cid is not None:
             company_filter = " AND company_id = ?"
             params.append(cid)
+        ph = "?" if getattr(self, "_engine", "sqlite") != "postgresql" else "%s"
         rows = self.conn.execute(
-            f"SELECT key, value FROM settings WHERE key IN ({','.join('?' * len(keys))}){company_filter}",
+            f"SELECT key, value FROM settings WHERE key IN ({','.join(ph * len(keys))}){company_filter}",
             params,
         ).fetchall()
         return {r[0]: r[1] for r in rows}
 
-    def save_setting(self, key: str, value: str) -> None:
+    def save_setting(self, key: str, value: str, company_id: Optional[int] = None) -> None:
+        """Upsert a setting, company-scoped.
+
+        ``company_id`` may be passed EXPLICITLY (B4 — see :meth:`get_settings`).
+        On PostgreSQL the settings PK is composite ``(key, company_id)``, so
+        the upsert uses ``ON CONFLICT``; on SQLite ``INSERT OR REPLACE``.
+        """
         from database.tenant_context import get_company_id
-        cid = get_company_id()
-        if cid is not None:
-            self.conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value, company_id) VALUES (?, ?, ?)",
-                (key, value, cid),
-            )
+        cid = get_company_id() if company_id is None else company_id
+        if getattr(self, "_engine", "sqlite") == "postgresql":
+            if cid is not None:
+                self.conn.execute(
+                    "INSERT INTO settings (key, value, company_id) VALUES (%s, %s, %s) "
+                    "ON CONFLICT (key, company_id) DO UPDATE SET value = EXCLUDED.value",
+                    (key, value, cid),
+                )
+            else:
+                self.conn.execute(
+                    "INSERT INTO settings (key, value, company_id) VALUES (%s, %s, NULL) "
+                    "ON CONFLICT (key, company_id) DO UPDATE SET value = EXCLUDED.value",
+                    (key, value),
+                )
         else:
-            self.conn.execute(
-                "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value),
-            )
+            if cid is not None:
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value, company_id) VALUES (?, ?, ?)",
+                    (key, value, cid),
+                )
+            else:
+                self.conn.execute(
+                    "INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)", (key, value),
+                )
         self.conn.commit()
 
-    def get_setting(self, key: str) -> Optional[str]:
-        res = self.get_settings([key])
+    def get_setting(self, key: str, company_id: Optional[int] = None) -> Optional[str]:
+        res = self.get_settings([key], company_id=company_id)
         return res.get(key) if res else None
 
     # ── Schema version ────────────────────────────────────────────────
@@ -1937,6 +2516,10 @@ class DatabaseManager:
 
     def ensure_expenses_table(self):
         _deprecated("DatabaseManager.ensure_expenses_table — create table directly")
+        # The expenses table is part of the base schema (TABLE_EXPENSES) since
+        # Phase 0; only legacy DBs created before that need the lazy CREATE.
+        if self._table_exists("expenses"):
+            return
         self.conn.execute("""
             CREATE TABLE IF NOT EXISTS expenses (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1945,7 +2528,9 @@ class DatabaseManager:
                 category TEXT,
                 description TEXT,
                 amount REAL,
-                company_id INTEGER
+                company_id INTEGER,
+                created_at TEXT,
+                updated_at TEXT
             );
         """)
         self.conn.commit()

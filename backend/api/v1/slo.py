@@ -1,4 +1,6 @@
 """SLO/SLA status endpoints."""
+from __future__ import annotations
+
 from fastapi import APIRouter, Depends
 from backend.dependencies_security import require_admin
 from backend.services.slo_service import get_slo_service

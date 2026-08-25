@@ -107,7 +107,11 @@ class TestExecuteManyMethod:
             data,
         )
         db.commit()
-        count = db.execute("SELECT COUNT(*) AS c FROM companies").fetchone()
+        # Exclude the sentinel company (id=0, seeded on DB bootstrap for FK
+        # integrity) — the assertion is about the rows executemany inserted.
+        count = db.execute(
+            "SELECT COUNT(*) AS c FROM companies WHERE id != 0"
+        ).fetchone()
         assert dict(count)["c"] == 3
 
 

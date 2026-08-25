@@ -14,6 +14,8 @@ Fixtures from conftest:
     auth_admin  — Authorization header dict for admin user.
     auth_a      — Authorization header dict for Company A dispatcher.
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

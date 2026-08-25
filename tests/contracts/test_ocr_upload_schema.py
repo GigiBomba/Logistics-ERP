@@ -7,6 +7,8 @@ mobile ``ocr_upload_response.dart`` contract:
 - status: Literal["queued", "processing"] — NEVER "completed"
 - idempotency_key (str, echoed back)
 """
+from __future__ import annotations
+
 
 from backend.schemas.ocr import OcrUploadResponse
 

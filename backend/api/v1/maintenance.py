@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import warnings
 from datetime import date, timedelta
 from typing import Any, Dict, List
@@ -115,3 +117,28 @@ def get_maintenance_top_categories(
     repo = FleetRepository(db)
     since_date = _resolve_since(date_from, since)
     return MaintenanceDataResponse(data=repo.get_maintenance_most_expensive_category(since_date, company_id=company_id))
+
+
+@router.get("/fuel-price")
+def get_fuel_price(
+    current_user: Dict[str, Any] = Depends(require_dispatcher),
+    db: DatabaseManager = Depends(get_db),
+):
+    """Return the current diesel fuel price and last-update timestamp.
+
+    Reads from the shared ``FuelPriceService`` (cached / fallback data — no
+    live scrape, deterministic). ``db`` is injected for API consistency even
+    though the service keeps its own on-disk cache.
+    """
+    from backend.services.fuel_price_service import FuelPriceService
+
+    svc = FuelPriceService()
+    return {
+        "price": round(float(svc.get_price("DEFAULT", "EUR")), 3),
+        "currency": "EUR",
+        "country": "DEFAULT",
+        "updated_at": svc.last_updated_str(),
+        "age_seconds": svc.age_seconds(),
+        "available": bool(svc.is_available()),
+        "prices": svc.get_prices_all(),
+    }

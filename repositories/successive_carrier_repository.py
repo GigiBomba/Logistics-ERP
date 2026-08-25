@@ -1,4 +1,6 @@
 """Successive carrier repository — sub-contracted carriers per CMR trip."""
+from __future__ import annotations
+
 from typing import Any, Dict, List
 
 from repositories import BaseRepository

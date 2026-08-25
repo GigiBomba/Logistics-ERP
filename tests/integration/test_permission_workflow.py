@@ -1,4 +1,6 @@
 """Integration test: Permission checks across services."""
+from __future__ import annotations
+
 import pytest
 from services.permission_service import PermissionService, PermissionCheckResult
 from services.trip_service import TripService

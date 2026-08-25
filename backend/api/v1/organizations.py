@@ -3,6 +3,8 @@
 All endpoints require dispatcher+ auth.
 Membership management (invite/remove) requires owner or admin role within the org.
 """
+from __future__ import annotations
+
 
 import logging
 import re

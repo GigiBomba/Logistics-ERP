@@ -1,4 +1,6 @@
 """Integration test: Client create → search → merge flow."""
+from __future__ import annotations
+
 import pytest
 from models.client_models import ClientCreate, ClientUpdate, ClientContact
 from services.client_service import ClientService

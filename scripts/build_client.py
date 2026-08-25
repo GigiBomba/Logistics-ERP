@@ -1,21 +1,27 @@
 #!/usr/bin/env python
-"""PyInstaller client-only build script.
+"""PyInstaller local-first desktop build script.
 
-Produces a standalone ``dist/operion-client/`` directory containing
-*only* the UI, client networking layer, and required assets.  All
-server-side code (``backend/``, ``repositories/``, ``database/``,
-``tests/``, ``services/``) is excluded so the distributed binary
-exposes no SQL queries, local database logic, or backend schemas.
+Produces a standalone ``dist/operion-client/`` directory containing the
+full local-first app: the UI, the networking layer, the local SQLite
+database, the OperationsEngine and the offline-first sync stack
+(``services.sync_engine`` et al).  Only the server-side code
+(``backend/``), test/diagnostic tooling and heavy optional dependencies
+are excluded.
+
+The app is local-first ALWAYS (Phase F): ``main.py`` is the one entry
+point.  The old remote-only ``main_remote.py`` entry is deprecated.
 
 Usage::
 
-    python scripts/build_client.py        # client-only build
-    python scripts/build_client.py --dev  # local dev build (includes DB)
+    python scripts/build_client.py        # local-first build
+    python scripts/build_client.py --dev  # accepted for backwards compat
 
 Environment variables honoured at build time:
     ``OPERION_ENV``         ``production`` (default) or ``development``
     ``OPERION_API_URL``     override API base URL in production mode
 """
+from __future__ import annotations
+
 
 import argparse
 import shutil
@@ -40,6 +46,7 @@ CLIENT_ASSETS: List[str] = [
 ]
 
 EXCLUDE_MODULES: List[str] = [
+    # Server-side only — never shipped in the desktop binary.
     "backend",
     "backend.api",
     "backend.api.v1",
@@ -48,35 +55,26 @@ EXCLUDE_MODULES: List[str] = [
     "backend.celery_app",
     "backend.cache",
     "backend.middleware",
-    "database",
-    "database.db_manager",
-    "database.connection_pool",
-    "database.schema",
-    "repositories",
-    "services",
-    "services.automail",
-    "services.document",
-    "services.document_automation",
-    "services.invoicing",
-    "services.operations",
+    "celery",
+    "redis",
+    "psycopg2",
+    "asyncpg",
+    # Test / diagnostic tooling — never shipped.
     "tests",
     "test",
     "unittest",
     "pytest",
+    # Heavy optional dependencies that the app only uses in dev/notebooks.
     "matplotlib",
     "scipy",
     "notebook",
     "jupyter",
     "IPython",
     "tkinter",
-    "celery",
-    "redis",
-    "psycopg2",
-    "asyncpg",
-    "PIL.ImageShow",
-    "PIL.ImageQt",
     "paddleocr",
     "pytesseract",
+    "PIL.ImageShow",
+    "PIL.ImageQt",
 ]
 
 HIDDEN_IMPORTS: List[str] = [
@@ -175,36 +173,18 @@ def _report_size(base: Path) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Build Operion client-only distribution")
-    parser.add_argument("--dev", action="store_true", help="Local dev build (includes DB)")
-    args = parser.parse_args()
+    parser = argparse.ArgumentParser(description="Build the Operion local-first desktop distribution")
+    parser.add_argument("--dev", action="store_true",
+                        help="Accepted for backwards compatibility — the local-first build is the only build")
+    parser.parse_args()
 
     _clean_dist()
 
-    extra_excludes: Optional[List[str]] = None
+    # The app is local-first ALWAYS — one entry point, one build.
+    entry = str(PROJECT_ROOT / "main.py")
+    print("=== LOCAL-FIRST BUILD (production) ===\n")
 
-    if not args.dev:
-        entry = str(PROJECT_ROOT / "main_remote.py")
-        extra_excludes = [
-            "services.document",
-            "services.document_automation",
-            "services.invoicing",
-            "services.operations",
-            "services.route_service",
-            "services.trip_service",
-            "services.client_service",
-            "services.fleet_service",
-            "services.analytics_service",
-            "services.tacho_service",
-            "services.automail",
-            "services.calculator",
-        ]
-        print("=== CLIENT-ONLY BUILD (production) ===\n")
-    else:
-        entry = str(PROJECT_ROOT / "main.py")
-        print("=== CLIENT+LOCAL BUILD (development) ===\n")
-
-    rc = _run_pyinstaller(entry, extra_excludes=extra_excludes)
+    rc = _run_pyinstaller(entry)
     if rc != 0:
         print(f"\nPyInstaller exited with code {rc}")
         return rc

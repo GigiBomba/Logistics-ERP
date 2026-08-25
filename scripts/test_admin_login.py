@@ -1,4 +1,6 @@
 """Test admin login flow end-to-end by generating a known hash and testing the API."""
+from __future__ import annotations
+
 import os
 import sys
 

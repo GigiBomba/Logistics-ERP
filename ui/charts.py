@@ -30,6 +30,8 @@ migrated, old helpers removed from ``_tab_base.py``.
 Phase 8 (this file): ``ui/charts.py`` retired; matplotlib removed from
 ``requirements.txt``.
 """
+from __future__ import annotations
+
 
 
 def _unavailable(*_args, **_kwargs):

@@ -1,4 +1,6 @@
 """Thread-safety tests for EventBus under concurrent access."""
+from __future__ import annotations
+
 import threading
 import time
 import unittest

@@ -69,6 +69,15 @@ class WorkerPool:
 
     _pool: QThreadPool | None = None
 
+    # Strong references to in-flight ``_WorkerSignals`` senders.  The result
+    # signal is emitted from a worker thread via a queued connection, so the
+    # sender must stay alive until the main-thread event loop delivers the
+    # callback.  Without this, PySide6 garbage-collects ``_WorkerSignals`` as
+    # soon as the ``QRunnable`` finishes and the queued delivery is silently
+    # dropped (async results never reach ``on_result``).  Each entry is
+    # removed from the set once its callback has run.
+    _pending_signals: set = set()
+
     @classmethod
     def _pool_instance(cls) -> QThreadPool:
         if cls._pool is None:
@@ -100,10 +109,16 @@ class WorkerPool:
             priority: Task priority (higher = more urgent). Default 0.
         """
         signals = _WorkerSignals()
+        # Hold a strong reference until delivery completes (see class doc).
+        WorkerPool._pending_signals.add(signals)
+
+        def _release(*_args: Any) -> None:
+            WorkerPool._pending_signals.discard(signals)
+
         if on_result:
-            signals.result.connect(on_result)
+            signals.result.connect(lambda data: (on_result(data), _release()))
         if on_error:
-            signals.error.connect(on_error)
+            signals.error.connect(lambda msg: (on_error(msg), _release()))
 
         runnable = _Runnable(fn, signals)
         cls._pool_instance().start(runnable, priority)
@@ -170,10 +185,23 @@ class WorkerPool:
 
         for i, item in enumerate(items):
             sig = _WorkerSignals()
+            # Hold a strong reference until delivery completes (same reason
+            # as ``run``: queued cross-thread signal senders must stay alive).
+            cls._pending_signals.add(sig)
             if on_each:
-                sig.result.connect(_make_handler(i))
+                sig.result.connect(
+                    lambda data, i=i, sig=sig: (
+                        _make_handler(i)(data),
+                        cls._pending_signals.discard(sig),
+                    )
+                )
             if on_error:
-                sig.error.connect(_error_handler)
+                sig.error.connect(
+                    lambda msg, sig=sig: (
+                        _error_handler(msg),
+                        cls._pending_signals.discard(sig),
+                    )
+                )
             runnable = _Runnable(lambda i=i, item=item: fn(item), sig)
             cls._pool_instance().start(runnable)
 

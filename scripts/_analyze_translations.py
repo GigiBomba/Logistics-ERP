@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Analyze translation files for untranslated values."""
+from __future__ import annotations
+
 import json, os, re, sys
 
 TRANSLATIONS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "translations")

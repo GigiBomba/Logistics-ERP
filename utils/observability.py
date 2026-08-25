@@ -26,7 +26,15 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, Optional
 
-from backend.middleware.correlation_middleware import get_correlation_id
+# The correlation id comes from the FastAPI middleware.  The packaged desktop
+# build ships NO backend package (see scripts/build_client.py EXCLUDE_MODULES),
+# so the import must be guarded — an unguarded one kills every packaged boot.
+try:
+    from backend.middleware.correlation_middleware import get_correlation_id
+except ImportError:  # packaged client: no backend package
+    def get_correlation_id() -> str:
+        """No FastAPI request context in the desktop client — no correlation id."""
+        return ""
 
 
 class _StructuredLogger:

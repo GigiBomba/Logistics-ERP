@@ -3,6 +3,8 @@
 Typed methods (Pydantic v2) are available alongside legacy dict-based methods.
 Legacy methods emit deprecation warnings and will be removed in a future release.
 """
+from __future__ import annotations
+
 import contextlib
 import hashlib
 import json
@@ -910,7 +912,7 @@ class TachoService:
         days_imported = 0
         total_violations = 0
 
-        for day_record in activities:
+        for day_record in (activities or []):
             try:
                 activity_date = self._parse_tacho_date(
                     day_record.get("activityRecordDate")

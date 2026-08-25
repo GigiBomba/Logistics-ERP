@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from PySide6.QtCore import QEvent, Qt, QTimer
 from PySide6.QtGui import QKeyEvent, QMouseEvent, QPaintEvent, QResizeEvent
+from PySide6.QtTest import QTest
 from PySide6.QtWidgets import QApplication, QHBoxLayout, QLabel, QLineEdit, QPushButton, QWidget
 
 from ui.copilot.widgets.guided_overlay_widget import (
@@ -1032,10 +1033,32 @@ class TestEdgeCases:
         assert overlay._fade_anim is not None
         assert overlay._fade_anim.duration() == ANIM_DURATION_MS // 2
 
-    @pytest.mark.xfail(reason="Needs widget target for input filter resolution")
-    def test_input_filter_detects_keypress(self, qt_widget: QWidget):
+    def test_input_filter_detects_keypress(self, qt_widget: QWidget, qtbot):
         """_InputEventFilter calls overlay._on_input_detected on KeyPress."""
-        pass
+        qt_widget.show()
+        target = QLineEdit(qt_widget)
+        target.setObjectName("driver-form-name")
+        target.show()
+
+        overlay = GuidedOverlayWidget(parent=qt_widget)
+        overlay._fade_transition = lambda cb: cb()  # make synchronous
+        steps = [
+            _make_step("s1", step_type="wait_for_input", target_id="driver_form_name"),
+            _make_step("s2", step_type="dim"),
+        ]
+        overlay.start_tour(steps)
+
+        assert overlay._state == "WAITING_INPUT"
+        assert overlay._target_widget is target
+        assert overlay._input_filter is not None
+
+        # Simulate a KeyPress on the target — the filter detects it and calls
+        # overlay._on_input_detected, which removes the filter and advances.
+        QTest.keyClick(target, Qt.Key_A)
+        qtbot.wait(150)
+
+        assert overlay._input_filter is None  # filter removed after input
+        assert overlay.current_step_index() == 1  # advanced to next step
 
     def test_parent_resize_filter_emits(self, qt_widget: QWidget):
         overlay = GuidedOverlayWidget(parent=qt_widget)

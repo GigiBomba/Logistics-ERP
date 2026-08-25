@@ -8,6 +8,8 @@ Usage in repository create() methods::
     from database.uuid_helpers import new_uuid
     data["id"] = new_uuid(db)
 """
+from __future__ import annotations
+
 import uuid
 from typing import TYPE_CHECKING
 

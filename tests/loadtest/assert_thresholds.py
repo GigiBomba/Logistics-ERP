@@ -5,6 +5,8 @@ Usage:
 
 Returns exit code 0 if all thresholds pass, 1 if any fail.
 """
+from __future__ import annotations
+
 
 import csv
 import re

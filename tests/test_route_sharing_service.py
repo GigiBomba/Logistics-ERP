@@ -1,4 +1,6 @@
 """Tests for route_sharing_service module."""
+from __future__ import annotations
+
 import json
 import zlib
 from unittest.mock import MagicMock, patch

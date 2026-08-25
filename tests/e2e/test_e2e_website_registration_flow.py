@@ -4,6 +4,8 @@ Simulates the real Operion website (React frontend) communicating with
 the FastAPI backend. Tests the complete integration chain that was
 previously broken (mocked auth).
 """
+from __future__ import annotations
+
 
 import os
 import uuid

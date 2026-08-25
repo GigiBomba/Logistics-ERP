@@ -1,4 +1,6 @@
 """Driver repository — all driver DB access consolidated here."""
+from __future__ import annotations
+
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional
 
@@ -6,6 +8,7 @@ from repositories import BaseRepository
 
 class DriverRepository(BaseRepository):
     TABLE = "drivers"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "name", "phone", "email", "license_number", "license_category",
         "license_expiry", "medical_expiry", "hire_date", "monthly_salary",
@@ -18,13 +21,13 @@ class DriverRepository(BaseRepository):
 
     def get_by_id_with_adr(self, driver_id: int) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT name, adr_certificate_expiry FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+            f"SELECT name, adr_certificate_expiry FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (driver_id,) + self._company_params(),
         )
 
     def get_by_id(self, driver_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             (driver_id,) + self._company_params_for(company_id),
         )
 
@@ -40,13 +43,13 @@ class DriverRepository(BaseRepository):
         placeholders = ", ".join("?" for _ in driver_ids)
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) "
-            f"{self._company_filter_for(company_id)}",
+            f"{self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             tuple(driver_ids) + self._company_params_for(company_id),
         )
 
     def get_all(self, limit: int = 200, offset: int = 0, company_id=None) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} ORDER BY name ASC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} {self._soft_delete_filter()} ORDER BY name ASC LIMIT ? OFFSET ?",
             self._company_params_for(company_id) + (limit, offset),
         )
 
@@ -81,16 +84,18 @@ class DriverRepository(BaseRepository):
         commit=True)
 
     def delete(self, driver_id: int, company_id=None) -> None:
+        """Soft-delete a driver by stamping ``deleted_at`` (row kept for sync)."""
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
-            (driver_id,) + self._company_params_for(company_id),
+            f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id = ? {self._company_filter_for(company_id)}",
+            (utc_now_iso(), driver_id) + self._company_params_for(company_id),
         commit=True)
 
     # ── Domain-specific queries ───────────────────────────────────────
 
     def get_active_drivers(self) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 {self._company_filter()} ORDER BY name ASC",
+            f"SELECT * FROM {self.TABLE} WHERE is_active = 1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY name ASC",
             self._company_params(),
         )
 
@@ -104,7 +109,7 @@ class DriverRepository(BaseRepository):
                   AND license_expiry != ''
                   AND license_expiry >= ?
                   AND license_expiry <= ?
-                  {self._company_filter()}
+                  {self._company_filter()} {self._soft_delete_filter()}
                 ORDER BY license_expiry ASC""",
             (today, cutoff) + self._company_params(),
         )
@@ -119,7 +124,7 @@ class DriverRepository(BaseRepository):
                   AND medical_expiry != ''
                   AND medical_expiry >= ?
                   AND medical_expiry <= ?
-                  {self._company_filter()}
+                  {self._company_filter()} {self._soft_delete_filter()}
                 ORDER BY medical_expiry ASC""",
             (today, cutoff) + self._company_params(),
         )
@@ -132,7 +137,7 @@ class DriverRepository(BaseRepository):
                   AND license_expiry IS NOT NULL
                   AND license_expiry != ''
                   AND license_expiry < ?
-                  {self._company_filter()}
+                  {self._company_filter()} {self._soft_delete_filter()}
                 ORDER BY license_expiry ASC""",
             (today,) + self._company_params(),
         )
@@ -145,20 +150,20 @@ class DriverRepository(BaseRepository):
                   AND medical_expiry IS NOT NULL
                   AND medical_expiry != ''
                   AND medical_expiry < ?
-                  {self._company_filter()}
+                  {self._company_filter()} {self._soft_delete_filter()}
                 ORDER BY medical_expiry ASC""",
             (today,) + self._company_params(),
         )
 
     def search_by_name(self, query: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE name LIKE ? {self._company_filter()} ORDER BY name ASC",
+            f"SELECT * FROM {self.TABLE} WHERE name LIKE ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY name ASC",
             (f"%{query}%",) + self._company_params(),
         )
 
     def get_by_card_number(self, card_number: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE driver_card_number = ? {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE driver_card_number = ? {self._company_filter()} {self._soft_delete_filter()}",
             (card_number,) + self._company_params(),
         )
 
@@ -168,7 +173,7 @@ class DriverRepository(BaseRepository):
 
     def get_by_name_fuzzy(self, name: str) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE name LIKE ? ESCAPE '\\' {self._company_filter()} LIMIT 1",
+            f"SELECT * FROM {self.TABLE} WHERE name LIKE ? ESCAPE '\\' {self._company_filter()} {self._soft_delete_filter()} LIMIT 1",
             (f"%{self._escape_like(name)}%",) + self._company_params(),
         )
 
@@ -180,7 +185,7 @@ class DriverRepository(BaseRepository):
 
     def count_active(self) -> int:
         row = self._fetchone(
-            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_active = 1 {self._company_filter()}",
+            f"SELECT COUNT(*) AS cnt FROM {self.TABLE} WHERE is_active = 1 {self._company_filter()} {self._soft_delete_filter()}",
             self._company_params(),
         )
         return row["cnt"] if row else 0

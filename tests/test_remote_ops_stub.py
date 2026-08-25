@@ -286,14 +286,86 @@ class TestRemoteOpsStub:
         ops = RemoteOpsStub()
         ops._configure_smtp_from_db()  # should not raise
 
-    def test_get_active_alerts_returns_empty_list(self):
+    def test_get_active_alerts_returns_empty_list_without_api_client(self):
+        # NOTE: RemoteOpsStub is now API-BACKED — get_active_alerts() reads
+        # GET /api/v1/alerts via the ApiClient.  Without an api_client it
+        # degrades to [] so the UI never crashes offline.
         ops = RemoteOpsStub()
         assert ops.get_active_alerts() == []
         assert ops.get_active_alerts(limit=10) == []
 
-    def test_get_active_alert_count_returns_zero(self):
+    def test_get_active_alerts_is_api_backed(self):
+        """get_active_alerts() surfaces server-side alerts via the API.
+
+        The backend runs the OperationsEngine workers; the stub proxies
+        get_active_alerts() to GET /api/v1/alerts (list) instead of
+        returning a hollow empty list.
+        """
+        api = MagicMock()
+        api.list_alerts.return_value = {
+            "items": [
+                {"id": "a1", "type": "maintenance", "message": "Oil change due",
+                 "status": "active"},
+                {"id": "a2", "type": "insurance", "message": "Insurance expires soon",
+                 "status": "active"},
+            ],
+            "total": 2,
+        }
+        ops = RemoteOpsStub(api_client=api)
+        alerts = ops.get_active_alerts(limit=10)
+        assert len(alerts) == 2
+        assert alerts[0].id == "a1"
+        assert alerts[0].message == "Oil change due"
+        assert alerts[0].type == "maintenance"
+        assert alerts[1].status == "active"
+        api.list_alerts.assert_called_once_with(limit=10)
+
+    def test_get_active_alerts_returns_empty_on_api_error(self):
+        """API failure degrades to [] instead of raising."""
+        api = MagicMock()
+        api.list_alerts.side_effect = RuntimeError("API unreachable")
+        ops = RemoteOpsStub(api_client=api)
+        assert ops.get_active_alerts() == []
+
+    def test_get_active_alert_count_returns_zero_without_api_client(self):
+        # NOTE: RemoteOpsStub is now API-BACKED — get_active_alert_count()
+        # reads GET /api/v1/alerts/count via the ApiClient.  Without an
+        # api_client it degrades to 0 so the UI never crashes offline.
         ops = RemoteOpsStub()
         assert ops.get_active_alert_count() == 0
+
+    def test_get_active_alert_count_is_api_backed(self):
+        """get_active_alert_count() reads the count from the alerts API."""
+        api = MagicMock()
+        api.get_alert_count.return_value = {"count": 7}
+        ops = RemoteOpsStub(api_client=api)
+        assert ops.get_active_alert_count() == 7
+        api.get_alert_count.assert_called_once_with()
+
+    def test_get_active_alert_count_returns_zero_on_api_error(self):
+        """API failure degrades to 0 instead of raising."""
+        api = MagicMock()
+        api.get_alert_count.side_effect = RuntimeError("API unreachable")
+        ops = RemoteOpsStub(api_client=api)
+        assert ops.get_active_alert_count() == 0
+
+    def test_resolve_alert_is_api_backed(self):
+        """resolve_alert() proxies to POST /api/v1/alerts/{id}/resolve."""
+        api = MagicMock()
+        api.resolve_alert.return_value = {"status": "resolved"}
+        ops = RemoteOpsStub(api_client=api)
+        assert ops.resolve_alert("a1") is True
+        api.resolve_alert.assert_called_once_with("a1")
+
+    def test_resolve_alert_returns_false_without_api_client(self):
+        ops = RemoteOpsStub()
+        assert ops.resolve_alert("a1") is False
+
+    def test_resolve_alert_returns_false_on_api_error(self):
+        api = MagicMock()
+        api.resolve_alert.side_effect = RuntimeError("API unreachable")
+        ops = RemoteOpsStub(api_client=api)
+        assert ops.resolve_alert("a1") is False
 
     def test_event_bus_is_persistent(self):
         ops = RemoteOpsStub()

@@ -8,10 +8,12 @@ import pytest
 
 from client.auth import Auth
 from client.auth_manager import (
+    _auth_changed_callbacks,
     clear_auth,
     get_auth,
     hydrate_from_storage,
     is_admin,
+    on_auth_changed,
     require_admin_async,
     set_auth,
 )
@@ -48,6 +50,56 @@ class TestGetSetClear:
         set_auth(mock_auth)
         clear_auth()
         mock_auth.clear_token.assert_called_once()
+
+
+class TestAuthChangedCallbacks:
+    """Phase F: the sync engine is wired to auth state via on_auth_changed."""
+
+    def test_set_auth_notifies_with_auth_instance(self):
+        received = []
+        on_auth_changed(received.append)
+        auth = Auth(token="abc")
+        set_auth(auth)
+        assert received[-1] is auth
+
+    def test_clear_auth_notifies_with_none(self):
+        received = []
+        on_auth_changed(received.append)
+        set_auth(Auth(token="abc"))
+        received.clear()
+        clear_auth()
+        assert received[-1] is None
+
+    def test_set_auth_overwrite_notifies(self):
+        received = []
+        on_auth_changed(received.append)
+        set_auth(Auth(token="first"))
+        second = Auth(token="second")
+        set_auth(second)
+        assert received[-1] is second
+        assert len(received) == 2
+
+    def test_callback_exception_does_not_break_others(self):
+        received = []
+        on_auth_changed(lambda auth: (_ for _ in ()).throw(RuntimeError("boom")))
+        on_auth_changed(received.append)
+        set_auth(Auth(token="abc"))  # must not raise
+        assert received[-1] is not None
+
+    def test_hydrate_success_notifies(self):
+        received = []
+        on_auth_changed(received.append)
+        with patch("client.auth_manager.Auth.load_from_storage") as mock_load:
+            auth = Auth(token="valid")
+            auth._token = "valid"
+            mock_load.return_value = auth
+            # Patch the expiry + role checks to a valid, admin session.
+            with (
+                patch.object(Auth, "token_expired", property(lambda self: False)),
+                patch.object(Auth, "role", property(lambda self: "admin")),
+            ):
+                assert hydrate_from_storage() is True
+        assert received[-1] is auth
 
 
 class TestIsAdmin:

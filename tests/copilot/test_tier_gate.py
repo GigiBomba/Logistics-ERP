@@ -7,6 +7,8 @@ Covers:
 - Rate limiting integration concept
 - Token limit enforcement (MAX_LLM_TOKENS_PER_TURN)
 """
+from __future__ import annotations
+
 
 from typing import Any, Dict
 from unittest.mock import MagicMock, patch

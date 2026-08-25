@@ -3,6 +3,8 @@ languages must have a localized fallback message.
 
 Blueprint: §3.4, §27.10.
 """
+from __future__ import annotations
+
 
 import pytest
 

@@ -10,6 +10,8 @@ contract:
 - ``DownloadManifestEntry``: record_id (str), filename (str), size_bytes (int),
   download_url (str), url_expires_at (ISO-8601 str, Dart ``DateTime.parse``).
 """
+from __future__ import annotations
+
 
 from datetime import datetime, timedelta, timezone
 

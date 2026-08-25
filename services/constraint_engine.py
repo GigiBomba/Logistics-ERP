@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # services/constraint_engine.py
 # Refactored: Improved parameter building for GraphHopper truck routing
 

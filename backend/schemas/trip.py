@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from typing import Any, Dict, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
@@ -18,6 +20,11 @@ class TripResponse(TripBase):
     id: int
     status: str
     created_at: str
+    # Fields the API accepts on create/update — must round-trip on GET,
+    # otherwise the create→read lifecycle drops user-provided data.
+    # Optional: DB rows may have NULL driver/truck (no assignment).
+    driver_name: Optional[str] = None
+    truck_number: Optional[str] = None
 
 
 class TripSearchParams(BaseModel):

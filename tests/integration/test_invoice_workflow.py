@@ -1,4 +1,6 @@
 """Integration test: Invoice create → finalize → PDF flow."""
+from __future__ import annotations
+
 import pytest
 from models.invoice_models import InvoiceCreate, InvoiceLineItem, InvoiceFinalizeRequest
 from services.invoicing.service import InvoiceService

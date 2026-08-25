@@ -38,6 +38,10 @@ from ui.design_tokens import (
 )
 
 # ── Color palette (aliases for Plotly-facing code) ─────────────────
+# The *_LIGHT variants (SECONDARY / SUCCESS_LIGHT / WARNING_LIGHT /
+# DANGER_LIGHT / INFO_LIGHT) are the chart-palette extension — data-viz
+# series colors intentionally beyond the UI token set (audit item 4
+# exemption: "data-viz palettes intentionally extend beyond UI tokens").
 
 PLOTLY_ACCENT          = ACCENT          # "#6366f1"
 PLOTLY_SECONDARY       = "#818cf8"

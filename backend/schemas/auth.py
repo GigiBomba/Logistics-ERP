@@ -4,6 +4,8 @@ These replace raw ``Dict[str, str]`` parameters in auth endpoints
 so that input validation happens at the Pydantic boundary before
 reaching the handler.
 """
+from __future__ import annotations
+
 
 from pydantic import BaseModel, Field
 

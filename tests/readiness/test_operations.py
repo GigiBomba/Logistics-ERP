@@ -4,6 +4,8 @@ These tests validate the core service contracts for feature flag evaluation,
 SLO/SLA reporting, and audit event logging.  DB connections are mocked so
 that tests run without an active database.
 """
+from __future__ import annotations
+
 import pytest
 from unittest.mock import MagicMock, patch, call
 from datetime import datetime, timezone

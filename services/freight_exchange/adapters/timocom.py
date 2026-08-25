@@ -4,6 +4,8 @@ Maps TIMOCOM's REST API into the normalized ``FreightProviderAdapter``
 interface.  All TIMOCOM-specific API knowledge lives here — nothing above
 this file ever imports a TIMOCOM type or references a TIMOCOM payload shape.
 """
+from __future__ import annotations
+
 import logging
 import time
 from datetime import datetime, timezone

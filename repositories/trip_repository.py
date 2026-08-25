@@ -1,4 +1,6 @@
 """Trip repository — all trip DB access consolidated here."""
+from __future__ import annotations
+
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -7,6 +9,7 @@ from repositories import BaseRepository
 class TripRepository(BaseRepository):
     TABLE = "trips"
     TABLE_CMR_COUNTER = "cmr_counter"
+    SOFT_DELETE = True
     COLUMNS = [
         "id", "created_at", "truck_number", "driver_name", "client_name",
         "distance_km", "total_price_eur", "rate_per_km", "gross_per_km", "net_profit",
@@ -30,7 +33,7 @@ class TripRepository(BaseRepository):
         import json
         try:
             row = self._fetchone(
-                f"SELECT documents_attached FROM {self.TABLE} WHERE id = ? {self._company_filter()}",
+                f"SELECT documents_attached FROM {self.TABLE} WHERE id = ? {self._company_filter()} {self._soft_delete_filter()}",
                 (trip_id,) + self._company_params(),
             )
         except Exception:
@@ -56,13 +59,13 @@ class TripRepository(BaseRepository):
 
     def get_by_id(self, trip_id: int, company_id=None) -> Optional[Dict[str, Any]]:
         return self._fetchone(
-            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
+            f"SELECT * FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)} {self._soft_delete_filter()}",
             (trip_id,) + self._company_params_for(company_id),
         )
 
     def get_all(self, limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ? OFFSET ?",
             self._company_params() + (limit, offset),
         )
 
@@ -129,13 +132,13 @@ class TripRepository(BaseRepository):
             return []
         placeholders = ",".join("?" for _ in trip_ids)
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()}",
+            f"SELECT * FROM {self.TABLE} WHERE id IN ({placeholders}) {self._company_filter()} {self._soft_delete_filter()}",
             tuple(trip_ids) + self._company_params(),
         )
 
     def get_last_activity_by_truck_id(self, truck_id: int) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT MAX(created_at) AS last_activity FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()}",
+            f"SELECT MAX(created_at) AS last_activity FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} {self._soft_delete_filter()}",
             (truck_id,) + self._company_params(),
         )
         return row["last_activity"] if row else None
@@ -147,9 +150,11 @@ class TripRepository(BaseRepository):
         commit=True)
 
     def delete(self, trip_id: int, company_id=None) -> None:
+        """Soft-delete a trip by stamping ``deleted_at`` (row is kept for sync)."""
+        from database.time_utils import utc_now_iso
         self._execute(
-            f"DELETE FROM {self.TABLE} WHERE id = ? {self._company_filter_for(company_id)}",
-            (trip_id,) + self._company_params_for(company_id),
+            f"UPDATE {self.TABLE} SET deleted_at = ? WHERE id = ? {self._company_filter_for(company_id)}",
+            (utc_now_iso(), trip_id) + self._company_params_for(company_id),
         commit=True)
 
     # ── Status history ──────────────────────────────────────────────
@@ -167,7 +172,7 @@ class TripRepository(BaseRepository):
 
     def get_by_driver_id(self, driver_id: int, limit: int = 500) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} ORDER BY created_at DESC LIMIT ?",
+            f"SELECT * FROM {self.TABLE} WHERE driver_id = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC LIMIT ?",
             (driver_id,) + self._company_params() + (limit,),
         )
 
@@ -178,7 +183,7 @@ class TripRepository(BaseRepository):
         query explicitly — without it the context filter is a no-op in the
         HTTP request path.
         """
-        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)}"
+        query = f"SELECT * FROM {self.TABLE} WHERE 1=1 {self._company_filter_for(company_id)} {self._soft_delete_filter()}"
         params: list = list(self._company_params_for(company_id))
         if search:
             query += " AND (client_name LIKE ? OR driver_name LIKE ?)"
@@ -200,7 +205,7 @@ class TripRepository(BaseRepository):
         placeholders = ", ".join("?" for _ in statuses)
         query = (
             f"SELECT * FROM {self.TABLE} WHERE status IN ({placeholders}) "
-            f"{self._company_filter()} ORDER BY created_at DESC"
+            f"{self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC"
         )
         params: list = list(tuple(statuses) + self._company_params())
         if limit is not None:
@@ -210,26 +215,26 @@ class TripRepository(BaseRepository):
 
     def get_by_date_range(self, start: str, end: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE created_at >= ? AND created_at <= ? {self._company_filter()} ORDER BY created_at DESC",
+            f"SELECT * FROM {self.TABLE} WHERE created_at >= ? AND created_at <= ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC",
             (start, end) + self._company_params(),
         )
 
     def get_by_truck_number(self, truck_number: str) -> List[Dict[str, Any]]:
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE truck_number = ? {self._company_filter()} ORDER BY created_at DESC",
+            f"SELECT * FROM {self.TABLE} WHERE truck_number = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC",
             (truck_number,) + self._company_params(),
         )
 
     def get_by_truck_id(self, truck_id: int) -> List[Dict[str, Any]]:
         """Return trips for a given truck by canonical FK."""
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} ORDER BY created_at DESC",
+            f"SELECT * FROM {self.TABLE} WHERE truck_id = ? {self._company_filter()} {self._soft_delete_filter()} ORDER BY created_at DESC",
             (truck_id,) + self._company_params(),
         )
 
     def get_last_activity(self, truck_number: str) -> Optional[str]:
         row = self._fetchone(
-            f"SELECT MAX(created_at) AS last_date FROM {self.TABLE} WHERE truck_number = ? {self._company_filter()}",
+            f"SELECT MAX(created_at) AS last_date FROM {self.TABLE} WHERE truck_number = ? {self._company_filter()} {self._soft_delete_filter()}",
             (truck_number,) + self._company_params(),
         )
         return row["last_date"] if row else None
@@ -248,7 +253,7 @@ class TripRepository(BaseRepository):
                 WHERE start_date >= ?
                   AND start_date <= ?
                   AND LOWER(status) IN ('delivered', 'completed', 'done', 'paid')
-                  {self._company_filter()}
+                  {self._company_filter()} {self._soft_delete_filter()}
                 GROUP BY start_date
                 ORDER BY start_date""",
             (start, end) + self._company_params(),
@@ -272,7 +277,7 @@ class TripRepository(BaseRepository):
                  WHERE tr.start_date >= ?
                    AND tr.start_date <= ?
                    AND LOWER(tr.status) IN ('delivered', 'completed', 'done', 'paid')
-                   {self._company_filter_for(company_id, "tr")}
+                   {self._company_filter_for(company_id, "tr")} {self._soft_delete_filter("tr")}
                  GROUP BY COALESCE(tr.truck_id, tr.truck_number)
                  ORDER BY revenue DESC
                  LIMIT ?""",
@@ -287,7 +292,7 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             "WHERE cmr_number IS NOT NULL AND TRIM(cmr_number) != '' "
             "AND LOWER(TRIM(cmr_number)) = LOWER(TRIM(?)) "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             "ORDER BY id DESC",
             (cmr_number,) + self._company_params(),
         )
@@ -298,7 +303,7 @@ class TripRepository(BaseRepository):
             f"""SELECT t.* FROM {self.TABLE} t
                  JOIN invoices i ON i.trip_id = t.id
                  WHERE LOWER(TRIM(i.invoice_number)) = LOWER(TRIM(?))
-                 {self._company_filter("t")}
+                 {self._company_filter("t")} {self._soft_delete_filter("t")}
                  ORDER BY t.id DESC""",
             (invoice_number,) + self._company_params(),
         )
@@ -310,7 +315,7 @@ class TripRepository(BaseRepository):
                  LEFT JOIN trucks t ON tr.truck_id = t.id
                  WHERE (LOWER(TRIM(COALESCE(tr.truck_number, ''))) = LOWER(TRIM(?))
                      OR LOWER(TRIM(COALESCE(t.plate_number, ''))) = LOWER(TRIM(?)))
-                 {self._company_filter("tr")}
+                 {self._company_filter("tr")} {self._soft_delete_filter("tr")}
                  ORDER BY tr.id DESC
                  LIMIT 20""",
             (plate, plate) + self._company_params(),
@@ -322,7 +327,7 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             "WHERE driver_name IS NOT NULL AND TRIM(driver_name) != '' "
             "AND LOWER(driver_name) LIKE LOWER(?) "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             "ORDER BY id DESC LIMIT 20",
             (f"%{driver_name.strip()}%",) + self._company_params(),
         )
@@ -336,7 +341,7 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             f"WHERE (status NOT IN ({placeholders}) "
             f"OR status IS NULL OR status = '') "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             f"ORDER BY created_at DESC LIMIT ?",
             tuple(exclude_statuses) + (limit,) + self._company_params(),
         )
@@ -362,7 +367,7 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             f"WHERE {where} AND (status NOT IN ({placeholders}) OR status IS NULL OR status = '') "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             f"ORDER BY created_at DESC LIMIT ?",
             tuple(params) + tuple(statuses) + self._company_params() + (limit,),
         )
@@ -377,7 +382,7 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             f"WHERE driver_id = ? AND (status NOT IN ({placeholders}) OR status IS NULL OR status = '') "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             f"ORDER BY created_at DESC LIMIT ?",
             (driver_id,) + tuple(statuses) + self._company_params() + (limit,),
         )
@@ -402,7 +407,7 @@ class TripRepository(BaseRepository):
             f"WHERE ({where_truck}) AND "
             f"(status NOT IN ('Delivered','Completed','Done','Cancelled','Paid') "
             f"OR status IS NULL OR status = '') "
-            f"{self._company_filter()}",
+            f"{self._company_filter()} {self._soft_delete_filter()}",
             tuple(params) + self._company_params(),
         )
         return row["latest_end"] if row and row["latest_end"] else None
@@ -416,7 +421,7 @@ class TripRepository(BaseRepository):
             f"WHERE driver_id = ? AND "
             f"(status NOT IN ('Delivered','Completed','Done','Cancelled','Paid') "
             f"OR status IS NULL OR status = '') "
-            f"{self._company_filter()}",
+            f"{self._company_filter()} {self._soft_delete_filter()}",
             (driver_id,) + self._company_params(),
         )
         return row["latest_end"] if row and row["latest_end"] else None
@@ -433,7 +438,7 @@ class TripRepository(BaseRepository):
         return self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             "WHERE start_date >= ? AND start_date <= ? "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             "ORDER BY id DESC LIMIT ?",
             (start, end) + self._company_params() + (limit,),
         )
@@ -458,7 +463,7 @@ class TripRepository(BaseRepository):
         rows = self._fetchall(
             f"SELECT * FROM {self.TABLE} "
             "WHERE start_date >= ? AND start_date <= ? "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             "ORDER BY id DESC",
             (start, end) + self._company_params(),
         )
@@ -485,7 +490,7 @@ class TripRepository(BaseRepository):
             f"SELECT * FROM {self.TABLE} "
             "WHERE client_name IS NOT NULL AND TRIM(client_name) != '' "
             "AND LOWER(client_name) LIKE LOWER(?) "
-            f"{self._company_filter()} "
+            f"{self._company_filter()} {self._soft_delete_filter()} "
             "ORDER BY id DESC LIMIT ?",
             (f"%{q}%",) + self._company_params() + (limit,),
         )

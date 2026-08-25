@@ -10,6 +10,8 @@ position 0 mid-typing).  After the fix:
 * the amount cell is *not* reformatted while the user is still
   typing — formatting is deferred to focus-leave.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

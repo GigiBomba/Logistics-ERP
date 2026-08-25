@@ -2,6 +2,8 @@
 
 Blueprint: §4 (core contracts), §5.2 (reasoning graph).
 """
+from __future__ import annotations
+
 
 import json
 from datetime import datetime, timezone

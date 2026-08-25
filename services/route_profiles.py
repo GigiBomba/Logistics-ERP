@@ -3,6 +3,8 @@
 Retained for backward compatibility. New code should import from
 ``utils.labels`` directly.
 """
+from __future__ import annotations
+
 
 from utils.labels import (  # noqa: F401
     GRAPHHOPPER_PROFILES,

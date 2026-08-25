@@ -176,7 +176,7 @@ class QtDispatchTabs(QWidget):
         """Return the ``tab_id`` of the currently active tab, or ``None``."""
         return self._active_tab
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         """Clear callbacks and internal dicts, then schedule deletion."""
         self._on_switch_callback = None
         self._tabs.clear()

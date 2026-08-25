@@ -6,6 +6,8 @@ for the calculator and dispatch board).  The fix publishes
 ``TRUCK_*`` and ``CLIENT_*`` events from the manager views and has
 the consumer views subscribe.
 """
+from __future__ import annotations
+
 
 import os
 import tempfile

@@ -6,6 +6,8 @@ accept / reject / counter dialogue (the adapter push can come later).  Rows form
 a linear chain via ``parent_negotiation_id``; ``latest()`` returns the tail so a
 counter can link to it.
 """
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository

@@ -386,6 +386,23 @@ class TestUpdateAuth:
             {"Authorization": "Bearer new_token"}
         )
 
+    def test_update_auth_none_removes_stale_header(self, mock_instance, mock_httpx_cls):
+        """Logout (update_auth(None)) must drop the stale Authorization
+        header — otherwise the client keeps sending a dead token and 401s
+        on every request forever."""
+        old_auth = Auth(token="old_token")
+        client = ApiClient(base_url="http://test.local", verify_ssl=False, auth=old_auth)
+        client.update_auth(None)
+        assert client._auth is None
+        mock_instance.headers.pop.assert_called_with("Authorization", None)
+
+    def test_update_auth_tokenless_removes_stale_header(self, mock_instance, mock_httpx_cls):
+        old_auth = Auth(token="old_token")
+        client = ApiClient(base_url="http://test.local", verify_ssl=False, auth=old_auth)
+        client.update_auth(Auth())  # cleared token, no refresh token
+        assert client._auth is not None
+        mock_instance.headers.pop.assert_called_with("Authorization", None)
+
 
 class TestClose:
     def test_close_calls_client_close(self, mock_instance, mock_httpx_cls):
@@ -586,6 +603,18 @@ class TestRetryOn401:
             result = client.export_trip_pdf(1)
         assert result == b"binary data"
         assert mock_instance.request.call_count == 2
+
+    def test_failed_refresh_removes_stale_header(self, mock_instance):
+        """When the refresh fails, the dead Bearer header must be dropped —
+        otherwise every subsequent request 401s forever."""
+        auth = Auth(token="expired", refresh_token="rtok")
+        client = ApiClient(base_url="http://test.local/api/v1", verify_ssl=False, auth=auth)
+        req = httpx.Request("GET", "http://test.local/api/v1/documents/42")
+        mock_instance.request.return_value = httpx.Response(401, request=req)
+        with patch.object(client._auth, "refresh", return_value=False):
+            with pytest.raises(httpx.HTTPStatusError):
+                client.get_document(42)
+        mock_instance.headers.pop.assert_called_with("Authorization", None)
 
 
 class TestDualModeDocumentServiceExtended:

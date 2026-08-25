@@ -3,6 +3,8 @@
 All public methods now accept/return typed Pydantic models.
 Backward-compatible dict-accepting methods are kept with deprecation warnings.
 """
+from __future__ import annotations
+
 
 import logging
 import warnings

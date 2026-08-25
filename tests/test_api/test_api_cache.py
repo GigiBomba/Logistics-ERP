@@ -1,4 +1,6 @@
 """Test that the FastAPI app boots without Redis (graceful degradation)."""
+from __future__ import annotations
+
 import pytest
 from fastapi.testclient import TestClient
 

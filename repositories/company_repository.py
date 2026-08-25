@@ -5,6 +5,8 @@ Company-level filtering is not applied because the company IS the tenant
 root.  Cross-tenant admin reads rely on this behaviour.
 # read-only
 """
+from __future__ import annotations
+
 from typing import Any, Dict, List, Optional
 
 from repositories import BaseRepository
@@ -23,8 +25,11 @@ class CompanyRepository(BaseRepository):
         )
 
     def get_all(self, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
+        # The sentinel company (id=0) is an internal FK anchor seeded on DB
+        # bootstrap — never a real tenant, so keep it out of listings.
         return self._fetchall(
-            f"SELECT * FROM {self.TABLE} ORDER BY company_name LIMIT ? OFFSET ?",
+            f"SELECT * FROM {self.TABLE} WHERE id != 0 "
+            f"ORDER BY company_name LIMIT ? OFFSET ?",
             (limit, offset),
         )
 
@@ -47,6 +52,6 @@ class CompanyRepository(BaseRepository):
 
     def get_active_ids(self) -> List[int]:
         rows = self._fetchall(
-            f"SELECT id FROM {self.TABLE} WHERE is_active = 1 ORDER BY id",
+            f"SELECT id FROM {self.TABLE} WHERE is_active = 1 AND id != 0 ORDER BY id",
         )
         return [r["id"] for r in rows]

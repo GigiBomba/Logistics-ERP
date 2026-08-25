@@ -2,6 +2,8 @@
 
 Blueprint: §10 — Confidence Engine (concrete formula, not a label).
 """
+from __future__ import annotations
+
 
 import pytest
 

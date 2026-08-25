@@ -9,6 +9,8 @@ Provider-agnostic: if a provider doesn't expose counterparty rating,
 that input is simply absent (neutral contribution).  No per-provider
 ``if`` branches exist here.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 from typing import Optional

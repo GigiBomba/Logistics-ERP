@@ -24,6 +24,8 @@ work) and before WebhookBodyMiddleware (CSRF only reads headers, so the
 request body is untouched; WebhookBody runs later and can still parse the
 raw body for signature checks).
 """
+from __future__ import annotations
+
 
 import hmac
 import logging

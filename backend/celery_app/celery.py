@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from celery import Celery
 
 from backend.config import BackendSettings

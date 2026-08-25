@@ -8,6 +8,8 @@ Revision ID: f7b8c9d0e1f8
 Revises: a9b0c1d2e3f4, a9b0c1d2e3f5
 Create Date: 2026-07-21
 """
+from __future__ import annotations
+
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa

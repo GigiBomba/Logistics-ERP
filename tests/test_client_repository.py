@@ -218,6 +218,45 @@ class TestSearchAdvanced:
         results = repo.search_advanced("Hidden", include_inactive=True)
         assert len(results) == 1
 
+    def test_excludes_soft_deleted(self, db, repo):
+        """R2: search_advanced must exclude soft-deleted clients."""
+        _client(db, name="Deleted Client")
+        cid = _client(db, name="Deleted Client 2")
+        repo.soft_delete(cid)
+        results = repo.search_advanced("Deleted Client")
+        assert all(r["id"] != cid for r in results)
+
+
+class TestGetInvoices:
+    def test_excludes_soft_deleted_invoice(self, db, repo):
+        """R2: get_invoices must exclude soft-deleted invoices."""
+        cid = _client(db, name="Invoice Client")
+        tid1 = _trip(db, client_id=cid, client_name="Invoice Client")
+        tid2 = _trip(db, client_id=cid, client_name="Invoice Client")
+        db.conn.execute(
+            "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, "
+            "total_amount, status) VALUES (?, ?, '2026-06-15', '2026-07-15', 1000.00, 'Unpaid')",
+            (tid1, "INV-2026-0001"),
+        )
+        db.conn.execute(
+            "INSERT INTO invoices (trip_id, invoice_number, issue_date, due_date, "
+            "total_amount, status) VALUES (?, ?, '2026-06-15', '2026-07-15', 2000.00, 'Unpaid')",
+            (tid2, "INV-2026-0002"),
+        )
+        db.conn.commit()
+        gone_id = db.conn.execute(
+            "SELECT id FROM invoices WHERE invoice_number = 'INV-2026-0002'"
+        ).fetchone()["id"]
+        db.conn.execute(
+            "UPDATE invoices SET deleted_at = '2026-08-01T00:00:00Z' WHERE id = ?",
+            (gone_id,),
+        )
+        db.conn.commit()
+        rows = repo.get_invoices(cid)
+        ids = {r["id"] for r in rows}
+        assert gone_id not in ids
+        assert len(rows) == 1
+
 
 class TestGetTripCount:
     def test_counts_trips(self, db, repo):

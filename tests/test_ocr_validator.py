@@ -1,4 +1,6 @@
 """Tests for ocr_validator module."""
+from __future__ import annotations
+
 import pytest
 
 from services.document_automation.ocr_validator import (

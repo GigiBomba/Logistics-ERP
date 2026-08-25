@@ -61,7 +61,6 @@ class TestShareRouteDialogKeyboard:
                 "Clipboard should contain the share URL after Enter on Copy"
             )
 
-    @pytest.mark.xfail(reason="Clipboard not available in headless CI")
     def test_copy_button_via_space(self, qt_widget, qtbot):
         """Space on Copy button copies share_url to clipboard."""
         from ui.dialogs.share_route_dialog import ShareRouteDialog

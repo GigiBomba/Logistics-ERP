@@ -1,4 +1,6 @@
 """Debug: check _increment_mock_call and find where calls are recorded."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock
 import inspect
 

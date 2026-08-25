@@ -8,6 +8,8 @@ Usage::
     from backend.celery_app.schedule import CELERY_BEAT_SCHEDULE
     celery_app.conf.beat_schedule.update(CELERY_BEAT_SCHEDULE)
 """
+from __future__ import annotations
+
 from celery.schedules import crontab
 
 CELERY_BEAT_SCHEDULE = {

@@ -3,6 +3,8 @@ webhook processing, health checks, and expired session cleanup.
 
 All tasks are referred to by entries in ``backend/celery_app.schedule``.
 """
+from __future__ import annotations
+
 import logging
 from datetime import datetime, timezone
 

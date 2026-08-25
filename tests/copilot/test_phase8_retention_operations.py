@@ -3,6 +3,8 @@
 Tests: task existence, correct retention periods, SQL compatibility,
 anonymization logic, and Celery integration.
 """
+from __future__ import annotations
+
 
 from datetime import datetime, timedelta
 from unittest.mock import MagicMock, patch

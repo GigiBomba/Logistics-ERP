@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 
 from services.exchange_rate_service import ExchangeRateService

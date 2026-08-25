@@ -3,6 +3,8 @@
 All endpoints enforce multi-tenant isolation: ``company_id`` is derived
 from the JWT, never trusted from the client request body.
 """
+from __future__ import annotations
+
 import logging
 from datetime import date
 from typing import Any, Dict, Literal, Optional

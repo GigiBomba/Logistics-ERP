@@ -4,6 +4,8 @@ Every endpoint in this module is protected by the ``require_admin``
 dependency gate, returning HTTP 403 before any business logic if the
 caller is not an authenticated admin user.
 """
+from __future__ import annotations
+
 
 import logging
 import os

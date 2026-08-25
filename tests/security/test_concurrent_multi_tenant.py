@@ -10,6 +10,8 @@ Fixtures from conftest:
     auth_b        Company B dispatcher bearer headers
     auth_admin    Admin bearer headers (company_id=0, role=admin)
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

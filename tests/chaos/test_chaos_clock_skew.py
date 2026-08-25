@@ -4,6 +4,8 @@ Simulates scenarios where the server clock is ahead of or behind the real
 time, or where a token's ``nbf`` (not-before) or ``exp`` (expiration) claims
 interact with PyJWT's leeway settings.
 """
+from __future__ import annotations
+
 
 import time
 from datetime import timedelta

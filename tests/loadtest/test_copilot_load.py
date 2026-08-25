@@ -4,6 +4,8 @@ These tests verify the system meets performance expectations
 under realistic load. They are marked 'loadtest' to separate
 from unit tests.
 """
+from __future__ import annotations
+
 
 import asyncio
 import time

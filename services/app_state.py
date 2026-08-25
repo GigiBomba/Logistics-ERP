@@ -8,6 +8,8 @@ Replaces scattered global variables and provides a single source of truth for:
 - active filters
 - user preferences
 """
+from __future__ import annotations
+
 import logging
 import threading
 from typing import Any, Callable

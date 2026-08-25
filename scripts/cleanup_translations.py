@@ -10,6 +10,8 @@ Strategy:
 - Step 2: Remove truly dead keys from all translation files
 - Step 3: Fix all placeholder mismatches
 """
+from __future__ import annotations
+
 
 import json
 import os

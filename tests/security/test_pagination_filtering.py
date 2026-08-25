@@ -8,6 +8,8 @@ Fixtures from conftest:
     auth_a  — Authorization header dict for Company A dispatcher.
     auth_b  — Authorization header dict for Company B dispatcher.
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

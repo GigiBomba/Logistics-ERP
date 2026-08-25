@@ -1,4 +1,6 @@
 """Currency, exchange rate, and fuel price non-determinism contracts."""
+from __future__ import annotations
+
 
 from .contract import (
     NON_DETERMINISTIC_OPERATIONS,

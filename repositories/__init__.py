@@ -52,6 +52,13 @@ class BaseRepository:
     # This is the allowlist used to prevent SQL injection via column names.
     COLUMNS: list = []
 
+    # Subclasses whose table has a ``deleted_at`` column set this to True.
+    # The base query helpers then append ``AND deleted_at IS NULL`` to SELECT
+    # queries so soft-deleted rows are invisible to list/get/read paths.
+    # NOTE: the sync pull endpoint (backend/api/v1/sync.py) reads rows via
+    # ``db.execute`` directly — it is intentionally NOT filtered here.
+    SOFT_DELETE: bool = False
+
     def __init__(self, db):
         self.db = db
 
@@ -103,6 +110,18 @@ class BaseRepository:
         if self._scoped:
             return (self._user_company_id,)
         return ()
+
+    def _soft_delete_filter(self, alias: str = "") -> str:
+        """Return an SQL fragment ``AND alias.deleted_at IS NULL`` for
+        repositories that soft-delete (``SOFT_DELETE = True``).
+
+        Returns empty string for repositories without a ``deleted_at``
+        column, so existing queries are unchanged for those tables.
+        """
+        if not self.SOFT_DELETE:
+            return ""
+        prefix = f"{alias}." if alias else ""
+        return f"AND {prefix}deleted_at IS NULL"
 
     def _company_filter_for(self, company_id, alias: str = "") -> str:
         """Explicit tenant-scoping fragment for callers that pass company_id.

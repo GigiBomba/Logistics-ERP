@@ -4,6 +4,8 @@ Handles OAuth token exchange, Api-key header injection, and raw
 request/response handling. Used by TransEuAdapter and other
 Trans.eu domain services.
 """
+from __future__ import annotations
+
 import logging
 from typing import Any, Optional
 

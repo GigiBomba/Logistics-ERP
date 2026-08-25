@@ -30,7 +30,16 @@ class TestReceiptsRouter:
         resp = client.post(f"{BASE}/generate", json=payload)
         assert resp.status_code == 200
         assert "application/pdf" in resp.headers.get("content-type", "")
-        mock_gen.generate.assert_called_once_with(payload["receipt_data"])
+        # Server-side sequence numbering: when the request supplies no
+        # receipt_number, the endpoint injects the assigned sequence number
+        # into the payload before rendering the PDF and surfaces it in the
+        # response header.
+        call_args = mock_gen.generate.call_args
+        sent = call_args[0][0]
+        assert sent["client"] == "Acme Corp"
+        assert sent["amount"] == 1500.00
+        assert sent["receipt_number"].startswith("RCT-")
+        assert resp.headers.get("X-Receipt-Number") == sent["receipt_number"]
 
     @patch("services.invoicing.receipt_generator.ReceiptGenerator")
     def test_generate_receipt_empty_data(self, mock_gen_cls, client_with_mocks):

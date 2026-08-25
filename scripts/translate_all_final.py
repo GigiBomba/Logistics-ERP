@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Final comprehensive translation for de.json, es.json, fr.json."""
+from __future__ import annotations
+
 import json, os, re
 
 TRANS_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "translations")

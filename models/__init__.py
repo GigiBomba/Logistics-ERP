@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 # models package — Pydantic v2 typed contracts for AI-callable services
 
 from .common import (

@@ -20,6 +20,8 @@ Test matrix:
   5.  Vertical privilege escalation — Dispatcher tries admin-only endpoints
   6.  Dispatcher CRUD on own trips (Company A)
 """
+from __future__ import annotations
+
 
 import pytest
 from fastapi.testclient import TestClient

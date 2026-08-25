@@ -29,6 +29,8 @@ Companies are mapped from the event object's ``customer`` id via
 ``subscriptions.stripe_customer_id``. Events for unknown customers are
 acknowledged (200) with ``status=skipped`` so Stripe stops retrying.
 """
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timedelta

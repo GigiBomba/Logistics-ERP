@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Translate all English placeholder values in data/translations/el.json to Greek."""
+from __future__ import annotations
+
 import json
 import os
 import sys

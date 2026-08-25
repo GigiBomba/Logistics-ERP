@@ -48,9 +48,9 @@ class TestDesignTokens:
 
     def test_legacy_status_dict_has_keys(self):
         from ui import design_tokens as dt
-        assert "delivered" in dt.STATUS
-        assert "planned" in dt.STATUS
-        assert "cancelled" in dt.STATUS
+        assert "delivered" in dt.STATUS_COLORS
+        assert "planned" in dt.STATUS_COLORS
+        assert "cancelled" in dt.STATUS_COLORS
 
     def test_sp_dictionary_matches_space_constants(self):
         from ui import design_tokens as dt

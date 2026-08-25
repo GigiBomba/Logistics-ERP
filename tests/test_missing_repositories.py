@@ -113,8 +113,11 @@ class TestCompaniesTable:
             )
         db.conn.commit()
 
+        # Exclude the sentinel company (id=0, seeded on DB bootstrap for FK
+        # integrity) — the assertion is about the three inserted companies.
         rows = db.conn.execute(
-            "SELECT company_name FROM companies ORDER BY company_name",
+            "SELECT company_name FROM companies WHERE id != 0 "
+            "ORDER BY company_name",
         ).fetchall()
         assert len(rows) == 3
         assert [r["company_name"] for r in rows] == ["Alpha", "Beta", "Gamma"]

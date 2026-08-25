@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from pydantic import BaseModel, ConfigDict
 from decimal import Decimal
 from typing import Optional, Generic, TypeVar

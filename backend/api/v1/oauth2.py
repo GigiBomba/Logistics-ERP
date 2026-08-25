@@ -1,4 +1,6 @@
 """OAuth2 client management (admin only)."""
+from __future__ import annotations
+
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, status

@@ -1,4 +1,6 @@
 """Audit service — centralized audit logging for all business operations."""
+from __future__ import annotations
+
 import logging
 from typing import Any, Optional
 

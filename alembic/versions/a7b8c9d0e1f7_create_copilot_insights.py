@@ -4,6 +4,8 @@ Revision ID: a7b8c9d0e1f7
 Revises: f6a7b8c9d0e6
 Create Date: 2026-07-14
 """
+from __future__ import annotations
+
 from typing import Sequence, Union
 from alembic import op
 import sqlalchemy as sa

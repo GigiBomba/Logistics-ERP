@@ -268,7 +268,9 @@ class Sidebar(QFrame):
         self._container_layout.addWidget(self._search_input)
 
         self._scroll.setWidget(self._container)
-        self.layout().addWidget(self._scroll, 1)
+        layout = self.layout()
+        assert isinstance(layout, QVBoxLayout)
+        layout.addWidget(self._scroll, 1)
 
     def _build_bottom_section(self):
         bottom = QFrame()
@@ -393,7 +395,7 @@ class Sidebar(QFrame):
         # Left accent bar
         accent = QFrame()
         accent.setFixedWidth(4)
-        accent.setStyleSheet("background: transparent; border-radius: 2px;")
+        accent.setStyleSheet(f"background: transparent; border-radius: {RADIUS_SM}px;")
         layout.addWidget(accent)
 
         # Icon
@@ -622,7 +624,7 @@ class Sidebar(QFrame):
             if name in self._group_labels:
                 self._group_labels[name].setText(t(i18n_key).upper())
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         unregister_listener(self._language_callback)
         self._stop_animation()
         self._items.clear()

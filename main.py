@@ -2,6 +2,8 @@
 
 Running ``python main.py`` launches the Qt version of the app.
 """
+from __future__ import annotations
+
 
 import contextlib
 import logging
@@ -101,6 +103,104 @@ def _register_operion_protocol() -> None:
         logger.debug("operion:// protocol handler registered")
     except Exception:
         logger.debug("Could not register operion:// protocol (admin rights may be required)")
+
+
+def setup_sync(db, main_window, api_client=None, interval_seconds: int = 60):
+    """Wire the offline-first sync engine into the app (Phase 4b / F).
+
+    Builds the ApiClient (unless one is injected), the outbox/pull services
+    and the ``SyncEngine``, connects the engine's signals to the main
+    window's sync status indicator + conflict journal, and returns the
+    engine.
+
+    Phase F (production wiring): the engine's per-user cursor namespace is
+    locked to the logged-in user.  Login happens BEFORE this function runs
+    (the ``require_admin_async`` gate in ``run_app``), so the initial user is
+    set at construction; an ``on_auth_changed`` callback keeps the engine in
+    lockstep with mid-session login/logout/user switches (each switch forces
+    a full refresh for the new user — see ``SyncEngine.set_user``).
+
+    NOTE (multi-company outbox, accepted design): pending outbox rows are
+    pushed under the CURRENTLY logged-in user's JWT (the server stamps
+    ``company_id`` from the JWT).  User B logging in while user A's rows are
+    still pending would push them into B's company.  No drain/flush mechanism
+    is built here — documented so a company switch with a non-empty outbox
+    can be handled deliberately (flush first) if it ever becomes a real
+    scenario.
+
+    The app is local-first ALWAYS: this is best-effort.  If the API config
+    is missing or the ApiClient cannot be constructed, a warning is logged
+    and ``None`` is returned — the app continues fully local-only.
+
+    Returns:
+        The configured ``SyncEngine``, or ``None`` when sync is unavailable.
+    """
+    try:
+        if api_client is None:
+            from client.api_client import ApiClient
+            from client.config import get_client_config
+            api_client = ApiClient(config=get_client_config())
+
+        from services.sync_conflict_service import SyncConflictService
+        from services.sync_engine import SyncEngine
+        from services.sync_outbox_service import SyncOutboxService
+        from services.sync_pull_service import SyncPullService
+
+        outbox = SyncOutboxService(db)
+        pull = SyncPullService(db, api_client)
+
+        # Phase F: the login gate ran before this function, so the initial
+        # per-user cursor namespace comes from the already-established session.
+        from client.auth_manager import get_auth, on_auth_changed
+        auth = get_auth()
+        initial_user_id = auth.user_id if auth is not None else 0
+
+        # The sync client MUST carry the logged-in user's Bearer token —
+        # without it the server rejects every push/pull with 401 (the sync
+        # endpoints require a JWT).  Guarded with hasattr for test doubles
+        # that don't implement update_auth.
+        if hasattr(api_client, "update_auth"):
+            api_client.update_auth(auth)
+
+        engine = SyncEngine(
+            db, api_client, outbox, pull,
+            interval_seconds=interval_seconds,
+            user_id=initial_user_id,
+        )
+
+        def _sync_user_for_auth(auth=None):
+            """Keep the engine's per-user cursors in lockstep with login state."""
+            if auth is None:
+                auth = get_auth()
+            uid = auth.user_id if auth is not None else 0
+            # set_user also forces a one-shot full refresh, so a user switch
+            # (or logout) can never leave polluted partial cursors behind.
+            engine.set_user(uid)
+            # Keep the sync client's Bearer header in lockstep with login /
+            # logout — a stale header 401s every request after logout.
+            if hasattr(api_client, "update_auth"):
+                api_client.update_auth(auth)
+
+        # Initial state (login already happened) — set_user also clears any
+        # stale force flag / cursor namespace for the just-created engine.
+        _sync_user_for_auth(auth)
+        # Reactive: in-app login/logout/user switches (set_auth/clear_auth/
+        # hydrate_from_storage all notify through auth_manager).
+        on_auth_changed(_sync_user_for_auth)
+
+        if main_window is not None:
+            main_window.setup_sync_ui(
+                engine,
+                outbox=outbox,
+                pull=pull,
+                conflict_service=SyncConflictService(db),
+            )
+        return engine
+    except Exception as exc:
+        logger.warning(
+            "Sync engine setup skipped (%s) — app continues local-only", exc
+        )
+        return None
 
 
 def run_app(return_window: bool = False):
@@ -272,6 +372,16 @@ def run_app(return_window: bool = False):
         window = MainWindow(db, api, prefs=prefs, ops=ops)
         window.show()
 
+        # ── Offline-first sync (Phase 4b) ─────────────────────────────
+        # Local-first ALWAYS: boot the background sync engine that pushes
+        # the local outbox to the cloud API and pulls server rows when
+        # online.  Best-effort — if no API config exists the app continues
+        # local-only.
+        sync_engine = setup_sync(db, window)
+        if sync_engine is not None:
+            sync_engine.start()
+            logger.info("Sync engine started")
+
         # Handle route sharing URL or file passed via CLI args.
         # Deferred via QTimer so the event loop is running and the
         # window is fully laid out before we try to navigate.
@@ -290,7 +400,16 @@ def run_app(return_window: bool = False):
 
         result = app.exec()
 
-        # 8. Cleanup — close DB and shared browser after Qt event loop ends
+        # 8. Cleanup — stop sync engine, close DB and shared browser after
+        # the Qt event loop ends.
+        # R4: engine.stop() MUST complete before db.close() — the engine's
+        # worker thread owns a thread-local SQLite connection; closing the
+        # pool out from under it would crash.  stop() waits for the cycle to
+        # abort (stop flag + wait without a short ceiling), so this order is
+        # safe.
+        if sync_engine is not None:
+            sync_engine.stop()
+            logger.info("Sync engine stopped")
         ops.stop()
         with contextlib.suppress(Exception):
             from utils.chart_export import shutdown_browser_sync

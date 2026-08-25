@@ -1,4 +1,6 @@
 """Tests for automail_models.py — Template variables, schedule recurrence, recipient config."""
+from __future__ import annotations
+
 import pytest
 from datetime import date, datetime
 from pydantic import ValidationError

@@ -17,6 +17,8 @@ TOTP is implemented with the stdlib only (RFC 6238, HMAC-SHA1, 30s step,
 (see ``backend.security.encrypt_at_rest``) and backup codes are stored as
 bcrypt hashes with single-use enforcement.
 """
+from __future__ import annotations
+
 
 import asyncio
 import secrets

@@ -1,4 +1,6 @@
-﻿import json, os, re, copy, sys
+﻿from __future__ import annotations
+
+import json, os, re, copy, sys
 
 BASE = os.path.dirname(os.path.abspath(__file__))
 

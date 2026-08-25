@@ -1,4 +1,6 @@
 """Tests for image_processor module."""
+from __future__ import annotations
+
 from unittest.mock import MagicMock, call, patch
 
 import pytest

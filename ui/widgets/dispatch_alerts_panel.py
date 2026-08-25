@@ -458,7 +458,7 @@ class QtDispatchAlertsPanel(QWidget):
 
     # ── Cleanup ──────────────────────────────────────────────────────────────
 
-    def destroy(self) -> None:
+    def _destroy(self) -> None:
         self._db = None
         self._ops = None
         self._on_assign_truck = None

@@ -1,4 +1,6 @@
 """Tests for dispatch_models.py — Dispatch create, truck/driver assignment validation, status fields."""
+from __future__ import annotations
+
 import pytest
 from datetime import datetime
 from pydantic import ValidationError

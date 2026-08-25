@@ -110,13 +110,16 @@ class QtAnalyticsView(QWidget):
             return
         self._load_started = True
         # Load only the initially visible tab (index 0)
-        self._loading_overlay.show()
-        self._loading_overlay.set_progress(0, 1)
+        overlay = self._overlay()
+        if overlay is not None:
+            overlay.show()
+            overlay.set_progress(0, 1)
         self._load_tab(0)
         self._tabs_loaded = 1
-        self._loading_overlay.set_progress(self._tabs_loaded, self._total_tabs)
-        self._loading_overlay.mark_done()
-        self._loading_overlay.hide()
+        if overlay is not None:
+            overlay.set_progress(self._tabs_loaded, self._total_tabs)
+            overlay.mark_done()
+            overlay.hide()
 
     def _build_ui(self):
         self.setAccessibleName("Analytics")
@@ -169,7 +172,7 @@ class QtAnalyticsView(QWidget):
             self._tabs[index] = tab
             tab.refresh()
             self._tabs_loaded += 1
-            overlay = getattr(self, '_loading_overlay', None)
+            overlay = self._overlay()
             if overlay is not None:
                 overlay.set_progress(self._tabs_loaded, self._total_tabs)
                 if self._tabs_loaded >= self._total_tabs:
@@ -205,7 +208,7 @@ class QtAnalyticsView(QWidget):
             f" border-radius: 6px; }}"
         )
         pill_layout = QHBoxLayout(pill_group)
-        pill_layout.setContentsMargins(2, 2, 2, 2)
+        pill_layout.setContentsMargins(4, 4, 4, 4)
         pill_layout.setSpacing(0)
 
         self._period_buttons: list[QPushButton] = []
@@ -288,6 +291,25 @@ class QtAnalyticsView(QWidget):
 
     # ── Tab switching (lazy-loads tabs on demand via currentChanged) ──
 
+    def _overlay(self):
+        """Return the loading overlay if its C++ object is still alive, else None.
+
+        ``LoadingOverlay.mark_done()`` schedules the overlay for deletion; the
+        Python wrapper survives, so any later use must be guarded against a
+        deleted C++ object (RuntimeError: Internal C++ object already deleted).
+        """
+        overlay = getattr(self, "_loading_overlay", None)
+        if overlay is None:
+            return None
+        try:
+            from shiboken6 import isValid
+            if not isValid(overlay):
+                self._loading_overlay = None
+                return None
+        except Exception:
+            pass
+        return overlay
+
     def _on_tab_changed(self, index: int) -> None:
         """Lazy-load tab when user clicks it — only load what's visible."""
         with PerfTimer(f"analytics.tab_changed_{index}"):
@@ -295,7 +317,7 @@ class QtAnalyticsView(QWidget):
                 return
             # Load tab if not yet created
             if index not in self._tabs:
-                overlay = getattr(self, '_loading_overlay', None)
+                overlay = self._overlay()
                 if overlay is not None:
                     overlay.show()
                     overlay.set_progress(self._tabs_loaded, self._total_tabs)

@@ -12,6 +12,8 @@ Public entry points are re-exported from submodules:
     - :class:`EmailTemplateService` — render email subject/body
     - :class:`PackageBuilder`     — collect linked docs into a package
 """
+from __future__ import annotations
+
 
 __all__ = [
     "CustomerDetector",

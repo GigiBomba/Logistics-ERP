@@ -11,6 +11,7 @@ import logging
 import time
 from typing import Any
 
+from ui.design_tokens import COLOR_NEUTRAL_DEFAULT
 from ui.map.map_helpers import create_path_on_map
 from utils.perf_log import perf_timer
 
@@ -20,10 +21,13 @@ logger = logging.getLogger(__name__)
 class QtRouteMapRenderer:
     """Manages route path, stop markers, and comparison overlay on a MapWidget."""
 
+    # Marker colors are Leaflet color-marker names (web surface, not app
+    # chrome) — intentionally exempt from design_tokens.py.
     MARKER_COLOR_START = "green"
     MARKER_COLOR_STOP = "blue"
     MARKER_COLOR_DEST = "red"
-    ALT_ROUTE_COLOR = "gray"
+    ALT_ROUTE_COLOR = COLOR_NEUTRAL_DEFAULT
+    # Map overlay colors are intentionally exempt from design_tokens.py (web surface, not app chrome).
     AVOID_COLOR = "#cc0000"
     AVOID_FILL_OPACITY = 0.15
 
@@ -152,7 +156,7 @@ class QtRouteMapRenderer:
             if show_comparison and isinstance(orig, dict) and orig.get("geometry"):
                 try:
                     alt_geo = orig.get("geometry")
-                    alt_coords = [(float(p[0]), float(p[1])) for p in alt_geo if len(p) >= 2]
+                    alt_coords = [(float(p[0]), float(p[1])) for p in (alt_geo or []) if len(p) >= 2]
                     self.map_widget.add_polyline(alt_coords, color=self.ALT_ROUTE_COLOR, weight=2)
                 except Exception as exc:
                     logger.warning("alt_route_line draw failed: %s", exc)

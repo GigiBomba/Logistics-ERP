@@ -12,13 +12,13 @@ from PySide6.QtCore import QPoint, QPropertyAnimation, Qt, QTimer
 from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QFrame, QGraphicsOpacityEffect, QHBoxLayout, QLabel, QWidget
 
-from ui.design_tokens import COLOR_ERROR_DEFAULT, COLOR_SUCCESS_DEFAULT
+from ui.design_tokens import COLOR_ERROR_DEFAULT, COLOR_SUCCESS_DEFAULT, TOAST_FADE_MS
 
 class Toast(QFrame):
     """Non-blocking toast message that auto-dismisses after a delay."""
 
     DEFAULT_DURATION_MS = 2500
-    FADE_DURATION_MS = 250
+    FADE_DURATION_MS = TOAST_FADE_MS
 
     def __init__(
         self,

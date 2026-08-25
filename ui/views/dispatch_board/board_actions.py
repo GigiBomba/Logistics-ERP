@@ -152,6 +152,21 @@ class BoardActionsMixin:
             return
 
         def fetch_trucks():
+            if self._is_remote_mode():
+                # Remote mode: no local fleet repo — list active trucks from
+                # the API (when available); no conflict/block data.
+                active_trucks = self._remote_active_trucks()
+                items = []
+                for truck in active_trucks:
+                    items.append({
+                        "id": truck.get("id"),
+                        "label": truck.get("plate_number", ""),
+                        "sublabel": truck.get("model", ""),
+                        "available": True,
+                        "status_text": "",
+                    })
+                items.sort(key=lambda x: x["label"])
+                return items
             active_trucks = self._fleet_repo.get_active_trucks()
             items = []
             for truck in active_trucks:
@@ -182,6 +197,21 @@ class BoardActionsMixin:
             return
 
         def fetch_drivers():
+            if self._is_remote_mode():
+                # Remote mode: no local driver repo — list active drivers from
+                # the API (when available); no conflict/hours data.
+                active_drivers = self._remote_active_drivers()
+                items = []
+                for d in active_drivers:
+                    items.append({
+                        "id": d.get("id"),
+                        "label": d.get("name", ""),
+                        "sublabel": d.get("license_category", ""),
+                        "available": True,
+                        "status_text": "",
+                    })
+                items.sort(key=lambda x: x["label"])
+                return items
             active_drivers = self._driver_repo.get_active_drivers()
             items = []
             for d in active_drivers:
@@ -209,6 +239,32 @@ class BoardActionsMixin:
 
     def _assign_truck_to_selected(self, truck_id: int) -> None:
         try:
+            if self._is_remote_mode():
+                trip_ids = [
+                    card.trip_data.get("trip_id_num")
+                    for card in self._selected_cards
+                    if card.trip_data.get("trip_id_num")
+                ]
+                result = self._dispatch_service.bulk_assign(trip_ids, truck_id=truck_id)
+                updated = result.get("updated", []) if isinstance(result, dict) else []
+                failed = result.get("failed", []) if isinstance(result, dict) else []
+                if updated:
+                    self._show_toast(
+                        t("dispatch_board.bulk_success").format(count=len(updated)),
+                        "success",
+                    )
+                if failed:
+                    self._show_toast(
+                        t("dispatch_board.bulk_partial").format(
+                            ok=len(updated), failed=len(failed),
+                        ),
+                        "warning",
+                    )
+                if not updated and not failed:
+                    self._show_toast(t("dispatch_board.truck_not_found"), "error")
+                self._refresh_after_remote_assignment()
+                self._clear_all_selections()
+                return
             truck = self._fleet_repo.get_by_id(truck_id)
             if not truck:
                 return
@@ -234,6 +290,32 @@ class BoardActionsMixin:
 
     def _assign_driver_to_selected(self, driver_id: int) -> None:
         try:
+            if self._is_remote_mode():
+                trip_ids = [
+                    card.trip_data.get("trip_id_num")
+                    for card in self._selected_cards
+                    if card.trip_data.get("trip_id_num")
+                ]
+                result = self._dispatch_service.bulk_assign(trip_ids, driver_id=driver_id)
+                updated = result.get("updated", []) if isinstance(result, dict) else []
+                failed = result.get("failed", []) if isinstance(result, dict) else []
+                if updated:
+                    self._show_toast(
+                        t("dispatch_board.bulk_success").format(count=len(updated)),
+                        "success",
+                    )
+                if failed:
+                    self._show_toast(
+                        t("dispatch_board.bulk_partial").format(
+                            ok=len(updated), failed=len(failed),
+                        ),
+                        "warning",
+                    )
+                if not updated and not failed:
+                    self._show_toast(t("dispatch_board.driver_not_found"), "error")
+                self._refresh_after_remote_assignment()
+                self._clear_all_selections()
+                return
             driver = self._driver_repo.get_by_id(driver_id)
             if not driver:
                 return
@@ -474,7 +556,14 @@ class BoardActionsMixin:
         new_card.trip_data["status"] = new_status
 
         try:
-            if self.ops:
+            if getattr(self, "_db", None) is None and self._dispatch_service is not None:
+                # Remote mode: the backend validates the transition.
+                result = self._dispatch_service.transition_status(trip_id, new_status)
+                if result is None or (
+                    isinstance(result, dict) and result.get("trip") is None
+                ):
+                    raise RuntimeError(f"Status transition failed for trip {trip_id}")
+            elif self.ops:
                 ok = self.ops.force_trip_status(trip_id, new_status)
                 if not ok:
                     raise RuntimeError(f"Status transition failed for trip {trip_id}")
@@ -530,6 +619,77 @@ class BoardActionsMixin:
         toast = Toast(self, message=message, icon=icon)
         toast.show_at(self, QPoint(self.width() // 2 - 100, 80))
 
+    def _remote_readonly_guard(self) -> bool:
+        """Return ``True`` when the board is in remote mode (assignments
+        unavailable) and show a toast explaining so."""
+        if getattr(self, "_db", None) is not None or self._dispatch_service is None:
+            return False
+        self._show_toast(
+            t("dispatch_board.remote_assign_unavailable",
+              default="Assignments are not available in remote mode"),
+            "warning",
+        )
+        return True
+
+    # ── Remote-mode assignment helpers ───────────────────────────────────
+    # Assignment now has a backend surface (PATCH /dispatch/trips/{id}/assignment
+    # + POST /dispatch/assignments/bulk), so the entry points below call the
+    # remote dispatch service directly instead of ``_remote_readonly_guard``.
+
+    def _is_remote_mode(self) -> bool:
+        """``True`` when the board is running against the backend (no local DB)."""
+        return getattr(self, "_db", None) is None and self._dispatch_service is not None
+
+    def _refresh_after_remote_assignment(self) -> None:
+        """Reload the board data after a successful remote assignment."""
+        try:
+            self._start_load()
+        except Exception:
+            logger.warning(
+                "dispatch: board refresh after remote assignment failed", exc_info=True,
+            )
+
+    def _remote_active_trucks(self) -> list:
+        """Return the active truck list for assignment dropdowns in remote mode.
+
+        Uses the API client when available (mirrors ``RemoteDriverService``
+        filtering); degrades to ``[]`` when no client is injected or the call
+        fails, so the dropdown shows its empty state instead of crashing.
+        """
+        api = getattr(self, "_api_client", None)
+        if api is None:
+            return []
+        try:
+            resp = api.list_trucks()
+            items = resp.get("items", []) if isinstance(resp, dict) else (resp or [])
+            return [
+                t for t in items
+                if isinstance(t, dict) and t.get("is_active", t.get("active_status", 0))
+            ]
+        except Exception:
+            logger.warning("dispatch: remote active trucks fetch failed", exc_info=True)
+            return []
+
+    def _remote_active_drivers(self) -> list:
+        """Return the active driver list for assignment dropdowns in remote mode.
+
+        Uses the API client when available; degrades to ``[]`` when no client
+        is injected or the call fails.
+        """
+        api = getattr(self, "_api_client", None)
+        if api is None:
+            return []
+        try:
+            resp = api.list_drivers(limit=1000)
+            items = resp.get("items", []) if isinstance(resp, dict) else (resp or [])
+            return [
+                d for d in items
+                if isinstance(d, dict) and d.get("is_active", d.get("active_status", 0))
+            ]
+        except Exception:
+            logger.warning("dispatch: remote active drivers fetch failed", exc_info=True)
+            return []
+
     # ══════════════════════════════════════════════════════════════════════════
     # Assignment (single trip)
     # ══════════════════════════════════════════════════════════════════════════
@@ -540,6 +700,23 @@ class BoardActionsMixin:
             return
 
         def fetch_trucks():
+            if self._is_remote_mode():
+                # Remote mode: no local fleet repo / conflict service — list
+                # active trucks from the API (when available) without
+                # conflict/block data.
+                active_trucks = self._remote_active_trucks()
+                items = []
+                for truck in active_trucks:
+                    items.append({
+                        "id": truck.get("id"),
+                        "label": truck.get("plate_number", ""),
+                        "sublabel": truck.get("model", ""),
+                        "available": True,
+                        "status_text": "",
+                        "plate": truck.get("plate_number", ""),
+                    })
+                items.sort(key=lambda x: x["label"])
+                return items
             active_trucks = self._fleet_repo.get_active_trucks()
             card_data = card.trip_data
 
@@ -643,6 +820,24 @@ class BoardActionsMixin:
             return
 
         def fetch_drivers():
+            if self._is_remote_mode():
+                # Remote mode: no local driver repo / conflict service — list
+                # active drivers from the API (when available) without
+                # conflict/hours/block data.
+                active_drivers = self._remote_active_drivers()
+                items = []
+                for d in active_drivers:
+                    name = d.get("name", "")
+                    items.append({
+                        "id": d.get("id"),
+                        "label": name,
+                        "sublabel": d.get("license_category", ""),
+                        "available": True,
+                        "status_text": "",
+                        "name": name,
+                    })
+                items.sort(key=lambda x: x["label"])
+                return items
             active_drivers = self._driver_repo.get_active_drivers()
             card_data = card.trip_data
 
@@ -758,6 +953,49 @@ class BoardActionsMixin:
         dropdown.show_anchored(card)
 
     def _score_items(self, truck_items: list, driver_items: list, card_data: dict) -> None:
+        if self._db is None and self._dispatch_service is not None:
+            # Remote mode: next-available-slot scoring comes from the backend
+            # (GET /dispatch/slots/next).  Tacho/fuel/health inputs are not
+            # available remotely, so only the slot term contributes to the
+            # score (same formula as the local slot branch below).
+            now = datetime.now()
+            for item in truck_items:
+                if not item["available"]:
+                    continue
+                score = 0
+                slot = self._dispatch_service.get_next_available_slot(
+                    truck_id=item.get("id"),
+                )
+                start_at = slot.get("start_at") if isinstance(slot, dict) else None
+                if start_at:
+                    try:
+                        nf_dt = datetime.fromisoformat(start_at)
+                        hours_until = max(0, (nf_dt - now).total_seconds() / 3600)
+                        score += max(0, 40 - hours_until * 2)
+                    except ValueError:
+                        score += 40
+                else:
+                    score += 40
+                item["score"] = round(score, 1)
+            for item in driver_items:
+                if not item["available"]:
+                    continue
+                score = 0
+                slot = self._dispatch_service.get_next_available_slot(
+                    driver_id=item.get("id"),
+                )
+                start_at = slot.get("start_at") if isinstance(slot, dict) else None
+                if start_at:
+                    try:
+                        nf_dt = datetime.fromisoformat(start_at)
+                        hours_until = max(0, (nf_dt - now).total_seconds() / 3600)
+                        score += max(0, 40 - hours_until * 2)
+                    except ValueError:
+                        score += 40
+                else:
+                    score += 40
+                item["score"] = round(score, 1)
+            return
         now = datetime.now()
 
         for item in truck_items:
@@ -841,115 +1079,144 @@ class BoardActionsMixin:
         from ui.dialogs.paired_assignment_dialog import QtPairedAssignmentDialog
 
         card_data = card.trip_data
-        active_trucks = self._fleet_repo.get_active_trucks()
-        active_drivers = self._driver_repo.get_active_drivers()
-        now = datetime.now()
-        cutoff_7 = date.today() - timedelta(days=7)
-        if self._db is None:
-            logger.warning("TachoDriverActivityRepository requires local database - not available in remote mode")
-            tacho_repo = None
+        if self._is_remote_mode():
+            # Remote mode: no local fleet/driver repos or conflict service —
+            # list active resources from the API (when available).  Scoring is
+            # skipped (no local tacho/conflict data); the common tail below
+            # still opens the paired-assignment dialog with remote callbacks.
+            truck_items = []
+            for trk in self._remote_active_trucks():
+                truck_items.append({
+                    "id": trk.get("id"),
+                    "label": trk.get("plate_number", ""),
+                    "sublabel": trk.get("model", ""),
+                    "available": True,
+                    "status_text": "", "score": 0,
+                })
+            driver_items = []
+            for d in self._remote_active_drivers():
+                name = d.get("name", "")
+                driver_items.append({
+                    "id": d.get("id"),
+                    "label": name,
+                    "sublabel": d.get("license_category", ""),
+                    "available": True,
+                    "status_text": "", "score": 0,
+                })
         else:
-            tacho_repo = self._tacho_repo if self._tacho_repo is not None else TachoDriverActivityRepository(self._db)
+            active_trucks = self._fleet_repo.get_active_trucks()
+            active_drivers = self._driver_repo.get_active_drivers()
+            now = datetime.now()
+            cutoff_7 = date.today() - timedelta(days=7)
+            tacho_repo = (
+                None
+                if self._db is None
+                else (
+                    self._tacho_repo
+                    if self._tacho_repo is not None
+                    else TachoDriverActivityRepository(self._db)
+                )
+            )
 
-        truck_items = []
-        for trk in active_trucks:
-            plate = trk.get("plate_number", "")
-            model = trk.get("model", "")
-            tid = trk.get("id")
-            conflicts = self._conflict_service.check_conflicts({
-                "truck_plate": plate,
-                "start_date": card_data.get("departure_date", ""),
-                "end_date": card_data.get("eta", ""),
-                "distance_km": 0,
-            })
-            conf = [c for c in conflicts if c.get("trip_id") != card_data.get("trip_id_num")]
-            blocks = []
-            if trk.get("status") == "In Service":
-                blocks.append(t("dispatch_board.resource_in_service"))
-            try:
-                ins_ = trk.get("insurance_expiry", "")
-                if ins_:
-                    exp = datetime.strptime(ins_, "%Y-%m-%d")
-                    if now.date() > exp.date():
-                        blocks.append(t("dispatch_board.resource_insurance_expired"))
-            except Exception:
-                logger.warning("Failed to validate insurance expiry for truck %s", plate, exc_info=True)
-            try:
-                insp_ = trk.get("inspection_expiry", "")
-                if insp_:
-                    exp = datetime.strptime(insp_, "%Y-%m-%d")
-                    if now.date() > exp.date():
-                        blocks.append(t("dispatch_board.resource_inspection_expired"))
-            except Exception:
-                logger.warning("Failed to validate inspection expiry for truck %s", plate, exc_info=True)
-            try:
-                md = trk.get("maintenance_due")
-                mi = trk.get("mileage")
-                if md is not None and mi is not None and float(mi) >= float(md):
-                    blocks.append(t("dispatch_board.resource_maintenance_due"))
-            except Exception:
-                logger.warning("Failed to validate maintenance due for truck %s", plate, exc_info=True)
-            avail = not conf and not blocks
-            st = ""
-            if blocks:
-                st = ", ".join(blocks)
-            elif conf:
-                st = t("dispatch_board.unavailable_overlap").format(
-                    f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
-            truck_items.append({
-                "id": tid, "label": plate, "sublabel": model,
-                "available": avail, "status_text": st, "score": 0,
-            })
+            truck_items = []
+            for trk in active_trucks:
+                plate = trk.get("plate_number", "")
+                model = trk.get("model", "")
+                tid = trk.get("id")
+                conflicts = self._conflict_service.check_conflicts({
+                    "truck_plate": plate,
+                    "start_date": card_data.get("departure_date", ""),
+                    "end_date": card_data.get("eta", ""),
+                    "distance_km": 0,
+                })
+                conf = [c for c in conflicts if c.get("trip_id") != card_data.get("trip_id_num")]
+                blocks = []
+                if trk.get("status") == "In Service":
+                    blocks.append(t("dispatch_board.resource_in_service"))
+                try:
+                    ins_ = trk.get("insurance_expiry", "")
+                    if ins_:
+                        exp = datetime.strptime(ins_, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_insurance_expired"))
+                except Exception:
+                    logger.warning("Failed to validate insurance expiry for truck %s", plate, exc_info=True)
+                try:
+                    insp_ = trk.get("inspection_expiry", "")
+                    if insp_:
+                        exp = datetime.strptime(insp_, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_inspection_expired"))
+                except Exception:
+                    logger.warning("Failed to validate inspection expiry for truck %s", plate, exc_info=True)
+                try:
+                    md = trk.get("maintenance_due")
+                    mi = trk.get("mileage")
+                    if md is not None and mi is not None and float(mi) >= float(md):
+                        blocks.append(t("dispatch_board.resource_maintenance_due"))
+                except Exception:
+                    logger.warning("Failed to validate maintenance due for truck %s", plate, exc_info=True)
+                avail = not conf and not blocks
+                st = ""
+                if blocks:
+                    st = ", ".join(blocks)
+                elif conf:
+                    st = t("dispatch_board.unavailable_overlap").format(
+                        f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
+                truck_items.append({
+                    "id": tid, "label": plate, "sublabel": model,
+                    "available": avail, "status_text": st, "score": 0,
+                })
 
-        driver_items = []
-        for d in active_drivers:
-            did = d.get("id")
-            name = d.get("name", "")
-            lcat = d.get("license_category", "")
-            conflicts = self._conflict_service.check_conflicts({
-                "driver_id": did,
-                "start_date": card_data.get("departure_date", ""),
-                "end_date": card_data.get("eta", ""),
-                "distance_km": 0,
-            })
-            conf = [c for c in conflicts if c.get("trip_id") != card_data.get("trip_id_num")]
-            blocks = []
-            try:
-                le = d.get("license_expiry", "")
-                if le:
-                    exp = datetime.strptime(le, "%Y-%m-%d")
-                    if now.date() > exp.date():
-                        blocks.append(t("dispatch_board.resource_license_expired"))
-            except Exception:
-                pass
-            try:
-                me = d.get("medical_expiry", "")
-                if me:
-                    exp = datetime.strptime(me, "%Y-%m-%d")
-                    if now.date() > exp.date():
-                        blocks.append(t("dispatch_board.resource_medical_expired"))
-            except Exception:
-                pass
-            weekly_h = 0.0
-            try:
-                records = tacho_repo.get_by_driver(int(did or 0), cutoff_7)
-                weekly_h = sum(r.get("driving_minutes", 0) or 0 for r in records) / 60
-            except Exception:
-                pass
-            if weekly_h > 56:
-                blocks.append(t("dispatch_board.driver_hours_exceeded", hours=weekly_h, max_h=56))
-            hours_label = t("dispatch_board.driver_hours_weekly", hours=weekly_h, max_h=56)
-            avail = not conf and not blocks
-            st = ""
-            if blocks:
-                st = ", ".join(blocks)
-            elif conf:
-                st = t("dispatch_board.unavailable_overlap").format(
-                    f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
-            driver_items.append({
-                "id": did, "label": name, "sublabel": f"{lcat} | {hours_label}",
-                "available": avail, "status_text": st, "score": 0,
-            })
+            driver_items = []
+            for d in active_drivers:
+                did = d.get("id")
+                name = d.get("name", "")
+                lcat = d.get("license_category", "")
+                conflicts = self._conflict_service.check_conflicts({
+                    "driver_id": did,
+                    "start_date": card_data.get("departure_date", ""),
+                    "end_date": card_data.get("eta", ""),
+                    "distance_km": 0,
+                })
+                conf = [c for c in conflicts if c.get("trip_id") != card_data.get("trip_id_num")]
+                blocks = []
+                try:
+                    le = d.get("license_expiry", "")
+                    if le:
+                        exp = datetime.strptime(le, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_license_expired"))
+                except Exception:
+                    pass
+                try:
+                    me = d.get("medical_expiry", "")
+                    if me:
+                        exp = datetime.strptime(me, "%Y-%m-%d")
+                        if now.date() > exp.date():
+                            blocks.append(t("dispatch_board.resource_medical_expired"))
+                except Exception:
+                    pass
+                weekly_h = 0.0
+                try:
+                    records = tacho_repo.get_by_driver(int(did or 0), cutoff_7)
+                    weekly_h = sum(r.get("driving_minutes", 0) or 0 for r in records) / 60
+                except Exception:
+                    pass
+                if weekly_h > 56:
+                    blocks.append(t("dispatch_board.driver_hours_exceeded", hours=weekly_h, max_h=56))
+                hours_label = t("dispatch_board.driver_hours_weekly", hours=weekly_h, max_h=56)
+                avail = not conf and not blocks
+                st = ""
+                if blocks:
+                    st = ", ".join(blocks)
+                elif conf:
+                    st = t("dispatch_board.unavailable_overlap").format(
+                        f"{t('dispatch_board.trip_id_prefix')}{conf[0].get('trip_id','?')}")
+                driver_items.append({
+                    "id": did, "label": name, "sublabel": f"{lcat} | {hours_label}",
+                    "available": avail, "status_text": st, "score": 0,
+                })
 
         self._score_items(truck_items, driver_items, card_data)
         truck_items.sort(key=lambda x: (-x.get("score", 0), x["label"]))
@@ -986,6 +1253,28 @@ class BoardActionsMixin:
         ).show()
 
     def _assign_both_to_trip(self, card, truck_id, driver_id) -> None:
+        if self._is_remote_mode():
+            # Remote mode: the PATCH assignment endpoint sets both fields in
+            # one call and records the driver↔truck pairing server-side.
+            try:
+                trip_id = card.trip_data.get("trip_id_num")
+                result = self._dispatch_service.assign_trip(
+                    trip_id, truck_id=truck_id, driver_id=driver_id,
+                )
+                if result is None or (
+                    isinstance(result, dict) and result.get("trip") is None
+                ):
+                    raise RuntimeError(t("dispatch_board.assignment_failed",
+                                          default="Assignment failed"))
+                self._refresh_after_remote_assignment()
+                logger.info(
+                    "Assigned truck %s + driver %s to trip %d (remote)",
+                    truck_id, driver_id, trip_id,
+                )
+            except Exception as e:
+                logger.error("Failed paired assignment: %s", e)
+                card.show_error("both", str(e))
+            return
         rolled_back_truck = False
         try:
             if truck_id is not None:
@@ -1004,11 +1293,31 @@ class BoardActionsMixin:
 
     def _assign_truck_to_trip(self, card, truck_id: int) -> None:
         try:
+            trip_id = card.trip_data.get("trip_id_num")
+            if self._is_remote_mode():
+                # Remote mode: PATCH the assignment via the backend; the
+                # updated trip (with resolved plate) comes back in the result.
+                result = self._dispatch_service.assign_trip(trip_id, truck_id=truck_id)
+                if result is None or (
+                    isinstance(result, dict) and result.get("trip") is None
+                ):
+                    raise RuntimeError(t("dispatch_board.truck_not_found"))
+                trip = result.get("trip") if isinstance(result, dict) else None
+                plate = ""
+                if isinstance(trip, dict):
+                    plate = (
+                        trip.get("truck_plate", "")
+                        or trip.get("truck_number", "")
+                        or ""
+                    )
+                card.update_truck(plate, truck_id)
+                self._refresh_after_remote_assignment()
+                logger.info("Assigned truck %s to trip %d (remote)", truck_id, trip_id)
+                return
             truck = self._fleet_repo.get_by_id(truck_id)
             if not truck:
                 raise ValueError(t("dispatch_board.truck_not_found"))
             plate = truck.get("plate_number", "")
-            trip_id = card.trip_data.get("trip_id_num")
             self._trip_service.update(trip_id, TripUpdate(truck_plate=plate, truck_id=truck_id))
             card.update_truck(plate, truck_id)
             self._event_bus.publish(TRIP_ASSIGNED, {
@@ -1022,11 +1331,27 @@ class BoardActionsMixin:
 
     def _assign_driver_to_trip(self, card, driver_id: int) -> None:
         try:
+            trip_id = card.trip_data.get("trip_id_num")
+            if self._is_remote_mode():
+                # Remote mode: PATCH the assignment via the backend; the
+                # updated trip (with resolved name) comes back in the result.
+                result = self._dispatch_service.assign_trip(trip_id, driver_id=driver_id)
+                if result is None or (
+                    isinstance(result, dict) and result.get("trip") is None
+                ):
+                    raise RuntimeError(t("dispatch_board.driver_not_found"))
+                trip = result.get("trip") if isinstance(result, dict) else None
+                name = ""
+                if isinstance(trip, dict):
+                    name = trip.get("driver_name", "") or ""
+                card.update_driver(name, driver_id)
+                self._refresh_after_remote_assignment()
+                logger.info("Assigned driver %s to trip %d (remote)", driver_id, trip_id)
+                return
             driver = self._driver_repo.get_by_id(driver_id)
             if not driver:
                 raise ValueError(t("dispatch_board.driver_not_found"))
             name = driver.get("name", "")
-            trip_id = card.trip_data.get("trip_id_num")
             self._trip_service.update(trip_id, TripUpdate(driver_id=driver_id, driver_name=name))
             card.update_driver(name, driver_id)
             self._event_bus.publish(TRIP_ASSIGNED, {
@@ -1041,6 +1366,16 @@ class BoardActionsMixin:
     def _clear_truck_assignment(self, card) -> None:
         try:
             trip_id = card.trip_data.get("trip_id_num")
+            if self._is_remote_mode():
+                result = self._dispatch_service.assign_trip(trip_id, truck_id=None)
+                if result is None or (
+                    isinstance(result, dict) and result.get("trip") is None
+                ):
+                    raise RuntimeError(t("dispatch_board.truck_not_found"))
+                card.update_truck("", None)
+                self._refresh_after_remote_assignment()
+                logger.info("Cleared truck assignment for trip %d (remote)", trip_id)
+                return
             self._trip_service.update(trip_id, TripUpdate(truck_plate="", truck_id=None))
             card.update_truck("", None)
             logger.info("Cleared truck assignment for trip %d", trip_id)
@@ -1051,6 +1386,16 @@ class BoardActionsMixin:
     def _clear_driver_assignment(self, card) -> None:
         try:
             trip_id = card.trip_data.get("trip_id_num")
+            if self._is_remote_mode():
+                result = self._dispatch_service.assign_trip(trip_id, driver_id=None)
+                if result is None or (
+                    isinstance(result, dict) and result.get("trip") is None
+                ):
+                    raise RuntimeError(t("dispatch_board.driver_not_found"))
+                card.update_driver("", None)
+                self._refresh_after_remote_assignment()
+                logger.info("Cleared driver assignment for trip %d (remote)", trip_id)
+                return
             self._trip_service.update(trip_id, TripUpdate(driver_id=None, driver_name=""))
             card.update_driver("", None)
             logger.info("Cleared driver assignment for trip %d", trip_id)
@@ -1070,6 +1415,25 @@ class BoardActionsMixin:
         for col in self._columns.values():
             for card in col._cards:
                 card_data = card.trip_data
+                if self._db is None:
+                    # Remote mode: delay evaluation runs server-side
+                    # (GET /dispatch/trips/{id}/delay).  The remote service
+                    # returns the delay evaluation result (dict-like, also
+                    # unpackable as a tuple); the delay indicator is set from
+                    # it and the alert creation call is fired for late trips.
+                    trip_id = card_data.get("trip_id_num") or card_data.get("trip_id")
+                    if trip_id is None:
+                        continue
+                    result = self._dispatch_service.evaluate_trip_delay(trip_id)
+                    if isinstance(result, dict):
+                        is_delayed = bool(result.get("delayed", False))
+                        minutes = int(round((result.get("delay_hours") or 0.0) * 60))
+                    else:
+                        is_delayed, minutes = False, 0
+                    card.set_delayed(is_delayed, minutes)
+                    if is_delayed:
+                        self._dispatch_service.create_delay_alert(trip_id)
+                    continue
                 is_delayed, minutes = self._dispatch_service.evaluate_trip_delay(card_data)
                 card.set_delayed(is_delayed, minutes)
                 if is_delayed:

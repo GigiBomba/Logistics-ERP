@@ -1,4 +1,6 @@
 """OAuth2 client credentials grant implementation."""
+from __future__ import annotations
+
 import hashlib
 import json
 import logging

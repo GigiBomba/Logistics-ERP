@@ -1,4 +1,6 @@
 """Receipt service — receipt lifecycle: generate PDF, persist, save draft, email."""
+from __future__ import annotations
+
 import json
 import logging
 import os

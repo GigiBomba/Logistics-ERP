@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """Build the complete translate_batch3.py script with all 4 dictionaries."""
+from __future__ import annotations
+
 import io, sys, json, os
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')

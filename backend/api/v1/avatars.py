@@ -14,6 +14,8 @@ Hardening (blueprint §18c.2):
   ``users`` table has no ``avatar_url`` column and adding one would require
   a schema.py edit (owned by another lane this wave).
 """
+from __future__ import annotations
+
 
 import hashlib
 import logging

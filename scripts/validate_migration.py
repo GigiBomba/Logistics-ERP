@@ -4,6 +4,8 @@
 Usage:
     python scripts/validate_migration.py [--sqlite data/cashflow.db] [--pg-dsn postgresql://...]
 """
+from __future__ import annotations
+
 
 import os
 import sys

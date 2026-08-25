@@ -4,6 +4,8 @@ Provides ``ConnectionManagerService`` which wraps the registry and repository
 to manage per-company, per-provider sessions, authentication, health probing,
 connect/disconnect lifecycle, and provider listing.
 """
+from __future__ import annotations
+
 import json
 import logging
 from datetime import datetime, timezone
