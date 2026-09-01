@@ -36,11 +36,6 @@ from services.i18n import t
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
-    COLOR_BG_BASE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_MEDIUM,
     COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_ERROR_SUBTLE,
@@ -50,31 +45,17 @@ from ui.design_tokens import (
     COLOR_SUCCESS_DEFAULT,
     COLOR_SUCCESS_SUBTLE,
     COLOR_SUCCESS_TEXT,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
     COLOR_WARNING_SUBTLE,
-    COLOR_WARNING_TEXT,
-    FONT_SIZE_BASE,
-    FONT_SIZE_LG,
-    FONT_SIZE_MD,
-    FONT_SIZE_SM,
     FONT_SIZE_XS,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_MEDIUM,
-    FONT_WEIGHT_REGULAR,
-    FONT_WEIGHT_SEMIBOLD,
-    RADIUS_LG,
-    RADIUS_MD,
     RADIUS_SM,
-    SPACE_1,
     SPACE_2,
     SPACE_3,
     SPACE_4,
     SPACE_5,
     SPACE_6,
-    SPACE_8,
 )
 
 from enum import Enum
@@ -287,12 +268,7 @@ class _StepCard(QFrame):
         self._expanded = False
 
         self.setObjectName(f"step-card-{step.step_id}")
-        base_style = (
-            f"background-color: {COLOR_BG_ELEVATED};"
-            f"border: 1px solid {COLOR_BORDER_SUBTLE};"
-            f"border-radius: {RADIUS_MD}px;"
-        )
-        self.setStyleSheet(f"QFrame#step-card-{step.step_id} {{ {base_style} }}")
+        self.setProperty("role", "panel-elevated")
 
         self._layout = QVBoxLayout(self)
         self._layout.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
@@ -310,19 +286,12 @@ class _StepCard(QFrame):
         # Step number
         self._num_lbl = QLabel(f"{self._step_number}.")
         self._num_lbl.setFixedWidth(20)
-        self._num_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px;"
-            f"background: transparent; border: none;"
-        )
+        self._num_lbl.setProperty("fontRole", "label")
         self._header.addWidget(self._num_lbl)
 
         # Tool name
         self._tool_lbl = QLabel(self._step.tool_name)
-        self._tool_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_BASE}px;"
-            f"font-weight: {FONT_WEIGHT_MEDIUM};"
-            f"background: transparent; border: none;"
-        )
+        self._tool_lbl.setProperty("fontRole", "base-medium")
         self._header.addWidget(self._tool_lbl, 1)
 
         # Status badge
@@ -335,10 +304,7 @@ class _StepCard(QFrame):
         # Expand chevron
         self._chevron = QLabel("▶")
         self._chevron.setFixedWidth(16)
-        self._chevron.setStyleSheet(
-            f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px;"
-            f"background: transparent; border: none;"
-        )
+        self._chevron.setProperty("fontRole", "xs-muted")
         self._chevron.mousePressEvent = lambda _e: self._toggle_expand()
         self._header.addWidget(self._chevron)
 
@@ -347,7 +313,7 @@ class _StepCard(QFrame):
         # ── Detail (collapsible) ────────────────────────────────
         self._detail = QWidget()
         self._detail.setVisible(False)
-        self._detail.setStyleSheet("background: transparent; border: none;")
+        self._detail.setProperty("role", "transparent")
         detail_layout = QVBoxLayout(self._detail)
         detail_layout.setContentsMargins(SPACE_3, 0, SPACE_3, 0)
         detail_layout.setSpacing(SPACE_2)
@@ -358,19 +324,13 @@ class _StepCard(QFrame):
             param_text = ", ".join(f"{k}={v}" for k, v in params.items())
             self._param_lbl = QLabel(param_text)
             self._param_lbl.setWordWrap(True)
-            self._param_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;"
-                f"background: transparent; border: none;"
-            )
+            self._param_lbl.setProperty("fontRole", "sm-secondary")
             detail_layout.addWidget(self._param_lbl)
         else:
             self._param_lbl = QLabel(
                 t("copilot.step.no_result", default="No parameters")
             )
-            self._param_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px;"
-                f"font-style: italic; background: transparent; border: none;"
-            )
+            self._param_lbl.setProperty("fontRole", "sm-muted-italic")
             detail_layout.addWidget(self._param_lbl)
 
         # Result
@@ -380,36 +340,24 @@ class _StepCard(QFrame):
             result_text = str(self._step.result)
             self._result_lbl = QLabel(result_text)
             self._result_lbl.setWordWrap(True)
-            self._result_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_SM}px;"
-                f"background: transparent; border: none;"
-            )
+            self._result_lbl.setProperty("fontRole", "sm")
             detail_layout.addWidget(self._result_lbl)
         elif self._step.error:
             self._error_lbl = QLabel(f"\u26a0 {self._step.error}")
             self._error_lbl.setWordWrap(True)
-            self._error_lbl.setStyleSheet(
-                f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_SM}px;"
-                f"background: transparent; border: none;"
-            )
+            self._error_lbl.setProperty("fontRole", "sm-error")
             detail_layout.addWidget(self._error_lbl)
         else:
             self._result_lbl = QLabel(
                 t("copilot.step.no_result", default="No result yet")
             )
-            self._result_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px;"
-                f"font-style: italic; background: transparent; border: none;"
-            )
+            self._result_lbl.setProperty("fontRole", "sm-muted-italic")
             detail_layout.addWidget(self._result_lbl)
 
         # Timing
         timing_str = _format_timing(self._step.started_at, self._step.finished_at)
         self._timing_lbl = QLabel(timing_str)
-        self._timing_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px;"
-            f"background: transparent; border: none;"
-        )
+        self._timing_lbl.setProperty("fontRole", "xs-muted")
         if timing_str:
             detail_layout.addWidget(self._timing_lbl)
 
@@ -464,11 +412,9 @@ class _StepList(QScrollArea):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setWidgetResizable(True)
-        self.setStyleSheet("background: transparent; border: none;")
         self.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         self._container = QWidget()
-        self._container.setStyleSheet("background: transparent; border: none;")
         self._layout = QVBoxLayout(self._container)
         self._layout.setContentsMargins(0, 0, 0, 0)
         self._layout.setSpacing(SPACE_3)
@@ -560,19 +506,7 @@ class _ReasoningGraphTree(QTreeWidget):
         self.setHeaderHidden(True)
         self.setIndentation(20)
         self.setAnimated(True)
-        self.setStyleSheet(
-            f"""
-            QTreeWidget {{
-                background: transparent;
-                border: none;
-                color: {COLOR_TEXT_PRIMARY};
-                font-size: {FONT_SIZE_BASE}px;
-            }}
-            QTreeWidget::item {{
-                padding: {SPACE_1}px {SPACE_2}px;
-            }}
-            """
-        )
+        self.setProperty("role", "transparent")
         self._items: Dict[str, QTreeWidgetItem] = {}
 
     def set_graph(self, graph: ReasoningGraph) -> None:
@@ -660,15 +594,7 @@ class _ConfirmationBar(QFrame):
     def __init__(self, parent: QWidget | None = None) -> None:
         super().__init__(parent)
         self.setObjectName("confirmation-bar")
-        self.setStyleSheet(
-            f"""
-            QFrame#confirmation-bar {{
-                background-color: {COLOR_WARNING_SUBTLE};
-                border: 1px solid {COLOR_WARNING_DEFAULT};
-                border-radius: {RADIUS_MD}px;
-            }}
-            """
-        )
+        self.setProperty("role", "warning-panel")
         self.setVisible(False)
 
         layout = QHBoxLayout(self)
@@ -683,32 +609,14 @@ class _ConfirmationBar(QFrame):
             )
         )
         msg.setWordWrap(True)
-        msg.setStyleSheet(
-            f"color: {COLOR_WARNING_TEXT}; font-size: {FONT_SIZE_BASE}px;"
-            f"font-weight: {FONT_WEIGHT_MEDIUM}; background: transparent; border: none;"
-        )
+        msg.setProperty("fontRole", "base-warning")
         layout.addWidget(msg, 1)
 
         # Confirm button
         confirm_btn = QPushButton(
             t("copilot.timeline.confirm", default="Confirm")
         )
-        confirm_btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {COLOR_WARNING_DEFAULT};
-                color: {COLOR_TEXT_PRIMARY};
-                border: none;
-                border-radius: {RADIUS_MD}px;
-                padding: {SPACE_2}px {SPACE_5}px;
-                font-size: {FONT_SIZE_BASE}px;
-                font-weight: {FONT_WEIGHT_MEDIUM};
-            }}
-            QPushButton:hover {{
-                background-color: {COLOR_WARNING_TEXT};
-            }}
-            """
-        )
+        confirm_btn.setProperty("variant", "warning")
         confirm_btn.clicked.connect(self._on_confirm)
         layout.addWidget(confirm_btn)
 
@@ -716,22 +624,7 @@ class _ConfirmationBar(QFrame):
         cancel_btn = QPushButton(
             t("copilot.timeline.cancel", default="Cancel")
         )
-        cancel_btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: transparent;
-                color: {COLOR_WARNING_TEXT};
-                border: 1px solid {COLOR_WARNING_DEFAULT};
-                border-radius: {RADIUS_MD}px;
-                padding: {SPACE_2}px {SPACE_5}px;
-                font-size: {FONT_SIZE_BASE}px;
-                font-weight: {FONT_WEIGHT_MEDIUM};
-            }}
-            QPushButton:hover {{
-                background-color: {COLOR_WARNING_SUBTLE};
-            }}
-            """
-        )
+        cancel_btn.setProperty("variant", "warning-outline")
         cancel_btn.clicked.connect(self._on_cancel)
         layout.addWidget(cancel_btn)
 
@@ -792,32 +685,15 @@ class CoPilotTimelineWidget(QFrame):
         self._title = QLabel(
             t("copilot.timeline.title", default="Execution Timeline")
         )
-        self._title.setStyleSheet(
-            f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
-            f"color: {COLOR_TEXT_PRIMARY};"
-        )
+        self._title.setProperty("fontRole", "base-semibold")
         header.addWidget(self._title)
         header.addStretch()
 
         self._view_btn = QPushButton(
             t("copilot.timeline.view_reasoning", default="View Reasoning")
         )
-        self._view_btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_MD}px;
-                padding: {SPACE_1}px {SPACE_3}px;
-                font-size: {FONT_SIZE_SM}px;
-            }}
-            QPushButton:hover {{
-                background-color: {COLOR_BG_HOVER};
-                color: {COLOR_TEXT_PRIMARY};
-            }}
-            """
-        )
+        self._view_btn.setProperty("variant", "secondary")
+        self._view_btn.setProperty("sizeRole", "sm")
         self._view_btn.clicked.connect(self._toggle_view)
         header.addWidget(self._view_btn)
         self._layout.addLayout(header)
@@ -833,7 +709,6 @@ class CoPilotTimelineWidget(QFrame):
         self._stack.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
         )
-        self._stack.setStyleSheet("background: transparent; border: none;")
 
         self._step_list = _StepList(self)
         self._reasoning_tree = _ReasoningGraphTree(self)
@@ -851,7 +726,7 @@ class CoPilotTimelineWidget(QFrame):
         )
         self._empty_lbl.setWordWrap(True)
         self._empty_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self._empty_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY};")
+        self._empty_lbl.setProperty("fontRole", "secondary")
         self._layout.addWidget(self._empty_lbl)
 
         self._show_empty()

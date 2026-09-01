@@ -18,10 +18,13 @@ from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 from ui.design_tokens import (
+    BTN_HEIGHT,
     COLOR_ACCENT_HOVER,
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
     COLOR_BG_BASE,
+    COLOR_BG_CARD,
+    COLOR_BG_CARD_HOVER,
     COLOR_BG_ELEVATED,
     COLOR_BG_HOVER,
     COLOR_BG_OVERLAY,
@@ -59,7 +62,14 @@ from ui.design_tokens import (
     RADIUS_MD as RADIUS_BUTTON,
     SPACE_2 as _P2,
     SPACE_4 as _P4,
+    FONT_SIZE_2XL,
+    FONT_SIZE_BASE,
+    FONT_SIZE_LG,
+    FONT_SIZE_MD,
     FONT_SIZE_SM,
+    FONT_SIZE_XL,
+    FONT_SIZE_XS,
+    INPUT_HEIGHT,
     SPACE_1,
 )
 
@@ -70,21 +80,23 @@ from ui.design_tokens import (
 FONT_FAMILIES = {
     "sans": "'IBM Plex Sans', 'Segoe UI', 'Microsoft YaHei', sans-serif",
     "hero": "'Impact', 'Arial Black', 'Helvetica Neue', sans-serif",
-    "mono": "'IBM Plex Mono', 'Consolas', 'Courier New', monospace",
+    "mono": "'IBM Plex Mono', 'Courier New', monospace",
 }
 
+# Single ladder of truth: every size is a reference to the canonical
+# ``ui.design_tokens.FONT_SIZE_*`` constants (no literal px values here).
 FONT_SIZES = {
-    "display": 32,
-    "h1": 22,
-    "h2": 16,
-    "h3": 13,
-    "body": 13,
-    "body_bold": 13,
-    "small": 12,
-    "label": 11,
-    "mono": 13,
-    "mono_lg": 22,
-    "mono_xl": 32,
+    "display": FONT_SIZE_2XL,  # 32
+    "h1": FONT_SIZE_XL,        # 22
+    "h2": FONT_SIZE_LG,        # 16
+    "h3": FONT_SIZE_MD,        # 13
+    "body": FONT_SIZE_MD,      # 13
+    "body_bold": FONT_SIZE_MD,  # 13
+    "small": FONT_SIZE_BASE,   # 12
+    "label": FONT_SIZE_SM,     # 11
+    "mono": FONT_SIZE_MD,      # 13
+    "mono_lg": FONT_SIZE_XL,   # 22
+    "mono_xl": FONT_SIZE_2XL,  # 32
 }
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -154,6 +166,11 @@ class QtTheme:
                 cls._stackedwidget_qss(),
                 cls._calendar_qss(),
                 cls._toast_qss(),
+                cls._stat_card_qss(),
+                cls._filter_qss(),
+                cls._section_header_qss(),
+                cls._tab_button_qss(),
+                cls._kanban_qss(),
             ]
         )
 
@@ -171,6 +188,42 @@ class QtTheme:
     def _px(cls, key: str) -> int:
         sizes = {"2": 8, "4": 16, "5": 20, "6": 24, "8": 32, "10": 40, "12": 48, "16": 64}
         return sizes.get(key, 8)
+
+    # ── QSS ROLE CATALOG ────────────────────────────────────────────────────
+    # The attribute selectors used across the QSS below are the widget-styling
+    # vocabulary.  Keep every new selector inside this grammar:
+    #
+    # Attribute vocabulary
+    #   * ``fontRole``            - hyphenated size-weight-color grammar, e.g.
+    #                               ``sm-bold-error`` (11px / bold / error
+    #                               text).  Values are STRICTLY REUSED from the
+    #                               catalog below — never introduce a synonym
+    #                               for an existing value.
+    #   * ``role`` / ``variant``  - generic component roles / button variants
+    #                               ("panel-elevated", "danger-panel",
+    #                               "dialog-primary", ...).
+    #   * ``*Role`` suffix        - enum-valued attributes (``sizeRole``,
+    #                               ``tabRole``).
+    #   * NEVER use built-in QWidget property names as QSS attributes.  The
+    #     ``size`` collision (QWidget.size() is a real property, so a dynamic
+    #     ``setProperty("size", ...)`` never survives) is the canonical
+    #     counter-example.  Denylist: size, width, height, pos, geometry,
+    #     visible, enabled, font, cursor, minimumWidth, minimumHeight,
+    #     maximumWidth, maximumHeight, fixedWidth, fixedHeight, objectName.
+    #
+    # Ordering hazards
+    #   * Qt resolves equal-specificity rules by source order, so ordering can
+    #     be load-bearing.  Example: the ``base-surface`` dialog ``role``
+    #     override MUST stay AFTER the modal-dialog rule (``QDialog`` + the
+    #     ``modal`` attribute) — both are single-attribute selectors, so the
+    #     base-surface override only wins because it appears later in the
+    #     sheet.
+    #
+    # Convention
+    #   * Panel/button roles are generic and reusable.  A domain prefix
+    #     ("nav-*", "alert-*", "tacho-*") is acceptable ONLY when the role
+    #     styles hard-coded dialog chrome that will never be reused as a
+    #     generic component.
 
     # ── Base / reset ──────────────────────────────────────────────────────────
 
@@ -195,6 +248,34 @@ class QtTheme:
 
         QWidget:disabled {{
             color: {COLOR_TEXT_TERTIARY};
+        }}
+
+        /* Elevated scroll-content sheet: a widget marked surface="elevated"
+           paints the elevated panel surface for itself and every plain QWidget
+           descendant. Styled widgets (inputs/buttons/…) keep their own rules
+           because those selectors appear later in the stylesheet and tie on
+           specificity. */
+        QWidget[surface="elevated"] {{
+            background-color: {COLOR_BG_ELEVATED};
+        }}
+
+        [surface="elevated"] QWidget {{
+            background-color: {COLOR_BG_ELEVATED};
+        }}
+
+        /* Pinned action-bar surface (route planner Calculate/Export/Share
+           bar): elevated sheet with a subtle top divider. Selector-scoped so
+           it does not cascade to the buttons inside it. */
+        QWidget[role="button-bar"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border-top: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+
+        /* Transparent container: plain QWidget sheets that must show the
+           parent surface instead of the default COLOR_BG_BASE sheet. */
+        QWidget[role="transparent"] {{
+            background-color: transparent;
+            border: none;
         }}
         """
 
@@ -245,6 +326,101 @@ class QtTheme:
         QLabel[fontRole="helper"] {{
             color: {COLOR_TEXT_TERTIARY};
             font-size: {cls._fs("small")}px;
+        }}
+
+        QLabel[fontRole="xs-muted"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_XS}px;
+        }}
+
+        QLabel[fontRole="sm"] {{
+            font-size: {FONT_SIZE_SM}px;
+        }}
+
+        QLabel[fontRole="sm-secondary"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_SM}px;
+        }}
+
+        QLabel[fontRole="sm-muted-italic"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-style: italic;
+        }}
+
+        QLabel[fontRole="sm-error"] {{
+            color: {COLOR_ERROR_TEXT};
+            font-size: {FONT_SIZE_SM}px;
+        }}
+
+        QLabel[fontRole="sm-bold-error"] {{
+            color: {COLOR_ERROR_TEXT};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: bold;
+        }}
+
+        QLabel[fontRole="sm-bold-success"] {{
+            color: {COLOR_SUCCESS_TEXT};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: bold;
+        }}
+
+        QLabel[fontRole="sm-bold-muted"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: bold;
+        }}
+
+        QLabel[fontRole="base-medium"] {{
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+        }}
+
+        QLabel[fontRole="base-semibold"] {{
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 600;
+        }}
+
+        QLabel[fontRole="base-secondary"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+
+        QLabel[fontRole="base-secondary-italic"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-style: italic;
+        }}
+
+        QLabel[fontRole="base-warning"] {{
+            color: {COLOR_WARNING_TEXT};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+        }}
+
+        QLabel[fontRole="lg-semibold"] {{
+            font-size: {FONT_SIZE_LG}px;
+            font-weight: 600;
+        }}
+
+        QLabel[role="danger-panel"] {{
+            background-color: {COLOR_ERROR_SUBTLE};
+            color: {COLOR_ERROR_TEXT};
+            border: 1px solid {COLOR_ERROR_DEFAULT};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 12px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 500;
+        }}
+
+        QLabel[role="warning-panel"] {{
+            background-color: {COLOR_WARNING_SUBTLE};
+            color: {COLOR_WARNING_TEXT};
+            border: 1px solid {COLOR_WARNING_DEFAULT};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 12px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 500;
         }}
 
         QLabel[role="field-error"] {{
@@ -432,6 +608,164 @@ class QtTheme:
             background-color: {COLOR_SUCCESS_SUBTLE};
             border-color: {COLOR_SUCCESS_TEXT};
         }}
+
+        /* Compact size class (route planner action buttons). Reproduces the
+           planner's measured compact buttons: the global min-height/padding
+           still apply, so heights stay 54/56px; only the style differs. */
+        QPushButton[compact="true"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: none;
+            border-radius: {RADIUS_INPUT}px;
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+        }}
+
+        QPushButton[compact="true"]:hover {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+
+        QPushButton[compact="true"]:pressed {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+
+        QPushButton[compact="true"]:disabled {{
+            background-color: rgba(99, 102, 241, 0.4);
+            color: rgba(255, 255, 255, 0.4);
+        }}
+
+        QPushButton[compact="true"][variant="secondary"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 400;
+        }}
+
+        QPushButton[compact="true"][variant="secondary"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+            color: {COLOR_TEXT_PRIMARY};
+            border-color: {COLOR_BORDER_MEDIUM};
+        }}
+
+        /* Tight-padding compact primary (route planner "Create Trip"): SM
+           radius/font and zero vertical padding keep it ~40px tall. */
+        QPushButton[compact="true"][size="sm"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 500;
+            padding: 0 16px;
+        }}
+
+        QPushButton[compact="true"][size="sm"]:hover {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+
+        QPushButton[compact="true"][size="sm"]:pressed {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+
+        /* Tight-padding compact secondary (route planner "Google Maps"): SM
+           radius/font and zero vertical padding keep it ~40px tall. */
+        QPushButton[compact="true"][variant="secondary"][size="sm"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 400;
+            padding: 0 12px;
+        }}
+
+        QPushButton[compact="true"][variant="secondary"][size="sm"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+            color: {COLOR_TEXT_PRIMARY};
+            border-color: {COLOR_BORDER_MEDIUM};
+        }}
+
+        /* Dialog primary action (CoPilot confirmation modal): accent-filled,
+           fixed BTN_HEIGHT, 8px/20px padding. */
+        QPushButton[variant="dialog-primary"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: none;
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px 20px;
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+            height: {BTN_HEIGHT}px;
+        }}
+        QPushButton[variant="dialog-primary"]:hover {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[variant="dialog-primary"]:disabled {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_TERTIARY};
+        }}
+
+        /* Dialog secondary action (CoPilot confirmation modal cancel). */
+        QPushButton[variant="dialog-secondary"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px 20px;
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+            height: {BTN_HEIGHT}px;
+        }}
+        QPushButton[variant="dialog-secondary"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+            border-color: {COLOR_BORDER_MEDIUM};
+        }}
+
+        /* Warning action button (CoPilot timeline confirmation bar). */
+        QPushButton[variant="warning"] {{
+            background-color: {COLOR_WARNING_DEFAULT};
+            color: {COLOR_TEXT_PRIMARY};
+            border: none;
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px 20px;
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+        }}
+        QPushButton[variant="warning"]:hover {{
+            background-color: {COLOR_WARNING_TEXT};
+        }}
+
+        QPushButton[variant="warning-outline"] {{
+            background-color: transparent;
+            color: {COLOR_WARNING_TEXT};
+            border: 1px solid {COLOR_WARNING_DEFAULT};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px 20px;
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+        }}
+        QPushButton[variant="warning-outline"]:hover {{
+            background-color: {COLOR_WARNING_SUBTLE};
+        }}
+
+        /* Compact secondary toggle (CoPilot timeline view-switch button).
+           NB: a plain "size" attribute cannot be used — it collides with
+           QWidget's built-in ``size`` property, so the compact variant is
+           keyed on ``sizeRole`` instead. */
+        QPushButton[variant="secondary"][sizeRole="sm"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 4px 12px;
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        QPushButton[variant="secondary"][sizeRole="sm"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
         """
 
     # ── Inputs ──────────────────────────────────────────────────────────────────
@@ -497,6 +831,31 @@ class QtTheme:
         QLineEdit[validation="success"], QPlainTextEdit[validation="success"] {{
             border-color: {COLOR_SUCCESS_DEFAULT};
         }}
+
+        /* Compact size class (route planner waypoint fields): SUBTLE border,
+           SM radius, zero vertical padding, 12px font (FONT_SIZE_BASE).
+           Background is set explicitly so the compact rule ties with the
+           elevated-surface rule and wins by stylesheet order. */
+        QLineEdit[compact="true"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+            padding: 0 10px;
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+
+        QLineEdit[role="dialog-input"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_INPUT}px;
+            color: {COLOR_TEXT_PRIMARY};
+            padding: 8px 12px;
+            font-size: {FONT_SIZE_BASE}px;
+            height: {INPUT_HEIGHT}px;
+        }}
+        QLineEdit[role="dialog-input"]:focus {{
+            border-color: {COLOR_ACCENT_PRIMARY};
+        }}
         """
 
     # ── Checkboxes / Radio buttons ──────────────────────────────────────────────
@@ -537,6 +896,32 @@ class QtTheme:
         QCheckBox::indicator:disabled {{
             background-color: {COLOR_BG_OVERLAY};
             border-color: {COLOR_BORDER_MEDIUM};
+        }}
+
+        /* Compact size class (route planner toggles): 16px indicator and
+           secondary text vs the global 18px/primary. Font stays at the
+           planner's 12px (FONT_SIZE_BASE), not the theme's 13px body.
+           Background set explicitly so the compact rule ties with the
+           elevated-surface rule and wins by stylesheet order. */
+        QCheckBox[compact="true"] {{
+            background-color: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 400;
+            spacing: 8px;
+        }}
+
+        QCheckBox[compact="true"]:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+
+        QCheckBox[compact="true"]::indicator {{
+            width: 16px;
+            height: 16px;
+        }}
+
+        QCheckBox[compact="true"]::indicator:hover {{
+            border-color: {COLOR_ACCENT_PRIMARY};
         }}
         """
 
@@ -630,6 +1015,35 @@ class QtTheme:
         QComboBox QAbstractItemView::item:selected {{
             background-color: {COLOR_ACCENT_SUBTLE};
             color: {COLOR_ACCENT_PRIMARY};
+        }}
+
+        /* Compact size class (route planner combos): SUBTLE border, SM radius,
+           zero vertical padding (keeps height ~40px vs the global ~52px),
+           12px font (FONT_SIZE_BASE). Background set explicitly to tie with
+           the elevated-surface rule and win by stylesheet order. */
+        QComboBox[compact="true"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+            padding: 0 10px;
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+
+        QComboBox[compact="true"]::drop-down {{
+            border: none;
+        }}
+
+        QComboBox[compact="true"]::down-arrow {{
+            width: 12px;
+            height: 12px;
+        }}
+
+        QComboBox[compact="true"] QAbstractItemView {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_INPUT}px;
+            color: {COLOR_TEXT_PRIMARY};
+            selection-background-color: {COLOR_BG_HOVER};
         }}
         """
 
@@ -754,6 +1168,17 @@ class QtTheme:
         QTreeWidget::branch:has-siblings:adjoins-item {{
             border-image: none;
         }}
+
+        /* Transparent reasoning-graph tree (CoPilot timeline). */
+        QTreeWidget[role="transparent"] {{
+            background-color: transparent;
+            border: none;
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        QTreeWidget[role="transparent"]::item {{
+            padding: {SPACE_1}px {_P2}px;
+        }}
         """
 
     # ── ScrollArea / ScrollBar ──────────────────────────────────────────────────
@@ -828,6 +1253,23 @@ class QtTheme:
         QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal {{
             background: none;
             width: 0px;
+        }}
+
+        /* Compact size class (route planner scrollbar): 4px track with
+           hover-expand, 20px handle min-height (vs global 6px/36px). */
+        QScrollBar:vertical[compact="true"] {{
+            background: transparent;
+            width: 4px;
+        }}
+
+        QScrollBar:vertical[compact="true"]:hover {{
+            width: 6px;
+        }}
+
+        QScrollBar::handle:vertical[compact="true"] {{
+            background-color: {COLOR_BORDER_MEDIUM};
+            border-radius: 2px;
+            min-height: {cls._px("5")}px;
         }}
         """
 
@@ -927,20 +1369,20 @@ class QtTheme:
             border: none;
         }}
 
-        QFrame[role="card"] {{
+        QFrame[role="card"], QFrame#card {{
             background-color: {COLOR_BG_ELEVATED};
-            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
             border-radius: {RADIUS_CARD}px;
             /* Transition for smooth hover elevation */
         }}
 
-        QFrame[role="card"]:hover {{
+        QFrame[role="card"]:hover, QFrame#card:hover {{
             border-color: {ELEVATION_RAISED};
         }}
 
         QFrame[role="card-elevated"] {{
             background-color: {COLOR_BG_OVERLAY};
-            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
             border-radius: {RADIUS_CARD}px;
             /* Transition for smooth hover elevation */
         }}
@@ -976,7 +1418,7 @@ class QtTheme:
 
         QFrame[role="kpi-card"] {{
             background-color: {COLOR_BG_ELEVATED};
-            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
             border-radius: {RADIUS_CARD}px;
             /* Transition for smooth hover elevation */
         }}
@@ -1023,6 +1465,51 @@ class QtTheme:
             border: none;
             border-radius: {RADIUS_CHIP}px;
             padding: 2px 8px;
+        }}
+
+        QLabel[role="status-chip"][solid="true"] {{
+            /* Solid (borderless) status chip surface — used by StatusBadge
+               with ``solid=True``; per-instance colours are applied inline. */
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 8px;
+            font-size: {FONT_SIZE_SM}px;
+        }}
+
+        QFrame[role="panel-elevated"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_INPUT}px;
+        }}
+
+        QFrame[role="panel-danger"] {{
+            background-color: {COLOR_ERROR_SUBTLE};
+            border: 1px solid {COLOR_ERROR_DEFAULT};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+
+        QFrame[role="panel-success"] {{
+            background-color: {COLOR_SUCCESS_SUBTLE};
+            border: 1px solid {COLOR_SUCCESS_DEFAULT};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+
+        QFrame[role="warning-panel"] {{
+            background-color: {COLOR_WARNING_SUBTLE};
+            border: 1px solid {COLOR_WARNING_DEFAULT};
+            border-radius: {RADIUS_INPUT}px;
+        }}
+
+        QFrame[role="option-row"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_INPUT}px;
+        }}
+        QFrame[role="option-row"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+            border-color: {COLOR_BORDER_MEDIUM};
         }}
         """
 
@@ -1111,6 +1598,10 @@ class QtTheme:
         QDialog[modal="true"] {{
             background-color: {COLOR_BG_ELEVATED};
         }}
+
+        QDialog[role="base-surface"] {{
+            background-color: {COLOR_BG_BASE};
+        }}
         """
 
     # ── Splitter ────────────────────────────────────────────────────────────────
@@ -1184,7 +1675,7 @@ class QtTheme:
             background-color: transparent;
             color: {COLOR_TEXT_TERTIARY};
             font-family: "'Segoe UI Emoji', 'Segoe UI Symbol', 'Apple Color Emoji', 'Noto Color Emoji', sans-serif";
-            font-size: 18px;
+            font-size: {cls._fs("h2")}px;
         }}
 
         QFrame[role="nav-item"][state="active"] QLabel[role="nav-icon"] {{
@@ -1219,7 +1710,7 @@ class QtTheme:
             background-color: transparent;
             color: {TEXT_WHITE};
             font-weight: bold;
-            font-size: 14px;
+            font-size: {cls._fs("body")}px;
         }}
 
         QLabel[role="nav-app-name"] {{
@@ -1412,5 +1903,123 @@ class QtTheme:
             background-color: transparent;
             color: {COLOR_TEXT_PRIMARY};
             font-size: {cls._fs("body")}px;
+        }}
+        """
+
+    # ── App-specific fragments (formerly ui/stylesheet.py) ──────────────────
+
+    @classmethod
+    def _stat_card_qss(cls) -> str:
+        return f"""
+        QFrame#stat-card {{
+            background-color: {COLOR_BG_CARD};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CARD}px;
+            padding: 16px;
+        }}
+
+        QFrame#stat-card[hovered="true"] {{
+            background-color: {COLOR_BG_CARD_HOVER};
+            border-color: {COLOR_ACCENT_PRIMARY};
+        }}
+        """
+
+    @classmethod
+    def _filter_qss(cls) -> str:
+        return f"""
+        QCheckBox[role="filter"] {{
+            spacing: 6px;
+        }}
+
+        QCheckBox[role="filter"]::indicator {{
+            width: 16px;
+            height: 16px;
+            border-radius: {RADIUS_CHIP}px;
+        }}
+
+        QLineEdit[role="filter"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 4px 8px;
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+
+        QComboBox[role="filter"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 4px 8px;
+            color: {COLOR_TEXT_PRIMARY};
+            min-height: 28px;
+        }}
+        """
+
+    @classmethod
+    def _section_header_qss(cls) -> str:
+        return f"""
+        QLabel[role="section-header"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {cls._fs("label")}px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            padding: 4px 0;
+        }}
+        """
+
+    @classmethod
+    def _tab_button_qss(cls) -> str:
+        return f"""
+        QPushButton[tabRole="tab-button"] {{
+            background-color: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            border: none;
+            border-bottom: 2px solid transparent;
+            border-radius: 0;
+            padding: 8px 16px;
+            font-weight: 600;
+            font-size: {cls._fs("label")}px;
+            letter-spacing: 0.04em;
+        }}
+
+        QPushButton[tabRole="tab-button"]:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+
+        QPushButton[tabRole="tab-button"][tabActive="true"] {{
+            color: {COLOR_ACCENT_PRIMARY};
+            border-bottom: 2px solid {COLOR_ACCENT_PRIMARY};
+        }}
+        """
+
+    @classmethod
+    def _kanban_qss(cls) -> str:
+        return f"""
+        QFrame[role="kanban-column"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CARD}px;
+        }}
+
+        QWidget[role="kanban-column-header"] {{
+            background-color: transparent;
+            padding: 8px 12px 4px;
+        }}
+
+        QWidget[role="kanban-column-header"] QLabel[class="kanban-column-title"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-weight: 600;
+            font-size: {cls._fs("body")}px;
+        }}
+
+        QWidget[role="kanban-column-header"] QLabel[class="kanban-column-count"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {cls._fs("label")}px;
+        }}
+
+        QScrollArea[class="kanban-columns-container"] {{
+            border: none;
+            background-color: transparent;
         }}
         """

@@ -197,7 +197,8 @@ class TestInsightCard:
         insight = _make_insight()
         card = _InsightCard(parent, insight)
         assert card is not None
-        assert card.property("role") == "insight-card"
+        # The dead "insight-card" role property was removed (matched no theme
+        # selector); the card's interactive affordance is the pointing-hand cursor.
         assert card.cursor().shape() == Qt.PointingHandCursor
 
     def test_card_shows_type_icon(self, qtbot):

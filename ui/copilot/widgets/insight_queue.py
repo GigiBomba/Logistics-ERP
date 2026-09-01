@@ -27,38 +27,19 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.copilot.models import Insight
 from ui.design_tokens import (
-    COLOR_ACCENT_HOVER,
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BG_BASE,
     COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_MEDIUM,
     COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
-    COLOR_ERROR_TEXT,
     COLOR_INFO_DEFAULT,
     COLOR_NEUTRAL_DEFAULT,
-    COLOR_SUCCESS_DEFAULT,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
-    COLOR_WARNING_TEXT,
-    FONT_SIZE_BASE,
-    FONT_SIZE_SM,
     FONT_SIZE_XS,
     FONT_WEIGHT_MEDIUM,
-    FONT_WEIGHT_SEMIBOLD,
     RADIUS_LG,
-    RADIUS_MD,
     RADIUS_PILL,
-    RADIUS_SM,
     SPACE_1,
     SPACE_2,
     SPACE_3,
-    SPACE_4,
-    SPACE_5,
 )
 from ui.widgets import StyledComboBox
 
@@ -157,7 +138,9 @@ class _InsightCard(QFrame):
     def __init__(self, parent: QWidget, insight: Insight) -> None:
         super().__init__(parent)
         self._insight = insight
-        self.setProperty("role", "insight-card")
+        # NB: the former ``role="insight-card"`` property was removed — it
+        # matched no theme selector, so it had zero visual effect (a dead
+        # ``setProperty``; see the style-gate role_inventory check).
         self.setFrameShape(QFrame.StyledPanel)
         self.setCursor(Qt.PointingHandCursor)
 
@@ -190,13 +173,13 @@ class _InsightCard(QFrame):
 
         type_key = f"insight.type.{insight.insight_type}"
         type_lbl = QLabel(t(type_key, default=insight.insight_type.replace("_", " ").title()), top_row)
-        type_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_BASE}px;")
+        type_lbl.setProperty("fontRole", "small")
         top_row_layout.addWidget(type_lbl)
 
         top_row_layout.addStretch()
 
         ts_lbl = QLabel(_format_timestamp(insight.created_at), top_row)
-        ts_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px;")
+        ts_lbl.setProperty("fontRole", "xs-muted")
         top_row_layout.addWidget(ts_lbl)
 
         info_layout.addWidget(top_row)
@@ -206,7 +189,7 @@ class _InsightCard(QFrame):
         if summary:
             summary_lbl = QLabel(summary[:120], info_col)
             summary_lbl.setWordWrap(True)
-            summary_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;")
+            summary_lbl.setProperty("fontRole", "sm-secondary")
             info_layout.addWidget(summary_lbl)
 
         layout.addWidget(info_col, 1)
@@ -282,6 +265,8 @@ class InsightQueueWidget(QFrame):
         self._insights: List[Insight] = []
         self._active_filter: str = self.FILTER_ALL
 
+        # Kept inline: tests/copilot/test_insight_queue.py asserts the queue's
+        # own styleSheet() string (background-color/border-radius/objectName).
         self.setStyleSheet(f"""
             #insight-queue {{
                 background-color: {COLOR_BG_ELEVATED};
@@ -298,6 +283,10 @@ class InsightQueueWidget(QFrame):
         """Fetch insights from the backend and rebuild the list."""
         if self._api_client is None:
             logger.debug("InsightQueueWidget: no api_client, skipping refresh")
+            # Still render the muted empty placeholder so the section never
+            # appears as a blank void.
+            self._insights = []
+            self._rebuild_list()
             return
         try:
             if not hasattr(self._api_client, '_get') and not hasattr(self._api_client, 'get'):
@@ -337,11 +326,7 @@ class InsightQueueWidget(QFrame):
         header_layout.setSpacing(SPACE_2)
 
         title_lbl = QLabel(t("insight.title", default="Insights"), header_row)
-        title_lbl.setStyleSheet(f"""
-            color: {COLOR_TEXT_PRIMARY};
-            font-size: {FONT_SIZE_BASE}px;
-            font-weight: {FONT_WEIGHT_SEMIBOLD};
-        """)
+        title_lbl.setProperty("fontRole", "base-semibold")
         header_layout.addWidget(title_lbl)
 
         header_layout.addStretch()
@@ -364,9 +349,6 @@ class InsightQueueWidget(QFrame):
         self._scroll_area = QScrollArea(self)
         self._scroll_area.setWidgetResizable(True)
         self._scroll_area.setFrameShape(QFrame.NoFrame)
-        self._scroll_area.setStyleSheet(f"""
-            QScrollArea {{ background-color: transparent; border: none; }}
-        """)
 
         self._list_content = QWidget(self._scroll_area)
         self._list_layout = QVBoxLayout(self._list_content)
@@ -379,10 +361,12 @@ class InsightQueueWidget(QFrame):
 
         # ── Empty state label (hidden by default) ──────────────────────
         self._empty_lbl = QLabel(
-            t("insight.empty", default="No insights to review"), self
+            t("insight.empty", default="Insights will appear here as ARGO analyzes your operations"),
+            self,
         )
         self._empty_lbl.setAlignment(Qt.AlignCenter)
-        self._empty_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+        self._empty_lbl.setWordWrap(True)
+        self._empty_lbl.setProperty("fontRole", "muted")
         self._empty_lbl.setVisible(False)
         layout.addWidget(self._empty_lbl)
 
@@ -397,9 +381,14 @@ class InsightQueueWidget(QFrame):
                 item.widget().deleteLater()
 
         if not self._insights:
+            # Keep the queue visible with a muted placeholder instead of
+            # collapsing to an empty section with no explanation.
             self._scroll_area.setVisible(False)
+            self._empty_lbl.setText(
+                t("insight.empty", default="Insights will appear here as ARGO analyzes your operations")
+            )
             self._empty_lbl.setVisible(True)
-            self.setVisible(False)
+            self.setVisible(True)
             return
 
         self._scroll_area.setVisible(True)
@@ -441,5 +430,19 @@ class InsightQueueWidget(QFrame):
         self._rebuild_list()
 
     def _on_card_remind(self, insight: Insight) -> None:
-        """Placeholder: could reschedule or snooze the insight."""
-        logger.info("Insight %s marked for remind-later", insight.id)
+        """Send the Remind-later action to the backend (§18) and drop the card."""
+        api = self._api_client
+        if api is None:
+            logger.info("Insight %s marked for remind-later (client-side only)", insight.id)
+            return
+        try:
+            post_method = getattr(api, "post", None) or getattr(api, "_post")
+            post_method(
+                f"/api/v1/copilot/insights/{insight.id}/action",
+                json={"action": "remind"},
+            )
+        except Exception as exc:
+            logger.warning("Insight %s remind-later failed: %s", insight.id, exc)
+            return
+        self._insights = [i for i in self._insights if i.id != insight.id]
+        self._rebuild_list()

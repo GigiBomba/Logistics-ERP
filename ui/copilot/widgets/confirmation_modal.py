@@ -31,37 +31,14 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.copilot.models import ExecutionStep
 from ui.design_tokens import (
-    BTN_HEIGHT,
-    COLOR_ACCENT_HOVER,
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BG_BASE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_MEDIUM,
-    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_ERROR_SUBTLE,
     COLOR_ERROR_TEXT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_SUCCESS_SUBTLE,
     COLOR_SUCCESS_TEXT,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-    COLOR_WARNING_DEFAULT,
-    COLOR_WARNING_SUBTLE,
-    COLOR_WARNING_TEXT,
-    FONT_SIZE_BASE,
-    FONT_SIZE_LG,
-    FONT_SIZE_MD,
-    FONT_SIZE_SM,
     FONT_SIZE_XS,
     FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_MEDIUM,
-    FONT_WEIGHT_SEMIBOLD,
-    INPUT_HEIGHT,
-    RADIUS_MD,
     RADIUS_SM,
     SPACE_2,
     SPACE_3,
@@ -109,7 +86,7 @@ class CoPilotConfirmationModal(QDialog):
         self.setMinimumWidth(560)
         self.setMinimumHeight(400)
         self.setModal(True)
-        self.setStyleSheet(f"background-color: {COLOR_BG_BASE};")
+        self.setProperty("role", "base-surface")
 
         self._steps = steps or []
         self._confirmation_level = confirmation_level
@@ -184,15 +161,12 @@ class CoPilotConfirmationModal(QDialog):
             )
         header = QLabel(header_text)
         header.setWordWrap(True)
-        header.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_LG}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
-        )
+        header.setProperty("fontRole", "lg-semibold")
         layout.addWidget(header)
 
         # ── Content area (steps or OCR) ──────────────────────────────
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
-        scroll.setStyleSheet("background: transparent; border: none;")
         scroll.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
 
         scroll_content = QWidget()
@@ -213,9 +187,7 @@ class CoPilotConfirmationModal(QDialog):
                     default="No confirmation needed",
                 )
             )
-            no_conf.setStyleSheet(
-                f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px;"
-            )
+            no_conf.setProperty("fontRole", "base-secondary")
             scroll_layout.addWidget(no_conf)
 
         scroll_layout.addStretch()
@@ -234,11 +206,7 @@ class CoPilotConfirmationModal(QDialog):
             )
             warning_lbl = QLabel(warning_text)
             warning_lbl.setWordWrap(True)
-            warning_lbl.setStyleSheet(
-                f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
-                f"background-color: {COLOR_ERROR_SUBTLE}; border: 1px solid {COLOR_ERROR_DEFAULT}; "
-                f"border-radius: {RADIUS_MD}px; padding: {SPACE_3}px;"
-            )
+            warning_lbl.setProperty("role", "danger-panel")
             layout.addWidget(warning_lbl)
 
             self._phrase_input = QLineEdit()
@@ -250,22 +218,7 @@ class CoPilotConfirmationModal(QDialog):
                     phrase=self._confirmation_phrase,
                 )
             )
-            self._phrase_input.setStyleSheet(
-                f"""
-                QLineEdit {{
-                    background-color: {COLOR_BG_OVERLAY};
-                    border: 1px solid {COLOR_BORDER_MEDIUM};
-                    border-radius: {RADIUS_MD}px;
-                    color: {COLOR_TEXT_PRIMARY};
-                    padding: {SPACE_2}px {SPACE_3}px;
-                    font-size: {FONT_SIZE_BASE}px;
-                    height: {INPUT_HEIGHT}px;
-                }}
-                QLineEdit:focus {{
-                    border-color: {COLOR_ACCENT_PRIMARY};
-                }}
-                """
-            )
+            self._phrase_input.setProperty("role", "dialog-input")
             self._phrase_input.textChanged.connect(self._on_phrase_changed)
             layout.addWidget(self._phrase_input)
         else:
@@ -276,11 +229,7 @@ class CoPilotConfirmationModal(QDialog):
                 )
             )
             warning_lbl.setWordWrap(True)
-            warning_lbl.setStyleSheet(
-                f"color: {COLOR_WARNING_TEXT}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
-                f"background-color: {COLOR_WARNING_SUBTLE}; border: 1px solid {COLOR_WARNING_DEFAULT}; "
-                f"border-radius: {RADIUS_MD}px; padding: {SPACE_3}px;"
-            )
+            warning_lbl.setProperty("role", "warning-panel")
             layout.addWidget(warning_lbl)
 
         # ── Buttons ──────────────────────────────────────────────────
@@ -289,24 +238,7 @@ class CoPilotConfirmationModal(QDialog):
 
         cancel_btn = QPushButton(t("copilot.confirmation.cancel", default="Cancel"))
         cancel_btn.setAccessibleName("Cancel")
-        cancel_btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_MD}px;
-                padding: {SPACE_2}px {SPACE_5}px;
-                font-size: {FONT_SIZE_BASE}px;
-                font-weight: {FONT_WEIGHT_MEDIUM};
-                height: {BTN_HEIGHT}px;
-            }}
-            QPushButton:hover {{
-                background-color: {COLOR_BG_HOVER};
-                border-color: {COLOR_BORDER_MEDIUM};
-            }}
-            """
-        )
+        cancel_btn.setProperty("variant", "dialog-secondary")
         cancel_btn.clicked.connect(self.reject)
         btn_layout.addWidget(cancel_btn)
 
@@ -314,27 +246,7 @@ class CoPilotConfirmationModal(QDialog):
         self._confirm_btn.setAccessibleName("Confirm")
         default_enabled = self._confirmation_level < 3 and not self._ocr_candidates
         self._confirm_btn.setEnabled(default_enabled)
-        self._confirm_btn.setStyleSheet(
-            f"""
-            QPushButton {{
-                background-color: {COLOR_ACCENT_PRIMARY};
-                color: white;
-                border: none;
-                border-radius: {RADIUS_MD}px;
-                padding: {SPACE_2}px {SPACE_5}px;
-                font-size: {FONT_SIZE_BASE}px;
-                font-weight: {FONT_WEIGHT_MEDIUM};
-                height: {BTN_HEIGHT}px;
-            }}
-            QPushButton:hover {{
-                background-color: {COLOR_ACCENT_HOVER};
-            }}
-            QPushButton:disabled {{
-                background-color: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_TERTIARY};
-            }}
-            """
-        )
+        self._confirm_btn.setProperty("variant", "dialog-primary")
         self._confirm_btn.clicked.connect(self._on_confirm)
         btn_layout.addWidget(self._confirm_btn)
 
@@ -343,15 +255,7 @@ class CoPilotConfirmationModal(QDialog):
     def _build_step_card(self, index: int, step: Dict[str, Any]) -> QFrame:
         """Build a card showing a single step's details and optional diff."""
         card = QFrame()
-        card.setStyleSheet(
-            f"""
-            QFrame {{
-                background-color: {COLOR_BG_ELEVATED};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_MD}px;
-            }}
-            """
-        )
+        card.setProperty("role", "panel-elevated")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(SPACE_4, SPACE_3, SPACE_4, SPACE_3)
         card_layout.setSpacing(SPACE_3)
@@ -360,9 +264,7 @@ class CoPilotConfirmationModal(QDialog):
         header_row = QHBoxLayout()
         tool_name = step.get("tool_name", "unknown")
         tool_lbl = QLabel(f"{index + 1}. {tool_name}")
-        tool_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM};"
-        )
+        tool_lbl.setProperty("fontRole", "base-medium")
 
         level = step.get("confirmation_level", 2)
         is_destructive = level >= 3
@@ -401,9 +303,7 @@ class CoPilotConfirmationModal(QDialog):
                 )
                 params_lbl = QLabel(params_text)
                 params_lbl.setWordWrap(True)
-                params_lbl.setStyleSheet(
-                    f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px;"
-                )
+                params_lbl.setProperty("fontRole", "sm-secondary")
                 card_layout.addWidget(params_lbl)
 
         return card
@@ -433,49 +333,29 @@ class CoPilotConfirmationModal(QDialog):
 
         # Before
         before_frame = QFrame()
-        before_frame.setStyleSheet(
-            f"""
-            QFrame {{
-                background-color: {COLOR_ERROR_SUBTLE};
-                border: 1px solid {COLOR_ERROR_DEFAULT};
-                border-radius: {RADIUS_SM}px;
-            }}
-            """
-        )
+        before_frame.setProperty("role", "panel-danger")
         before_layout = QVBoxLayout(before_frame)
         before_layout.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
         before_header = QLabel(t("copilot.confirmation.diff_before", default="Before"))
-        before_header.setStyleSheet(
-            f"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_BOLD};"
-        )
+        before_header.setProperty("fontRole", "sm-bold-error")
         before_layout.addWidget(before_header)
         before_value = QLabel(self._format_value(before))
         before_value.setWordWrap(True)
-        before_value.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_BASE}px;")
+        before_value.setProperty("fontRole", "small")
         before_layout.addWidget(before_value)
         layout.addWidget(before_frame)
 
         # After
         after_frame = QFrame()
-        after_frame.setStyleSheet(
-            f"""
-            QFrame {{
-                background-color: {COLOR_SUCCESS_SUBTLE};
-                border: 1px solid {COLOR_SUCCESS_DEFAULT};
-                border-radius: {RADIUS_SM}px;
-            }}
-            """
-        )
+        after_frame.setProperty("role", "panel-success")
         after_layout = QVBoxLayout(after_frame)
         after_layout.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
         after_header = QLabel(t("copilot.confirmation.diff_after", default="After"))
-        after_header.setStyleSheet(
-            f"color: {COLOR_SUCCESS_TEXT}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_BOLD};"
-        )
+        after_header.setProperty("fontRole", "sm-bold-success")
         after_layout.addWidget(after_header)
         after_value = QLabel(self._format_value(after))
         after_value.setWordWrap(True)
-        after_value.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_BASE}px;")
+        after_value.setProperty("fontRole", "small")
         after_layout.addWidget(after_value)
         layout.addWidget(after_frame)
 
@@ -502,44 +382,25 @@ class CoPilotConfirmationModal(QDialog):
                 default="Select the correct match:",
             )
         )
-        prompt.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM};"
-        )
+        prompt.setProperty("fontRole", "base-medium")
         layout.addWidget(prompt)
 
         self._ocr_group = QButtonGroup(self)
 
         for i, candidate in enumerate(self._ocr_candidates):
             row = QFrame()
-            row.setStyleSheet(
-                f"""
-                QFrame {{
-                    background-color: {COLOR_BG_OVERLAY};
-                    border: 1px solid {COLOR_BORDER_SUBTLE};
-                    border-radius: {RADIUS_MD}px;
-                }}
-                QFrame:hover {{
-                    background-color: {COLOR_BG_HOVER};
-                    border-color: {COLOR_BORDER_MEDIUM};
-                }}
-                """
-            )
+            row.setProperty("role", "option-row")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
 
             radio = QRadioButton()
-            radio.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
             self._ocr_group.addButton(radio, i)
 
             rank_lbl = QLabel(f"#{i + 1}")
-            rank_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_BOLD};"
-            )
+            rank_lbl.setProperty("fontRole", "sm-bold-muted")
 
             candidate_lbl = QLabel(str(candidate))
-            candidate_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_BASE}px;"
-            )
+            candidate_lbl.setProperty("fontRole", "small")
             candidate_lbl.setWordWrap(True)
 
             row_layout.addWidget(radio)
@@ -549,32 +410,17 @@ class CoPilotConfirmationModal(QDialog):
 
         # "None of these" escape hatch
         none_row = QFrame()
-        none_row.setStyleSheet(
-            f"""
-            QFrame {{
-                background-color: {COLOR_BG_OVERLAY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_MD}px;
-            }}
-            QFrame:hover {{
-                background-color: {COLOR_BG_HOVER};
-                border-color: {COLOR_BORDER_MEDIUM};
-            }}
-            """
-        )
+        none_row.setProperty("role", "option-row")
         none_layout = QHBoxLayout(none_row)
         none_layout.setContentsMargins(SPACE_3, SPACE_2, SPACE_3, SPACE_2)
 
         none_radio = QRadioButton()
-        none_radio.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         self._ocr_group.addButton(none_radio, -1)
 
         none_lbl = QLabel(
             t("copilot.confirmation.none_of_these", default="None of these")
         )
-        none_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px; font-style: italic;"
-        )
+        none_lbl.setProperty("fontRole", "base-secondary-italic")
 
         none_layout.addWidget(none_radio)
         none_layout.addWidget(none_lbl, 1)
