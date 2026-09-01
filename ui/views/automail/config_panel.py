@@ -37,26 +37,12 @@ from ui.widgets import SectionHeader
 from ui.widgets.toast import Toast
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
-    COLOR_ACCENT_SUBTLE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_SUBTLE,
-    COLOR_ERROR_TEXT,
-    COLOR_NEUTRAL_TEXT,
-    COLOR_SUCCESS_TEXT,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
-    COLOR_WARNING_TEXT,
     FONT_WEIGHT_MEDIUM,
-    RADIUS_LG,
     SPACE_2,
     SPACE_3,
     SPACE_4,
     SPACE_5,
-    SPACE_6,
-    SPACE_8,
 )
 
 logger = logging.getLogger(__name__)
@@ -70,10 +56,6 @@ class _MasterToggle(QFrame):
     def __init__(self, parent: QWidget, enabled: bool = False) -> None:
         super().__init__(parent)
         self.setProperty("role", "automail-master-toggle")
-        self.setStyleSheet(
-            f"background: {COLOR_BG_ELEVATED}; border: 1px solid {COLOR_BORDER_SUBTLE}; "
-            f"border-radius: {RADIUS_LG}px; padding: {SPACE_4}px;"
-        )
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SPACE_5, SPACE_4, SPACE_5, SPACE_4)
         layout.setSpacing(SPACE_3)
@@ -81,12 +63,10 @@ class _MasterToggle(QFrame):
         self._switch = QCheckBox(
             t("automail.enable_reminders", "Enable Automatic Payment Reminders"), self
         )
+        self._switch.setProperty("role", "toggle-switch")
         self._switch.blockSignals(True)
         self._switch.setChecked(enabled)
         self._switch.blockSignals(False)
-        self._switch.setStyleSheet(
-            f"font-size: 13px; font-weight: {FONT_WEIGHT_MEDIUM}; color: {COLOR_TEXT_PRIMARY}; spacing: {SPACE_3}px;"
-        )
         self._switch.stateChanged.connect(lambda st: self.toggled.emit(bool(st)))
         layout.addWidget(self._switch, 1)
 
@@ -113,10 +93,6 @@ class _InlineScheduleEditor(QFrame):
         super().__init__(parent)
         self._schedule_id = schedule.get("id")
         self.setProperty("role", "inline-schedule-editor")
-        self.setStyleSheet(
-            f"background: {COLOR_BG_ELEVATED}; border: 1px solid {COLOR_BORDER_SUBTLE}; "
-            f"border-radius: {RADIUS_LG}px;"
-        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE_4, SPACE_3, SPACE_4, SPACE_3)
@@ -198,14 +174,7 @@ class _InlineScheduleEditor(QFrame):
         self._save_btn = QPushButton(t("common.save", "Save"), self)
         self._save_btn.setFixedHeight(28)
         self._save_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._save_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_ACCENT_PRIMARY}; color: #FFFFFF;
-                border: none; border-radius: 4px; font-size: 11px; font-weight: 600;
-                padding: 0 12px;
-            }}
-            QPushButton:hover {{ background: {COLOR_ACCENT_PRIMARY}CC; }}
-        """)
+        self._save_btn.setProperty("variant", "sm-primary")
         self._save_btn.clicked.connect(self._on_save)
         btn_row.addWidget(self._save_btn)
 
@@ -214,28 +183,14 @@ class _InlineScheduleEditor(QFrame):
         )
         self._save_all_btn.setFixedHeight(28)
         self._save_all_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._save_all_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_ACCENT_PRIMARY}; border-radius: 4px;
-                font-size: 11px; font-weight: 600; padding: 0 12px;
-            }}
-            QPushButton:hover {{ background: {COLOR_BG_HOVER}; }}
-        """)
+        self._save_all_btn.setProperty("variant", "sm-outline-accent")
         self._save_all_btn.clicked.connect(self._on_save_all)
         btn_row.addWidget(self._save_all_btn)
 
         self._cancel_btn = QPushButton(t("common.cancel", "Cancel"), self)
         self._cancel_btn.setFixedHeight(28)
         self._cancel_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._cancel_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent; color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 4px;
-                font-size: 11px; padding: 0 12px;
-            }}
-            QPushButton:hover {{ background: {COLOR_BG_HOVER}; color: {COLOR_TEXT_PRIMARY}; }}
-        """)
+        self._cancel_btn.setProperty("variant", "sm-outline")
         self._cancel_btn.clicked.connect(lambda: self.cancel_clicked.emit(self._schedule_id))
         btn_row.addWidget(self._cancel_btn)
 
@@ -285,10 +240,6 @@ class _ScheduleCard(QFrame):
         super().__init__(parent)
         self._schedule_id = schedule.get("id")
         self.setProperty("role", "schedule-card")
-        self.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; border: 1px solid {COLOR_BORDER_SUBTLE}; "
-            f"border-radius: {RADIUS_LG}px; padding: {SPACE_3}px;"
-        )
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE_4, SPACE_3, SPACE_4, SPACE_3)
         layout.setSpacing(SPACE_2)
@@ -313,9 +264,7 @@ class _ScheduleCard(QFrame):
         # Template name
         tpl_name = schedule.get("template_name") or "?"
         self._tpl_lbl = QLabel(tpl_name, self)
-        self._tpl_lbl.setStyleSheet(
-            f"color: {COLOR_NEUTRAL_TEXT}; font-size: 11px;"
-        )
+        self._tpl_lbl.setProperty("fontRole", "sm-neutral")
         layout.addWidget(self._tpl_lbl)
 
         # Action buttons
@@ -382,7 +331,6 @@ class ConfigPanel(QFrame):
         self._editor_containers: dict[int, QWidget] = {}
 
         self.setProperty("role", "automail-config-panel")
-        self.setStyleSheet(f"background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px;")
 
         self._build_ui()
         self._load_data()
@@ -397,10 +345,8 @@ class ConfigPanel(QFrame):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
 
         content = QWidget(scroll)
-        content.setStyleSheet("background: transparent;")
         self._content_layout = QVBoxLayout(content)
         self._content_layout.setContentsMargins(SPACE_4, SPACE_4, SPACE_4, SPACE_4)
         self._content_layout.setSpacing(SPACE_3)
@@ -426,28 +372,12 @@ class ConfigPanel(QFrame):
         self._add_btn.setObjectName("add-reminder-btn")
         self._add_btn.setFixedHeight(34)
         self._add_btn.setCursor(Qt.PointingHandCursor)
-        self._add_btn.setStyleSheet(f"""
-            QPushButton#add-reminder-btn {{
-                background: {COLOR_ACCENT_PRIMARY};
-                color: #FFFFFF;
-                border: none;
-                border-radius: 6px;
-                font-size: 12px;
-                font-weight: 600;
-                padding: 0 16px;
-            }}
-            QPushButton#add-reminder-btn:hover {{
-                background: {COLOR_ACCENT_PRIMARY}CC;
-            }}
-            QPushButton#add-reminder-btn:pressed {{
-                background: {COLOR_ACCENT_PRIMARY}AA;
-            }}
-        """)
+        self._add_btn.setProperty("variant", "primary-strong")
         self._add_btn.clicked.connect(self._on_add_reminder)
         self._content_layout.addWidget(self._add_btn)
 
         self._schedule_container = QWidget(content)
-        self._schedule_container.setStyleSheet("background: transparent;")
+        self._schedule_container.setProperty("role", "transparent")
         self._schedule_list_layout = QVBoxLayout(self._schedule_container)
         self._schedule_list_layout.setContentsMargins(0, 0, 0, 0)
         self._schedule_list_layout.setSpacing(SPACE_2)
@@ -464,7 +394,7 @@ class ConfigPanel(QFrame):
             t("automail.business_hours_only", "Only send during business hours"), content
         )
         self._biz_hours_cb.setAccessibleName("Business hours only")
-        self._biz_hours_cb.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;")
+        self._biz_hours_cb.setProperty("fontRole", "small")
         self._content_layout.addWidget(self._biz_hours_cb)
 
         hours_row = QHBoxLayout()
@@ -488,7 +418,7 @@ class ConfigPanel(QFrame):
             t("automail.skip_weekends", "Skip weekends"), content
         )
         self._skip_weekends_cb.setAccessibleName("Skip weekends")
-        self._skip_weekends_cb.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;")
+        self._skip_weekends_cb.setProperty("fontRole", "small")
         self._content_layout.addWidget(self._skip_weekends_cb)
 
         # ── Safety ──────────────────────────────────────────────────

@@ -199,6 +199,12 @@ class QtTheme:
     #                               text).  Values are STRICTLY REUSED from the
     #                               catalog below — never introduce a synonym
     #                               for an existing value.
+    #                               ``fontRole`` is QLabel-PRIMARY: every
+    #                               ``[fontRole=...]`` selector is ``QLabel``-
+    #                               scoped.  Other widget classes (QCheckBox,
+    #                               QPushButton, ...) must OPT IN with their
+    #                               own scoped rule before a ``fontRole``
+    #                               property has any effect on them.
     #   * ``role`` / ``variant``  - generic component roles / button variants
     #                               ("panel-elevated", "danger-panel",
     #                               "dialog-primary", ...).
@@ -421,6 +427,23 @@ class QtTheme:
             padding: 12px;
             font-size: {FONT_SIZE_SM}px;
             font-weight: 500;
+        }}
+
+        QLabel[fontRole="sm-neutral"] {{
+            color: {COLOR_NEUTRAL_TEXT};
+            font-size: {FONT_SIZE_SM}px;
+        }}
+
+        QLabel[fontRole="sm-medium-secondary"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 500;
+        }}
+
+        QLabel[role="empty-hint"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: 13px;
+            padding: 40px;
         }}
 
         QLabel[role="field-error"] {{
@@ -766,6 +789,104 @@ class QtTheme:
             background-color: {COLOR_BG_HOVER};
             color: {COLOR_TEXT_PRIMARY};
         }}
+
+        /* Small 28px action buttons (AutoMail inline schedule editor). */
+        QPushButton[variant="sm-primary"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+            padding: 0 12px;
+        }}
+        QPushButton[variant="sm-primary"]:hover {{
+            background-color: {COLOR_ACCENT_PRIMARY}CC;
+        }}
+
+        QPushButton[variant="sm-outline-accent"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_ACCENT_PRIMARY};
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+            padding: 0 12px;
+        }}
+        QPushButton[variant="sm-outline-accent"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+        }}
+
+        QPushButton[variant="sm-outline"] {{
+            background-color: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            padding: 0 12px;
+        }}
+        QPushButton[variant="sm-outline"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+
+        /* Strong primary action (AutoMail "Add Reminder"). */
+        QPushButton[variant="primary-strong"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: none;
+            border-radius: {RADIUS_INPUT}px;
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 600;
+            padding: 0 16px;
+        }}
+        QPushButton[variant="primary-strong"]:hover {{
+            background-color: {COLOR_ACCENT_PRIMARY}CC;
+        }}
+        QPushButton[variant="primary-strong"]:pressed {{
+            background-color: {COLOR_ACCENT_PRIMARY}AA;
+        }}
+
+        /* Checkable filter pill (AutoMail timeline status filters).
+           Qt's ``:!checked`` negation is unreliable in this Qt build, so the
+           two visual states are driven by an explicit ``state`` property
+           ("active"/"inactive") that the view toggles with unpolish/polish. */
+        QPushButton[role="filter-pill"] {{
+            background-color: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            border: none;
+            border-radius: 12px;
+            padding: 4px 12px;
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        QPushButton[role="filter-pill"][state="inactive"] {{
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QPushButton[role="filter-pill"][state="inactive"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+        }}
+        QPushButton[role="filter-pill"][state="active"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+        }}
+
+        /* Rich-text formatting toolbar button (AutoMail editor). */
+        QToolButton[role="format-btn"] {{
+            background-color: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            padding: 4px 8px;
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        QToolButton[role="format-btn"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QToolButton[role="format-btn"]:checked {{
+            background-color: {COLOR_ACCENT_SUBTLE};
+            color: {COLOR_ACCENT_PRIMARY};
+        }}
         """
 
     # ── Inputs ──────────────────────────────────────────────────────────────────
@@ -856,6 +977,24 @@ class QtTheme:
         QLineEdit[role="dialog-input"]:focus {{
             border-color: {COLOR_ACCENT_PRIMARY};
         }}
+
+        QLineEdit[role="panel-input"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px 10px;
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+
+        QTextEdit[role="panel-input"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px;
+            font-size: {FONT_SIZE_BASE}px;
+        }}
         """
 
     # ── Checkboxes / Radio buttons ──────────────────────────────────────────────
@@ -922,6 +1061,12 @@ class QtTheme:
 
         QCheckBox[compact="true"]::indicator:hover {{
             border-color: {COLOR_ACCENT_PRIMARY};
+        }}
+
+        /* ``fontRole`` is QLabel-primary but OPT-IN per widget class; checkbox
+           labels opt into the 12px ``small`` size here. */
+        QCheckBox[fontRole="small"] {{
+            font-size: {FONT_SIZE_BASE}px;
         }}
         """
 
@@ -1511,6 +1656,52 @@ class QtTheme:
             background-color: {COLOR_BG_HOVER};
             border-color: {COLOR_BORDER_MEDIUM};
         }}
+
+        /* AutoMail cluster surfaces (domain-prefixed: hard-coded panel chrome). */
+        QFrame[role="automail-config-panel"],
+        QFrame[role="automail-editor-panel"],
+        QFrame[role="automail-timeline-panel"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border-radius: {RADIUS_CARD}px;
+        }}
+
+        QFrame[role="automail-master-toggle"],
+        QFrame[role="inline-schedule-editor"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CARD}px;
+        }}
+        QFrame[role="automail-master-toggle"] {{
+            padding: 16px;
+        }}
+
+        QFrame[role="schedule-card"],
+        QFrame[role="invoice-timeline-card"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CARD}px;
+        }}
+        QFrame[role="schedule-card"] {{
+            padding: 12px;
+        }}
+
+        QFrame[role="panel-surface"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CARD}px;
+        }}
+
+        QFrame[role="step-connector"] {{
+            background-color: {COLOR_BORDER_SUBTLE};
+            border: none;
+            margin-left: 4px;
+            margin-right: 4px;
+        }}
+
+        QFrame[role="format-toolbar"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
         """
 
     # ── Menu / ToolTip ──────────────────────────────────────────────────────────
@@ -1929,6 +2120,14 @@ class QtTheme:
         return f"""
         QCheckBox[role="filter"] {{
             spacing: 6px;
+        }}
+
+        QCheckBox[role="toggle-switch"] {{
+            background-color: transparent;
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: 500;
+            spacing: 12px;
         }}
 
         QCheckBox[role="filter"]::indicator {{

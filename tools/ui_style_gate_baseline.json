@@ -258,12 +258,7 @@
       },
       {
         "file": "ui/copilot/widgets/insight_queue.py",
-        "line": 118,
-        "code": "        self.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/copilot/widgets/insight_queue.py",
-        "line": 270,
+        "line": 115,
         "code": "        self.setStyleSheet(f\"\"\""
       },
       {
@@ -323,22 +318,17 @@
       },
       {
         "file": "ui/copilot/widgets/timeline_widget.py",
-        "line": 239,
+        "line": 238,
         "code": "        self.setStyleSheet("
       },
       {
         "file": "ui/copilot/widgets/timeline_widget.py",
-        "line": 299,
+        "line": 298,
         "code": "        self._badge_lbl.setStyleSheet("
       },
       {
         "file": "ui/copilot/widgets/timeline_widget.py",
-        "line": 370,
-        "code": "        self._connector.setStyleSheet("
-      },
-      {
-        "file": "ui/copilot/widgets/timeline_widget.py",
-        "line": 383,
+        "line": 379,
         "code": "        self._badge_lbl.setStyleSheet(_status_badge_style(status))"
       },
       {
@@ -1068,153 +1058,23 @@
       },
       {
         "file": "ui/views/automail/config_panel.py",
-        "line": 73,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 87,
-        "code": "        self._switch.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 116,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 201,
-        "code": "        self._save_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 217,
-        "code": "        self._save_all_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 231,
-        "code": "        self._cancel_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 288,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 302,
+        "line": 253,
         "code": "        self._timing_lbl.setStyleSheet(f\"color: {timing_color}; font-size: 12px; font-weight: {FONT_WEIGHT_MEDIUM};\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 316,
-        "code": "        self._tpl_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 385,
-        "code": "        self.setStyleSheet(f\"background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px;\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 400,
-        "code": "        scroll.setStyleSheet(\"background: transparent; border: none;\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 403,
-        "code": "        content.setStyleSheet(\"background: transparent;\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 429,
-        "code": "        self._add_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 450,
-        "code": "        self._schedule_container.setStyleSheet(\"background: transparent;\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 467,
-        "code": "        self._biz_hours_cb.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 491,
-        "code": "        self._skip_weekends_cb.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;\")"
       },
       {
         "file": "ui/views/automail/editor_panel.py",
         "line": 72,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 85,
-        "code": "            btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 94,
         "code": "        self._bold_btn.setStyleSheet(self._bold_btn.styleSheet() + \"font-weight: bold;\")"
       },
       {
         "file": "ui/views/automail/editor_panel.py",
-        "line": 98,
+        "line": 76,
         "code": "        self._italic_btn.setStyleSheet(self._italic_btn.styleSheet() + \"font-style: italic;\")"
       },
       {
         "file": "ui/views/automail/editor_panel.py",
-        "line": 102,
+        "line": 80,
         "code": "        self._underline_btn.setStyleSheet(self._underline_btn.styleSheet() + \"text-decoration: underline;\")"
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 188,
-        "code": "        self.setStyleSheet(f\"background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px;\")"
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 202,
-        "code": "        scroll.setStyleSheet(\"background: transparent; border: none;\")"
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 205,
-        "code": "        content.setStyleSheet(\"background: transparent;\")"
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 248,
-        "code": "        subj_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};\")"
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 262,
-        "code": "        self._subject_edit.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 274,
-        "code": "        body_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};\")"
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 299,
-        "code": "        self._body_editor.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 314,
-        "code": "        self._preview_widget.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 331,
-        "code": "        self._attach_preview.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY}; font-size: 11px;\")"
       },
       {
         "file": "ui/views/automail/schedule_editor_dialog.py",
@@ -1263,88 +1123,28 @@
       },
       {
         "file": "ui/views/automail/timeline_panel.py",
-        "line": 80,
+        "line": 72,
         "code": "        self.setStyleSheet("
       },
       {
         "file": "ui/views/automail/timeline_panel.py",
-        "line": 102,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 121,
-        "code": "        info.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 129,
-        "code": "        due_lbl.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 135,
+        "line": 123,
         "code": "            badge.setStyleSheet("
       },
       {
         "file": "ui/views/automail/timeline_panel.py",
-        "line": 142,
+        "line": 130,
         "code": "            badge.setStyleSheet("
       },
       {
         "file": "ui/views/automail/timeline_panel.py",
-        "line": 213,
+        "line": 201,
         "code": "        dot.setStyleSheet(f\"color: {c}; font-size: {FONT_SIZE_XS}px;\")"
       },
       {
         "file": "ui/views/automail/timeline_panel.py",
-        "line": 232,
+        "line": 220,
         "code": "        lbl.setStyleSheet(f\"color: {color}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 403,
-        "code": "        self.setStyleSheet(f\"background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 420,
-        "code": "        self._stats_bar.setStyleSheet(\"background: transparent;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 428,
-        "code": "            lbl.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 469,
-        "code": "            btn.setStyleSheet(self._filter_style(fvalue == \"\"))"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 480,
-        "code": "        scroll.setStyleSheet(\"background: transparent; border: none;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 483,
-        "code": "        self._list_content.setStyleSheet(\"background: transparent;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 498,
-        "code": "        self._page_label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 566,
-        "code": "            empty.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY}; font-size: 13px; padding: 40px;\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 617,
-        "code": "            btn.setStyleSheet(self._filter_style(matches))"
       },
       {
         "file": "ui/views/automail/variable_picker.py",
@@ -2945,22 +2745,22 @@
       },
       {
         "file": "ui/copilot/widgets/insight_queue.py",
-        "line": 50,
+        "line": 47,
         "code": "    \"critical\": {\"bg\": COLOR_ERROR_DEFAULT, \"fg\": \"#FFFFFF\"},"
       },
       {
         "file": "ui/copilot/widgets/insight_queue.py",
-        "line": 51,
+        "line": 48,
         "code": "    \"high\":     {\"bg\": COLOR_WARNING_DEFAULT, \"fg\": \"#000000\"},"
       },
       {
         "file": "ui/copilot/widgets/insight_queue.py",
-        "line": 52,
+        "line": 49,
         "code": "    \"medium\":   {\"bg\": COLOR_INFO_DEFAULT,    \"fg\": \"#FFFFFF\"},"
       },
       {
         "file": "ui/copilot/widgets/insight_queue.py",
-        "line": 53,
+        "line": 50,
         "code": "    \"low\":      {\"bg\": COLOR_NEUTRAL_DEFAULT, \"fg\": \"#FFFFFF\"},"
       },
       {
@@ -3009,48 +2809,23 @@
         "code": "    \"unknown\": \"color: #6b7280; font-style: italic;\","
       },
       {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 203,
-        "code": "                background: {COLOR_ACCENT_PRIMARY}; color: #FFFFFF;"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 430,
-        "code": "            QPushButton#add-reminder-btn {{"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 432,
-        "code": "                color: #FFFFFF;"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 439,
-        "code": "            QPushButton#add-reminder-btn:hover {{"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 442,
-        "code": "            QPushButton#add-reminder-btn:pressed {{"
-      },
-      {
         "file": "ui/views/automail/editor_panel.py",
-        "line": 527,
+        "line": 490,
         "code": "                '<div style=\"padding:8px;margin-bottom:12px;border:1px dashed #555;'"
       },
       {
         "file": "ui/views/automail/editor_panel.py",
-        "line": 528,
+        "line": 491,
         "code": "                'border-radius:6px;color:#888;font-style:italic;font-size:11px;'"
       },
       {
         "file": "ui/views/automail/editor_panel.py",
-        "line": 536,
+        "line": 499,
         "code": "                '<div style=\"padding:8px;margin-bottom:12px;border:1px dashed #555;'"
       },
       {
         "file": "ui/views/automail/editor_panel.py",
-        "line": 537,
+        "line": 500,
         "code": "                'border-radius:6px;color:#888;font-style:italic;font-size:11px;'"
       },
       {
@@ -3187,7 +2962,7 @@
       },
       {
         "file": "ui/copilot/widgets/insight_queue.py",
-        "line": 204,
+        "line": 201,
         "code": "        review_btn.setProperty(\"variant\", \"primary\")"
       },
       {
@@ -3242,227 +3017,217 @@
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 432,
+        "line": 455,
         "code": "        QLabel[fontRole=\"h1\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 447,
+        "line": 470,
         "code": "        QLabel[fontRole=\"hero\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 458,
+        "line": 481,
         "code": "        QLabel[fontRole=\"mono_lg\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 464,
+        "line": 487,
         "code": "        QLabel[fontRole=\"mono_xl\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 476,
+        "line": 499,
         "code": "        QLabel[fontRole=\"kpi-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 483,
+        "line": 506,
         "code": "        QLabel[fontRole=\"kpi-value\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 490,
+        "line": 513,
         "code": "        QLabel[class=\"page-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 496,
+        "line": 519,
         "code": "        QLabel[class=\"section-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 504,
+        "line": 527,
         "code": "        QLabel[class=\"field-label\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 511,
+        "line": 534,
         "code": "        QLabel[class=\"kpi-value\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 518,
+        "line": 541,
         "code": "        QLabel[class=\"kpi-label\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 575,
+        "line": 598,
         "code": "        QPushButton[variant=\"danger\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 581,
+        "line": 604,
         "code": "        QPushButton[variant=\"danger\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 654,
+        "line": 677,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 664,
+        "line": 687,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 668,
+        "line": 691,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"]:pressed {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 674,
+        "line": 697,
         "code": "        QPushButton[compact=\"true\"][variant=\"secondary\"][size=\"sm\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 684,
+        "line": 707,
         "code": "        QPushButton[compact=\"true\"][variant=\"secondary\"][size=\"sm\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 831,
+        "line": 952,
         "code": "        QLineEdit[validation=\"success\"], QPlainTextEdit[validation=\"success\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1394,
+        "line": 1539,
         "code": "        QFrame[role=\"input\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1406,
+        "line": 1551,
         "code": "        QFrame[role=\"accent-bar\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1430,
+        "line": 1575,
         "code": "        QFrame[role=\"chip-critical\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1438,
+        "line": 1583,
         "code": "        QFrame[role=\"chip-warning\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1446,
+        "line": 1591,
         "code": "        QFrame[role=\"chip-info\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1454,
+        "line": 1599,
         "code": "        QFrame[role=\"chip-success\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1462,
+        "line": 1607,
         "code": "        QFrame[role=\"chip-neutral\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1598,
+        "line": 1789,
         "code": "        QDialog[modal=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1630,
+        "line": 1821,
         "code": "        QFrame[role=\"nav-panel\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1636,
+        "line": 1827,
         "code": "        QFrame[role=\"nav-top-section\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1658,
-        "code": "        QFrame[role=\"nav-item\"][state=\"active\"] {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 1663,
+        "line": 1854,
         "code": "        QFrame[role=\"nav-accent\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1670,
+        "line": 1861,
         "code": "        QFrame[role=\"nav-item\"][state=\"active\"] QFrame[role=\"nav-accent\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1674,
+        "line": 1865,
         "code": "        QLabel[role=\"nav-icon\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1681,
+        "line": 1872,
         "code": "        QFrame[role=\"nav-item\"][state=\"active\"] QLabel[role=\"nav-icon\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1691,
-        "code": "        QFrame[role=\"nav-item\"][state=\"active\"] QLabel[role=\"nav-label\"] {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 1704,
+        "line": 1895,
         "code": "        QFrame[role=\"nav-monogram\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1758,
+        "line": 1949,
         "code": "        QFrame[role=\"top-bar-divider\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1764,
+        "line": 1955,
         "code": "        QLabel[role=\"fuel-status\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1778,
+        "line": 1969,
         "code": "        QLabel[role=\"bell\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1784,
+        "line": 1975,
         "code": "        QLabel[role=\"bell\"][alert=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1921,
+        "line": 2112,
         "code": "        QFrame#stat-card[hovered=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1990,
+        "line": 2189,
         "code": "        QPushButton[tabRole=\"tab-button\"][tabActive=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2010,
+        "line": 2209,
         "code": "        QWidget[role=\"kanban-column-header\"] QLabel[class=\"kanban-column-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2016,
+        "line": 2215,
         "code": "        QWidget[role=\"kanban-column-header\"] QLabel[class=\"kanban-column-count\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2021,
+        "line": 2220,
         "code": "        QScrollArea[class=\"kanban-columns-container\"] {{"
       },
       {
@@ -3474,41 +3239,6 @@
         "file": "ui/views/admin_panel_view.py",
         "line": 177,
         "code": "        self._tab_widget.setProperty(\"role\", \"admin-panel-tabs\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 72,
-        "code": "        self.setProperty(\"role\", \"automail-master-toggle\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 115,
-        "code": "        self.setProperty(\"role\", \"inline-schedule-editor\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 287,
-        "code": "        self.setProperty(\"role\", \"schedule-card\")"
-      },
-      {
-        "file": "ui/views/automail/config_panel.py",
-        "line": 384,
-        "code": "        self.setProperty(\"role\", \"automail-config-panel\")"
-      },
-      {
-        "file": "ui/views/automail/editor_panel.py",
-        "line": 187,
-        "code": "        self.setProperty(\"role\", \"automail-editor-panel\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 101,
-        "code": "        self.setProperty(\"role\", \"invoice-timeline-card\")"
-      },
-      {
-        "file": "ui/views/automail/timeline_panel.py",
-        "line": 402,
-        "code": "        self.setProperty(\"role\", \"automail-timeline-panel\")"
       },
       {
         "file": "ui/views/automail_view.py",

@@ -40,24 +40,9 @@ from services.invoicing.config_manager import load_company_config
 from services.operations.notification_center import NotificationCenter
 from ui.components import Btn
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_ACCENT_SUBTLE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_SUBTLE,
-    COLOR_NEUTRAL_TEXT,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-    FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_MEDIUM,
-    FONT_WEIGHT_REGULAR,
-    RADIUS_LG,
     SPACE_2,
     SPACE_3,
     SPACE_4,
-    SPACE_5,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,9 +54,7 @@ class _FormatToolbar(QFrame):
     def __init__(self, parent: QWidget, editor: QTextEdit) -> None:
         super().__init__(parent)
         self._editor = editor
-        self.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; border-bottom: 1px solid {COLOR_BORDER_SUBTLE};"
-        )
+        self.setProperty("role", "format-toolbar")
         layout = QHBoxLayout(self)
         layout.setContentsMargins(SPACE_2, SPACE_2, SPACE_2, SPACE_2)
         layout.setSpacing(SPACE_2)
@@ -81,13 +64,8 @@ class _FormatToolbar(QFrame):
             btn.setText(text)
             btn.setToolTip(tooltip)
             btn.setCheckable(True)
+            btn.setProperty("role", "format-btn")
             btn.clicked.connect(command)
-            btn.setStyleSheet(
-                f"QToolButton {{ background: transparent; color: {COLOR_TEXT_SECONDARY}; "
-                f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 12px; }}"
-                f"QToolButton:hover {{ background: {COLOR_BG_HOVER}; color: {COLOR_TEXT_PRIMARY}; }}"
-                f"QToolButton:checked {{ background: {COLOR_ACCENT_SUBTLE}; color: {COLOR_ACCENT_PRIMARY}; }}"
-            )
             return btn
 
         self._bold_btn = _make_btn("B", "Bold (Ctrl+B)", self._toggle_bold)
@@ -185,7 +163,6 @@ class EditorPanel(QFrame):
         self._preview_mode = False
 
         self.setProperty("role", "automail-editor-panel")
-        self.setStyleSheet(f"background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px;")
 
         self._build_ui()
 
@@ -199,10 +176,8 @@ class EditorPanel(QFrame):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
 
         content = QWidget(scroll)
-        content.setStyleSheet("background: transparent;")
         self._content_layout = QVBoxLayout(content)
         self._content_layout.setContentsMargins(SPACE_4, SPACE_4, SPACE_4, SPACE_4)
         self._content_layout.setSpacing(SPACE_3)
@@ -245,7 +220,7 @@ class EditorPanel(QFrame):
         subject_header = QHBoxLayout()
         subject_header.setSpacing(SPACE_2)
         subj_label = QLabel(t("automail.subject", "Subject") + ":", content)
-        subj_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        subj_label.setProperty("fontRole", "sm-medium-secondary")
         subject_header.addWidget(subj_label)
 
         self._insert_var_subj_btn = Btn(
@@ -259,11 +234,7 @@ class EditorPanel(QFrame):
 
         self._subject_edit = QLineEdit(content)
         self._subject_edit.setAccessibleName("Subject editor")
-        self._subject_edit.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
-            f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 6px; "
-            f"padding: 8px 10px; font-size: 12px;"
-        )
+        self._subject_edit.setProperty("role", "panel-input")
         self._subject_edit.textChanged.connect(self._schedule_preview_update)
         self._content_layout.addWidget(self._subject_edit)
 
@@ -271,7 +242,7 @@ class EditorPanel(QFrame):
         body_header = QHBoxLayout()
         body_header.setSpacing(SPACE_2)
         body_label = QLabel(t("automail.body", "Body"), content)
-        body_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px; font-weight: {FONT_WEIGHT_MEDIUM};")
+        body_label.setProperty("fontRole", "sm-medium-secondary")
         body_header.addWidget(body_label)
 
         self._insert_var_body_btn = Btn(
@@ -296,11 +267,7 @@ class EditorPanel(QFrame):
         self._body_editor = QTextEdit(content)
         self._body_editor.setAccessibleName("Body editor")
         self._body_editor.setAcceptRichText(True)
-        self._body_editor.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
-            f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 6px; "
-            f"padding: 8px; font-size: 12px;"
-        )
+        self._body_editor.setProperty("role", "panel-input")
         self._body_editor.setMinimumHeight(200)
         self._body_editor.textChanged.connect(self._schedule_preview_update)
         self._content_layout.addWidget(self._body_editor)
@@ -311,11 +278,7 @@ class EditorPanel(QFrame):
         # ── Preview (hidden until toggled) ──────────────────────────
         self._preview_widget = QTextEdit(content)
         self._preview_widget.setReadOnly(True)
-        self._preview_widget.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
-            f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 6px; "
-            f"padding: 8px; font-size: 12px;"
-        )
+        self._preview_widget.setProperty("role", "panel-input")
         self._preview_widget.setMinimumHeight(200)
         self._preview_widget.hide()
         self._content_layout.addWidget(self._preview_widget)
@@ -328,7 +291,7 @@ class EditorPanel(QFrame):
 
         # ── Attachment preview ──────────────────────────────────────
         self._attach_preview = QLabel(content)
-        self._attach_preview.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 11px;")
+        self._attach_preview.setProperty("fontRole", "label")
         self._content_layout.addWidget(self._attach_preview)
 
         # ── Actions ─────────────────────────────────────────────────

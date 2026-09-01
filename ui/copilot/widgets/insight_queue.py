@@ -27,15 +27,12 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.copilot.models import Insight
 from ui.design_tokens import (
-    COLOR_BG_ELEVATED,
-    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_INFO_DEFAULT,
     COLOR_NEUTRAL_DEFAULT,
     COLOR_WARNING_DEFAULT,
     FONT_SIZE_XS,
     FONT_WEIGHT_MEDIUM,
-    RADIUS_LG,
     RADIUS_PILL,
     SPACE_1,
     SPACE_2,
@@ -260,20 +257,11 @@ class InsightQueueWidget(QFrame):
     ) -> None:
         super().__init__(parent)
         self.setObjectName("insight-queue")
+        self.setProperty("role", "panel-surface")
         self._api_client = api_client
         self._controller = controller
         self._insights: List[Insight] = []
         self._active_filter: str = self.FILTER_ALL
-
-        # Kept inline: tests/copilot/test_insight_queue.py asserts the queue's
-        # own styleSheet() string (background-color/border-radius/objectName).
-        self.setStyleSheet(f"""
-            #insight-queue {{
-                background-color: {COLOR_BG_ELEVATED};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_LG}px;
-            }}
-        """)
 
         self._build_ui()
 

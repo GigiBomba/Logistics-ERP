@@ -87,6 +87,13 @@ CHECK5_SETPROP_REGEX = re.compile(
 CHECK5_SELECTOR_REGEX = re.compile(
     r"\[([A-Za-z][A-Za-z0-9_-]*)=[\"']([^\"']+)[\"']\]"
 )
+# Receiver of a ``setProperty`` call (identifier chain before ``.setProperty(``).
+CHECK5_RECEIVER_REGEX = re.compile(
+    r"([A-Za-z_][A-Za-z0-9_.]*)\s*\.\s*setProperty\("
+)
+# Warning label for the ``fontRole`` type-mismatch heuristic (warnings only,
+# never a gate failure and never added to the baseline).
+CHECK5_TM_LABEL = "type-mismatch(fontRole)"
 
 # Check 5c: attribute names that collide with built-in QWidget property names.
 # Never use these as QSS attributes (see the role catalog in ui/theme_engine.py).
@@ -222,8 +229,8 @@ def _read_lines(path: Path, rel: str) -> list[str]:
         raise RuntimeError(f"cannot read {rel}: {exc}") from exc
 
 
-def _collect_role_inventory() -> list[dict]:
-    """Collect Check 5 (``role_inventory``) violations.
+def _collect_role_inventory() -> tuple[list[dict], list[dict]]:
+    """Collect Check 5 (``role_inventory``) violations + type-mismatch warnings.
 
     Cross-file inventory over the ``setProperty("attr", "val")`` call sites in
     ``ui/`` and the QSS attribute selectors ``[attr="val"]`` in
@@ -239,9 +246,25 @@ def _collect_role_inventory() -> list[dict]:
     Each violation is ``{"file", "line", "code"}`` so it participates in the
     same baseline mechanism as checks 1-3.  Per-entry sub-check labels are
     recorded in ``ROLE_ENTRY_LABELS`` for the report/summary output.
+
+    WARNING (non-blocking, never baselined): ``fontRole`` type-mismatch.
+    ``fontRole`` selectors are QLabel-scoped, so a ``setProperty("fontRole", ...)``
+    on a non-QLabel widget is a silent no-op.  This heuristic flags any
+    ``fontRole`` setter whose receiver is not PROVABLY a QLabel:
+
+      * the setter line itself mentions ``QLabel`` / ``Label(``, or
+      * a backward assignment ``<receiver> = <rhs>`` (up to 300 lines) has a
+        RHS mentioning ``QLabel`` / ``Label(``.
+
+    LIMITATIONS: string-literal values only; line-scoped with a backward
+    assignment scan — receivers constructed in other files, via aliasing or
+    indirection, or with a RHS that doesn't spell ``QLabel``/``Label(`` are
+    reported as potential mismatches (conservative; may include false
+    positives).  Warnings never fail the gate and are not baseline entries.
     """
     setprop_sites: dict[tuple[str, str], set[tuple[str, int, str]]] = {}
     selector_sites: dict[tuple[str, str], set[tuple[str, int, str]]] = {}
+    tm_warnings: list[dict] = []
     for path, rel in _iter_ui_files():
         lines = _read_lines(path, rel)
         for idx, raw in enumerate(lines, 1):
@@ -249,6 +272,13 @@ def _collect_role_inventory() -> list[dict]:
             for m in CHECK5_SETPROP_REGEX.finditer(raw):
                 key = (m.group(1), m.group(2))
                 setprop_sites.setdefault(key, set()).add((rel, idx, code))
+                if m.group(1) == "fontRole" and not _fontrole_receiver_is_qlabel(
+                    raw, lines, idx
+                ):
+                    tm_warnings.append({
+                        "check": CHECK5_TM_LABEL,
+                        "file": rel, "line": idx, "code": code,
+                    })
             if rel == "ui/theme_engine.py":
                 for m in CHECK5_SELECTOR_REGEX.finditer(raw):
                     key = (m.group(1), m.group(2))
@@ -291,14 +321,39 @@ def _collect_role_inventory() -> list[dict]:
         if k not in seen:
             seen.add(k)
             unique.append(v)
-    return unique
+    return unique, tm_warnings
+
+
+def _fontrole_receiver_is_qlabel(raw: str, lines: list[str], idx: int) -> bool:
+    """Conservative check: is the receiver of this line's ``fontRole`` setter
+    provably a QLabel?
+
+    True when the line mentions ``QLabel`` / ``Label(`` itself, or when a
+    backward assignment ``<receiver> = <rhs>`` (within 300 lines) has a RHS
+    mentioning ``QLabel`` / ``Label(``.  Anything else is reported as a
+    potential type mismatch (see the heuristic limitations above).
+    """
+    if "QLabel" in raw or "Label(" in raw:
+        return True
+    rm = CHECK5_RECEIVER_REGEX.search(raw)
+    if rm is None:
+        return False
+    receiver = rm.group(1)
+    assign = re.compile(r"^\s*" + re.escape(receiver) + r"\s*=\s*([^#;]*)")
+    for prev in range(idx - 1, max(0, idx - 300) - 1, -1):
+        m = assign.search(lines[prev - 1])
+        if m is not None:
+            rhs = m.group(1)
+            return "QLabel" in rhs or "Label(" in rhs
+    return False
 
 
 def collect_violations() -> tuple[dict[str, list[dict]], list[dict]]:
     """Walk ui/ and return (violations, warnings).
 
     violations: {check_name: [{"file", "line", "code"}, ...]} for graded checks.
-    warnings:   [{"check", "file", "line", "code"}, ...] for fixed_geometry.
+    warnings:   [{"check", "file", "line", "code"}, ...] for the
+                ``fixed_geometry`` and ``type-mismatch(fontRole)`` sub-checks.
     """
     violations: dict[str, list[dict]] = {c: [] for c in GRADED_CHECKS}
     warnings: list[dict] = []
@@ -312,7 +367,11 @@ def collect_violations() -> tuple[dict[str, list[dict]], list[dict]]:
             warnings.append({"check": CHECK4_NAME, "file": rel, "line": line_no, "code": code})
 
     # Check 5 is a global cross-file analysis (not per-file scalar regex).
-    violations[CHECK5_NAME] = _collect_role_inventory()
+    # ``_collect_role_inventory`` returns (violations, type-mismatch warnings);
+    # the warnings are informational only and never become baseline entries.
+    check5_violations, tm_warnings = _collect_role_inventory()
+    violations[CHECK5_NAME] = check5_violations
+    warnings.extend(tm_warnings)
 
     return violations, warnings
 
@@ -410,6 +469,14 @@ def _fmt(key: tuple[str, int, str]) -> str:
     return f"{file_}:{line}  {code}"
 
 
+def _warning_counts(warnings: list[dict]) -> dict[str, int]:
+    """{check label: count} for the non-blocking warning sub-checks."""
+    counts: dict[str, int] = {}
+    for w in warnings:
+        counts[w["check"]] = counts.get(w["check"], 0) + 1
+    return counts
+
+
 def _print_summary(analysis: dict[str, dict], warnings: list[dict]) -> None:
     print("Summary:")
     for check in GRADED_CHECKS:
@@ -420,7 +487,9 @@ def _print_summary(analysis: dict[str, dict], warnings: list[dict]) -> None:
             f"new={len(a['new']):>4}  stale={len(a['stale']):>4}"
         )
     _print_role_breakdown(analysis)
-    print(f"  {CHECK4_NAME:<18} {len(warnings):>4} warning(s) (non-blocking, Phase 2)")
+    for label, count in sorted(_warning_counts(warnings).items()):
+        note = " (non-blocking, Phase 2)" if label == CHECK4_NAME else " (non-blocking)"
+        print(f"  {label:<26} {count:>4} warning(s){note}")
 
 
 def _print_role_breakdown(analysis: dict[str, dict]) -> None:
@@ -490,9 +559,10 @@ def print_report(analysis: dict[str, dict], warnings: list[dict]) -> None:
                 print(f"    {_fmt(key)}")
 
     if warnings:
-        _heading(f"{CHECK4_NAME}  ({len(warnings)} warnings, non-blocking):")
-        for w in warnings:
-            print(f"    {w['file']}:{w['line']}  {w['code']}")
+        _heading(f"Warnings ({len(warnings)} total, non-blocking -- never fail the gate):")
+        for label in sorted({w["check"] for w in warnings}):
+            for w in (x for x in warnings if x["check"] == label):
+                print(f"    [{label}] {w['file']}:{w['line']}  {w['code']}")
 
 
 # ---------------------------------------------------------------------------
@@ -551,7 +621,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Baseline generated: {baseline_path}")
         for check in GRADED_CHECKS:
             print(f"  {check}: {len(violations[check])} violation(s) frozen")
-        print(f"  {CHECK4_NAME}: {len(warnings)} warning(s) (not part of the baseline)")
+        for label, count in sorted(_warning_counts(warnings).items()):
+            print(f"  {label}: {count} warning(s) (not part of the baseline)")
         return 0
 
     try:

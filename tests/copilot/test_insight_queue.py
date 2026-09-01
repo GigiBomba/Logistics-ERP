@@ -946,10 +946,14 @@ class TestInsightQueueWidgetStyling:
     def test_queue_has_correct_stylesheet(self, qtbot):
         widget = InsightQueueWidget()
         qtbot.addWidget(widget)
-        ss = widget.styleSheet()
-        assert "background-color" in ss
-        assert "border-radius" in ss
-        assert widget.objectName() in ss or "#insight-queue" in ss
+        # The queue's panel styling is theme-driven via a role property.
+        role = widget.property("role")
+        assert role == "panel-surface"
+        from ui.theme_engine import QtTheme
+        qss = QtTheme.qss()
+        assert f'QFrame[role="{role}"]' in qss
+        assert "background-color" in qss
+        assert "border-radius" in qss
 
 
 class TestInsightQueueWidgetScrollContent:

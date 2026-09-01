@@ -34,25 +34,18 @@ from ui.components import Btn
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
     COLOR_BG_OVERLAY,
-    COLOR_BORDER_MEDIUM,
-    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_TEXT,
     COLOR_NEUTRAL_TEXT,
     COLOR_SUCCESS_TEXT,
-    COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_TEXT,
-    FONT_WEIGHT_BOLD,
+    FONT_SIZE_XS,
     FONT_WEIGHT_MEDIUM,
-    RADIUS_LG,
     SPACE_2,
     SPACE_3,
     SPACE_4,
-    SPACE_5,
 )
 from ui.widgets import StyledLineEdit
 
@@ -98,10 +91,6 @@ class _InvoiceTimelineCard(QFrame):
         self._db = db
         self._automail_repo = None
         self.setProperty("role", "invoice-timeline-card")
-        self.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; border: 1px solid {COLOR_BORDER_SUBTLE}; "
-            f"border-radius: {RADIUS_LG}px;"
-        )
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(SPACE_4, SPACE_3, SPACE_4, SPACE_3)
@@ -117,7 +106,7 @@ class _InvoiceTimelineCard(QFrame):
         due = data.get("due_date", "")
 
         info = QLabel(f"<b>{inv_num}</b>  {client_name}  —  €{total:,.2f}", self)
-        info.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY}; font-size: 12px;")
+        info.setProperty("fontRole", "small")
         header.addWidget(info, 1)
         layout.addLayout(header)
 
@@ -125,10 +114,10 @@ class _InvoiceTimelineCard(QFrame):
         due_row = QHBoxLayout()
         due_row.setSpacing(SPACE_2)
         due_lbl = QLabel(t("automail.due", "Due") + f": {due}", self)
-        due_lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        due_lbl.setProperty("fontRole", "sm-secondary")
         due_row.addWidget(due_lbl)
 
-        days_past = self._compute_days_past(due)
+        days_past = self._compute_days_past(due) or 0
         if days_past > 0:
             badge = QLabel(f"{days_past} day(s) overdue", self)
             badge.setStyleSheet(
@@ -209,7 +198,7 @@ class _InvoiceTimelineCard(QFrame):
         }
         c = colors.get(status, COLOR_TEXT_TERTIARY)
         dot = QLabel("●", self)
-        dot.setStyleSheet(f"color: {c}; font-size: 8px;")
+        dot.setStyleSheet(f"color: {c}; font-size: {FONT_SIZE_XS}px;")
         layout.addWidget(dot)
 
     def _add_timeline_text(
@@ -399,7 +388,6 @@ class TimelinePanel(QFrame):
         self._ops = ops
         self._automail_repo = automail_repo
         self.setProperty("role", "automail-timeline-panel")
-        self.setStyleSheet(f"background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px;")
 
         self._page = 0
         self._search = ""
@@ -416,7 +404,7 @@ class TimelinePanel(QFrame):
 
         # Stats bar
         self._stats_bar = QWidget(self)
-        self._stats_bar.setStyleSheet("background: transparent;")
+        self._stats_bar.setProperty("role", "transparent")
         self._stats_layout = QHBoxLayout(self._stats_bar)
         self._stats_layout.setContentsMargins(SPACE_4, SPACE_3, SPACE_4, SPACE_2)
         self._stats_layout.setSpacing(SPACE_3)
@@ -424,7 +412,7 @@ class TimelinePanel(QFrame):
         self._stats_failed = QLabel(t("automail.failed_count", default="0 failed"), self)
         self._stats_recovered = QLabel(t("automail.outstanding_count", default="€0 outstanding"), self)
         for lbl in (self._stats_sent, self._stats_failed, self._stats_recovered):
-            lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+            lbl.setProperty("fontRole", "sm-secondary")
             lbl.setSizePolicy(QSizePolicy.Preferred, QSizePolicy.Preferred)
         self._stats_layout.addStretch(1)
         self._stats_layout.addWidget(self._stats_sent)
@@ -464,8 +452,12 @@ class TimelinePanel(QFrame):
             btn = QPushButton(flabel, self)
             btn.setCheckable(True)
             btn.setProperty("filter_value", fvalue)
+            btn.setProperty("role", "filter-pill")
+            if fvalue == "":
+                btn.setProperty("state", "active")
+            else:
+                btn.setProperty("state", "inactive")
             btn.setChecked(fvalue == "")
-            btn.setStyleSheet(self._filter_style(fvalue == ""))
             btn.clicked.connect(lambda checked, v=fvalue: self._on_filter_changed(v))
             self._filter_btns.append(btn)
             filter_row.addWidget(btn)
@@ -476,10 +468,8 @@ class TimelinePanel(QFrame):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
 
         self._list_content = QWidget(scroll)
-        self._list_content.setStyleSheet("background: transparent;")
         self._list_layout = QVBoxLayout(self._list_content)
         self._list_layout.setContentsMargins(SPACE_4, SPACE_2, SPACE_4, SPACE_2)
         self._list_layout.setSpacing(SPACE_2)
@@ -494,7 +484,7 @@ class TimelinePanel(QFrame):
         pager_layout.setSpacing(SPACE_2)
 
         self._page_label = QLabel("", self)
-        self._page_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 11px;")
+        self._page_label.setProperty("fontRole", "label")
         pager_layout.addWidget(self._page_label)
 
         pager_layout.addStretch()
@@ -514,18 +504,6 @@ class TimelinePanel(QFrame):
         self._search_timer.setSingleShot(True)
         self._search_timer.setInterval(300)
         self._search_timer.timeout.connect(self._do_search)
-
-    def _filter_style(self, active: bool) -> str:
-        if active:
-            return (
-                f"QPushButton {{ background: {COLOR_ACCENT_PRIMARY}; color: white; "
-                f"border: none; border-radius: 12px; padding: 4px 12px; font-size: 11px; }}"
-            )
-        return (
-            f"QPushButton {{ background: transparent; color: {COLOR_TEXT_SECONDARY}; "
-            f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 12px; padding: 4px 12px; font-size: 11px; }}"
-            f"QPushButton:hover {{ background: {COLOR_BG_HOVER}; }}"
-        )
 
     # ── Data loading ───────────────────────────────────────────────
 
@@ -562,7 +540,7 @@ class TimelinePanel(QFrame):
                 self._list_content,
             )
             empty.setAlignment(Qt.AlignCenter)
-            empty.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 13px; padding: 40px;")
+            empty.setProperty("role", "empty-hint")
             self._list_layout.addWidget(empty)
         else:
             for entry in entries:
@@ -613,7 +591,13 @@ class TimelinePanel(QFrame):
         for btn in self._filter_btns:
             matches = btn.property("filter_value") == filter_value
             btn.setChecked(matches)
-            btn.setStyleSheet(self._filter_style(matches))
+            if matches:
+                btn.setProperty("state", "active")
+            else:
+                btn.setProperty("state", "inactive")
+            # Re-polish so the QSS state selector is re-applied.
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
         self._page = 0
         self._load_data()
 

@@ -790,11 +790,13 @@ class TestQtMergeDialog:
         dialog.close()
 
     def test_source_label_shows_name(self, qtbot, mock_svc):
-        """Source label contains source client name via translation key."""
+        """Source label contains source client name (translation-agnostic)."""
         dialog = self._create_dialog(qtbot, mock_svc)
         all_labels = dialog.findChildren(QLabel)
-        # The label text will be the translation key since no translations loaded
-        found = any("merge_source" in lb.text() for lb in all_labels)
+        # t("client.merge_source") resolves to "Merge from: {name}" when
+        # translations are loaded, or the key itself when not — either way the
+        # source client's display name is part of the label text.
+        found = any("Source Client" in lb.text() for lb in all_labels)
         assert found
         dialog.close()
 

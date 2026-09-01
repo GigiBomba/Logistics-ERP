@@ -36,7 +36,6 @@ from services.i18n import t
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
-    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_ERROR_SUBTLE,
     COLOR_ERROR_TEXT,
@@ -366,11 +365,8 @@ class _StepCard(QFrame):
         # Connector line to next step
         self._connector = QFrame()
         self._connector.setFixedHeight(1)
+        self._connector.setProperty("role", "step-connector")
         self._connector.setVisible(show_connector)
-        self._connector.setStyleSheet(
-            f"background-color: {COLOR_BORDER_SUBTLE}; border: none;"
-            f"margin-left: 4px; margin-right: 4px;"
-        )
         self._layout.addWidget(self._connector)
 
     # ── Public API ─────────────────────────────────────────────
