@@ -18,7 +18,9 @@ from PySide6.QtGui import QFont, QFontDatabase
 from PySide6.QtWidgets import QApplication
 
 from ui.design_tokens import (
+    ACCENT_TEXT,
     BTN_HEIGHT,
+    COLOR_ACCENT_BORDER,
     COLOR_ACCENT_HOVER,
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
@@ -60,6 +62,7 @@ from ui.design_tokens import (
     RADIUS_MD as RADIUS_INPUT,
     RADIUS_LG as RADIUS_CARD,
     RADIUS_MD as RADIUS_BUTTON,
+    RADIUS_PILL,
     SPACE_2 as _P2,
     SPACE_4 as _P4,
     FONT_SIZE_2XL,
@@ -171,6 +174,8 @@ class QtTheme:
                 cls._section_header_qss(),
                 cls._tab_button_qss(),
                 cls._kanban_qss(),
+                cls._freight_exchange_qss(),
+                cls._cmr_qss(),
             ]
         )
 
@@ -205,6 +210,12 @@ class QtTheme:
     #                               QPushButton, ...) must OPT IN with their
     #                               own scoped rule before a ``fontRole``
     #                               property has any effect on them.
+    #                               ``fontRole`` = STATIC typography only.
+    #                               STATEFUL label variants (per-status
+    #                               colors) use ``QLabel[role=...]`` + a
+    #                               ``state`` property — never mint fontRole
+    #                               values for state-dependent colors (they
+    #                               would multiply values per label kind).
     #   * ``role`` / ``variant``  - generic component roles / button variants
     #                               ("panel-elevated", "danger-panel",
     #                               "dialog-primary", ...).
@@ -224,6 +235,11 @@ class QtTheme:
     #     ``modal`` attribute) — both are single-attribute selectors, so the
     #     base-surface override only wins because it appears later in the
     #     sheet.
+    #   * Qt negation selectors: ``:!checked`` is UNRELIABLE in this Qt build
+    #     (matches both states) — never use it; drive check-state styling with
+    #     an explicit ``state`` property instead.  ``:!hover`` /
+    #     ``:focus:!hover`` are VERIFIED WORKING (gate 3) and are acceptable
+    #     where hover-priority ordering is needed.
     #
     # Convention
     #   * Panel/button roles are generic and reusable.  A domain prefix
@@ -2218,6 +2234,265 @@ class QtTheme:
         }}
 
         QScrollArea[class="kanban-columns-container"] {{
+            border: none;
+            background-color: transparent;
+        }}
+        """
+
+    # ── Freight Exchange cluster (Phase 3) ─────────────────────────────────
+    # Connection view (connect_view), search view (search_view) and load
+    # detail view (load_detail_view).  Domain-prefixed roles only where the
+    # styled widget is hard-coded cluster chrome (score bars, match rows);
+    # generic roles/variants where the component could be reused elsewhere.
+    # ``QLabel`` typography roles (match-rank / score-value / match-profit)
+    # are used because the closest ``fontRole`` values differ by exactly one
+    # property (e.g. ``h2`` for match-rank), so minting a fontRole is barred
+    # by the "≥2 properties" reuse rule; the family stays whatever QFont the
+    # widget carries (QLabel roles do not set font-family).
+
+    @classmethod
+    def _freight_exchange_qss(cls) -> str:
+        return f"""
+        QLabel[role="status-badge"] {{
+            padding: 4px 12px;
+            border-radius: {RADIUS_PILL}px;
+        }}
+        QLabel[role="status-badge"][state="neutral"] {{
+            background-color: {COLOR_NEUTRAL_SUBTLE};
+            color: {COLOR_NEUTRAL_TEXT};
+        }}
+        QLabel[role="status-badge"][state="connected"] {{
+            background-color: {COLOR_SUCCESS_SUBTLE};
+            color: {COLOR_SUCCESS_TEXT};
+        }}
+        QLabel[role="status-badge"][state="connecting"] {{
+            background-color: {COLOR_WARNING_SUBTLE};
+            color: {COLOR_WARNING_TEXT};
+        }}
+
+        QPushButton[variant="primary-bordered"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_BUTTON}px;
+            padding: 6px 12px;
+        }}
+        QPushButton[variant="primary-bordered"]:hover {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+        /* The inline styles these buttons replaced also beat the global
+           :focus rules (inline > app stylesheet), so the focus border must
+           be re-declared here or the global 2px accent focus ring shows. */
+        QPushButton[variant="primary-bordered"]:focus,
+        QPushButton[variant="primary-bordered"]:focus:!hover {{
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+        }}
+
+        /* Accent primary with 6px vertical padding (connect button). The
+           global QPushButton rule pads 8px, so this is a distinct variant. */
+        QPushButton[variant="primary-tight"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: none;
+            border-radius: {RADIUS_BUTTON}px;
+            padding: 6px 16px;
+        }}
+        QPushButton[variant="primary-tight"]:hover {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[variant="primary-tight"]:focus,
+        QPushButton[variant="primary-tight"]:focus:!hover {{
+            border: none;
+        }}
+
+        QPushButton[variant="danger-bordered"] {{
+            background-color: {COLOR_ACCENT_PRIMARY};
+            color: {COLOR_ERROR_TEXT};
+            border: 1px solid {COLOR_ERROR_DEFAULT};
+            border-radius: {RADIUS_BUTTON}px;
+            padding: 6px 12px;
+        }}
+        QPushButton[variant="danger-bordered"]:hover {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[variant="danger-bordered"]:focus,
+        QPushButton[variant="danger-bordered"]:focus:!hover {{
+            border: 1px solid {COLOR_ERROR_DEFAULT};
+        }}
+
+        QPushButton[variant="outline-accent"] {{
+            background-color: transparent;
+            color: {COLOR_ACCENT_PRIMARY};
+            border: 1px solid {COLOR_ACCENT_BORDER};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QPushButton[variant="outline-accent"]:hover {{
+            background-color: {COLOR_BG_OVERLAY};
+        }}
+        /* Reproduces the replaced ghost-variant focus: overlay surface with
+           the accent-border outline (the old inline overrode the global
+           accent focus ring the same way). */
+        QPushButton[variant="outline-accent"]:focus,
+        QPushButton[variant="outline-accent"]:focus:!hover {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_ACCENT_BORDER};
+        }}
+
+        QFrame[role="match-row"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_BUTTON}px;
+        }}
+        QFrame[role="match-row"]:hover {{
+            background-color: {COLOR_BG_HOVER};
+        }}
+        QFrame[role="match-row"]:focus {{
+            border: 1px solid {COLOR_ACCENT_PRIMARY};
+        }}
+
+        QLabel[role="match-rank"] {{
+            font-size: {FONT_SIZE_LG}px;
+            font-weight: bold;
+            color: {COLOR_TEXT_TERTIARY};
+        }}
+
+        QFrame[role="score-track"] {{
+            background-color: {COLOR_BG_BASE};
+            border-radius: {RADIUS_PILL}px;
+            border: none;
+        }}
+
+        QFrame[role="score-fill"] {{
+            border-radius: {RADIUS_PILL}px;
+            border: none;
+        }}
+        QFrame[role="score-fill"][state="high"] {{
+            background-color: {COLOR_SUCCESS_DEFAULT};
+        }}
+        QFrame[role="score-fill"][state="mid"] {{
+            background-color: {COLOR_WARNING_DEFAULT};
+        }}
+        QFrame[role="score-fill"][state="low"] {{
+            background-color: {COLOR_ERROR_DEFAULT};
+        }}
+
+        QLabel[role="score-value"] {{
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: bold;
+        }}
+        QLabel[role="score-value"][state="high"] {{
+            color: {COLOR_SUCCESS_DEFAULT};
+        }}
+        QLabel[role="score-value"][state="mid"] {{
+            color: {COLOR_WARNING_DEFAULT};
+        }}
+        QLabel[role="score-value"][state="low"] {{
+            color: {COLOR_ERROR_DEFAULT};
+        }}
+
+        QLabel[role="match-profit"] {{
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 500;
+        }}
+        QLabel[role="match-profit"][state="positive"] {{
+            color: {COLOR_SUCCESS_TEXT};
+        }}
+        QLabel[role="match-profit"][state="negative"] {{
+            color: {COLOR_ERROR_TEXT};
+        }}
+
+        QWidget[role="panel-card"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CARD}px;
+        }}
+
+        QListView[role="combo-popup"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+
+        QFrame[role="panel-danger-lg"] {{
+            background-color: {COLOR_ERROR_SUBTLE};
+            border: 1px solid {COLOR_ERROR_DEFAULT};
+            border-radius: {RADIUS_CARD}px;
+        }}
+
+        QFrame[role="scrim"] {{
+            background-color: rgba(12, 12, 14, 0.7);
+        }}
+
+        QFrame[role="separator"] {{
+            background-color: {COLOR_BORDER_SUBTLE};
+        }}
+        """
+
+    # ── CMR form cluster (Phase 3) ─────────────────────────────────────────
+    # Box-number badges (QLabel[role="box-badge"]), compact date edits, the
+    # ADR toggle, inset input rows and the collapsible-section header button
+    # from cmr_form.py / cmr_fields.py.
+
+    @classmethod
+    def _cmr_qss(cls) -> str:
+        return f"""
+        QLabel[role="box-badge"] {{
+            background-color: {COLOR_ACCENT_SUBTLE};
+            color: {ACCENT_TEXT};
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_XS}px;
+            font-weight: bold;
+        }}
+        QLabel[role="box-badge"][sizeRole="sm"] {{
+            border-radius: 3px;
+        }}
+        QLabel[role="box-badge"][state="complete"] {{
+            background-color: {COLOR_SUCCESS_SUBTLE};
+            color: {COLOR_SUCCESS_DEFAULT};
+        }}
+        QLabel[role="box-badge"][state="partial"] {{
+            background-color: {COLOR_WARNING_SUBTLE};
+            color: {COLOR_WARNING_DEFAULT};
+        }}
+        QLabel[role="box-badge"][state="empty"] {{
+            background-color: {COLOR_ACCENT_SUBTLE};
+            color: {ACCENT_TEXT};
+        }}
+
+        QDateEdit[role="cmr-date"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 6px;
+        }}
+
+        QCheckBox[role="adr-toggle"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-weight: bold;
+            spacing: 6px;
+        }}
+
+        QFrame[role="input-row"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+
+        QPushButton[role="collapsible-header"] {{
+            text-align: left;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+            color: {COLOR_TEXT_PRIMARY};
+            padding: 0;
+            border: none;
+            background-color: transparent;
+            letter-spacing: 0.5px;
+        }}
+        QPushButton[role="collapsible-header"]:hover {{
+            color: {COLOR_ACCENT_PRIMARY};
+        }}
+        QPushButton[role="collapsible-header"]:focus,
+        QPushButton[role="collapsible-header"]:focus:!hover {{
             border: none;
             background-color: transparent;
         }}

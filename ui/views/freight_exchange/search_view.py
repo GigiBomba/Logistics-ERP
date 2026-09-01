@@ -26,14 +26,10 @@ from ui.components import (
     Icon,
     Label,
     SectionTitle,
+    get_icon,
 )
 from ui.design_tokens import (
-    COLOR_ACCENT_BORDER,
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BG_ELEVATED,
-    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
-    COLOR_ERROR_SUBTLE,
     COLOR_ERROR_TEXT,
     COLOR_NEUTRAL_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
@@ -43,8 +39,6 @@ from ui.design_tokens import (
     COLOR_WARNING_TEXT,
     FONT_SIZE_XS,
     INPUT_HEIGHT,
-    RADIUS_LG,
-    RADIUS_SM,
     ROW_HEIGHT,
     SPACE_1,
     SPACE_2,
@@ -55,6 +49,70 @@ from ui.design_tokens import (
 from ui.widgets import StyledTableWidget
 
 logger = logging.getLogger(__name__)
+
+
+class _CollapsibleFilterSection(QWidget):
+    """Clickable disclosure row that shows/hides an attached filter content.
+
+    Mimics the settings-view collapsible idiom (clickable header toggling a
+    content container) using a chevron that points right when collapsed and
+    down when expanded. Rendered purely from existing design components and
+    tokens, so it needs no inline styles.
+    """
+
+    def __init__(
+        self,
+        parent: Optional[QWidget] = None,
+        content: Optional[QWidget] = None,
+        title_key: str = "freight.filters.advanced",
+        expanded: bool = False,
+    ):
+        super().__init__(parent)
+        self._content = content
+        self._expanded = bool(expanded)
+
+        row = QHBoxLayout(self)
+        row.setContentsMargins(0, SPACE_1, 0, SPACE_1)
+        row.setSpacing(SPACE_2)
+
+        self._chevron = Icon(
+            "mdi6.chevron-down" if self._expanded else "mdi6.chevron-right",
+            color=COLOR_TEXT_SECONDARY,
+            size=16,
+        )
+        row.addWidget(self._chevron)
+
+        self._title = FieldLabel(self, t(title_key, default="Advanced filters"))
+        row.addWidget(self._title)
+        row.addStretch()
+
+        self.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.setToolTip(t(title_key, default="Advanced filters"))
+        self._apply_state()
+
+    def mousePressEvent(self, event) -> None:  # noqa: N802 (Qt override)
+        if event.button() == Qt.MouseButton.LeftButton:
+            self.set_expanded(not self._expanded)
+            event.accept()
+            return
+        super().mousePressEvent(event)
+
+    def set_expanded(self, expanded: bool) -> None:
+        self._expanded = bool(expanded)
+        self._apply_state()
+
+    def is_expanded(self) -> bool:
+        return self._expanded
+
+    def _apply_state(self) -> None:
+        if self._content is not None:
+            self._content.setVisible(self._expanded)
+        self._chevron.setIcon(
+            get_icon(
+                "mdi6.chevron-down" if self._expanded else "mdi6.chevron-right",
+                color=COLOR_TEXT_SECONDARY,
+            )
+        )
 
 
 class FreightSearchView(QWidget):
@@ -111,8 +169,9 @@ class FreightSearchView(QWidget):
             self._results_table.hide()
             self._empty_state.hide()
             self._error_card.hide()
-        else:
-            self._results_table.show()
+        # When done searching, visibility is decided by set_table_data /
+        # show_empty / show_error so an empty result list lands on the
+        # EmptyState instead of a blank table grid.
 
     def show_empty(self, visible: bool = True) -> None:
         """Show or hide the empty state in place of the table."""
@@ -141,9 +200,14 @@ class FreightSearchView(QWidget):
             self._results_table.setCellWidget(
                 r, actions_col, self._create_action_widget()
             )
-        self._results_table.show()
-        self._empty_state.hide()
         self._error_card.hide()
+        if rows:
+            self._results_table.show()
+            self._empty_state.hide()
+        else:
+            # No loads returned — show the EmptyState instead of a blank grid.
+            self._results_table.hide()
+            self._empty_state.show()
 
     def update_status_bar(
         self, has_providers: bool = True, last_updated: str = ""
@@ -181,22 +245,18 @@ class FreightSearchView(QWidget):
         self._sidebar = QWidget()
         self._sidebar.setObjectName("filter_panel")
         self._sidebar.setFixedWidth(280)
-        self._sidebar.setStyleSheet(f"""
-            QWidget#filter_panel {{
-                background: {COLOR_BG_ELEVATED};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_LG}px;
-            }}
-        """)
+        self._sidebar.setProperty("role", "panel-card")
 
         layout = QVBoxLayout(self._sidebar)
-        layout.setContentsMargins(SPACE_4, SPACE_4, SPACE_4, SPACE_4)
-        layout.setSpacing(SPACE_4)
+        layout.setContentsMargins(SPACE_3, SPACE_3, SPACE_3, SPACE_3)
+        layout.setSpacing(SPACE_3)
 
         # 1. SectionTitle
         layout.addWidget(SectionTitle(self._sidebar, t("freight.filters.title")))
         # 2. Divider
         layout.addWidget(Divider(self._sidebar))
+
+        # ── PRIMARY filters (high-frequency, always visible) ──────────────
 
         # ── Route group ──
         layout.addWidget(FieldLabel(self._sidebar, t("freight.filters.route")))
@@ -229,8 +289,16 @@ class FreightSearchView(QWidget):
         date_row.addWidget(self._date_to)
         layout.addLayout(date_row)
 
+        # ── ADVANCED filters (lower-frequency, collapsed by default) ───────
+        self._advanced_content = QWidget(self._sidebar)
+        advanced = QVBoxLayout(self._advanced_content)
+        advanced.setContentsMargins(0, 0, 0, 0)
+        advanced.setSpacing(SPACE_3)
+
         # ── Vehicle group ──
-        layout.addWidget(FieldLabel(self._sidebar, t("freight.filters.vehicle")))
+        advanced.addWidget(
+            FieldLabel(self._advanced_content, t("freight.filters.vehicle"))
+        )
         self._trailer_combo = QComboBox()
         self._trailer_combo.addItems([
             t("freight.trailer.any"),
@@ -241,14 +309,28 @@ class FreightSearchView(QWidget):
             t("freight.trailer.low_loader"),
         ])
         self._trailer_combo.setFixedHeight(INPUT_HEIGHT)
-        layout.addWidget(self._trailer_combo)
+        self._trailer_combo.setMinimumWidth(150)
+        self._trailer_combo.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        # Give the popup view an opaque themed background so item text never
+        # bleeds through onto the widgets underneath the dropdown.
+        trailer_view = self._trailer_combo.view()
+        if trailer_view is not None:
+            trailer_view.setProperty("role", "combo-popup")
+            trailer_view.style().unpolish(trailer_view)
+            trailer_view.style().polish(trailer_view)
+        advanced.addWidget(self._trailer_combo)
 
         self._adr_check = QCheckBox(t("freight.filter.adr"))
-        layout.addWidget(self._adr_check)
+        advanced.addWidget(self._adr_check)
 
         # ── Weight group ──
-        layout.addWidget(FieldLabel(self._sidebar, t("freight.filter.weight")))
+        advanced.addWidget(
+            FieldLabel(self._advanced_content, t("freight.filter.weight"))
+        )
         weight_row = QHBoxLayout()
+        weight_row.setSpacing(SPACE_2)
         self._weight_min = QLineEdit()
         self._weight_min.setPlaceholderText(t("freight.filter.weight_min_placeholder"))
         self._weight_min.setFixedHeight(INPUT_HEIGHT)
@@ -256,14 +338,16 @@ class FreightSearchView(QWidget):
         self._weight_max.setPlaceholderText(t("freight.filter.weight_max_placeholder"))
         self._weight_max.setFixedHeight(INPUT_HEIGHT)
         weight_row.addWidget(self._weight_min)
-        weight_row.addWidget(QLabel("–"))
+        weight_row.addWidget(QLabel("\u2013"))
         weight_row.addWidget(self._weight_max)
-        layout.addLayout(weight_row)
-        layout.addSpacing(SPACE_3)
+        advanced.addLayout(weight_row)
 
         # ── Price group ──
-        layout.addWidget(FieldLabel(self._sidebar, t("freight.filter.price")))
+        advanced.addWidget(
+            FieldLabel(self._advanced_content, t("freight.filter.price"))
+        )
         price_row = QHBoxLayout()
+        price_row.setSpacing(SPACE_2)
         self._price_min = QLineEdit()
         self._price_min.setPlaceholderText(t("freight.filter.price_min_placeholder", default="Min €"))
         self._price_min.setFixedHeight(INPUT_HEIGHT)
@@ -271,38 +355,65 @@ class FreightSearchView(QWidget):
         self._price_max.setPlaceholderText(t("freight.filter.price_max_placeholder", default="Max €"))
         self._price_max.setFixedHeight(INPUT_HEIGHT)
         price_row.addWidget(self._price_min)
-        price_row.addWidget(QLabel("–"))
+        price_row.addWidget(QLabel("\u2013"))
         price_row.addWidget(self._price_max)
-        layout.addLayout(price_row)
-        layout.addSpacing(SPACE_3)
+        advanced.addLayout(price_row)
 
         # ── Distance max ──
-        layout.addWidget(FieldLabel(self._sidebar, t("freight.filter.distance")))
+        advanced.addWidget(
+            FieldLabel(self._advanced_content, t("freight.filter.distance"))
+        )
         self._distance_max = QLineEdit()
         self._distance_max.setPlaceholderText(t("freight.filter.distance_max_placeholder"))
         self._distance_max.setFixedHeight(INPUT_HEIGHT)
-        layout.addWidget(self._distance_max)
-        layout.addSpacing(SPACE_3)
+        advanced.addWidget(self._distance_max)
 
         # ── Loading type ──
-        layout.addWidget(FieldLabel(self._sidebar, t("freight.filter.loading_type")))
+        advanced.addWidget(
+            FieldLabel(self._advanced_content, t("freight.filter.loading_type"))
+        )
         self._loading_type = QComboBox()
         self._loading_type.addItems([t("freight.loading_type.any"), "FTL", "LTL"])
         self._loading_type.setFixedHeight(INPUT_HEIGHT)
-        layout.addWidget(self._loading_type)
-        layout.addSpacing(SPACE_3)
+        self._loading_type.setMinimumWidth(150)
+        self._loading_type.setSizeAdjustPolicy(
+            QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon
+        )
+        loading_view = self._loading_type.view()
+        if loading_view is not None:
+            loading_view.setProperty("role", "combo-popup")
+            loading_view.style().unpolish(loading_view)
+            loading_view.style().polish(loading_view)
+        advanced.addWidget(self._loading_type)
 
-        # ── Country ──
-        layout.addWidget(FieldLabel(self._sidebar, t("freight.filter.country")))
+        # ── Country group ──
+        advanced.addWidget(
+            FieldLabel(self._advanced_content, t("freight.filter.country"))
+        )
         self._loading_country = QLineEdit()
         self._loading_country.setPlaceholderText(t("freight.filter.loading_country_placeholder"))
         self._loading_country.setFixedHeight(INPUT_HEIGHT)
-        layout.addWidget(self._loading_country)
+        advanced.addWidget(self._loading_country)
         self._delivery_country = QLineEdit()
         self._delivery_country.setPlaceholderText(t("freight.filter.delivery_country_placeholder"))
         self._delivery_country.setFixedHeight(INPUT_HEIGHT)
-        layout.addWidget(self._delivery_country)
-        layout.addSpacing(SPACE_3)
+        advanced.addWidget(self._delivery_country)
+
+        # Expanded advanced content (~6 groups) cannot fit alongside the
+        # primary filters within the 1280x720 minimum window, so the section
+        # starts collapsed — the primary filters are the common search path
+        # and the toggle keeps every filter one click away.
+        self._advanced_content.setVisible(False)
+
+        layout.addWidget(Divider(self._sidebar))
+        self._advanced_toggle = _CollapsibleFilterSection(
+            self._sidebar,
+            content=self._advanced_content,
+            title_key="freight.filters.advanced",
+            expanded=False,
+        )
+        layout.addWidget(self._advanced_toggle)
+        layout.addWidget(self._advanced_content)
 
         # ── Sidebar buttons (bottom, after addStretch()) ──
         layout.addStretch()
@@ -367,34 +478,30 @@ class FreightSearchView(QWidget):
         self._build_results_table()
         self._right_area.addWidget(self._results_table, 1)
 
-        # ── Empty state (hidden by default) ──
+        # ── Empty state (hidden by default; shown for empty results) ──
         self._empty_state = EmptyState(
             parent=self,
             icon_name="mdi6.magnify-close",
-            title=t("freight.results.empty_title"),
-            subtitle=t("freight.results.empty_subtitle"),
+            title=t("freight.results.empty_title", default="No results found"),
+            subtitle=t("freight.results.empty_subtitle", default="Try adjusting your search criteria"),
         )
-        self._right_area.addWidget(self._empty_state)
+        self._right_area.addWidget(self._empty_state, 1, Qt.AlignmentFlag.AlignCenter)
 
         # ── Status bar ──
         self._status_label = Label(self, role="muted")
         self._right_area.addWidget(self._status_label)
 
-        # Initial state
-        self._empty_state.hide()
+        # Initial state: no providers / no search yet — show the EmptyState
+        # in the grid area rather than a blank table.
+        self._results_table.hide()
+        self._empty_state.show()
         self._error_card.hide()
         self._loading_overlay.hide()
         self.update_status_bar(has_providers=False)
 
     def _build_summary_bar(self):
         self._summary_bar = QWidget()
-        self._summary_bar.setStyleSheet(f"""
-            QWidget {{
-                background: {COLOR_BG_ELEVATED};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_LG}px;
-            }}
-        """)
+        self._summary_bar.setProperty("role", "panel-card")
         layout = QHBoxLayout(self._summary_bar)
         layout.setContentsMargins(SPACE_4, SPACE_3, SPACE_4, SPACE_3)
 
@@ -408,11 +515,7 @@ class FreightSearchView(QWidget):
 
     def _build_error_card(self):
         self._error_card = QFrame(self)
-        self._error_card.setStyleSheet(f"""
-            background: {COLOR_ERROR_SUBTLE};
-            border: 1px solid {COLOR_ERROR_DEFAULT};
-            border-radius: {RADIUS_LG}px;
-        """)
+        self._error_card.setProperty("role", "panel-danger-lg")
         error_layout = QHBoxLayout(self._error_card)
         error_layout.setContentsMargins(SPACE_4, SPACE_4, SPACE_4, SPACE_4)
         error_layout.setSpacing(SPACE_2)
@@ -455,9 +558,7 @@ class FreightSearchView(QWidget):
 
         # Loading overlay — child of the table, covers it when shown
         self._loading_overlay = QFrame(self._results_table)
-        self._loading_overlay.setStyleSheet(
-            "background: rgba(12,12,14,0.7);"
-        )
+        self._loading_overlay.setProperty("role", "scrim")
         self._loading_overlay.setCursor(Qt.CursorShape.WaitCursor)
         overlay_layout = QVBoxLayout(self._loading_overlay)
         overlay_layout.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -487,15 +588,11 @@ class FreightSearchView(QWidget):
         layout.addWidget(import_btn)
 
         eval_btn = Btn(
-            container, text=t("freight.evaluate"), variant="ghost", size="sm"
+            container, text=t("freight.evaluate"), variant="outline-accent", size="sm"
         )
-        eval_btn.setStyleSheet(f"""
-            QPushButton {{
-                border: 1px solid {COLOR_ACCENT_BORDER};
-                color: {COLOR_ACCENT_PRIMARY};
-                border-radius: {RADIUS_SM}px;
-            }}
-        """)
+        eval_btn.setProperty("variant", "outline-accent")
+        eval_btn.style().unpolish(eval_btn)
+        eval_btn.style().polish(eval_btn)
         layout.addWidget(eval_btn)
 
         return container

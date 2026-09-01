@@ -19,16 +19,7 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.components import Btn, Divider
-from ui.design_tokens import (
-    ACCENT_TEXT,
-    COLOR_ACCENT_SUBTLE,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_SUBTLE,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-    SP,
-)
+from ui.design_tokens import SP
 from ui.widgets import StyledLineEdit
 from ui.widgets.signature_pad import QtSignaturePad
 
@@ -102,8 +93,7 @@ class CmrFieldsMixin:
         date_layout.setSpacing(SP["2"])
 
         date_label = QLabel(t("cmr.date", "Date:"))
-        date_label.setProperty("fontRole", "small")
-        date_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+        date_label.setProperty("fontRole", "helper")
         date_layout.addWidget(date_label)
 
         wld = QDateEdit()
@@ -111,12 +101,7 @@ class CmrFieldsMixin:
         wld.setCalendarPopup(True)
         wld.setDate(QDate.currentDate())
         wld.setFixedHeight(32)
-        wld.setStyleSheet(
-            f"background-color: {COLOR_BG_OVERLAY};"
-            f"color: {COLOR_TEXT_PRIMARY};"
-            f"border: 1px solid {COLOR_BORDER_SUBTLE};"
-            f"border-radius: 4px; padding: 2px 6px;"
-        )
+        wld.setProperty("role", "cmr-date")
         date_layout.addWidget(wld, 1)
 
         left.layout().addWidget(date_container)
@@ -229,11 +214,7 @@ class CmrFieldsMixin:
         self._adr_toggle = QCheckBox(
             t("cmr.adr_toggle", "Contains DANGEROUS GOODS (ADR)")
         )
-        self._adr_toggle.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY};"
-            f"font-weight: bold;"
-            f"spacing: 6px;"
-        )
+        self._adr_toggle.setProperty("role", "adr-toggle")
         self._adr_toggle.stateChanged.connect(self._on_adr_toggle)
         parent.layout().addWidget(self._adr_toggle)
 
@@ -271,10 +252,7 @@ class CmrFieldsMixin:
     def _add_adr_row(self):
         row = QFrame()
         row.setFrameShape(QFrame.StyledPanel)
-        row.setStyleSheet(
-            f"background-color: {COLOR_BG_OVERLAY};"
-            f"border-radius: 4px;"
-        )
+        row.setProperty("role", "input-row")
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
         row_layout.setSpacing(SP["2"])
@@ -391,18 +369,13 @@ class CmrFieldsMixin:
         badge = QLabel("19")
         badge.setFixedSize(30, 20)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setStyleSheet(
-            f"background-color: {COLOR_ACCENT_SUBTLE};"
-            f"color: {ACCENT_TEXT};"
-            f"border-radius: 4px; font-weight: bold; font-size: 10px;"
-        )
+        badge.setProperty("role", "box-badge")
         sc_lbl_layout.addWidget(badge)
 
         sc_lbl = QLabel(
             t("cmr.successive_carriers", "Successive Carriers / Transportatori Successivi")
         )
         sc_lbl.setProperty("fontRole", "label")
-        sc_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         sc_lbl_layout.addWidget(sc_lbl)
         sc_lbl_layout.addStretch(1)
 
@@ -428,10 +401,7 @@ class CmrFieldsMixin:
     def _add_successive_carrier_row(self):
         row = QFrame()
         row.setFrameShape(QFrame.StyledPanel)
-        row.setStyleSheet(
-            f"background-color: {COLOR_BG_OVERLAY};"
-            f"border-radius: 4px;"
-        )
+        row.setProperty("role", "input-row")
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(SP["2"], SP["1"], SP["2"], SP["1"])
         row_layout.setSpacing(SP["2"])
@@ -479,18 +449,15 @@ class CmrFieldsMixin:
 
         cost_type_lbl = QLabel(t("cmr.cost_type", "Cost Type"))
         cost_type_lbl.setProperty("fontRole", "label")
-        cost_type_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         hdr_layout.addWidget(cost_type_lbl, 2)
 
         sender_lbl = QLabel(t("cmr.sender", "Sender"))
         sender_lbl.setProperty("fontRole", "label")
-        sender_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         sender_lbl.setAlignment(Qt.AlignRight)
         hdr_layout.addWidget(sender_lbl, 1)
 
         consignee_lbl = QLabel(t("cmr.consignee_short", "Consignee"))
         consignee_lbl.setProperty("fontRole", "label")
-        consignee_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         consignee_lbl.setAlignment(Qt.AlignRight)
         hdr_layout.addWidget(consignee_lbl, 1)
 
@@ -519,8 +486,7 @@ class CmrFieldsMixin:
         row_layout.setSpacing(SP["3"])
 
         lbl = QLabel(label)
-        lbl.setProperty("fontRole", "small")
-        lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY};")
+        lbl.setProperty("fontRole", "base-secondary")
         row_layout.addWidget(lbl, 2)
 
         se = StyledLineEdit(row, placeholder="EUR", height=32)
@@ -558,18 +524,13 @@ class CmrFieldsMixin:
         badge21 = QLabel("21")
         badge21.setFixedSize(30, 20)
         badge21.setAlignment(Qt.AlignCenter)
-        badge21.setStyleSheet(
-            f"background-color: {COLOR_ACCENT_SUBTLE};"
-            f"color: {ACCENT_TEXT};"
-            f"border-radius: 4px; font-weight: bold; font-size: 10px;"
-        )
+        badge21.setProperty("role", "box-badge")
         b21_lbl_layout.addWidget(badge21)
 
         b21_title = QLabel(
             t("cmr.established_in", "Established in / Intocmit in")
         )
         b21_title.setProperty("fontRole", "label")
-        b21_title.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         b21_lbl_layout.addWidget(b21_title)
         b21_lbl_layout.addStretch(1)
 
@@ -586,8 +547,7 @@ class CmrFieldsMixin:
         place_col_layout.setContentsMargins(0, 0, 0, 0)
         place_col_layout.setSpacing(SP["1"])
         place_label = QLabel(t("cmr.place", "Place:"))
-        place_label.setProperty("fontRole", "small")
-        place_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+        place_label.setProperty("fontRole", "helper")
         place_col_layout.addWidget(place_label)
         self._cmr_entries["issue_place"] = StyledLineEdit(
             place_col, placeholder=t("cmr.city_country", "City, Country"), height=32,
@@ -600,20 +560,14 @@ class CmrFieldsMixin:
         date_col_layout.setContentsMargins(0, 0, 0, 0)
         date_col_layout.setSpacing(SP["1"])
         date_label = QLabel(t("cmr.date", "Date:"))
-        date_label.setProperty("fontRole", "small")
-        date_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+        date_label.setProperty("fontRole", "helper")
         date_col_layout.addWidget(date_label)
         w21d = QDateEdit()
         w21d.setDisplayFormat("yyyy-MM-dd")
         w21d.setCalendarPopup(True)
         w21d.setDate(QDate.currentDate())
         w21d.setFixedHeight(32)
-        w21d.setStyleSheet(
-            f"background-color: {COLOR_BG_OVERLAY};"
-            f"color: {COLOR_TEXT_PRIMARY};"
-            f"border: 1px solid {COLOR_BORDER_SUBTLE};"
-            f"border-radius: 4px; padding: 2px 6px;"
-        )
+        w21d.setProperty("role", "cmr-date")
         date_col_layout.addWidget(w21d)
         row21_layout.addWidget(date_col, 1)
         self._cmr_entries["issue_date"] = w21d
@@ -648,16 +602,12 @@ class CmrFieldsMixin:
             sig_badge = QLabel(str(num))
             sig_badge.setFixedSize(26, 18)
             sig_badge.setAlignment(Qt.AlignCenter)
-            sig_badge.setStyleSheet(
-                f"background-color: {COLOR_ACCENT_SUBTLE};"
-                f"color: {ACCENT_TEXT};"
-                f"border-radius: 3px; font-weight: bold; font-size: 8px;"
-            )
+            sig_badge.setProperty("role", "box-badge")
+            sig_badge.setProperty("sizeRole", "sm")
             sig_lbl_layout.addWidget(sig_badge)
 
             sig_lbl = QLabel(label_text)
             sig_lbl.setProperty("fontRole", "label")
-            sig_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             sig_lbl_layout.addWidget(sig_lbl)
             sig_lbl_layout.addStretch(1)
 

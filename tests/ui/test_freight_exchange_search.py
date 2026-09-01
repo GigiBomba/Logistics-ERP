@@ -259,8 +259,10 @@ class TestFreightSearchViewConstruction:
     def test_error_card_hidden_initially(self, search_view):
         assert not search_view._error_card.isVisible()
 
-    def test_empty_state_hidden_initially(self, search_view):
-        assert not search_view._empty_state.isVisible()
+    def test_empty_state_shown_initially(self, search_view):
+        # Code intentionally shows the EmptyState by default (a blank grid
+        # before any search looks broken), so it must be visible on startup.
+        assert search_view._empty_state.isVisible()
 
     def test_loading_overlay_hidden_initially(self, search_view):
         assert not search_view._loading_overlay.isVisible()
@@ -457,11 +459,15 @@ class TestLoadingState:
         assert not search_view._loading_overlay.isVisible()
 
     def test_loading_overlay_hidden_when_done(self, search_view):
-        """show_loading(False) hides overlay."""
+        """show_loading(False) hides the overlay; table visibility is
+        delegated to set_table_data / show_empty (intentional contract)."""
         search_view.show_loading(searching=True)
+        assert not search_view._results_table.isVisible()
         search_view.show_loading(searching=False)
         assert not search_view._loading_overlay.isVisible()
-        assert search_view._results_table.isVisible()
+        # show_loading(False) no longer shows the table — the caller decides
+        # via set_table_data/show_empty so empty results land on EmptyState.
+        assert not search_view._results_table.isVisible()
 
     def test_loading_overlay_style(self, search_view):
         """Loading overlay has wait cursor."""
@@ -551,11 +557,13 @@ class TestSetTableData:
         ])
         assert search_view._results_table.rowCount() == 2
 
-    def test_set_table_data_hides_empty_state(self, search_view):
-        """set_table_data hides the empty state."""
+    def test_set_table_data_shows_empty_state_for_no_rows(self, search_view):
+        """set_table_data([]) intentionally shows the empty state — a blank
+        results grid would be misleading."""
         search_view.show_empty(True)
         search_view.set_table_data([])
-        assert not search_view._empty_state.isVisible()
+        assert search_view._empty_state.isVisible()
+        assert not search_view._results_table.isVisible()
 
     def test_set_table_data_hides_error_card(self, search_view):
         """set_table_data hides the error card."""
@@ -944,11 +952,12 @@ class TestBuildMatchRow:
     """_build_match_row edge cases and formatting."""
 
     def test_match_row_negative_profit_formatting(self, detail_view):
-        """Negative profit displays with ERROR_TEXT color."""
+        """Negative profit displays with ERROR_TEXT color (match-profit role)."""
         row = detail_view._build_match_row(1, MATCH_NEGATIVE_PROFIT)
         profit_label = next(lbl for lbl in row.findChildren(QLabel) if "€" in lbl.text())
         assert profit_label.text() == "-€320"
-        assert COLOR_ERROR_TEXT in profit_label.styleSheet()
+        assert profit_label.property("role") == "match-profit"
+        assert profit_label.property("state") == "negative"
 
     def test_match_row_score_boundary_50(self, detail_view):
         """Score of 50 uses warning color, not success or error."""
@@ -957,9 +966,8 @@ class TestBuildMatchRow:
             "expected_profit": {"amount": 100, "currency": "EUR"},
         })
         score_label = next(lbl for lbl in row.findChildren(QLabel) if lbl.text() == "50")
-        assert COLOR_WARNING_DEFAULT in score_label.styleSheet()
-        assert COLOR_SUCCESS_DEFAULT not in score_label.styleSheet()
-        assert COLOR_ERROR_DEFAULT not in score_label.styleSheet()
+        assert score_label.property("role") == "score-value"
+        assert score_label.property("state") == "mid"
 
     def test_match_row_zero_reasons(self, detail_view):
         """Empty reasons list does not produce any badges."""
@@ -1017,7 +1025,8 @@ class TestBuildMatchRow:
         })
         profit_label = next(lbl for lbl in row.findChildren(QLabel) if "€" in lbl.text())
         assert profit_label.text() == "+€570"
-        assert COLOR_SUCCESS_TEXT in profit_label.styleSheet()
+        assert profit_label.property("role") == "match-profit"
+        assert profit_label.property("state") == "positive"
 
 
 # =========================================================================

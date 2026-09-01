@@ -1,0 +1,2884 @@
+[
+ {
+  "class": "QtOverviewView",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   1232,
+   676
+  ],
+  "sizeHint": [
+   468,
+   312
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_viewport",
+  "geometry": [
+   0,
+   0,
+   1226,
+   676
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   1226,
+   744
+  ],
+  "sizeHint": [
+   958,
+   744
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 16,
+    "contentsMargins": [
+     40,
+     24,
+     40,
+     24
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   40,
+   24,
+   1146,
+   72
+  ],
+  "sizeHint": [
+   571,
+   54
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     40,
+     0,
+     40,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   40,
+   0,
+   101,
+   72
+  ],
+  "sizeHint": [
+   101,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   153,
+   0,
+   104,
+   72
+  ],
+  "sizeHint": [
+   104,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   844,
+   0,
+   234,
+   72
+  ],
+  "sizeHint": [
+   234,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "_IconButton",
+  "objectName": "",
+  "geometry": [
+   1090,
+   28,
+   16,
+   54
+  ],
+  "sizeHint": [
+   44,
+   54
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   40,
+   112,
+   1146,
+   88
+  ],
+  "sizeHint": [
+   670,
+   88
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "CompactKPICard",
+  "objectName": "card",
+  "geometry": [
+   0,
+   0,
+   377,
+   88
+  ],
+  "sizeHint": [
+   253,
+   73
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     16,
+     16,
+     16
+    ]
+   },
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 4,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   24,
+   343,
+   13
+  ],
+  "sizeHint": [
+   219,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   41,
+   343,
+   22
+  ],
+  "sizeHint": [
+   24,
+   22
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 22
+  },
+  "layouts": []
+ },
+ {
+  "class": "CompactKPICard",
+  "objectName": "card",
+  "geometry": [
+   385,
+   0,
+   376,
+   88
+  ],
+  "sizeHint": [
+   203,
+   73
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     16,
+     16,
+     16
+    ]
+   },
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 4,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   24,
+   342,
+   13
+  ],
+  "sizeHint": [
+   169,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   41,
+   342,
+   22
+  ],
+  "sizeHint": [
+   24,
+   22
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 22
+  },
+  "layouts": []
+ },
+ {
+  "class": "CompactKPICard",
+  "objectName": "card",
+  "geometry": [
+   769,
+   0,
+   377,
+   88
+  ],
+  "sizeHint": [
+   198,
+   73
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     16,
+     16,
+     16
+    ]
+   },
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 4,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   24,
+   343,
+   13
+  ],
+  "sizeHint": [
+   164,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   41,
+   343,
+   22
+  ],
+  "sizeHint": [
+   24,
+   22
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 22
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   40,
+   216,
+   1146,
+   504
+  ],
+  "sizeHint": [
+   878,
+   504
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 16,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   668,
+   504
+  ],
+  "sizeHint": [
+   400,
+   411
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QFrame",
+  "objectName": "card",
+  "geometry": [
+   0,
+   0,
+   668,
+   389
+  ],
+  "sizeHint": [
+   400,
+   296
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     20,
+     16,
+     20
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   21,
+   634,
+   15
+  ],
+  "sizeHint": [
+   366,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   252,
+   15
+  ],
+  "sizeHint": [
+   252,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   526,
+   0,
+   108,
+   15
+  ],
+  "sizeHint": [
+   108,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   48,
+   634,
+   293
+  ],
+  "sizeHint": [
+   309,
+   190
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     9,
+     9,
+     9,
+     9
+    ]
+   }
+  ]
+ },
+ {
+  "class": "EmptyState",
+  "objectName": "card",
+  "geometry": [
+   9,
+   9,
+   320,
+   275
+  ],
+  "sizeHint": [
+   291,
+   172
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     20,
+     20,
+     20,
+     20
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   35,
+   72,
+   249,
+   48
+  ],
+  "sizeHint": [
+   48,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   35,
+   128,
+   249,
+   35
+  ],
+  "sizeHint": [
+   249,
+   35
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 15
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   35,
+   171,
+   249,
+   31
+  ],
+  "sizeHint": [
+   189,
+   31
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "EmptyState",
+  "objectName": "card",
+  "geometry": [
+   9,
+   9,
+   320,
+   275
+  ],
+  "sizeHint": [
+   291,
+   172
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     20,
+     20,
+     20,
+     20
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   35,
+   72,
+   249,
+   48
+  ],
+  "sizeHint": [
+   48,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   35,
+   128,
+   249,
+   35
+  ],
+  "sizeHint": [
+   249,
+   35
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 15
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   35,
+   171,
+   249,
+   31
+  ],
+  "sizeHint": [
+   189,
+   31
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   353,
+   634,
+   15
+  ],
+  "sizeHint": [
+   354,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "card",
+  "geometry": [
+   0,
+   401,
+   668,
+   103
+  ],
+  "sizeHint": [
+   311,
+   103
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     20,
+     16,
+     20
+    ]
+   },
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 2,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   21,
+   634,
+   15
+  ],
+  "sizeHint": [
+   121,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   314,
+   15
+  ],
+  "sizeHint": [
+   108,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   320,
+   0,
+   314,
+   15
+  ],
+  "sizeHint": [
+   7,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   48,
+   634,
+   34
+  ],
+  "sizeHint": [
+   277,
+   22
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     12,
+     0,
+     12,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   13,
+   1,
+   72,
+   32
+  ],
+  "sizeHint": [
+   91,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   93,
+   1,
+   442,
+   32
+  ],
+  "sizeHint": [
+   85,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   543,
+   7,
+   78,
+   20
+  ],
+  "sizeHint": [
+   78,
+   20
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   684,
+   0,
+   462,
+   504
+  ],
+  "sizeHint": [
+   462,
+   504
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QFrame",
+  "objectName": "card",
+  "geometry": [
+   0,
+   0,
+   462,
+   217
+  ],
+  "sizeHint": [
+   462,
+   217
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     20,
+     16,
+     20
+    ]
+   },
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 2,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   21,
+   428,
+   15
+  ],
+  "sizeHint": [
+   117,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   48,
+   428,
+   48
+  ],
+  "sizeHint": [
+   400,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     12,
+     0,
+     12,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   12,
+   0,
+   14,
+   48
+  ],
+  "sizeHint": [
+   14,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   32,
+   0,
+   250,
+   48
+  ],
+  "sizeHint": [
+   222,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   288,
+   0,
+   128,
+   48
+  ],
+  "sizeHint": [
+   128,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   98,
+   428,
+   48
+  ],
+  "sizeHint": [
+   428,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     12,
+     0,
+     12,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   12,
+   0,
+   14,
+   48
+  ],
+  "sizeHint": [
+   14,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   32,
+   0,
+   250,
+   48
+  ],
+  "sizeHint": [
+   250,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   288,
+   0,
+   128,
+   48
+  ],
+  "sizeHint": [
+   128,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   148,
+   428,
+   48
+  ],
+  "sizeHint": [
+   426,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     12,
+     0,
+     12,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   12,
+   0,
+   14,
+   48
+  ],
+  "sizeHint": [
+   14,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   32,
+   0,
+   250,
+   48
+  ],
+  "sizeHint": [
+   248,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   288,
+   0,
+   128,
+   48
+  ],
+  "sizeHint": [
+   128,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "card",
+  "geometry": [
+   0,
+   229,
+   462,
+   100
+  ],
+  "sizeHint": [
+   205,
+   100
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     20,
+     16,
+     20
+    ]
+   },
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 3,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   21,
+   428,
+   15
+  ],
+  "sizeHint": [
+   95,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   48,
+   428,
+   14
+  ],
+  "sizeHint": [
+   171,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   24,
+   14
+  ],
+  "sizeHint": [
+   24,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   30,
+   0,
+   369,
+   14
+  ],
+  "sizeHint": [
+   112,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   405,
+   0,
+   23,
+   14
+  ],
+  "sizeHint": [
+   23,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   65,
+   428,
+   14
+  ],
+  "sizeHint": [
+   170,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   24,
+   14
+  ],
+  "sizeHint": [
+   24,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   30,
+   0,
+   369,
+   14
+  ],
+  "sizeHint": [
+   111,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   405,
+   0,
+   23,
+   14
+  ],
+  "sizeHint": [
+   23,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "card",
+  "geometry": [
+   0,
+   341,
+   462,
+   163
+  ],
+  "sizeHint": [
+   331,
+   163
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     16,
+     20,
+     16,
+     20
+    ]
+   },
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 2,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   17,
+   21,
+   428,
+   15
+  ],
+  "sizeHint": [
+   138,
+   15
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   48,
+   428,
+   14
+  ],
+  "sizeHint": [
+   276,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   80,
+   14
+  ],
+  "sizeHint": [
+   84,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   86,
+   0,
+   70,
+   14
+  ],
+  "sizeHint": [
+   84,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   162,
+   0,
+   237,
+   14
+  ],
+  "sizeHint": [
+   85,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   405,
+   0,
+   23,
+   14
+  ],
+  "sizeHint": [
+   23,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   64,
+   428,
+   14
+  ],
+  "sizeHint": [
+   277,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   80,
+   14
+  ],
+  "sizeHint": [
+   81,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   86,
+   0,
+   70,
+   14
+  ],
+  "sizeHint": [
+   111,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   162,
+   0,
+   237,
+   14
+  ],
+  "sizeHint": [
+   86,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   405,
+   0,
+   23,
+   14
+  ],
+  "sizeHint": [
+   23,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   80,
+   428,
+   14
+  ],
+  "sizeHint": [
+   277,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   80,
+   14
+  ],
+  "sizeHint": [
+   81,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   86,
+   0,
+   70,
+   14
+  ],
+  "sizeHint": [
+   112,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   162,
+   0,
+   237,
+   14
+  ],
+  "sizeHint": [
+   86,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   405,
+   0,
+   23,
+   14
+  ],
+  "sizeHint": [
+   23,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   96,
+   428,
+   14
+  ],
+  "sizeHint": [
+   297,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   80,
+   14
+  ],
+  "sizeHint": [
+   83,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   86,
+   0,
+   70,
+   14
+  ],
+  "sizeHint": [
+   86,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   162,
+   0,
+   216,
+   14
+  ],
+  "sizeHint": [
+   85,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   384,
+   0,
+   44,
+   14
+  ],
+  "sizeHint": [
+   44,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   112,
+   428,
+   14
+  ],
+  "sizeHint": [
+   283,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   80,
+   14
+  ],
+  "sizeHint": [
+   80,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   86,
+   0,
+   70,
+   14
+  ],
+  "sizeHint": [
+   86,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   162,
+   0,
+   223,
+   14
+  ],
+  "sizeHint": [
+   78,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   391,
+   0,
+   37,
+   14
+  ],
+  "sizeHint": [
+   37,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   17,
+   128,
+   428,
+   14
+  ],
+  "sizeHint": [
+   289,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   80,
+   14
+  ],
+  "sizeHint": [
+   83,
+   13
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 11
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   86,
+   0,
+   70,
+   14
+  ],
+  "sizeHint": [
+   85,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   162,
+   0,
+   237,
+   14
+  ],
+  "sizeHint": [
+   98,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QLabel",
+  "objectName": "",
+  "geometry": [
+   405,
+   0,
+   23,
+   14
+  ],
+  "sizeHint": [
+   23,
+   14
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 12
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_hcontainer",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   100,
+   6
+  ],
+  "sizeHint": [
+   48,
+   6
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonPage",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   1232,
+   676
+  ],
+  "sizeHint": [
+   334,
+   420
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 16,
+    "contentsMargins": [
+     24,
+     16,
+     24,
+     16
+    ]
+   }
+  ]
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   24,
+   16,
+   1184,
+   36
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonKPIStrip",
+  "objectName": "",
+  "geometry": [
+   24,
+   68,
+   1184,
+   80
+  ],
+  "sizeHint": [
+   16,
+   80
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   389,
+   80
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   397,
+   0,
+   390,
+   80
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   795,
+   0,
+   389,
+   80
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   24,
+   164,
+   1184,
+   496
+  ],
+  "sizeHint": [
+   286,
+   240
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 16,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "SkeletonChart",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   701,
+   496
+  ],
+  "sizeHint": [
+   252,
+   178
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 8,
+    "contentsMargins": [
+     24,
+     24,
+     24,
+     24
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   24,
+   24,
+   653,
+   448
+  ],
+  "sizeHint": [
+   204,
+   130
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QHBoxLayout",
+    "objectName": "",
+    "spacing": 6,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   0,
+   353,
+   24,
+   60
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   30,
+   338,
+   24,
+   90
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   60,
+   363,
+   24,
+   40
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   90,
+   328,
+   24,
+   110
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   120,
+   348,
+   24,
+   70
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   150,
+   318,
+   24,
+   130
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   180,
+   358,
+   24,
+   50
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QFrame",
+  "objectName": "",
+  "geometry": [
+   717,
+   0,
+   467,
+   496
+  ],
+  "sizeHint": [
+   18,
+   162
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QVBoxLayout",
+    "objectName": "",
+    "spacing": 12,
+    "contentsMargins": [
+     9,
+     9,
+     9,
+     9
+    ]
+   }
+  ]
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   9,
+   92,
+   449,
+   40
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   9,
+   227,
+   449,
+   40
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "SkeletonWidget",
+  "objectName": "",
+  "geometry": [
+   9,
+   362,
+   449,
+   40
+  ],
+  "sizeHint": [
+   -1,
+   -1
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ },
+ {
+  "class": "QWidget",
+  "objectName": "qt_scrollarea_vcontainer",
+  "geometry": [
+   1226,
+   0,
+   6,
+   676
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": [
+   {
+    "class": "QBoxLayout",
+    "objectName": "",
+    "spacing": 0,
+    "contentsMargins": [
+     0,
+     0,
+     0,
+     0
+    ]
+   }
+  ]
+ },
+ {
+  "class": "QScrollBar",
+  "objectName": "",
+  "geometry": [
+   0,
+   0,
+   6,
+   676
+  ],
+  "sizeHint": [
+   6,
+   48
+  ],
+  "font": {
+   "pointSize": -1,
+   "pixelSize": 13
+  },
+  "layouts": []
+ }
+]

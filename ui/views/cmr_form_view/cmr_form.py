@@ -31,21 +31,9 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.components import Btn, Card, CardHeader, Divider, EmptyState, Label, PageTitle
 from ui.design_tokens import (
-    ACCENT_TEXT,
     COLOR_ACCENT_PRIMARY,
-    COLOR_ACCENT_SUBTLE,
-    COLOR_BG_HOVER,
     COLOR_BORDER_SUBTLE,
-    COLOR_ERROR_TEXT,
-    COLOR_SUCCESS_DEFAULT,
-    COLOR_SUCCESS_SUBTLE,
-    COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-    COLOR_WARNING_DEFAULT,
-    COLOR_WARNING_SUBTLE,
-    FONT_SIZE_SM,
-    FONT_WEIGHT_SEMIBOLD,
     SP,
     SPACE_1,
 )
@@ -197,23 +185,13 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
                 self._field_has_content(k) for k in field_keys
             )
             if has_content:
-                badge.setStyleSheet(
-                    f"background-color: {COLOR_SUCCESS_SUBTLE};"
-                    f"color: {COLOR_SUCCESS_DEFAULT};"
-                    f"border-radius: 4px; font-size: 7px; font-weight: bold;"
-                )
+                badge.setProperty("state", "complete")
             elif field_keys:
-                badge.setStyleSheet(
-                    f"background-color: {COLOR_WARNING_SUBTLE};"
-                    f"color: {COLOR_WARNING_DEFAULT};"
-                    f"border-radius: 4px; font-size: 7px; font-weight: bold;"
-                )
+                badge.setProperty("state", "partial")
             else:
-                badge.setStyleSheet(
-                    f"background-color: {COLOR_ACCENT_SUBTLE};"
-                    f"color: {ACCENT_TEXT};"
-                    f"border-radius: 4px; font-size: 7px; font-weight: bold;"
-                )
+                badge.setProperty("state", "empty")
+            badge.style().unpolish(badge)
+            badge.style().polish(badge)
 
     def _field_has_content(self, key: str) -> bool:
         widget = self._cmr_entries.get(key)
@@ -270,14 +248,9 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         self._box_badges = {}
         for i in range(1, 25):
             badge = QLabel(str(i))
-            badge.setFixedSize(18, 18)
+            badge.setFixedSize(20, 18)
             badge.setAlignment(Qt.AlignCenter)
             badge.setProperty("role", "box-badge")
-            badge.setStyleSheet(
-                f"background-color: {COLOR_ACCENT_SUBTLE};"
-                f"color: {ACCENT_TEXT};"
-                f"border-radius: 4px; font-size: 7px; font-weight: bold;"
-            )
             nav_layout.addWidget(badge)
             self._box_badges[i] = badge
         nav_layout.addStretch(1)
@@ -362,21 +335,7 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         header_btn.setCursor(Qt.PointingHandCursor)
         header_btn.setFixedHeight(32)
         header_btn.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
-        header_btn.setStyleSheet(f"""
-            QPushButton {{
-                text-align: left;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_SEMIBOLD};
-                color: {COLOR_TEXT_PRIMARY};
-                padding: 0;
-                border: none;
-                background: transparent;
-                letter-spacing: 0.5px;
-            }}
-            QPushButton:hover {{
-                color: {COLOR_ACCENT_PRIMARY};
-            }}
-        """)
+        header_btn.setProperty("role", "collapsible-header")
 
         # Subtitle label
         sub_lbl = QLabel(subtitle)
@@ -487,7 +446,7 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         vline.setFrameShape(QFrame.VLine)
         vline.setFrameShadow(QFrame.Plain)
         vline.setFixedWidth(1)
-        vline.setStyleSheet(f"background-color: {COLOR_BORDER_SUBTLE};")
+        vline.setProperty("role", "separator")
         wrapper_layout.addWidget(vline)
 
         right = QWidget()
@@ -548,16 +507,11 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
             badge = QLabel(str(box_num))
             badge.setFixedSize(30, 20)
             badge.setAlignment(Qt.AlignCenter)
-            badge.setStyleSheet(
-                f"background-color: {COLOR_ACCENT_SUBTLE};"
-                f"color: {ACCENT_TEXT};"
-                f"border-radius: 4px; font-weight: bold; font-size: 10px;"
-            )
+            badge.setProperty("role", "box-badge")
             lbl_layout.addWidget(badge)
 
         label = QLabel(f"{label_en} / {label_ro}")
         label.setProperty("fontRole", "label")
-        label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         lbl_layout.addWidget(label)
         lbl_layout.addStretch(1)
 
@@ -622,15 +576,12 @@ class QtCmrFormView(CmrFieldsMixin, QWidget):
         badge = QLabel(str(box_num))
         badge.setFixedSize(26, 18)
         badge.setAlignment(Qt.AlignCenter)
-        badge.setStyleSheet(
-            f"background-color: {COLOR_ACCENT_SUBTLE};"
-            f"color: {ACCENT_TEXT};"
-            f"border-radius: 3px; font-weight: bold; font-size: 8px;"
-        )
+        badge.setProperty("role", "box-badge")
+        badge.setProperty("sizeRole", "sm")
         lbl_layout.addWidget(badge)
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 10px;")
+        lbl.setProperty("fontRole", "xs-muted")
         lbl_layout.addWidget(lbl)
         lbl_layout.addStretch(1)
 

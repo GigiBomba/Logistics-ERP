@@ -1352,153 +1352,13 @@
         "code": "                chip.setStyleSheet("
       },
       {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 107,
-        "code": "        date_label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 115,
-        "code": "        wld.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 233,
-        "code": "        self._adr_toggle.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 275,
-        "code": "        row.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 395,
-        "code": "        badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 406,
-        "code": "        sc_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 432,
-        "code": "        row.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 483,
-        "code": "        cost_type_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 488,
-        "code": "        sender_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 494,
-        "code": "        consignee_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 524,
-        "code": "        lbl.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 562,
-        "code": "        badge21.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 573,
-        "code": "        b21_title.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 591,
-        "code": "        place_label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 605,
-        "code": "        date_label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 612,
-        "code": "        w21d.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 652,
-        "code": "            sig_badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_fields.py",
-        "line": 661,
-        "code": "            sig_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
         "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 201,
-        "code": "                badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 207,
-        "code": "                badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 213,
-        "code": "                badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 277,
-        "code": "            badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 366,
-        "code": "        header_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 385,
+        "line": 343,
         "code": "        sub_lbl.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 10px;\")"
       },
       {
         "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 491,
-        "code": "        vline.setStyleSheet(f\"background-color: {COLOR_BORDER_SUBTLE};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 552,
-        "code": "            badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 561,
-        "code": "        label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 626,
-        "code": "        badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 634,
-        "code": "        lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY}; font-size: 10px;\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 667,
+        "line": 617,
         "code": "        self._progress_bar.setStyleSheet(f\"\"\""
       },
       {
@@ -1673,198 +1533,63 @@
       },
       {
         "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 82,
-        "code": "        self._title_label.setStyleSheet(f\"font-weight: {FONT_WEIGHT_BOLD}; font-size: {FONT_SIZE_LG}px;\")"
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
         "line": 88,
-        "code": "        self._status_badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 96,
-        "code": "        self._expiry_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px;\")"
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 102,
         "code": "        self._error_label.setStyleSheet(f\"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px;\")"
       },
       {
         "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 112,
-        "code": "        self._connect_btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 119,
-        "code": "        self._test_btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 127,
-        "code": "        self._disconnect_btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 140,
-        "code": "        separator.setStyleSheet(f\"background: {COLOR_BORDER_SUBTLE};\")"
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 184,
-        "code": "            self._status_badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 194,
-        "code": "            self._status_badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 202,
-        "code": "            self._status_badge.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 236,
+        "line": 219,
         "code": "                    self._expiry_label.setStyleSheet(f\"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px;\")"
       },
       {
         "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 238,
+        "line": 221,
         "code": "                    self._expiry_label.setStyleSheet(f\"color: {COLOR_WARNING_TEXT}; font-size: {FONT_SIZE_BASE}px;\")"
       },
       {
         "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 240,
+        "line": 223,
         "code": "                    self._expiry_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px;\")"
       },
       {
         "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 243,
+        "line": 226,
         "code": "                self._expiry_label.setStyleSheet(f\"color: {COLOR_ERROR_TEXT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_BOLD};\")"
       },
       {
-        "file": "ui/views/freight_exchange/connect_view.py",
-        "line": 346,
-        "code": "                self._status_badge.setStyleSheet("
-      },
-      {
         "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 298,
-        "code": "        row.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 323,
-        "code": "        rank_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 335,
-        "code": "        truck_id_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 345,
-        "code": "        sub_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 362,
-        "code": "        track.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 375,
-        "code": "        fill.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 384,
-        "code": "        score_value.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 420,
+        "line": 376,
         "code": "            badge.setStyleSheet("
       },
       {
         "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 432,
-        "code": "            more_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 448,
-        "code": "        profit_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 503,
+        "line": 455,
         "code": "        self._kpi_profit.value_label.setStyleSheet(f\"color: {profit_color};\")"
       },
       {
         "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 513,
+        "line": 465,
         "code": "        self._kpi_margin.value_label.setStyleSheet(f\"color: {margin_color};\")"
       },
       {
         "file": "ui/views/freight_exchange/load_detail_view.py",
-        "line": 523,
+        "line": 475,
         "code": "        self._kpi_risk.value_label.setStyleSheet(f\"color: {risk_color};\")"
       },
       {
         "file": "ui/views/freight_exchange/search_view.py",
-        "line": 158,
+        "line": 151,
         "code": "            dot.setStyleSheet("
       },
       {
         "file": "ui/views/freight_exchange/search_view.py",
-        "line": 225,
+        "line": 218,
         "code": "            self._status_label.setStyleSheet("
       },
       {
         "file": "ui/views/freight_exchange/search_view.py",
-        "line": 229,
+        "line": 222,
         "code": "            self._status_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/search_view.py",
-        "line": 255,
-        "code": "        self._sidebar.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/freight_exchange/search_view.py",
-        "line": 333,
-        "code": "            trailer_view.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/search_view.py",
-        "line": 401,
-        "code": "            loading_view.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/search_view.py",
-        "line": 525,
-        "code": "        self._summary_bar.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/freight_exchange/search_view.py",
-        "line": 545,
-        "code": "        self._error_card.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/freight_exchange/search_view.py",
-        "line": 592,
-        "code": "        self._loading_overlay.setStyleSheet("
-      },
-      {
-        "file": "ui/views/freight_exchange/search_view.py",
-        "line": 626,
-        "code": "        eval_btn.setStyleSheet(f\"\"\""
       },
       {
         "file": "ui/views/generators_view.py",
@@ -3017,217 +2742,217 @@
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 455,
+        "line": 460,
         "code": "        QLabel[fontRole=\"h1\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 470,
+        "line": 475,
         "code": "        QLabel[fontRole=\"hero\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 481,
+        "line": 486,
         "code": "        QLabel[fontRole=\"mono_lg\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 487,
+        "line": 492,
         "code": "        QLabel[fontRole=\"mono_xl\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 499,
+        "line": 504,
         "code": "        QLabel[fontRole=\"kpi-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 506,
+        "line": 511,
         "code": "        QLabel[fontRole=\"kpi-value\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 513,
+        "line": 518,
         "code": "        QLabel[class=\"page-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 519,
+        "line": 524,
         "code": "        QLabel[class=\"section-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 527,
+        "line": 532,
         "code": "        QLabel[class=\"field-label\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 534,
+        "line": 539,
         "code": "        QLabel[class=\"kpi-value\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 541,
+        "line": 546,
         "code": "        QLabel[class=\"kpi-label\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 598,
+        "line": 603,
         "code": "        QPushButton[variant=\"danger\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 604,
+        "line": 609,
         "code": "        QPushButton[variant=\"danger\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 677,
+        "line": 682,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 687,
+        "line": 692,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 691,
+        "line": 696,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"]:pressed {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 697,
+        "line": 702,
         "code": "        QPushButton[compact=\"true\"][variant=\"secondary\"][size=\"sm\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 707,
+        "line": 712,
         "code": "        QPushButton[compact=\"true\"][variant=\"secondary\"][size=\"sm\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 952,
+        "line": 957,
         "code": "        QLineEdit[validation=\"success\"], QPlainTextEdit[validation=\"success\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1539,
+        "line": 1544,
         "code": "        QFrame[role=\"input\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1551,
+        "line": 1556,
         "code": "        QFrame[role=\"accent-bar\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1575,
+        "line": 1580,
         "code": "        QFrame[role=\"chip-critical\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1583,
+        "line": 1588,
         "code": "        QFrame[role=\"chip-warning\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1591,
+        "line": 1596,
         "code": "        QFrame[role=\"chip-info\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1599,
+        "line": 1604,
         "code": "        QFrame[role=\"chip-success\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1607,
+        "line": 1612,
         "code": "        QFrame[role=\"chip-neutral\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1789,
+        "line": 1794,
         "code": "        QDialog[modal=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1821,
+        "line": 1826,
         "code": "        QFrame[role=\"nav-panel\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1827,
+        "line": 1832,
         "code": "        QFrame[role=\"nav-top-section\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1854,
+        "line": 1859,
         "code": "        QFrame[role=\"nav-accent\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1861,
+        "line": 1866,
         "code": "        QFrame[role=\"nav-item\"][state=\"active\"] QFrame[role=\"nav-accent\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1865,
+        "line": 1870,
         "code": "        QLabel[role=\"nav-icon\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1872,
+        "line": 1877,
         "code": "        QFrame[role=\"nav-item\"][state=\"active\"] QLabel[role=\"nav-icon\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1895,
+        "line": 1900,
         "code": "        QFrame[role=\"nav-monogram\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1949,
+        "line": 1954,
         "code": "        QFrame[role=\"top-bar-divider\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1955,
+        "line": 1960,
         "code": "        QLabel[role=\"fuel-status\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1969,
+        "line": 1974,
         "code": "        QLabel[role=\"bell\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1975,
+        "line": 1980,
         "code": "        QLabel[role=\"bell\"][alert=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2112,
+        "line": 2117,
         "code": "        QFrame#stat-card[hovered=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2189,
+        "line": 2194,
         "code": "        QPushButton[tabRole=\"tab-button\"][tabActive=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2209,
+        "line": 2214,
         "code": "        QWidget[role=\"kanban-column-header\"] QLabel[class=\"kanban-column-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2215,
+        "line": 2220,
         "code": "        QWidget[role=\"kanban-column-header\"] QLabel[class=\"kanban-column-count\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2220,
+        "line": 2225,
         "code": "        QScrollArea[class=\"kanban-columns-container\"] {{"
       },
       {
@@ -3297,22 +3022,17 @@
       },
       {
         "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 276,
-        "code": "            badge.setProperty(\"role\", \"box-badge\")"
-      },
-      {
-        "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 384,
+        "line": 342,
         "code": "        sub_lbl.setProperty(\"role\", \"muted\")"
       },
       {
         "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 739,
+        "line": 689,
         "code": "            self._role_consignor_btn.setProperty(\"variant\", \"primary\")"
       },
       {
         "file": "ui/views/cmr_form_view/cmr_form.py",
-        "line": 743,
+        "line": 693,
         "code": "            self._role_consignee_btn.setProperty(\"variant\", \"primary\")"
       },
       {

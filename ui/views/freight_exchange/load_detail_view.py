@@ -30,33 +30,17 @@ from ui.components import (
     StatusBadge,
 )
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BG_BASE,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_SUBTLE,
-    COLOR_ERROR_DEFAULT,
-    COLOR_ERROR_SUBTLE,
     COLOR_ERROR_TEXT,
     COLOR_INFO_SUBTLE,
     COLOR_INFO_TEXT,
-    COLOR_SUCCESS_DEFAULT,
     COLOR_SUCCESS_SUBTLE,
     COLOR_SUCCESS_TEXT,
     COLOR_TEXT_PRIMARY,
     COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-    COLOR_WARNING_DEFAULT,
     COLOR_WARNING_SUBTLE,
     COLOR_WARNING_TEXT,
-    FONT_SIZE_BASE,
-    FONT_SIZE_LG,
-    FONT_SIZE_MD,
     FONT_SIZE_XS,
-    FONT_WEIGHT_BOLD,
-    FONT_WEIGHT_MEDIUM,
     FONT_WEIGHT_SEMIBOLD,
-    RADIUS_MD,
     RADIUS_PILL,
     SPACE_1,
     SPACE_2,
@@ -285,29 +269,9 @@ class FreightLoadDetailView(QWidget):
         maintenance_status = match.get("maintenance_status", "")
         trailer_compatible = match.get("trailer_compatible", False)
 
-        # Score color mapping
-        if score >= 85:
-            score_color = COLOR_SUCCESS_DEFAULT
-        elif score >= 50:
-            score_color = COLOR_WARNING_DEFAULT
-        else:
-            score_color = COLOR_ERROR_DEFAULT
-
         # ── Frame ─────────────────────────────────────────────────────
         row = QFrame(self._match_card)
-        row.setStyleSheet(f"""
-            QFrame {{
-                background: {COLOR_BG_OVERLAY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: {RADIUS_MD}px;
-            }}
-            QFrame:hover {{
-                background: {COLOR_BG_HOVER};
-            }}
-            QFrame:focus {{
-                border: 1px solid {COLOR_ACCENT_PRIMARY};
-            }}
-        """)
+        row.setProperty("role", "match-row")
         row.setCursor(Qt.PointingHandCursor)
         row.setFocusPolicy(Qt.StrongFocus)
         row.setFrameShape(QFrame.Shape.NoFrame)
@@ -320,10 +284,7 @@ class FreightLoadDetailView(QWidget):
         # 1. Rank
         rank_label = MonoLabel(row, f"{rank:02d}", size="body")
         rank_label.setFixedWidth(32)
-        rank_label.setStyleSheet(
-            f"font-size: {FONT_SIZE_LG}px; font-weight: {FONT_WEIGHT_BOLD}; "
-            f"color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;"
-        )
+        rank_label.setProperty("role", "match-rank")
         row_layout.addWidget(rank_label)
 
         # 2. Truck info
@@ -332,20 +293,14 @@ class FreightLoadDetailView(QWidget):
 
         truck_text = t("freight.match.truck_id", id=vehicle_id)
         truck_id_label = QLabel(truck_text, row)
-        truck_id_label.setStyleSheet(
-            f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_SEMIBOLD}; "
-            f"color: {COLOR_TEXT_PRIMARY}; background: transparent; border: none;"
-        )
+        truck_id_label.setProperty("fontRole", "base-semibold")
         truck_col.addWidget(truck_id_label)
 
         trailer_type = match.get("trailer_type", "")
         sub_parts = [p for p in (trailer_type, maintenance_status) if p]
         sub_text = " · ".join(sub_parts)
         sub_label = QLabel(sub_text, row)
-        sub_label.setStyleSheet(
-            f"font-size: {FONT_SIZE_XS}px; color: {COLOR_TEXT_TERTIARY}; "
-            f"background: transparent; border: none;"
-        )
+        sub_label.setProperty("fontRole", "xs-muted")
         truck_col.addWidget(sub_label)
 
         row_layout.addLayout(truck_col)
@@ -359,10 +314,7 @@ class FreightLoadDetailView(QWidget):
         track = QFrame(row)
         track.setFixedWidth(80)
         track.setFixedHeight(6)
-        track.setStyleSheet(
-            f"background: {COLOR_BG_BASE}; border-radius: {RADIUS_PILL}px; "
-            f"border: none;"
-        )
+        track.setProperty("role", "score-track")
         track_layout = QHBoxLayout(track)
         track_layout.setContentsMargins(0, 0, 0, 0)
         track_layout.setSpacing(0)
@@ -372,20 +324,24 @@ class FreightLoadDetailView(QWidget):
         fill = QFrame(track)
         fill.setFixedHeight(6)
         fill.setFixedWidth(fill_width)
-        fill.setStyleSheet(
-            f"background: {score_color}; border-radius: {RADIUS_PILL}px; "
-            f"border: none;"
-        )
+        fill.setProperty("role", "score-fill")
         track_layout.addWidget(fill)
         track_layout.addStretch()
         score_col.addWidget(track)
 
         score_value = MonoLabel(row, f"{score:.0f}", size="body")
-        score_value.setStyleSheet(
-            f"font-size: {FONT_SIZE_MD}px; font-weight: {FONT_WEIGHT_BOLD}; "
-            f"color: {score_color}; background: transparent; border: none;"
-        )
+        score_value.setProperty("role", "score-value")
         score_value.setAlignment(Qt.AlignCenter)
+        # Score state drives both the bar fill and the value label colour.
+        if score >= 85:
+            fill.setProperty("state", "high")
+            score_value.setProperty("state", "high")
+        elif score >= 50:
+            fill.setProperty("state", "mid")
+            score_value.setProperty("state", "mid")
+        else:
+            fill.setProperty("state", "low")
+            score_value.setProperty("state", "low")
         score_col.addWidget(score_value)
 
         row_layout.addLayout(score_col)
@@ -429,10 +385,7 @@ class FreightLoadDetailView(QWidget):
         if len(reasons) > 3:
             more_count = len(reasons) - 3
             more_label = QLabel(f"+{more_count}", row)
-            more_label.setStyleSheet(
-                f"color: {COLOR_TEXT_TERTIARY}; font-size: {FONT_SIZE_XS}px; "
-                f"background: transparent; border: none;"
-            )
+            more_label.setProperty("fontRole", "xs-muted")
             reason_layout.addWidget(more_label)
 
         row_layout.addLayout(reason_layout)
@@ -440,15 +393,14 @@ class FreightLoadDetailView(QWidget):
         # 5. Profit preview
         if profit_amount >= 0:
             profit_text = f"+€{profit_amount:,.0f}"
-            profit_color = COLOR_SUCCESS_TEXT
         else:
             profit_text = f"-€{abs(profit_amount):,.0f}"
-            profit_color = COLOR_ERROR_TEXT
         profit_label = MonoLabel(row, profit_text, size="body")
-        profit_label.setStyleSheet(
-            f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
-            f"color: {profit_color}; background: transparent; border: none;"
-        )
+        profit_label.setProperty("role", "match-profit")
+        if profit_amount >= 0:
+            profit_label.setProperty("state", "positive")
+        else:
+            profit_label.setProperty("state", "negative")
         row_layout.addWidget(profit_label)
 
         # 6. Assign button

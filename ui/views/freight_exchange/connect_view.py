@@ -18,24 +18,11 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BORDER_MEDIUM,
-    COLOR_BORDER_SUBTLE,
-    COLOR_ERROR_DEFAULT,
     COLOR_ERROR_TEXT,
-    COLOR_NEUTRAL_SUBTLE,
-    COLOR_NEUTRAL_TEXT,
-    COLOR_SUCCESS_SUBTLE,
-    COLOR_SUCCESS_TEXT,
     COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_WHITE,
-    COLOR_WARNING_SUBTLE,
     COLOR_WARNING_TEXT,
     FONT_SIZE_BASE,
-    FONT_SIZE_LG,
     FONT_WEIGHT_BOLD,
-    RADIUS_MD,
-    RADIUS_PILL,
 )
 
 logger = logging.getLogger(__name__)
@@ -79,21 +66,20 @@ class ConnectView(QWidget):
         # Header row
         header_layout = QHBoxLayout()
         self._title_label = QLabel(t("freight.connection.provider_trans_eu", default="Trans.eu"))
-        self._title_label.setStyleSheet(f"font-weight: {FONT_WEIGHT_BOLD}; font-size: {FONT_SIZE_LG}px;")
+        self._title_label.setProperty("fontRole", "h2")
         header_layout.addWidget(self._title_label)
         header_layout.addStretch()
 
         # Status badge
         self._status_badge = QLabel(t("freight.connection.status_disconnected", default="Disconnected"))
-        self._status_badge.setStyleSheet(
-            f"padding: 4px 12px; border-radius: {RADIUS_PILL}px; background: {COLOR_NEUTRAL_SUBTLE}; color: {COLOR_NEUTRAL_TEXT};"
-        )
+        self._status_badge.setProperty("role", "status-badge")
+        self._status_badge.setProperty("state", "neutral")
+        self._repolish(self._status_badge)
         header_layout.addWidget(self._status_badge)
         layout.addLayout(header_layout)
 
         # Expiry info
         self._expiry_label = QLabel("")
-        self._expiry_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px;")
         self._expiry_label.setVisible(False)
         layout.addWidget(self._expiry_label)
 
@@ -109,24 +95,18 @@ class ConnectView(QWidget):
         button_layout.setSpacing(6)
 
         self._connect_btn = QPushButton(t("freight.connection.connect_trans_eu", default="Connect Trans.eu"))
-        self._connect_btn.setStyleSheet(
-            f"background: {COLOR_ACCENT_PRIMARY}; color: {COLOR_TEXT_WHITE}; padding: 6px 16px; border-radius: {RADIUS_MD}px; border: none;"
-        )
+        self._connect_btn.setProperty("variant", "primary-tight")
         self._connect_btn.clicked.connect(self._on_connect_clicked)
         button_layout.addWidget(self._connect_btn)
 
         self._test_btn = QPushButton(t("freight.connection.test_button", default="Test"))
-        self._test_btn.setStyleSheet(
-            f"padding: 6px 12px; border-radius: {RADIUS_MD}px; border: 1px solid {COLOR_BORDER_MEDIUM};"
-        )
+        self._test_btn.setProperty("variant", "primary-bordered")
         self._test_btn.clicked.connect(self._on_test_clicked)
         self._test_btn.setVisible(False)
         button_layout.addWidget(self._test_btn)
 
         self._disconnect_btn = QPushButton(t("freight.connection.disconnect", default="Disconnect"))
-        self._disconnect_btn.setStyleSheet(
-            f"padding: 6px 12px; border-radius: {RADIUS_MD}px; border: 1px solid {COLOR_ERROR_DEFAULT}; color: {COLOR_ERROR_TEXT};"
-        )
+        self._disconnect_btn.setProperty("variant", "danger-bordered")
         self._disconnect_btn.clicked.connect(self._on_disconnect_clicked)
         self._disconnect_btn.setVisible(False)
         button_layout.addWidget(self._disconnect_btn)
@@ -137,7 +117,7 @@ class ConnectView(QWidget):
         # Bottom separator
         separator = QFrame()
         separator.setFrameShape(QFrame.HLine)
-        separator.setStyleSheet(f"background: {COLOR_BORDER_SUBTLE};")
+        separator.setProperty("role", "separator")
         layout.addWidget(separator)
 
     # ── Public API ─────────────────────────────────────────────────
@@ -177,13 +157,18 @@ class ConnectView(QWidget):
 
     # ── UI State ───────────────────────────────────────────────────
 
+    @staticmethod
+    def _repolish(widget) -> None:
+        """Force a style refresh so dynamic-property QSS re-resolves."""
+        widget.style().unpolish(widget)
+        widget.style().polish(widget)
+
     def _update_ui_for_status(self):
         """Update visibility and text based on current status."""
         if self._status == self.STATUS_CONNECTED:
             self._status_badge.setText(t("freight.connection.status_connected", default="Connected"))
-            self._status_badge.setStyleSheet(
-                f"padding: 4px 12px; border-radius: {RADIUS_PILL}px; background: {COLOR_SUCCESS_SUBTLE}; color: {COLOR_SUCCESS_TEXT};"
-            )
+            self._status_badge.setProperty("state", "connected")
+            self._repolish(self._status_badge)
             self._connect_btn.setVisible(False)
             self._test_btn.setVisible(True)
             self._disconnect_btn.setVisible(True)
@@ -191,17 +176,15 @@ class ConnectView(QWidget):
             self._start_expiry_timer()
         elif self._status == self.STATUS_CONNECTING:
             self._status_badge.setText(t("freight.connection.status_connecting", default="Connecting..."))
-            self._status_badge.setStyleSheet(
-                f"padding: 4px 12px; border-radius: {RADIUS_PILL}px; background: {COLOR_WARNING_SUBTLE}; color: {COLOR_WARNING_TEXT};"
-            )
+            self._status_badge.setProperty("state", "connecting")
+            self._repolish(self._status_badge)
             self._connect_btn.setVisible(False)
             self._test_btn.setVisible(False)
             self._disconnect_btn.setVisible(False)
         else:
             self._status_badge.setText(t("freight.connection.status_disconnected", default="Disconnected"))
-            self._status_badge.setStyleSheet(
-                f"padding: 4px 12px; border-radius: {RADIUS_PILL}px; background: {COLOR_NEUTRAL_SUBTLE}; color: {COLOR_NEUTRAL_TEXT};"
-            )
+            self._status_badge.setProperty("state", "neutral")
+            self._repolish(self._status_badge)
             self._connect_btn.setVisible(True)
             self._test_btn.setVisible(False)
             self._disconnect_btn.setVisible(False)
@@ -343,9 +326,8 @@ class ConnectView(QWidget):
             if result.get("status") == "healthy":
                 self._hide_error()
                 self._status_badge.setText(t("freight.connection.status_connected", default="Connected"))
-                self._status_badge.setStyleSheet(
-                    f"padding: 4px 12px; border-radius: {RADIUS_PILL}px; background: {COLOR_SUCCESS_SUBTLE}; color: {COLOR_SUCCESS_TEXT};"
-                )
+                self._status_badge.setProperty("state", "connected")
+                self._repolish(self._status_badge)
             else:
                 self._show_error(t(
                     "freight.connection.test_status",
