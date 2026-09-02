@@ -15,17 +15,6 @@ from PySide6.QtWidgets import (
 
 from services.country_avoidance import CountryAvoidanceManager
 from services.i18n import t
-from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_MEDIUM,
-    COLOR_BORDER_SUBTLE,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-)
 from ui.widgets import StyledCheckBox
 
 
@@ -48,36 +37,23 @@ class CountryExclusionsDialog(QDialog):
         self.setWindowTitle(t("route.exclusions_label"))
         self.setMinimumSize(280, 320)
         self.resize(360, 440)
-        self.setStyleSheet(f"""
-            QDialog {{
-                background: {COLOR_BG_ELEVATED};
-                border: 1px solid {COLOR_BORDER_MEDIUM};
-                border-radius: 8px;
-            }}
-        """)
+        self.setProperty("role", "dialog-outlined")
 
         layout = QVBoxLayout(self)
         layout.setContentsMargins(16, 16, 16, 16)
         layout.setSpacing(12)
 
         header = QLabel(t("route.exclusions_label"))
-        header.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: 14px; font-weight: 600;"
-        )
+        header.setProperty("role", "dialog-title")
         layout.addWidget(header)
 
         scroll = QScrollArea()
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(type(scroll).NoFrame)
-        scroll.setStyleSheet(f"""
-            QScrollArea {{ background: transparent; border: none; }}
-            QScrollBar:vertical {{ width: 4px; background: transparent; }}
-            QScrollBar::handle:vertical {{ background: {COLOR_BORDER_MEDIUM}; border-radius: 2px; }}
-            QScrollBar::add-line, QScrollBar::sub-line {{ height: 0; }}
-        """)
+        scroll.setProperty("role", "thin-scroll")
 
         content = QWidget()
-        content.setStyleSheet("background: transparent;")
+        content.setProperty("role", "transparent")
         cl = QVBoxLayout(content)
         cl.setContentsMargins(0, 0, 0, 0)
         cl.setSpacing(2)
@@ -91,27 +67,7 @@ class CountryExclusionsDialog(QDialog):
             cb.setAccessibleName(f"Exclude {name}")
             cb.setProperty("country_code", code)
             cb.setChecked(code in selected)
-            cb.setStyleSheet(f"""
-                QCheckBox {{
-                    color: {COLOR_TEXT_SECONDARY};
-                    font-size: 12px;
-                    spacing: 8px;
-                    padding: 4px 8px;
-                    border-radius: 4px;
-                }}
-                QCheckBox:hover {{ color: {COLOR_TEXT_PRIMARY}; background: {COLOR_BG_HOVER}; }}
-                QCheckBox::indicator {{
-                    width: 16px; height: 16px;
-                    border-radius: 4px;
-                    border: 1px solid {COLOR_BORDER_MEDIUM};
-                    background: {COLOR_BG_OVERLAY};
-                }}
-                QCheckBox::indicator:checked {{
-                    background: {COLOR_ACCENT_PRIMARY};
-                    border-color: {COLOR_ACCENT_PRIMARY};
-                }}
-                QCheckBox::indicator:hover {{ border-color: {COLOR_ACCENT_PRIMARY}; }}
-            """)
+            cb.setProperty("role", "country-check")
             cl.addWidget(cb)
             self._checkboxes.append(cb)
 
@@ -125,19 +81,7 @@ class CountryExclusionsDialog(QDialog):
         )
         for btn in buttons.buttons():
             btn.setAccessibleName(btn.text())
-        buttons.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_PRIMARY};
-                border: 1px solid {COLOR_BORDER_SUBTLE};
-                border-radius: 4px;
-                padding: 6px 16px;
-                font-size: 12px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_HOVER};
-            }}
-        """)
+            btn.setProperty("role", "dialog-btn")
         buttons.accepted.connect(self._on_accept)
         buttons.rejected.connect(self.reject)
         layout.addWidget(buttons)

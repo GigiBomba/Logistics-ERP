@@ -25,13 +25,6 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.components import EmptyState, IconButton, KPICard
 from ui.design_tokens import (
-    ACCENT,
-    BG_BASE,
-    BG_ELEVATED,
-    BG_SURFACE,
-    BORDER_DEFAULT,
-    BORDER_FAINT,
-    BORDER_STRONG,
     FONT_FAMILY,
     SP,
     TEXT_MUTED,
@@ -39,7 +32,7 @@ from ui.design_tokens import (
     TEXT_SECONDARY,
 )
 from ui.plotly_charts import _value_color
-from ui.plotly_renderer import PlotlyChartWidget, get_render_manager
+from ui.plotly_renderer import PlotlyChartWidget, figure_has_data, get_render_manager
 
 class _SparklineLabel(QLabel):
     """A ``QLabel`` that asynchronously renders a Plotly figure as its pixmap.
@@ -62,7 +55,6 @@ class _SparklineLabel(QLabel):
         super().__init__(parent)
         self.setAttribute(Qt.WidgetAttribute.WA_TransparentForMouseEvents, True)
         self.setAttribute(Qt.WidgetAttribute.WA_DontCreateNativeAncestors, True)
-        self.setStyleSheet("background: transparent; border: none;")
         self._pending_tag: object | None = None
         self._target_w: int = 0
         self._target_h: int = 0
@@ -461,33 +453,9 @@ class BaseTab(QWidget):
         self._scroll.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOn)
         # A slightly-reserved gutter on the right side of the scroll area
         # so the scrollbar doesn't overlap chart cards.
-        self._scroll.setStyleSheet(f"""
-            QScrollArea {{ background: {BG_BASE}; border: none; padding-right: 6px; }}
-            QScrollBar:vertical {{
-                background: transparent;
-                width: 12px;
-                margin: 0px;
-                border-radius: 6px;
-            }}
-            QScrollBar::handle:vertical {{
-                background: {BORDER_STRONG};
-                border-radius: 6px;
-                min-height: 40px;
-                margin: 2px;
-            }}
-            QScrollBar::handle:vertical:hover {{
-                background: {ACCENT};
-            }}
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{
-                height: 0px; background: transparent;
-            }}
-            QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{
-                background: transparent;
-            }}
-        """)
+        self._scroll.setProperty("role", "analytics-scroll")
 
         self._content = QWidget()
-        self._content.setStyleSheet(f"background: {BG_BASE};")
         self._content_layout = QVBoxLayout(self._content)
         self._content_layout.setContentsMargins(SP["10"], SP["8"], SP["10"], SP["10"])
         self._content_layout.setSpacing(SP["4"])
@@ -504,17 +472,11 @@ class BaseTab(QWidget):
         text_col = QVBoxLayout()
         text_col.setSpacing(2)
         title_lbl = QLabel(t(title_key))
-        title_lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 18px; font-weight: 600;"
-            f"font-family: '{FONT_FAMILY}';"
-        )
+        title_lbl.setProperty("role", "analytics-title")
         text_col.addWidget(title_lbl)
         if subtitle_key:
             sub = QLabel(t(subtitle_key))
-            sub.setStyleSheet(
-                f"color: {TEXT_SECONDARY}; font-size: 13px;"
-                f"font-family: '{FONT_FAMILY}';"
-            )
+            sub.setProperty("fontRole", "secondary")
             text_col.addWidget(sub)
         hdr.addLayout(text_col)
         hdr.addStretch()
@@ -525,18 +487,7 @@ class BaseTab(QWidget):
         self._grid_btn.setToolTip(t("analytics.toggle_grid", default="Toggle chart grid"))
         self._grid_btn.setFixedSize(28, 28)
         self._grid_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self._grid_btn.setStyleSheet(
-            f"QPushButton {{"
-            f" background: transparent;"
-            f" border: 1px solid {BORDER_FAINT};"
-            f" border-radius: 4px;"
-            f" padding: 2px;"
-            f" }}"
-            f"QPushButton:hover {{"
-            f" background: {BG_ELEVATED};"
-            f" border-color: {BORDER_DEFAULT};"
-            f" }}"
-        )
+        self._grid_btn.setProperty("role", "analytics-grid-btn")
         self._grid_btn.clicked.connect(self._toggle_grid)
 
         # ── Export button ────────────────────────────────────────
@@ -553,7 +504,7 @@ class BaseTab(QWidget):
 
         # Subtle hairline divider under header
         div = QFrame()
-        div.setStyleSheet(f"background: {BORDER_FAINT}; max-height: 1px; min-height: 1px;")
+        div.setProperty("role", "hairline")
         self._content_layout.addWidget(div)
         # Breathing room after the divider
         self._content_layout.addSpacing(SP["2"])
@@ -612,23 +563,14 @@ class BaseTab(QWidget):
             # Build a custom card with: label (top) + value (mid) + sparkline (bottom)
             card = QFrame()
             card.setObjectName("kpi-spark-card")
-            card.setStyleSheet(
-                f"QFrame#kpi-spark-card {{"
-                f" background: {BG_SURFACE};"
-                f" border: 1px solid {BORDER_DEFAULT};"
-                f" border-radius: 8px;"
-                f" }}"
-            )
+            card.setProperty("role", "kpi-spark-card")
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(SP["2"], SP["2"], SP["2"], SP["1"])
             card_layout.setSpacing(SP["1"])
 
             # Label
             lbl = QLabel(kpi.get("label", ""))
-            lbl.setStyleSheet(
-                f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: 600;"
-                f" letter-spacing: 0.05em; background: transparent;"
-            )
+            lbl.setProperty("role", "kpi-spark-label")
             card_layout.addWidget(lbl)
 
             # Value (the big number)
@@ -694,23 +636,18 @@ class BaseTab(QWidget):
 
         if icon:
             icon_label = QLabel(icon)
-            icon_label.setStyleSheet(
-                f"font-size: 14px; color: {TEXT_PRIMARY}; font-family: '{FONT_FAMILY}';"
-            )
+            icon_label.setProperty("role", "analytics-section-icon")
             header_layout.addWidget(icon_label)
 
         title_label = QLabel(title)
-        title_label.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 14px; font-weight: 600;"
-            f"letter-spacing: 0.04em; font-family: '{FONT_FAMILY}';"
-        )
+        title_label.setProperty("role", "analytics-section-title")
         header_layout.addWidget(title_label)
         header_layout.addStretch()
 
         self._content_layout.addWidget(header_widget)
         # 1px hairline divider (replaces the previous 2px accent bar)
         line = QFrame()
-        line.setStyleSheet(f"background: {BORDER_FAINT}; max-height: 1px; min-height: 1px;")
+        line.setProperty("role", "hairline")
         line.setFixedHeight(1)
         self._content_layout.addWidget(line)
 
@@ -720,7 +657,7 @@ class BaseTab(QWidget):
         wrapper_layout = QVBoxLayout(wrapper)
         wrapper_layout.setContentsMargins(0, SP["3"], 0, SP["3"])
         line = QFrame()
-        line.setStyleSheet(f"background: {BORDER_FAINT}; max-height: 1px; min-height: 1px;")
+        line.setProperty("role", "hairline")
         line.setFixedHeight(1)
         wrapper_layout.addWidget(line)
         self._content_layout.addWidget(wrapper)
@@ -741,21 +678,13 @@ class BaseTab(QWidget):
         """
         card = QFrame(self)
         card.setObjectName("chart-card")
-        card.setStyleSheet(
-            f"QFrame#chart-card {{ background: transparent;"
-            f" border: 1px solid {BORDER_DEFAULT};"
-            f" border-radius: 8px; }}"
-        )
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(SP["2"], SP["2"], SP["2"], SP["2"])
         card_layout.setSpacing(SP["1"])
 
         if title:
             title_lbl = QLabel(title, card)
-            title_lbl.setStyleSheet(
-                f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: 600;"
-                f"font-family: '{FONT_FAMILY}'; padding-bottom: 2px; background: transparent;"
-            )
+            title_lbl.setProperty("role", "chart-card-title")
             card_layout.addWidget(title_lbl)
 
         chart_widget = PlotlyChartWidget(card, min_height=min_height)
@@ -765,7 +694,15 @@ class BaseTab(QWidget):
         # callback can notify the tab's loading overlay.  See
         # ``BaseTab._install_overlay`` for the consumer side.
         chart_widget.set_owner(self)
-        chart_widget.set_figure(fig)
+        if figure_has_data(fig):
+            chart_widget.set_figure(fig)
+        else:
+            # No data — show the standard muted empty state instead of a
+            # black render void.
+            chart_widget.set_empty(
+                True,
+                t("common.no_data", default="No data available"),
+            )
         card_layout.addWidget(chart_widget, 1)
 
         return card
@@ -800,26 +737,24 @@ class BaseTab(QWidget):
         for i, fig in enumerate(figures):
             card = QFrame(row_widget)
             card.setObjectName("chart-card")
-            card.setStyleSheet(
-                f"QFrame#chart-card {{ background: transparent;"
-                f" border: 1px solid {BORDER_DEFAULT};"
-                f" border-radius: 8px; }}"
-            )
             card_layout = QVBoxLayout(card)
             card_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
             card_layout.setSpacing(SP["2"])
 
             if i < len(titles) and titles[i]:
                 title_lbl = QLabel(titles[i], card)
-                title_lbl.setStyleSheet(
-                    f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: 600;"
-                    f"font-family: '{FONT_FAMILY}'; padding-bottom: 2px; background: transparent;"
-                )
+                title_lbl.setProperty("role", "chart-card-title")
                 card_layout.addWidget(title_lbl)
 
             chart_widget = PlotlyChartWidget(card, min_height=155)
             chart_widget.set_owner(self)
-            chart_widget.set_figure(fig)
+            if figure_has_data(fig):
+                chart_widget.set_figure(fig)
+            else:
+                chart_widget.set_empty(
+                    True,
+                    t("common.no_data", default="No data available"),
+                )
             card_layout.addWidget(chart_widget, 1)
             row_layout.addWidget(card, stretch=1)
             widgets.append(chart_widget)
@@ -904,6 +839,13 @@ class BaseTab(QWidget):
 
         Pass ``force=True`` for an explicit teardown (e.g. when the
         data shape changes and the old widgets are no longer valid).
+        Removed widgets are detached from the object tree immediately
+        (``hide`` + ``setParent(None)``) *before* ``deleteLater()``:
+        deferred deletes are not processed while the app is only
+        pumping events (the audit harness captures via
+        ``processEvents``, which never fires DeferredDelete), so a
+        takeAt'd widget that stays parented would keep rendering over
+        the freshly rebuilt content (the double ``_add_header`` title).
         """
         if not force:
             return
@@ -911,6 +853,8 @@ class BaseTab(QWidget):
             item = self._content_layout.takeAt(0)
             w = item.widget()
             if w is not None:
+                w.hide()
+                w.setParent(None)
                 w.deleteLater()
 
     def _compute_signature(self) -> tuple | None:
@@ -1007,9 +951,7 @@ class BaseTab(QWidget):
         self._grid_visible = not self._grid_visible
         for chart_widget in self.findChildren(PlotlyChartWidget):
             try:
-                chart_widget.fig.update_xaxes(showgrid=self._grid_visible)
-                chart_widget.fig.update_yaxes(showgrid=self._grid_visible)
-                chart_widget.render()
+                chart_widget.set_grid_visible(self._grid_visible)
             except Exception:
                 _log.exception("Failed to toggle grid on chart widget")
 
@@ -1021,7 +963,9 @@ class BaseTab(QWidget):
                 self, "Export Chart", "", "PNG (*.png)"
             )
             if path:
-                chart.fig.write_image(path, scale=2)
+                fig = chart.figure()
+                if fig is not None:
+                    fig.write_image(path, scale=2)
                 break  # export only the first chart for simplicity
 
     def _on_chart_rendered(self, _widget) -> None:

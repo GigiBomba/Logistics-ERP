@@ -171,8 +171,10 @@ class TestQtDispatchDetailPanelInit:
         assert detail_panel.property("role") == "detail-drawer"
 
     def test_fixed_width_480(self, detail_panel):
+        # setFixedWidth(480) was replaced with setMinimumWidth(480)+resize(480, 480)
+        # so the drawer can grow on high-DPI displays while still opening at 480px.
         assert detail_panel.minimumWidth() == 480
-        assert detail_panel.maximumWidth() == 480
+        assert detail_panel.width() == 480
 
     def test_trip_service_created_when_db_provided(self, detail_panel):
         assert detail_panel._trip_service is not None
@@ -763,11 +765,14 @@ class TestQtDispatchDetailPanelAlerts:
         labels = panel._alerts_frame.findChildren(QLabel)
         sev_labels = [lbl for lbl in labels if lbl.text() in ("CRITICAL", "WARNING")]
         assert len(sev_labels) == 2
+        from ui.theme_engine import QtTheme
+        assert 'QLabel[role="severity-chip"]' in QtTheme.qss()
         for lbl in sev_labels:
+            assert lbl.property("role") == "severity-chip"
             if lbl.text() == "CRITICAL":
-                assert "#e5484d" in lbl.styleSheet() or lbl.styleSheet()
+                assert lbl.property("state") == "critical"
             elif lbl.text() == "WARNING":
-                assert "#f5a623" in lbl.styleSheet() or lbl.styleSheet()
+                assert lbl.property("state") == "warning"
 
 
 # ======================================================================
@@ -808,9 +813,10 @@ class TestQtDispatchDetailPanelErrorHandling:
         labels = detail_panel._fields_frame.findChildren(QLabel)
         err_labels = [lbl for lbl in labels if lbl.text() == "Test error"]
         assert len(err_labels) == 1
-        ss = err_labels[0].styleSheet()
-        # COLOR_ERROR_DEFAULT = "#EF4444"
-        assert "#EF4444" in ss or "#EF4444".lower() in ss.lower()
+        # COLOR_ERROR_DEFAULT (#EF4444) now comes from the error-banner role
+        from ui.theme_engine import QtTheme
+        assert 'QLabel[role="error-banner"]' in QtTheme.qss()
+        assert err_labels[0].property("role") == "error-banner"
 
     def test_inline_error_dismissed_after_timeout(self, qtbot, detail_panel):
         from unittest.mock import patch

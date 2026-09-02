@@ -6,15 +6,12 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel, QVBoxLayout, QWidget
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_BG_ELEVATED,
-    COLOR_BG_OVERLAY,
     COLOR_ERROR_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_PRIMARY,
     COLOR_WARNING_DEFAULT,
     FONT_FAMILY,
     SP,
-    TEXT_PRIMARY,
 )
 from ui.plotly_charts import (
     CHART_ACCENT,
@@ -226,22 +223,14 @@ class RouteAnalyticsTab(BaseTab):
     ) -> QFrame:
         card = QFrame()
         card.setObjectName("kpi-spark-card")
-        card.setStyleSheet(
-            f"QFrame#kpi-spark-card {{"
-            f" background: {COLOR_BG_OVERLAY};"
-            f" border: 1px solid {COLOR_BG_ELEVATED};"
-            f" border-radius: 8px;"
-            f" }}"
-        )
+        card.setProperty("role", "kpi-spark-card")
+        card.setProperty("state", "overlay")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(SP["2"], SP["2"], SP["2"], SP["2"])
         card_layout.setSpacing(SP["1"])
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 11px; font-weight: 600;"
-            f" letter-spacing: 0.05em; background: transparent;"
-        )
+        lbl.setProperty("role", "kpi-card-label")
         card_layout.addWidget(lbl)
 
         val = QLabel(value)

@@ -14,14 +14,11 @@ from PySide6.QtWidgets import QFrame, QHBoxLayout, QLabel
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
     COLOR_ERROR_DEFAULT,
     COLOR_INFO_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_WARNING_DEFAULT,
     DANGER,
-    FONT_FAMILY,
-    RADIUS_SM,
     SUCCESS,
     TEXT_MUTED,
     TEXT_PRIMARY,
@@ -158,17 +155,7 @@ class FinancialAnalyticsTab(BaseTab):
             margin_bar.setFixedHeight(6)
             margin_bar.setMaximumWidth(400)
             margin_bar.setTextVisible(False)
-            margin_bar.setStyleSheet(
-                f"QProgressBar {{"
-                f" background: {TEXT_MUTED}22;"
-                f" border: none;"
-                f" border-radius: {RADIUS_SM}px;"
-                f" }}"
-                f"QProgressBar::chunk {{"
-                f" background: {COLOR_ACCENT_PRIMARY};"
-                f" border-radius: {RADIUS_SM}px;"
-                f" }}"
-            )
+            margin_bar.setProperty("role", "margin-bar")
             self._content_layout.addWidget(margin_bar)
 
         month_labels = [self._fmt_month_label(r.get("month", "")) for r in monthly]
@@ -235,10 +222,7 @@ class FinancialAnalyticsTab(BaseTab):
             paid_count = last_month.get("paid_count", 0) or 0
             if inv_count > 0 or paid_count > 0:
                 card = QFrame()
-                card.setStyleSheet(
-                    f"background: {COLOR_ACCENT_PRIMARY}0D; border: 1px solid {COLOR_ACCENT_PRIMARY}33;"
-                    f" border-radius: 6px; padding: 8px;"
-                )
+                card.setProperty("role", "accent-panel")
                 card_l = QHBoxLayout(card)
                 card_l.setContentsMargins(12, 8, 12, 8)
                 card_l.setSpacing(16)

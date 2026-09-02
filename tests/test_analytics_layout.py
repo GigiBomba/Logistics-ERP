@@ -1047,11 +1047,15 @@ class TestScrollbarVisibility:
         svc.get_cost_breakdown.return_value = []
 
         tab = FinancialAnalyticsTab(parent=parent, service=svc)
-        stylesheet = tab._scroll.styleSheet()
-        # Should contain scrollbar styling
-        assert "QScrollBar:vertical" in stylesheet, "Scrollbar should be styled"
+        from ui.theme_engine import QtTheme
+        qss = QtTheme.qss()
+        # Scrollbar styling moved to the analytics-scroll theme role
+        assert tab._scroll.property("role") == "analytics-scroll"
+        assert 'QScrollArea[role="analytics-scroll"] QScrollBar:vertical' in qss, (
+            "Scrollbar should be styled"
+        )
         # Width should be visible (≥10px)
-        assert "width:" in stylesheet and "12px" in stylesheet, (
+        assert 'QScrollArea[role="analytics-scroll"] QScrollBar:vertical' in qss and "width: 12px" in qss, (
             "Scrollbar should be visibly wide (12px)"
         )
         tab.cleanup()
@@ -1332,19 +1336,20 @@ class TestSectionHeaderStyle:
         )
 
     def test_section_header_uses_text_primary(self):
-        src = open("ui/views/analytics/_tab_base.py", encoding="utf-8").read()
-        idx = src.find("def _add_section_header")
-        body = src[idx:idx+800]
-        assert "TEXT_PRIMARY" in body, (
-            "Section header should use TEXT_PRIMARY for emphasis"
+        from ui.theme_engine import QtTheme
+        qss = QtTheme.qss()
+        assert 'QLabel[role="analytics-section-title"]' in qss
+        seg = qss.split('QLabel[role="analytics-section-title"]')[1].split("}")[0]
+        assert "#F0F0F3" in seg, (
+            "Section header role should use TEXT_PRIMARY (#F0F0F3) for emphasis"
         )
 
     def test_section_header_font_size_14(self):
-        src = open("ui/views/analytics/_tab_base.py", encoding="utf-8").read()
-        idx = src.find("def _add_section_header")
-        body = src[idx:idx+800]
-        assert "font-size: 14px" in body, (
-            "Section header should use 14px font size"
+        from ui.theme_engine import QtTheme
+        qss = QtTheme.qss()
+        seg = qss.split('QLabel[role="analytics-section-title"]')[1].split("}")[0]
+        assert "font-size: 14px" in seg, (
+            "Section header role should use 14px font size"
         )
 
 

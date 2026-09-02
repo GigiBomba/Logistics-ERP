@@ -243,14 +243,14 @@ class TestQtPairedAssignmentDialogAutoSelect:
     def test_auto_select_highlights_truck_row(self, dialog):
         """Selected truck row should have COLOR_ACCENT_SUBTLE background."""
         wid = dialog._truck_widgets[0]
-        style = wid.styleSheet()
-        assert "#1e1f3d" in style.lower()
+        assert wid.property("role") == "item-row"
+        assert wid.property("state") == "selected"
 
     def test_auto_select_highlights_driver_row(self, dialog):
         """Selected driver row should have COLOR_ACCENT_SUBTLE background."""
         wid = dialog._driver_widgets[0]
-        style = wid.styleSheet()
-        assert "#1e1f3d" in style.lower()
+        assert wid.property("role") == "item-row"
+        assert wid.property("state") == "selected"
 
     def test_no_selection_when_all_unavailable(self, dialog_empty):
         assert dialog_empty._selected_truck is None
@@ -292,16 +292,14 @@ class TestQtPairedAssignmentDialogSelection:
     def test_select_truck_highlights_row(self, dialog):
         dialog._select_truck(1)
         wid = dialog._truck_widgets[1]
-        style = wid.styleSheet()
-        # Selected row gets COLOR_ACCENT_SUBTLE (#1E1F3D)
-        assert "#1e1f3d" in style.lower()
+        # Selected row gets COLOR_ACCENT_SUBTLE (#1E1F3D) via state property
+        assert wid.property("state") == "selected"
 
     def test_select_truck_deselects_previous(self, dialog):
         dialog._select_truck(1)
         wid_0 = dialog._truck_widgets[0]
-        style_0 = wid_0.styleSheet()
-        # Deselected row gets COLOR_BG_SURFACE
-        assert "#141416" in style_0.lower()
+        # Deselected row falls back to the item-row base (COLOR_BG_ELEVATED)
+        assert wid_0.property("state") in ("", None)
 
     def test_select_same_truck_twice_keeps_selection(self, dialog):
         dialog._select_truck(0)
@@ -310,8 +308,8 @@ class TestQtPairedAssignmentDialogSelection:
     def test_select_driver_highlights_row(self, dialog):
         dialog._select_driver(1)
         wid = dialog._driver_widgets[1]
-        style = wid.styleSheet()
-        assert "#1e1f3d" in style.lower()
+        assert wid.property("role") == "item-row"
+        assert wid.property("state") == "selected"
 
     def test_select_unavailable_truck_still_selects(self, dialog):
         """User can select an unavailable item (the dialog does not prevent it)."""

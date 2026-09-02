@@ -26,26 +26,14 @@ from services.i18n import t
 from services.operations.event_bus import TRIP_UPDATED, VALID_TRANSITIONS, EventBus
 from services.trip_service import TripService
 from ui.design_tokens import (
-    COLOR_ACCENT_HOVER,
     COLOR_ACCENT_PRIMARY,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_SUBTLE,
-    COLOR_ERROR_DEFAULT,
     COLOR_INFO_DEFAULT,
     COLOR_NEUTRAL_SUBTLE,
     COLOR_SUCCESS_SUBTLE,
     COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
-    COLOR_WARNING_DEFAULT,
     COLOR_WARNING_SUBTLE,
-    RADIUS_SM,
-    SPACE_2,
-    SPACE_3,
-    SPACE_4,
     SP,
-    TEXT_WHITE,
 )
 from ui.widgets import (
     ActionButton,
@@ -62,6 +50,12 @@ STATUS_TO_COLUMN_UI = {
     "Delivered": COLOR_SUCCESS_SUBTLE,
     "Cancelled": COLOR_NEUTRAL_SUBTLE,
 }
+
+# Close (×) button is a compact square icon button: the width must stay a
+# hard cap so the glyph stays a square click target in the header row. The
+# height is a minimum floor — the global QPushButton QSS (min-height/padding)
+# governs the rendered height. Intentional icon-button geometry (Phase 2).
+_CLOSE_BTN_SIZE = 28
 
 
 class QtDispatchDetailPanel(QFrame):
@@ -83,15 +77,10 @@ class QtDispatchDetailPanel(QFrame):
     ) -> None:
         super().__init__(parent)
         self.setProperty("role", "detail-drawer")
-        self.setFixedWidth(480)
-
-        # Style with design tokens
-        self.setStyleSheet(f"""
-            QtDispatchDetailPanel {{
-                background-color: {COLOR_BG_ELEVATED};
-                border-left: 1px solid {COLOR_BORDER_SUBTLE};
-            }}
-        """)
+        # DPI-safe (Phase 2): a hard 480px width squeezes content at
+        # 125-150% Windows scaling. Use 480 as a floor; the drawer may grow
+        # via its layout sizeHint. Positioning callers read width() at runtime.
+        self.setMinimumWidth(480)
 
         self._trip_data: dict = dict(trip_data or {})
         self._db = db
@@ -106,6 +95,13 @@ class QtDispatchDetailPanel(QFrame):
             self.close_requested.connect(on_close)
 
         self._build()
+
+        # Seed the initial geometry: the drawer is a side panel placed manually
+        # by dispatch_board (which reads width() before show for its slide
+        # animation), so preserve the designed 480px footprint. The width stays
+        # on a minimum, not a hard cap, so the drawer can still grow if a
+        # caller ever resizes it (e.g. high-DPI layouts).
+        self.resize(480, 480)
 
     # ── UI construction ──────────────────────────────────────────────────────
 
@@ -158,7 +154,6 @@ class QtDispatchDetailPanel(QFrame):
         trip_id = str(self._trip_data.get("trip_id", ""))
         trip_lbl = QLabel(trip_id)
         trip_lbl.setProperty("fontRole", "h2")
-        trip_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         title_row_layout.addWidget(trip_lbl)
 
         title_row_layout.addStretch(1)
@@ -167,13 +162,11 @@ class QtDispatchDetailPanel(QFrame):
         self._close_btn = QPushButton()
         self._close_btn.setIcon(qta.icon("fa5s.times", color=COLOR_TEXT_TERTIARY))
         self._close_btn.setFlat(True)
-        self._close_btn.setFixedSize(28, 28)
+        self._close_btn.setFixedWidth(_CLOSE_BTN_SIZE)
+        self._close_btn.setMinimumHeight(_CLOSE_BTN_SIZE)
         self._close_btn.setCursor(Qt.PointingHandCursor)
+        self._close_btn.setProperty("role", "close-btn")
         self._close_btn.clicked.connect(self._close)
-        self._close_btn.setStyleSheet(
-            f"QPushButton {{ border: none; border-radius: 4px; background: transparent; }}\n"
-            f"QPushButton:hover {{ background-color: {COLOR_ACCENT_HOVER}; }}"
-        )
         title_row_layout.addWidget(self._close_btn)
 
         hdr_layout.addWidget(title_row)
@@ -260,7 +253,6 @@ class QtDispatchDetailPanel(QFrame):
 
             label = QLabel(t(label_key))
             label.setProperty("fontRole", "label")
-            label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
             label.setFixedWidth(100)
             label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             row_layout.addWidget(label)
@@ -272,7 +264,6 @@ class QtDispatchDetailPanel(QFrame):
             )
             value_lbl = QLabel(str(value))
             value_lbl.setProperty("fontRole", "body")
-            value_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
             value_lbl.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
             value_lbl.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
             row_layout.addWidget(value_lbl, 1)
@@ -334,7 +325,6 @@ class QtDispatchDetailPanel(QFrame):
 
         label = QLabel(t(label_key))
         label.setProperty("fontRole", "label")
-        label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         label.setFixedWidth(100)
         label.setAlignment(Qt.AlignLeft | Qt.AlignVCenter)
         row_layout.addWidget(label)
@@ -352,14 +342,12 @@ class QtDispatchDetailPanel(QFrame):
         div = QFrame()
         div.setFrameShape(QFrame.HLine)
         div.setFrameShadow(QFrame.Plain)
-        div.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
         div.setFixedHeight(1)
         self._alerts_layout.addWidget(div)
 
         if not self._editing:
             title = QLabel(t("dispatch_board.detail_alerts_for_trip"))
             title.setProperty("fontRole", "h3")
-            title.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
             title.setContentsMargins(0, SP["1"], 0, SP["2"])
             self._alerts_layout.addWidget(title)
 
@@ -375,16 +363,9 @@ class QtDispatchDetailPanel(QFrame):
                 if alerts:
                     for alert in alerts:
                         sev_value = getattr(alert.severity, "value", "")
-                        sev_color = {
-                            "critical": COLOR_ERROR_DEFAULT,
-                            "warning": COLOR_WARNING_DEFAULT,
-                        }.get(sev_value, COLOR_INFO_DEFAULT)
 
                         arow = QWidget()
-                        arow.setStyleSheet(
-                            f"background-color: {COLOR_BG_OVERLAY};"
-                            f" border-radius: 4px;"
-                        )
+                        arow.setProperty("role", "alert-item")
                         arow.setFixedHeight(28)
                         arow_layout = QHBoxLayout(arow)
                         arow_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
@@ -393,19 +374,17 @@ class QtDispatchDetailPanel(QFrame):
                         sev_lbl = QLabel(sev_value.upper())
                         sev_lbl.setFixedWidth(60)
                         sev_lbl.setAlignment(Qt.AlignCenter)
-                        sev_lbl.setStyleSheet(
-                            f"background-color: {sev_color};"
-                            f" color: {TEXT_WHITE};"
-                            f" border-radius: {RADIUS_SM}px; padding: 1px 4px;"
-                        )
+                        sev_lbl.setProperty("role", "severity-chip")
+                        if sev_value == "critical":
+                            sev_lbl.setProperty("state", "critical")
+                        elif sev_value == "warning":
+                            sev_lbl.setProperty("state", "warning")
+                        else:
+                            sev_lbl.setProperty("state", "info")
                         arow_layout.addWidget(sev_lbl)
 
                         msg_lbl = QLabel(getattr(alert, "message", "")[:80])
-                        msg_lbl.setProperty("fontRole", "label")
-                        msg_lbl.setStyleSheet(
-                            f"color: {COLOR_TEXT_SECONDARY};"
-                            f" background: transparent;"
-                        )
+                        msg_lbl.setProperty("fontRole", "sm-secondary")
                         msg_lbl.setSizePolicy(
                             QSizePolicy.Expanding, QSizePolicy.Preferred
                         )
@@ -420,7 +399,6 @@ class QtDispatchDetailPanel(QFrame):
     def _no_alerts_label(self) -> QLabel:
         lbl = QLabel(t("dispatch_board.detail_no_alerts"))
         lbl.setProperty("fontRole", "label")
-        lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         return lbl
 
     # ── Button row ───────────────────────────────────────────────────────────
@@ -428,9 +406,7 @@ class QtDispatchDetailPanel(QFrame):
     def _build_button_row(self, parent_layout: QVBoxLayout) -> None:
         self._btn_widget = QWidget()
         self._btn_widget.setFixedHeight(48)
-        self._btn_widget.setStyleSheet(
-            f"background-color: {COLOR_BG_OVERLAY};"
-        )
+        self._btn_widget.setProperty("role", "action-bar")
         self._btn_layout = QHBoxLayout(self._btn_widget)
         self._btn_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
         self._btn_layout.setSpacing(SP["2"])
@@ -564,11 +540,7 @@ class QtDispatchDetailPanel(QFrame):
         clear_layout(self._fields_layout)
 
         err = QLabel(msg)
-        err.setStyleSheet(
-            f"background-color: {COLOR_ERROR_DEFAULT};"
-            f" color: {TEXT_WHITE};"
-            f" border-radius: 6px; padding: 8px 12px;"
-        )
+        err.setProperty("role", "error-banner")
         err.setWordWrap(True)
         self._fields_layout.addWidget(err)
 

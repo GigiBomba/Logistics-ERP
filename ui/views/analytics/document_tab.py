@@ -14,8 +14,6 @@ from PySide6.QtWidgets import (
 from services.i18n import t
 from ui.components import KPICard
 from ui.design_tokens import (
-    BORDER_DEFAULT,
-    COLOR_BG_ELEVATED,
     COLOR_ERROR_DEFAULT,
     COLOR_ERROR_TEXT,
     COLOR_SUCCESS_DEFAULT,
@@ -23,10 +21,7 @@ from ui.design_tokens import (
     COLOR_WARNING_DEFAULT,
     COLOR_WARNING_TEXT,
     FONT_FAMILY,
-    RADIUS_SM,
     SP,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
     WARNING_TEXT,
 )
 from ui.plotly_charts import (
@@ -201,10 +196,7 @@ class DocumentAnalyticsTab(BaseTab):
 
     def _build_expiry_list(self, expiring: list) -> None:
         container = QFrame()
-        container.setStyleSheet(
-            f"QFrame {{ background: {COLOR_BG_ELEVATED};"
-            f" border: 1px solid {BORDER_DEFAULT}; border-radius: {RADIUS_SM}px; }}"
-        )
+        container.setProperty("role", "list-panel")
         layout = QVBoxLayout(container)
         layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
         layout.setSpacing(0)
@@ -215,10 +207,7 @@ class DocumentAnalyticsTab(BaseTab):
                 default="{count} documents expiring within 30 days:").format(
                     count=len(expiring))
         )
-        header.setStyleSheet(
-            f"color: {WARNING_TEXT}; font-size: 13px; font-weight: 600;"
-            f" font-family: '{FONT_FAMILY}'; padding-bottom: 8px;"
-        )
+        header.setProperty("role", "doc-expiry-header")
         layout.addWidget(header)
 
         shown = min(len(expiring), 5)
@@ -230,27 +219,19 @@ class DocumentAnalyticsTab(BaseTab):
 
             row = QFrame()
             row.setFixedHeight(38)
-            row.setStyleSheet(
-                f"QFrame:hover {{ background: {COLOR_BG_ELEVATED}; }}"
-            )
+            row.setProperty("role", "hover-row")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(SP["2"], 0, SP["2"], 0)
             row_layout.setSpacing(SP["2"])
 
             name_lbl = QLabel(title)
-            name_lbl.setStyleSheet(
-                f"color: {TEXT_PRIMARY}; font-size: 12px;"
-                f" font-family: '{FONT_FAMILY}';"
-            )
+            name_lbl.setProperty("fontRole", "small")
             row_layout.addWidget(name_lbl, 1)
 
             days_lbl = QLabel(
                 f"{t('analytics.doc_expires', default='Expires')}: {expiry_date[:10]}"
             )
-            days_lbl.setStyleSheet(
-                f"color: {TEXT_MUTED}; font-size: 11px;"
-                f" font-family: '{FONT_FAMILY}';"
-            )
+            days_lbl.setProperty("role", "doc-days")
             row_layout.addWidget(days_lbl)
 
             urgency = QLabel(f"  {days_text}  ")
@@ -270,10 +251,7 @@ class DocumentAnalyticsTab(BaseTab):
                     count=len(expiring)
                 )
             )
-            more.setStyleSheet(
-                f"color: {TEXT_PRIMARY}; font-size: 12px; font-weight: 600;"
-                f" font-family: '{FONT_FAMILY}'; padding-top: 8px;"
-            )
+            more.setProperty("role", "list-more")
             layout.addWidget(more)
 
         self._chart_layout.addWidget(container)
@@ -284,9 +262,5 @@ class DocumentAnalyticsTab(BaseTab):
             + t("analytics.doc_no_expiring",
                 default="No documents expiring within 30 days")
         )
-        note.setStyleSheet(
-            f"color: {COLOR_SUCCESS_TEXT}; font-size: 12px;"
-            f" font-family: '{FONT_FAMILY}'; padding: 8px;"
-            f" background: {COLOR_BG_ELEVATED}; border-radius: 4px;"
-        )
+        note.setProperty("role", "success-note")
         self._chart_layout.addWidget(note)

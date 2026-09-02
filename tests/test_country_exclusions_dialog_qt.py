@@ -183,8 +183,15 @@ class TestCountryExclusionsDialogEdgeCases:
         dlg.close()
 
     def test_widgets_are_styled(self, exclusion_dialog):
-        """Dialog has a stylesheet set."""
-        assert len(exclusion_dialog.styleSheet()) > 0
+        """Dialog chrome and checkboxes are themed via roles."""
+        from ui.theme_engine import QtTheme
+        qss = QtTheme.qss()
+        assert exclusion_dialog.property("role") == "dialog-outlined"
+        assert 'QDialog[role="dialog-outlined"]' in qss
+        assert any(
+            cb.property("role") == "country-check" for cb in exclusion_dialog._checkboxes
+        )
+        assert 'QCheckBox[role="country-check"]' in qss
 
 
 class TestCountryExclusionsDialogIntegration:

@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QFrame,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QVBoxLayout,
     QWidget,
@@ -14,21 +15,12 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_OVERLAY,
     COLOR_ERROR_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
-    COLOR_SUCCESS_TEXT,
-    COLOR_TEXT_PRIMARY,
     COLOR_WARNING_DEFAULT,
-    COLOR_WARNING_TEXT,
     FONT_FAMILY,
-    RADIUS_SM,
     SP,
-    TEXT_MUTED,
     TEXT_PRIMARY,
-    WARNING_DIM,
     WARNING_TEXT,
 )
 from ui.plotly_charts import CHART_WARNING, make_bar_chart
@@ -121,13 +113,9 @@ class DriverAnalyticsTab(BaseTab):
                 f"{unassigned_trips} \u26a0",
                 WARNING_TEXT,
             )
-            warn_card.setStyleSheet(
-                f"QFrame#kpi-spark-card {{"
-                f" background: {WARNING_DIM};"
-                f" border: 1px solid {COLOR_WARNING_DEFAULT};"
-                f" border-radius: 8px;"
-                f" }}"
-            )
+            warn_card.setProperty("state", "warning")
+            warn_card.style().unpolish(warn_card)
+            warn_card.style().polish(warn_card)
             kpi_l.addWidget(warn_card)
         self._chart_layout.addWidget(kpi_row)
 
@@ -177,7 +165,15 @@ class DriverAnalyticsTab(BaseTab):
                     "profit_km": _fmt_rate,
                 },
             )
+            # Interactive sections with a readable minimum — header text is
+            # never elided; columns are resized to fit after data loads
+            # (same approach as history_view).
+            _hdr = driver_table.horizontalHeader()
+            _hdr.setStretchLastSection(False)
+            _hdr.setMinimumSectionSize(70)
+            _hdr.setSectionResizeMode(QHeaderView.Interactive)
             driver_table.set_data(table_data)
+            driver_table.horizontalHeader().resizeSections(QHeaderView.ResizeToContents)
             driver_table.setMinimumHeight(min(38 * len(table_data) + 38, 320))
             self._chart_layout.addWidget(driver_table)
 
@@ -220,10 +216,7 @@ class DriverAnalyticsTab(BaseTab):
                 t("analytics.driver_unassigned_note", default="{count} trips without assigned driver (excluded)")
                 .format(count=unassigned_trips)
             )
-            note.setStyleSheet(
-                f"color: {WARNING_TEXT}; font-size: 11px; font-family: {FONT_FAMILY};"
-                f" padding: 4px 8px; background: {WARNING_DIM}; border-radius: 4px;"
-            )
+            note.setProperty("role", "warning-note")
             self._chart_layout.addWidget(note)
 
     # ── Activity Timeline ────────────────────────────────────────────
@@ -257,10 +250,7 @@ class DriverAnalyticsTab(BaseTab):
             all_weeks = all_weeks[-12:]  # Show last 12 weeks max
 
         container = QFrame()
-        container.setStyleSheet(
-            f"QFrame {{ background: {COLOR_BG_ELEVATED};"
-            f" border: 1px solid {COLOR_BG_OVERLAY}; border-radius: 6px; }}"
-        )
+        container.setProperty("role", "panel-outline")
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
         container_layout.setSpacing(SP["1"])
@@ -277,10 +267,7 @@ class DriverAnalyticsTab(BaseTab):
             except (ValueError, TypeError):
                 wlbl = QLabel(w[:7] if len(w) >= 7 else w)
             wlbl.setFixedWidth(22)
-            wlbl.setStyleSheet(
-                f"color: {TEXT_MUTED}; font-size: 8px; font-family: '{FONT_FAMILY}';"
-                f" text-align: center; background: transparent;"
-            )
+            wlbl.setProperty("fontRole", "xs-muted")
             wlbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
             header_layout.addWidget(wlbl)
         header_layout.addStretch()
@@ -295,10 +282,7 @@ class DriverAnalyticsTab(BaseTab):
 
             driver_lbl = QLabel(driver_name)
             driver_lbl.setFixedWidth(96)
-            driver_lbl.setStyleSheet(
-                f"color: {TEXT_PRIMARY}; font-size: 10px; font-weight: 600;"
-                f" font-family: '{FONT_FAMILY}'; background: transparent;"
-            )
+            driver_lbl.setProperty("fontRole", "xs-semibold")
             driver_row_layout.addWidget(driver_lbl)
 
             active_count = 0
@@ -306,25 +290,15 @@ class DriverAnalyticsTab(BaseTab):
             for w in all_weeks:
                 cell = QFrame()
                 cell.setFixedSize(22, 22)
+                cell.setProperty("role", "activity-cell")
                 if w in active_weeks:
-                    cell.setStyleSheet(
-                        f"QFrame {{ background: {COLOR_ACCENT_PRIMARY};"
-                        f" border-radius: {RADIUS_SM}px; }}"
-                    )
+                    cell.setProperty("state", "active")
                     active_count += 1
-                else:
-                    cell.setStyleSheet(
-                        f"QFrame {{ background: {COLOR_BG_OVERLAY};"
-                        f" border-radius: {RADIUS_SM}px; }}"
-                    )
                 driver_row_layout.addWidget(cell)
 
             # Activity summary
             summary = QLabel(f"  {active_count}/{total_weeks}")
-            summary.setStyleSheet(
-                f"color: {TEXT_MUTED}; font-size: 9px;"
-                f" font-family: '{FONT_FAMILY}'; background: transparent;"
-            )
+            summary.setProperty("fontRole", "xs-muted")
             driver_row_layout.addWidget(summary)
             driver_row_layout.addStretch()
 
@@ -342,22 +316,13 @@ class DriverAnalyticsTab(BaseTab):
 
         card = QFrame()
         card.setObjectName("kpi-spark-card")
-        card.setStyleSheet(
-            f"QFrame#kpi-spark-card {{"
-            f" background: {BG_SURFACE};"
-            f" border: 1px solid {BORDER_DEFAULT};"
-            f" border-radius: 8px;"
-            f" }}"
-        )
+        card.setProperty("role", "kpi-spark-card")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(SP["2"], SP["2"], SP["2"], SP["2"])
         card_layout.setSpacing(SP["1"])
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 11px; font-weight: 600;"
-            f" letter-spacing: 0.05em; background: transparent;"
-        )
+        lbl.setProperty("role", "kpi-card-label")
         card_layout.addWidget(lbl)
 
         val = QLabel(value)

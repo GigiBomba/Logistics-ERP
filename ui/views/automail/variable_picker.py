@@ -23,21 +23,7 @@ from PySide6.QtWidgets import (
 
 from services.automail.template_service import get_available_variables
 from services.i18n import t
-from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_ACCENT_SUBTLE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BORDER_SUBTLE,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-    FONT_WEIGHT_MEDIUM,
-    RADIUS_LG,
-    RADIUS_MD,
-    SPACE_2,
-    SPACE_3,
-)
+from ui.design_tokens import SPACE_2
 from ui.widgets import StyledLineEdit
 
 logger = logging.getLogger(__name__)
@@ -56,10 +42,7 @@ class VariablePickerPopup(QFrame):
         super().__init__(parent)
         self.setWindowFlags(Qt.Popup | Qt.FramelessWindowHint)
         self.setAttribute(Qt.WA_ShowWithoutActivating)
-        self.setStyleSheet(
-            f"background: {COLOR_BG_ELEVATED}; border: 1px solid {COLOR_BORDER_SUBTLE}; "
-            f"border-radius: {RADIUS_LG}px;"
-        )
+        self.setProperty("role", "panel-surface")
 
         self._build_ui()
         self._variables = []
@@ -78,7 +61,6 @@ class VariablePickerPopup(QFrame):
         scroll = QScrollArea(self)
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
-        scroll.setStyleSheet("background: transparent; border: none;")
         scroll.setFixedHeight(220)
 
         self._list_widget = QWidget(scroll)
@@ -129,26 +111,19 @@ class VariablePickerPopup(QFrame):
                 continue
 
             row = QWidget(self._list_widget)
-            row.setStyleSheet(
-                f"background: transparent; border-radius: {RADIUS_MD}px;"
-            )
+            row.setProperty("role", "transparent")
             row_layout = QHBoxLayout(row)
             row_layout.setContentsMargins(SPACE_2, SPACE_2, SPACE_2, SPACE_2)
             row_layout.setSpacing(SPACE_2)
 
             btn = QPushButton(f"{{{name}}}", row)
             btn.setToolTip(f"{description}\nExample: {example}")
-            btn.setStyleSheet(
-                f"QPushButton {{ background: {COLOR_ACCENT_SUBTLE}; color: {COLOR_ACCENT_PRIMARY}; "
-                f"border: none; border-radius: 4px; padding: 4px 8px; font-size: 11px; "
-                f"font-weight: {FONT_WEIGHT_MEDIUM}; }}"
-                f"QPushButton:hover {{ background: {COLOR_ACCENT_PRIMARY}; color: white; }}"
-            )
+            btn.setProperty("role", "variable-chip")
             btn.clicked.connect(lambda checked, v=name: self._on_variable_chosen(v))
             row_layout.addWidget(btn)
 
             lbl = QLabel(label, row)
-            lbl.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+            lbl.setProperty("fontRole", "sm-secondary")
             row_layout.addWidget(lbl, 1)
 
             self._list_layout.addWidget(row)
@@ -158,7 +133,7 @@ class VariablePickerPopup(QFrame):
                 t("automail.no_variables", "No variables match."),
                 self._list_widget,
             )
-            empty.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 11px; padding: 8px;")
+            empty.setProperty("role", "list-empty")
             self._list_layout.addWidget(empty)
 
     def _on_variable_chosen(self, name: str) -> None:

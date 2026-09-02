@@ -176,6 +176,8 @@ class QtTheme:
                 cls._kanban_qss(),
                 cls._freight_exchange_qss(),
                 cls._cmr_qss(),
+                cls._analytics_qss(),
+                cls._dialogs_qss(),
             ]
         )
 
@@ -210,12 +212,15 @@ class QtTheme:
     #                               QPushButton, ...) must OPT IN with their
     #                               own scoped rule before a ``fontRole``
     #                               property has any effect on them.
-    #                               ``fontRole`` = STATIC typography only.
-    #                               STATEFUL label variants (per-status
-    #                               colors) use ``QLabel[role=...]`` + a
-    #                               ``state`` property — never mint fontRole
-    #                               values for state-dependent colors (they
-    #                               would multiply values per label kind).
+    #                               ``fontRole`` = pure font properties on the
+    #                               FONT_SIZES ladder (size/weight/color/
+    #                               family/style).  ``QLabel[role=...]`` =
+    #                               labels with off-ladder sizes, letter-
+    #                               spacing, padding or surface roles;
+    #                               ``role`` + ``state`` = STATEFUL variants.
+    #                               NEVER mint fontRole values for state-
+    #                               dependent colors (they would multiply
+    #                               values per label kind).
     #   * ``role`` / ``variant``  - generic component roles / button variants
     #                               ("panel-elevated", "danger-panel",
     #                               "dialog-primary", ...).
@@ -2495,5 +2500,540 @@ class QtTheme:
         QPushButton[role="collapsible-header"]:focus:!hover {{
             border: none;
             background-color: transparent;
+        }}
+        """
+
+    # ── Analytics cluster (Phase 4) ─────────────────────────────────────────
+    # Base tab chrome (titles, KPI cards, section headers, scroll), the
+    # period strip (pill group + refresh), and the per-tab widgets
+    # (client/route/driver/financial/document).  Statful severity/KPI
+    # colors use ``role`` + ``state`` (never fontRole); static typography
+    # reuses existing fontRole values where the nearest value is exact.
+
+    @classmethod
+    def _analytics_qss(cls) -> str:
+        return f"""
+        QLabel[role="analytics-title"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: 18px;
+            font-weight: 600;
+        }}
+        QLabel[fontRole="xs-semibold"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_XS}px;
+            font-weight: 600;
+        }}
+        QLabel[role="kpi-spark-label"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }}
+        QLabel[role="analytics-section-icon"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: 14px;
+        }}
+        QLabel[role="analytics-section-title"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: 14px;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+        }}
+        QLabel[role="chart-card-title"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 600;
+            padding-bottom: 2px;
+        }}
+        QLabel[role="kpi-card-label"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+            letter-spacing: 0.05em;
+        }}
+        QLabel[role="row-label"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+        }}
+        QLabel[role="doc-days"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        QLabel[role="list-more"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: 600;
+            padding-top: 8px;
+        }}
+        QLabel[role="doc-expiry-header"] {{
+            color: {COLOR_WARNING_TEXT};
+            font-size: 13px;
+            font-weight: 600;
+            padding-bottom: 8px;
+        }}
+        QLabel[role="success-note"] {{
+            color: {COLOR_SUCCESS_TEXT};
+            font-size: {FONT_SIZE_BASE}px;
+            padding: 8px;
+            background-color: {COLOR_BG_ELEVATED};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QLabel[role="warning-note"] {{
+            color: {COLOR_WARNING_TEXT};
+            font-size: {FONT_SIZE_SM}px;
+            padding: 4px 8px;
+            background-color: {COLOR_WARNING_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QLabel[role="period-label"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            padding-right: 8px;
+        }}
+        QLabel[role="dialog-title"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: 14px;
+            font-weight: 600;
+        }}
+        QLabel[role="insight-icon"] {{
+            font-size: 14px;
+        }}
+        QLabel[role="insight-icon"][state="warning"] {{
+            color: {COLOR_WARNING_TEXT};
+        }}
+        QLabel[role="insight-icon"][state="info"] {{
+            color: {COLOR_INFO_TEXT};
+        }}
+        QLabel[role="delay-status"] {{
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+        }}
+        QLabel[role="delay-status"][state="ok"] {{
+            color: {COLOR_SUCCESS_DEFAULT};
+        }}
+        QLabel[role="delay-status"][state="warn"] {{
+            color: {COLOR_WARNING_DEFAULT};
+        }}
+        QLabel[role="delay-status"][state="bad"] {{
+            color: {COLOR_ERROR_DEFAULT};
+        }}
+        QFrame[role="insight-banner"][state="warning"] {{
+            background: {COLOR_WARNING_SUBTLE};
+            border-left: 3px solid {COLOR_WARNING_DEFAULT};
+            border-radius: 4px;
+            padding: 0px;
+        }}
+        QFrame[role="insight-banner"][state="info"] {{
+            background: {COLOR_INFO_SUBTLE};
+            border-left: 3px solid {COLOR_INFO_DEFAULT};
+            border-radius: 4px;
+            padding: 0px;
+        }}
+        QFrame[role="delay-bar"] {{
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QFrame[role="delay-bar"][state="ok"] {{
+            background: {COLOR_SUCCESS_DEFAULT};
+        }}
+        QFrame[role="delay-bar"][state="warn"] {{
+            background: {COLOR_WARNING_DEFAULT};
+        }}
+        QFrame[role="delay-bar"][state="bad"] {{
+            background: {COLOR_ERROR_DEFAULT};
+        }}
+        QScrollArea[role="analytics-scroll"] {{
+            background: {COLOR_BG_BASE};
+            border: none;
+            padding-right: 6px;
+        }}
+        QScrollArea[role="analytics-scroll"] QScrollBar:vertical {{
+            background: transparent;
+            width: 12px;
+            margin: 0px;
+            border-radius: 6px;
+        }}
+        QScrollArea[role="analytics-scroll"] QScrollBar::handle:vertical {{
+            background: {COLOR_BORDER_STRONG};
+            border-radius: 6px;
+            min-height: 40px;
+            margin: 2px;
+        }}
+        QScrollArea[role="analytics-scroll"] QScrollBar::handle:vertical:hover {{
+            background: {COLOR_ACCENT_PRIMARY};
+        }}
+        QPushButton[role="analytics-grid-btn"] {{
+            background: transparent;
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: 4px;
+            padding: 2px;
+        }}
+        QPushButton[role="analytics-grid-btn"]:hover {{
+            background: {COLOR_BG_OVERLAY};
+            border-color: {COLOR_BORDER_MEDIUM};
+        }}
+        QPushButton[role="analytics-grid-btn"]:focus,
+        QPushButton[role="analytics-grid-btn"]:focus:!hover {{
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QFrame[role="hairline"] {{
+            background: {COLOR_BORDER_SUBTLE};
+            max-height: 1px;
+            min-height: 1px;
+        }}
+        QFrame[role="kpi-spark-card"] {{
+            background: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: 8px;
+        }}
+        QFrame[role="kpi-spark-card"][state="overlay"] {{
+            background: {COLOR_BG_OVERLAY};
+            border-color: {COLOR_BG_ELEVATED};
+        }}
+        QFrame[role="kpi-spark-card"][state="warning"] {{
+            background: {COLOR_WARNING_SUBTLE};
+            border: 1px solid {COLOR_WARNING_DEFAULT};
+        }}
+        QFrame[role="panel-outline"] {{
+            background: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BG_OVERLAY};
+            border-radius: 6px;
+        }}
+        QFrame[role="list-panel"] {{
+            background: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QFrame[role="hover-row"]:hover {{
+            background: {COLOR_BG_ELEVATED};
+        }}
+        QFrame[role="activity-cell"] {{
+            background: {COLOR_BG_OVERLAY};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QFrame[role="activity-cell"][state="active"] {{
+            background: {COLOR_ACCENT_PRIMARY};
+        }}
+        QTabWidget[role="analytics-tabs"]::pane {{
+            border: none;
+            background: {COLOR_BG_ELEVATED};
+        }}
+        QTabWidget[role="analytics-tabs"] QTabBar::tab {{
+            background: transparent;
+            color: {COLOR_TEXT_TERTIARY};
+            padding: 8px 16px;
+            border: none;
+            font-size: 13px;
+        }}
+        QTabWidget[role="analytics-tabs"] QTabBar::tab:selected {{
+            color: {COLOR_TEXT_PRIMARY};
+            border-bottom: 2px solid {COLOR_ACCENT_PRIMARY};
+        }}
+        QTabWidget[role="analytics-tabs"] QTabBar::tab:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QWidget#period-strip {{
+            background: {COLOR_BG_ELEVATED};
+            border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QWidget[role="pill-group"] {{
+            background: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: 6px;
+        }}
+        QPushButton[role="period-pill"] {{
+            background: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            border: none;
+            border-radius: 4px;
+            padding: 4px 12px;
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        QPushButton[role="period-pill"]:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QPushButton[role="period-pill"]:checked {{
+            background: {COLOR_ACCENT_PRIMARY};
+            color: white;
+            font-weight: 600;
+        }}
+        QPushButton[role="period-pill"]:focus,
+        QPushButton[role="period-pill"]:focus:!hover {{
+            border: none;
+        }}
+        QPushButton[role="analytics-refresh"] {{
+            background: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: 14px;
+        }}
+        QPushButton[role="analytics-refresh"]:hover {{
+            background: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QPushButton[role="analytics-refresh"]:focus,
+        QPushButton[role="analytics-refresh"]:focus:!hover {{
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+        }}
+        QProgressBar[role="margin-bar"] {{
+            background: {COLOR_TEXT_TERTIARY}22;
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QProgressBar[role="margin-bar"]::chunk {{
+            background: {COLOR_ACCENT_PRIMARY};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QFrame[role="accent-panel"] {{
+            background: {COLOR_ACCENT_PRIMARY}0D;
+            border: 1px solid {COLOR_ACCENT_PRIMARY}33;
+            border-radius: 6px;
+            padding: 8px;
+        }}
+        QFrame#chart-card {{
+            background: transparent;
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: 8px;
+        }}
+        """
+
+    # ── Dialog cluster (Phase 4) ───────────────────────────────────────────
+    # Paired-assignment dialog, dispatch detail drawer, share-route dialog,
+    # automail dialogs (variable picker / template / schedule editor) and
+    # the country-exclusions dialog.  Buttons keep explicit ``:focus`` /
+    # ``:focus:!hover`` re-declarations so the global accent focus ring
+    # reproduces what the removed inline stylesheets overrode.
+
+    @classmethod
+    def _dialogs_qss(cls) -> str:
+        return f"""
+        QLabel[role="accent-hint"] {{
+            color: {COLOR_ACCENT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        QLabel[role="item-status"] {{
+            color: {COLOR_WARNING_DEFAULT};
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        QLabel[role="url-label"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+        }}
+        QLabel[role="share-url-field"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_SM}px;
+            background: {COLOR_BG_OVERLAY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_CHIP}px;
+            padding: {SPACE_1}px {_P2}px;
+        }}
+        QLabel[role="helper-italic"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-style: italic;
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        QLabel[role="list-empty"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_SM}px;
+            padding: 8px;
+        }}
+        QLabel[role="error-banner"] {{
+            background-color: {COLOR_ERROR_DEFAULT};
+            color: {TEXT_WHITE};
+            border-radius: 6px;
+            padding: 8px 12px;
+        }}
+        QLabel[role="severity-chip"] {{
+            color: {TEXT_WHITE};
+            border-radius: {RADIUS_CHIP}px;
+            padding: 1px 4px;
+        }}
+        QLabel[role="severity-chip"][state="critical"] {{
+            background-color: {COLOR_ERROR_DEFAULT};
+        }}
+        QLabel[role="severity-chip"][state="warning"] {{
+            background-color: {COLOR_WARNING_DEFAULT};
+        }}
+        QLabel[role="severity-chip"][state="info"] {{
+            background-color: {COLOR_INFO_DEFAULT};
+        }}
+        QFrame[role="surface-md"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border-radius: {RADIUS_INPUT}px;
+        }}
+        QWidget[role="action-bar"] {{
+            background-color: {COLOR_BG_OVERLAY};
+        }}
+        QScrollArea[role="elevated-surface"] {{
+            background-color: {COLOR_BG_ELEVATED};
+        }}
+        QWidget[role="elevated-surface"] {{
+            background-color: {COLOR_BG_ELEVATED};
+        }}
+        QFrame[role="item-row"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QFrame[role="item-row"][state="selected"] {{
+            background-color: {COLOR_ACCENT_SUBTLE};
+        }}
+        QFrame[role="avail-dot"] {{
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        QFrame[role="avail-dot"][state="ok"] {{
+            background-color: {COLOR_SUCCESS_DEFAULT};
+        }}
+        QFrame[role="avail-dot"][state="bad"] {{
+            background-color: {COLOR_ERROR_DEFAULT};
+        }}
+        QWidget[role="alert-item"] {{
+            background-color: {COLOR_BG_OVERLAY};
+            border-radius: 4px;
+        }}
+        QWidget[role="detail-drawer"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border-left: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QPushButton[role="close-btn"] {{
+            border: none;
+            border-radius: 4px;
+            background: transparent;
+        }}
+        QPushButton[role="close-btn"]:hover {{
+            background-color: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[role="close-btn"]:focus,
+        QPushButton[role="close-btn"]:focus:!hover {{
+            border: none;
+            background: transparent;
+        }}
+        QDialog[role="dialog-outlined"] {{
+            background: {COLOR_BG_ELEVATED};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: 8px;
+        }}
+        QScrollArea[role="thin-scroll"] {{
+            background: transparent;
+            border: none;
+        }}
+        QScrollArea[role="thin-scroll"] QScrollBar:vertical {{
+            width: 4px;
+            background: transparent;
+        }}
+        QScrollArea[role="thin-scroll"] QScrollBar::handle:vertical {{
+            background: {COLOR_BORDER_MEDIUM};
+            border-radius: 2px;
+        }}
+        QCheckBox[role="country-check"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_BASE}px;
+            spacing: 8px;
+            padding: 4px 8px;
+            border-radius: 4px;
+        }}
+        QCheckBox[role="country-check"]:hover {{
+            color: {COLOR_TEXT_PRIMARY};
+            background: {COLOR_BG_HOVER};
+        }}
+        QCheckBox[role="country-check"]::indicator {{
+            width: 16px;
+            height: 16px;
+            border-radius: 4px;
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            background: {COLOR_BG_OVERLAY};
+        }}
+        QCheckBox[role="country-check"]::indicator:checked {{
+            background: {COLOR_ACCENT_PRIMARY};
+            border-color: {COLOR_ACCENT_PRIMARY};
+        }}
+        QCheckBox[role="country-check"]::indicator:hover {{
+            border-color: {COLOR_ACCENT_PRIMARY};
+        }}
+        QPushButton[role="dialog-btn"] {{
+            background: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: 4px;
+            padding: 6px 16px;
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        QPushButton[role="dialog-btn"]:hover {{
+            background: {COLOR_BG_HOVER};
+        }}
+        QPushButton[role="dialog-btn"]:focus,
+        QPushButton[role="dialog-btn"]:focus:!hover {{
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QPushButton[role="variable-chip"] {{
+            background: {COLOR_ACCENT_SUBTLE};
+            color: {COLOR_ACCENT_PRIMARY};
+            border: none;
+            border-radius: 4px;
+            padding: 4px 8px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 500;
+        }}
+        QPushButton[role="variable-chip"]:hover {{
+            background: {COLOR_ACCENT_PRIMARY};
+            color: white;
+        }}
+        QPushButton[role="variable-chip"]:focus,
+        QPushButton[role="variable-chip"]:focus:!hover {{
+            border: none;
+        }}
+        QPushButton[variant="sm-accent"] {{
+            background: {COLOR_ACCENT_PRIMARY};
+            color: {TEXT_WHITE};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+        }}
+        QPushButton[variant="sm-accent"]:hover {{
+            background: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[variant="sm-accent"]:pressed {{
+            background: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[variant="sm-accent"]:focus,
+        QPushButton[variant="sm-accent"]:focus:!hover {{
+            border: none;
+        }}
+        QPushButton[role="sm-outline-solid"] {{
+            background: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: 600;
+            padding: 0 12px;
+        }}
+        QPushButton[role="sm-outline-solid"]:hover {{
+            background: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QPushButton[role="sm-outline-solid"]:focus,
+        QPushButton[role="sm-outline-solid"]:focus:!hover {{
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+        }}
+        QPushButton[role="dialog-outline"] {{
+            background: transparent;
+            color: {COLOR_TEXT_SECONDARY};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        QPushButton[role="dialog-outline"]:hover {{
+            background: {COLOR_BG_OVERLAY};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+        QPushButton[role="dialog-outline"]:focus,
+        QPushButton[role="dialog-outline"]:focus:!hover {{
+            border: 1px solid {COLOR_BORDER_MEDIUM};
         }}
         """

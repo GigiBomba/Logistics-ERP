@@ -26,22 +26,8 @@ from PySide6.QtWidgets import (
 
 from services.automail.template_service import get_available_variables, render_template
 from services.i18n import t
-from ui.design_tokens import RADIUS_LG
-from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_ACCENT_SUBTLE,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_HOVER,
-    COLOR_BG_OVERLAY,
-    COLOR_BORDER_SUBTLE,
-    COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
-    SPACE_2,
-    SPACE_3,
-    SPACE_4,
-    SPACE_6,
-)
+from ui.design_tokens import SPACE_4, SPACE_6
+from ui.widgets import StyledLineEdit
 
 logger = logging.getLogger(__name__)
 
@@ -67,9 +53,6 @@ class TemplateEditorDialog(QDialog):
         self.setMinimumWidth(600)
         self.setMinimumHeight(500)
         self.setModal(True)
-        self.setStyleSheet(
-            f"QDialog {{ background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px; }}"
-        )
 
         self._build_ui()
         if template:
@@ -92,31 +75,23 @@ class TemplateEditorDialog(QDialog):
 
         # Subject
         subj_label = QLabel(t("automail.subject", "Subject") + ":", self)
-        subj_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        subj_label.setProperty("fontRole", "sm-secondary")
         layout.addWidget(subj_label)
 
         self._subject_edit = QLineEdit(self)
         self._subject_edit.setAccessibleName("Template subject")
-        self._subject_edit.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
-            f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 6px; "
-            f"padding: 8px 10px; font-size: 12px;"
-        )
+        self._subject_edit.setProperty("role", "panel-input")
         layout.addWidget(self._subject_edit)
 
         # Body
         body_label = QLabel(t("automail.body", "Body") + ":", self)
-        body_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;")
+        body_label.setProperty("fontRole", "sm-secondary")
         layout.addWidget(body_label)
 
         self._body_editor = QTextEdit(self)
         self._body_editor.setAccessibleName("Template body")
         self._body_editor.setAcceptRichText(True)
-        self._body_editor.setStyleSheet(
-            f"background: {COLOR_BG_OVERLAY}; color: {COLOR_TEXT_PRIMARY}; "
-            f"border: 1px solid {COLOR_BORDER_SUBTLE}; border-radius: 6px; "
-            f"padding: 8px; font-size: 12px;"
-        )
+        self._body_editor.setProperty("role", "panel-input")
         self._body_editor.setMinimumHeight(200)
         layout.addWidget(self._body_editor, 1)
 
@@ -127,7 +102,7 @@ class TemplateEditorDialog(QDialog):
             self,
         )
         vars_label.setWordWrap(True)
-        vars_label.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY}; font-size: 10px;")
+        vars_label.setProperty("fontRole", "xs-muted")
         layout.addWidget(vars_label)
 
         # Buttons

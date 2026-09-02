@@ -24,12 +24,20 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY, COLOR_ACCENT_SUBTLE, COLOR_BG_ELEVATED, COLOR_BG_OVERLAY,
-    COLOR_ERROR_DEFAULT, COLOR_SUCCESS_DEFAULT, COLOR_TEXT_PRIMARY, COLOR_TEXT_TERTIARY,
-    COLOR_WARNING_DEFAULT, FADE_MS, RADIUS_MD, RADIUS_SM, ROW_HEIGHT, SPACE_12,
+    COLOR_ACCENT_PRIMARY,
+    COLOR_TEXT_PRIMARY,
+    COLOR_TEXT_TERTIARY,
+    FADE_MS,
+    ROW_HEIGHT,
+    SPACE_12,
 )
 from ui.design_tokens import SP as S
 from ui.widgets import ActionButton
+
+# Availability dot: 8x8 fixed geometry. Converted to a minimum floor with a
+# Fixed size policy so the QFrame never stretches in the row layout (Phase 2:
+# minimums, not hard caps). Decorative dot — must read as a small square.
+_DOT_SIZE = 8
 
 class QtPairedAssignmentDialog(QDialog):
     """Side-by-side truck and driver picker with paired suggestion.
@@ -137,7 +145,6 @@ class QtPairedAssignmentDialog(QDialog):
         trip_id = str(self._trip_data.get("trip_id", ""))
         trip_lbl = QLabel(trip_id)
         trip_lbl.setProperty("fontRole", "h2")
-        trip_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         hdr_layout.addWidget(trip_lbl)
 
         route = (
@@ -145,8 +152,7 @@ class QtPairedAssignmentDialog(QDialog):
             f" \u2192 {self._trip_data.get('destination', '?')}"
         )
         route_lbl = QLabel(route)
-        route_lbl.setProperty("fontRole", "small")
-        route_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
+        route_lbl.setProperty("fontRole", "helper")
         hdr_layout.addWidget(route_lbl)
 
         hdr_layout.addStretch(1)
@@ -161,7 +167,6 @@ class QtPairedAssignmentDialog(QDialog):
         )
         hint_lbl.setAccessibleName("Assignment hint")
         hint_lbl.setProperty("fontRole", "label")
-        hint_lbl.setStyleSheet(f"color: {COLOR_TEXT_TERTIARY};")
         hint_lbl.setContentsMargins(S["4"], 0, S["4"], S["1"])
         layout.addWidget(hint_lbl)
 
@@ -209,15 +214,12 @@ class QtPairedAssignmentDialog(QDialog):
         wrapper_layout.setContentsMargins(0, 0, 0, 0)
 
         hint_frame = QFrame()
-        hint_frame.setStyleSheet(
-            f"background-color: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_MD}px;"
-        )
+        hint_frame.setProperty("role", "surface-md")
         hint_frame_layout = QHBoxLayout(hint_frame)
         hint_frame_layout.setContentsMargins(S["2"], S["1"], S["2"], S["1"])
 
         hint_lbl = QLabel(self._paired_hint)
-        hint_lbl.setProperty("fontRole", "small")
-        hint_lbl.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY};")
+        hint_lbl.setProperty("role", "accent-hint")
         hint_frame_layout.addWidget(hint_lbl)
 
         wrapper_layout.addWidget(hint_frame)
@@ -226,7 +228,7 @@ class QtPairedAssignmentDialog(QDialog):
     def _build_buttons(self, layout: QVBoxLayout) -> None:
         btn_row = QWidget()
         btn_row.setFixedHeight(SPACE_12)
-        btn_row.setStyleSheet(f"background-color: {COLOR_BG_OVERLAY};")
+        btn_row.setProperty("role", "action-bar")
         btn_layout = QHBoxLayout(btn_row)
         btn_layout.setContentsMargins(S["3"], S["2"], S["3"], S["2"])
         btn_layout.setSpacing(S["2"])
@@ -286,7 +288,6 @@ class QtPairedAssignmentDialog(QDialog):
         title_lbl = QLabel(t(title_key))
         title_lbl.setAccessibleName(t(title_key))
         title_lbl.setProperty("fontRole", "h3")
-        title_lbl.setStyleSheet(f"color: {COLOR_TEXT_PRIMARY};")
         title_lbl.setContentsMargins(S["2"], S["2"], S["2"], S["1"])
         parent_layout.addWidget(title_lbl)
 
@@ -294,11 +295,11 @@ class QtPairedAssignmentDialog(QDialog):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.NoFrame)
         scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        scroll.setStyleSheet(f"background-color: {COLOR_BG_ELEVATED};")
+        scroll.setProperty("role", "elevated-surface")
         parent_layout.addWidget(scroll, 1)
 
         content = QWidget()
-        content.setStyleSheet(f"background-color: {COLOR_BG_ELEVATED};")
+        content.setProperty("role", "elevated-surface")
         content_layout = QVBoxLayout(content)
         content_layout.setContentsMargins(S["1"], 0, S["1"], S["1"])
         content_layout.setSpacing(S["1"])
@@ -322,44 +323,39 @@ class QtPairedAssignmentDialog(QDialog):
         row.setFrameShape(QFrame.NoFrame)
         row.setCursor(Qt.PointingHandCursor)
         row.setFixedHeight(ROW_HEIGHT)
-        row.setStyleSheet(
-            f"background-color: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_SM}px;"
-        )
+        row.setProperty("role", "item-row")
 
         row_layout = QHBoxLayout(row)
         row_layout.setContentsMargins(S["1"], 0, S["1"], 0)
         row_layout.setSpacing(S["1"])
 
         avail = item.get("available", True)
-        dot_color = COLOR_SUCCESS_DEFAULT if avail else COLOR_ERROR_DEFAULT
 
         dot = QFrame(row)
-        dot.setFixedSize(8, 8)
-        dot.setStyleSheet(
-            f"background-color: {dot_color}; border-radius: {RADIUS_SM}px;"
-        )
+        dot.setMinimumSize(_DOT_SIZE, _DOT_SIZE)
+        dot.setSizePolicy(QSizePolicy.Fixed, QSizePolicy.Fixed)
+        dot.setProperty("role", "avail-dot")
+        if avail:
+            dot.setProperty("state", "ok")
+        else:
+            dot.setProperty("state", "bad")
         row_layout.addWidget(dot)
 
         score = item.get("score", 0)
         if avail and score > 70:
             star_lbl = QLabel("\u2b50")
             star_lbl.setFixedWidth(16)
-            star_lbl.setStyleSheet("background: transparent;")
             row_layout.addWidget(star_lbl)
 
         fg = COLOR_TEXT_PRIMARY if avail else COLOR_TEXT_TERTIARY
         label_text = str(item.get("label", ""))[:24]
         label_widget = QLabel(label_text)
-        label_widget.setProperty("fontRole", "small")
-        label_widget.setStyleSheet(f"color: {fg}; background: transparent;")
+        label_widget.setProperty("fontRole", "small" if avail else "helper")
         row_layout.addWidget(label_widget)
 
         sublabel_text = str(item.get("sublabel", ""))[:30]
         sublabel_widget = QLabel(sublabel_text)
         sublabel_widget.setProperty("fontRole", "label")
-        sublabel_widget.setStyleSheet(
-            f"color: {COLOR_TEXT_TERTIARY}; background: transparent;"
-        )
         sublabel_widget.setSizePolicy(
             QSizePolicy.Expanding, QSizePolicy.Preferred
         )
@@ -368,10 +364,7 @@ class QtPairedAssignmentDialog(QDialog):
         st = item.get("status_text", "")
         if st:
             status_widget = QLabel(str(st)[:30])
-            status_widget.setProperty("fontRole", "label")
-            status_widget.setStyleSheet(
-                f"color: {COLOR_WARNING_DEFAULT}; background: transparent;"
-            )
+            status_widget.setProperty("role", "item-status")
             row_layout.addWidget(status_widget)
 
         row.mousePressEvent = lambda event, i=idx: select_fn(i)  # type: ignore[assignment]
@@ -383,19 +376,17 @@ class QtPairedAssignmentDialog(QDialog):
     def _select_truck(self, idx: int) -> None:
         self._selected_truck = idx
         for i, wid in self._truck_widgets.items():
-            bg = COLOR_ACCENT_SUBTLE if i == idx else COLOR_BG_ELEVATED
-            wid.setStyleSheet(
-                f"background-color: {bg}; border-radius: {RADIUS_SM}px;"
-            )
+            wid.setProperty("state", "selected" if i == idx else "")
+            wid.style().unpolish(wid)
+            wid.style().polish(wid)
         self._update_buttons()
 
     def _select_driver(self, idx: int) -> None:
         self._selected_driver = idx
         for i, wid in self._driver_widgets.items():
-            bg = COLOR_ACCENT_SUBTLE if i == idx else COLOR_BG_ELEVATED
-            wid.setStyleSheet(
-                f"background-color: {bg}; border-radius: {RADIUS_SM}px;"
-            )
+            wid.setProperty("state", "selected" if i == idx else "")
+            wid.style().unpolish(wid)
+            wid.style().polish(wid)
         self._update_buttons()
 
     def _update_buttons(self) -> None:

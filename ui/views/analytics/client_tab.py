@@ -13,28 +13,12 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_ACCENT_PRIMARY,
-    COLOR_BG_ELEVATED,
-    COLOR_BG_OVERLAY,
-    COLOR_ERROR_DEFAULT,
-    COLOR_INFO_DEFAULT,
-    COLOR_INFO_SUBTLE,
-    COLOR_INFO_TEXT,
     COLOR_SUCCESS_DEFAULT,
-    COLOR_SUCCESS_TEXT,
     COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
-    COLOR_WARNING_SUBTLE,
     COLOR_WARNING_TEXT,
     FONT_FAMILY,
-    RADIUS_SM,
     SP,
-    SUCCESS,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    WARNING,
 )
 from ui.plotly_charts import (
     CHART_ACCENT,
@@ -233,22 +217,14 @@ class ClientAnalyticsTab(BaseTab):
     ) -> QFrame:
         card = QFrame()
         card.setObjectName("kpi-spark-card")
-        card.setStyleSheet(
-            f"QFrame#kpi-spark-card {{"
-            f" background: {COLOR_BG_OVERLAY};"
-            f" border: 1px solid {COLOR_BG_ELEVATED};"
-            f" border-radius: 8px;"
-            f" }}"
-        )
+        card.setProperty("role", "kpi-spark-card")
+        card.setProperty("state", "overlay")
         card_layout = QVBoxLayout(card)
         card_layout.setContentsMargins(SP["2"], SP["2"], SP["2"], SP["2"])
         card_layout.setSpacing(SP["1"])
 
         lbl = QLabel(label)
-        lbl.setStyleSheet(
-            f"color: {TEXT_PRIMARY}; font-size: 11px; font-weight: 600;"
-            f" letter-spacing: 0.05em; background: transparent;"
-        )
+        lbl.setProperty("role", "kpi-card-label")
         card_layout.addWidget(lbl)
 
         val = QLabel(value)
@@ -265,34 +241,27 @@ class ClientAnalyticsTab(BaseTab):
     # ── Insight banner ──────────────────────────────────────────────
 
     def _build_insight_banner(self, text: str, warning: bool = False) -> None:
-        bg = COLOR_WARNING_SUBTLE if warning else COLOR_INFO_SUBTLE
-        border = COLOR_WARNING_DEFAULT if warning else COLOR_INFO_DEFAULT
-        icon_color = COLOR_WARNING_TEXT if warning else COLOR_INFO_TEXT
-
         banner = QFrame()
-        banner.setStyleSheet(
-            f"QFrame {{ background: {bg};"
-            f" border-left: 3px solid {border};"
-            f" border-radius: 4px; padding: 0px; }}"
-        )
+        banner.setProperty("role", "insight-banner")
         banner_layout = QHBoxLayout(banner)
         banner_layout.setContentsMargins(SP["3"], SP["3"], SP["3"], SP["3"])
         banner_layout.setSpacing(SP["2"])
 
         icon_lbl = QLabel("\U0001f4a1")
-        icon_lbl.setStyleSheet(
-            f"font-size: 14px; color: {icon_color}; background: transparent;"
-        )
+        icon_lbl.setProperty("role", "insight-icon")
         banner_layout.addWidget(icon_lbl, 0, Qt.AlignmentFlag.AlignTop)
 
         text_lbl = QLabel(text)
-        text_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_SECONDARY}; font-size: 12px;"
-            f" font-family: '{FONT_FAMILY}'; background: transparent;"
-            f" line-height: 1.4;"
-        )
+        text_lbl.setProperty("fontRole", "base-secondary")
         text_lbl.setWordWrap(True)
         banner_layout.addWidget(text_lbl, 1)
+
+        if warning:
+            banner.setProperty("state", "warning")
+            icon_lbl.setProperty("state", "warning")
+        else:
+            banner.setProperty("state", "info")
+            icon_lbl.setProperty("state", "info")
 
         self._chart_layout.addWidget(banner)
 
@@ -320,10 +289,7 @@ class ClientAnalyticsTab(BaseTab):
             return
 
         container = QFrame()
-        container.setStyleSheet(
-            f"QFrame {{ background: {COLOR_BG_ELEVATED};"
-            f" border: 1px solid {COLOR_BG_OVERLAY}; border-radius: 6px; }}"
-        )
+        container.setProperty("role", "panel-outline")
         container_layout = QVBoxLayout(container)
         container_layout.setContentsMargins(SP["3"], SP["2"], SP["3"], SP["2"])
         container_layout.setSpacing(SP["1"])
@@ -340,13 +306,10 @@ class ClientAnalyticsTab(BaseTab):
             bar_width = int(pct * 160)
 
             if days <= 15:
-                bar_color = COLOR_SUCCESS_DEFAULT
                 icon = "\u2713"
             elif days <= 30:
-                bar_color = COLOR_WARNING_DEFAULT
                 icon = "\u26a0"
             else:
-                bar_color = COLOR_ERROR_DEFAULT
                 icon = "\u26d4"
 
             row = QFrame()
@@ -356,28 +319,30 @@ class ClientAnalyticsTab(BaseTab):
 
             name_lbl = QLabel(name)
             name_lbl.setFixedWidth(110)
-            name_lbl.setStyleSheet(
-                f"color: {COLOR_TEXT_PRIMARY}; font-size: 11px; font-weight: 600;"
-                f" font-family: '{FONT_FAMILY}'; background: transparent;"
-            )
+            name_lbl.setProperty("role", "row-label")
             row_layout.addWidget(name_lbl)
 
             bar = QFrame()
             bar.setFixedSize(bar_width, 16)
-            bar.setStyleSheet(
-                f"QFrame {{ background: {bar_color}; border-radius: {RADIUS_SM}px; }}"
-            )
+            bar.setProperty("role", "delay-bar")
             row_layout.addWidget(bar)
 
             if bar_width < 160:
                 row_layout.addStretch()
 
             icon_lbl = QLabel(f"{icon} {days:.0f}d")
-            icon_lbl.setStyleSheet(
-                f"color: {bar_color}; font-size: 11px; font-weight: 600;"
-                f" font-family: '{FONT_FAMILY}'; background: transparent;"
-            )
+            icon_lbl.setProperty("role", "delay-status")
             row_layout.addWidget(icon_lbl)
+
+            if days <= 15:
+                bar.setProperty("state", "ok")
+                icon_lbl.setProperty("state", "ok")
+            elif days <= 30:
+                bar.setProperty("state", "warn")
+                icon_lbl.setProperty("state", "warn")
+            else:
+                bar.setProperty("state", "bad")
+                icon_lbl.setProperty("state", "bad")
 
             container_layout.addWidget(row)
 

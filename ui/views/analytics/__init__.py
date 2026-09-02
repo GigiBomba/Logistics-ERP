@@ -23,18 +23,7 @@ from PySide6.QtWidgets import (
 from services.i18n import register_listener, t, unregister_listener
 from ui.components import Label, PageTitle
 from ui.performance_timer import PerfTimer
-from ui.design_tokens import (
-    ACCENT,
-    BG_ELEVATED,
-    BG_SURFACE,
-    BORDER_DEFAULT,
-    BORDER_FAINT,
-    FONT_FAMILY,
-    SP,
-    TEXT_MUTED,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
-)
+from ui.design_tokens import SP
 from ui.views.analytics.client_tab import ClientAnalyticsTab
 from ui.views.analytics.document_tab import DocumentAnalyticsTab
 from ui.views.analytics.driver_tab import DriverAnalyticsTab
@@ -141,12 +130,7 @@ class QtAnalyticsView(QWidget):
 
         self._tab_widget = QTabWidget()
         self._tab_widget.currentChanged.connect(self._on_tab_changed)
-        self._tab_widget.setStyleSheet(
-            f"QTabWidget::pane {{ border: none; background: {BG_SURFACE}; }}"
-            f"QTabBar::tab {{ background: transparent; color: {TEXT_MUTED}; padding: 8px 16px; border: none; font-family: '{FONT_FAMILY}'; font-size: 13px; }}"
-            f"QTabBar::tab:selected {{ color: {TEXT_PRIMARY}; border-bottom: 2px solid {ACCENT}; }}"
-            f"QTabBar::tab:hover {{ color: {TEXT_PRIMARY}; }}"
-        )
+        self._tab_widget.setProperty("role", "analytics-tabs")
 
         for _, label_key in TAB_DEFS:
             placeholder = QWidget()
@@ -184,29 +168,17 @@ class QtAnalyticsView(QWidget):
     def _build_period_strip(self) -> QWidget:
         strip = QWidget()
         strip.setObjectName("period-strip")
-        strip.setStyleSheet(
-            f"QWidget#period-strip {{ background: {BG_SURFACE};"
-            f" border-bottom: 1px solid {BORDER_FAINT}; }}"
-        )
         layout = QHBoxLayout(strip)
         layout.setContentsMargins(SP["10"], SP["2"], SP["10"], SP["2"])
         layout.setSpacing(SP["2"])
 
         label = Label(strip, "PERIOADA", role="muted")
-        label.setStyleSheet(
-            f"color: {TEXT_MUTED}; font-size: 11px; font-weight: 600;"
-            f" letter-spacing: 0.08em; font-family: '{FONT_FAMILY}';"
-            f" text-transform: uppercase; padding-right: {SP['2']}px;"
-        )
+        label.setProperty("role", "period-label")
         layout.addWidget(label)
 
         # Segmented control: pill group container
         pill_group = QWidget()
-        pill_group.setStyleSheet(
-            f"QWidget {{ background: {BG_ELEVATED};"
-            f" border: 1px solid {BORDER_DEFAULT};"
-            f" border-radius: 6px; }}"
-        )
+        pill_group.setProperty("role", "pill-group")
         pill_layout = QHBoxLayout(pill_group)
         pill_layout.setContentsMargins(4, 4, 4, 4)
         pill_layout.setSpacing(0)
@@ -218,25 +190,7 @@ class QtAnalyticsView(QWidget):
             btn = QPushButton(t(key))
             btn.setCheckable(True)
             btn.setCursor(Qt.CursorShape.PointingHandCursor)
-            btn.setStyleSheet(
-                f"QPushButton {{"
-                f" background: transparent;"
-                f" color: {TEXT_SECONDARY};"
-                f" border: none;"
-                f" border-radius: 4px;"
-                f" padding: 4px 12px;"
-                f" font-size: 12px;"
-                f" font-family: '{FONT_FAMILY}';"
-                f" }}"
-                f"QPushButton:hover {{"
-                f" color: {TEXT_PRIMARY};"
-                f" }}"
-                f"QPushButton:checked {{"
-                f" background: {ACCENT};"
-                f" color: white;"
-                f" font-weight: 600;"
-                f" }}"
-            )
+            btn.setProperty("role", "period-pill")
             btn.clicked.connect(lambda _checked=False, i=idx: self._on_period_changed(i))
             self._period_group.addButton(btn, idx)
             self._period_buttons.append(btn)
@@ -248,21 +202,7 @@ class QtAnalyticsView(QWidget):
         self._refresh_btn.setToolTip(t("analytics.refresh_tooltip", default="Refresh data"))
         self._refresh_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self._refresh_btn.setFixedWidth(32)
-        self._refresh_btn.setStyleSheet(
-            f"QPushButton {{"
-            f" background: transparent;"
-            f" color: {TEXT_SECONDARY};"
-            f" border: 1px solid {BORDER_DEFAULT};"
-            f" border-radius: 4px;"
-            f" padding: 4px 8px;"
-            f" font-size: 14px;"
-            f" font-family: '{FONT_FAMILY}';"
-            f" }}"
-            f"QPushButton:hover {{"
-            f" background: {BG_ELEVATED};"
-            f" color: {TEXT_PRIMARY};"
-            f" }}"
-        )
+        self._refresh_btn.setProperty("role", "analytics-refresh")
         self._refresh_btn.clicked.connect(self._on_explicit_refresh)
         layout.addWidget(self._refresh_btn)
 

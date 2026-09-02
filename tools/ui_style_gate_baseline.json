@@ -333,78 +333,8 @@
       },
       {
         "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 98,
-        "code": "        self.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 177,
-        "code": "        trip_lbl.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 190,
-        "code": "        self._close_btn.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 202,
+        "line": 178,
         "code": "        chip.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 280,
-        "code": "            label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 292,
-        "code": "            value_lbl.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 354,
-        "code": "        label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 372,
-        "code": "        div.setStyleSheet(f\"color: {COLOR_BORDER_SUBTLE};\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 379,
-        "code": "            title.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 401,
-        "code": "                        arow.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 413,
-        "code": "                        sev_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 422,
-        "code": "                        msg_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 440,
-        "code": "        lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 448,
-        "code": "        self._btn_widget.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 584,
-        "code": "        err.setStyleSheet("
       },
       {
         "file": "ui/dialogs/freight_provider_settings.py",
@@ -425,91 +355,6 @@
         "file": "ui/dialogs/login_dialog.py",
         "line": 139,
         "code": "        self.setStyleSheet(f\"QDialog {{ background-color: {COLOR_BG_BASE}; }}\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 145,
-        "code": "        trip_lbl.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 154,
-        "code": "        route_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 169,
-        "code": "        hint_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 217,
-        "code": "        hint_frame.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 225,
-        "code": "        hint_lbl.setStyleSheet(f\"color: {COLOR_ACCENT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 234,
-        "code": "        btn_row.setStyleSheet(f\"background-color: {COLOR_BG_OVERLAY};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 294,
-        "code": "        title_lbl.setStyleSheet(f\"color: {COLOR_TEXT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 302,
-        "code": "        scroll.setStyleSheet(f\"background-color: {COLOR_BG_ELEVATED};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 306,
-        "code": "        content.setStyleSheet(f\"background-color: {COLOR_BG_ELEVATED};\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 330,
-        "code": "        row.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 344,
-        "code": "        dot.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 353,
-        "code": "            star_lbl.setStyleSheet(\"background: transparent;\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 360,
-        "code": "        label_widget.setStyleSheet(f\"color: {fg}; background: transparent;\")"
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 366,
-        "code": "        sublabel_widget.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 378,
-        "code": "            status_widget.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 393,
-        "code": "            wid.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/paired_assignment_dialog.py",
-        "line": 402,
-        "code": "            wid.setStyleSheet("
       },
       {
         "file": "ui/dialogs/report_issue_dialog.py",
@@ -555,61 +400,6 @@
         "file": "ui/dialogs/report_issue_dialog.py",
         "line": 322,
         "code": "        self._submit_btn.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 118,
-        "code": "        title_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 127,
-        "code": "        subtitle_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 136,
-        "code": "        url_label.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 148,
-        "code": "        self._url_field.setStyleSheet("
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 165,
-        "code": "        copy_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 189,
-        "code": "        self._qr_label.setStyleSheet(\"background: transparent; border: none;\")"
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 209,
-        "code": "        export_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 234,
-        "code": "        gmaps_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 259,
-        "code": "        share_os_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 286,
-        "code": "        close_btn.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/dialogs/share_route_dialog.py",
-        "line": 303,
-        "code": "        self.setStyleSheet("
       },
       {
         "file": "ui/dialogs/sync_conflict_dialog.py",
@@ -727,289 +517,34 @@
         "code": "        self._log_text.setStyleSheet("
       },
       {
-        "file": "ui/views/analytics/__init__.py",
-        "line": 144,
-        "code": "        self._tab_widget.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/__init__.py",
-        "line": 187,
-        "code": "        strip.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/__init__.py",
-        "line": 196,
-        "code": "        label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/__init__.py",
-        "line": 205,
-        "code": "        pill_group.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/__init__.py",
-        "line": 221,
-        "code": "            btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/__init__.py",
-        "line": 251,
-        "code": "        self._refresh_btn.setStyleSheet("
-      },
-      {
         "file": "ui/views/analytics/_tab_base.py",
-        "line": 65,
-        "code": "        self.setStyleSheet(\"background: transparent; border: none;\")"
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 464,
-        "code": "        self._scroll.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 490,
-        "code": "        self._content.setStyleSheet(f\"background: {BG_BASE};\")"
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 507,
-        "code": "        title_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 514,
-        "code": "            sub.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 528,
-        "code": "        self._grid_btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 556,
-        "code": "        div.setStyleSheet(f\"background: {BORDER_FAINT}; max-height: 1px; min-height: 1px;\")"
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 615,
-        "code": "            card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 628,
-        "code": "            lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 637,
+        "line": 579,
         "code": "            val.setStyleSheet("
       },
       {
         "file": "ui/views/analytics/_tab_base.py",
-        "line": 648,
+        "line": 590,
         "code": "                sub.setStyleSheet("
       },
       {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 697,
-        "code": "            icon_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 703,
-        "code": "        title_label.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 713,
-        "code": "        line.setStyleSheet(f\"background: {BORDER_FAINT}; max-height: 1px; min-height: 1px;\")"
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 723,
-        "code": "        line.setStyleSheet(f\"background: {BORDER_FAINT}; max-height: 1px; min-height: 1px;\")"
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 744,
-        "code": "        card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 755,
-        "code": "            title_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 811,
-        "code": "            card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/_tab_base.py",
-        "line": 822,
-        "code": "                title_lbl.setStyleSheet("
-      },
-      {
         "file": "ui/views/analytics/client_tab.py",
-        "line": 236,
-        "code": "        card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 248,
-        "code": "        lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 255,
+        "line": 231,
         "code": "        val.setStyleSheet("
       },
       {
         "file": "ui/views/analytics/client_tab.py",
-        "line": 261,
+        "line": 237,
         "code": "            val.setStyleSheet(val.styleSheet() + \" line-height: 1.3;\")"
       },
       {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 273,
-        "code": "        banner.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 283,
-        "code": "        icon_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 289,
-        "code": "        text_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 323,
-        "code": "        container.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 359,
-        "code": "            name_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 367,
-        "code": "            bar.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/client_tab.py",
-        "line": 376,
-        "code": "            icon_lbl.setStyleSheet("
-      },
-      {
         "file": "ui/views/analytics/document_tab.py",
-        "line": 204,
-        "code": "        container.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/document_tab.py",
-        "line": 218,
-        "code": "        header.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/document_tab.py",
-        "line": 233,
-        "code": "            row.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/document_tab.py",
-        "line": 241,
-        "code": "            name_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/document_tab.py",
-        "line": 250,
-        "code": "            days_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/document_tab.py",
-        "line": 257,
+        "line": 238,
         "code": "            urgency.setStyleSheet("
       },
       {
-        "file": "ui/views/analytics/document_tab.py",
-        "line": 273,
-        "code": "            more.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/document_tab.py",
-        "line": 287,
-        "code": "        note.setStyleSheet("
-      },
-      {
         "file": "ui/views/analytics/driver_tab.py",
-        "line": 126,
-        "code": "            warn_card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 233,
-        "code": "            note.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 270,
-        "code": "        container.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 290,
-        "code": "            wlbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 308,
-        "code": "            driver_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 320,
-        "code": "                    cell.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 326,
-        "code": "                    cell.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 334,
-        "code": "            summary.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 355,
-        "code": "        card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 367,
-        "code": "        lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/driver_tab.py",
-        "line": 374,
+        "line": 329,
         "code": "        val.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/financial_tab.py",
-        "line": 161,
-        "code": "            margin_bar.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/financial_tab.py",
-        "line": 238,
-        "code": "                card.setStyleSheet("
       },
       {
         "file": "ui/views/analytics/fleet_tab.py",
@@ -1033,17 +568,7 @@
       },
       {
         "file": "ui/views/analytics/route_tab.py",
-        "line": 229,
-        "code": "        card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/route_tab.py",
-        "line": 241,
-        "code": "        lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/analytics/route_tab.py",
-        "line": 248,
+        "line": 237,
         "code": "        val.setStyleSheet("
       },
       {
@@ -1077,51 +602,6 @@
         "code": "        self._underline_btn.setStyleSheet(self._underline_btn.styleSheet() + \"text-decoration: underline;\")"
       },
       {
-        "file": "ui/views/automail/schedule_editor_dialog.py",
-        "line": 74,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/schedule_editor_dialog.py",
-        "line": 112,
-        "code": "        self._preview_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-style: italic; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/schedule_editor_dialog.py",
-        "line": 124,
-        "code": "        attach_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 12px;\")"
-      },
-      {
-        "file": "ui/views/automail/template_editor_dialog.py",
-        "line": 70,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/template_editor_dialog.py",
-        "line": 95,
-        "code": "        subj_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/template_editor_dialog.py",
-        "line": 100,
-        "code": "        self._subject_edit.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/template_editor_dialog.py",
-        "line": 109,
-        "code": "        body_label.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/template_editor_dialog.py",
-        "line": 115,
-        "code": "        self._body_editor.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/template_editor_dialog.py",
-        "line": 130,
-        "code": "        vars_label.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY}; font-size: 10px;\")"
-      },
-      {
         "file": "ui/views/automail/timeline_panel.py",
         "line": 72,
         "code": "        self.setStyleSheet("
@@ -1145,36 +625,6 @@
         "file": "ui/views/automail/timeline_panel.py",
         "line": 220,
         "code": "        lbl.setStyleSheet(f\"color: {color}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/variable_picker.py",
-        "line": 59,
-        "code": "        self.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/variable_picker.py",
-        "line": 81,
-        "code": "        scroll.setStyleSheet(\"background: transparent; border: none;\")"
-      },
-      {
-        "file": "ui/views/automail/variable_picker.py",
-        "line": 132,
-        "code": "            row.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/variable_picker.py",
-        "line": 141,
-        "code": "            btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automail/variable_picker.py",
-        "line": 151,
-        "code": "            lbl.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY}; font-size: 11px;\")"
-      },
-      {
-        "file": "ui/views/automail/variable_picker.py",
-        "line": 161,
-        "code": "            empty.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY}; font-size: 11px; padding: 8px;\")"
       },
       {
         "file": "ui/views/automail_view.py",
@@ -1360,36 +810,6 @@
         "file": "ui/views/cmr_form_view/cmr_form.py",
         "line": 617,
         "code": "        self._progress_bar.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/country_exclusions_dialog.py",
-        "line": 51,
-        "code": "        self.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/country_exclusions_dialog.py",
-        "line": 64,
-        "code": "        header.setStyleSheet("
-      },
-      {
-        "file": "ui/views/country_exclusions_dialog.py",
-        "line": 72,
-        "code": "        scroll.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/country_exclusions_dialog.py",
-        "line": 80,
-        "code": "        content.setStyleSheet(\"background: transparent;\")"
-      },
-      {
-        "file": "ui/views/country_exclusions_dialog.py",
-        "line": 94,
-        "code": "            cb.setStyleSheet(f\"\"\""
-      },
-      {
-        "file": "ui/views/country_exclusions_dialog.py",
-        "line": 128,
-        "code": "        buttons.setStyleSheet(f\"\"\""
       },
       {
         "file": "ui/views/country_exclusions_panel.py",
@@ -2520,7 +1940,7 @@
       },
       {
         "file": "ui/views/analytics/financial_tab.py",
-        "line": 213,
+        "line": 200,
         "code": "                    \"#F97316\","
       },
       {
@@ -2697,12 +2117,7 @@
       },
       {
         "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 91,
-        "code": "        self.setProperty(\"role\", \"detail-drawer\")"
-      },
-      {
-        "file": "ui/dialogs/dispatch_detail_panel.py",
-        "line": 291,
+        "line": 266,
         "code": "            value_lbl.setProperty(\"fontRole\", \"body\")"
       },
       {
@@ -2742,217 +2157,217 @@
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 460,
+        "line": 473,
         "code": "        QLabel[fontRole=\"h1\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 475,
+        "line": 488,
         "code": "        QLabel[fontRole=\"hero\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 486,
+        "line": 499,
         "code": "        QLabel[fontRole=\"mono_lg\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 492,
+        "line": 505,
         "code": "        QLabel[fontRole=\"mono_xl\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 504,
+        "line": 517,
         "code": "        QLabel[fontRole=\"kpi-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 511,
+        "line": 524,
         "code": "        QLabel[fontRole=\"kpi-value\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 518,
+        "line": 531,
         "code": "        QLabel[class=\"page-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 524,
+        "line": 537,
         "code": "        QLabel[class=\"section-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 532,
+        "line": 545,
         "code": "        QLabel[class=\"field-label\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 539,
+        "line": 552,
         "code": "        QLabel[class=\"kpi-value\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 546,
+        "line": 559,
         "code": "        QLabel[class=\"kpi-label\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 603,
+        "line": 616,
         "code": "        QPushButton[variant=\"danger\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 609,
+        "line": 622,
         "code": "        QPushButton[variant=\"danger\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 682,
+        "line": 695,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 692,
+        "line": 705,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 696,
+        "line": 709,
         "code": "        QPushButton[compact=\"true\"][size=\"sm\"]:pressed {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 702,
+        "line": 715,
         "code": "        QPushButton[compact=\"true\"][variant=\"secondary\"][size=\"sm\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 712,
+        "line": 725,
         "code": "        QPushButton[compact=\"true\"][variant=\"secondary\"][size=\"sm\"]:hover {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 957,
+        "line": 970,
         "code": "        QLineEdit[validation=\"success\"], QPlainTextEdit[validation=\"success\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1544,
+        "line": 1557,
         "code": "        QFrame[role=\"input\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1556,
+        "line": 1569,
         "code": "        QFrame[role=\"accent-bar\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1580,
+        "line": 1593,
         "code": "        QFrame[role=\"chip-critical\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1588,
+        "line": 1601,
         "code": "        QFrame[role=\"chip-warning\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1596,
+        "line": 1609,
         "code": "        QFrame[role=\"chip-info\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1604,
+        "line": 1617,
         "code": "        QFrame[role=\"chip-success\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1612,
+        "line": 1625,
         "code": "        QFrame[role=\"chip-neutral\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1794,
+        "line": 1807,
         "code": "        QDialog[modal=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1826,
+        "line": 1839,
         "code": "        QFrame[role=\"nav-panel\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1832,
+        "line": 1845,
         "code": "        QFrame[role=\"nav-top-section\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1859,
+        "line": 1872,
         "code": "        QFrame[role=\"nav-accent\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1866,
+        "line": 1879,
         "code": "        QFrame[role=\"nav-item\"][state=\"active\"] QFrame[role=\"nav-accent\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1870,
+        "line": 1883,
         "code": "        QLabel[role=\"nav-icon\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1877,
+        "line": 1890,
         "code": "        QFrame[role=\"nav-item\"][state=\"active\"] QLabel[role=\"nav-icon\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1900,
+        "line": 1913,
         "code": "        QFrame[role=\"nav-monogram\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1954,
+        "line": 1967,
         "code": "        QFrame[role=\"top-bar-divider\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1960,
+        "line": 1973,
         "code": "        QLabel[role=\"fuel-status\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1974,
+        "line": 1987,
         "code": "        QLabel[role=\"bell\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 1980,
+        "line": 1993,
         "code": "        QLabel[role=\"bell\"][alert=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2117,
+        "line": 2130,
         "code": "        QFrame#stat-card[hovered=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2194,
+        "line": 2207,
         "code": "        QPushButton[tabRole=\"tab-button\"][tabActive=\"true\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2214,
+        "line": 2227,
         "code": "        QWidget[role=\"kanban-column-header\"] QLabel[class=\"kanban-column-title\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2220,
+        "line": 2233,
         "code": "        QWidget[role=\"kanban-column-header\"] QLabel[class=\"kanban-column-count\"] {{"
       },
       {
         "file": "ui/theme_engine.py",
-        "line": 2225,
+        "line": 2238,
         "code": "        QScrollArea[class=\"kanban-columns-container\"] {{"
       },
       {

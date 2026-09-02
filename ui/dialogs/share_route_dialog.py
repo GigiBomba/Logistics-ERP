@@ -31,10 +31,9 @@ from PySide6.QtWidgets import (
 
 from services.i18n import t
 from ui.design_tokens import (
-    COLOR_ACCENT_HOVER, COLOR_ACCENT_PRIMARY, COLOR_BG_ELEVATED, COLOR_BG_OVERLAY,
-    COLOR_BORDER_MEDIUM, COLOR_TEXT_PRIMARY, COLOR_TEXT_SECONDARY, COLOR_TEXT_WHITE,
-    FADE_MS, FONT_SIZE_BASE, FONT_SIZE_LG, FONT_SIZE_SM, FONT_WEIGHT_BOLD, FONT_WEIGHT_SEMIBOLD,
-    RADIUS_LG, RADIUS_SM, SPACE_1, SPACE_2, SPACE_3, BTN_HEIGHT, BTN_HEIGHT_SM,
+    BTN_HEIGHT,
+    BTN_HEIGHT_SM,
+    FADE_MS,
 )
 from ui.design_tokens import SP as S
 
@@ -115,28 +114,19 @@ class ShareRouteDialog(QDialog):
 
         # ── Title ─────────────────────────────────────────────────
         title_lbl = QLabel(t("route.share_title", default="Share Route"))
-        title_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_LG}px; font-weight: {FONT_WEIGHT_BOLD};"
-            f" background: transparent; border: none;"
-        )
+        title_lbl.setProperty("fontRole", "h2")
         outer.addWidget(title_lbl)
 
         subtitle_lbl = QLabel(
             t("route.share_subtitle", default="Share this route with others so they can load it in Operion.")
         )
-        subtitle_lbl.setStyleSheet(
-            f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_BASE}px;"
-            f" background: transparent; border: none;"
-        )
+        subtitle_lbl.setProperty("fontRole", "base-secondary")
         subtitle_lbl.setWordWrap(True)
         outer.addWidget(subtitle_lbl)
 
         # ── Share URL field + Copy button ─────────────────────────
         url_label = QLabel(t("route.share_link_label", default="Share link"))
-        url_label.setStyleSheet(
-            f"color: {COLOR_TEXT_SECONDARY}; font-size: {FONT_SIZE_SM}px; font-weight: {FONT_WEIGHT_SEMIBOLD};"
-            f" background: transparent; border: none;"
-        )
+        url_label.setProperty("role", "url-label")
         outer.addWidget(url_label)
 
         url_row = QWidget()
@@ -145,11 +135,7 @@ class ShareRouteDialog(QDialog):
         url_row_layout.setSpacing(S["2"])
 
         self._url_field = QLabel(self._share_url if self._share_url else "-")
-        self._url_field.setStyleSheet(
-            f"color: {COLOR_TEXT_PRIMARY}; font-size: {FONT_SIZE_SM}px;"
-            f" background: {COLOR_BG_OVERLAY}; border: 1px solid {COLOR_BORDER_MEDIUM};"
-            f" border-radius: {RADIUS_SM}px; padding: {SPACE_1}px {SPACE_2}px;"
-        )
+        self._url_field.setProperty("role", "share-url-field")
         self._url_field.setWordWrap(True)
         self._url_field.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
         self._url_field.setTextInteractionFlags(Qt.TextSelectableByMouse)
@@ -162,22 +148,7 @@ class ShareRouteDialog(QDialog):
         copy_btn.setFixedWidth(64)
         copy_btn.setFixedHeight(BTN_HEIGHT_SM)
         copy_btn.setCursor(Qt.PointingHandCursor)
-        copy_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_ACCENT_PRIMARY};
-                color: {COLOR_TEXT_WHITE};
-                border: none;
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_SEMIBOLD};
-            }}
-            QPushButton:hover {{
-                background: {COLOR_ACCENT_HOVER};
-            }}
-            QPushButton:pressed {{
-                background: {COLOR_ACCENT_HOVER};
-            }}
-        """)
+        copy_btn.setProperty("variant", "sm-accent")
         copy_btn.clicked.connect(self._on_copy_link)
         url_row_layout.addWidget(copy_btn)
 
@@ -186,7 +157,6 @@ class ShareRouteDialog(QDialog):
         # ── QR code ───────────────────────────────────────────────
         self._qr_label = QLabel()
         self._qr_label.setAlignment(Qt.AlignCenter)
-        self._qr_label.setStyleSheet("background: transparent; border: none;")
         self._qr_label.setFixedHeight(120)
         self._qr_label.hide()
         outer.addWidget(self._qr_label)
@@ -206,21 +176,7 @@ class ShareRouteDialog(QDialog):
         export_btn.setAccessibleName("Export route file")
         export_btn.setFixedHeight(BTN_HEIGHT)
         export_btn.setCursor(Qt.PointingHandCursor)
-        export_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_MEDIUM};
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_SEMIBOLD};
-                padding: 0 {SPACE_3}px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_PRIMARY};
-            }}
-        """)
+        export_btn.setProperty("role", "sm-outline-solid")
         export_btn.clicked.connect(self._on_export_file)
         actions_layout.addWidget(export_btn)
 
@@ -231,21 +187,7 @@ class ShareRouteDialog(QDialog):
         gmaps_btn.setAccessibleName("Open in Google Maps")
         gmaps_btn.setFixedHeight(BTN_HEIGHT)
         gmaps_btn.setCursor(Qt.PointingHandCursor)
-        gmaps_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_MEDIUM};
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_SEMIBOLD};
-                padding: 0 {SPACE_3}px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_PRIMARY};
-            }}
-        """)
+        gmaps_btn.setProperty("role", "sm-outline-solid")
         gmaps_btn.clicked.connect(self._on_open_gmaps)
         actions_layout.addWidget(gmaps_btn)
 
@@ -256,21 +198,7 @@ class ShareRouteDialog(QDialog):
         share_os_btn.setAccessibleName("Save and open folder")
         share_os_btn.setFixedHeight(BTN_HEIGHT)
         share_os_btn.setCursor(Qt.PointingHandCursor)
-        share_os_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_MEDIUM};
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-                font-weight: {FONT_WEIGHT_SEMIBOLD};
-                padding: 0 {SPACE_3}px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_PRIMARY};
-            }}
-        """)
+        share_os_btn.setProperty("role", "sm-outline-solid")
         share_os_btn.clicked.connect(self._on_share_via_os)
         actions_layout.addWidget(share_os_btn)
 
@@ -283,26 +211,9 @@ class ShareRouteDialog(QDialog):
         close_btn.setAccessibleName("Close dialog")
         close_btn.setFixedHeight(BTN_HEIGHT)
         close_btn.setCursor(Qt.PointingHandCursor)
-        close_btn.setStyleSheet(f"""
-            QPushButton {{
-                background: transparent;
-                color: {COLOR_TEXT_SECONDARY};
-                border: 1px solid {COLOR_BORDER_MEDIUM};
-                border-radius: {RADIUS_SM}px;
-                font-size: {FONT_SIZE_SM}px;
-            }}
-            QPushButton:hover {{
-                background: {COLOR_BG_OVERLAY};
-                color: {COLOR_TEXT_PRIMARY};
-            }}
-        """)
+        close_btn.setProperty("role", "dialog-outline")
         close_btn.clicked.connect(self.reject)
         outer.addWidget(close_btn)
-
-        # Dialog background
-        self.setStyleSheet(
-            f"QDialog {{ background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px; }}"
-        )
 
     # ── Slots ────────────────────────────────────────────────────
 

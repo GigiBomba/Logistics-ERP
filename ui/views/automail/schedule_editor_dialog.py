@@ -25,15 +25,7 @@ from PySide6.QtWidgets import (
 )
 
 from services.i18n import t
-from ui.design_tokens import (
-    COLOR_BG_ELEVATED,
-    COLOR_TEXT_SECONDARY,
-    RADIUS_LG,
-    SP,
-    SPACE_4,
-    SPACE_5,
-    SPACE_6,
-)
+from ui.design_tokens import SPACE_4, SPACE_6
 
 logger = logging.getLogger(__name__)
 
@@ -71,9 +63,6 @@ class ScheduleEditorDialog(QDialog):
         )
         self.setMinimumWidth(480)
         self.setModal(True)
-        self.setStyleSheet(
-            f"QDialog {{ background: {COLOR_BG_ELEVATED}; border-radius: {RADIUS_LG}px; }}"
-        )
 
         self._build_ui()
         if schedule:
@@ -109,7 +98,7 @@ class ScheduleEditorDialog(QDialog):
 
         # Preview label (shows human-readable timing)
         self._preview_label = QLabel("", self)
-        self._preview_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-style: italic; font-size: 11px;")
+        self._preview_label.setProperty("role", "helper-italic")
         form.addRow("", self._preview_label)
         self._update_preview()
 
@@ -121,7 +110,7 @@ class ScheduleEditorDialog(QDialog):
 
         # Attachments
         attach_label = QLabel(t("automail.attachments", "Attachments"))
-        attach_label.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY}; font-size: 12px;")
+        attach_label.setProperty("fontRole", "base-secondary")
         layout.addWidget(attach_label)
 
         attach_layout = QHBoxLayout()
