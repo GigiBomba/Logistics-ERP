@@ -47,7 +47,6 @@ from ui.components import (
     StatusBadge,
 )
 from ui.design_tokens import (
-    ACCENT,
     COLOR_ERROR_TEXT,
     COLOR_SUCCESS_TEXT,
     COLOR_TEXT_PRIMARY,
@@ -58,14 +57,11 @@ from ui.design_tokens import (
     FONT_MONO,
     FONT_SIZE_BASE,
     FONT_SIZE_SM,
-    FONT_WEIGHT_MEDIUM,
     FONT_WEIGHT_SEMIBOLD,
     INFO_TEXT,
     SP,
     SUCCESS,
     SUCCESS_TEXT,
-    TEXT_PRIMARY,
-    TEXT_SECONDARY,
     WARNING,
     WARNING_TEXT,
 )
@@ -764,9 +760,7 @@ class QtOverviewView(BaseView):
                 title = title[:37] + "…"
             title_lbl = QLabel(title)
             title_lbl.setToolTip(full_title)
-            title_lbl.setStyleSheet(
-                f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};"
-            )
+            title_lbl.setProperty("fontRole", "base-primary")
             layout.addWidget(title_lbl, 1)
 
             ts = getattr(a, "created_at", "")
@@ -780,7 +774,7 @@ class QtOverviewView(BaseView):
 
         if len(alerts) > 3:
             more = QLabel(f'+ {len(alerts) - 3} {t("home.more", default="more")}')
-            more.setStyleSheet(f"color: {ACCENT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM};")
+            more.setProperty("fontRole", "base-accent-semibold")
             more.setCursor(Qt.PointingHandCursor)
             self._alerts_layout.addWidget(more)
 
@@ -835,15 +829,11 @@ class QtOverviewView(BaseView):
 
             plate_lbl = QLabel(plate)
             plate_lbl.setToolTip(plate)
-            plate_lbl.setStyleSheet(
-                f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};"
-            )
+            plate_lbl.setProperty("fontRole", "base-primary")
             layout.addWidget(plate_lbl, 1)
 
             rev_lbl = QLabel(fmt_currency(revenue, decimals=0))
-            rev_lbl.setStyleSheet(
-                f"font-family: '{FONT_MONO}'; font-size: {FONT_SIZE_BASE}px; color: {SUCCESS_TEXT};"
-            )
+            rev_lbl.setProperty("fontRole", "mono-success")
             rev_lbl.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             layout.addWidget(rev_lbl)
 
@@ -912,15 +902,13 @@ class QtOverviewView(BaseView):
             layout.addWidget(date_lbl)
 
             plate_lbl = QLabel(plate)
-            plate_lbl.setStyleSheet(
-                f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_SECONDARY}; font-weight: {FONT_WEIGHT_MEDIUM};"
-            )
+            plate_lbl.setProperty("fontRole", "base-secondary-semibold")
             plate_lbl.setFixedWidth(64)
             plate_lbl.setToolTip(plate)
             layout.addWidget(plate_lbl)
 
             client_lbl = _ElidedLabel(client)
-            client_lbl.setStyleSheet(f"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};")
+            client_lbl.setProperty("fontRole", "base-primary")
             layout.addWidget(client_lbl, 1)
 
             color = SUCCESS_TEXT if profit > 0 else DANGER_TEXT

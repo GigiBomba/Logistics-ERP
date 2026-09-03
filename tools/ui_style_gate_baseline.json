@@ -573,47 +573,17 @@
       },
       {
         "file": "ui/views/automation_view/automation_view.py",
-        "line": 141,
+        "line": 139,
         "code": "        self.setStyleSheet("
       },
       {
         "file": "ui/views/automation_view/automation_view.py",
-        "line": 215,
+        "line": 213,
         "code": "        self._status_dot.setStyleSheet("
       },
       {
         "file": "ui/views/automation_view/automation_view.py",
-        "line": 274,
-        "code": "        btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automation_view/automation_view.py",
-        "line": 297,
-        "code": "        btn.setStyleSheet("
-      },
-      {
-        "file": "ui/views/automation_view/automation_view.py",
-        "line": 343,
-        "code": "        self._simple_status.setStyleSheet(f\"color: {ACCENT_TEXT};\")"
-      },
-      {
-        "file": "ui/views/automation_view/automation_view.py",
-        "line": 350,
-        "code": "        self._candidates_box.setStyleSheet(f\"color: {ACCENT};\")"
-      },
-      {
-        "file": "ui/views/automation_view/automation_view.py",
-        "line": 833,
-        "code": "        header.setStyleSheet(f\"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};\")"
-      },
-      {
-        "file": "ui/views/automation_view/automation_view.py",
-        "line": 845,
-        "code": "        mode_row.setStyleSheet(f\"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};\")"
-      },
-      {
-        "file": "ui/views/automation_view/automation_view.py",
-        "line": 997,
+        "line": 968,
         "code": "            card.setStyleSheet("
       },
       {
@@ -693,18 +663,8 @@
       },
       {
         "file": "ui/views/dashboard.py",
-        "line": 998,
-        "code": "        feed_scroll.setStyleSheet(\"\"\""
-      },
-      {
-        "file": "ui/views/dashboard.py",
-        "line": 1079,
+        "line": 1075,
         "code": "        status_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/dashboard.py",
-        "line": 1098,
-        "code": "        divider.setStyleSheet(f\"color: {COLOR_BORDER_SUBTLE};\")"
       },
       {
         "file": "ui/views/dispatch_board/dispatch_board.py",
@@ -750,16 +710,6 @@
         "file": "ui/views/fleet_tab/fleet_tab.py",
         "line": 811,
         "code": "                card.setStyleSheet("
-      },
-      {
-        "file": "ui/views/fleet_tracking_view.py",
-        "line": 225,
-        "code": "        icon_lbl.setStyleSheet(f\"font-size: 64px; color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/fleet_tracking_view.py",
-        "line": 611,
-        "code": "        line.setStyleSheet(f\"color: {COLOR_BORDER_SUBTLE};\")"
       },
       {
         "file": "ui/views/freight_exchange/connect_view.py",
@@ -978,47 +928,17 @@
       },
       {
         "file": "ui/views/overview_view.py",
-        "line": 555,
+        "line": 551,
         "code": "                val_lbl.setStyleSheet(f\"color: {color};\")"
       },
       {
         "file": "ui/views/overview_view.py",
-        "line": 767,
-        "code": "            title_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/overview_view.py",
-        "line": 783,
-        "code": "            more.setStyleSheet(f\"color: {ACCENT}; font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM};\")"
-      },
-      {
-        "file": "ui/views/overview_view.py",
-        "line": 830,
+        "line": 824,
         "code": "            idx.setStyleSheet("
       },
       {
         "file": "ui/views/overview_view.py",
-        "line": 838,
-        "code": "            plate_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/overview_view.py",
-        "line": 844,
-        "code": "            rev_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/overview_view.py",
-        "line": 915,
-        "code": "            plate_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/views/overview_view.py",
-        "line": 923,
-        "code": "            client_lbl.setStyleSheet(f\"font-size: {FONT_SIZE_BASE}px; color: {TEXT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/views/overview_view.py",
-        "line": 928,
+        "line": 916,
         "code": "            profit_lbl.setStyleSheet("
       },
       {
@@ -1118,42 +1038,17 @@
       },
       {
         "file": "ui/views/tacho_import_view.py",
-        "line": 162,
-        "code": "        drop_icon.setStyleSheet(f\"font-size: 28px; color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;\")"
-      },
-      {
-        "file": "ui/views/tacho_import_view.py",
-        "line": 168,
-        "code": "        drop_hint.setStyleSheet("
-      },
-      {
-        "file": "ui/views/tacho_import_view.py",
-        "line": 188,
-        "code": "        steps.setStyleSheet(f\"padding: {SP['2']}px; color: {COLOR_TEXT_TERTIARY};\")"
-      },
-      {
-        "file": "ui/views/tacho_import_view.py",
-        "line": 206,
-        "code": "        self._btn_vehicle.setStyleSheet("
-      },
-      {
-        "file": "ui/views/tacho_import_view.py",
-        "line": 236,
+        "line": 225,
         "code": "        self._drop_zone.setStyleSheet("
       },
       {
         "file": "ui/views/tacho_import_view.py",
-        "line": 290,
-        "code": "        self._result_violations.setStyleSheet("
-      },
-      {
-        "file": "ui/views/tacho_import_view.py",
-        "line": 530,
+        "line": 517,
         "code": "        self._result_icon.setStyleSheet("
       },
       {
         "file": "ui/views/tacho_import_view.py",
-        "line": 578,
+        "line": 565,
         "code": "        self._result_icon.setStyleSheet("
       },
       {
@@ -1438,83 +1333,53 @@
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 67,
+        "line": 63,
         "code": "    accent_bar.setStyleSheet("
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 343,
+        "line": 339,
         "code": "        self._truck_lbl.setStyleSheet(f\"color: {plate_color};\")"
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 372,
-        "code": "        self._both_lbl.setStyleSheet(f\"color: {COLOR_ACCENT_PRIMARY};\")"
-      },
-      {
-        "file": "ui/widgets/trip_card.py",
-        "line": 395,
+        "line": 390,
         "code": "        self._driver_lbl.setStyleSheet(f\"color: {driver_color};\")"
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 464,
-        "code": "        live_dot.setStyleSheet(f\"color: {COLOR_SUCCESS_DEFAULT};\")"
-      },
-      {
-        "file": "ui/widgets/trip_card.py",
-        "line": 469,
-        "code": "        self._live_speed.setStyleSheet(f\"color: {COLOR_TEXT_SECONDARY};\")"
-      },
-      {
-        "file": "ui/widgets/trip_card.py",
-        "line": 514,
+        "line": 507,
         "code": "            self._truck_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 541,
+        "line": 534,
         "code": "            self._driver_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 567,
+        "line": 560,
         "code": "                self._date_lbl.setStyleSheet(f\"color: {self.DELAYED_COLOR};\")"
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 607,
+        "line": 600,
         "code": "                self._truck_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 618,
+        "line": 611,
         "code": "                self._driver_lbl.setStyleSheet(f\"color: {COLOR_TEXT_TERTIARY};\")"
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 725,
-        "code": "        self._error_lbl.setStyleSheet("
-      },
-      {
-        "file": "ui/widgets/trip_card.py",
-        "line": 762,
-        "code": "        frame.setStyleSheet("
-      },
-      {
-        "file": "ui/widgets/trip_card.py",
-        "line": 792,
+        "line": 783,
         "code": "        self.setStyleSheet("
       },
       {
         "file": "ui/widgets/trip_card.py",
-        "line": 799,
+        "line": 790,
         "code": "            self._content_widget.setStyleSheet("
-      },
-      {
-        "file": "ui/widgets/trip_card.py",
-        "line": 840,
-        "code": "        menu.setStyleSheet("
       }
     ],
     "raw_hex_colors": [
@@ -1614,11 +1479,6 @@
         "code": "                'border-radius:6px;color:#888;font-style:italic;font-size:11px;'"
       },
       {
-        "file": "ui/views/dashboard.py",
-        "line": 1001,
-        "code": "            QScrollBar::handle:vertical { background: #38383F; border-radius: 2px; min-height: 30px; }"
-      },
-      {
         "file": "ui/views/maintenance_analytics_view.py",
         "line": 46,
         "code": "    \"#6366f1\", COLOR_SUCCESS_DEFAULT, COLOR_WARNING_DEFAULT, COLOR_ERROR_DEFAULT,"
@@ -1630,17 +1490,17 @@
       },
       {
         "file": "ui/views/overview_view.py",
-        "line": 826,
+        "line": 820,
         "code": "                1: \"#F59E0B\",  # gold"
       },
       {
         "file": "ui/views/overview_view.py",
-        "line": 827,
+        "line": 821,
         "code": "                2: \"#9CA3AF\",  # silver"
       },
       {
         "file": "ui/views/overview_view.py",
-        "line": 828,
+        "line": 822,
         "code": "                3: \"#B45309\",  # bronze"
       },
       {
@@ -1766,69 +1626,14 @@
         "code": "        self._email_display.setProperty(\"fontRole\", \"body_bold\")"
       },
       {
-        "file": "ui/form_utils.py",
-        "line": 89,
-        "code": "        self._label.setProperty(\"role\", \"field-label\")"
-      },
-      {
-        "file": "ui/form_utils.py",
-        "line": 111,
-        "code": "            self._helper_label.setProperty(\"role\", \"muted\")"
-      },
-      {
         "file": "ui/main_window.py",
         "line": 1162,
         "code": "        title.setProperty(\"role\", \"heading\")"
       },
       {
         "file": "ui/main_window.py",
-        "line": 1167,
-        "code": "        msg.setProperty(\"role\", \"muted\")"
-      },
-      {
-        "file": "ui/main_window.py",
         "line": 1187,
         "code": "        title.setProperty(\"role\", \"heading\")"
-      },
-      {
-        "file": "ui/main_window.py",
-        "line": 1195,
-        "code": "        msg.setProperty(\"role\", \"muted\")"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 564,
-        "code": "        QPushButton[variant=\"danger\"] {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 570,
-        "code": "        QPushButton[variant=\"danger\"]:hover {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 921,
-        "code": "        QLineEdit[validation=\"success\"], QPlainTextEdit[validation=\"success\"] {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 1706,
-        "code": "        QDialog[modal=\"true\"] {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 1970,
-        "code": "        QFrame#stat-card[hovered=\"true\"] {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 2049,
-        "code": "        QPushButton[tabRole=\"tab-button\"][tabActive=\"true\"] {{"
-      },
-      {
-        "file": "ui/theme_engine.py",
-        "line": 2881,
-        "code": "        QLabel[role=\"pill-value\"] {{"
       },
       {
         "file": "ui/views/admin_panel_view.py",
@@ -1847,23 +1652,13 @@
       },
       {
         "file": "ui/views/automation_view/automation_view.py",
-        "line": 187,
+        "line": 185,
         "code": "        self._title.setProperty(\"fontRole\", \"body_bold\")"
       },
       {
         "file": "ui/views/automation_view/automation_view.py",
-        "line": 342,
-        "code": "        self._simple_status.setProperty(\"fontRole\", \"body_bold\")"
-      },
-      {
-        "file": "ui/views/automation_view/automation_view.py",
-        "line": 850,
+        "line": 821,
         "code": "        mode_label.setProperty(\"fontRole\", \"body_bold\")"
-      },
-      {
-        "file": "ui/views/client_workspace/client_details.py",
-        "line": 108,
-        "code": "        self._label.setProperty(\"role\", \"field-label\")"
       },
       {
         "file": "ui/views/client_workspace/client_details.py",
@@ -1901,18 +1696,8 @@
         "code": "            self._role_consignee_btn.setProperty(\"variant\", \"primary\")"
       },
       {
-        "file": "ui/views/country_exclusions_panel.py",
-        "line": 92,
-        "code": "        self._header_label.setProperty(\"role\", \"section-title\")"
-      },
-      {
-        "file": "ui/views/country_exclusions_panel.py",
-        "line": 100,
-        "code": "        self._count_label.setProperty(\"role\", \"muted\")"
-      },
-      {
         "file": "ui/views/dashboard.py",
-        "line": 1070,
+        "line": 1066,
         "code": "        truck_lbl.setProperty(\"fontRole\", \"body_bold\")"
       },
       {
@@ -2082,38 +1867,8 @@
       },
       {
         "file": "ui/views/generators_view.py",
-        "line": 924,
-        "code": "        self._cmr_status_lbl.setProperty(\"role\", \"success\")"
-      },
-      {
-        "file": "ui/views/generators_view.py",
         "line": 1072,
         "code": "        self._cmr_status_lbl.setProperty(\"role\", \"warning\")"
-      },
-      {
-        "file": "ui/views/generators_view.py",
-        "line": 1120,
-        "code": "                        self._cmr_status_lbl.setProperty(\"role\", \"danger\")"
-      },
-      {
-        "file": "ui/views/generators_view.py",
-        "line": 1160,
-        "code": "                self._cmr_status_lbl.setProperty(\"role\", \"success\")"
-      },
-      {
-        "file": "ui/views/generators_view.py",
-        "line": 1181,
-        "code": "            status_lbl.setProperty(\"role\", \"success\")"
-      },
-      {
-        "file": "ui/views/generators_view.py",
-        "line": 1241,
-        "code": "                status_lbl.setProperty(\"role\", \"muted\")"
-      },
-      {
-        "file": "ui/views/generators_view.py",
-        "line": 1247,
-        "code": "                status_lbl.setProperty(\"role\", \"success\")"
       },
       {
         "file": "ui/views/invoice_editor/editor_form.py",
@@ -2226,11 +1981,6 @@
         "code": "        self._canvas_grand.setProperty(\"fontRole\", \"body-bold\")"
       },
       {
-        "file": "ui/views/maintenance_hub.py",
-        "line": 135,
-        "code": "        lbl.setProperty(\"role\", \"muted\")"
-      },
-      {
         "file": "ui/views/proforma_editor/editor_form.py",
         "line": 476,
         "code": "            lbl.setProperty(\"fontRole\", \"body-bold\")"
@@ -2276,16 +2026,6 @@
         "code": "            badge.setProperty(\"role\", \"tag-chip\")"
       },
       {
-        "file": "ui/views/route_history_view.py",
-        "line": 233,
-        "code": "        self._route_info.setProperty(\"role\", \"secondary\")"
-      },
-      {
-        "file": "ui/views/route_history_view.py",
-        "line": 239,
-        "code": "        self._stats_text.setProperty(\"role\", \"muted\")"
-      },
-      {
         "file": "ui/views/settings_view/settings_fields.py",
         "line": 344,
         "code": "        swatch.setProperty(\"role\", \"colour-swatch\")"
@@ -2297,12 +2037,12 @@
       },
       {
         "file": "ui/views/tacho_import_view.py",
-        "line": 270,
+        "line": 259,
         "code": "        self._result_icon.setProperty(\"fontRole\", \"result-icon\")"
       },
       {
         "file": "ui/views/tacho_import_view.py",
-        "line": 275,
+        "line": 264,
         "code": "        self._result_msg.setProperty(\"fontRole\", \"body\")"
       },
       {
@@ -2314,31 +2054,6 @@
         "file": "ui/views/upload_integration.py",
         "line": 247,
         "code": "        title_lbl.setProperty(\"fontRole\", \"body_bold\")"
-      },
-      {
-        "file": "ui/widgets/__init__.py",
-        "line": 185,
-        "code": "        self.label.setProperty(\"role\", \"section-title\")"
-      },
-      {
-        "file": "ui/widgets/__init__.py",
-        "line": 227,
-        "code": "        self.title_label.setProperty(\"role\", \"kpi-label\")"
-      },
-      {
-        "file": "ui/widgets/__init__.py",
-        "line": 233,
-        "code": "        self.value_label.setProperty(\"role\", \"kpi-value\")"
-      },
-      {
-        "file": "ui/widgets/__init__.py",
-        "line": 348,
-        "code": "    label.setProperty(\"role\", \"field-label\")"
-      },
-      {
-        "file": "ui/widgets/__init__.py",
-        "line": 357,
-        "code": "        helper.setProperty(\"role\", \"muted\")"
       },
       {
         "file": "ui/widgets/alert_panel.py",

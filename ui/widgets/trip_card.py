@@ -36,21 +36,17 @@ from ui.components import IconButton, StatusBadge
 from ui.design_tokens import (
     COLOR_ACCENT_PRIMARY,
     COLOR_ACCENT_SUBTLE,
-    COLOR_BG_HOVER,
     COLOR_BG_OVERLAY,
     COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_ERROR_SUBTLE,
     COLOR_INFO_DEFAULT,
     COLOR_NEUTRAL_SUBTLE,
-    COLOR_SUCCESS_DEFAULT,
     COLOR_SUCCESS_SUBTLE,
     COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
     COLOR_TEXT_TERTIARY,
     COLOR_WARNING_DEFAULT,
     COLOR_WARNING_SUBTLE,
-    RADIUS_SM,
     SP,
 )
 
@@ -368,8 +364,7 @@ class QtTripCard(QFrame):
         both_row_layout.setSpacing(0)
 
         self._both_lbl = QLabel("\u26a1 " + t("dispatch_board.assign_both"))
-        self._both_lbl.setProperty("fontRole", "small")
-        self._both_lbl.setStyleSheet(f"color: {COLOR_ACCENT_PRIMARY};")
+        self._both_lbl.setProperty("fontRole", "sm-accent")
         self._both_lbl.setCursor(Qt.PointingHandCursor)
         self._both_lbl.mousePressEvent = self._on_both_click  # type: ignore[assignment]
         both_row_layout.addWidget(self._both_lbl)
@@ -460,13 +455,11 @@ class QtTripCard(QFrame):
         live_layout.setSpacing(0)
 
         live_dot = QLabel("\u25cf " + t("dispatch_board.live"))
-        live_dot.setProperty("fontRole", "label")
-        live_dot.setStyleSheet(f"color: {COLOR_SUCCESS_DEFAULT};")
+        live_dot.setProperty("fontRole", "sm-success-default")
         live_layout.addWidget(live_dot)
 
         self._live_speed = QLabel("")
-        self._live_speed.setProperty("fontRole", "mono")
-        self._live_speed.setStyleSheet(f"color: {COLOR_TEXT_SECONDARY};")
+        self._live_speed.setProperty("fontRole", "mono-secondary")
         live_layout.addWidget(self._live_speed)
         live_layout.addStretch(1)
 
@@ -721,13 +714,10 @@ class QtTripCard(QFrame):
         self._dismiss_error()
 
         self._error_lbl = QLabel(message)
-        self._error_lbl.setProperty("fontRole", "label")
-        self._error_lbl.setStyleSheet(
-            f"background-color: {COLOR_ERROR_DEFAULT};"
-            f"color: {COLOR_TEXT_PRIMARY};"
-            f"padding: 2px 6px;"
-            f"border-radius: {RADIUS_SM}px;"
-        )
+        self._error_lbl.setProperty("role", "error-banner-solid")
+        if self._error_lbl.style():
+            self._error_lbl.style().unpolish(self._error_lbl)
+            self._error_lbl.style().polish(self._error_lbl)
         self._error_lbl.setWordWrap(True)
 
         if self._content_widget is not None:
@@ -759,9 +749,10 @@ class QtTripCard(QFrame):
     def _build_alert_banner(self, count: int) -> QFrame:
         """Build the red alert-count banner used in the card body."""
         frame = QFrame()
-        frame.setStyleSheet(
-            f"background-color: {COLOR_ERROR_DEFAULT}; border-radius: {RADIUS_SM}px;"
-        )
+        frame.setProperty("role", "panel-danger-solid")
+        if frame.style():
+            frame.style().unpolish(frame)
+            frame.style().polish(frame)
         alert_layout = QHBoxLayout(frame)
         alert_layout.setContentsMargins(SP["1"], 1, SP["1"], 1)
         alert_layout.setSpacing(0)
@@ -837,10 +828,10 @@ class QtTripCard(QFrame):
     def _on_documents_clicked(self) -> None:
         """Show a context menu with document generation options."""
         menu = QMenu(self)
-        menu.setStyleSheet(
-            f"border: 1px solid {COLOR_BORDER_SUBTLE};"
-            f"border-radius: {RADIUS_SM}px;"
-        )
+        menu.setProperty("role", "subtle")
+        if menu.style():
+            menu.style().unpolish(menu)
+            menu.style().polish(menu)
 
         act_invoice = QAction(qta.icon("fa5s.file-invoice-dollar"), t("dispatch_board.generate_invoice", default="Generate Invoice"), self)
         act_cmr = QAction(qta.icon("fa5s.file-alt"), t("dispatch_board.generate_cmr", default="Generate CMR"), self)

@@ -53,9 +53,6 @@ from ui.components import (
 from ui.design_tokens import (
     ACCENT_TEXT,
     COLOR_ACCENT_PRIMARY,
-    COLOR_BORDER_MEDIUM,
-    COLOR_BORDER_SUBTLE,
-    COLOR_ERROR_DEFAULT,
     COLOR_NEUTRAL_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_PRIMARY,
@@ -995,12 +992,11 @@ class QtFleetDashboard(QWidget):
         feed_scroll.setWidgetResizable(True)
         feed_scroll.setFrameShape(QFrame.NoFrame)
         feed_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        feed_scroll.setStyleSheet("""
-            QScrollArea { background: transparent; border: none; }
-            QScrollBar:vertical { width: 4px; background: transparent; }
-            QScrollBar::handle:vertical { background: #38383F; border-radius: 2px; min-height: 30px; }
-            QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
-        """)
+        _vbar = feed_scroll.verticalScrollBar()
+        _vbar.setProperty("role", "thin-scroll-no-arrows")
+        if _vbar.style():
+            _vbar.style().unpolish(_vbar)
+            _vbar.style().polish(_vbar)
         feed_scroll.setMaximumHeight(600)
 
         feed_frame = QFrame()
@@ -1092,10 +1088,14 @@ class QtFleetDashboard(QWidget):
 
         parent_layout.addWidget(row)
 
-        # Divider
+        # Divider (visible 1px subtle line — the old HLine + `color:` sheet rendered
+        # invisible under the global ``QFrame { border: none }`` rule; the
+        # ``hairline`` role activates the intended line, a sanctioned fix).
         divider = QFrame()
-        divider.setFrameShape(QFrame.HLine)
-        divider.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
+        divider.setProperty("role", "hairline")
+        if divider.style():
+            divider.style().unpolish(divider)
+            divider.style().polish(divider)
         parent_layout.addWidget(divider)
 
     # ── Grid toggle ──────────────────────────────────────────────────
@@ -1105,9 +1105,7 @@ class QtFleetDashboard(QWidget):
         self._grid_visible = not self._grid_visible
         for chart in self.findChildren(PlotlyChartWidget):
             try:
-                chart.fig.update_xaxes(showgrid=self._grid_visible)
-                chart.fig.update_yaxes(showgrid=self._grid_visible)
-                chart.render()
+                chart.set_grid_visible(self._grid_visible)
             except Exception:
                 logger.exception("Failed to toggle grid on chart widget")
 

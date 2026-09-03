@@ -39,7 +39,6 @@ from services.i18n import t
 from ui.components import Btn, EmptyState, UniversalCard
 from ui.performance_timer import PerfTimer
 from ui.design_tokens import (
-    COLOR_BORDER_SUBTLE,
     COLOR_ERROR_DEFAULT,
     COLOR_SUCCESS_DEFAULT,
     COLOR_TEXT_TERTIARY,
@@ -222,7 +221,10 @@ class QtFleetTrackingView(QWidget):
 
         # Globe icon
         icon_lbl = QLabel("\U0001f5fa")
-        icon_lbl.setStyleSheet(f"font-size: 64px; color: {COLOR_TEXT_TERTIARY};")
+        icon_lbl.setProperty("role", "fleet-icon")
+        if icon_lbl.style():
+            icon_lbl.style().unpolish(icon_lbl)
+            icon_lbl.style().polish(icon_lbl)
         icon_lbl.setAlignment(Qt.AlignCenter)
         cl.addWidget(icon_lbl)
 
@@ -606,9 +608,14 @@ class QtFleetTrackingView(QWidget):
 
     @staticmethod
     def _make_divider() -> QFrame:
+        # Visible 1px subtle line — the old HLine + `color:` sheet rendered
+        # invisible under the global ``QFrame { border: none }`` rule; the
+        # ``hairline`` role activates the intended line (sanctioned fix).
         line = QFrame()
-        line.setFrameShape(QFrame.HLine)
-        line.setStyleSheet(f"color: {COLOR_BORDER_SUBTLE};")
+        line.setProperty("role", "hairline")
+        if line.style():
+            line.style().unpolish(line)
+            line.style().polish(line)
         line.setFixedHeight(1)
         return line
 

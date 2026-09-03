@@ -179,3 +179,93 @@ class TestGetIcon:
         from ui.components import get_icon
         icon = get_icon("fa5s.home", color="#6366F1")
         assert icon is not None
+
+
+class TestStateLabel:
+    """Phase-5 ``StateLabel``: theme-driven role/fontRole label with an
+    optional runtime-switchable ``state`` property."""
+
+    def test_constructor_sets_role_fontrole_and_state(self, qt_widget, qtbot):
+        from ui.components import StateLabel
+        lbl = StateLabel(
+            qt_widget, "Status", role="status-badge",
+            fontRole="xs-muted", state="neutral",
+        )
+        qtbot.addWidget(lbl)
+        assert lbl.text() == "Status"
+        assert lbl.property("role") == "status-badge"
+        assert lbl.property("fontRole") == "xs-muted"
+        assert lbl.property("state") == "neutral"
+
+    def test_constructor_empty_args_set_no_properties(self, qt_widget, qtbot):
+        from ui.components import StateLabel
+        lbl = StateLabel(qt_widget, "Plain")
+        qtbot.addWidget(lbl)
+        assert lbl.text() == "Plain"
+        assert lbl.property("role") is None
+        assert lbl.property("fontRole") is None
+        assert lbl.property("state") is None
+
+    def test_set_state_updates_property(self, qt_widget, qtbot):
+        from ui.components import StateLabel
+        lbl = StateLabel(qt_widget, "Status", role="status-badge", state="neutral")
+        qtbot.addWidget(lbl)
+        assert lbl.property("state") == "neutral"
+        lbl.set_state("active")
+        assert lbl.property("state") == "active"
+
+    def test_set_state_repolishes(self, qt_widget, qtbot, monkeypatch):
+        """set_state() re-runs the QSS polish so the new state takes effect."""
+        from ui.components import StateLabel
+        lbl = StateLabel(qt_widget, "Status", role="status-badge", state="neutral")
+        qtbot.addWidget(lbl)
+        style = lbl.style()
+        calls = []
+        monkeypatch.setattr(style, "unpolish", lambda w: calls.append("unpolish"))
+        monkeypatch.setattr(style, "polish", lambda w: calls.append("polish"))
+        lbl.set_state("active")
+        assert lbl.property("state") == "active"
+        assert "unpolish" in calls
+        assert "polish" in calls
+
+    def test_role_and_fontrole_theme_coverage(self, qapp):
+        """The role/fontRole values StateLabel accepts exist in QtTheme.qss()."""
+        from ui.theme_engine import QtTheme
+        qss = QtTheme.qss()
+        assert '[role="pill-value"]' in qss
+        assert '[role="status-badge"]' in qss
+        assert '[fontRole="xs-muted"]' in qss
+        assert '[fontRole="sm-secondary"]' in qss
+
+
+class TestDot:
+    """Phase-5 ``Dot``: fixed-size coloured status/waypoint indicator."""
+
+    def test_default_size_and_role(self, qt_widget, qtbot):
+        from ui.components import Dot
+        dot = Dot(qt_widget)
+        qtbot.addWidget(dot)
+        assert dot.property("role") == "dot"
+        assert dot.width() == 10
+        assert dot.height() == 10
+
+    def test_custom_size(self, qt_widget, qtbot):
+        from ui.components import Dot
+        dot = Dot(qt_widget, size=14)
+        qtbot.addWidget(dot)
+        assert dot.width() == 14
+        assert dot.height() == 14
+
+    def test_set_color_updates_stored_color(self, qt_widget, qtbot):
+        """set_color() updates the colour the dot renders with."""
+        from ui.components import Dot
+        dot = Dot(qt_widget, color="#ef4444")
+        qtbot.addWidget(dot)
+        assert dot._color == "#ef4444"
+        dot.set_color("#22c55e")
+        assert dot._color == "#22c55e"
+
+    def test_dot_role_theme_coverage(self, qapp):
+        """The dot's static geometry lives in the QSS ``dot`` role."""
+        from ui.theme_engine import QtTheme
+        assert 'QLabel[role="dot"]' in QtTheme.qss()

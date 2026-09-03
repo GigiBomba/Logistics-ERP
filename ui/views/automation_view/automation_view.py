@@ -33,8 +33,6 @@ from services.i18n import t
 from ui.components import Btn, PageTitle
 from ui.design_tokens import (
     ACCENT,
-    ACCENT_DIM,
-    ACCENT_HOVER,
     ACCENT_TEXT,
     BG_SURFACE,
     BORDER_DEFAULT,
@@ -271,52 +269,18 @@ class _RunDetailPanel(QFrame):
 
     @staticmethod
     def _style_primary_btn(btn: QPushButton) -> None:
-        btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  background: {ACCENT};"
-            f"  color: {ACCENT_TEXT};"
-            f"  border: none;"
-            f"  border-radius: 6px;"
-            f"  padding: 8px 16px;"
-            f"  font-size: 13px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  background: {ACCENT_HOVER};"
-            f"}}"
-            f"QPushButton:pressed {{"
-            f"  background: {ACCENT};"
-            f"}}"
-            f"QPushButton:disabled {{"
-            f"  background: {BORDER_FAINT};"
-            f"  color: {TEXT_MUTED};"
-            f"}}"
-        )
+        btn.setProperty("role", "btn-accent-text")
+        if btn.style():
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
 
     @staticmethod
     def _style_secondary_btn(btn: QPushButton) -> None:
-        btn.setStyleSheet(
-            f"QPushButton {{"
-            f"  background: {BG_SURFACE};"
-            f"  color: {ACCENT_TEXT};"
-            f"  border: 1px solid {BORDER_DEFAULT};"
-            f"  border-radius: 6px;"
-            f"  padding: 8px 16px;"
-            f"  font-size: 13px;"
-            f"}}"
-            f"QPushButton:hover {{"
-            f"  border: 1px solid {ACCENT};"
-            f"  background: {ACCENT_DIM};"
-            f"}}"
-            f"QPushButton:pressed {{"
-            f"  background: {ACCENT};"
-            f"  color: {ACCENT_TEXT};"
-            f"}}"
-            f"QPushButton:disabled {{"
-            f"  background: {BORDER_FAINT};"
-            f"  color: {TEXT_MUTED};"
-            f"  border: 1px solid transparent;"
-            f"}}"
-        )
+        btn.setProperty("variant", "secondary")
+        btn.setProperty("role", "btn-accent-text")
+        if btn.style():
+            btn.style().unpolish(btn)
+            btn.style().polish(btn)
 
     # ------------------------------------------------------------------
     # UI construction
@@ -339,15 +303,16 @@ class _RunDetailPanel(QFrame):
         # Simple-mode status label (hidden by default)
         self._simple_status = QLabel()
         self._simple_status.setWordWrap(True)
-        self._simple_status.setProperty("fontRole", "body_bold")
-        self._simple_status.setStyleSheet(f"color: {ACCENT_TEXT};")
+        self._simple_status.setProperty("role", "accent-text")
+        if self._simple_status.style():
+            self._simple_status.style().unpolish(self._simple_status)
+            self._simple_status.style().polish(self._simple_status)
         self._simple_status.hide()
         layout.addWidget(self._simple_status)
 
         # Candidate manual selection area (hidden by default)
         self._candidates_box = QLabel()
-        self._candidates_box.setProperty("fontRole", "small")
-        self._candidates_box.setStyleSheet(f"color: {ACCENT};")
+        self._candidates_box.setProperty("fontRole", "sm-accent")
         self._candidates_box.setWordWrap(True)
         self._candidates_box.hide()
         layout.addWidget(self._candidates_box)
@@ -830,7 +795,10 @@ class QtAutomationView(QueueManagementMixin, QWidget):
         root.setSpacing(SP["3"])
 
         header = QFrame()
-        header.setStyleSheet(f"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};")
+        header.setProperty("role", "panel-header")
+        if header.style():
+            header.style().unpolish(header)
+            header.style().polish(header)
         h = QHBoxLayout(header)
         h.setContentsMargins(SP["5"], SP["3"], SP["5"], SP["3"])
         h.addWidget(PageTitle(header, t("automation.title", default="Document Automation")))
@@ -842,7 +810,10 @@ class QtAutomationView(QueueManagementMixin, QWidget):
 
         # Mode switch
         mode_row = QFrame()
-        mode_row.setStyleSheet(f"background: {BG_SURFACE}; border-bottom: 1px solid {BORDER_FAINT};")
+        mode_row.setProperty("role", "panel-header")
+        if mode_row.style():
+            mode_row.style().unpolish(mode_row)
+            mode_row.style().polish(mode_row)
         mode_layout = QHBoxLayout(mode_row)
         mode_layout.setContentsMargins(SP["5"], SP["2"], SP["5"], SP["2"])
         mode_layout.setSpacing(SP["2"])

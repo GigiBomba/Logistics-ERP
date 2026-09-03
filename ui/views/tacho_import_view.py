@@ -43,17 +43,11 @@ from ui.components import (
 from ui.design_tokens import (
     COLOR_BG_ELEVATED,
     COLOR_BORDER_MEDIUM,
-    COLOR_BORDER_SUBTLE,
     COLOR_INFO_DEFAULT,
     COLOR_TEXT_PRIMARY,
-    COLOR_TEXT_SECONDARY,
-    COLOR_TEXT_TERTIARY,
     DANGER_TEXT,
-    FONT_SIZE_BASE,
-    FONT_WEIGHT_MEDIUM,
     SP,
     SUCCESS_TEXT,
-    WARNING_DIM,
     WARNING_TEXT,
 )
 
@@ -159,16 +153,16 @@ class QtTachoImportView(QWidget):
 
         drop_icon = QLabel("\u2B06")  # up arrow
         drop_icon.setAlignment(Qt.AlignCenter)
-        drop_icon.setStyleSheet(f"font-size: 28px; color: {COLOR_TEXT_TERTIARY}; background: transparent; border: none;")
+        drop_icon.setProperty("role", "drop-icon")
+        if drop_icon.style():
+            drop_icon.style().unpolish(drop_icon)
+            drop_icon.style().polish(drop_icon)
         drop_layout.addWidget(drop_icon)
 
         drop_hint = QLabel(t("tacho.drop_hint", "Trage\u021Bi fi\u0219ierele aici sau ap\u0103sa\u021Bi pentru a selecta"))
         drop_hint.setAlignment(Qt.AlignCenter)
         drop_hint.setWordWrap(True)
-        drop_hint.setStyleSheet(
-            f"font-size: {FONT_SIZE_BASE}px; font-weight: {FONT_WEIGHT_MEDIUM}; "
-            f"color: {COLOR_TEXT_SECONDARY}; background: transparent; border: none;"
-        )
+        drop_hint.setProperty("fontRole", "base-secondary-semibold")
         drop_layout.addWidget(drop_hint)
 
         drop_sub = QLabel(t("tacho.drop_supported", "DDD / TGD / alte fi\u0219iere tahograf"))
@@ -183,9 +177,8 @@ class QtTachoImportView(QWidget):
         card_layout.addWidget(self._drop_zone)
 
         # How-it-works steps (compact)
-        steps = Label(None, t("tacho.import_steps"), role="muted")
+        steps = Label(None, t("tacho.import_steps"), role="list-step")
         steps.setWordWrap(True)
-        steps.setStyleSheet(f"padding: {SP['2']}px; color: {COLOR_TEXT_TERTIARY};")
         card_layout.addWidget(steps)
 
         # Import buttons
@@ -203,14 +196,10 @@ class QtTachoImportView(QWidget):
             variant="secondary",
             command=self._import_vehicle_unit,
         )
-        self._btn_vehicle.setStyleSheet(
-            f"QPushButton{{"
-            f"  border: 1px solid {COLOR_BORDER_SUBTLE};"
-            f"}}"
-            f"QPushButton:hover{{"
-            f"  border-color: {COLOR_INFO_DEFAULT};"
-            f"}}"
-        )
+        self._btn_vehicle.setProperty("role", "btn-outline-tight")
+        if self._btn_vehicle.style():
+            self._btn_vehicle.style().unpolish(self._btn_vehicle)
+            self._btn_vehicle.style().polish(self._btn_vehicle)
         card_layout.addWidget(self._btn_vehicle)
 
         # Progress label (hidden initially)
@@ -285,13 +274,11 @@ class QtTachoImportView(QWidget):
 
         # Violations warning chip
         self._result_violations = QLabel("")
-        self._result_violations.setProperty("fontRole", "label")
+        self._result_violations.setProperty("role", "chip-warning-lg")
+        if self._result_violations.style():
+            self._result_violations.style().unpolish(self._result_violations)
+            self._result_violations.style().polish(self._result_violations)
         self._result_violations.setVisible(False)
-        self._result_violations.setStyleSheet(
-            f"background-color: {WARNING_DIM};"
-            f"color: {WARNING_TEXT};"
-            f"border-radius: 4px; padding: 2px 8px;"
-        )
         result_layout.addWidget(self._result_violations)
 
         layout.addWidget(self._result_card)

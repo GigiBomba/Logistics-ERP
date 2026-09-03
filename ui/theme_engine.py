@@ -72,6 +72,10 @@ from ui.design_tokens import (
     FONT_SIZE_SM,
     FONT_SIZE_XL,
     FONT_SIZE_XS,
+    FONT_WEIGHT_BOLD,
+    FONT_WEIGHT_MEDIUM,
+    FONT_WEIGHT_REGULAR,
+    FONT_WEIGHT_SEMIBOLD,
     INPUT_HEIGHT,
     SPACE_1,
 )
@@ -180,6 +184,7 @@ class QtTheme:
                 cls._dialogs_qss(),
                 cls._route_planner_qss(),
                 cls._components_qss(),
+                cls._pc_qss(),
             ]
         )
 
@@ -255,14 +260,16 @@ class QtTheme:
     #     generic component.
     #
     # Known gate false-positives (tools/ui_style_gate.py role_inventory)
-    #   The string-literal scanner cannot see variable/bool/property setters,
-    #   so the following selectors are reported "dead" but are LIVE (each also
-    #   carries an inline comment next to its rule):
+    #   The gate's role_inventory dead-check is ATTR-LEVEL: a selector's
+    #   attribute is live when ANY setProperty("attr", ...) exists (literal or
+    #   variable/bool value) — so these selectors are NOT reported dead anymore
+    #   (their attributes have live setters).  The inline comments next to each
+    #   rule remain as documentation of the mechanism:
     #     - QPushButton variant="danger"            (variant set via variable in components)
     #     - QLineEdit validation="success"          (validation set via variable in form_utils)
     #     - QFrame stat-card hovered="true"         (hovered set via bool in stat_card)
     #     - QPushButton tabRole="tab-button" with tabActive="true" (bool in dispatch_tabs)
-    #     - QDialog modal="true"                    (real Q_PROPERTY on QDialog)
+    #     - QDialog modal="true"                    (real Q_PROPERTY on QDialog; gate exempts modal ONLY on QDialog-scoped selectors)
     #     - QLabel role="pill-value"                (role set via StateLabel variable)
     #   Each carries a matching inline comment next to its rule.
 
@@ -505,6 +512,91 @@ class QtTheme:
             color: {COLOR_ACCENT_PRIMARY};
             font-size: {cls._fs("body")}px;
             font-weight: bold;
+        }}
+
+        /* ── Label(role=...) wire-up (post-launch candidates, Lane A) ──
+           These QLabel[role=...] selectors activate the ~40 component
+           ``Label(role=...)`` sites that render base-styled.  The first five
+           are the exact port of the legacy ``QLabel[class=...]`` rules (from
+           commit 2c4fcf3a), minus the dead-in-Qt ``text-transform`` clause;
+           the eight below are the designer spec (token-based). */
+        QLabel[role="page-title"] {{
+            font-size: 20px;
+            font-weight: {FONT_WEIGHT_SEMIBOLD};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+
+        QLabel[role="section-title"] {{
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: {FONT_WEIGHT_SEMIBOLD};
+            color: {COLOR_TEXT_PRIMARY};
+            letter-spacing: 0.05em;
+        }}
+
+        QLabel[role="field-label"] {{
+            font-size: {FONT_SIZE_SM}px;
+            color: {COLOR_TEXT_TERTIARY};
+            letter-spacing: 0.08em;
+        }}
+
+        QLabel[role="kpi-value"] {{
+            font-size: {FONT_SIZE_XL}px;
+            font-weight: {FONT_WEIGHT_BOLD};
+            font-family: {cls._ff("mono")};
+            color: {COLOR_TEXT_PRIMARY};
+        }}
+
+        QLabel[role="kpi-label"] {{
+            font-size: {FONT_SIZE_SM}px;
+            color: {COLOR_TEXT_TERTIARY};
+        }}
+
+        QLabel[role="default"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: {FONT_WEIGHT_REGULAR};
+        }}
+
+        QLabel[role="secondary"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: {FONT_WEIGHT_REGULAR};
+        }}
+
+        QLabel[role="muted"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: {FONT_WEIGHT_REGULAR};
+        }}
+
+        QLabel[role="label"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_SM}px;
+            font-weight: {FONT_WEIGHT_REGULAR};
+        }}
+
+        QLabel[role="danger"] {{
+            color: {COLOR_ERROR_TEXT};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: {FONT_WEIGHT_REGULAR};
+        }}
+
+        QLabel[role="success"] {{
+            color: {COLOR_SUCCESS_TEXT};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: {FONT_WEIGHT_REGULAR};
+        }}
+
+        QLabel[role="body-bold"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_MD}px;
+            font-weight: {FONT_WEIGHT_SEMIBOLD};
+        }}
+
+        QLabel[role="bold"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: {FONT_WEIGHT_BOLD};
         }}
         """
 
@@ -3053,5 +3145,175 @@ class QtTheme:
             background-color: {COLOR_BORDER_SUBTLE};
             max-height: 1px;
             min-height: 1px;
+        }}
+        """
+
+    # ── Post-launch candidates (Lane A static-keep roles) ────────────────────
+    # Minted for Lane B to apply to the listed views.  Values reproduce the
+    # current inline sheets pixel-exactly (colors/sizes/paddings/hovers);
+    # placed LAST so these single-attribute role rules win source-order ties
+    # against the generic QPushButton/QMenu/QScrollBar rules above them.
+    # ``role="hairline"`` is intentionally NOT reworked here — the OLD
+    # ``QFrame(HLine) + color:`` dividers render INVISIBLE (the global
+    # ``QFrame { border: none }`` rule suppresses the HLine shape), so exact
+    # parity is impossible without erasing the visible analytics hairline.
+
+    @classmethod
+    def _pc_qss(cls) -> str:
+        return f"""
+        /* automation _candidates_box / trip_card _both_lbl: 12px accent
+           (both sources carry fontRole="small" = FONT_SIZE_BASE). */
+        QLabel[fontRole="sm-accent"] {{
+            color: {COLOR_ACCENT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        /* trip_card live_dot: 11px success-default. */
+        QLabel[fontRole="sm-success-default"] {{
+            color: {COLOR_SUCCESS_DEFAULT};
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        /* trip_card live_speed: mono + 13px + secondary (fontRole="mono" base). */
+        QLabel[fontRole="mono-secondary"] {{
+            font-family: {cls._ff("mono")};
+            font-size: {FONT_SIZE_MD}px;
+            color: {COLOR_TEXT_SECONDARY};
+        }}
+        /* overview rev_lbl: mono + 12px + success-text. */
+        QLabel[fontRole="mono-success"] {{
+            font-family: {cls._ff("mono")};
+            font-size: {FONT_SIZE_BASE}px;
+            color: {COLOR_SUCCESS_TEXT};
+        }}
+        /* overview alerts/top-trucks/activity titles: 12px primary. */
+        QLabel[fontRole="base-primary"] {{
+            color: {COLOR_TEXT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+        }}
+        /* overview "more": 12px accent + 500. */
+        QLabel[fontRole="base-accent-semibold"] {{
+            color: {COLOR_ACCENT_PRIMARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: {FONT_WEIGHT_MEDIUM};
+        }}
+        /* overview plate / tacho drop_hint: 12px secondary + 500. */
+        QLabel[fontRole="base-secondary-semibold"] {{
+            color: {COLOR_TEXT_SECONDARY};
+            font-size: {FONT_SIZE_BASE}px;
+            font-weight: {FONT_WEIGHT_MEDIUM};
+        }}
+        /* trip_card error banner: solid error bg + primary text + 2/6 pad. */
+        QLabel[role="error-banner-solid"] {{
+            background-color: {COLOR_ERROR_DEFAULT};
+            color: {COLOR_TEXT_PRIMARY};
+            padding: 2px 6px;
+            border-radius: {RADIUS_CHIP}px;
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        /* trip_card alert banner frame: solid error bg + SM radius. */
+        QFrame[role="panel-danger-solid"] {{
+            background-color: {COLOR_ERROR_DEFAULT};
+            border: none;
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        /* trip_card documents menu: subtle border override. */
+        QMenu[role="subtle"] {{
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+            border-radius: {RADIUS_CHIP}px;
+        }}
+        /* automation _style_primary_btn: accent fill + ACCENT_TEXT label. */
+        QPushButton[role="btn-accent-text"] {{
+            background: {COLOR_ACCENT_PRIMARY};
+            color: {ACCENT_TEXT};
+            border: none;
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px 16px;
+            font-size: {FONT_SIZE_MD}px;
+        }}
+        QPushButton[role="btn-accent-text"]:hover {{
+            background: {COLOR_ACCENT_HOVER};
+        }}
+        QPushButton[role="btn-accent-text"]:pressed {{
+            background: {COLOR_ACCENT_PRIMARY};
+        }}
+        QPushButton[role="btn-accent-text"]:disabled {{
+            background: {COLOR_BORDER_SUBTLE};
+            color: {COLOR_TEXT_TERTIARY};
+        }}
+        /* automation _style_secondary_btn: elevated bg + accent-text + border. */
+        QPushButton[role="btn-accent-text"][variant="secondary"] {{
+            background: {COLOR_BG_ELEVATED};
+            color: {ACCENT_TEXT};
+            border: 1px solid {COLOR_BORDER_MEDIUM};
+            border-radius: {RADIUS_INPUT}px;
+            padding: 8px 16px;
+            font-size: {FONT_SIZE_MD}px;
+        }}
+        QPushButton[role="btn-accent-text"][variant="secondary"]:hover {{
+            background: {COLOR_ACCENT_SUBTLE};
+            border-color: {COLOR_ACCENT_PRIMARY};
+        }}
+        QPushButton[role="btn-accent-text"][variant="secondary"]:pressed {{
+            background: {COLOR_ACCENT_PRIMARY};
+            color: {ACCENT_TEXT};
+        }}
+        QPushButton[role="btn-accent-text"][variant="secondary"]:disabled {{
+            background: {COLOR_BORDER_SUBTLE};
+            color: {COLOR_TEXT_TERTIARY};
+            border: 1px solid transparent;
+        }}
+        /* automation _simple_status: ACCENT_TEXT color. */
+        QLabel[role="accent-text"] {{
+            color: {ACCENT_TEXT};
+        }}
+        /* automation header + mode_row: elevated + bottom divider. */
+        QFrame[role="panel-header"] {{
+            background-color: {COLOR_BG_ELEVATED};
+            border: none;
+            border-bottom: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        /* tacho import steps: 12px tertiary + 8px pad (QLabel). */
+        QLabel[role="list-step"] {{
+            color: {COLOR_TEXT_TERTIARY};
+            font-size: {FONT_SIZE_BASE}px;
+            padding: {_P2}px;
+        }}
+        /* tacho _btn_vehicle: subtle border + info hover (on secondary variant). */
+        QPushButton[role="btn-outline-tight"] {{
+            border: 1px solid {COLOR_BORDER_SUBTLE};
+        }}
+        QPushButton[role="btn-outline-tight"]:hover {{
+            border-color: {COLOR_INFO_DEFAULT};
+        }}
+        /* tacho result_violations: warning chip (11px label base), pad 2/8. */
+        QLabel[role="chip-warning-lg"] {{
+            background-color: {COLOR_WARNING_SUBTLE};
+            color: {COLOR_WARNING_TEXT};
+            border-radius: {RADIUS_CHIP}px;
+            padding: 2px 8px;
+            font-size: {FONT_SIZE_SM}px;
+        }}
+        /* tacho drop_icon: 28px tertiary glyph. */
+        QLabel[role="drop-icon"] {{
+            font-size: 28px;
+            color: {COLOR_TEXT_TERTIARY};
+        }}
+        /* dashboard feed_scroll: 4px scrollbar, 30px thumb, no arrows. */
+        QScrollBar:vertical[role="thin-scroll-no-arrows"] {{
+            background: transparent;
+            width: 4px;
+        }}
+        QScrollBar::handle:vertical[role="thin-scroll-no-arrows"] {{
+            background: {COLOR_BORDER_MEDIUM};
+            border-radius: 2px;
+            min-height: 30px;
+        }}
+        QScrollBar[role="thin-scroll-no-arrows"]::add-line,
+        QScrollBar[role="thin-scroll-no-arrows"]::sub-line {{
+            height: 0;
+        }}
+        /* fleet_tracking empty-state globe icon: 64px tertiary glyph. */
+        QLabel[role="fleet-icon"] {{
+            font-size: 64px;
+            color: {COLOR_TEXT_TERTIARY};
         }}
         """

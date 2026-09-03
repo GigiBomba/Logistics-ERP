@@ -14,11 +14,12 @@ Read-only linter over the ``ui/`` tree. Enforces five checks:
                        will address these)
   5. role_inventory  - cross-file attribute inventory: QSS selectors
                        ``[attr="val"]`` in ui/theme_engine.py that have no
-                       ``setProperty("attr", "val")`` setter anywhere in
-                       ui/ (dead), setProperty attrs/values with no matching
-                       theme selector (unstyled), and attribute names that
-                       collide with built-in QWidget property names (the
-                       ``size`` collision class).
+                       ``setProperty("attr", ...)`` setter anywhere in
+                       ui/ (dead; variable/bool/property setters count as
+                       live — any value form), setProperty attr/values with
+                       no matching theme selector (unstyled), and attribute
+                       names that collide with built-in QWidget property
+                       names (the ``size`` collision class).
 
 Checks 1-3 and 5 are graded against a baseline file (default
 ``tools/ui_style_gate_baseline.json``, override with ``--baseline``):
@@ -83,8 +84,15 @@ CHECK1_REGEX = re.compile(r"setStyleSheet\(")
 CHECK2_REGEX = re.compile(r"#[0-9a-fA-F]{3,8}\b")
 CHECK3_REGEX = re.compile(r"font-size:\s*(0?[0-9])(\.[0-9]+)?px")
 CHECK4_REGEX = re.compile(r"setFixedSize\(")
-# Check 5: string-literal setProperty("attr", "val") and QSS attribute selectors.
+# Check 5: setProperty("attr", <value>) and QSS attribute selectors.
+# ``CHECK5_SETPROP_REGEX`` matches ANY value form (string literal, variable,
+# bool, expression) — attribute-name extraction is what feeds the dead
+# selector scan.  ``CHECK5_SETPROP_VALUE_REGEX`` additionally captures a
+# string-literal value for the pair-level (unstyled + fontRole) checks.
 CHECK5_SETPROP_REGEX = re.compile(
+    r'setProperty\(\s*["\']([A-Za-z][A-Za-z0-9_]*)["\']\s*,'
+)
+CHECK5_SETPROP_VALUE_REGEX = re.compile(
     r'setProperty\(\s*["\']([A-Za-z][A-Za-z0-9_]*)["\']\s*,\s*["\']([^"\']+)["\']'
 )
 CHECK5_SELECTOR_REGEX = re.compile(
@@ -105,6 +113,12 @@ CHECK5_DENYLIST = {
     "font", "cursor", "minimumWidth", "minimumHeight", "maximumWidth",
     "maximumHeight", "fixedWidth", "fixedHeight", "objectName",
 }
+
+# Attribute names that are LIVE via Qt's own property mechanism rather than
+# ``setProperty`` (e.g. QDialog's ``modal`` Q_PROPERTY is set by Qt when the
+# dialog opens, not by an explicit setProperty call).  A QSS selector on one
+# of these is never "dead" even though no setter call exists in ``ui/``.
+CHECK5_ALIVE_ATTR_ALLOWLIST = {"modal"}
 
 # (file, line, code) -> sub-check label, set by _collect_role_inventory so the
 # report/summary can annotate entries. Kept module-level: this is a CLI tool.
@@ -241,14 +255,17 @@ def _read_lines(path: Path, rel: str) -> list[str]:
 def _collect_role_inventory() -> tuple[list[dict], list[dict]]:
     """Collect Check 5 (``role_inventory``) violations + type-mismatch warnings.
 
-    Cross-file inventory over the ``setProperty("attr", "val")`` call sites in
-    ``ui/`` and the QSS attribute selectors ``[attr="val"]`` in
-    ``ui/theme_engine.py``:
+    Cross-file inventory over the ``setProperty("attr", ...)`` call sites in
+    ``ui/`` (any value form) and the QSS attribute selectors ``[attr="val"]``
+    in ``ui/theme_engine.py``:
 
-      a. Dead selector     - a theme selector attr/val with no matching
-                             setProperty anywhere in ``ui/``.
-      b. Unstyled property - a setProperty attr/val with no matching theme
-                             selector.
+      a. Dead selector     - a theme selector whose ATTRIBUTE has no
+                             ``setProperty("attr", ...)`` call anywhere in
+                             ``ui/`` (any value form) and is not a known
+                             live attribute (``CHECK5_ALIVE_ATTR_ALLOWLIST``,
+                             e.g. QDialog's ``modal`` Q_PROPERTY).
+      b. Unstyled property - a setProperty attr/val (string-literal values
+                             only) with no matching theme selector.
       c. Built-in denylist - a setProperty or selector attribute name that
                              collides with a built-in QWidget property name.
 
@@ -265,20 +282,28 @@ def _collect_role_inventory() -> tuple[list[dict], list[dict]]:
       * a backward assignment ``<receiver> = <rhs>`` (up to 300 lines) has a
         RHS mentioning ``QLabel`` / ``Label(``.
 
-    LIMITATIONS: string-literal values only; line-scoped with a backward
-    assignment scan — receivers constructed in other files, via aliasing or
-    indirection, or with a RHS that doesn't spell ``QLabel``/``Label(`` are
-    reported as potential mismatches (conservative; may include false
+    LIMITATIONS: the type-mismatch heuristic only inspects string-literal
+    ``fontRole`` values; receivers constructed in other files, via aliasing
+    or indirection, or with a RHS that doesn't spell ``QLabel``/``Label(``
+    are reported as potential mismatches (conservative; may include false
     positives).  Warnings never fail the gate and are not baseline entries.
     """
     setprop_sites: dict[tuple[str, str], set[tuple[str, int, str]]] = {}
+    setprop_attrs: set[str] = set()
     selector_sites: dict[tuple[str, str], set[tuple[str, int, str]]] = {}
     tm_warnings: list[dict] = []
     for path, rel in _iter_ui_files():
         lines = _read_lines(path, rel)
         for idx, raw in enumerate(lines, 1):
             code = raw.rstrip()
+            # Attribute-name inventory: EVERY setProperty("attr", <any>) call
+            # counts as a live setter for *attr*, regardless of value form
+            # (string literal, variable, bool, ternary expression, ...).
             for m in CHECK5_SETPROP_REGEX.finditer(raw):
+                setprop_attrs.add(m.group(1))
+            # Pair inventory: only string-literal values participate in the
+            # unstyled-property and fontRole type-mismatch checks.
+            for m in CHECK5_SETPROP_VALUE_REGEX.finditer(raw):
                 key = (m.group(1), m.group(2))
                 setprop_sites.setdefault(key, set()).add((rel, idx, code))
                 if m.group(1) == "fontRole" and not _fontrole_receiver_is_qlabel(
@@ -305,10 +330,22 @@ def _collect_role_inventory() -> tuple[list[dict], list[dict]]:
             ROLE_ENTRY_LABELS[key] = label
             violations.append({"file": rel, "line": idx, "code": code})
 
-    # (a) Dead selectors: theme selector pair with no setter anywhere.
+    # (a) Dead selectors: theme selector whose attribute has no setProperty
+    # call anywhere (any value form) and is not a known live attribute
+    # (e.g. QDialog's ``modal`` Q_PROPERTY — scoped to QDialog selectors).
     for key, sites in sorted(selector_sites.items()):
-        if key not in setprop_sites:
-            _flag("dead", sites)
+        attr = key[0]
+        if attr not in setprop_attrs:
+            if attr in CHECK5_ALIVE_ATTR_ALLOWLIST:
+                # ``modal`` is a real Q_PROPERTY on QDialog: exempt only
+                # QDialog-scoped selectors, not other widgets.
+                if attr == "modal" and not any(
+                    code.lstrip().startswith("QDialog[")
+                    for _, _, code in sites
+                ):
+                    _flag("dead", sites)
+            else:
+                _flag("dead", sites)
     # (b) Unstyled properties: setter pair with no theme selector.
     for key, sites in sorted(setprop_sites.items()):
         if key not in selector_sites:
